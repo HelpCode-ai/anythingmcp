@@ -1,0 +1,337 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+import { connectors } from '@/lib/api';
+import { NavBar } from '@/components/nav-bar';
+
+const CONNECTOR_TYPES = [
+  { id: 'REST', name: 'REST API', description: 'Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually.', color: 'bg-blue-100 text-blue-700 border-blue-200', iconBg: 'bg-blue-50' },
+  { id: 'SOAP', name: 'SOAP Service', description: 'Connect to SOAP web services via WSDL.', color: 'bg-orange-100 text-orange-700 border-orange-200', iconBg: 'bg-orange-50' },
+  { id: 'GRAPHQL', name: 'GraphQL', description: 'Connect to GraphQL APIs with schema introspection.', color: 'bg-pink-100 text-pink-700 border-pink-200', iconBg: 'bg-pink-50' },
+  { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', color: 'bg-purple-100 text-purple-700 border-purple-200', iconBg: 'bg-purple-50' },
+  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, or MSSQL for read-only queries.', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', iconBg: 'bg-emerald-50' },
+  { id: 'WEBHOOK', name: 'Webhook', description: 'Receive events from external services via webhooks.', color: 'bg-amber-100 text-amber-700 border-amber-200', iconBg: 'bg-amber-50' },
+];
+
+const TYPE_ICONS: Record<string, React.ReactNode> = {
+  REST: <RestIcon />,
+  SOAP: <SoapIcon />,
+  GRAPHQL: <GraphqlIcon />,
+  MCP: <McpIcon />,
+  DATABASE: <DatabaseIcon />,
+  WEBHOOK: <WebhookIcon />,
+};
+
+export default function NewConnectorPage() {
+  const { token } = useAuth();
+  const router = useRouter();
+  const [selectedType, setSelectedType] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [specUrl, setSpecUrl] = useState('');
+  const [authType, setAuthType] = useState('NONE');
+  const [authKey, setAuthKey] = useState('');
+  const [authValue, setAuthValue] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const buildAuthConfig = () => {
+    switch (authType) {
+      case 'API_KEY':
+        return { headerName: authKey || 'X-API-Key', apiKey: authValue };
+      case 'BEARER_TOKEN':
+        return { token: authValue };
+      case 'BASIC_AUTH':
+        return { username: authKey, password: authValue };
+      default:
+        return undefined;
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !selectedType) return;
+    setError('');
+    setLoading(true);
+
+    try {
+      const data: any = {
+        name,
+        type: selectedType,
+        baseUrl,
+        authType,
+      };
+      const authConfig = buildAuthConfig();
+      if (authConfig) data.authConfig = authConfig;
+      if (specUrl) data.specUrl = specUrl;
+
+      const created = await connectors.create(data, token);
+
+      if (specUrl && (selectedType === 'REST' || selectedType === 'SOAP' || selectedType === 'GRAPHQL')) {
+        try {
+          await connectors.importSpec(created.id, token);
+        } catch {}
+      }
+
+      router.push('/connectors');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTest = async () => {
+    if (!token || !selectedType) return;
+    setTestResult(null);
+    setLoading(true);
+
+    try {
+      const data: any = { name: name || 'Test', type: selectedType, baseUrl, authType };
+      const authConfig = buildAuthConfig();
+      if (authConfig) data.authConfig = authConfig;
+
+      const created = await connectors.create(data, token);
+      const result = await connectors.test(created.id, token);
+      setTestResult(result);
+      await connectors.delete(created.id, token);
+    } catch (err: any) {
+      setTestResult({ ok: false, message: err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[var(--background)]">
+      <NavBar
+        breadcrumbs={[
+          { label: 'Dashboard', href: '/' },
+          { label: 'Connectors', href: '/connectors' },
+        ]}
+        title="New Connector"
+      />
+
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        <h2 className="text-lg font-medium mb-2">Choose connector type</h2>
+        <p className="text-sm text-[var(--muted-foreground)] mb-6">Select the type of API you want to connect to.</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {CONNECTOR_TYPES.map((type) => (
+            <button
+              key={type.id}
+              onClick={() => setSelectedType(type.id)}
+              className={`text-left border rounded-lg p-5 transition-all ${
+                selectedType === type.id
+                  ? 'border-[var(--brand)] ring-2 ring-[var(--brand)] ring-opacity-20 bg-[var(--brand-light)]'
+                  : 'border-[var(--border)] hover:border-[var(--brand)] hover:shadow-sm'
+              }`}
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className={`w-10 h-10 rounded-lg ${type.iconBg} flex items-center justify-center`}>
+                  {TYPE_ICONS[type.id]}
+                </div>
+                <span className="font-medium">{type.name}</span>
+              </div>
+              <p className="text-sm text-[var(--muted-foreground)]">{type.description}</p>
+            </button>
+          ))}
+        </div>
+
+        {selectedType && (
+          <div className="mt-8 border border-[var(--border)] rounded-lg p-6">
+            <h3 className="text-lg font-medium mb-4">
+              Configure {CONNECTOR_TYPES.find((t) => t.id === selectedType)?.name}
+            </h3>
+
+            {error && (
+              <div className="mb-4 p-3 rounded-md bg-red-50 text-red-700 text-sm border border-red-200">{error}</div>
+            )}
+            {testResult && (
+              <div className={`mb-4 p-3 rounded-md text-sm border ${testResult.ok ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                {testResult.message}
+              </div>
+            )}
+
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              <div>
+                <label className="block text-sm font-medium mb-1">Connector Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., My REST API"
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  {selectedType === 'DATABASE' ? 'Connection String' : 'Base URL'}
+                </label>
+                <input
+                  type="text"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder={selectedType === 'DATABASE' ? 'postgresql://user:pass@host:5432/db' : 'https://api.example.com/v1'}
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  required
+                />
+              </div>
+
+              {(selectedType === 'REST' || selectedType === 'SOAP' || selectedType === 'GRAPHQL') && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    {selectedType === 'REST'
+                      ? 'OpenAPI Spec URL (optional)'
+                      : selectedType === 'GRAPHQL'
+                        ? 'GraphQL Introspection URL (optional)'
+                        : 'WSDL URL (optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={specUrl}
+                    onChange={(e) => setSpecUrl(e.target.value)}
+                    placeholder={
+                      selectedType === 'REST'
+                        ? 'https://api.example.com/openapi.json'
+                        : selectedType === 'GRAPHQL'
+                          ? 'https://api.example.com/graphql'
+                          : 'https://service.example.com?wsdl'
+                    }
+                    className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  />
+                  <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                    Provide a spec URL to auto-generate MCP tools
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Authentication</label>
+                <select
+                  value={authType}
+                  onChange={(e) => setAuthType(e.target.value)}
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                >
+                  <option value="NONE">None</option>
+                  <option value="API_KEY">API Key</option>
+                  <option value="BEARER_TOKEN">Bearer Token</option>
+                  <option value="BASIC_AUTH">Basic Auth</option>
+                  <option value="OAUTH2">OAuth 2.0</option>
+                </select>
+              </div>
+
+              {authType === 'API_KEY' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Header Name</label>
+                    <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">API Key</label>
+                    <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} placeholder="sk-..." className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                </div>
+              )}
+              {authType === 'BEARER_TOKEN' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Bearer Token</label>
+                  <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} placeholder="eyJ..." className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                </div>
+              )}
+              {authType === 'BASIC_AUTH' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Username</label>
+                    <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Password</label>
+                    <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                  {loading ? 'Creating...' : 'Create Connector'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTest}
+                  disabled={loading || !baseUrl}
+                  className="border border-[var(--border)] px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--accent)] disabled:opacity-50"
+                >
+                  Test Connection
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+/* Connector type SVG icons */
+function RestIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 7c0-1.1.9-2 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z" />
+      <path d="M9 12h6" />
+      <path d="M12 9v6" />
+    </svg>
+  );
+}
+function SoapIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ea580c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m18 16 4-4-4-4" />
+      <path d="m6 8-4 4 4 4" />
+      <path d="m14.5 4-5 16" />
+    </svg>
+  );
+}
+function GraphqlIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#db2777" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5" />
+      <line x1="12" y1="22" x2="12" y2="15.5" />
+      <polyline points="22 8.5 12 15.5 2 8.5" />
+    </svg>
+  );
+}
+function McpIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="6" width="8" height="8" rx="1" />
+      <rect x="14" y="6" width="8" height="8" rx="1" />
+      <path d="M10 10h4" />
+    </svg>
+  );
+}
+function DatabaseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" />
+      <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />
+    </svg>
+  );
+}
+function WebhookIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+    </svg>
+  );
+}

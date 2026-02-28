@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'anything-to-mcp/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'anything-to-mcp/**'
+
+defaults:
+  run:
+    working-directory: anything-to-mcp
+
+jobs:
+  backend:
+    name: Backend (lint, test, build)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: atmcp
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: anythingtomcp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://atmcp:testpassword@localhost:5432/anythingtomcp_test
+      JWT_SECRET: ci-test-jwt-secret-at-least-32-chars
+      ENCRYPTION_KEY: ci-test-encryption-key-32-chars!
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: anything-to-mcp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: anything-to-mcp/packages/backend
+
+      - name: Run Prisma migrations
+        run: npx prisma migrate deploy
+        working-directory: anything-to-mcp/packages/backend
+
+      - name: Run tests
+        run: npm test
+        working-directory: anything-to-mcp/packages/backend
+
+      - name: Build backend
+        run: npm run build
+        working-directory: anything-to-mcp/packages/backend
+
+  frontend:
+    name: Frontend (build)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: anything-to-mcp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: anything-to-mcp/packages/frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t anything-to-mcp-backend:ci .
+        working-directory: anything-to-mcp
+
+      - name: Build frontend image
+        run: docker build -f Dockerfile.frontend -t anything-to-mcp-frontend:ci .
+        working-directory: anything-to-mcp

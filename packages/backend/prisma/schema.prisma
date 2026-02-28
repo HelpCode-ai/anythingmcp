@@ -1,0 +1,236 @@
+// =============================================================================
+// AnythingToMCP — Database Schema
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── User Management ─────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  role         UserRole @default(EDITOR)
+
+  // Optional AI provider config (per-user)
+  aiProvider String? @map("ai_provider") // "anthropic" | "openai"
+  aiApiKey   String? @map("ai_api_key") // encrypted
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  connectors     Connector[]
+  mcpServers     McpServerConfig[]
+  toolInvocations ToolInvocation[]
+
+  @@map("users")
+}
+
+// ── Connector Engine ────────────────────────────────────────────────────────
+
+enum ConnectorType {
+  REST
+  SOAP
+  GRAPHQL
+  MCP
+  DATABASE
+  WEBHOOK
+}
+
+enum AuthType {
+  NONE
+  API_KEY
+  BEARER_TOKEN
+  BASIC_AUTH
+  OAUTH2
+  WS_SECURITY
+  CERTIFICATE
+  CONNECTION_STRING
+  HMAC
+}
+
+model Connector {
+  id   String        @id @default(cuid())
+  userId String      @map("user_id")
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name     String
+  type     ConnectorType
+  baseUrl  String        @map("base_url")
+  isActive Boolean       @default(true) @map("is_active")
+
+  // Authentication
+  authType   AuthType @default(NONE) @map("auth_type")
+  authConfig String?  @map("auth_config") // encrypted JSON
+
+  // Specification (OpenAPI, WSDL, GraphQL schema)
+  specUrl  String? @map("spec_url")
+  specData Json?   @map("spec_data") // stored spec for offline use
+
+  // Custom headers and config
+  headers Json? // default headers as JSON
+  config  Json? // connector-specific configuration
+
+  // Environment variables for runtime interpolation of {{VAR_NAME}} patterns
+  envVars Json? @map("env_vars")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tools     McpTool[]
+  resources McpResource[]
+  prompts   McpPrompt[]
+
+  @@map("connectors")
+}
+
+// ── MCP Tool Definition ─────────────────────────────────────────────────────
+
+model McpTool {
+  id          String    @id @default(cuid())
+  connectorId String    @map("connector_id")
+  connector   Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String    @db.Text
+  isEnabled   Boolean   @default(true) @map("is_enabled")
+
+  // Parameter schema (JSON Schema / Zod-compatible)
+  parameters Json
+
+  // How to map this tool to the connector's API
+  endpointMapping Json @map("endpoint_mapping")
+  // {
+  //   method: "GET" | "POST" | ...,
+  //   path: "/users/{id}",
+  //   queryParams: { ... },
+  //   bodyMapping: { ... },
+  //   headers: { ... }
+  // }
+
+  // How to transform the API response for MCP
+  responseMapping Json? @map("response_mapping")
+  // {
+  //   type: "json" | "text",
+  //   template: "...",
+  //   fields: [...]
+  // }
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  invocations ToolInvocation[]
+
+  @@unique([connectorId, name])
+  @@map("mcp_tools")
+}
+
+// ── MCP Resource Definition ─────────────────────────────────────────────────
+
+model McpResource {
+  id          String    @id @default(cuid())
+  connectorId String    @map("connector_id")
+  connector   Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  uri         String
+  name        String
+  description String?   @db.Text
+  mimeType    String    @default("application/json") @map("mime_type")
+
+  // How to fetch the resource data
+  fetchConfig Json @map("fetch_config")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([connectorId, uri])
+  @@map("mcp_resources")
+}
+
+// ── MCP Prompt Template ─────────────────────────────────────────────────────
+
+model McpPrompt {
+  id          String    @id @default(cuid())
+  connectorId String    @map("connector_id")
+  connector   Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?   @db.Text
+  template    String    @db.Text
+  arguments   Json?     // expected arguments for the template
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([connectorId, name])
+  @@map("mcp_prompts")
+}
+
+// ── MCP Server Configuration ────────────────────────────────────────────────
+
+model McpServerConfig {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name      String @default("My MCP Server")
+  version   String @default("1.0.0")
+  isActive  Boolean @default(true) @map("is_active")
+
+  // MCP client authentication
+  authType   AuthType @default(BEARER_TOKEN) @map("auth_type")
+  authConfig String?  @map("auth_config") // encrypted
+
+  // Transport configuration
+  transport String @default("streamable-http")
+  endpoint  String @default("/mcp")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("mcp_server_configs")
+}
+
+// ── Audit Log ───────────────────────────────────────────────────────────────
+
+enum InvocationStatus {
+  SUCCESS
+  ERROR
+  TIMEOUT
+}
+
+model ToolInvocation {
+  id     String @id @default(cuid())
+  toolId String @map("tool_id")
+  tool   McpTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  input      Json
+  output     Json?
+  status     InvocationStatus
+  durationMs Int?              @map("duration_ms")
+  error      String?           @db.Text
+
+  clientInfo String? @map("client_info") // e.g. "Claude Desktop", "Cursor"
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([toolId, createdAt])
+  @@index([userId, createdAt])
+  @@map("tool_invocations")
+}

@@ -1,0 +1,25 @@
+version: '3.9'
+
+# =============================================================================
+# AnythingToMCP — Development Overrides
+# =============================================================================
+# Usage:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Only starts postgres + redis; run frontend/backend locally with hot reload.
+# =============================================================================
+
+services:
+  frontend:
+    profiles:
+      - disabled
+
+  backend:
+    profiles:
+      - disabled
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"

@@ -1,0 +1,95 @@
+version: '3.9'
+
+# =============================================================================
+# AnythingToMCP — Full Stack Deployment
+# =============================================================================
+# Usage:  docker compose up -d
+# UI:     http://localhost:3000
+# API:    http://localhost:4000
+# MCP:    http://localhost:4000/mcp
+# =============================================================================
+
+services:
+
+  # Next.js Admin UI
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: atmcp-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:4000
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-in-production}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # NestJS Backend + MCP Server
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atmcp-backend
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - DATABASE_URL=postgresql://atmcp:${POSTGRES_PASSWORD:-atmcp}@postgres:5432/anythingtomcp
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production-min-32-chars}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-in-production-exactly-32}
+      - CORS_ORIGIN=http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: atmcp-postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=atmcp
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-atmcp}
+      - POSTGRES_DB=anythingtomcp
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atmcp -d anythingtomcp"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: atmcp-redis
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
