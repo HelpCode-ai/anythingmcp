@@ -194,11 +194,14 @@ export class DynamicMcpTools {
         headers: interpolatedConfig.headers,
       };
 
+      // Apply JSON Schema defaults for missing params
+      const mergedParams = this.applyDefaults(tool.parameters, args.params || {});
+
       const result = await this.executeWithEngine(
         tool.connectorType,
         engineConfig,
         interpolatedMapping,
-        args.params || {},
+        mergedParams,
       );
 
       const durationMs = Date.now() - startTime;
@@ -254,6 +257,22 @@ export class DynamicMcpTools {
       .digest('hex')
       .slice(0, 12);
     return `tool_cache:${toolName}:${paramsHash}`;
+  }
+
+  private applyDefaults(
+    schema: Record<string, unknown>,
+    params: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const properties = (schema as any)?.properties;
+    if (!properties || typeof properties !== 'object') return params;
+
+    const result = { ...params };
+    for (const [key, prop] of Object.entries(properties)) {
+      if (result[key] === undefined && (prop as any)?.default !== undefined) {
+        result[key] = (prop as any).default;
+      }
+    }
+    return result;
   }
 
   private async executeWithEngine(

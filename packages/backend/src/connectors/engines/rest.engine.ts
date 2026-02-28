@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosRequestConfig, AxiosError, Method } from 'axios';
+import FormData from 'form-data';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -26,6 +27,8 @@ export class RestEngine {
       path: string;
       queryParams?: Record<string, unknown>;
       bodyMapping?: Record<string, unknown>;
+      bodyTemplate?: string;
+      bodyEncoding?: string;
       headers?: Record<string, string>;
     },
     params: Record<string, unknown>,
@@ -76,13 +79,50 @@ export class RestEngine {
     }
 
     // Request body
-    if (
-      endpointMapping.bodyMapping &&
-      ['POST', 'PUT', 'PATCH'].includes(
-        endpointMapping.method.toUpperCase(),
-      )
-    ) {
-      axiosConfig.data = this.mapParams(endpointMapping.bodyMapping, params);
+    if (['POST', 'PUT', 'PATCH'].includes(endpointMapping.method.toUpperCase())) {
+      if (endpointMapping.bodyTemplate) {
+        // Template mode: interpolate ${paramName} placeholders, then parse as JSON
+        let rendered = endpointMapping.bodyTemplate;
+        for (const [key, value] of Object.entries(params)) {
+          const placeholder = '${' + key + '}';
+          if (rendered.includes(placeholder)) {
+            const replacement = typeof value === 'string' ? value : JSON.stringify(value);
+            rendered = rendered.split(placeholder).join(replacement);
+          }
+        }
+        try {
+          axiosConfig.data = JSON.parse(rendered);
+        } catch (e: any) {
+          throw new Error(`bodyTemplate produced invalid JSON after interpolation: ${e.message}`);
+        }
+      } else if (endpointMapping.bodyMapping) {
+        const mapped = this.mapParams(endpointMapping.bodyMapping, params);
+        const encoding = endpointMapping.bodyEncoding || 'json';
+
+        if (encoding === 'form-urlencoded') {
+          const urlParams = new URLSearchParams();
+          for (const [k, v] of Object.entries(mapped)) {
+            urlParams.append(k, String(v));
+          }
+          axiosConfig.data = urlParams.toString();
+          axiosConfig.headers = {
+            ...axiosConfig.headers,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          };
+        } else if (encoding === 'form-data') {
+          const form = new FormData();
+          for (const [k, v] of Object.entries(mapped)) {
+            form.append(k, String(v));
+          }
+          axiosConfig.data = form;
+          axiosConfig.headers = {
+            ...axiosConfig.headers,
+            ...form.getHeaders(),
+          };
+        } else {
+          axiosConfig.data = mapped;
+        }
+      }
     }
 
     this.logger.debug(`REST call: ${axiosConfig.method} ${url}`);

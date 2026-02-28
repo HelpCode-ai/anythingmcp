@@ -17,7 +17,12 @@ export class PostmanParser {
   private readonly logger = new Logger(PostmanParser.name);
 
   async parse(collection: string | Record<string, unknown>): Promise<ParsedTool[]> {
-    const col = typeof collection === 'string' ? JSON.parse(collection) : collection;
+    let col: any;
+    try {
+      col = typeof collection === 'string' ? JSON.parse(collection) : collection;
+    } catch (e: any) {
+      throw new Error(`Invalid Postman Collection JSON: ${e.message}`);
+    }
 
     // Validate it's a Postman Collection
     const info = (col as any).info;
@@ -39,7 +44,44 @@ export class PostmanParser {
 
   async parseFromUrl(url: string): Promise<ParsedTool[]> {
     this.logger.debug(`Fetching Postman Collection from: ${url}`);
+
+    // Detect Postman Documenter URLs (they serve HTML, not JSON)
+    const documenterMatch = url.match(
+      /documenter\.getpostman\.com\/view\/(\d+)\/([^/?#]+)/,
+    );
+    if (documenterMatch) {
+      const ownerId = documenterMatch[1];
+      const slug = documenterMatch[2];
+      const apiUrl = `https://documenter.getpostman.com/api/collections/download?version=latest&document_id=${slug}&owner=${ownerId}`;
+      this.logger.debug(`Detected Postman Documenter URL. Trying API: ${apiUrl}`);
+      try {
+        const apiResp = await axios.get(apiUrl, { timeout: 15000 });
+        if (apiResp.data && typeof apiResp.data === 'object') {
+          return this.parse(apiResp.data);
+        }
+      } catch {
+        // Fall through to descriptive error
+      }
+      throw new Error(
+        'Postman Documenter URLs are not directly importable. ' +
+        'Please export the collection as JSON from Postman, or use the raw collection URL.',
+      );
+    }
+
     const response = await axios.get(url, { timeout: 15000 });
+
+    // Validate response is JSON, not HTML
+    const contentType = (response.headers?.['content-type'] || '') as string;
+    if (
+      contentType.includes('text/html') ||
+      (typeof response.data === 'string' && response.data.trimStart().startsWith('<'))
+    ) {
+      throw new Error(
+        'The URL did not return a valid JSON collection. ' +
+        'Expected a Postman Collection JSON URL, but received HTML instead.',
+      );
+    }
+
     return this.parse(response.data);
   }
 

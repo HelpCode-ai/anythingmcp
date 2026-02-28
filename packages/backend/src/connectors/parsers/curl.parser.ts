@@ -120,7 +120,14 @@ export class CurlParser {
         required.push(varName);
         queryParamsMapping[key] = `$${varName}`;
       } else {
-        queryParamsMapping[key] = value;
+        // Static query param → create an optional parameter with default value
+        const paramName = key.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_+/, '') || 'param';
+        properties[paramName] = {
+          type: 'string',
+          description: `Query parameter: ${key}`,
+          default: value,
+        };
+        queryParamsMapping[key] = `$${paramName}`;
       }
     }
 

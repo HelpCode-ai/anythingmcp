@@ -1,5 +1,6 @@
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { join } from 'path';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { McpModule, McpTransportType } from '@rekog/mcp-nest';
@@ -18,7 +19,13 @@ import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
 @Module({
   imports: [
     // Configuration
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [
+        join(__dirname, '..', '..', '..', '.env'),
+        '.env',
+      ],
+    }),
 
     // Database
     PrismaModule,
