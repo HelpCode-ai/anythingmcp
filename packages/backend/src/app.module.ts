@@ -16,6 +16,8 @@ import { AiModule } from './ai/ai.module';
 import { UsersModule } from './users/users.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
+import { SettingsModule } from './settings/settings.module';
+import { RolesModule } from './roles/roles.module';
 import { PrismaModule } from './common/prisma.module';
 import { RedisModule } from './common/redis.module';
 import { McpAuthMiddleware } from './auth/mcp-auth.middleware';
@@ -104,6 +106,8 @@ if (useOAuth) {
     AiModule,
     AuditModule,
     HealthModule,
+    SettingsModule,
+    RolesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

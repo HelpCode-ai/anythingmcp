@@ -149,9 +149,18 @@ export class CurlParser {
     // Parse body data
     if (dataBody) {
       try {
-        // Try JSON parse
-        const cleanBody = dataBody.replace(/\{\{([^}]+)\}\}/g, '"__var_$1__"');
+        // Try JSON parse — replace {{var}} placeholders with sentinel values.
+        // Handle "{{var}}" (quoted) first to avoid producing ""__var_var__"".
+        const cleanBody = dataBody
+          .replace(/"\{\{([^}]+)\}\}"/g, '"__var_$1__"')   // "{{var}}" → "__var_var__"
+          .replace(/\{\{([^}]+)\}\}/g, '"__var_$1__"');     // remaining bare {{var}}
         const parsed = JSON.parse(cleanBody);
+
+        // If parsed result is not an object (e.g. bare "{{var}}" parses as string), treat as raw body
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          throw new Error('Not a JSON object — fall through to raw body handler');
+        }
+
         for (const [key, value] of Object.entries(parsed)) {
           const strVal = String(value);
           if (strVal.startsWith('__var_') && strVal.endsWith('__')) {
@@ -171,10 +180,18 @@ export class CurlParser {
       } catch {
         // Not JSON — treat as raw body parameter
         if (dataBody.includes('{{')) {
-          const varName = dataBody.replace(/.*\{\{([^}]+)\}\}.*/, '$1');
-          properties[varName] = { type: 'string', description: 'Request body' };
-          required.push(varName);
-          bodyMapping['__raw'] = `$${varName}`;
+          const varMatches = [...dataBody.matchAll(/\{\{([^}]+)\}\}/g)];
+          if (varMatches.length === 1) {
+            const varName = varMatches[0][1];
+            properties[varName] = { type: 'string', description: 'Request body' };
+            required.push(varName);
+            bodyMapping['__raw'] = `$${varName}`;
+          } else {
+            // Multiple variables in raw body — use a single body parameter
+            properties['body'] = { type: 'string', description: 'Raw request body' };
+            required.push('body');
+            bodyMapping['__raw'] = '$body';
+          }
         } else {
           properties['body'] = { type: 'string', description: 'Raw request body', default: dataBody };
           bodyMapping['__raw'] = '$body';

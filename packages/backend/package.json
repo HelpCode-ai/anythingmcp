@@ -22,7 +22,7 @@
     "db:studio": "npx prisma studio"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.78.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
@@ -36,13 +36,15 @@
     "@prisma/client": "^7.4.0",
     "@rekog/mcp-nest": "^1.9.3",
     "axios": "^1.13.2",
-    "bcrypt": "^5.1.1",
+    "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
-    "class-validator": "^0.14.3",
+    "class-validator": "^0.15.0",
+    "cookie-parser": "^1.4.7",
     "fast-xml-parser": "^5.3.3",
     "graphql": "^16.10.0",
     "graphql-request": "^7.1.2",
     "ioredis": "^5.6.0",
+    "nodemailer": "^8.0.1",
     "openai": "^6.25.0",
     "pg": "^8.16.0",
     "passport": "^0.7.0",
@@ -57,11 +59,12 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
-    "@types/bcrypt": "^5.0.2",
+    "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/pg": "^8.15.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
+    "@types/nodemailer": "^7.0.11",
     "@types/passport-jwt": "^4.0.1",
     "eslint": "^9.18.0",
     "jest": "^30.0.0",
@@ -75,13 +78,19 @@
     "typescript": "^5.7.3"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
-    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   }

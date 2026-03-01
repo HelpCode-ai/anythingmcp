@@ -96,31 +96,37 @@ export class RestEngine {
           throw new Error(`bodyTemplate produced invalid JSON after interpolation: ${e.message}`);
         }
       } else if (endpointMapping.bodyMapping) {
-        const mapped = this.mapParams(endpointMapping.bodyMapping, params);
-        const encoding = endpointMapping.bodyEncoding || 'json';
-
-        if (encoding === 'form-urlencoded') {
-          const urlParams = new URLSearchParams();
-          for (const [k, v] of Object.entries(mapped)) {
-            urlParams.append(k, String(v));
-          }
-          axiosConfig.data = urlParams.toString();
-          axiosConfig.headers = {
-            ...axiosConfig.headers,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          };
-        } else if (encoding === 'form-data') {
-          const form = new FormData();
-          for (const [k, v] of Object.entries(mapped)) {
-            form.append(k, String(v));
-          }
-          axiosConfig.data = form;
-          axiosConfig.headers = {
-            ...axiosConfig.headers,
-            ...form.getHeaders(),
-          };
+        // Handle __raw body mapping (non-JSON body, e.g. XML/SOAP)
+        if ('__raw' in endpointMapping.bodyMapping) {
+          const mapped = this.mapParams(endpointMapping.bodyMapping, params);
+          axiosConfig.data = mapped['__raw'];
         } else {
-          axiosConfig.data = mapped;
+          const mapped = this.mapParams(endpointMapping.bodyMapping, params);
+          const encoding = endpointMapping.bodyEncoding || 'json';
+
+          if (encoding === 'form-urlencoded') {
+            const urlParams = new URLSearchParams();
+            for (const [k, v] of Object.entries(mapped)) {
+              urlParams.append(k, String(v));
+            }
+            axiosConfig.data = urlParams.toString();
+            axiosConfig.headers = {
+              ...axiosConfig.headers,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            };
+          } else if (encoding === 'form-data') {
+            const form = new FormData();
+            for (const [k, v] of Object.entries(mapped)) {
+              form.append(k, String(v));
+            }
+            axiosConfig.data = form;
+            axiosConfig.headers = {
+              ...axiosConfig.headers,
+              ...form.getHeaders(),
+            };
+          } else {
+            axiosConfig.data = mapped;
+          }
         }
       }
     }

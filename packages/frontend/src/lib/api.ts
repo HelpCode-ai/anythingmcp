@@ -43,6 +43,29 @@ export const auth = {
       method: 'POST',
       body: { email, password, name },
     }),
+  forgotPassword: (email: string) =>
+    request<{ message: string }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: { email },
+    }),
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: { token, newPassword },
+    }),
+  inviteUser: (data: { email: string; role: string; mcpRoleId?: string }, token: string) =>
+    request<{ message: string; inviteUrl?: string }>('/api/auth/invite', {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+  verifyInvite: (token: string) =>
+    request<{ email: string; role: string; valid: boolean }>(`/api/auth/invite/verify?token=${token}`),
+  acceptInvite: (data: { token: string; password: string; name: string }) =>
+    request<{ accessToken: string; user: any }>('/api/auth/accept-invite', {
+      method: 'POST',
+      body: data,
+    }),
 };
 
 // Users
@@ -51,8 +74,10 @@ export const users = {
     request<any>('/api/users/me', { token }),
   updateProfile: (data: { name?: string; email?: string }, token: string) =>
     request('/api/users/me', { method: 'PUT', body: data, token }),
-  updateAiConfig: (data: { provider: string; apiKey: string }, token: string) =>
+  updateAiConfig: (data: { provider: string; apiKey: string; model?: string }, token: string) =>
     request('/api/users/me/ai-config', { method: 'PUT', body: data, token }),
+  changePassword: (data: { currentPassword: string; newPassword: string }, token: string) =>
+    request<{ message?: string; error?: string }>('/api/users/me/password', { method: 'PUT', body: data, token }),
   // Admin
   list: (token: string) =>
     request<any[]>('/api/users', { token }),
@@ -146,8 +171,65 @@ export const server = {
     }>('/health/server-info'),
 };
 
+// Site Settings
+export const siteSettings = {
+  footerLinks: () =>
+    request<Array<{ label: string; url: string }>>('/api/site-settings/footer-links'),
+};
+
+// Admin Settings
+export const adminSettings = {
+  getSmtp: (token: string) =>
+    request<{ configured: boolean; host?: string; port?: number; user?: string; from?: string; secure?: boolean }>('/api/admin/settings/smtp', { token }),
+  updateSmtp: (data: { host: string; port: number; user: string; pass: string; from?: string; secure?: boolean }, token: string) =>
+    request<{ message: string }>('/api/admin/settings/smtp', { method: 'PUT', body: data, token }),
+  testSmtp: (token: string) =>
+    request<{ ok: boolean; message: string }>('/api/admin/settings/smtp/test', { method: 'POST', token }),
+  getFooterLinks: (token: string) =>
+    request<Array<{ label: string; url: string }>>('/api/admin/settings/footer-links', { token }),
+  updateFooterLinks: (links: Array<{ label: string; url: string }>, token: string) =>
+    request<{ message: string }>('/api/admin/settings/footer-links', { method: 'PUT', body: { links }, token }),
+};
+
+// Roles (Admin)
+export const roles = {
+  list: (token: string) =>
+    request<any[]>('/api/roles', { token }),
+  get: (id: string, token: string) =>
+    request<any>(`/api/roles/${id}`, { token }),
+  create: (data: { name: string; description?: string }, token: string) =>
+    request<any>('/api/roles', { method: 'POST', body: data, token }),
+  update: (id: string, data: { name?: string; description?: string }, token: string) =>
+    request<any>(`/api/roles/${id}`, { method: 'PUT', body: data, token }),
+  delete: (id: string, token: string) =>
+    request(`/api/roles/${id}`, { method: 'DELETE', token }),
+  getToolAccess: (id: string, token: string) =>
+    request<any[]>(`/api/roles/${id}/tools`, { token }),
+  setToolAccess: (id: string, toolIds: string[], token: string) =>
+    request(`/api/roles/${id}/tools`, { method: 'PUT', body: { toolIds }, token }),
+  assignToUser: (userId: string, roleId: string | null, token: string) =>
+    request(`/api/roles/assign/${userId}`, { method: 'PUT', body: { roleId }, token }),
+};
+
+// MCP API Keys
+export const mcpKeys = {
+  list: (token: string) =>
+    request<any[]>('/api/mcp-keys', { token }),
+  generate: (name: string, token: string) =>
+    request<{ id: string; key: string; name: string }>('/api/mcp-keys', { method: 'POST', body: { name }, token }),
+  revoke: (id: string, token: string) =>
+    request(`/api/mcp-keys/${id}/revoke`, { method: 'POST', token }),
+  delete: (id: string, token: string) =>
+    request(`/api/mcp-keys/${id}`, { method: 'DELETE', token }),
+};
+
 // AI
 export const ai = {
+  models: (token: string) =>
+    request<{
+      anthropic: { models: Array<{ id: string; label: string }>; default: string };
+      openai: { models: Array<{ id: string; label: string }>; default: string };
+    }>('/api/ai/models', { token }),
   generateTools: (data: unknown, token: string) =>
     request('/api/ai/generate-tools', { method: 'POST', body: data, token }),
   improveDescription: (data: unknown, token: string) =>

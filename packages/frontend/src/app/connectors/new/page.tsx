@@ -5,14 +5,15 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 
 const CONNECTOR_TYPES = [
-  { id: 'REST', name: 'REST API', description: 'Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually.', color: 'bg-blue-100 text-blue-700 border-blue-200', iconBg: 'bg-blue-50' },
-  { id: 'SOAP', name: 'SOAP Service', description: 'Connect to SOAP web services via WSDL.', color: 'bg-orange-100 text-orange-700 border-orange-200', iconBg: 'bg-orange-50' },
-  { id: 'GRAPHQL', name: 'GraphQL', description: 'Connect to GraphQL APIs with schema introspection.', color: 'bg-pink-100 text-pink-700 border-pink-200', iconBg: 'bg-pink-50' },
-  { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', color: 'bg-purple-100 text-purple-700 border-purple-200', iconBg: 'bg-purple-50' },
-  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, or MSSQL for read-only queries.', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', iconBg: 'bg-emerald-50' },
-  { id: 'WEBHOOK', name: 'Webhook', description: 'Receive events from external services via webhooks.', color: 'bg-amber-100 text-amber-700 border-amber-200', iconBg: 'bg-amber-50' },
+  { id: 'REST', name: 'REST API', description: 'Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually.', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30', iconBg: 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' },
+  { id: 'SOAP', name: 'SOAP Service', description: 'Connect to SOAP web services via WSDL.', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/30', iconBg: 'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400' },
+  { id: 'GRAPHQL', name: 'GraphQL', description: 'Connect to GraphQL APIs with schema introspection.', color: 'bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-400 dark:border-pink-500/30', iconBg: 'bg-pink-50 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400' },
+  { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30', iconBg: 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, or MSSQL for read-only queries.', color: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30', iconBg: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  { id: 'WEBHOOK', name: 'Webhook', description: 'Receive events from external services via webhooks.', color: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30', iconBg: 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400' },
 ];
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -106,7 +107,7 @@ export default function NewConnectorPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[
           { label: 'Dashboard', href: '/' },
@@ -115,7 +116,7 @@ export default function NewConnectorPage() {
         title="New Connector"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
         <h2 className="text-lg font-medium mb-2">Choose connector type</h2>
         <p className="text-sm text-[var(--muted-foreground)] mb-6">Select the type of API you want to connect to.</p>
 
@@ -148,10 +149,10 @@ export default function NewConnectorPage() {
             </h3>
 
             {error && (
-              <div className="mb-4 p-3 rounded-md bg-red-50 text-red-700 text-sm border border-red-200">{error}</div>
+              <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">{error}</div>
             )}
             {testResult && (
-              <div className={`mb-4 p-3 rounded-md text-sm border ${testResult.ok ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+              <div className={`mb-4 p-3 rounded-md text-sm border ${testResult.ok ? 'bg-[var(--success-bg)] text-[var(--success-text)] border-[var(--success-border)]' : 'bg-[var(--destructive-bg)] text-[var(--destructive-text)] border-[var(--destructive-border)]'}`}>
                 {testResult.message}
               </div>
             )}
@@ -261,7 +262,7 @@ export default function NewConnectorPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                  className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
                 >
                   {loading ? 'Creating...' : 'Create Connector'}
                 </button>
@@ -278,6 +279,7 @@ export default function NewConnectorPage() {
           </div>
         )}
       </main>
+      <Footer />
     </div>
   );
 }
@@ -285,7 +287,7 @@ export default function NewConnectorPage() {
 /* Connector type SVG icons */
 function RestIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 7c0-1.1.9-2 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z" />
       <path d="M9 12h6" />
       <path d="M12 9v6" />
@@ -294,7 +296,7 @@ function RestIcon() {
 }
 function SoapIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ea580c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="m18 16 4-4-4-4" />
       <path d="m6 8-4 4 4 4" />
       <path d="m14.5 4-5 16" />
@@ -303,7 +305,7 @@ function SoapIcon() {
 }
 function GraphqlIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#db2777" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5" />
       <line x1="12" y1="22" x2="12" y2="15.5" />
       <polyline points="22 8.5 12 15.5 2 8.5" />
@@ -312,7 +314,7 @@ function GraphqlIcon() {
 }
 function McpIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="2" y="6" width="8" height="8" rx="1" />
       <rect x="14" y="6" width="8" height="8" rx="1" />
       <path d="M10 10h4" />
@@ -321,7 +323,7 @@ function McpIcon() {
 }
 function DatabaseIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <ellipse cx="12" cy="5" rx="9" ry="3" />
       <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" />
       <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />
@@ -330,7 +332,7 @@ function DatabaseIcon() {
 }
 function WebhookIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
     </svg>
   );

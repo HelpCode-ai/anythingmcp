@@ -7,10 +7,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
+import { McpApiKeysService } from '../roles/mcp-api-keys.service';
 
 /**
  * Guard for the MCP endpoint (/mcp).
  * Supports:
+ *   - Per-user MCP API key (mcp_... prefix → resolves user + role)
  *   - Bearer token (JWT from AnythingToMCP auth)
  *   - Bearer token (static MCP_BEARER_TOKEN for Claude Desktop)
  *   - X-API-Key header (static MCP_API_KEY for Claude Desktop)
@@ -28,6 +30,7 @@ export class McpAuthGuard implements CanActivate {
   constructor(
     private readonly configService: ConfigService,
     private readonly authService: AuthService,
+    private readonly mcpApiKeysService: McpApiKeysService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -39,6 +42,16 @@ export class McpAuthGuard implements CanActivate {
     const configuredApiKey = this.configService.get<string>('MCP_API_KEY');
     const mcpBearerToken = this.configService.get<string>('MCP_BEARER_TOKEN');
 
+    // Check per-user MCP API key first (mcp_... prefix)
+    if (apiKey?.startsWith('mcp_')) {
+      const user = await this.mcpApiKeysService.resolveUserByKey(apiKey);
+      if (user) {
+        request.user = { sub: user.id, email: user.email, role: user.role, mcpRoleId: user.mcpRoleId };
+        return true;
+      }
+      // Invalid per-user key — fall through to 401
+    }
+
     // If no auth is configured, allow (dev mode)
     if (!configuredApiKey && !mcpBearerToken) {
       this.logger.warn(
@@ -47,7 +60,7 @@ export class McpAuthGuard implements CanActivate {
       return true;
     }
 
-    // Check API key
+    // Check static API key
     if (apiKey && configuredApiKey && apiKey === configuredApiKey) {
       return true;
     }

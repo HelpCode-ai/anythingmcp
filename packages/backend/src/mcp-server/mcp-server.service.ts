@@ -7,6 +7,7 @@ import { PrismaService } from '../common/prisma.service';
 import { decrypt } from '../common/crypto/encryption.util';
 import { ToolRegistry } from './tool-registry';
 import { DynamicMcpTools } from './dynamic-mcp-tools';
+import { RolesService } from '../roles/roles.service';
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -20,6 +21,7 @@ export class McpServerService implements OnModuleInit {
     private readonly toolExecutor: DynamicMcpTools,
     private readonly moduleRef: ModuleRef,
     private readonly configService: ConfigService,
+    private readonly rolesService: RolesService,
   ) {
     this.encryptionKey =
       this.configService.get<string>('ENCRYPTION_KEY') ||
@@ -136,6 +138,10 @@ export class McpServerService implements OnModuleInit {
   /**
    * Register a tool directly with the MCP library's registry so it
    * appears as a native tool in tools/list (not behind invoke_tool).
+   *
+   * The handler checks role-based access: if the requesting user has a
+   * custom MCP role, only tools assigned to that role are executable.
+   * ADMIN users and users without a custom role have unrestricted access.
    */
   private registerMcpTool(
     name: string,
@@ -148,7 +154,23 @@ export class McpServerService implements OnModuleInit {
       name,
       description,
       parameters: zodParams,
-      handler: async (args: Record<string, unknown>) => {
+      handler: async (args: Record<string, unknown>, _context: any, request: any) => {
+        // Check role-based tool access if user is identified
+        const user = request?.user;
+        if (user?.sub) {
+          const allowedToolIds = await this.rolesService.getAllowedToolIds(user.sub);
+          if (allowedToolIds !== null) {
+            // User has restricted access — check if this tool is allowed
+            const tool = this.toolRegistry.getTool(name);
+            if (tool && !allowedToolIds.includes(tool.id)) {
+              return {
+                content: [{ type: 'text' as const, text: JSON.stringify({ error: `Access denied: you do not have permission to use '${name}'.` }) }],
+                isError: true,
+              };
+            }
+          }
+        }
+
         return this.toolExecutor.executeTool(name, args);
       },
     });

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 
 /* Inline SVG logo component */
@@ -43,17 +44,28 @@ interface NavBarProps {
 export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const allNavItems = [
+    ...NAV_ITEMS,
+    ...(user?.role === 'ADMIN' ? [
+      { href: '/admin/users', label: 'Users', icon: UsersIcon },
+      { href: '/admin/roles', label: 'Roles', icon: ShieldIcon },
+      { href: '/admin/settings', label: 'Admin', icon: GearIcon },
+    ] : []),
+  ];
 
   return (
-    <header className="border-b border-[var(--border)] bg-[var(--background)] sticky top-0 z-50">
+    <header className="border-b border-[var(--border)] bg-[var(--background)]/95 backdrop-blur-sm sticky top-0 z-50">
       <div className="flex items-center justify-between max-w-7xl mx-auto px-6 h-14">
         <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2.5 hover:opacity-80">
-            <LogoIcon />
-            <span className="text-lg font-bold">AnythingToMCP</span>
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <span className="transition-transform group-hover:scale-105"><LogoIcon /></span>
+            <span className="text-lg font-bold hidden sm:inline">AnythingToMCP</span>
           </Link>
-          <nav className="flex items-center gap-1">
-            {NAV_ITEMS.map((item) => {
+          {/* Desktop nav */}
+          <nav className="hidden lg:flex items-center gap-1">
+            {allNavItems.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
               return (
                 <Link
@@ -70,23 +82,10 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
                 </Link>
               );
             })}
-            {user?.role === 'ADMIN' && (
-              <Link
-                href="/admin/users"
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
-                  pathname.startsWith('/admin')
-                    ? 'bg-[var(--brand-light)] text-[var(--brand)] font-medium'
-                    : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)]'
-                }`}
-              >
-                <UsersIcon size={15} />
-                Users
-              </Link>
-            )}
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm">
-          <div className="flex items-center gap-2 text-[var(--muted-foreground)]">
+          <div className="hidden sm:flex items-center gap-2 text-[var(--muted-foreground)]">
             <div className="w-6 h-6 rounded-full bg-[var(--brand)] text-white flex items-center justify-center text-xs font-medium">
               {(user?.name || user?.email || '?')[0].toUpperCase()}
             </div>
@@ -94,12 +93,66 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
           </div>
           <button
             onClick={logout}
-            className="text-[var(--muted-foreground)] hover:text-[var(--destructive)] px-2 py-1 rounded text-xs"
+            className="hidden sm:block text-[var(--muted-foreground)] hover:text-[var(--destructive)] px-2 py-1 rounded text-xs"
           >
             Logout
           </button>
+          {/* Mobile hamburger */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="lg:hidden p-1.5 rounded-md hover:bg-[var(--accent)] text-[var(--muted-foreground)]"
+            aria-label="Toggle menu"
+          >
+            {mobileMenuOpen ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
+
+      {/* Mobile nav dropdown */}
+      {mobileMenuOpen && (
+        <nav className="lg:hidden border-t border-[var(--border)] px-4 py-2 space-y-1">
+          {allNavItems.map((item) => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                  isActive
+                    ? 'bg-[var(--brand-light)] text-[var(--brand)] font-medium'
+                    : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)]'
+                }`}
+              >
+                <item.icon size={16} />
+                {item.label}
+              </Link>
+            );
+          })}
+          <div className="sm:hidden flex items-center justify-between px-3 py-2 border-t border-[var(--border)] mt-2 pt-3">
+            <div className="flex items-center gap-2 text-[var(--muted-foreground)]">
+              <div className="w-6 h-6 rounded-full bg-[var(--brand)] text-white flex items-center justify-center text-xs font-medium">
+                {(user?.name || user?.email || '?')[0].toUpperCase()}
+              </div>
+              <span className="text-xs truncate max-w-[150px]">{user?.email}</span>
+            </div>
+            <button
+              onClick={logout}
+              className="text-[var(--muted-foreground)] hover:text-[var(--destructive)] text-xs"
+            >
+              Logout
+            </button>
+          </div>
+        </nav>
+      )}
 
       {/* Breadcrumbs + Actions bar */}
       {(breadcrumbs || actions) && (
@@ -189,6 +242,14 @@ function UsersIcon({ size = 16 }: { size?: number }) {
       <circle cx="9" cy="7" r="4" />
       <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+function ShieldIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
     </svg>
   );
 }

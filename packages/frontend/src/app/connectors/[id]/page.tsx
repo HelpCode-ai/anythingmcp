@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors, tools, ai } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 import { ToolEditor } from '@/components/tool-editor';
 
 const IMPORT_SOURCES = [
@@ -293,7 +294,7 @@ export default function ConnectorDetailPage() {
   if (!connector) return null;
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[
           { label: 'Dashboard', href: '/' },
@@ -316,7 +317,7 @@ export default function ConnectorDetailPage() {
             </button>
             <button
               onClick={handleDelete}
-              className="border border-[var(--destructive)] text-[var(--destructive)] px-3 py-1.5 rounded text-sm hover:bg-red-50"
+              className="border border-[var(--destructive)] text-[var(--destructive)] px-3 py-1.5 rounded text-sm hover:bg-[var(--destructive-bg)]"
             >
               Delete
             </button>
@@ -324,9 +325,9 @@ export default function ConnectorDetailPage() {
         }
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6 flex-1 w-full">
         {msg && (
-          <div className="p-3 rounded-md bg-blue-50 text-blue-700 text-sm border border-blue-200">
+          <div className="p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)]">
             {msg}
             <button onClick={() => setMsg('')} className="ml-2 underline">
               dismiss
@@ -335,7 +336,7 @@ export default function ConnectorDetailPage() {
         )}
         {testResult && (
           <div
-            className={`p-3 rounded-md text-sm border ${testResult.ok ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}
+            className={`p-3 rounded-md text-sm border ${testResult.ok ? 'bg-[var(--success-bg)] text-[var(--success-text)] border-[var(--success-border)]' : 'bg-[var(--destructive-bg)] text-[var(--destructive-text)] border-[var(--destructive-border)]'}`}
           >
             {testResult.message}
           </div>
@@ -375,7 +376,7 @@ export default function ConnectorDetailPage() {
               </div>
               <button
                 onClick={handleSave}
-                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
+                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"
               >
                 Save Changes
               </button>
@@ -477,7 +478,7 @@ export default function ConnectorDetailPage() {
                 <button
                   onClick={handleSaveEnvVars}
                   disabled={savingEnvVars}
-                  className="bg-[var(--brand)] text-white px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                  className="bg-[var(--brand)] text-white px-4 py-1.5 rounded text-sm font-medium hover:brightness-90 disabled:opacity-50"
                 >
                   {savingEnvVars ? 'Saving...' : 'Save Variables'}
                 </button>
@@ -509,7 +510,7 @@ export default function ConnectorDetailPage() {
               )}
               <button
                 onClick={() => setShowNewTool(!showNewTool)}
-                className="bg-[var(--brand)] text-white px-3 py-1.5 rounded text-sm font-medium hover:opacity-90"
+                className="bg-[var(--brand)] text-white px-3 py-1.5 rounded text-sm font-medium hover:brightness-90"
               >
                 {showNewTool ? 'Cancel' : 'Add Tool'}
               </button>
@@ -565,7 +566,7 @@ export default function ConnectorDetailPage() {
               <button
                 onClick={handleImportTools}
                 disabled={importing || (!importContent && !importUrl)}
-                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
               >
                 {importing ? 'Importing...' : 'Import'}
               </button>
@@ -612,12 +613,12 @@ export default function ConnectorDetailPage() {
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-sm font-mono">{tool.name}</span>
                             {tool.endpointMapping?.method && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-mono">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--info-bg)] text-[var(--info-text)] font-mono">
                                 {tool.endpointMapping.method}
                               </span>
                             )}
                             <span
-                              className={`text-xs px-1.5 py-0.5 rounded ${tool.isEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+                              className={`text-xs px-1.5 py-0.5 rounded ${tool.isEnabled ? 'bg-[var(--success-bg)] text-[var(--success-text)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}
                             >
                               {tool.isEnabled ? 'enabled' : 'disabled'}
                             </span>
@@ -673,7 +674,7 @@ export default function ConnectorDetailPage() {
                           <button
                             onClick={() => handleAiEnhance(tool.id, tool.name, tool.description)}
                             disabled={enhancingToolId === tool.id}
-                            className="border border-purple-300 text-purple-600 px-2 py-1 rounded text-xs hover:bg-purple-50 disabled:opacity-50"
+                            className="border border-[var(--brand)] text-[var(--brand)] px-2 py-1 rounded text-xs hover:bg-[var(--brand-light)] disabled:opacity-50"
                             title="Use AI to improve this tool's description"
                           >
                             {enhancingToolId === tool.id ? 'Enhancing...' : 'AI Enhance'}
@@ -695,7 +696,7 @@ export default function ConnectorDetailPage() {
                           </button>
                           <button
                             onClick={() => handleDeleteTool(tool.id)}
-                            className="border border-[var(--destructive)] text-[var(--destructive)] px-2 py-1 rounded text-xs hover:bg-red-50"
+                            className="border border-[var(--destructive)] text-[var(--destructive)] px-2 py-1 rounded text-xs hover:bg-[var(--destructive-bg)]"
                           >
                             Delete
                           </button>
@@ -718,7 +719,7 @@ export default function ConnectorDetailPage() {
                               <button
                                 onClick={() => handleTestTool(tool.id)}
                                 disabled={testRunning}
-                                className="mt-2 bg-[var(--brand)] text-white px-4 py-1.5 rounded text-xs font-medium hover:opacity-90 disabled:opacity-50"
+                                className="mt-2 bg-[var(--brand)] text-white px-4 py-1.5 rounded text-xs font-medium hover:brightness-90 disabled:opacity-50"
                               >
                                 {testRunning ? 'Running...' : 'Run Test'}
                               </button>
@@ -751,6 +752,7 @@ export default function ConnectorDetailPage() {
           )}
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

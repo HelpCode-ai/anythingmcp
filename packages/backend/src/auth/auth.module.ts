@@ -13,11 +13,13 @@ import { RolesGuard } from './roles.guard';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { ClientCredentialsMiddleware } from './client-credentials.middleware';
 import { UsersModule } from '../users/users.module';
+import { SettingsModule } from '../settings/settings.module';
 
 @Global()
 @Module({
   imports: [
     UsersModule,
+    SettingsModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

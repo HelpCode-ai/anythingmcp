@@ -5,16 +5,17 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { connectors } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 
 type HealthStatus = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
 const TYPE_STYLES: Record<string, { text: string; bg: string; icon: string }> = {
-  REST: { text: 'REST', bg: 'bg-blue-100 text-blue-700', icon: '{ }' },
-  SOAP: { text: 'SOAP', bg: 'bg-orange-100 text-orange-700', icon: '</>' },
-  GRAPHQL: { text: 'GraphQL', bg: 'bg-pink-100 text-pink-700', icon: 'GQL' },
-  MCP: { text: 'MCP', bg: 'bg-purple-100 text-purple-700', icon: 'MCP' },
-  DATABASE: { text: 'Database', bg: 'bg-emerald-100 text-emerald-700', icon: 'DB' },
-  WEBHOOK: { text: 'Webhook', bg: 'bg-amber-100 text-amber-700', icon: 'WH' },
+  REST: { text: 'REST', bg: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400', icon: '{ }' },
+  SOAP: { text: 'SOAP', bg: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400', icon: '</>' },
+  GRAPHQL: { text: 'GraphQL', bg: 'bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-400', icon: 'GQL' },
+  MCP: { text: 'MCP', bg: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400', icon: 'MCP' },
+  DATABASE: { text: 'Database', bg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400', icon: 'DB' },
+  WEBHOOK: { text: 'Webhook', bg: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400', icon: 'WH' },
 };
 
 export default function ConnectorsPage() {
@@ -128,7 +129,7 @@ export default function ConnectorsPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
         title="Connectors"
@@ -158,7 +159,7 @@ export default function ConnectorsPage() {
             </button>
             <Link
               href="/connectors/new"
-              className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 flex items-center gap-1.5"
+              className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 flex items-center gap-1.5"
             >
               <PlusIcon />
               Add Connector
@@ -167,9 +168,9 @@ export default function ConnectorsPage() {
         }
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
         {msg && (
-          <div className="mb-4 p-3 rounded-md bg-blue-50 text-blue-700 text-sm border border-blue-200">
+          <div className="mb-4 p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)]">
             {msg}
             <button onClick={() => setMsg('')} className="ml-2 underline">dismiss</button>
           </div>
@@ -202,7 +203,7 @@ export default function ConnectorsPage() {
               <button
                 onClick={handleImportAll}
                 disabled={importingAll || !importJson.trim()}
-                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
               >
                 {importingAll ? 'Importing...' : 'Import'}
               </button>
@@ -231,7 +232,7 @@ export default function ConnectorsPage() {
             {healthStatus.connectors.length > 0 && (
               <div className="space-y-2">
                 {healthStatus.connectors.map((c: any, i: number) => (
-                  <div key={i} className={`flex items-center justify-between p-2 rounded text-sm border ${c.status === 'healthy' ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                  <div key={i} className={`flex items-center justify-between p-2 rounded text-sm border ${c.status === 'healthy' ? 'border-[var(--success-border)] bg-[var(--success-bg)]' : 'border-[var(--destructive-border)] bg-[var(--destructive-bg)]'}`}>
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${c.status === 'healthy' ? 'bg-[var(--success)]' : 'bg-[var(--destructive)]'}`}></span>
                       <span className="font-medium">{c.name}</span>
@@ -239,7 +240,7 @@ export default function ConnectorsPage() {
                     </div>
                     <div className="flex items-center gap-3 text-xs">
                       <span className="text-[var(--muted-foreground)]">{c.latencyMs}ms</span>
-                      <span className={c.status === 'healthy' ? 'text-green-700' : 'text-red-700'}>{c.message}</span>
+                      <span className={c.status === 'healthy' ? 'text-[var(--success-text)]' : 'text-[var(--destructive-text)]'}>{c.message}</span>
                     </div>
                   </div>
                 ))}
@@ -270,7 +271,7 @@ export default function ConnectorsPage() {
             </p>
             <Link
               href="/connectors/new"
-              className="inline-flex items-center gap-1.5 bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
+              className="inline-flex items-center gap-1.5 bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"
             >
               <PlusIcon />
               Add Connector
@@ -310,15 +311,15 @@ export default function ConnectorsPage() {
 
             <div className="space-y-3">
               {filtered.map((c) => {
-                const ts = TYPE_STYLES[c.type] || { text: c.type, bg: 'bg-gray-100 text-gray-700', icon: '?' };
+                const ts = TYPE_STYLES[c.type] || { text: c.type, bg: 'bg-[var(--muted)] text-[var(--muted-foreground)]', icon: '?' };
                 return (
                   <div key={c.id} className="border border-[var(--border)] rounded-lg p-4 hover:border-[var(--brand)] transition-colors group">
                     <div className="flex items-center justify-between">
-                      <Link href={`/connectors/${c.id}`} className="flex-1 min-w-0 hover:opacity-90">
+                      <Link href={`/connectors/${c.id}`} className="flex-1 min-w-0 hover:brightness-90">
                         <div className="flex items-center gap-3">
                           <span className={`text-xs font-bold px-2 py-1 rounded ${ts.bg}`}>{ts.icon}</span>
                           <h3 className="font-medium">{c.name}</h3>
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c.isActive ? 'bg-[var(--success)]' : 'bg-gray-400'}`} />
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c.isActive ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
                           <span className="text-xs text-[var(--muted-foreground)]">{c.isActive ? 'Active' : 'Inactive'}</span>
                         </div>
                         <div className="flex items-center gap-4 mt-1.5 text-sm text-[var(--muted-foreground)]">
@@ -338,7 +339,7 @@ export default function ConnectorsPage() {
                         )}
                         <button
                           onClick={() => handleDelete(c.id)}
-                          className="border border-[var(--destructive)] text-[var(--destructive)] px-3 py-1 rounded text-xs hover:bg-red-50"
+                          className="border border-[var(--destructive)] text-[var(--destructive)] px-3 py-1 rounded text-xs hover:bg-[var(--destructive-bg)]"
                         >
                           Delete
                         </button>
@@ -351,6 +352,7 @@ export default function ConnectorsPage() {
           </>
         )}
       </main>
+      <Footer />
     </div>
   );
 }

@@ -42,6 +42,10 @@ class UpdateAiConfigDto {
 
   @IsString()
   apiKey: string;
+
+  @IsOptional()
+  @IsString()
+  model?: string;
 }
 
 class UpdateUserRoleDto {
@@ -65,7 +69,11 @@ export class UsersController {
     const user = await this.usersService.findById(req.user.sub);
     if (!user) return { error: 'User not found' };
     const { passwordHash, aiApiKey, ...profile } = user;
-    return profile;
+    return {
+      ...profile,
+      hasAiApiKey: !!aiApiKey,
+      hasEnvApiKey: !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY),
+    };
   }
 
   @Put('me')
@@ -106,6 +114,7 @@ export class UsersController {
       req.user.sub,
       dto.provider,
       dto.apiKey,
+      dto.model,
     );
     return { message: 'AI configuration updated' };
   }

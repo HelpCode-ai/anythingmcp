@@ -1,5 +1,3 @@
-version: '3.9'
-
 # =============================================================================
 # AnythingToMCP — Full Stack Deployment
 # =============================================================================
@@ -18,11 +16,9 @@ services:
       dockerfile: Dockerfile.frontend
     container_name: atmcp-frontend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:4000
-      - NEXTAUTH_URL=http://localhost:3000
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-in-production}
+      - NEXT_PUBLIC_API_URL=http://backend:4000
     depends_on:
       backend:
         condition: service_healthy
@@ -35,7 +31,7 @@ services:
       dockerfile: Dockerfile
     container_name: atmcp-backend
     ports:
-      - "4000:4000"
+      - "${BACKEND_PORT:-4000}:4000"
     environment:
       - NODE_ENV=production
       - PORT=4000
@@ -43,7 +39,16 @@ services:
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production-min-32-chars}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-in-production-exactly-32}
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+      - SERVER_URL=${SERVER_URL:-http://localhost:4000}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      # MCP Authentication (oauth2 | legacy | both | none)
+      - MCP_AUTH_MODE=${MCP_AUTH_MODE:-legacy}
+      - MCP_API_KEY=${MCP_API_KEY:-}
+      - MCP_BEARER_TOKEN=${MCP_BEARER_TOKEN:-}
+      # Optional: AI provider keys (server-level fallback)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,6 +59,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     restart: unless-stopped
 
   # PostgreSQL Database
@@ -79,8 +85,6 @@ services:
     container_name: atmcp-redis
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

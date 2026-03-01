@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { connectors } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 
 export default function McpServerPage() {
   const { token } = useAuth();
@@ -46,13 +47,13 @@ export default function McpServerPage() {
 }`;
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
         title="MCP Server"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6 flex-1 w-full">
         {/* Server Status */}
         <div className="border border-[var(--border)] rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
@@ -133,13 +134,13 @@ export default function McpServerPage() {
               {toolsList.map((t) => (
                 <div key={t.id} className="flex items-center justify-between p-3 bg-[var(--muted)] rounded-lg">
                   <div className="flex items-center gap-3">
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.isEnabled ? 'bg-[var(--success)]' : 'bg-gray-400'}`} />
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.isEnabled ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
                     <span className="font-mono text-sm font-medium">{t.name}</span>
                     <span className="text-xs text-[var(--muted-foreground)]">
                       {t.connectorName} / {t.connectorType}
                     </span>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded ${t.isEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded ${t.isEnabled ? 'bg-[var(--success-bg)] text-[var(--success-text)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
                     {t.isEnabled ? 'enabled' : 'disabled'}
                   </span>
                 </div>
@@ -148,6 +149,7 @@ export default function McpServerPage() {
           )}
         </div>
       </main>
+      <Footer />
     </div>
   );
 }
