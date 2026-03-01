@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Class-based dark mode for manual toggle support */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #0a0a0a;
@@ -40,45 +43,44 @@
   --warning-border: #fde68a;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #fafafa;
-    --card: #0a0a0a;
-    --card-foreground: #fafafa;
-    --primary: #fafafa;
-    --primary-foreground: #171717;
-    --secondary: #262626;
-    --secondary-foreground: #fafafa;
-    --muted: #262626;
-    --muted-foreground: #a3a3a3;
-    --accent: #262626;
-    --accent-foreground: #fafafa;
-    --destructive: #ef4444;
-    --border: #262626;
-    --input: #262626;
-    --ring: #d4d4d4;
-    --brand: #818cf8;
-    --brand-light: #1e1b4b;
-    --brand-foreground: #1e1b4b;
-    --success: #4ade80;
-    --success-light: #052e16;
-    --warning: #fbbf24;
-    --warning-light: #451a03;
-    /* Semantic status colors for dark mode */
-    --destructive-bg: #1c1214;
-    --destructive-text: #f87171;
-    --destructive-border: #991b1b;
-    --success-bg: #0a1f0d;
-    --success-text: #4ade80;
-    --success-border: #14532d;
-    --info-bg: #0c1629;
-    --info-text: #60a5fa;
-    --info-border: #1e3a5f;
-    --warning-bg: #1a1408;
-    --warning-text: #fbbf24;
-    --warning-border: #78350f;
-  }
+/* Class-based dark mode — applied via .dark on <html> */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #fafafa;
+  --card: #0a0a0a;
+  --card-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #171717;
+  --secondary: #262626;
+  --secondary-foreground: #fafafa;
+  --muted: #262626;
+  --muted-foreground: #a3a3a3;
+  --accent: #262626;
+  --accent-foreground: #fafafa;
+  --destructive: #ef4444;
+  --border: #262626;
+  --input: #262626;
+  --ring: #d4d4d4;
+  --brand: #818cf8;
+  --brand-light: #1e1b4b;
+  --brand-foreground: #1e1b4b;
+  --success: #4ade80;
+  --success-light: #052e16;
+  --warning: #fbbf24;
+  --warning-light: #451a03;
+  /* Semantic status colors for dark mode */
+  --destructive-bg: #1c1214;
+  --destructive-text: #f87171;
+  --destructive-border: #991b1b;
+  --success-bg: #0a1f0d;
+  --success-text: #4ade80;
+  --success-border: #14532d;
+  --info-bg: #0c1629;
+  --info-text: #60a5fa;
+  --info-border: #1e3a5f;
+  --warning-bg: #1a1408;
+  --warning-text: #fbbf24;
+  --warning-border: #78350f;
 }
 
 body {

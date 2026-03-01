@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { connectors } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 
 export default function McpServerPage() {
   const { token } = useAuth();
@@ -46,13 +47,13 @@ export default function McpServerPage() {
 }`;
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
         title="MCP Server"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6 flex-1 w-full">
         {/* Server Status */}
         <div className="border border-[var(--border)] rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
@@ -148,6 +149,7 @@ export default function McpServerPage() {
           )}
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { ai, connectors, users } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 import { ChatMessage } from '@/components/chat-message';
 
 interface Message {
@@ -134,6 +135,8 @@ export default function AiAssistantPage() {
       ]);
     } finally {
       setSending(false);
+      // Re-focus textarea so mobile keyboard stays open
+      setTimeout(() => textareaRef.current?.focus(), 0);
     }
   };
 
@@ -162,13 +165,13 @@ export default function AiAssistantPage() {
   const isReady = configLoaded && (hasApiKey || hasEnvApiKey);
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
         title="AI Assistant"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Chat Area */}
           <div className="lg:col-span-2 border border-[var(--border)] rounded-lg flex flex-col h-[700px]">
@@ -365,6 +368,7 @@ export default function AiAssistantPage() {
           </div>
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { audit } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 
 export default function LogsPage() {
   const { token } = useAuth();
@@ -30,13 +31,13 @@ export default function LogsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
         title="Logs"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
         <div className="border border-[var(--border)] rounded-lg">
           <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
             <h3 className="font-medium">Tool Invocation Logs ({logs.length})</h3>
@@ -103,6 +104,7 @@ export default function LogsPage() {
           </div>
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

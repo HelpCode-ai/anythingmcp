@@ -34,11 +34,37 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  connectors     Connector[]
-  mcpServers     McpServerConfig[]
-  toolInvocations ToolInvocation[]
+  connectors          Connector[]
+  mcpServers          McpServerConfig[]
+  toolInvocations     ToolInvocation[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
+}
+
+// ── Password Reset Tokens ───────────────────────────────────────────────────
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("password_reset_tokens")
+}
+
+// ── Site Settings (key-value store) ─────────────────────────────────────────
+
+model SiteSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("site_settings")
 }
 
 // ── Connector Engine ────────────────────────────────────────────────────────

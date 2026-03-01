@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { auth } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -111,7 +112,15 @@ function LoginForm() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-[var(--muted-foreground)] mt-4">
+        {!isRegister && (
+          <p className="text-center text-sm mt-3">
+            <Link href="/forgot-password" className="text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline">
+              Forgot password?
+            </Link>
+          </p>
+        )}
+
+        <p className="text-center text-sm text-[var(--muted-foreground)] mt-3">
           {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
           <button
             onClick={() => { setIsRegister(!isRegister); setError(''); }}

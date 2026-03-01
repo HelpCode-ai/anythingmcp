@@ -42,6 +42,7 @@
     "graphql": "^16.10.0",
     "graphql-request": "^7.1.2",
     "ioredis": "^5.6.0",
+    "nodemailer": "^8.0.1",
     "openai": "^4.85.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
@@ -59,6 +60,7 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
+    "@types/nodemailer": "^7.0.11",
     "@types/passport-jwt": "^4.0.1",
     "eslint": "^9.18.0",
     "jest": "^30.0.0",
@@ -72,13 +74,19 @@
     "typescript": "^5.7.3"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
-    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   }

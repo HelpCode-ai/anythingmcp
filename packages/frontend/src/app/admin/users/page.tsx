@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { users } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 
 const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
 
@@ -60,13 +61,13 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
         title="User Management"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
         {msg && (
           <div className="mb-4 p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)]">
             {msg}
@@ -138,6 +139,7 @@ export default function AdminUsersPage() {
           The first registered user automatically becomes ADMIN.
         </p>
       </main>
+      <Footer />
     </div>
   );
 }

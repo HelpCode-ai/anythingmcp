@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 
 const CONNECTOR_TYPES = [
   { id: 'REST', name: 'REST API', description: 'Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually.', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30', iconBg: 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' },
@@ -106,7 +107,7 @@ export default function NewConnectorPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[
           { label: 'Dashboard', href: '/' },
@@ -115,7 +116,7 @@ export default function NewConnectorPage() {
         title="New Connector"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
         <h2 className="text-lg font-medium mb-2">Choose connector type</h2>
         <p className="text-sm text-[var(--muted-foreground)] mb-6">Select the type of API you want to connect to.</p>
 
@@ -278,6 +279,7 @@ export default function NewConnectorPage() {
           </div>
         )}
       </main>
+      <Footer />
     </div>
   );
 }

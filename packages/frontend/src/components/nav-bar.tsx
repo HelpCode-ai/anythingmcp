@@ -48,7 +48,10 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
 
   const allNavItems = [
     ...NAV_ITEMS,
-    ...(user?.role === 'ADMIN' ? [{ href: '/admin/users', label: 'Users', icon: UsersIcon }] : []),
+    ...(user?.role === 'ADMIN' ? [
+      { href: '/admin/users', label: 'Users', icon: UsersIcon },
+      { href: '/admin/settings', label: 'Admin', icon: GearIcon },
+    ] : []),
   ];
 
   return (

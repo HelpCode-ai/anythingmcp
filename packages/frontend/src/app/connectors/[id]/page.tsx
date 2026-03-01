@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors, tools, ai } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 import { ToolEditor } from '@/components/tool-editor';
 
 const IMPORT_SOURCES = [
@@ -293,7 +294,7 @@ export default function ConnectorDetailPage() {
   if (!connector) return null;
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[
           { label: 'Dashboard', href: '/' },
@@ -324,7 +325,7 @@ export default function ConnectorDetailPage() {
         }
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6 flex-1 w-full">
         {msg && (
           <div className="p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)]">
             {msg}
@@ -751,6 +752,7 @@ export default function ConnectorDetailPage() {
           )}
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

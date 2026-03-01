@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { users, server, ai } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { Footer } from '@/components/footer';
 
 const AUTH_MODE_LABELS: Record<string, string> = {
   none: 'None (not recommended)',
@@ -21,6 +22,11 @@ export default function SettingsPage() {
   const { token, user } = useAuth();
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileMsg, setProfileMsg] = useState('');
+  // Change password
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordMsg, setPasswordMsg] = useState('');
   const [aiProvider, setAiProvider] = useState('');
   const [aiModel, setAiModel] = useState('');
   const [aiApiKey, setAiApiKey] = useState('');
@@ -71,6 +77,28 @@ export default function SettingsPage() {
     }
   };
 
+  const handleChangePassword = async () => {
+    if (!token) return;
+    if (newPassword !== confirmNewPassword) {
+      setPasswordMsg('Error: Passwords do not match');
+      return;
+    }
+    try {
+      const result = await users.changePassword({ currentPassword, newPassword }, token);
+      if (result.error) {
+        setPasswordMsg(`Error: ${result.error}`);
+      } else {
+        setPasswordMsg('Password changed successfully');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+        setTimeout(() => setPasswordMsg(''), 3000);
+      }
+    } catch (err: any) {
+      setPasswordMsg(`Error: ${err.message}`);
+    }
+  };
+
   const handleSaveAi = async () => {
     if (!token || !aiProvider || !aiApiKey) return;
     try {
@@ -101,13 +129,13 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
         title="Settings"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
         <div className="space-y-6">
           {/* Profile */}
           <div className="border border-[var(--border)] rounded-lg p-6">
@@ -132,6 +160,56 @@ export default function SettingsPage() {
               )}
               <button onClick={handleSaveProfile} className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90">
                 Save Profile
+              </button>
+            </div>
+          </div>
+
+          {/* Change Password */}
+          <div className="border border-[var(--border)] rounded-lg p-6">
+            <h3 className="text-lg font-medium mb-4">Change Password</h3>
+            <div className="space-y-4 max-w-md">
+              <div>
+                <label className="block text-sm font-medium mb-1">Current Password</label>
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">New Password</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min. 8 characters"
+                  minLength={8}
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  placeholder="Repeat new password"
+                  minLength={8}
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                />
+              </div>
+              {passwordMsg && (
+                <p className={`text-sm ${passwordMsg.startsWith('Error') ? 'text-[var(--destructive)]' : 'text-[var(--success)]'}`}>
+                  {passwordMsg}
+                </p>
+              )}
+              <button
+                onClick={handleChangePassword}
+                disabled={!currentPassword || !newPassword || newPassword.length < 8}
+                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+              >
+                Change Password
               </button>
             </div>
           </div>
@@ -255,6 +333,7 @@ export default function SettingsPage() {
           </div>
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

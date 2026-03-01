@@ -43,6 +43,16 @@ export const auth = {
       method: 'POST',
       body: { email, password, name },
     }),
+  forgotPassword: (email: string) =>
+    request<{ message: string }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: { email },
+    }),
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: { token, newPassword },
+    }),
 };
 
 // Users
@@ -53,6 +63,8 @@ export const users = {
     request('/api/users/me', { method: 'PUT', body: data, token }),
   updateAiConfig: (data: { provider: string; apiKey: string; model?: string }, token: string) =>
     request('/api/users/me/ai-config', { method: 'PUT', body: data, token }),
+  changePassword: (data: { currentPassword: string; newPassword: string }, token: string) =>
+    request<{ message?: string; error?: string }>('/api/users/me/password', { method: 'PUT', body: data, token }),
   // Admin
   list: (token: string) =>
     request<any[]>('/api/users', { token }),
@@ -144,6 +156,26 @@ export const server = {
       mcpEndpoint: string;
       oauthEndpoints: { wellKnown: string; authorize: string; token: string; register: string } | null;
     }>('/health/server-info'),
+};
+
+// Site Settings
+export const siteSettings = {
+  footerLinks: () =>
+    request<Array<{ label: string; url: string }>>('/api/site-settings/footer-links'),
+};
+
+// Admin Settings
+export const adminSettings = {
+  getSmtp: (token: string) =>
+    request<{ configured: boolean; host?: string; port?: number; user?: string; from?: string; secure?: boolean }>('/api/admin/settings/smtp', { token }),
+  updateSmtp: (data: { host: string; port: number; user: string; pass: string; from?: string; secure?: boolean }, token: string) =>
+    request<{ message: string }>('/api/admin/settings/smtp', { method: 'PUT', body: data, token }),
+  testSmtp: (token: string) =>
+    request<{ ok: boolean; message: string }>('/api/admin/settings/smtp/test', { method: 'POST', token }),
+  getFooterLinks: (token: string) =>
+    request<Array<{ label: string; url: string }>>('/api/admin/settings/footer-links', { token }),
+  updateFooterLinks: (links: Array<{ label: string; url: string }>, token: string) =>
+    request<{ message: string }>('/api/admin/settings/footer-links', { method: 'PUT', body: { links }, token }),
 };
 
 // AI
