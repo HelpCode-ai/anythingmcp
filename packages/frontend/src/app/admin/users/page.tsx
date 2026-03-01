@@ -68,7 +68,7 @@ export default function AdminUsersPage() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {msg && (
-          <div className="mb-4 p-3 rounded-md bg-blue-50 text-blue-700 text-sm border border-blue-200">
+          <div className="mb-4 p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)]">
             {msg}
             <button onClick={() => setMsg('')} className="ml-2 underline">dismiss</button>
           </div>
@@ -120,7 +120,7 @@ export default function AdminUsersPage() {
                       {u.id !== currentUser?.id && (
                         <button
                           onClick={() => handleDelete(u.id, u.email)}
-                          className="border border-[var(--destructive)] text-[var(--destructive)] px-2 py-1 rounded text-xs hover:bg-red-50"
+                          className="border border-[var(--destructive)] text-[var(--destructive)] px-2 py-1 rounded text-xs hover:bg-[var(--destructive-bg)]"
                         >
                           Delete
                         </button>

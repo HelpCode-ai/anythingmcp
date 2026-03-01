@@ -261,7 +261,7 @@ export default function AiAssistantPage() {
                 <button
                   onClick={handleSend}
                   disabled={!message.trim() || !isReady || sending}
-                  className="bg-[var(--brand)] text-white p-2.5 rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity flex-shrink-0"
+                  className="bg-[var(--brand)] text-white p-2.5 rounded-lg hover:brightness-90 disabled:opacity-50 transition-opacity flex-shrink-0"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />

@@ -57,7 +57,7 @@ function LoginForm() {
         </h2>
 
         {error && (
-          <div className="mb-4 p-3 rounded-md bg-red-50 text-red-700 text-sm border border-red-200">
+          <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
             {error}
           </div>
         )}
@@ -105,7 +105,7 @@ function LoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
           >
             {loading ? 'Loading...' : isRegister ? 'Create Account' : 'Sign In'}
           </button>

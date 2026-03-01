@@ -86,9 +86,9 @@ export default function LogsPage() {
                       <td className="px-4 py-3 font-medium font-mono text-xs">{log.tool?.name || log.toolId}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          log.status === 'SUCCESS' ? 'bg-green-100 text-green-700' :
-                          log.status === 'ERROR' ? 'bg-red-100 text-red-700' :
-                          'bg-yellow-100 text-yellow-700'
+                          log.status === 'SUCCESS' ? 'bg-[var(--success-bg)] text-[var(--success-text)]' :
+                          log.status === 'ERROR' ? 'bg-[var(--destructive-bg)] text-[var(--destructive-text)]' :
+                          'bg-[var(--warning-bg)] text-[var(--warning-text)]'
                         }`}>
                           {log.status}
                         </span>

@@ -322,7 +322,7 @@ function StatCard({ title, value, icon, color }: { title: string; value: string;
   const colorMap: Record<string, string> = {
     brand: 'text-[var(--brand)] bg-[var(--brand-light)]',
     success: 'text-[var(--success)] bg-[var(--success-light)]',
-    destructive: 'text-[var(--destructive)] bg-red-50',
+    destructive: 'text-[var(--destructive)] bg-[var(--destructive-bg)]',
   };
 
   return (
@@ -340,14 +340,14 @@ function StatCard({ title, value, icon, color }: { title: string; value: string;
 
 function ConnectorTypeIcon({ type }: { type: string }) {
   const labels: Record<string, { text: string; bg: string }> = {
-    REST: { text: 'REST', bg: 'bg-blue-100 text-blue-700' },
-    SOAP: { text: 'SOAP', bg: 'bg-orange-100 text-orange-700' },
-    GRAPHQL: { text: 'GQL', bg: 'bg-pink-100 text-pink-700' },
-    MCP: { text: 'MCP', bg: 'bg-purple-100 text-purple-700' },
-    DATABASE: { text: 'DB', bg: 'bg-emerald-100 text-emerald-700' },
-    WEBHOOK: { text: 'WH', bg: 'bg-amber-100 text-amber-700' },
+    REST: { text: 'REST', bg: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400' },
+    SOAP: { text: 'SOAP', bg: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400' },
+    GRAPHQL: { text: 'GQL', bg: 'bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-400' },
+    MCP: { text: 'MCP', bg: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400' },
+    DATABASE: { text: 'DB', bg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' },
+    WEBHOOK: { text: 'WH', bg: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' },
   };
-  const l = labels[type] || { text: type, bg: 'bg-gray-100 text-gray-700' };
+  const l = labels[type] || { text: type, bg: 'bg-[var(--muted)] text-[var(--muted-foreground)]' };
   return (
     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${l.bg}`}>{l.text}</span>
   );

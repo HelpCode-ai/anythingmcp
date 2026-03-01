@@ -505,7 +505,7 @@ export function ToolEditor({
           <button
             onClick={handleSave}
             disabled={!isValid || saving}
-            className="bg-[var(--primary)] text-[var(--primary-foreground)] px-4 py-1.5 rounded text-xs font-medium hover:opacity-90 disabled:opacity-50"
+            className="bg-[var(--primary)] text-[var(--primary-foreground)] px-4 py-1.5 rounded text-xs font-medium hover:brightness-90 disabled:opacity-50"
           >
             {saving ? 'Saving...' : existingTool ? 'Update Tool' : 'Create Tool'}
           </button>

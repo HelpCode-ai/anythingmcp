@@ -25,6 +25,19 @@
   --success-light: #f0fdf4;
   --warning: #f59e0b;
   --warning-light: #fffbeb;
+  /* Semantic status colors for alerts/badges */
+  --destructive-bg: #fef2f2;
+  --destructive-text: #dc2626;
+  --destructive-border: #fecaca;
+  --success-bg: #f0fdf4;
+  --success-text: #15803d;
+  --success-border: #bbf7d0;
+  --info-bg: #eff6ff;
+  --info-text: #1d4ed8;
+  --info-border: #bfdbfe;
+  --warning-bg: #fffbeb;
+  --warning-text: #b45309;
+  --warning-border: #fde68a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,7 +54,7 @@
     --muted-foreground: #a3a3a3;
     --accent: #262626;
     --accent-foreground: #fafafa;
-    --destructive: #7f1d1d;
+    --destructive: #ef4444;
     --border: #262626;
     --input: #262626;
     --ring: #d4d4d4;
@@ -52,6 +65,19 @@
     --success-light: #052e16;
     --warning: #fbbf24;
     --warning-light: #451a03;
+    /* Semantic status colors for dark mode */
+    --destructive-bg: #1c1214;
+    --destructive-text: #f87171;
+    --destructive-border: #991b1b;
+    --success-bg: #0a1f0d;
+    --success-text: #4ade80;
+    --success-border: #14532d;
+    --info-bg: #0c1629;
+    --info-text: #60a5fa;
+    --info-border: #1e3a5f;
+    --warning-bg: #1a1408;
+    --warning-text: #fbbf24;
+    --warning-border: #78350f;
   }
 }
 
@@ -64,6 +90,14 @@ body {
 /* Smooth transitions for interactive elements */
 button, a, input, select, textarea {
   transition: all 0.15s ease;
+}
+
+/* Cursor pointer on all interactive elements */
+button:not(:disabled), select, summary, [role="button"] {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
 }
 
 /* Better focus styles */

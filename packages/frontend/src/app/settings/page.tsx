@@ -130,7 +130,7 @@ export default function SettingsPage() {
                   {profileMsg}
                 </p>
               )}
-              <button onClick={handleSaveProfile} className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90">
+              <button onClick={handleSaveProfile} className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90">
                 Save Profile
               </button>
             </div>
@@ -248,7 +248,7 @@ export default function SettingsPage() {
                   {aiMsg}
                 </p>
               )}
-              <button onClick={handleSaveAi} disabled={!aiProvider || !aiApiKey} className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50">
+              <button onClick={handleSaveAi} disabled={!aiProvider || !aiApiKey} className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50">
                 Save AI Config
               </button>
             </div>
