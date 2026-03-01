@@ -1,8 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { z } from 'zod';
 import { McpRegistryService } from '@rekog/mcp-nest';
 import { PrismaService } from '../common/prisma.service';
+import { decrypt } from '../common/crypto/encryption.util';
 import { ToolRegistry } from './tool-registry';
 import { DynamicMcpTools } from './dynamic-mcp-tools';
 
@@ -10,13 +12,19 @@ import { DynamicMcpTools } from './dynamic-mcp-tools';
 export class McpServerService implements OnModuleInit {
   private readonly logger = new Logger(McpServerService.name);
   private mcpRegistry!: McpRegistryService;
+  private readonly encryptionKey: string;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly toolRegistry: ToolRegistry,
     private readonly toolExecutor: DynamicMcpTools,
     private readonly moduleRef: ModuleRef,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.encryptionKey =
+      this.configService.get<string>('ENCRYPTION_KEY') ||
+      'default-dev-key-change-in-prod!!';
+  }
 
   async onModuleInit() {
     // Resolve McpRegistryService from the global app context
@@ -50,7 +58,7 @@ export class McpServerService implements OnModuleInit {
           connectorConfig: {
             baseUrl: connector.baseUrl,
             authType: connector.authType,
-            authConfig: connector.authConfig ?? undefined,
+            authConfig: this.decryptAuthConfig(connector.authConfig),
             headers: connector.headers as Record<string, string> | undefined,
             envVars: connector.envVars as Record<string, string> | undefined,
           },
@@ -101,7 +109,7 @@ export class McpServerService implements OnModuleInit {
           connectorConfig: {
             baseUrl: connector.baseUrl,
             authType: connector.authType,
-            authConfig: connector.authConfig ?? undefined,
+            authConfig: this.decryptAuthConfig(connector.authConfig),
             headers: connector.headers as Record<string, string> | undefined,
             envVars: connector.envVars as Record<string, string> | undefined,
           },
@@ -144,6 +152,22 @@ export class McpServerService implements OnModuleInit {
         return this.toolExecutor.executeTool(name, args);
       },
     });
+  }
+
+  /**
+   * Decrypt authConfig from the database (encrypted with AES-256-GCM)
+   * back to a JSON string that can be parsed later by the tool executor.
+   */
+  private decryptAuthConfig(
+    encryptedAuthConfig: string | null,
+  ): string | undefined {
+    if (!encryptedAuthConfig) return undefined;
+    try {
+      return decrypt(encryptedAuthConfig, this.encryptionKey);
+    } catch (error: any) {
+      this.logger.error(`Failed to decrypt authConfig: ${error.message}`);
+      return undefined;
+    }
   }
 
   /**

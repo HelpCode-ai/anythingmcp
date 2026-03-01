@@ -1,14 +1,7 @@
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
-    paths:
-      - 'anything-to-mcp/**'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'anything-to-mcp/**'
+  workflow_dispatch:
 
 defaults:
   run:
