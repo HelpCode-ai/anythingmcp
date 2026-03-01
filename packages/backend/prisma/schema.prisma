@@ -72,6 +72,22 @@ model SiteSettings {
   @@map("site_settings")
 }
 
+// ── User Invitation Tokens ──────────────────────────────────────────────────
+
+model InvitationToken {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique
+  role      UserRole  @default(EDITOR)
+  mcpRoleId String?   @map("mcp_role_id")
+  invitedBy String    @map("invited_by") // admin user id
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("invitation_tokens")
+}
+
 // ── MCP Governance: Custom Roles ────────────────────────────────────────────
 
 model Role {

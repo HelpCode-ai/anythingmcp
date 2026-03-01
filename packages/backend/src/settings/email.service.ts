@@ -59,6 +59,61 @@ export class EmailService {
     }
   }
 
+  private async createTransporter() {
+    const smtp = await this.siteSettings.getSmtpConfig();
+    if (!smtp) return null;
+    return {
+      transporter: nodemailer.createTransport({
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.secure,
+        auth: { user: smtp.user, pass: smtp.pass },
+      }),
+      from: smtp.from || `AnythingToMCP <${smtp.user}>`,
+    };
+  }
+
+  async sendInvitationEmail(
+    to: string,
+    inviteUrl: string,
+    invitedByName: string,
+    roleName: string,
+  ): Promise<boolean> {
+    const transport = await this.createTransporter();
+    if (!transport) {
+      this.logger.warn('Cannot send invitation email: SMTP not configured');
+      return false;
+    }
+
+    try {
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        subject: 'You\'ve been invited to AnythingToMCP',
+        html: `
+          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+            <h2 style="color: #6366f1;">You're Invited!</h2>
+            <p><strong>${invitedByName}</strong> has invited you to join the AnythingToMCP workspace as <strong>${roleName}</strong>.</p>
+            <p>Click the button below to create your account. This invitation expires in 48 hours.</p>
+            <a href="${inviteUrl}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
+              Accept Invitation
+            </a>
+            <p style="color: #737373; font-size: 14px;">If you weren't expecting this invite, you can safely ignore this email.</p>
+            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+            <p style="color: #a3a3a3; font-size: 12px;">AnythingToMCP</p>
+          </div>
+        `,
+        text: `You're Invited!\n\n${invitedByName} has invited you to join AnythingToMCP as ${roleName}.\n\nAccept your invitation: ${inviteUrl}\n\nThis link expires in 48 hours.`,
+      });
+
+      this.logger.log(`Invitation email sent to ${to}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send invitation to ${to}: ${err}`);
+      return false;
+    }
+  }
+
   async testConnection(): Promise<{ ok: boolean; message: string }> {
     const smtp = await this.siteSettings.getSmtpConfig();
     if (!smtp) {

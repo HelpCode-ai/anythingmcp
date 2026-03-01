@@ -53,6 +53,19 @@ export const auth = {
       method: 'POST',
       body: { token, newPassword },
     }),
+  inviteUser: (data: { email: string; role: string; mcpRoleId?: string }, token: string) =>
+    request<{ message: string; inviteUrl?: string }>('/api/auth/invite', {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+  verifyInvite: (token: string) =>
+    request<{ email: string; role: string; valid: boolean }>(`/api/auth/invite/verify?token=${token}`),
+  acceptInvite: (data: { token: string; password: string; name: string }) =>
+    request<{ accessToken: string; user: any }>('/api/auth/accept-invite', {
+      method: 'POST',
+      body: data,
+    }),
 };
 
 // Users
