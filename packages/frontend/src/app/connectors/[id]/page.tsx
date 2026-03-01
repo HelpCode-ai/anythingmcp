@@ -128,12 +128,16 @@ export default function ConnectorDetailPage() {
       } else if (importContent) {
         data.content = importContent;
       }
-      const result = await connectors.importTools(id, data, token);
-      setMsg(result.message);
-      setShowImport(false);
-      setImportContent('');
-      setImportUrl('');
-      fetchConnector();
+      const result = await connectors.importTools(id, data, token) as any;
+      if (result.error) {
+        setMsg(result.error);
+      } else {
+        setMsg(result.message);
+        setShowImport(false);
+        setImportContent('');
+        setImportUrl('');
+        fetchConnector();
+      }
     } catch (err: any) {
       setMsg(`Import failed: ${err.message}`);
     } finally {

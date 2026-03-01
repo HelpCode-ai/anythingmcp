@@ -24,6 +24,7 @@
     "db:seed": "npm run db:seed --workspace=packages/backend"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "concurrently": "^9.1.2"
   }
 }

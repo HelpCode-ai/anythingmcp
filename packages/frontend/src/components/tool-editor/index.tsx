@@ -15,6 +15,8 @@ export interface ToolParam {
   target: 'path' | 'query' | 'body' | 'header' | 'graphql_var' | 'sql' | 'soap';
   /** For headers: override the header name (defaults to param name) */
   headerName?: string;
+  /** For query params: override the query key (defaults to param name, e.g. $skip vs skip) */
+  queryKey?: string;
 }
 
 export interface ToolEditorData {
@@ -33,6 +35,12 @@ export interface ToolEditorData {
   extraHeaders?: Record<string, string>;
   /** Response cache TTL in seconds (0 = no caching) */
   cacheTtl?: number;
+  /** Raw JSON body template with ${param} placeholders */
+  bodyTemplate?: string;
+  /** When true, use bodyTemplate instead of per-field bodyMapping */
+  useBodyTemplate?: boolean;
+  /** Body encoding: 'json' (default), 'form-urlencoded', or 'form-data' */
+  bodyEncoding?: string;
 }
 
 interface ToolEditorProps {
@@ -125,6 +133,7 @@ function parseExistingTool(
 
   // Build a reverse map: which params go where
   const queryMapped = new Set<string>();
+  const queryKeyMap: Record<string, string> = {}; // paramName → actual query key
   const bodyMapped = new Set<string>();
   const headerMapped = new Set<string>();
   const pathMapped = new Set<string>();
@@ -137,9 +146,13 @@ function parseExistingTool(
 
   // Parse queryParams
   if (em.queryParams) {
-    for (const [, value] of Object.entries(em.queryParams)) {
+    for (const [key, value] of Object.entries(em.queryParams)) {
       if (typeof value === 'string' && value.startsWith('$')) {
-        queryMapped.add(value.substring(1));
+        const paramName = value.substring(1);
+        queryMapped.add(paramName);
+        if (key !== paramName) {
+          queryKeyMap[paramName] = key;
+        }
       }
     }
   }
@@ -150,6 +163,16 @@ function parseExistingTool(
       if (typeof value === 'string' && value.startsWith('$')) {
         bodyMapped.add(value.substring(1));
       }
+    }
+  }
+
+  // Detect bodyTemplate mode
+  const detectedBodyTemplate: string | undefined = em.bodyTemplate as string | undefined;
+  const detectedUseBodyTemplate = !!detectedBodyTemplate;
+  if (detectedBodyTemplate) {
+    const templateParamMatches = detectedBodyTemplate.match(/\$\{([^}]+)\}/g) || [];
+    for (const match of templateParamMatches) {
+      bodyMapped.add(match.slice(2, -1));
     }
   }
 
@@ -166,6 +189,7 @@ function parseExistingTool(
     const p = prop as any;
     let target: ToolParam['target'] = DEFAULT_TARGET[connectorType] as ToolParam['target'] || 'query';
     let headerName: string | undefined;
+    let queryKey: string | undefined;
 
     if (pathMapped.has(name)) {
       target = 'path';
@@ -181,6 +205,7 @@ function parseExistingTool(
       }
     } else if (queryMapped.has(name)) {
       target = connectorType === 'GRAPHQL' ? 'graphql_var' : 'query';
+      queryKey = queryKeyMap[name];
     } else if (bodyMapped.has(name)) {
       target = connectorType === 'SOAP' ? 'soap' : 'body';
     } else if (connectorType === 'DATABASE') {
@@ -194,6 +219,7 @@ function parseExistingTool(
       required: required.includes(name),
       target,
       headerName,
+      queryKey,
     });
   }
 
@@ -209,6 +235,9 @@ function parseExistingTool(
     soapOperation: connectorType === 'SOAP' ? em.method : undefined,
     sqlTemplate: connectorType === 'DATABASE' ? em.path : undefined,
     cacheTtl: rm?.cacheTtl || 0,
+    bodyTemplate: detectedBodyTemplate,
+    useBodyTemplate: detectedUseBodyTemplate,
+    bodyEncoding: (em.bodyEncoding as string) || 'json',
   };
 }
 
@@ -246,11 +275,13 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
     switch (p.target) {
       case 'query':
       case 'graphql_var':
-        queryParams[p.name] = `$${p.name}`;
+        queryParams[p.queryKey || p.name] = `$${p.name}`;
         break;
       case 'body':
       case 'soap':
-        bodyMapping[p.name] = `$${p.name}`;
+        if (!(data.useBodyTemplate && data.bodyTemplate)) {
+          bodyMapping[p.name] = `$${p.name}`;
+        }
         break;
       case 'header':
         headers[p.headerName || p.name] = `$${p.name}`;
@@ -279,7 +310,14 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
 
   const endpointMapping: Record<string, unknown> = { method, path };
   if (Object.keys(queryParams).length > 0) endpointMapping.queryParams = queryParams;
-  if (Object.keys(bodyMapping).length > 0) endpointMapping.bodyMapping = bodyMapping;
+  if (data.useBodyTemplate && data.bodyTemplate) {
+    endpointMapping.bodyTemplate = data.bodyTemplate;
+  } else if (Object.keys(bodyMapping).length > 0) {
+    endpointMapping.bodyMapping = bodyMapping;
+    if (data.bodyEncoding && data.bodyEncoding !== 'json') {
+      endpointMapping.bodyEncoding = data.bodyEncoding;
+    }
+  }
   if (Object.keys(headers).length > 0) endpointMapping.headers = headers;
 
   const result: {
@@ -326,6 +364,9 @@ export function ToolEditor({
   const [graphqlQuery, setGraphqlQuery] = useState('');
   const [sqlTemplate, setSqlTemplate] = useState('');
   const [cacheTtl, setCacheTtl] = useState(0);
+  const [bodyTemplate, setBodyTemplate] = useState('');
+  const [useBodyTemplate, setUseBodyTemplate] = useState(false);
+  const [bodyEncoding, setBodyEncoding] = useState('json');
 
   // Initialize from existing tool
   useEffect(() => {
@@ -339,6 +380,9 @@ export function ToolEditor({
       if (parsed.graphqlQuery) setGraphqlQuery(parsed.graphqlQuery);
       if (parsed.sqlTemplate) setSqlTemplate(parsed.sqlTemplate);
       if (parsed.cacheTtl) setCacheTtl(parsed.cacheTtl);
+      if (parsed.bodyTemplate) setBodyTemplate(parsed.bodyTemplate);
+      if (parsed.useBodyTemplate) setUseBodyTemplate(true);
+      if (parsed.bodyEncoding) setBodyEncoding(parsed.bodyEncoding);
     }
   }, [existingTool, type]);
 
@@ -368,6 +412,29 @@ export function ToolEditor({
         }
         return p;
       });
+    });
+  }, []);
+
+  // Auto-extract params from body template ${param} patterns
+  const extractTemplateParams = useCallback((template: string) => {
+    const matches = template.match(/\$\{([^}]+)\}/g) || [];
+    const paramNames = [...new Set(matches.map(m => m.slice(2, -1)))];
+    setParams(prev => {
+      // Keep non-body params, and body params that are still in the template
+      const updated = prev.filter(p => p.target !== 'body' || paramNames.includes(p.name));
+      // Add new template params
+      for (const pName of paramNames) {
+        if (!updated.find(p => p.name === pName)) {
+          updated.push({
+            name: pName,
+            type: 'string',
+            description: '',
+            required: true,
+            target: 'body',
+          });
+        }
+      }
+      return updated;
     });
   }, []);
 
@@ -409,6 +476,9 @@ export function ToolEditor({
       graphqlQuery: type === 'GRAPHQL' ? graphqlQuery : undefined,
       sqlTemplate: type === 'DATABASE' ? sqlTemplate : undefined,
       cacheTtl,
+      bodyTemplate: useBodyTemplate ? bodyTemplate : undefined,
+      useBodyTemplate,
+      bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined,
     };
     onSave(buildToolPayload(data, type));
   };
@@ -574,6 +644,69 @@ export function ToolEditor({
         </div>
       )}
 
+      {/* Body Mode — only for REST/WEBHOOK write methods */}
+      {(type === 'REST' || type === 'WEBHOOK') && ['POST', 'PUT', 'PATCH'].includes(method) && (
+        <div className="border border-[var(--border)] rounded-md p-3 space-y-2">
+          <div className="flex items-center gap-4">
+            <label className="text-xs font-semibold">Request Body</label>
+            <div className="flex gap-3 text-xs">
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  name="bodyMode"
+                  checked={!useBodyTemplate}
+                  onChange={() => setUseBodyTemplate(false)}
+                />
+                Body Fields
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  name="bodyMode"
+                  checked={useBodyTemplate}
+                  onChange={() => setUseBodyTemplate(true)}
+                />
+                Body Template (JSON)
+              </label>
+            </div>
+          </div>
+
+          {!useBodyTemplate && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-[var(--muted-foreground)]">Encoding:</label>
+              <select
+                value={bodyEncoding}
+                onChange={e => setBodyEncoding(e.target.value)}
+                className="border border-[var(--input)] rounded px-2 py-1 text-xs bg-[var(--background)]"
+              >
+                <option value="json">application/json</option>
+                <option value="form-urlencoded">application/x-www-form-urlencoded</option>
+                <option value="form-data">multipart/form-data</option>
+              </select>
+            </div>
+          )}
+
+          {useBodyTemplate && (
+            <div>
+              <textarea
+                value={bodyTemplate}
+                onChange={e => {
+                  setBodyTemplate(e.target.value);
+                  extractTemplateParams(e.target.value);
+                }}
+                rows={8}
+                placeholder={'{\n  "Name": "Static value",\n  "Description": "${description}",\n  "Count": ${count}\n}'}
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+              />
+              <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
+                Use <code className="bg-[var(--muted)] px-1 rounded">${'{param_name}'}</code> for dynamic values.
+                All other fields are sent as-is. Parameters are auto-extracted below.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Parameters */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -665,6 +798,30 @@ export function ToolEditor({
               </div>
             ))}
 
+            {/* Query key override for query-targeted params */}
+            {params.some(p => (p.target === 'query' || p.target === 'graphql_var') && p.queryKey) && (
+              <div className="mt-2 space-y-1">
+                <p className="text-[10px] font-medium text-[var(--muted-foreground)]">Query Key Overrides</p>
+                {params.filter(p => (p.target === 'query' || p.target === 'graphql_var') && p.queryKey).map((param) => {
+                  const idx = params.indexOf(param);
+                  return (
+                    <div key={idx} className="flex items-center gap-2 text-xs">
+                      <span className="font-mono text-[var(--muted-foreground)] w-32">{param.name}</span>
+                      <span className="text-[var(--muted-foreground)]">&rarr;</span>
+                      <input
+                        type="text"
+                        value={param.queryKey || ''}
+                        onChange={e => updateParam(idx, { queryKey: e.target.value || undefined })}
+                        placeholder={param.name}
+                        className="border border-[var(--input)] rounded px-2 py-1 text-xs bg-[var(--background)] font-mono w-48"
+                      />
+                      <span className="text-[var(--muted-foreground)] text-[10px]">query key</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Header name input for header-targeted params */}
             {params.some(p => p.target === 'header') && (
               <div className="mt-2 space-y-1">
@@ -719,7 +876,7 @@ export function ToolEditor({
           </summary>
           <pre className="mt-2 p-3 bg-[var(--muted)] rounded text-[10px] font-mono overflow-x-auto max-h-48 overflow-y-auto">
             {JSON.stringify(
-              buildToolPayload({ name, description, method, path, params, graphqlQuery, sqlTemplate, cacheTtl }, type),
+              buildToolPayload({ name, description, method, path, params, graphqlQuery, sqlTemplate, cacheTtl, bodyTemplate: useBodyTemplate ? bodyTemplate : undefined, useBodyTemplate, bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined }, type),
               null,
               2,
             )}

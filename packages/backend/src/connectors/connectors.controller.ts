@@ -8,6 +8,7 @@ import {
   Param,
   Req,
   UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -115,6 +116,8 @@ class ImportToolsDto {
 @UseGuards(AuthGuard('jwt'))
 @Controller('api/connectors')
 export class ConnectorsController {
+  private readonly logger = new Logger(ConnectorsController.name);
+
   constructor(
     private readonly connectorsService: ConnectorsService,
     private readonly openApiParser: OpenApiParser,
@@ -375,73 +378,78 @@ export class ConnectorsController {
 
     let parsedTools: any[] = [];
 
-    switch (dto.source) {
-      case 'openapi': {
-        if (dto.url) {
-          parsedTools = await this.openApiParser.parseFromUrl(dto.url);
-        } else if (dto.content) {
-          parsedTools = await this.openApiParser.parse(dto.content);
-        } else {
-          return { error: 'Provide either content or url for OpenAPI import' };
-        }
-        break;
-      }
-      case 'wsdl': {
-        const wsdlUrl = dto.url || dto.content || connector.baseUrl;
-        parsedTools = await this.wsdlParser.parse(wsdlUrl);
-        break;
-      }
-      case 'graphql': {
-        const headers = connector.headers as Record<string, string> | undefined;
-        const endpoint = dto.url || connector.baseUrl;
-        parsedTools = await this.graphqlParser.parse(endpoint, headers || undefined);
-        break;
-      }
-      case 'postman': {
-        if (dto.url) {
-          parsedTools = await this.postmanParser.parseFromUrl(dto.url);
-        } else if (dto.content) {
-          parsedTools = await this.postmanParser.parseFromContent(dto.content);
-        } else {
-          return { error: 'Provide either content (JSON) or url for Postman import' };
-        }
-        break;
-      }
-      case 'curl': {
-        if (!dto.content) {
-          return { error: 'Provide the cURL command(s) in content field' };
-        }
-        parsedTools = this.curlParser.parse(dto.content);
-        break;
-      }
-      case 'json': {
-        if (!dto.content) {
-          return { error: 'Provide the JSON tool definitions in content field' };
-        }
-        try {
-          const parsed = JSON.parse(dto.content);
-          const toolArray = Array.isArray(parsed) ? parsed : parsed.tools || [parsed];
-          for (const t of toolArray) {
-            if (!t.name || !t.description || !t.endpointMapping) {
-              return {
-                error: `Invalid tool definition: each tool must have "name", "description", and "endpointMapping". Got keys: ${Object.keys(t).join(', ')}`,
-              };
-            }
-            parsedTools.push({
-              name: t.name,
-              description: t.description,
-              parameters: t.parameters || { type: 'object', properties: {} },
-              endpointMapping: t.endpointMapping,
-              responseMapping: t.responseMapping,
-            });
+    try {
+      switch (dto.source) {
+        case 'openapi': {
+          if (dto.url) {
+            parsedTools = await this.openApiParser.parseFromUrl(dto.url);
+          } else if (dto.content) {
+            parsedTools = await this.openApiParser.parse(dto.content);
+          } else {
+            return { error: 'Provide either content or url for OpenAPI import' };
           }
-        } catch (e: any) {
-          return { error: `Invalid JSON: ${e.message}` };
+          break;
         }
-        break;
+        case 'wsdl': {
+          const wsdlUrl = dto.url || dto.content || connector.baseUrl;
+          parsedTools = await this.wsdlParser.parse(wsdlUrl);
+          break;
+        }
+        case 'graphql': {
+          const headers = connector.headers as Record<string, string> | undefined;
+          const endpoint = dto.url || connector.baseUrl;
+          parsedTools = await this.graphqlParser.parse(endpoint, headers || undefined);
+          break;
+        }
+        case 'postman': {
+          if (dto.url) {
+            parsedTools = await this.postmanParser.parseFromUrl(dto.url);
+          } else if (dto.content) {
+            parsedTools = await this.postmanParser.parseFromContent(dto.content);
+          } else {
+            return { error: 'Provide either content (JSON) or url for Postman import' };
+          }
+          break;
+        }
+        case 'curl': {
+          if (!dto.content) {
+            return { error: 'Provide the cURL command(s) in content field' };
+          }
+          parsedTools = this.curlParser.parse(dto.content);
+          break;
+        }
+        case 'json': {
+          if (!dto.content) {
+            return { error: 'Provide the JSON tool definitions in content field' };
+          }
+          try {
+            const parsed = JSON.parse(dto.content);
+            const toolArray = Array.isArray(parsed) ? parsed : parsed.tools || [parsed];
+            for (const t of toolArray) {
+              if (!t.name || !t.description || !t.endpointMapping) {
+                return {
+                  error: `Invalid tool definition: each tool must have "name", "description", and "endpointMapping". Got keys: ${Object.keys(t).join(', ')}`,
+                };
+              }
+              parsedTools.push({
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters || { type: 'object', properties: {} },
+                endpointMapping: t.endpointMapping,
+                responseMapping: t.responseMapping,
+              });
+            }
+          } catch (e: any) {
+            return { error: `Invalid JSON: ${e.message}` };
+          }
+          break;
+        }
+        default:
+          return { error: `Unknown import source: ${dto.source}` };
       }
-      default:
-        return { error: `Unknown import source: ${dto.source}` };
+    } catch (err: any) {
+      this.logger.warn(`Import failed for connector ${id}: ${err.message}`);
+      return { error: `Import failed: ${err.message}` };
     }
 
     return this.createToolsFromParsed(connector.id, parsedTools);

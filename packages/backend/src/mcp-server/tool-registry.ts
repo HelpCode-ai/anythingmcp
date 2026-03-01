@@ -19,7 +19,7 @@ interface RegisteredTool {
   connectorConfig: {
     baseUrl: string;
     authType: string;
-    authConfig?: string; // encrypted string from DB
+    authConfig?: string; // decrypted JSON string
     headers?: Record<string, string>;
     envVars?: Record<string, string>; // runtime environment variables
   };

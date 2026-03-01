@@ -4,11 +4,14 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { LoginController } from './login.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { McpAuthGuard } from './mcp-auth.guard';
 import { McpAuthMiddleware } from './mcp-auth.middleware';
 import { McpRateLimitGuard } from './mcp-rate-limit.guard';
 import { RolesGuard } from './roles.guard';
+import { PrismaOAuthStore } from './prisma-oauth.store';
+import { ClientCredentialsMiddleware } from './client-credentials.middleware';
 import { UsersModule } from '../users/users.module';
 
 @Global()
@@ -25,8 +28,26 @@ import { UsersModule } from '../users/users.module';
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, McpAuthGuard, McpAuthMiddleware, McpRateLimitGuard, RolesGuard],
-  exports: [AuthService, McpAuthGuard, McpAuthMiddleware, McpRateLimitGuard, RolesGuard, JwtModule],
+  controllers: [AuthController, LoginController],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    McpAuthGuard,
+    McpAuthMiddleware,
+    McpRateLimitGuard,
+    RolesGuard,
+    PrismaOAuthStore,
+    ClientCredentialsMiddleware,
+  ],
+  exports: [
+    AuthService,
+    McpAuthGuard,
+    McpAuthMiddleware,
+    McpRateLimitGuard,
+    RolesGuard,
+    PrismaOAuthStore,
+    ClientCredentialsMiddleware,
+    JwtModule,
+  ],
 })
 export class AuthModule {}
