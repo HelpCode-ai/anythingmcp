@@ -135,6 +135,17 @@ export const audit = {
     }>('/api/audit/analytics', { token }),
 };
 
+// Server settings (public)
+export const server = {
+  info: () =>
+    request<{
+      mcpAuthMode: string;
+      serverUrl: string;
+      mcpEndpoint: string;
+      oauthEndpoints: { wellKnown: string; authorize: string; token: string; register: string } | null;
+    }>('/health/server-info'),
+};
+
 // AI
 export const ai = {
   generateTools: (data: unknown, token: string) =>

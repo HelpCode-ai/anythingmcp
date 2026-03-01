@@ -234,3 +234,76 @@ model ToolInvocation {
   @@index([userId, createdAt])
   @@map("tool_invocations")
 }
+
+// ── OAuth2 Authorization Server ─────────────────────────────────────────────
+
+model OAuthClient {
+  id                      String   @id @default(cuid())
+  clientId                String   @unique @map("client_id")
+  clientSecret            String?  @map("client_secret")
+  clientName              String   @map("client_name")
+  clientDescription       String?  @map("client_description")
+  logoUri                 String?  @map("logo_uri")
+  clientUri               String?  @map("client_uri")
+  developerName           String?  @map("developer_name")
+  developerEmail          String?  @map("developer_email")
+  redirectUris            String[] @map("redirect_uris")
+  grantTypes              String[] @map("grant_types")
+  responseTypes           String[] @map("response_types")
+  tokenEndpointAuthMethod String   @default("none") @map("token_endpoint_auth_method")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  @@map("oauth_clients")
+}
+
+model OAuthAuthorizationCode {
+  id                  String   @id @default(cuid())
+  code                String   @unique
+  userId              String   @map("user_id")
+  clientId            String   @map("client_id")
+  redirectUri         String   @map("redirect_uri")
+  codeChallenge       String   @map("code_challenge")
+  codeChallengeMethod String   @map("code_challenge_method")
+  resource            String?
+  scope               String?
+  expiresAt           BigInt   @map("expires_at")
+  userProfileId       String?  @map("user_profile_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@map("oauth_authorization_codes")
+}
+
+model OAuthSession {
+  id                  String   @id @default(cuid())
+  sessionId           String   @unique @map("session_id")
+  state               String
+  clientId            String?  @map("client_id")
+  redirectUri         String?  @map("redirect_uri")
+  codeChallenge       String?  @map("code_challenge")
+  codeChallengeMethod String?  @map("code_challenge_method")
+  oauthState          String?  @map("oauth_state")
+  scope               String?
+  resource            String?
+  expiresAt           BigInt   @map("expires_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@map("oauth_sessions")
+}
+
+model OAuthUserProfile {
+  id          String   @id @default(cuid())
+  profileId   String   @unique @map("profile_id")
+  provider    String
+  externalId  String   @map("external_id")
+  username    String
+  email       String?
+  displayName String?  @map("display_name")
+  avatarUrl   String?  @map("avatar_url")
+  raw         Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([provider, externalId])
+  @@map("oauth_user_profiles")
+}

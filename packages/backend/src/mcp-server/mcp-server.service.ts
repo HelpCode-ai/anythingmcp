@@ -1,17 +1,30 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import { z } from 'zod';
+import { McpRegistryService } from '@rekog/mcp-nest';
 import { PrismaService } from '../common/prisma.service';
 import { ToolRegistry } from './tool-registry';
+import { DynamicMcpTools } from './dynamic-mcp-tools';
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
   private readonly logger = new Logger(McpServerService.name);
+  private mcpRegistry!: McpRegistryService;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly toolRegistry: ToolRegistry,
+    private readonly toolExecutor: DynamicMcpTools,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async onModuleInit() {
+    // Resolve McpRegistryService from the global app context
+    // (it's exported by McpModule.forRoot() in AppModule)
+    this.mcpRegistry = this.moduleRef.get(McpRegistryService, {
+      strict: false,
+    });
+
     this.logger.log('Initializing dynamic MCP server...');
     await this.loadAllTools();
     this.logger.log(
@@ -27,7 +40,7 @@ export class McpServerService implements OnModuleInit {
 
     for (const connector of connectors) {
       for (const tool of connector.tools) {
-        this.toolRegistry.registerTool({
+        const toolDef = {
           id: tool.id,
           connectorId: connector.id,
           name: tool.name,
@@ -42,15 +55,35 @@ export class McpServerService implements OnModuleInit {
             envVars: connector.envVars as Record<string, string> | undefined,
           },
           endpointMapping: tool.endpointMapping as any,
-          responseMapping: tool.responseMapping as Record<string, unknown> | undefined,
-        });
+          responseMapping: tool.responseMapping as
+            | Record<string, unknown>
+            | undefined,
+        };
+
+        // Register in our internal registry (for execution lookup)
+        this.toolRegistry.registerTool(toolDef);
+
+        // Register as a native MCP tool so it appears directly in tools/list
+        this.registerMcpTool(
+          tool.name,
+          tool.description,
+          tool.parameters as Record<string, unknown>,
+        );
       }
     }
   }
 
   async reloadConnectorTools(connectorId: string): Promise<void> {
+    // Remove old tools from both registries
+    const oldTools = this.toolRegistry
+      .getAllTools()
+      .filter((t) => t.connectorId === connectorId);
+    for (const tool of oldTools) {
+      this.mcpRegistry.removeTool(tool.name);
+    }
     this.toolRegistry.unregisterConnectorTools(connectorId);
 
+    // Load and register new tools
     const connector = await this.prisma.connector.findUnique({
       where: { id: connectorId },
       include: { tools: { where: { isEnabled: true } } },
@@ -58,7 +91,7 @@ export class McpServerService implements OnModuleInit {
 
     if (connector && connector.isActive) {
       for (const tool of connector.tools) {
-        this.toolRegistry.registerTool({
+        const toolDef = {
           id: tool.id,
           connectorId: connector.id,
           name: tool.name,
@@ -73,13 +106,98 @@ export class McpServerService implements OnModuleInit {
             envVars: connector.envVars as Record<string, string> | undefined,
           },
           endpointMapping: tool.endpointMapping as any,
-          responseMapping: tool.responseMapping as Record<string, unknown> | undefined,
-        });
+          responseMapping: tool.responseMapping as
+            | Record<string, unknown>
+            | undefined,
+        };
+
+        this.toolRegistry.registerTool(toolDef);
+        this.registerMcpTool(
+          tool.name,
+          tool.description,
+          tool.parameters as Record<string, unknown>,
+        );
       }
     }
 
     this.logger.log(
       `Reloaded tools for connector ${connectorId}. Total tools: ${this.toolRegistry.getToolCount()}`,
     );
+  }
+
+  /**
+   * Register a tool directly with the MCP library's registry so it
+   * appears as a native tool in tools/list (not behind invoke_tool).
+   */
+  private registerMcpTool(
+    name: string,
+    description: string,
+    jsonSchema: Record<string, unknown>,
+  ): void {
+    const zodParams = this.jsonSchemaToZod(jsonSchema);
+
+    this.mcpRegistry.registerTool({
+      name,
+      description,
+      parameters: zodParams,
+      handler: async (args: Record<string, unknown>) => {
+        return this.toolExecutor.executeTool(name, args);
+      },
+    });
+  }
+
+  /**
+   * Convert a JSON Schema object to a Zod schema for the MCP library.
+   * Handles the common types used in tool parameters.
+   */
+  private jsonSchemaToZod(schema: Record<string, unknown>): any {
+    const properties = schema?.properties as Record<string, any> | undefined;
+    if (!properties) return z.object({});
+
+    const required = (schema?.required as string[]) || [];
+    const shape: Record<string, z.ZodType> = {};
+
+    for (const [key, prop] of Object.entries(properties)) {
+      let zodType: z.ZodType;
+
+      switch (prop.type) {
+        case 'string':
+          zodType = prop.enum
+            ? z.enum(prop.enum as [string, ...string[]])
+            : z.string();
+          break;
+        case 'number':
+        case 'integer':
+          zodType = z.number();
+          break;
+        case 'boolean':
+          zodType = z.boolean();
+          break;
+        case 'array':
+          zodType = z.array(z.any());
+          break;
+        case 'object':
+          zodType = z.record(z.string(), z.any());
+          break;
+        default:
+          zodType = z.any();
+      }
+
+      if (prop.description) {
+        zodType = zodType.describe(prop.description);
+      }
+
+      if (prop.default !== undefined) {
+        zodType = zodType.default(prop.default);
+      }
+
+      if (!required.includes(key)) {
+        zodType = zodType.optional();
+      }
+
+      shape[key] = zodType;
+    }
+
+    return z.object(shape);
   }
 }
