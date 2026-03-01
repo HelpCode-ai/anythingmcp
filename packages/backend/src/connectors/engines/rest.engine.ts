@@ -251,8 +251,9 @@ export class RestEngine {
       if (typeof value === 'string' && value.startsWith('$')) {
         // Reference to a param: "$paramName" → params.paramName
         const paramName = value.substring(1);
-        if (params[paramName] !== undefined) {
-          result[key] = params[paramName];
+        const paramValue = params[paramName];
+        if (paramValue !== undefined && paramValue !== '') {
+          result[key] = paramValue;
         }
       } else {
         result[key] = value;
