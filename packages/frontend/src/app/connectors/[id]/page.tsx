@@ -262,7 +262,7 @@ export default function ConnectorDetailPage() {
     setEnhancingToolId(toolId);
     try {
       const result: any = await ai.improveDescription(
-        { name: toolName, description: toolDescription, connectorName: connector?.name },
+        { toolName, currentDescription: toolDescription, apiContext: connector?.name || '' },
         token,
       );
       if (result?.description) {
