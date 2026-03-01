@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
 
 @Injectable()
 export class DatabaseEngine {
@@ -25,13 +25,11 @@ export class DatabaseEngine {
     const sql = this.interpolateParams(endpointMapping.path, params);
     this.validateQuery(sql);
 
-    const prisma = new PrismaClient({
-      datasources: { db: { url: config.baseUrl } },
-    });
+    const pool = new Pool({ connectionString: config.baseUrl });
 
     try {
-      const result = await prisma.$queryRawUnsafe(sql);
-      const rows = Array.isArray(result) ? result : [result];
+      const result = await pool.query(sql);
+      const rows = Array.isArray(result.rows) ? result.rows : [result.rows];
 
       if (rows.length > this.MAX_ROWS) {
         return {
@@ -44,7 +42,7 @@ export class DatabaseEngine {
 
       return { rows, totalRows: rows.length };
     } finally {
-      await prisma.$disconnect();
+      await pool.end();
     }
   }
 

@@ -33,6 +33,7 @@ coverage/
 
 # Prisma
 packages/backend/prisma/*.db
+packages/backend/src/generated/
 
 # Docker
 .docker/

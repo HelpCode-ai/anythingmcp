@@ -19,7 +19,7 @@ import {
   IsObject,
   IsBoolean,
 } from 'class-validator';
-import { ConnectorType, AuthType } from '@prisma/client';
+import { ConnectorType, AuthType } from '../generated/prisma/client';
 import { ConnectorsService } from './connectors.service';
 import { OpenApiParser } from './parsers/openapi.parser';
 import { WsdlParser } from './parsers/wsdl.parser';
