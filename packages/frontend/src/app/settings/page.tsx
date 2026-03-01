@@ -25,6 +25,7 @@ export default function SettingsPage() {
   const [aiModel, setAiModel] = useState('');
   const [aiApiKey, setAiApiKey] = useState('');
   const [hasExistingKey, setHasExistingKey] = useState(false);
+  const [hasEnvApiKey, setHasEnvApiKey] = useState(false);
   const [aiMsg, setAiMsg] = useState('');
   const [mcpAuthMode, setMcpAuthMode] = useState('');
   const [oauthEndpoints, setOauthEndpoints] = useState<Record<string, string> | null>(null);
@@ -51,6 +52,7 @@ export default function SettingsPage() {
       if (profile.aiProvider) setAiProvider(profile.aiProvider);
       if (profile.aiModel) setAiModel(profile.aiModel);
       if (profile.hasAiApiKey) setHasExistingKey(true);
+      if (profile.hasEnvApiKey) setHasEnvApiKey(true);
     }).catch(() => {});
 
     ai.models(token).then((data) => {
@@ -197,8 +199,16 @@ export default function SettingsPage() {
           <div className="border border-[var(--border)] rounded-lg p-6">
             <h3 className="text-lg font-medium mb-4">Default AI Provider</h3>
             <p className="text-sm text-[var(--muted-foreground)] mb-4">
-              Save your preferred AI provider, model, and API key. The AI Assistant will use this configuration automatically.
+              Save your preferred AI provider, model, and API key. Used by the AI Assistant chat and AI Enhance on tools.
             </p>
+            {hasEnvApiKey && (
+              <div className="border border-[var(--border)] rounded-md p-3 bg-[var(--muted)]/30 mb-4">
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Server-level API key detected from <code className="bg-[var(--muted)] px-1 rounded">.env</code> file (ANTHROPIC_API_KEY / OPENAI_API_KEY).
+                  This works as a global fallback. Per-user settings below take priority.
+                </p>
+              </div>
+            )}
             <div className="space-y-4 max-w-md">
               <div>
                 <label className="block text-sm font-medium mb-1">Provider</label>

@@ -25,8 +25,8 @@ export class AiController {
   ) {}
 
   /**
-   * Resolve AI provider, apiKey and model — prefers request body,
-   * falls back to user's saved config in DB.
+   * Resolve AI provider, apiKey and model.
+   * Priority: request body → user's saved DB config → .env vars
    */
   private async resolveAiConfig(
     userId: string,
@@ -38,24 +38,46 @@ export class AiController {
     const apiKey = bodyApiKey;
     const model = bodyModel;
 
-    // If both provider and apiKey are provided in the request body, use them
+    // 1) If both provider and apiKey are provided in the request body, use them
     if (provider && apiKey) {
       return { provider, apiKey, model };
     }
 
-    // Fall back to user's saved AI config
+    // 2) Fall back to user's saved AI config in DB
     const user = await this.usersService.findById(userId);
-    if (!user?.aiProvider || !user?.aiApiKey) {
-      throw new BadRequestException(
-        'AI provider not configured. Go to Settings to set up your AI provider and API key.',
-      );
+    if (user?.aiApiKey) {
+      return {
+        provider: (provider || user.aiProvider || 'openai') as 'anthropic' | 'openai',
+        apiKey: apiKey || user.aiApiKey,
+        model: model || user.aiModel || undefined,
+      };
     }
 
-    return {
-      provider: (provider || user.aiProvider) as 'anthropic' | 'openai',
-      apiKey: apiKey || user.aiApiKey,
-      model: model || user.aiModel || undefined,
-    };
+    // 3) Fall back to server-level .env API keys
+    const envAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    const envOpenaiKey = process.env.OPENAI_API_KEY;
+
+    const resolvedProvider = provider || (user?.aiProvider as 'anthropic' | 'openai') || undefined;
+
+    // If a specific provider is requested, try that env key
+    if (resolvedProvider === 'anthropic' && envAnthropicKey) {
+      return { provider: 'anthropic', apiKey: envAnthropicKey, model };
+    }
+    if (resolvedProvider === 'openai' && envOpenaiKey) {
+      return { provider: 'openai', apiKey: envOpenaiKey, model };
+    }
+
+    // Otherwise use whichever env key is available
+    if (envAnthropicKey) {
+      return { provider: 'anthropic', apiKey: envAnthropicKey, model };
+    }
+    if (envOpenaiKey) {
+      return { provider: 'openai', apiKey: envOpenaiKey, model };
+    }
+
+    throw new BadRequestException(
+      'AI provider not configured. Set your API key in Settings, or add ANTHROPIC_API_KEY / OPENAI_API_KEY to .env',
+    );
   }
 
   @Get('models')

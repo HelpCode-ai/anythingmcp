@@ -72,6 +72,7 @@ export class UsersController {
     return {
       ...profile,
       hasAiApiKey: !!aiApiKey,
+      hasEnvApiKey: !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY),
     };
   }
 
