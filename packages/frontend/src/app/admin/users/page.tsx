@@ -85,6 +85,7 @@ export default function AdminUsersPage() {
                   <th className="text-left px-4 py-3 font-medium">Email</th>
                   <th className="text-left px-4 py-3 font-medium">Name</th>
                   <th className="text-left px-4 py-3 font-medium">Role</th>
+                  <th className="text-left px-4 py-3 font-medium">MCP Role</th>
                   <th className="text-left px-4 py-3 font-medium">Joined</th>
                   <th className="text-right px-4 py-3 font-medium">Actions</th>
                 </tr>
@@ -112,6 +113,15 @@ export default function AdminUsersPage() {
                             <option key={r} value={r}>{r}</option>
                           ))}
                         </select>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {u.role === 'ADMIN' ? (
+                        <span className="text-xs text-[var(--muted-foreground)]">Full access</span>
+                      ) : u.mcpRole ? (
+                        <span className="text-xs bg-[var(--info-bg)] text-[var(--info-text)] px-1.5 py-0.5 rounded">{u.mcpRole.name}</span>
+                      ) : (
+                        <span className="text-xs text-[var(--muted-foreground)]">Unrestricted</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-[var(--muted-foreground)]">

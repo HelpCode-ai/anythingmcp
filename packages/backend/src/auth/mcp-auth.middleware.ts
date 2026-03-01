@@ -2,6 +2,7 @@ import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from './auth.service';
+import { McpApiKeysService } from '../roles/mcp-api-keys.service';
 
 /**
  * Middleware for authenticating MCP endpoint requests (/mcp).
@@ -10,7 +11,7 @@ import { AuthService } from './auth.service';
  * the /mcp route directly and guards can't easily be applied to it.
  *
  * Auth methods (checked in order):
- *   1. X-API-Key header → matches MCP_API_KEY env
+ *   1. X-API-Key header → per-user MCP key (mcp_...) or static MCP_API_KEY
  *   2. Bearer token → matches MCP_BEARER_TOKEN env (static) or JWT
  *
  * If no auth is configured, allows all requests (development mode).
@@ -23,21 +24,32 @@ export class McpAuthMiddleware implements NestMiddleware {
   constructor(
     private readonly configService: ConfigService,
     private readonly authService: AuthService,
+    private readonly mcpApiKeysService: McpApiKeysService,
   ) {}
 
-  use(req: Request, res: Response, next: NextFunction) {
+  async use(req: Request, res: Response, next: NextFunction) {
     const configuredApiKey = this.configService.get<string>('MCP_API_KEY');
     const mcpBearerToken = this.configService.get<string>('MCP_BEARER_TOKEN');
+
+    const apiKey = req.headers['x-api-key'] as string | undefined;
+    const authHeader = req.headers['authorization'] as string | undefined;
+
+    // Check per-user MCP API key first (mcp_... prefix)
+    if (apiKey?.startsWith('mcp_')) {
+      const user = await this.mcpApiKeysService.resolveUserByKey(apiKey);
+      if (user) {
+        (req as any).user = { sub: user.id, email: user.email, role: user.role, mcpRoleId: user.mcpRoleId };
+        return next();
+      }
+      // Invalid per-user key — fall through to 401
+    }
 
     // If no auth is configured, allow all (dev mode)
     if (!configuredApiKey && !mcpBearerToken) {
       return next();
     }
 
-    const apiKey = req.headers['x-api-key'] as string | undefined;
-    const authHeader = req.headers['authorization'] as string | undefined;
-
-    // Check API key
+    // Check static API key
     if (apiKey && configuredApiKey && apiKey === configuredApiKey) {
       return next();
     }

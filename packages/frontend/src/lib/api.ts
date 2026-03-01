@@ -178,6 +178,38 @@ export const adminSettings = {
     request<{ message: string }>('/api/admin/settings/footer-links', { method: 'PUT', body: { links }, token }),
 };
 
+// Roles (Admin)
+export const roles = {
+  list: (token: string) =>
+    request<any[]>('/api/roles', { token }),
+  get: (id: string, token: string) =>
+    request<any>(`/api/roles/${id}`, { token }),
+  create: (data: { name: string; description?: string }, token: string) =>
+    request<any>('/api/roles', { method: 'POST', body: data, token }),
+  update: (id: string, data: { name?: string; description?: string }, token: string) =>
+    request<any>(`/api/roles/${id}`, { method: 'PUT', body: data, token }),
+  delete: (id: string, token: string) =>
+    request(`/api/roles/${id}`, { method: 'DELETE', token }),
+  getToolAccess: (id: string, token: string) =>
+    request<any[]>(`/api/roles/${id}/tools`, { token }),
+  setToolAccess: (id: string, toolIds: string[], token: string) =>
+    request(`/api/roles/${id}/tools`, { method: 'PUT', body: { toolIds }, token }),
+  assignToUser: (userId: string, roleId: string | null, token: string) =>
+    request(`/api/roles/assign/${userId}`, { method: 'PUT', body: { roleId }, token }),
+};
+
+// MCP API Keys
+export const mcpKeys = {
+  list: (token: string) =>
+    request<any[]>('/api/mcp-keys', { token }),
+  generate: (name: string, token: string) =>
+    request<{ id: string; key: string; name: string }>('/api/mcp-keys', { method: 'POST', body: { name }, token }),
+  revoke: (id: string, token: string) =>
+    request(`/api/mcp-keys/${id}/revoke`, { method: 'POST', token }),
+  delete: (id: string, token: string) =>
+    request(`/api/mcp-keys/${id}`, { method: 'DELETE', token }),
+};
+
 // AI
 export const ai = {
   models: (token: string) =>

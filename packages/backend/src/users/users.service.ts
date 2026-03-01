@@ -29,7 +29,7 @@ export class UsersService {
     return this.prisma.user.count();
   }
 
-  async findAll(): Promise<Omit<User, 'passwordHash'>[]> {
+  async findAll() {
     return this.prisma.user.findMany({
       select: {
         id: true,
@@ -39,6 +39,8 @@ export class UsersService {
         aiProvider: true,
         aiModel: true,
         aiApiKey: true,
+        mcpRoleId: true,
+        mcpRole: { select: { id: true, name: true } },
         createdAt: true,
         updatedAt: true,
       },

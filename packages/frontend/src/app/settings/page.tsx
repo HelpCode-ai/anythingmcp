@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { users, server, ai } from '@/lib/api';
+import { users, server, ai, mcpKeys } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
 
@@ -41,6 +41,12 @@ export default function SettingsPage() {
     openai: { models: ModelOption[]; default: string };
   } | null>(null);
 
+  // MCP API Keys
+  const [keyList, setKeyList] = useState<any[]>([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [generatedKey, setGeneratedKey] = useState('');
+  const [keyMsg, setKeyMsg] = useState('');
+
   // Load server info
   useEffect(() => {
     server.info().then((info) => {
@@ -64,6 +70,8 @@ export default function SettingsPage() {
     ai.models(token).then((data) => {
       setModelOptions(data);
     }).catch(() => {});
+
+    mcpKeys.list(token).then(setKeyList).catch(() => {});
   }, [token]);
 
   const handleSaveProfile = async () => {
@@ -109,6 +117,41 @@ export default function SettingsPage() {
       setTimeout(() => setAiMsg(''), 3000);
     } catch (err: any) {
       setAiMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const handleGenerateKey = async () => {
+    if (!token || !newKeyName.trim()) return;
+    try {
+      const result = await mcpKeys.generate(newKeyName.trim(), token);
+      setGeneratedKey(result.key);
+      setNewKeyName('');
+      setKeyMsg('Key generated! Copy it now — it will not be shown again.');
+      mcpKeys.list(token).then(setKeyList).catch(() => {});
+    } catch (err: any) {
+      setKeyMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const handleRevokeKey = async (id: string) => {
+    if (!token) return;
+    try {
+      await mcpKeys.revoke(id, token);
+      mcpKeys.list(token).then(setKeyList).catch(() => {});
+      setKeyMsg('Key revoked');
+    } catch (err: any) {
+      setKeyMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const handleDeleteKey = async (id: string) => {
+    if (!token || !confirm('Delete this API key permanently?')) return;
+    try {
+      await mcpKeys.delete(id, token);
+      setKeyList((prev) => prev.filter((k) => k.id !== id));
+      setKeyMsg('Key deleted');
+    } catch (err: any) {
+      setKeyMsg(`Error: ${err.message}`);
     }
   };
 
@@ -330,6 +373,118 @@ export default function SettingsPage() {
                 Save AI Config
               </button>
             </div>
+          </div>
+
+          {/* MCP API Keys */}
+          <div className="border border-[var(--border)] rounded-lg p-6">
+            <h3 className="text-lg font-medium mb-4">MCP API Keys</h3>
+            <p className="text-sm text-[var(--muted-foreground)] mb-4">
+              Generate personal API keys to authenticate MCP clients (Claude Desktop, ChatGPT, Cursor).
+              Each key is linked to your account and respects your assigned MCP role permissions.
+            </p>
+
+            {/* Generate new key */}
+            <div className="space-y-3 mb-4">
+              <div className="flex gap-2 items-end">
+                <div className="flex-1 max-w-sm">
+                  <label className="block text-sm font-medium mb-1">Key Label</label>
+                  <input
+                    type="text"
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    placeholder="e.g. Claude Desktop, Cursor"
+                    className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  />
+                </div>
+                <button
+                  onClick={handleGenerateKey}
+                  disabled={!newKeyName.trim()}
+                  className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+                >
+                  Generate Key
+                </button>
+              </div>
+
+              {/* Show generated key */}
+              {generatedKey && (
+                <div className="border border-[var(--success-border)] bg-[var(--success-bg)] rounded-md p-3">
+                  <p className="text-xs font-medium text-[var(--success-text)] mb-1">
+                    Copy this key now! It will not be shown again.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs font-mono bg-[var(--background)] px-3 py-2 rounded border border-[var(--border)] select-all break-all">
+                      {generatedKey}
+                    </code>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(generatedKey); setKeyMsg('Copied!'); }}
+                      className="border border-[var(--border)] px-3 py-1.5 rounded text-xs hover:bg-[var(--accent)]"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-2">
+                    Use this key as <code className="bg-[var(--muted)] px-1 rounded">X-API-Key</code> header in your MCP client configuration.
+                  </p>
+                </div>
+              )}
+
+              {keyMsg && (
+                <p className={`text-sm ${keyMsg.startsWith('Error') ? 'text-[var(--destructive)]' : 'text-[var(--success)]'}`}>
+                  {keyMsg}
+                </p>
+              )}
+            </div>
+
+            {/* Key list */}
+            {keyList.length > 0 && (
+              <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-[var(--muted)]">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium text-xs">Label</th>
+                      <th className="text-left px-4 py-2 font-medium text-xs">Key</th>
+                      <th className="text-left px-4 py-2 font-medium text-xs">Status</th>
+                      <th className="text-left px-4 py-2 font-medium text-xs">Last Used</th>
+                      <th className="text-right px-4 py-2 font-medium text-xs">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {keyList.map((k) => (
+                      <tr key={k.id} className="border-t border-[var(--border)]">
+                        <td className="px-4 py-2 text-sm">{k.name}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-[var(--muted-foreground)]">{k.key}</td>
+                        <td className="px-4 py-2">
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${k.isActive ? 'bg-[var(--success-bg)] text-[var(--success-text)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
+                            {k.isActive ? 'active' : 'revoked'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-xs text-[var(--muted-foreground)]">
+                          {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : 'never'}
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <div className="flex gap-1 justify-end">
+                            {k.isActive && (
+                              <button
+                                onClick={() => handleRevokeKey(k.id)}
+                                className="border border-[var(--border)] px-2 py-1 rounded text-xs hover:bg-[var(--accent)]"
+                              >
+                                Revoke
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteKey(k.id)}
+                              className="border border-[var(--destructive)] text-[var(--destructive)] px-2 py-1 rounded text-xs hover:bg-[var(--destructive-bg)]"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </main>

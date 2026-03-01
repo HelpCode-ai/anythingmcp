@@ -34,10 +34,15 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // MCP tool governance — optional custom role for tool access control
+  mcpRoleId String? @map("mcp_role_id")
+  mcpRole   Role?   @relation(fields: [mcpRoleId], references: [id], onDelete: SetNull)
+
   connectors          Connector[]
   mcpServers          McpServerConfig[]
   toolInvocations     ToolInvocation[]
   passwordResetTokens PasswordResetToken[]
+  mcpApiKeys          McpApiKey[]
 
   @@map("users")
 }
@@ -65,6 +70,52 @@ model SiteSettings {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("site_settings")
+}
+
+// ── MCP Governance: Custom Roles ────────────────────────────────────────────
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?  @db.Text
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users      User[]
+  toolAccess ToolRoleAccess[]
+
+  @@map("roles")
+}
+
+// ── Tool ↔ Role Access (whitelist) ──────────────────────────────────────────
+// If a tool has entries here, only those roles can access it.
+// If a tool has NO entries, it is accessible to everyone.
+
+model ToolRoleAccess {
+  id     String  @id @default(cuid())
+  roleId String  @map("role_id")
+  role   Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  toolId String  @map("tool_id")
+  tool   McpTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, toolId])
+  @@map("tool_role_access")
+}
+
+// ── Per-User MCP API Keys ───────────────────────────────────────────────────
+
+model McpApiKey {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key        String    @unique
+  name       String    // label: "Claude Desktop", "Cursor", etc.
+  isActive   Boolean   @default(true) @map("is_active")
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@map("mcp_api_keys")
 }
 
 // ── Connector Engine ────────────────────────────────────────────────────────
@@ -161,6 +212,7 @@ model McpTool {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   invocations ToolInvocation[]
+  roleAccess  ToolRoleAccess[]
 
   @@unique([connectorId, name])
   @@map("mcp_tools")
