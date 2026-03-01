@@ -325,4 +325,110 @@ curl -X DELETE https://api.example.com/users/1`;
     expect(tools[0].endpointMapping.method).toBe('POST');
     expect(tools[0].endpointMapping.bodyMapping!['__raw']).toBe('$file_data');
   });
+
+  it('should handle JSON body with boolean and null values', () => {
+    const tools = parser.parse(
+      `curl -X POST https://api.example.com/settings -H 'Content-Type: application/json' -d '{"enabled":true,"count":0,"label":null}'`,
+    );
+    expect(tools).toHaveLength(1);
+    const params = tools[0].parameters as any;
+    expect(params.properties.enabled).toBeDefined();
+    expect(params.properties.enabled.type).toBe('boolean');
+    expect(params.properties.enabled.default).toBe(true);
+    expect(params.properties.count).toBeDefined();
+    expect(params.properties.count.type).toBe('number');
+    expect(params.properties.count.default).toBe(0);
+  });
+
+  it('should handle JSON body with array value', () => {
+    const tools = parser.parse(
+      `curl -X POST https://api.example.com/batch -d '{"ids":[1,2,3],"action":"delete"}'`,
+    );
+    expect(tools).toHaveLength(1);
+    const params = tools[0].parameters as any;
+    expect(params.properties.ids).toBeDefined();
+    expect(params.properties.ids.type).toBe('array');
+    expect(params.properties.action).toBeDefined();
+  });
+
+  it('should handle URL with port', () => {
+    const tools = parser.parse('curl http://localhost:8080/api/health');
+    expect(tools).toHaveLength(1);
+    expect(tools[0].endpointMapping.path).toBe('/api/health');
+  });
+
+  it('should handle double-quoted strings in curl', () => {
+    const tools = parser.parse(
+      `curl -X POST https://api.example.com/data -H "Content-Type: application/json" -d "{\\"name\\":\\"test\\"}"`,
+    );
+    expect(tools).toHaveLength(1);
+    expect(tools[0].endpointMapping.method).toBe('POST');
+  });
+
+  it('should handle mixed variables and static values in query params', () => {
+    const tools = parser.parse(
+      `curl 'https://api.example.com/search?q={{query}}&format=json&page={{page}}'`,
+    );
+    expect(tools).toHaveLength(1);
+    const params = tools[0].parameters as any;
+    expect(params.properties.query).toBeDefined();
+    expect(params.required).toContain('query');
+    expect(params.properties.format).toBeDefined();
+    expect(params.properties.format.default).toBe('json');
+    expect(params.properties.page).toBeDefined();
+    expect(params.required).toContain('page');
+  });
+
+  it('should handle multiple headers', () => {
+    const tools = parser.parse(
+      `curl https://api.example.com/data -H 'X-Api-Key: {{api_key}}' -H 'X-Tenant: acme' -H 'X-Version: v2'`,
+    );
+    expect(tools).toHaveLength(1);
+    expect(tools[0].endpointMapping.headers!['X-Api-Key']).toBe('$api_key');
+    expect(tools[0].endpointMapping.headers!['X-Tenant']).toBe('acme');
+    expect(tools[0].endpointMapping.headers!['X-Version']).toBe('v2');
+    const params = tools[0].parameters as any;
+    expect(params.properties.api_key).toBeDefined();
+  });
+
+  it('should handle --request (long form) flag', () => {
+    const tools = parser.parse('curl --request PUT https://api.example.com/users/1');
+    expect(tools).toHaveLength(1);
+    expect(tools[0].endpointMapping.method).toBe('PUT');
+  });
+
+  it('should handle --header (long form) flag', () => {
+    const tools = parser.parse(
+      `curl https://api.example.com/data --header 'X-Custom: value'`,
+    );
+    expect(tools).toHaveLength(1);
+    expect(tools[0].endpointMapping.headers!['X-Custom']).toBe('value');
+  });
+
+  it('should handle --data (long form) flag', () => {
+    const tools = parser.parse(
+      `curl -X POST https://api.example.com/data --data '{"key":"value"}'`,
+    );
+    expect(tools).toHaveLength(1);
+    expect(tools[0].endpointMapping.bodyMapping!['key']).toBe('$key');
+  });
+
+  it('should handle empty JSON body', () => {
+    const tools = parser.parse(
+      `curl -X POST https://api.example.com/trigger -d '{}'`,
+    );
+    expect(tools).toHaveLength(1);
+    expect(tools[0].endpointMapping.method).toBe('POST');
+  });
+
+  it('should handle deeply nested path', () => {
+    const tools = parser.parse(
+      `curl https://api.example.com/v2/organizations/{{org_id}}/projects/{{project_id}}/tasks`,
+    );
+    expect(tools).toHaveLength(1);
+    expect(tools[0].endpointMapping.path).toBe('/v2/organizations/{org_id}/projects/{project_id}/tasks');
+    const params = tools[0].parameters as any;
+    expect(params.required).toContain('org_id');
+    expect(params.required).toContain('project_id');
+  });
 });

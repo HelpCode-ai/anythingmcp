@@ -173,8 +173,9 @@ export class PostmanParser {
       }
     }
 
-    // Also detect {param} style path params
-    const pathParamMatches = url.path.match(/\{([^}]+)\}/g) || [];
+    // Also detect {param} style path params (but not {{param}} which are handled above)
+    const pathWithoutDoubles = url.path.replace(/\{\{[^}]+\}\}/g, '');
+    const pathParamMatches = pathWithoutDoubles.match(/\{([^}]+)\}/g) || [];
     for (const match of pathParamMatches) {
       const varName = match.replace(/[{}]/g, '');
       properties[varName] = { type: 'string', description: `Path parameter: ${varName}` };
@@ -284,11 +285,29 @@ export class PostmanParser {
       case 'raw': {
         if (body.raw) {
           try {
-            const parsed = JSON.parse(body.raw.replace(/\{\{([^}]+)\}\}/g, '"$1_placeholder"'));
+            // Replace {{var}} with sentinel values for JSON parsing.
+            // Handle "{{var}}" (quoted) first to avoid producing ""var_placeholder"".
+            const cleanBody = body.raw
+              .replace(/"\{\{([^}]+)\}\}"/g, '"__var_$1__"')   // "{{var}}" → "__var_var__"
+              .replace(/\{\{([^}]+)\}\}/g, '"__var_$1__"');     // remaining bare {{var}}
+            const parsed = JSON.parse(cleanBody);
+
+            // If parsed result is not an object, treat as raw body
+            if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+              throw new Error('Not a JSON object');
+            }
+
             for (const [key, value] of Object.entries(parsed)) {
-              properties[key] = { type: this.inferJsonType(value), description: `Body field: ${key}` };
-              bodyMapping[key] = `$${key}`;
-              required.push(key);
+              const strVal = String(value);
+              if (strVal.startsWith('__var_') && strVal.endsWith('__')) {
+                const varName = strVal.replace(/^__var_|__$/g, '');
+                properties[key] = { type: 'string', description: `Body field: ${key}` };
+                bodyMapping[key] = `$${varName}`;
+                required.push(varName);
+              } else {
+                properties[key] = { type: this.inferJsonType(value), description: `Body field: ${key}` };
+                bodyMapping[key] = `$${key}`;
+              }
             }
           } catch {
             // Non-JSON raw body — expose as single "body" parameter
