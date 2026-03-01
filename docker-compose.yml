@@ -7,6 +7,8 @@
 # MCP:    http://localhost:4000/mcp
 # =============================================================================
 
+name: atmcp
+
 services:
 
   # Next.js Admin UI
