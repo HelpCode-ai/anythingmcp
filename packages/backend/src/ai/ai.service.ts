@@ -20,6 +20,18 @@ export class AiService {
     private readonly openai: OpenaiProvider,
   ) {}
 
+  private async callProvider(
+    provider: 'anthropic' | 'openai',
+    apiKey: string,
+    prompt: string,
+    model?: string,
+  ): Promise<string> {
+    if (provider === 'anthropic') {
+      return this.claude.complete(apiKey, prompt, model);
+    }
+    return this.openai.complete(apiKey, prompt, model);
+  }
+
   /**
    * Generate MCP tool definitions from a parsed API spec.
    */
@@ -27,16 +39,10 @@ export class AiService {
     apiSpec: Record<string, unknown>,
     provider: 'anthropic' | 'openai',
     apiKey: string,
+    model?: string,
   ): Promise<GeneratedToolDef[]> {
     const prompt = this.buildToolGenerationPrompt(apiSpec);
-
-    let response: string;
-    if (provider === 'anthropic') {
-      response = await this.claude.complete(apiKey, prompt);
-    } else {
-      response = await this.openai.complete(apiKey, prompt);
-    }
-
+    const response = await this.callProvider(provider, apiKey, prompt, model);
     return this.parseToolDefinitions(response);
   }
 
@@ -49,6 +55,7 @@ export class AiService {
     apiContext: string,
     provider: 'anthropic' | 'openai',
     apiKey: string,
+    model?: string,
   ): Promise<string> {
     const prompt =
       `You are an expert at writing MCP tool descriptions optimized for LLM consumption.\n\n` +
@@ -63,10 +70,7 @@ export class AiService {
       `- Includes workflow tips (when to use this vs other tools)\n\n` +
       `Return ONLY the improved description text, no JSON or markdown.`;
 
-    if (provider === 'anthropic') {
-      return this.claude.complete(apiKey, prompt);
-    }
-    return this.openai.complete(apiKey, prompt);
+    return this.callProvider(provider, apiKey, prompt, model);
   }
 
   /**
@@ -78,6 +82,7 @@ export class AiService {
     existingConnectors: Array<{ name: string; type: string }>,
     provider: 'anthropic' | 'openai',
     apiKey: string,
+    model?: string,
   ): Promise<Record<string, unknown>> {
     const prompt =
       `You are an assistant helping configure API connectors for the AnythingToMCP platform.\n\n` +
@@ -90,16 +95,25 @@ export class AiService {
       `  "tools": [{ "name": "...", "description": "...", "endpoint": "..." }],\n` +
       `  "explanation": "What I understood and what I'm suggesting"\n` +
       `}\n\n` +
-      `Return valid JSON only.`;
+      `Return valid JSON only, no markdown fences.`;
 
     let response: string;
-    if (provider === 'anthropic') {
-      response = await this.claude.complete(apiKey, prompt);
-    } else {
-      response = await this.openai.complete(apiKey, prompt);
-    }
+    response = await this.callProvider(provider, apiKey, prompt, model);
 
-    return JSON.parse(response);
+    try {
+      // Try to extract JSON from the response (handle markdown fences etc.)
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return JSON.parse(response);
+    } catch {
+      this.logger.warn('Failed to parse AI configure response as JSON, returning as explanation');
+      return {
+        action: 'none',
+        explanation: response,
+      };
+    }
   }
 
   private buildToolGenerationPrompt(

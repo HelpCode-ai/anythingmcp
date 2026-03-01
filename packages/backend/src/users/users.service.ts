@@ -37,6 +37,7 @@ export class UsersService {
         name: true,
         role: true,
         aiProvider: true,
+        aiModel: true,
         aiApiKey: true,
         createdAt: true,
         updatedAt: true,
@@ -55,10 +56,18 @@ export class UsersService {
     userId: string,
     provider: string,
     apiKey: string,
+    model?: string,
   ): Promise<User> {
+    const data: Record<string, string> = {
+      aiProvider: provider,
+      aiApiKey: apiKey,
+    };
+    if (model) {
+      data.aiModel = model;
+    }
     return this.prisma.user.update({
       where: { id: userId },
-      data: { aiProvider: provider, aiApiKey: apiKey },
+      data,
     });
   }
 

@@ -28,6 +28,7 @@ model User {
 
   // Optional AI provider config (per-user)
   aiProvider String? @map("ai_provider") // "anthropic" | "openai"
+  aiModel    String? @map("ai_model")    // e.g. "gpt-5", "claude-sonnet-4-6"
   aiApiKey   String? @map("ai_api_key") // encrypted
 
   createdAt DateTime @default(now()) @map("created_at")

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { users, server } from '@/lib/api';
+import { users, server, ai } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 
 const AUTH_MODE_LABELS: Record<string, string> = {
@@ -12,17 +12,29 @@ const AUTH_MODE_LABELS: Record<string, string> = {
   both: 'Both (OAuth 2.0 + Legacy)',
 };
 
+interface ModelOption {
+  id: string;
+  label: string;
+}
+
 export default function SettingsPage() {
   const { token, user } = useAuth();
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileMsg, setProfileMsg] = useState('');
   const [aiProvider, setAiProvider] = useState('');
+  const [aiModel, setAiModel] = useState('');
   const [aiApiKey, setAiApiKey] = useState('');
+  const [hasExistingKey, setHasExistingKey] = useState(false);
   const [aiMsg, setAiMsg] = useState('');
   const [mcpAuthMode, setMcpAuthMode] = useState('');
   const [oauthEndpoints, setOauthEndpoints] = useState<Record<string, string> | null>(null);
   const [serverUrl, setServerUrl] = useState('');
+  const [modelOptions, setModelOptions] = useState<{
+    anthropic: { models: ModelOption[]; default: string };
+    openai: { models: ModelOption[]; default: string };
+  } | null>(null);
 
+  // Load server info
   useEffect(() => {
     server.info().then((info) => {
       setMcpAuthMode(info.mcpAuthMode);
@@ -30,6 +42,21 @@ export default function SettingsPage() {
       setServerUrl(info.serverUrl);
     }).catch(() => {});
   }, []);
+
+  // Load user's saved AI config + available models
+  useEffect(() => {
+    if (!token) return;
+
+    users.me(token).then((profile) => {
+      if (profile.aiProvider) setAiProvider(profile.aiProvider);
+      if (profile.aiModel) setAiModel(profile.aiModel);
+      if (profile.hasAiApiKey) setHasExistingKey(true);
+    }).catch(() => {});
+
+    ai.models(token).then((data) => {
+      setModelOptions(data);
+    }).catch(() => {});
+  }, [token]);
 
   const handleSaveProfile = async () => {
     if (!token) return;
@@ -45,11 +72,29 @@ export default function SettingsPage() {
   const handleSaveAi = async () => {
     if (!token || !aiProvider || !aiApiKey) return;
     try {
-      await users.updateAiConfig({ provider: aiProvider, apiKey: aiApiKey }, token);
+      await users.updateAiConfig({ provider: aiProvider, apiKey: aiApiKey, model: aiModel || undefined }, token);
+      setHasExistingKey(true);
+      setAiApiKey('');
       setAiMsg('AI configuration saved');
       setTimeout(() => setAiMsg(''), 3000);
     } catch (err: any) {
       setAiMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const currentModels: ModelOption[] =
+    aiProvider && modelOptions
+      ? modelOptions[aiProvider as 'anthropic' | 'openai']?.models || []
+      : [];
+
+  // When provider changes, reset model to default for that provider
+  const handleProviderChange = (newProvider: string) => {
+    setAiProvider(newProvider);
+    if (modelOptions && newProvider) {
+      const providerConfig = modelOptions[newProvider as 'anthropic' | 'openai'];
+      if (providerConfig) {
+        setAiModel(providerConfig.default);
+      }
     }
   };
 
@@ -152,20 +197,41 @@ export default function SettingsPage() {
           <div className="border border-[var(--border)] rounded-lg p-6">
             <h3 className="text-lg font-medium mb-4">Default AI Provider</h3>
             <p className="text-sm text-[var(--muted-foreground)] mb-4">
-              Save your preferred AI provider and API key for the AI assistant.
+              Save your preferred AI provider, model, and API key. The AI Assistant will use this configuration automatically.
             </p>
             <div className="space-y-4 max-w-md">
               <div>
                 <label className="block text-sm font-medium mb-1">Provider</label>
-                <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]">
+                <select value={aiProvider} onChange={(e) => handleProviderChange(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]">
                   <option value="">Select...</option>
-                  <option value="anthropic">Claude (Anthropic)</option>
-                  <option value="openai">GPT-4o (OpenAI)</option>
+                  <option value="anthropic">Anthropic (Claude)</option>
+                  <option value="openai">OpenAI (GPT)</option>
                 </select>
               </div>
+              {aiProvider && currentModels.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Model</label>
+                  <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]">
+                    {currentModels.map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium mb-1">API Key</label>
-                <input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder="sk-..." className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                <input
+                  type="password"
+                  value={aiApiKey}
+                  onChange={(e) => setAiApiKey(e.target.value)}
+                  placeholder={hasExistingKey ? '••••••••  (saved — enter new key to update)' : 'sk-...'}
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                />
+                {hasExistingKey && !aiApiKey && (
+                  <p className="text-xs text-[var(--success)] mt-1">
+                    API key is saved. Enter a new key only if you want to update it.
+                  </p>
+                )}
               </div>
               {aiMsg && (
                 <p className={`text-sm ${aiMsg.startsWith('Error') ? 'text-[var(--destructive)]' : 'text-[var(--success)]'}`}>

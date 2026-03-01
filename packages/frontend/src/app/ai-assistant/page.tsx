@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { ai, connectors } from '@/lib/api';
+import { ai, connectors, users } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 
 interface Message {
@@ -10,22 +10,62 @@ interface Message {
   content: string;
 }
 
+interface ModelOption {
+  id: string;
+  label: string;
+}
+
 export default function AiAssistantPage() {
   const { token } = useAuth();
   const [message, setMessage] = useState('');
   const [provider, setProvider] = useState<'anthropic' | 'openai'>('anthropic');
-  const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
   const [existingConnectors, setExistingConnectors] = useState<any[]>([]);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [modelOptions, setModelOptions] = useState<{
+    anthropic: { models: ModelOption[]; default: string };
+    openai: { models: ModelOption[]; default: string };
+  } | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Load user's saved AI config + available models + connectors
   useEffect(() => {
     if (!token) return;
+
     connectors.list(token).then(setExistingConnectors).catch(() => {});
+
+    Promise.all([
+      users.me(token),
+      ai.models(token),
+    ]).then(([profile, models]) => {
+      setModelOptions(models);
+      if (profile.aiProvider) {
+        setProvider(profile.aiProvider as 'anthropic' | 'openai');
+      }
+      if (profile.aiModel) {
+        setModel(profile.aiModel);
+      } else if (profile.aiProvider && models) {
+        // Use default model for the provider
+        const providerConfig = models[profile.aiProvider as 'anthropic' | 'openai'];
+        if (providerConfig) setModel(providerConfig.default);
+      }
+      setHasApiKey(!!profile.hasAiApiKey);
+      setConfigLoaded(true);
+    }).catch(() => {
+      setConfigLoaded(true);
+    });
   }, [token]);
 
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, sending]);
+
   const handleSend = async () => {
-    if (!message.trim() || !token || !apiKey) return;
+    if (!message.trim() || !token || !hasApiKey) return;
 
     const userMsg: Message = { role: 'user', content: message };
     setMessages((prev) => [...prev, userMsg]);
@@ -42,16 +82,33 @@ export default function AiAssistantPage() {
             baseUrl: c.baseUrl,
           })),
           provider,
-          apiKey,
+          model: model || undefined,
         },
         token,
       );
 
-      const assistantMsg: Message = {
-        role: 'assistant',
-        content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
+      let content: string;
+      if (typeof result === 'string') {
+        content = result;
+      } else if (result.explanation) {
+        // Format the response nicely
+        const parts: string[] = [];
+        if (result.explanation) parts.push(result.explanation);
+        if (result.action && result.action !== 'none') {
+          parts.push(`\nAction: ${result.action}`);
+        }
+        if (result.connector) {
+          parts.push(`\nConnector:\n${JSON.stringify(result.connector, null, 2)}`);
+        }
+        if (result.tools?.length) {
+          parts.push(`\nTools:\n${JSON.stringify(result.tools, null, 2)}`);
+        }
+        content = parts.join('\n');
+      } else {
+        content = JSON.stringify(result, null, 2);
+      }
+
+      setMessages((prev) => [...prev, { role: 'assistant', content }]);
     } catch (err: any) {
       setMessages((prev) => [
         ...prev,
@@ -68,6 +125,19 @@ export default function AiAssistantPage() {
       handleSend();
     }
   };
+
+  const handleProviderChange = (newProvider: 'anthropic' | 'openai') => {
+    setProvider(newProvider);
+    if (modelOptions) {
+      const providerConfig = modelOptions[newProvider];
+      if (providerConfig) setModel(providerConfig.default);
+    }
+  };
+
+  const currentModels: ModelOption[] =
+    modelOptions ? modelOptions[provider]?.models || [] : [];
+
+  const isReady = configLoaded && hasApiKey;
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -118,27 +188,32 @@ export default function AiAssistantPage() {
                   </div>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="p-4 border-t border-[var(--border)]">
-              {!apiKey && (
-                <p className="text-xs text-[var(--destructive)] mb-2">
-                  Please enter your AI API key in the settings panel to start chatting.
+              {!configLoaded ? (
+                <p className="text-xs text-[var(--muted-foreground)] mb-2">
+                  Loading AI configuration...
                 </p>
-              )}
+              ) : !hasApiKey ? (
+                <p className="text-xs text-[var(--destructive)] mb-2">
+                  No API key configured. Go to <a href="/settings" className="underline font-medium">Settings</a> to set up your AI provider and API key.
+                </p>
+              ) : null}
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Describe what you want to connect..."
-                  disabled={!apiKey || sending}
+                  placeholder={isReady ? 'Describe what you want to connect...' : 'Configure your AI provider in Settings first'}
+                  disabled={!isReady || sending}
                   className="flex-1 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] disabled:opacity-50"
                 />
                 <button
                   onClick={handleSend}
-                  disabled={!message.trim() || !apiKey || sending}
+                  disabled={!message.trim() || !isReady || sending}
                   className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
                 >
                   Send
@@ -148,28 +223,45 @@ export default function AiAssistantPage() {
           </div>
 
           <div className="space-y-4">
+            {/* Model Selection */}
             <div className="border border-[var(--border)] rounded-lg p-4">
-              <h3 className="font-medium mb-3">AI Provider</h3>
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value as 'anthropic' | 'openai')}
-                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] mb-3"
-              >
-                <option value="anthropic">Claude (Anthropic)</option>
-                <option value="openai">GPT-4o (OpenAI)</option>
-              </select>
-
-              <label className="block text-sm font-medium mb-1">API Key</label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
-                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-              />
-              <p className="text-xs text-[var(--muted-foreground)] mt-1">
-                Your API key is sent per-request and never stored.
-              </p>
+              <h3 className="font-medium mb-3">AI Provider & Model</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-[var(--muted-foreground)]">Provider</label>
+                  <select
+                    value={provider}
+                    onChange={(e) => handleProviderChange(e.target.value as 'anthropic' | 'openai')}
+                    className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  >
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai">OpenAI (GPT)</option>
+                  </select>
+                </div>
+                {currentModels.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-[var(--muted-foreground)]">Model</label>
+                    <select
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                    >
+                      {currentModels.map((m) => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {hasApiKey ? (
+                  <p className="text-xs text-[var(--success)]">
+                    API key configured
+                  </p>
+                ) : (
+                  <p className="text-xs text-[var(--destructive)]">
+                    <a href="/settings" className="underline">Configure API key in Settings</a>
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="border border-[var(--border)] rounded-lg p-4">

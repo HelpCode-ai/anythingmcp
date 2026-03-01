@@ -51,7 +51,7 @@ export const users = {
     request<any>('/api/users/me', { token }),
   updateProfile: (data: { name?: string; email?: string }, token: string) =>
     request('/api/users/me', { method: 'PUT', body: data, token }),
-  updateAiConfig: (data: { provider: string; apiKey: string }, token: string) =>
+  updateAiConfig: (data: { provider: string; apiKey: string; model?: string }, token: string) =>
     request('/api/users/me/ai-config', { method: 'PUT', body: data, token }),
   // Admin
   list: (token: string) =>
@@ -148,6 +148,11 @@ export const server = {
 
 // AI
 export const ai = {
+  models: (token: string) =>
+    request<{
+      anthropic: { models: Array<{ id: string; label: string }>; default: string };
+      openai: { models: Array<{ id: string; label: string }>; default: string };
+    }>('/api/ai/models', { token }),
   generateTools: (data: unknown, token: string) =>
     request('/api/ai/generate-tools', { method: 'POST', body: data, token }),
   improveDescription: (data: unknown, token: string) =>
