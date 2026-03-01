@@ -26,5 +26,9 @@
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
     "concurrently": "^9.1.2"
+  },
+  "dependencies": {
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1"
   }
 }

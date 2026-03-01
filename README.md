@@ -13,11 +13,17 @@ AnythingToMCP is a platform that lets you create dynamic [MCP (Model Context Pro
 - **Dynamic MCP Server**: Tools registered at runtime — no restart required
 - **Visual Tool Editor**: Define parameters and visually configure where each maps in the API request (path, query, body, header)
 - **Environment Variables**: Per-connector `{{VAR_NAME}}` interpolation at runtime
-- **AI-Assisted Configuration**: Claude or OpenAI auto-generates tool definitions from your API specs
+- **Multi-AI Provider Support**: Claude (Sonnet 4.6, Opus 4.6, Haiku 4.5) and OpenAI (GPT-5, GPT-5.2, GPT-4o) with per-user model selection
+- **AI Chat Assistant**: ChatGPT-style chat interface for AI-assisted tool generation and connector configuration
 - **Bulk API**: Create connectors and tools programmatically via REST API (for Claude Code, CI/CD, scripts)
-- **Full Auth Support**: JWT + API key for admin, Bearer/OAuth2/API key for MCP clients, AES-256-GCM encrypted credentials
+- **Full Auth Support**: JWT + OAuth2/Bearer/API key for MCP clients, AES-256-GCM encrypted credentials
+- **Per-User MCP API Keys**: Generate individual API keys for MCP client authentication with usage tracking
+- **Custom Roles & Tool Access Control**: Create custom roles with tool-level whitelisting for fine-grained MCP access
+- **User Invitations**: Invite users via email with role and MCP role assignment
+- **Password Reset**: Secure password reset flow via email with time-limited tokens
 - **Audit Logging**: Every tool invocation is logged with input, output, duration, and status
-- **Role-Based Access**: Admin, Editor, Viewer roles with per-route guards
+- **Dark/Light Theme**: System-aware theme toggle with persistent preference
+- **Site Settings**: Admin-configurable SMTP, footer links, and site-wide settings
 - **Docker Ready**: `docker compose up` and you're running
 
 ---
@@ -68,7 +74,7 @@ The first user to register becomes **Admin**.
 
 | Container | Image | Port |
 |-----------|-------|------|
-| `atmcp-frontend` | Next.js 15 (standalone) | 3000 |
+| `atmcp-frontend` | Next.js 16 (standalone) | 3000 |
 | `atmcp-backend` | NestJS 11 | 4000 |
 | `atmcp-postgres` | PostgreSQL 17 | 5432 |
 | `atmcp-redis` | Redis 7 | 6379 |
@@ -77,58 +83,85 @@ The first user to register becomes **Admin**.
 
 ## Local Development Setup
 
+Run PostgreSQL and Redis in Docker, and the frontend/backend locally with hot reload.
+
 ### Prerequisites
 
 - **Node.js** 22+
-- **Docker** (for PostgreSQL and Redis)
 - **npm** 9+
+- **Docker** and **Docker Compose** (for PostgreSQL and Redis)
 
 ### Step-by-Step
 
 ```bash
 cd anything-to-mcp
 
-# 1. Start only PostgreSQL and Redis via Docker
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
-
-# 2. Create your .env file
+# 1. Create your .env file
 cp .env.example .env
 ```
 
-Edit `.env` for local development:
+Edit `.env` for local development — note the `localhost:5433` port for PostgreSQL (the dev Docker override maps host port 5433 to container port 5432):
 
 ```env
 NODE_ENV=development
 PORT=4000
-DATABASE_URL=postgresql://atmcp:atmcp@localhost:5432/anythingtomcp
+POSTGRES_PASSWORD=your-local-password
+DATABASE_URL=postgresql://atmcp:your-local-password@localhost:5433/anythingtomcp
 REDIS_URL=redis://localhost:6379
 JWT_SECRET=local-dev-secret-at-least-32-chars!!
 ENCRYPTION_KEY=local-dev-key-exactly-32-chars!!
-CORS_ORIGIN=http://localhost:3000
 NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=local-dev-nextauth-secret-32-chars!!
+CORS_ORIGIN=http://localhost:3000
 ```
 
 ```bash
+# 2. Start PostgreSQL and Redis via Docker
+#    Uses docker-compose.dev.yml overlay which:
+#    - Disables frontend/backend containers (you run them locally)
+#    - Exposes PostgreSQL on host port 5433 (to avoid conflicts with any local PostgreSQL)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+
 # 3. Install dependencies
 npm install
 
-# 4. Setup database
+# 4. Symlink .env into package directories
+#    Prisma 7 and Next.js need the .env file in their own directories.
+ln -sf ../../.env packages/backend/.env
+ln -sf ../../.env packages/frontend/.env
+
+# 5. Run database migrations and generate Prisma client
 cd packages/backend
-npx prisma migrate dev --name init
+npx prisma migrate dev
 npx prisma generate
 cd ../..
 
-# 5. Start backend (terminal 1)
-npm run dev:backend
-
-# 6. Start frontend (terminal 2)
-npm run dev:frontend
-
-# Or start both at once:
+# 6. Start both backend and frontend (concurrent)
 npm run dev
 ```
 
-The backend runs on http://localhost:4000, the frontend on http://localhost:3000.
+Or start them separately in two terminals:
+
+```bash
+# Terminal 1 — Backend (NestJS with hot reload)
+npm run dev:backend
+
+# Terminal 2 — Frontend (Next.js with Turbopack)
+npm run dev:frontend
+```
+
+The first user to register becomes **Admin**.
+
+| Service | URL |
+|---------|-----|
+| Frontend (Next.js) | http://localhost:3000 |
+| Backend API (NestJS) | http://localhost:4000 |
+| Swagger Docs | http://localhost:4000/api/docs |
+| MCP Endpoint | http://localhost:4000/mcp |
+| Health Check | http://localhost:4000/health |
+
+> **Tip:** If ports 3000 or 4000 are already in use, check for stale Node processes with `lsof -i:3000 -i:4000` and kill them before starting.
 
 ### Useful Commands
 
@@ -145,8 +178,17 @@ cd packages/backend && npx prisma studio
 # Create a new migration after schema changes
 cd packages/backend && npx prisma migrate dev --name describe_change
 
+# Reset the database (drops all data and re-applies migrations)
+cd packages/backend && npx prisma migrate reset
+
 # Build for production
 npm run build
+
+# Stop Docker services
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+
+# Stop Docker services and remove volumes (fresh database)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v
 ```
 
 ---
@@ -260,10 +302,18 @@ claude mcp add anything-to-mcp \
 
 The MCP endpoint supports **Streamable HTTP** transport at `POST /mcp`.
 
-Authentication options (set in your `.env`):
+Authentication is controlled by `MCP_AUTH_MODE` in your `.env`:
+
+| Mode | Description |
+|------|-------------|
+| `oauth2` | OAuth 2.0 Authorization Code (PKCE) + Client Credentials (default) |
+| `legacy` | Static Bearer Token or API Key |
+| `both` | Accepts either OAuth2 or legacy tokens |
+| `none` | No authentication (not recommended for production) |
+
+Legacy auth tokens (when `MCP_AUTH_MODE=legacy` or `both`):
 - `MCP_BEARER_TOKEN` — Bearer token authentication
 - `MCP_API_KEY` — API key via `X-API-Key` header
-- Both can be set simultaneously
 
 ---
 
@@ -277,6 +327,11 @@ All API endpoints require JWT authentication (except auth and health). Get a tok
 |--------|----------|-------------|
 | POST | `/api/auth/register` | Register (first user becomes Admin) |
 | POST | `/api/auth/login` | Login, returns JWT token |
+| POST | `/api/auth/invite` | Invite a user via email (Admin only) |
+| GET | `/api/auth/invite/verify` | Verify an invitation token |
+| POST | `/api/auth/accept-invite` | Accept invitation and create account |
+| POST | `/api/auth/forgot-password` | Request a password reset email |
+| POST | `/api/auth/reset-password` | Reset password with token |
 
 ### Connectors
 
@@ -316,6 +371,36 @@ All API endpoints require JWT authentication (except auth and health). Get a tok
 | POST | `/api/ai/generate-tools` | AI-generate tool definitions from spec |
 | POST | `/api/ai/improve-description` | AI-improve tool description |
 | POST | `/api/ai/configure` | Natural language configuration |
+| GET | `/api/ai/models` | List available AI models per provider |
+
+### Roles & Access Control
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/roles` | List all roles |
+| POST | `/api/roles` | Create a custom role |
+| PUT | `/api/roles/:id` | Update a role |
+| DELETE | `/api/roles/:id` | Delete a role |
+| GET | `/api/roles/:id/tools` | List tool access for a role |
+| PUT | `/api/roles/:id/tools` | Set tool access whitelist for a role |
+
+### MCP API Keys
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/mcp-api-keys` | List your MCP API keys |
+| POST | `/api/mcp-api-keys` | Generate a new MCP API key |
+| DELETE | `/api/mcp-api-keys/:id` | Revoke an MCP API key |
+
+### Site Settings (Admin)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/settings/smtp` | Get SMTP configuration |
+| PUT | `/api/settings/smtp` | Update SMTP configuration |
+| POST | `/api/settings/smtp/test` | Test SMTP connection |
+| GET | `/api/settings/footer-links` | Get footer link configuration |
+| PUT | `/api/settings/footer-links` | Update footer links |
 
 ### Examples
 
@@ -590,17 +675,24 @@ You can also wrap the array in a `{ "tools": [...] }` object.
 │  - Connector CRUD         ├── Connector Engines      │
 │  - Visual Tool Editor     │   REST / SOAP / GraphQL  │
 │  - Import (6 formats)     │   MCP / Database / Hook  │
-│  - Env Variables          │                          │
-│  - Audit Logs             ├── Import Parsers         │
-│  - AI Assistant           │   OpenAPI / Postman      │
+│  - AI Chat Assistant      │                          │
+│  - Env Variables          ├── Import Parsers         │
+│  - Audit Logs             │   OpenAPI / Postman      │
 │  - User Management        │   cURL / WSDL / GraphQL  │
-│                           │   JSON definitions       │
-│                           │                          │
-│                           ├── Dynamic MCP Server     │
+│  - Role & Access Control  │   JSON definitions       │
+│  - Site Settings          │                          │
+│  - Dark/Light Theme       ├── Dynamic MCP Server     │
 │                           │   /mcp (Streamable HTTP) │
 │                           │                          │
-│                           └── AI Service             │
-│                               Claude / OpenAI API    │
+│                           ├── AI Service             │
+│                           │   Claude / OpenAI        │
+│                           │   Multi-model support    │
+│                           │                          │
+│                           ├── Roles & MCP API Keys   │
+│                           │   Tool-level access ctrl │
+│                           │                          │
+│                           └── Email Service (SMTP)   │
+│                               Invitations / Resets   │
 │                                                      │
 │  PostgreSQL 17          Redis 7                      │
 └──────────────────────────────────────────────────────┘
@@ -625,12 +717,12 @@ You can also wrap the array in a `{ "tools": [...] }` object.
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | Next.js 15, React 19, Tailwind CSS v4 |
+| Frontend | Next.js 16, React 19, Tailwind CSS v4 |
 | Backend | NestJS 11, TypeScript, @rekog/mcp-nest |
 | MCP SDK | @modelcontextprotocol/sdk (Streamable HTTP) |
-| Database | PostgreSQL 17 + Prisma ORM |
+| Database | PostgreSQL 17 + Prisma 7 |
 | Cache | Redis 7 (ioredis) |
-| AI | Anthropic SDK (Claude) + OpenAI SDK |
+| AI | Anthropic SDK (Claude) + OpenAI SDK v6 |
 | Validation | Zod v4, class-validator |
 | Auth | JWT (passport-jwt), AES-256-GCM encryption |
 | Deploy | Docker + Docker Compose |
@@ -650,12 +742,18 @@ Copy `.env.example` to `.env` and configure:
 | `REDIS_URL` | No | Redis URL (graceful fallback if unavailable) |
 | `CORS_ORIGIN` | No | Allowed origin (default: http://localhost:3000) |
 | `NEXT_PUBLIC_API_URL` | No | Backend URL for frontend (default: http://localhost:4000) |
+| `NEXTAUTH_URL` | No | NextAuth callback URL (default: http://localhost:3000) |
 | `NEXTAUTH_SECRET` | No | NextAuth secret for frontend |
-| `MCP_BEARER_TOKEN` | No | Bearer token for MCP endpoint auth |
-| `MCP_API_KEY` | No | API key for MCP endpoint auth |
+| `FRONTEND_URL` | No | Frontend URL for email links (default: http://localhost:3000) |
+| `MCP_AUTH_MODE` | No | MCP auth mode: `none`, `legacy`, `oauth2`, `both` (default: `oauth2`) |
+| `MCP_BEARER_TOKEN` | No | Bearer token for MCP endpoint auth (legacy mode) |
+| `MCP_API_KEY` | No | API key for MCP endpoint auth (legacy mode) |
+| `SERVER_URL` | No | Server URL for OAuth2 redirects and metadata (default: http://localhost:4000) |
 | `MCP_RATE_LIMIT_PER_MINUTE` | No | Rate limit per client (default: 60) |
-| `ANTHROPIC_API_KEY` | No | For AI-assisted configuration |
-| `OPENAI_API_KEY` | No | Alternative AI provider |
+| `ANTHROPIC_API_KEY` | No | Server-level fallback for AI-assisted configuration (Claude) |
+| `OPENAI_API_KEY` | No | Server-level fallback for AI-assisted configuration (OpenAI) |
+
+Users can also configure their own AI API keys and preferred model in the Settings page, which take priority over the server-level keys above.
 
 ---
 
