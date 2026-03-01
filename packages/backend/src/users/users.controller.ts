@@ -11,7 +11,7 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsOptional, IsEmail, IsEnum, MinLength } from 'class-validator';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../generated/prisma/client';
 import { UsersService } from './users.service';
 import { AuthService } from '../auth/auth.service';
 import { Roles, RolesGuard } from '../auth/roles.guard';

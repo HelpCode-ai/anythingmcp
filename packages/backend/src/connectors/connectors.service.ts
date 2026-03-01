@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
-import { Connector, ConnectorType, AuthType } from '@prisma/client';
+import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
 import { RestEngine } from './engines/rest.engine';
 import { SoapEngine } from './engines/soap.engine';
 import { GraphqlEngine } from './engines/graphql.engine';
