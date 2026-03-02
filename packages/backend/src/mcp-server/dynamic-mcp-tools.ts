@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
+import { AxiosError } from 'axios';
 import { ToolRegistry } from './tool-registry';
 import { RestEngine } from '../connectors/engines/rest.engine';
 import { GraphqlEngine } from '../connectors/engines/graphql.engine';
@@ -132,20 +133,23 @@ export class DynamicMcpTools {
       };
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
+      const errorDetail = this.extractErrorDetail(error);
 
       await this.auditService.logInvocation({
         toolId: tool.id,
         input: params,
         status: 'ERROR',
         durationMs,
-        error: error.message,
+        error: errorDetail.status
+          ? `${errorDetail.status} ${errorDetail.statusText || ''}: ${errorDetail.error}`
+          : String(errorDetail.error),
       });
 
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({ error: error.message }, null, 2),
+            text: JSON.stringify(errorDetail, null, 2),
           },
         ],
         isError: true,
@@ -178,6 +182,61 @@ export class DynamicMcpTools {
       }
     }
     return result;
+  }
+
+  /**
+   * Extract rich error details from different error types so that the AI
+   * client receives enough context to understand the failure and retry.
+   */
+  private extractErrorDetail(error: any): Record<string, unknown> {
+    if (error instanceof AxiosError && error.response) {
+      const res = error.response;
+
+      // Pick only headers useful for the AI to decide on retries
+      const relevantHeaders: Record<string, string> = {};
+      const headerKeys = [
+        'retry-after',
+        'x-ratelimit-limit',
+        'x-ratelimit-remaining',
+        'x-ratelimit-reset',
+        'www-authenticate',
+        'content-type',
+      ];
+      for (const key of headerKeys) {
+        const value = res.headers?.[key];
+        if (value) relevantHeaders[key] = String(value);
+      }
+
+      const detail: Record<string, unknown> = {
+        error: error.message,
+        status: res.status,
+        statusText: res.statusText,
+      };
+
+      // Include the API response body (the most useful part for the AI)
+      if (res.data !== undefined && res.data !== null && res.data !== '') {
+        detail.responseBody = res.data;
+      }
+
+      if (Object.keys(relevantHeaders).length > 0) {
+        detail.responseHeaders = relevantHeaders;
+      }
+
+      return detail;
+    }
+
+    // AxiosError without a response (network error, timeout, DNS failure)
+    if (error instanceof AxiosError) {
+      return {
+        error: error.message,
+        code: error.code, // e.g. ECONNREFUSED, ECONNABORTED, ETIMEDOUT
+      };
+    }
+
+    // Generic errors (database, SOAP, etc.)
+    const detail: Record<string, unknown> = { error: error.message };
+    if (error.code) detail.code = error.code;
+    return detail;
   }
 
   private async executeWithEngine(
