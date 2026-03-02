@@ -1,3 +1,10 @@
+// Load .env before any module imports so that top-level process.env reads
+// (e.g. MCP_AUTH_MODE in app.module.ts) have access to all variables.
+import { config } from 'dotenv';
+import { join } from 'path';
+config({ path: join(__dirname, '..', '..', '..', '.env') });
+config({ path: '.env' });
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
