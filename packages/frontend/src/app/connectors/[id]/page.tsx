@@ -30,6 +30,9 @@ export default function ConnectorDetailPage() {
   const [editName, setEditName] = useState('');
   const [editBaseUrl, setEditBaseUrl] = useState('');
   const [editActive, setEditActive] = useState(true);
+  const [editAuthType, setEditAuthType] = useState('NONE');
+  const [editAuthKey, setEditAuthKey] = useState('');
+  const [editAuthValue, setEditAuthValue] = useState('');
   const [msg, setMsg] = useState('');
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -65,6 +68,10 @@ export default function ConnectorDetailPage() {
       setEditName(c.name);
       setEditBaseUrl(c.baseUrl);
       setEditActive(c.isActive);
+      setEditAuthType(c.authType || 'NONE');
+      // Don't pre-fill credentials — they are encrypted on the server
+      setEditAuthKey('');
+      setEditAuthValue('');
       setToolList(c.tools || []);
       // Load env vars
       const ev = c.envVars as Record<string, string> | null;
@@ -82,10 +89,36 @@ export default function ConnectorDetailPage() {
     fetchConnector();
   }, [token, id]);
 
+  const buildAuthConfig = () => {
+    // Only send authConfig if the user filled in credential fields;
+    // empty fields mean "keep existing credentials on the server".
+    switch (editAuthType) {
+      case 'API_KEY':
+        if (!editAuthValue) return undefined;
+        return { headerName: editAuthKey || 'X-API-Key', apiKey: editAuthValue };
+      case 'BEARER_TOKEN':
+        if (!editAuthValue) return undefined;
+        return { token: editAuthValue };
+      case 'BASIC_AUTH':
+        if (!editAuthKey && !editAuthValue) return undefined;
+        return { username: editAuthKey, password: editAuthValue };
+      default:
+        return undefined;
+    }
+  };
+
   const handleSave = async () => {
     if (!token) return;
     try {
-      await connectors.update(id, { name: editName, baseUrl: editBaseUrl, isActive: editActive }, token);
+      const data: Record<string, unknown> = {
+        name: editName,
+        baseUrl: editBaseUrl,
+        isActive: editActive,
+        authType: editAuthType,
+      };
+      const authConfig = buildAuthConfig();
+      if (authConfig) data.authConfig = authConfig;
+      await connectors.update(id, data, token);
       setMsg('Connector updated');
       setEditing(false);
       fetchConnector();
@@ -374,6 +407,55 @@ export default function ConnectorDetailPage() {
                 />
                 <label htmlFor="isActive" className="text-sm">Active</label>
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Authentication</label>
+                <select
+                  value={editAuthType}
+                  onChange={(e) => { setEditAuthType(e.target.value); setEditAuthKey(''); setEditAuthValue(''); }}
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                >
+                  <option value="NONE">None</option>
+                  <option value="API_KEY">API Key</option>
+                  <option value="BEARER_TOKEN">Bearer Token</option>
+                  <option value="BASIC_AUTH">Basic Auth</option>
+                  <option value="OAUTH2">OAuth 2.0</option>
+                </select>
+              </div>
+              {editAuthType === 'API_KEY' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Header Name</label>
+                    <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">API Key</label>
+                    <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                </div>
+              )}
+              {editAuthType === 'BEARER_TOKEN' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Bearer Token</label>
+                  <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                </div>
+              )}
+              {editAuthType === 'BASIC_AUTH' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Username</label>
+                    <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Password</label>
+                    <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                </div>
+              )}
+              {editAuthType !== 'NONE' && editAuthType !== 'OAUTH2' && (
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Leave credential fields empty to keep the current values.
+                </p>
+              )}
               <button
                 onClick={handleSave}
                 className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"
