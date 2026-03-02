@@ -45,7 +45,7 @@ export default function ConnectorDetailPage() {
   const [testingToolId, setTestingToolId] = useState<string | null>(null);
   const [testParams, setTestParams] = useState('{}');
   const [testRunning, setTestRunning] = useState(false);
-  const [toolTestResult, setToolTestResult] = useState<{ ok: boolean; durationMs: number; result?: unknown; error?: string } | null>(null);
+  const [toolTestResult, setToolTestResult] = useState<{ ok: boolean; durationMs: number; result?: unknown; error?: string; [key: string]: unknown } | null>(null);
 
   // Import modal
   const [showImport, setShowImport] = useState(false);
@@ -506,6 +506,7 @@ export default function ConnectorDetailPage() {
               <h3 className="text-lg font-medium">Environment Variables</h3>
               <p className="text-xs text-[var(--muted-foreground)] mt-1">
                 Use {'{{VAR_NAME}}'} in URLs, paths, headers, and body fields. Variables are interpolated at runtime.
+                <strong className="block mt-1">Parameter override:</strong> If a variable name matches a tool parameter (e.g. <code className="bg-[var(--muted)] px-1 rounded">sContextTokenP</code>), the value is injected automatically and the parameter is hidden from the AI.
               </p>
             </div>
             <button
@@ -660,6 +661,7 @@ export default function ConnectorDetailPage() {
             <div className="mb-4">
               <ToolEditor
                 connectorType={connector.type}
+                envVarKeys={new Set(envVarEntries.map((e) => e.key.trim()).filter(Boolean))}
                 onSave={handleCreateTool}
                 onCancel={() => setShowNewTool(false)}
                 saving={savingTool}
@@ -678,6 +680,7 @@ export default function ConnectorDetailPage() {
                   {editingToolId === tool.id ? (
                     <ToolEditor
                       connectorType={connector.type}
+                      envVarKeys={new Set(envVarEntries.map((e) => e.key.trim()).filter(Boolean))}
                       existingTool={{
                         name: tool.name,
                         description: tool.description,
@@ -713,11 +716,18 @@ export default function ConnectorDetailPage() {
                             {tool.endpointMapping?.path && (
                               <span className="font-mono">{tool.endpointMapping.path}</span>
                             )}
-                            {tool.parameters?.properties && (
-                              <span>
-                                {Object.keys(tool.parameters.properties).length} params
-                              </span>
-                            )}
+                            {tool.parameters?.properties && (() => {
+                              const allParams = Object.keys(tool.parameters.properties);
+                              const envKeys = new Set(envVarEntries.map((e) => e.key.trim()).filter(Boolean));
+                              const envCovered = allParams.filter((k) => envKeys.has(k)).length;
+                              return (
+                                <span>
+                                  {allParams.length} params{envCovered > 0 && (
+                                    <span className="text-[var(--brand)]" title={`${envCovered} parameter(s) auto-filled from environment variables`}> ({envCovered} from env)</span>
+                                  )}
+                                </span>
+                              );
+                            })()}
                             {tool.endpointMapping?.queryParams && (
                               <span>{Object.keys(tool.endpointMapping.queryParams).length} query</span>
                             )}
@@ -737,10 +747,13 @@ export default function ConnectorDetailPage() {
                               } else {
                                 setTestingToolId(tool.id);
                                 setToolTestResult(null);
-                                // Pre-fill params from tool's parameter schema
+                                // Pre-fill params from tool's parameter schema,
+                                // excluding params covered by environment variables
                                 const props = tool.parameters?.properties || {};
+                                const envKeys = new Set(envVarEntries.map((e) => e.key.trim()).filter(Boolean));
                                 const example: Record<string, unknown> = {};
                                 for (const [k, v] of Object.entries(props)) {
+                                  if (envKeys.has(k)) continue; // skip env-var-covered params
                                   const prop = v as any;
                                   if (prop.type === 'string') example[k] = '';
                                   else if (prop.type === 'number' || prop.type === 'integer') example[k] = 0;
@@ -786,8 +799,24 @@ export default function ConnectorDetailPage() {
                       </div>
 
                       {/* Tool Playground */}
-                      {testingToolId === tool.id && (
+                      {testingToolId === tool.id && (() => {
+                        const envKeys = new Set(envVarEntries.map((e) => e.key.trim()).filter(Boolean));
+                        const allParamNames = Object.keys(tool.parameters?.properties || {});
+                        const envCoveredParams = allParamNames.filter((k) => envKeys.has(k));
+                        return (
                         <div className="mt-3 pt-3 border-t border-[var(--border)]">
+                          {envCoveredParams.length > 0 && (
+                            <div className="flex items-start gap-2 px-3 py-2 mb-3 rounded-md bg-[var(--brand-light,var(--info-bg))] border border-[var(--brand,var(--info-text))] border-opacity-30 text-xs">
+                              <span className="text-sm leading-none mt-0.5">&#9889;</span>
+                              <span>
+                                <strong>Auto-filled from env:</strong>{' '}
+                                {envCoveredParams.map((p) => (
+                                  <code key={p} className="mx-0.5 px-1 py-0.5 rounded bg-[var(--muted)] font-mono text-[11px]">{p}</code>
+                                ))}
+                                <span className="text-[var(--muted-foreground)]"> — injected at runtime, no need to include in test params</span>
+                              </span>
+                            </div>
+                          )}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
                               <label className="block text-xs font-medium mb-1">Input Parameters (JSON)</label>
@@ -819,13 +848,14 @@ export default function ConnectorDetailPage() {
                                 {toolTestResult
                                   ? toolTestResult.ok
                                     ? JSON.stringify(toolTestResult.result, null, 2)
-                                    : toolTestResult.error
+                                    : JSON.stringify(toolTestResult, null, 2)
                                   : 'Click "Run Test" to execute this tool...'}
                               </pre>
                             </div>
                           </div>
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

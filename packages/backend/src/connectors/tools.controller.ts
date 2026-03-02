@@ -213,6 +213,21 @@ export class ToolsController {
       };
     } catch (err: any) {
       const durationMs = Date.now() - startTime;
+      // Return rich error details for debugging
+      if (err.soapDetail) {
+        return { ok: false, durationMs, ...err.soapDetail };
+      }
+      const { AxiosError: AxiosErr } = await import('axios');
+      if (err instanceof AxiosErr && err.response) {
+        return {
+          ok: false,
+          durationMs,
+          error: err.message,
+          status: err.response.status,
+          statusText: err.response.statusText,
+          responseBody: err.response.data,
+        };
+      }
       return {
         ok: false,
         durationMs,

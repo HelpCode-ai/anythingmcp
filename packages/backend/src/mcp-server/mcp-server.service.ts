@@ -63,6 +63,7 @@ export class McpServerService implements OnModuleInit {
             authConfig: this.decryptAuthConfig(connector.authConfig),
             headers: connector.headers as Record<string, string> | undefined,
             envVars: connector.envVars as Record<string, string> | undefined,
+            specUrl: connector.specUrl ?? undefined,
           },
           endpointMapping: tool.endpointMapping as any,
           responseMapping: tool.responseMapping as
@@ -73,12 +74,15 @@ export class McpServerService implements OnModuleInit {
         // Register in our internal registry (for execution lookup)
         this.toolRegistry.registerTool(toolDef);
 
-        // Register as a native MCP tool so it appears directly in tools/list
-        this.registerMcpTool(
-          tool.name,
-          tool.description,
+        // Strip params covered by env vars so the AI doesn't need to provide them
+        const envVars = connector.envVars as Record<string, string> | undefined;
+        const effectiveSchema = this.stripEnvVarParams(
           tool.parameters as Record<string, unknown>,
+          envVars,
         );
+
+        // Register as a native MCP tool so it appears directly in tools/list
+        this.registerMcpTool(tool.name, tool.description, effectiveSchema);
       }
     }
   }
@@ -114,6 +118,7 @@ export class McpServerService implements OnModuleInit {
             authConfig: this.decryptAuthConfig(connector.authConfig),
             headers: connector.headers as Record<string, string> | undefined,
             envVars: connector.envVars as Record<string, string> | undefined,
+            specUrl: connector.specUrl ?? undefined,
           },
           endpointMapping: tool.endpointMapping as any,
           responseMapping: tool.responseMapping as
@@ -122,11 +127,13 @@ export class McpServerService implements OnModuleInit {
         };
 
         this.toolRegistry.registerTool(toolDef);
-        this.registerMcpTool(
-          tool.name,
-          tool.description,
+
+        const envVars = connector.envVars as Record<string, string> | undefined;
+        const effectiveSchema = this.stripEnvVarParams(
           tool.parameters as Record<string, unknown>,
+          envVars,
         );
+        this.registerMcpTool(tool.name, tool.description, effectiveSchema);
       }
     }
 
@@ -190,6 +197,37 @@ export class McpServerService implements OnModuleInit {
       this.logger.error(`Failed to decrypt authConfig: ${error.message}`);
       return undefined;
     }
+  }
+
+  /**
+   * Remove parameters from the JSON Schema that are covered by connector
+   * env vars. This hides them from the AI so it doesn't need to provide them.
+   */
+  private stripEnvVarParams(
+    schema: Record<string, unknown>,
+    envVars?: Record<string, string>,
+  ): Record<string, unknown> {
+    if (!envVars || Object.keys(envVars).length === 0) return schema;
+
+    const properties = schema.properties as Record<string, unknown> | undefined;
+    if (!properties) return schema;
+
+    const envKeys = new Set(Object.keys(envVars));
+    const newProperties: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(properties)) {
+      if (!envKeys.has(key)) {
+        newProperties[key] = value;
+      }
+    }
+
+    const required = (schema.required as string[]) || [];
+    const newRequired = required.filter((k) => !envKeys.has(k));
+
+    return {
+      ...schema,
+      properties: newProperties,
+      ...(newRequired.length > 0 ? { required: newRequired } : {}),
+    };
   }
 
   /**

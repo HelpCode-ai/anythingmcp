@@ -95,10 +95,15 @@ export class DynamicMcpTools {
           ? JSON.parse(tool.connectorConfig.authConfig)
           : undefined,
         headers: interpolatedConfig.headers,
+        specUrl: (tool.connectorConfig as any).specUrl,
       };
 
+      // Inject env vars as parameter defaults (env var values fill in params
+      // that match by name, so they don't need to be provided by the caller)
+      const paramsWithEnv = this.injectEnvVars(params, envVars);
+
       // Apply JSON Schema defaults for missing params
-      const mergedParams = this.applyDefaults(tool.parameters, params);
+      const mergedParams = this.applyDefaults(tool.parameters, paramsWithEnv);
 
       const result = await this.executeWithEngine(
         tool.connectorType,
@@ -168,6 +173,25 @@ export class DynamicMcpTools {
     return `tool_cache:${toolName}:${paramsHash}`;
   }
 
+  /**
+   * Inject connector env vars into params. If an env var key matches a
+   * parameter name and the caller didn't provide a value, use the env var.
+   */
+  private injectEnvVars(
+    params: Record<string, unknown>,
+    envVars: Record<string, string>,
+  ): Record<string, unknown> {
+    if (!envVars || Object.keys(envVars).length === 0) return params;
+
+    const result = { ...params };
+    for (const [key, value] of Object.entries(envVars)) {
+      if (result[key] === undefined) {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
   private applyDefaults(
     schema: Record<string, unknown>,
     params: Record<string, unknown>,
@@ -233,7 +257,12 @@ export class DynamicMcpTools {
       };
     }
 
-    // Generic errors (database, SOAP, etc.)
+    // SOAP errors enriched by SoapEngine
+    if (error.soapDetail) {
+      return error.soapDetail as Record<string, unknown>;
+    }
+
+    // Generic errors (database, etc.)
     const detail: Record<string, unknown> = { error: error.message };
     if (error.code) detail.code = error.code;
     return detail;

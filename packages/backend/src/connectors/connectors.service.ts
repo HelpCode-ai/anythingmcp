@@ -191,15 +191,24 @@ export class ConnectorsService {
       authType: connector.authType,
       authConfig,
       headers: connector.headers as Record<string, string>,
+      specUrl: connector.specUrl ?? undefined,
     };
+
+    // Inject env vars as parameter defaults
+    const envVars = connector.envVars as Record<string, string> | undefined;
+    const mergedParams = envVars
+      ? { ...params, ...Object.fromEntries(
+          Object.entries(envVars).filter(([k]) => params[k] === undefined),
+        ) }
+      : params;
 
     switch (connector.type) {
       case 'REST':
-        return this.restEngine.execute(config, endpointMapping, params);
+        return this.restEngine.execute(config, endpointMapping, mergedParams);
       case 'SOAP':
-        return this.soapEngine.execute(config, endpointMapping, params);
+        return this.soapEngine.execute(config, endpointMapping, mergedParams);
       case 'GRAPHQL':
-        return this.graphqlEngine.execute(config, endpointMapping, params);
+        return this.graphqlEngine.execute(config, endpointMapping, mergedParams);
       default:
         throw new NotFoundException(
           `Connector type '${connector.type}' not yet implemented`,

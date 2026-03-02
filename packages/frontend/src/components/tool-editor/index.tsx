@@ -55,6 +55,8 @@ interface ToolEditorProps {
     endpointMapping: Record<string, unknown>;
     responseMapping?: Record<string, unknown>;
   };
+  /** Environment variable keys — parameters matching these names are auto-filled at runtime */
+  envVarKeys?: Set<string>;
   onSave: (data: {
     name: string;
     description: string;
@@ -347,6 +349,7 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
 export function ToolEditor({
   connectorType,
   existingTool,
+  envVarKeys,
   onSave,
   onCancel,
   saving = false,
@@ -724,6 +727,22 @@ export function ToolEditor({
           </button>
         </div>
 
+        {/* Env var override banner */}
+        {envVarKeys && envVarKeys.size > 0 && params.some(p => p.name && envVarKeys.has(p.name)) && (
+          <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-[var(--brand-light,var(--info-bg))] border border-[var(--brand,var(--info-text))] border-opacity-30 text-xs text-[var(--foreground)]">
+            <span className="text-sm leading-none mt-0.5">&#9889;</span>
+            <div>
+              <span className="font-medium">Auto-filled from env:</span>{' '}
+              {params.filter(p => p.name && envVarKeys.has(p.name)).map(p => (
+                <code key={p.name} className="mx-0.5 px-1 py-0.5 rounded bg-[var(--muted)] font-mono text-[11px]">{p.name}</code>
+              ))}
+              <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
+                These parameters are injected from environment variables at runtime and hidden from the AI.
+              </p>
+            </div>
+          </div>
+        )}
+
         {params.length === 0 ? (
           <p className="text-xs text-[var(--muted-foreground)] py-3 text-center border border-dashed border-[var(--border)] rounded-md">
             No parameters defined. Click &quot;Add Parameter&quot; to define tool inputs.
@@ -740,18 +759,30 @@ export function ToolEditor({
               <span></span>
             </div>
 
-            {params.map((param, i) => (
+            {params.map((param, i) => {
+              const isEnvOverridden = !!(envVarKeys && param.name && envVarKeys.has(param.name));
+              return (
               <div
                 key={i}
-                className="grid grid-cols-[1fr_100px_1fr_140px_50px_30px] gap-2 items-center"
+                className={`grid grid-cols-[1fr_100px_1fr_140px_50px_30px] gap-2 items-center${isEnvOverridden ? ' opacity-60' : ''}`}
               >
-                <input
-                  type="text"
-                  value={param.name}
-                  onChange={e => updateParam(i, { name: e.target.value })}
-                  placeholder="param_name"
-                  className="border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)] font-mono"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={param.name}
+                    onChange={e => updateParam(i, { name: e.target.value })}
+                    placeholder="param_name"
+                    className={`w-full border rounded px-2 py-1.5 text-xs bg-[var(--background)] font-mono ${isEnvOverridden ? 'border-[var(--brand)] border-dashed' : 'border-[var(--input)]'}`}
+                  />
+                  {isEnvOverridden && (
+                    <span
+                      className="absolute -top-2 right-1 text-[9px] px-1 rounded bg-[var(--brand)] text-white leading-tight"
+                      title="This parameter is auto-filled from an environment variable and hidden from the AI"
+                    >
+                      env
+                    </span>
+                  )}
+                </div>
                 <select
                   value={param.type}
                   onChange={e => updateParam(i, { type: e.target.value as ToolParam['type'] })}
@@ -796,7 +827,8 @@ export function ToolEditor({
                   &times;
                 </button>
               </div>
-            ))}
+              );
+            })}
 
             {/* Query key override for query-targeted params */}
             {params.some(p => (p.target === 'query' || p.target === 'graphql_var') && p.queryKey) && (
