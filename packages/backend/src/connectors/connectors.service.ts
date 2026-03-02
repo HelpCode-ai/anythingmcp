@@ -5,6 +5,7 @@ import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
 import { RestEngine } from './engines/rest.engine';
 import { SoapEngine } from './engines/soap.engine';
 import { GraphqlEngine } from './engines/graphql.engine';
+import { DatabaseEngine } from './engines/database.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class ConnectorsService {
     private readonly restEngine: RestEngine,
     private readonly soapEngine: SoapEngine,
     private readonly graphqlEngine: GraphqlEngine,
+    private readonly databaseEngine: DatabaseEngine,
   ) {
     this.encryptionKey =
       this.configService.get<string>('ENCRYPTION_KEY') ||
@@ -159,6 +161,13 @@ export class ConnectorsService {
             {},
           );
           break;
+        case 'DATABASE':
+          await this.databaseEngine.testConnection({
+            baseUrl: connector.baseUrl,
+            authType: connector.authType,
+            authConfig,
+          });
+          break;
         default:
           return {
             ok: true,
@@ -209,6 +218,8 @@ export class ConnectorsService {
         return this.soapEngine.execute(config, endpointMapping, mergedParams);
       case 'GRAPHQL':
         return this.graphqlEngine.execute(config, endpointMapping, mergedParams);
+      case 'DATABASE':
+        return this.databaseEngine.execute(config, endpointMapping, mergedParams);
       default:
         throw new NotFoundException(
           `Connector type '${connector.type}' not yet implemented`,
@@ -221,5 +232,150 @@ export class ConnectorsService {
   ): Record<string, unknown> | undefined {
     if (!connector.authConfig) return undefined;
     return JSON.parse(decrypt(connector.authConfig, this.encryptionKey));
+  }
+
+  /**
+   * Generate the 3 default tools for DATABASE connectors:
+   *   1. get_database_schema — introspect tables/columns/types
+   *   2. get_example_queries — return static example SQL patterns
+   *   3. execute_query — run an arbitrary SELECT query
+   */
+  generateDefaultDatabaseTools(baseUrl: string): Array<{
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+    endpointMapping: Record<string, unknown>;
+  }> {
+    const isMssql = baseUrl.startsWith('mssql://');
+
+    const schemaQuery = isMssql
+      ? `SELECT t.TABLE_SCHEMA, t.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 'YES' ELSE 'NO' END AS IS_PRIMARY_KEY FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME LEFT JOIN (SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY') pk ON c.TABLE_SCHEMA = pk.TABLE_SCHEMA AND c.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME WHERE t.TABLE_TYPE = 'BASE TABLE' ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION`
+      : `SELECT t.table_schema, t.table_name, c.column_name, c.data_type, c.character_maximum_length, c.is_nullable, CASE WHEN pk.column_name IS NOT NULL THEN 'YES' ELSE 'NO' END AS is_primary_key FROM information_schema.tables t JOIN information_schema.columns c ON t.table_schema = c.table_schema AND t.table_name = c.table_name LEFT JOIN (SELECT ku.table_schema, ku.table_name, ku.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name WHERE tc.constraint_type = 'PRIMARY KEY') pk ON c.table_schema = pk.table_schema AND c.table_name = pk.table_name AND c.column_name = pk.column_name WHERE t.table_type = 'BASE TABLE' AND t.table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY t.table_schema, t.table_name, c.ordinal_position`;
+
+    const dbType = isMssql ? 'SQL Server' : 'PostgreSQL';
+    const topSyntax = isMssql ? 'SELECT TOP 10' : 'SELECT ... LIMIT 10';
+
+    return [
+      // 1. Schema introspection
+      {
+        name: 'get_database_schema',
+        description:
+          `Retrieve the full database schema: all tables, columns, data types, nullable flags, and primary keys. ` +
+          `Use this FIRST to understand the database structure before writing any queries. ` +
+          `Returns one row per column across all user tables.`,
+        parameters: { type: 'object', properties: {} },
+        endpointMapping: { method: 'query', path: schemaQuery },
+      },
+      // 2. Example queries (static text, no DB execution)
+      {
+        name: 'get_example_queries',
+        description:
+          `Returns example SQL query patterns for this ${dbType} database. ` +
+          `Use this to understand common query patterns before writing your own. ` +
+          `This tool does NOT execute any query — it returns a text guide with examples.`,
+        parameters: { type: 'object', properties: {} },
+        endpointMapping: {
+          method: 'static',
+          path: '',
+          staticResponse: this.buildExampleQueriesText(isMssql),
+        },
+      },
+      // 3. Dynamic query execution
+      {
+        name: 'execute_query',
+        description:
+          `Execute a read-only SQL query against the ${dbType} database. ` +
+          `IMPORTANT: Only SELECT statements are allowed. ` +
+          `Always call get_database_schema first to learn the table/column names, then use get_example_queries for syntax guidance. ` +
+          `Results are limited to 1000 rows.`,
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: `The SQL SELECT query to execute. Only SELECT is allowed. Example: "${topSyntax} * FROM table_name"`,
+            },
+          },
+          required: ['query'],
+        },
+        endpointMapping: { method: 'query', path: '${query}' },
+      },
+    ];
+  }
+
+  private buildExampleQueriesText(isMssql: boolean): string {
+    if (isMssql) {
+      return [
+        '# SQL Server Example Queries',
+        '',
+        '## List all tables',
+        "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_SCHEMA, TABLE_NAME",
+        '',
+        '## Preview table data (first 10 rows)',
+        'SELECT TOP 10 * FROM [schema].[TableName]',
+        '',
+        '## Count rows in a table',
+        'SELECT COUNT(*) AS total FROM [schema].[TableName]',
+        '',
+        '## Search by text column (case-insensitive)',
+        "SELECT TOP 50 * FROM [dbo].[TableName] WHERE ColumnName LIKE '%search_term%'",
+        '',
+        '## Filter by date range',
+        "SELECT * FROM [dbo].[TableName] WHERE DateColumn BETWEEN '2024-01-01' AND '2024-12-31' ORDER BY DateColumn DESC",
+        '',
+        '## Join two tables',
+        'SELECT a.*, b.ColumnName FROM [dbo].[TableA] a JOIN [dbo].[TableB] b ON a.ForeignKey = b.PrimaryKey',
+        '',
+        '## Aggregate with GROUP BY',
+        'SELECT Category, COUNT(*) AS cnt, SUM(Amount) AS total FROM [dbo].[TableName] GROUP BY Category ORDER BY total DESC',
+        '',
+        '## Get column details for a specific table',
+        "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'YourTable' ORDER BY ORDINAL_POSITION",
+        '',
+        '## Distinct values in a column',
+        'SELECT DISTINCT ColumnName FROM [dbo].[TableName] ORDER BY ColumnName',
+        '',
+        '## Pagination (SQL Server 2012+)',
+        'SELECT * FROM [dbo].[TableName] ORDER BY Id OFFSET 0 ROWS FETCH NEXT 50 ROWS ONLY',
+        '',
+        '> NOTE: Only SELECT queries are allowed. INSERT, UPDATE, DELETE, DROP, and other write operations are blocked.',
+      ].join('\n');
+    }
+
+    return [
+      '# PostgreSQL Example Queries',
+      '',
+      '## List all tables',
+      "SELECT table_schema, table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY table_schema, table_name",
+      '',
+      '## Preview table data (first 10 rows)',
+      'SELECT * FROM schema_name.table_name LIMIT 10',
+      '',
+      '## Count rows in a table',
+      'SELECT COUNT(*) AS total FROM schema_name.table_name',
+      '',
+      '## Search by text column (case-insensitive)',
+      "SELECT * FROM table_name WHERE column_name ILIKE '%search_term%' LIMIT 50",
+      '',
+      '## Filter by date range',
+      "SELECT * FROM table_name WHERE date_column BETWEEN '2024-01-01' AND '2024-12-31' ORDER BY date_column DESC",
+      '',
+      '## Join two tables',
+      'SELECT a.*, b.column_name FROM table_a a JOIN table_b b ON a.foreign_key = b.primary_key',
+      '',
+      '## Aggregate with GROUP BY',
+      'SELECT category, COUNT(*) AS cnt, SUM(amount) AS total FROM table_name GROUP BY category ORDER BY total DESC',
+      '',
+      '## Get column details for a specific table',
+      "SELECT column_name, data_type, character_maximum_length, is_nullable FROM information_schema.columns WHERE table_name = 'your_table' ORDER BY ordinal_position",
+      '',
+      '## Distinct values in a column',
+      'SELECT DISTINCT column_name FROM table_name ORDER BY column_name',
+      '',
+      '## Pagination',
+      'SELECT * FROM table_name ORDER BY id LIMIT 50 OFFSET 0',
+      '',
+      '> NOTE: Only SELECT queries are allowed. INSERT, UPDATE, DELETE, DROP, and other write operations are blocked.',
+    ].join('\n');
   }
 }

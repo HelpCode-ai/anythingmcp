@@ -178,7 +178,7 @@ export default function NewConnectorPage() {
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder={selectedType === 'DATABASE' ? 'postgresql://user:pass@host:5432/db' : 'https://api.example.com/v1'}
+                  placeholder={selectedType === 'DATABASE' ? 'postgresql://user:pass@host:5432/db  or  mssql://user:pass@host/db' : 'https://api.example.com/v1'}
                   className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
                   required
                 />

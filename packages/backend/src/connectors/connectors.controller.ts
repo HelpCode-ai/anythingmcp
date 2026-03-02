@@ -138,7 +138,31 @@ export class ConnectorsController {
   @Post()
   @ApiOperation({ summary: 'Create a new connector' })
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
-    return this.connectorsService.create(req.user.sub, dto);
+    const connector = await this.connectorsService.create(req.user.sub, dto);
+
+    // Auto-create default tools for DATABASE connectors
+    if (dto.type === 'DATABASE') {
+      const defaultTools = this.connectorsService.generateDefaultDatabaseTools(dto.baseUrl);
+      for (const tool of defaultTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: connector.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // skip duplicates
+        }
+      }
+      await this.mcpServer.reloadConnectorTools(connector.id);
+      this.logger.log(`Auto-created ${defaultTools.length} default tools for DATABASE connector ${connector.id}`);
+    }
+
+    return connector;
   }
 
   @Get(':id')
@@ -161,6 +185,8 @@ export class ConnectorsController {
   @ApiOperation({ summary: 'Delete connector' })
   async remove(@Req() req: any, @Param('id') id: string) {
     await this.connectorsService.remove(id, req.user.sub);
+    // Unregister tools from in-memory MCP registries after DB cascade delete
+    await this.mcpServer.reloadConnectorTools(id);
     return { message: 'Connector deleted' };
   }
 
