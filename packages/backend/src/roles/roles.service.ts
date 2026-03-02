@@ -92,10 +92,19 @@ export class RolesService {
    * Returns null if user has unrestricted access (no role assigned or ADMIN).
    */
   async getAllowedToolIds(userId: string): Promise<string[] | null> {
-    const user = await this.prisma.user.findUnique({
+    // The MCP OAuth JWT sets `sub` to the user's email/username (not the DB UUID).
+    // Try lookup by ID first, then fall back to email.
+    let user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, mcpRoleId: true },
     });
+
+    if (!user) {
+      user = await this.prisma.user.findUnique({
+        where: { email: userId },
+        select: { role: true, mcpRoleId: true },
+      });
+    }
 
     if (!user) return [];
 
