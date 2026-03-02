@@ -131,13 +131,19 @@ npm install
 ln -sf ../../.env packages/backend/.env
 ln -sf ../../.env packages/frontend/.env
 
-# 5. Run database migrations and generate Prisma client
+# 5. Export environment variables into your shell
+#    Prisma 7 CLI and the backend's PrismaService read DATABASE_URL at module
+#    level (before NestJS ConfigModule loads .env), so the variables must be
+#    present in the shell environment.
+export $(grep -v '^#' .env | grep -v '^$' | xargs)
+
+# 6. Run database migrations and generate Prisma client
 cd packages/backend
 npx prisma migrate dev
 npx prisma generate
 cd ../..
 
-# 6. Start both backend and frontend (concurrent)
+# 7. Start both backend and frontend (concurrent)
 npm run dev
 ```
 

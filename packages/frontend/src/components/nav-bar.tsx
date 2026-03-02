@@ -46,14 +46,7 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const allNavItems = [
-    ...NAV_ITEMS,
-    ...(user?.role === 'ADMIN' ? [
-      { href: '/admin/users', label: 'Users', icon: UsersIcon },
-      { href: '/admin/roles', label: 'Roles', icon: ShieldIcon },
-      { href: '/admin/settings', label: 'Admin', icon: GearIcon },
-    ] : []),
-  ];
+  const allNavItems = NAV_ITEMS;
 
   return (
     <header className="border-b border-[var(--border)] bg-[var(--background)]/95 backdrop-blur-sm sticky top-0 z-50">
@@ -66,7 +59,9 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
           {/* Desktop nav */}
           <nav className="hidden lg:flex items-center gap-1">
             {allNavItems.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+              const isActive = item.href === '/settings'
+                ? pathname === '/settings' || pathname.startsWith('/settings/')
+                : pathname === item.href || pathname.startsWith(item.href + '/');
               return (
                 <Link
                   key={item.href}
@@ -120,7 +115,9 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
       {mobileMenuOpen && (
         <nav className="lg:hidden border-t border-[var(--border)] px-4 py-2 space-y-1">
           {allNavItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+            const isActive = item.href === '/settings'
+              ? pathname === '/settings' || pathname.startsWith('/settings/')
+              : pathname === item.href || pathname.startsWith(item.href + '/');
             return (
               <Link
                 key={item.href}

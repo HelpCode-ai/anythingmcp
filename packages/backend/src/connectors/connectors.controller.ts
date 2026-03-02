@@ -132,19 +132,19 @@ export class ConnectorsController {
   @Get()
   @ApiOperation({ summary: 'List all connectors for the current user' })
   async list(@Req() req: any) {
-    return this.connectorsService.findAllByUser(req.user.id);
+    return this.connectorsService.findAllByUser(req.user.sub);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a new connector' })
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
-    return this.connectorsService.create(req.user.id, dto);
+    return this.connectorsService.create(req.user.sub, dto);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get connector details' })
   async findOne(@Req() req: any, @Param('id') id: string) {
-    return this.connectorsService.findById(id, req.user.id);
+    return this.connectorsService.findById(id, req.user.sub);
   }
 
   @Put(':id')
@@ -154,20 +154,20 @@ export class ConnectorsController {
     @Param('id') id: string,
     @Body() dto: UpdateConnectorDto,
   ) {
-    return this.connectorsService.update(id, req.user.id, dto);
+    return this.connectorsService.update(id, req.user.sub, dto);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete connector' })
   async remove(@Req() req: any, @Param('id') id: string) {
-    await this.connectorsService.remove(id, req.user.id);
+    await this.connectorsService.remove(id, req.user.sub);
     return { message: 'Connector deleted' };
   }
 
   @Post(':id/test')
   @ApiOperation({ summary: 'Test connector connection' })
   async test(@Req() req: any, @Param('id') id: string) {
-    return this.connectorsService.testConnection(id, req.user.id);
+    return this.connectorsService.testConnection(id, req.user.sub);
   }
 
   @Get('health-check')
@@ -177,14 +177,14 @@ export class ConnectorsController {
       'Runs a health check against all active connectors and returns their status.',
   })
   async healthCheck(@Req() req: any) {
-    const allConnectors = await this.connectorsService.findAllByUser(req.user.id);
+    const allConnectors = await this.connectorsService.findAllByUser(req.user.sub);
     const active = allConnectors.filter((c) => c.isActive);
 
     const results = await Promise.allSettled(
       active.map(async (c) => {
         const start = Date.now();
         try {
-          const result = await this.connectorsService.testConnection(c.id, req.user.id);
+          const result = await this.connectorsService.testConnection(c.id, req.user.sub);
           return {
             id: c.id,
             name: c.name,
@@ -229,7 +229,7 @@ export class ConnectorsController {
   })
   async exportAll(@Req() req: any) {
     const allConnectors = await this.prisma.connector.findMany({
-      where: { userId: req.user.id },
+      where: { userId: req.user.sub },
       include: { tools: true },
     });
 
@@ -278,7 +278,7 @@ export class ConnectorsController {
       try {
         const connector = await this.prisma.connector.create({
           data: {
-            userId: req.user.id,
+            userId: req.user.sub,
             name: c.name,
             type: c.type,
             baseUrl: c.baseUrl,
@@ -333,7 +333,7 @@ export class ConnectorsController {
   @Post(':id/import-spec')
   @ApiOperation({ summary: 'Auto-generate MCP tools from API specification' })
   async importSpec(@Req() req: any, @Param('id') id: string) {
-    const connector = await this.connectorsService.findById(id, req.user.id);
+    const connector = await this.connectorsService.findById(id, req.user.sub);
 
     let parsedTools: any[] = [];
 
@@ -374,7 +374,7 @@ export class ConnectorsController {
     @Param('id') id: string,
     @Body() dto: ImportToolsDto,
   ) {
-    const connector = await this.connectorsService.findById(id, req.user.id);
+    const connector = await this.connectorsService.findById(id, req.user.sub);
 
     let parsedTools: any[] = [];
 
@@ -462,7 +462,7 @@ export class ConnectorsController {
     @Param('id') id: string,
     @Body() body: { envVars: Record<string, string> },
   ) {
-    const updated = await this.connectorsService.update(id, req.user.id, {
+    const updated = await this.connectorsService.update(id, req.user.sub, {
       envVars: body.envVars,
     });
     await this.mcpServer.reloadConnectorTools(id);

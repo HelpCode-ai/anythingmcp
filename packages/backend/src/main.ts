@@ -3,6 +3,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import cookieParser from 'cookie-parser';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -12,6 +13,10 @@ async function bootstrap() {
   // Trust proxy headers (ngrok, reverse proxies) for correct protocol/host detection
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', true);
+
+  // Increase body size limit for large API spec imports (Postman, OpenAPI, etc.)
+  app.use(json({ limit: '10mb' }));
+  app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   // Cookie parser is required for OAuth2 session management
   app.use(cookieParser());
