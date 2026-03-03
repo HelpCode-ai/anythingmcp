@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Pool } from 'pg';
 import * as mssql from 'mssql';
+import { MongoClient } from 'mongodb';
 
 @Injectable()
 export class DatabaseEngine {
@@ -25,6 +26,11 @@ export class DatabaseEngine {
       return { text: endpointMapping.staticResponse };
     }
 
+    // MongoDB uses JSON-based queries, not SQL
+    if (this.isMongodb(config.baseUrl)) {
+      return this.executeMongodb(config, endpointMapping, params);
+    }
+
     // If the path is a single param reference like ${query}, use the raw value as SQL
     // (don't escape it as a string literal — it IS the SQL)
     const rawParamMatch = endpointMapping.path.match(/^\$\{(\w+)\}$/);
@@ -39,13 +45,23 @@ export class DatabaseEngine {
     return this.executePostgres(config.baseUrl, sql);
   }
 
-  /** Test connectivity — runs SELECT 1 */
+  /** Test connectivity — runs SELECT 1 (SQL) or ping (MongoDB) */
   async testConnection(config: {
     baseUrl: string;
     authType: string;
     authConfig?: Record<string, unknown>;
   }): Promise<void> {
-    if (this.isMssql(config.baseUrl)) {
+    if (this.isMongodb(config.baseUrl)) {
+      const client = new MongoClient(config.baseUrl, {
+        serverSelectionTimeoutMS: 10000,
+      });
+      try {
+        await client.connect();
+        await client.db().command({ ping: 1 });
+      } finally {
+        await client.close();
+      }
+    } else if (this.isMssql(config.baseUrl)) {
       const mssqlConfig = this.buildMssqlConfig(config);
       const pool = await mssql.connect(mssqlConfig);
       try {
@@ -174,8 +190,97 @@ export class DatabaseEngine {
   }
 
   /* ------------------------------------------------------------------ */
+  /*  MongoDB                                                            */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Execute a MongoDB read-only query.
+   *
+   * endpointMapping.path is a JSON string describing the query:
+   *   { "collection": "users", "filter": { "age": { "$gt": 18 } } }
+   *
+   * Or the path can be a param reference like ${query} whose value is a
+   * JSON string with { collection, filter?, projection?, sort?, limit? }.
+   */
+  private async executeMongodb(
+    config: { baseUrl: string; authConfig?: Record<string, unknown> },
+    endpointMapping: { method: string; path: string },
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    // Resolve the query spec (may be a param reference or inline JSON)
+    const rawParamMatch = endpointMapping.path.match(/^\$\{(\w+)\}$/);
+    const queryStr = rawParamMatch
+      ? String(params[rawParamMatch[1]] || '{}')
+      : this.interpolateMongoParams(endpointMapping.path, params);
+
+    let spec: {
+      collection: string;
+      filter?: Record<string, unknown>;
+      projection?: Record<string, unknown>;
+      sort?: Record<string, unknown>;
+      limit?: number;
+    };
+
+    try {
+      spec = JSON.parse(queryStr);
+    } catch {
+      throw new Error(
+        'MongoDB query must be a valid JSON object with at least a "collection" field',
+      );
+    }
+
+    if (!spec.collection) {
+      throw new Error('MongoDB query must specify a "collection" field');
+    }
+
+    const client = new MongoClient(config.baseUrl, {
+      serverSelectionTimeoutMS: 10000,
+    });
+
+    try {
+      await client.connect();
+      const db = client.db(); // uses the database from the connection string
+
+      this.logger.debug(`MongoDB query → ${spec.collection}`);
+
+      let cursor = db
+        .collection(spec.collection)
+        .find(spec.filter || {}, { projection: spec.projection });
+
+      if (spec.sort) {
+        cursor = cursor.sort(spec.sort as any);
+      }
+
+      const limit = Math.min(spec.limit || this.MAX_ROWS, this.MAX_ROWS);
+      cursor = cursor.limit(limit);
+
+      const rows = await cursor.toArray();
+      return this.truncateRows(rows as Record<string, unknown>[]);
+    } finally {
+      await client.close();
+    }
+  }
+
+  private interpolateMongoParams(
+    template: string,
+    params: Record<string, unknown>,
+  ): string {
+    let result = template;
+    for (const [key, value] of Object.entries(params)) {
+      const jsonValue = JSON.stringify(value);
+      result = result.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), jsonValue);
+      result = result.replace(new RegExp(`\\$${key}\\b`, 'g'), jsonValue);
+    }
+    return result;
+  }
+
+  /* ------------------------------------------------------------------ */
   /*  Shared helpers                                                     */
   /* ------------------------------------------------------------------ */
+
+  private isMongodb(baseUrl: string): boolean {
+    return baseUrl.startsWith('mongodb://') || baseUrl.startsWith('mongodb+srv://');
+  }
 
   private isMssql(baseUrl: string): boolean {
     return baseUrl.startsWith('mssql://');

@@ -16,7 +16,6 @@ const TYPE_STYLES: Record<string, { text: string; bg: string; icon: string }> = 
   GRAPHQL: { text: 'GraphQL', bg: 'bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-400', icon: 'GQL' },
   MCP: { text: 'MCP', bg: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400', icon: 'MCP' },
   DATABASE: { text: 'Database', bg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400', icon: 'DB' },
-  WEBHOOK: { text: 'Webhook', bg: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400', icon: 'WH' },
 };
 
 const SUPPORTED_TYPES = [
@@ -25,7 +24,6 @@ const SUPPORTED_TYPES = [
   { type: 'SOAP', label: 'SOAP' },
   { type: 'MCP', label: 'MCP' },
   { type: 'DATABASE', label: 'Database' },
-  { type: 'WEBHOOK', label: 'Webhook' },
 ];
 
 export default function ConnectorsPage() {
@@ -377,7 +375,6 @@ export default function ConnectorsPage() {
                 <option value="GRAPHQL">GraphQL</option>
                 <option value="MCP">MCP</option>
                 <option value="DATABASE">Database</option>
-                <option value="WEBHOOK">Webhook</option>
               </select>
               <span className="text-sm text-[var(--muted-foreground)]">
                 {filtered.length} connector{filtered.length !== 1 ? 's' : ''}

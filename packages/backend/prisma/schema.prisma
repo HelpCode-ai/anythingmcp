@@ -140,7 +140,6 @@ enum ConnectorType {
   GRAPHQL
   MCP
   DATABASE
-  WEBHOOK
 }
 
 enum AuthType {
@@ -152,7 +151,6 @@ enum AuthType {
   WS_SECURITY
   CERTIFICATE
   CONNECTION_STRING
-  HMAC
 }
 
 model Connector {

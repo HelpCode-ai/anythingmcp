@@ -58,6 +58,8 @@ export function Footer() {
           {/* Left: Legal links */}
           <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--muted-foreground)]">
             <span>&copy; {new Date().getFullYear()} AnythingToMCP</span>
+            <span className="hidden sm:inline">·</span>
+            <a href="https://helpcode.ai" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--foreground)] hover:underline">Powered by helpcode.ai</a>
             {links.length > 0 && (
               <>
                 <span className="hidden sm:inline">·</span>

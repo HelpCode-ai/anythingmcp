@@ -8,7 +8,6 @@ import { SoapEngine } from './engines/soap.engine';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { DatabaseEngine } from './engines/database.engine';
-import { WebhookEngine } from './engines/webhook.engine';
 import { OpenApiParser } from './parsers/openapi.parser';
 import { WsdlParser } from './parsers/wsdl.parser';
 import { GraphqlParser } from './parsers/graphql.parser';
@@ -23,7 +22,6 @@ const ENGINES = [
   GraphqlEngine,
   McpClientEngine,
   DatabaseEngine,
-  WebhookEngine,
 ];
 
 const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlParser];

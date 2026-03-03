@@ -9,7 +9,6 @@ import { GraphqlEngine } from '../connectors/engines/graphql.engine';
 import { SoapEngine } from '../connectors/engines/soap.engine';
 import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
 import { DatabaseEngine } from '../connectors/engines/database.engine';
-import { WebhookEngine } from '../connectors/engines/webhook.engine';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 
 const ENGINES = [
@@ -18,7 +17,6 @@ const ENGINES = [
   SoapEngine,
   McpClientEngine,
   DatabaseEngine,
-  WebhookEngine,
 ];
 
 @Module({
