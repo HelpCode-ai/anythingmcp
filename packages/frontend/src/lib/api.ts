@@ -74,8 +74,6 @@ export const users = {
     request<any>('/api/users/me', { token }),
   updateProfile: (data: { name?: string; email?: string }, token: string) =>
     request('/api/users/me', { method: 'PUT', body: data, token }),
-  updateAiConfig: (data: { provider: string; apiKey: string; model?: string }, token: string) =>
-    request('/api/users/me/ai-config', { method: 'PUT', body: data, token }),
   changePassword: (data: { currentPassword: string; newPassword: string }, token: string) =>
     request<{ message?: string; error?: string }>('/api/users/me/password', { method: 'PUT', body: data, token }),
   // Admin
@@ -221,19 +219,4 @@ export const mcpKeys = {
     request(`/api/mcp-keys/${id}/revoke`, { method: 'POST', token }),
   delete: (id: string, token: string) =>
     request(`/api/mcp-keys/${id}`, { method: 'DELETE', token }),
-};
-
-// AI
-export const ai = {
-  models: (token: string) =>
-    request<{
-      anthropic: { models: Array<{ id: string; label: string }>; default: string };
-      openai: { models: Array<{ id: string; label: string }>; default: string };
-    }>('/api/ai/models', { token }),
-  generateTools: (data: unknown, token: string) =>
-    request('/api/ai/generate-tools', { method: 'POST', body: data, token }),
-  improveDescription: (data: unknown, token: string) =>
-    request('/api/ai/improve-description', { method: 'POST', body: data, token }),
-  configure: (data: unknown, token: string) =>
-    request<any>('/api/ai/configure', { method: 'POST', body: data, token }),
 };

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { users, server, ai, mcpKeys } from '@/lib/api';
+import { users, server, mcpKeys } from '@/lib/api';
 
 const AUTH_MODE_LABELS: Record<string, string> = {
   none: 'None (not recommended)',
@@ -10,11 +10,6 @@ const AUTH_MODE_LABELS: Record<string, string> = {
   oauth2: 'OAuth 2.0 (Authorization Code + Client Credentials)',
   both: 'Both (OAuth 2.0 + Legacy)',
 };
-
-interface ModelOption {
-  id: string;
-  label: string;
-}
 
 export default function SettingsPage() {
   const { token, user } = useAuth();
@@ -25,19 +20,9 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [passwordMsg, setPasswordMsg] = useState('');
-  const [aiProvider, setAiProvider] = useState('');
-  const [aiModel, setAiModel] = useState('');
-  const [aiApiKey, setAiApiKey] = useState('');
-  const [hasExistingKey, setHasExistingKey] = useState(false);
-  const [hasEnvApiKey, setHasEnvApiKey] = useState(false);
-  const [aiMsg, setAiMsg] = useState('');
   const [mcpAuthMode, setMcpAuthMode] = useState('');
   const [oauthEndpoints, setOauthEndpoints] = useState<Record<string, string> | null>(null);
   const [serverUrl, setServerUrl] = useState('');
-  const [modelOptions, setModelOptions] = useState<{
-    anthropic: { models: ModelOption[]; default: string };
-    openai: { models: ModelOption[]; default: string };
-  } | null>(null);
 
   // MCP API Keys
   const [keyList, setKeyList] = useState<any[]>([]);
@@ -54,21 +39,9 @@ export default function SettingsPage() {
     }).catch(() => {});
   }, []);
 
-  // Load user's saved AI config + available models
+  // Load MCP API keys
   useEffect(() => {
     if (!token) return;
-
-    users.me(token).then((profile) => {
-      if (profile.aiProvider) setAiProvider(profile.aiProvider);
-      if (profile.aiModel) setAiModel(profile.aiModel);
-      if (profile.hasAiApiKey) setHasExistingKey(true);
-      if (profile.hasEnvApiKey) setHasEnvApiKey(true);
-    }).catch(() => {});
-
-    ai.models(token).then((data) => {
-      setModelOptions(data);
-    }).catch(() => {});
-
     mcpKeys.list(token).then(setKeyList).catch(() => {});
   }, [token]);
 
@@ -105,19 +78,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSaveAi = async () => {
-    if (!token || !aiProvider || !aiApiKey) return;
-    try {
-      await users.updateAiConfig({ provider: aiProvider, apiKey: aiApiKey, model: aiModel || undefined }, token);
-      setHasExistingKey(true);
-      setAiApiKey('');
-      setAiMsg('AI configuration saved');
-      setTimeout(() => setAiMsg(''), 3000);
-    } catch (err: any) {
-      setAiMsg(`Error: ${err.message}`);
-    }
-  };
-
   const handleGenerateKey = async () => {
     if (!token || !newKeyName.trim()) return;
     try {
@@ -150,22 +110,6 @@ export default function SettingsPage() {
       setKeyMsg('Key deleted');
     } catch (err: any) {
       setKeyMsg(`Error: ${err.message}`);
-    }
-  };
-
-  const currentModels: ModelOption[] =
-    aiProvider && modelOptions
-      ? modelOptions[aiProvider as 'anthropic' | 'openai']?.models || []
-      : [];
-
-  // When provider changes, reset model to default for that provider
-  const handleProviderChange = (newProvider: string) => {
-    setAiProvider(newProvider);
-    if (modelOptions && newProvider) {
-      const providerConfig = modelOptions[newProvider as 'anthropic' | 'openai'];
-      if (providerConfig) {
-        setAiModel(providerConfig.default);
-      }
     }
   };
 
@@ -304,65 +248,6 @@ export default function SettingsPage() {
             Auth mode is configured via the <code className="bg-[var(--muted)] px-1 rounded">MCP_AUTH_MODE</code> environment variable.
             Set it to <code className="bg-[var(--muted)] px-1 rounded">oauth2</code>, <code className="bg-[var(--muted)] px-1 rounded">legacy</code>, <code className="bg-[var(--muted)] px-1 rounded">both</code>, or <code className="bg-[var(--muted)] px-1 rounded">none</code>.
           </p>
-        </div>
-      </div>
-
-      {/* AI Provider */}
-      <div className="border border-[var(--border)] rounded-lg p-6">
-        <h3 className="text-lg font-medium mb-4">Default AI Provider</h3>
-        <p className="text-sm text-[var(--muted-foreground)] mb-4">
-          Save your preferred AI provider, model, and API key. Used by the AI Assistant chat and AI Enhance on tools.
-        </p>
-        {hasEnvApiKey && (
-          <div className="border border-[var(--border)] rounded-md p-3 bg-[var(--muted)]/30 mb-4">
-            <p className="text-xs text-[var(--muted-foreground)]">
-              Server-level API key detected from <code className="bg-[var(--muted)] px-1 rounded">.env</code> file (ANTHROPIC_API_KEY / OPENAI_API_KEY).
-              This works as a global fallback. Per-user settings below take priority.
-            </p>
-          </div>
-        )}
-        <div className="space-y-4 max-w-md">
-          <div>
-            <label className="block text-sm font-medium mb-1">Provider</label>
-            <select value={aiProvider} onChange={(e) => handleProviderChange(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]">
-              <option value="">Select...</option>
-              <option value="anthropic">Anthropic (Claude)</option>
-              <option value="openai">OpenAI (GPT)</option>
-            </select>
-          </div>
-          {aiProvider && currentModels.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Model</label>
-              <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]">
-                {currentModels.map((m) => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div>
-            <label className="block text-sm font-medium mb-1">API Key</label>
-            <input
-              type="password"
-              value={aiApiKey}
-              onChange={(e) => setAiApiKey(e.target.value)}
-              placeholder={hasExistingKey ? '••••••••  (saved — enter new key to update)' : 'sk-...'}
-              className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-            />
-            {hasExistingKey && !aiApiKey && (
-              <p className="text-xs text-[var(--success)] mt-1">
-                API key is saved. Enter a new key only if you want to update it.
-              </p>
-            )}
-          </div>
-          {aiMsg && (
-            <p className={`text-sm ${aiMsg.startsWith('Error') ? 'text-[var(--destructive)]' : 'text-[var(--success)]'}`}>
-              {aiMsg}
-            </p>
-          )}
-          <button onClick={handleSaveAi} disabled={!aiProvider || !aiApiKey} className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50">
-            Save AI Config
-          </button>
         </div>
       </div>
 

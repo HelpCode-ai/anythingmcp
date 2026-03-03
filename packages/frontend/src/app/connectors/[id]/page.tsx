@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, tools, ai } from '@/lib/api';
+import { connectors, tools } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
 import { ToolEditor } from '@/components/tool-editor';
@@ -58,7 +58,6 @@ export default function ConnectorDetailPage() {
   const [showEnvVars, setShowEnvVars] = useState(false);
   const [envVarEntries, setEnvVarEntries] = useState<{ key: string; value: string }[]>([]);
   const [savingEnvVars, setSavingEnvVars] = useState(false);
-  const [enhancingToolId, setEnhancingToolId] = useState<string | null>(null);
 
   const fetchConnector = async () => {
     if (!token) return;
@@ -291,27 +290,6 @@ export default function ConnectorDetailPage() {
     }
   };
 
-  const handleAiEnhance = async (toolId: string, toolName: string, toolDescription: string) => {
-    if (!token) return;
-    setEnhancingToolId(toolId);
-    try {
-      const result: any = await ai.improveDescription(
-        { toolName, currentDescription: toolDescription, apiContext: connector?.name || '' },
-        token,
-      );
-      if (result?.description) {
-        await tools.update(id, toolId, { description: result.description }, token);
-        setToolList((prev) =>
-          prev.map((t) => (t.id === toolId ? { ...t, description: result.description } : t)),
-        );
-        setMsg('Description enhanced by AI');
-      }
-    } catch (err: any) {
-      setMsg(`AI enhance failed: ${err.message}`);
-    } finally {
-      setEnhancingToolId(null);
-    }
-  };
 
   if (loading) {
     return (
@@ -765,14 +743,6 @@ export default function ConnectorDetailPage() {
                             className="border border-[var(--brand)] text-[var(--brand)] px-2 py-1 rounded text-xs hover:bg-[var(--brand-light)]"
                           >
                             {testingToolId === tool.id ? 'Close' : 'Test'}
-                          </button>
-                          <button
-                            onClick={() => handleAiEnhance(tool.id, tool.name, tool.description)}
-                            disabled={enhancingToolId === tool.id}
-                            className="border border-[var(--brand)] text-[var(--brand)] px-2 py-1 rounded text-xs hover:bg-[var(--brand-light)] disabled:opacity-50"
-                            title="Use AI to improve this tool's description"
-                          >
-                            {enhancingToolId === tool.id ? 'Enhancing...' : 'AI Enhance'}
                           </button>
                           <button
                             onClick={() => {

@@ -12,7 +12,7 @@ import {
 import { AuthModule } from './auth/auth.module';
 import { ConnectorsModule } from './connectors/connectors.module';
 import { McpServerModule } from './mcp-server/mcp-server.module';
-import { AiModule } from './ai/ai.module';
+
 import { UsersModule } from './users/users.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
@@ -103,7 +103,7 @@ if (useOAuth) {
     UsersModule,
     ConnectorsModule,
     McpServerModule,
-    AiModule,
+
     AuditModule,
     HealthModule,
     SettingsModule,

@@ -36,18 +36,6 @@ class ChangePasswordDto {
   newPassword: string;
 }
 
-class UpdateAiConfigDto {
-  @IsString()
-  provider: string;
-
-  @IsString()
-  apiKey: string;
-
-  @IsOptional()
-  @IsString()
-  model?: string;
-}
-
 class UpdateUserRoleDto {
   @IsEnum(UserRole)
   role: UserRole;
@@ -68,12 +56,8 @@ export class UsersController {
   async getProfile(@Req() req: any) {
     const user = await this.usersService.findById(req.user.sub);
     if (!user) return { error: 'User not found' };
-    const { passwordHash, aiApiKey, ...profile } = user;
-    return {
-      ...profile,
-      hasAiApiKey: !!aiApiKey,
-      hasEnvApiKey: !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY),
-    };
+    const { passwordHash, ...profile } = user;
+    return profile;
   }
 
   @Put('me')
@@ -84,7 +68,7 @@ export class UsersController {
     if (dto.email) data.email = dto.email;
 
     const user = await this.usersService.update(req.user.sub, data);
-    const { passwordHash, aiApiKey, ...profile } = user;
+    const { passwordHash, ...profile } = user;
     return profile;
   }
 
@@ -105,18 +89,6 @@ export class UsersController {
     const newHash = await this.authService.hashPassword(dto.newPassword);
     await this.usersService.update(req.user.sub, { passwordHash: newHash });
     return { message: 'Password changed successfully' };
-  }
-
-  @Put('me/ai-config')
-  @ApiOperation({ summary: 'Update AI provider configuration' })
-  async updateAiConfig(@Req() req: any, @Body() dto: UpdateAiConfigDto) {
-    await this.usersService.updateAiConfig(
-      req.user.sub,
-      dto.provider,
-      dto.apiKey,
-      dto.model,
-    );
-    return { message: 'AI configuration updated' };
   }
 
   // ── Admin endpoints ──────────────────────────────────────────────────────

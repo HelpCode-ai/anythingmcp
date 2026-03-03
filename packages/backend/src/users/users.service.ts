@@ -36,9 +36,6 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
-        aiProvider: true,
-        aiModel: true,
-        aiApiKey: true,
         mcpRoleId: true,
         mcpRole: { select: { id: true, name: true } },
         createdAt: true,
@@ -48,25 +45,6 @@ export class UsersService {
   }
 
   async update(userId: string, data: Partial<User>): Promise<User> {
-    return this.prisma.user.update({
-      where: { id: userId },
-      data,
-    });
-  }
-
-  async updateAiConfig(
-    userId: string,
-    provider: string,
-    apiKey: string,
-    model?: string,
-  ): Promise<User> {
-    const data: Record<string, string> = {
-      aiProvider: provider,
-      aiApiKey: apiKey,
-    };
-    if (model) {
-      data.aiModel = model;
-    }
     return this.prisma.user.update({
       where: { id: userId },
       data,

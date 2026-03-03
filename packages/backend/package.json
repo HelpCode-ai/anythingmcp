@@ -22,7 +22,6 @@
     "db:studio": "npx prisma studio"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
@@ -46,7 +45,6 @@
     "ioredis": "^5.6.0",
     "mssql": "^12.2.0",
     "nodemailer": "^8.0.1",
-    "openai": "^6.25.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.16.0",

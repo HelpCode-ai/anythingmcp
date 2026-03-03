@@ -48,9 +48,7 @@ services:
       - MCP_AUTH_MODE=${MCP_AUTH_MODE:-legacy}
       - MCP_API_KEY=${MCP_API_KEY:-}
       - MCP_BEARER_TOKEN=${MCP_BEARER_TOKEN:-}
-      # Optional: AI provider keys (server-level fallback)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+
     depends_on:
       postgres:
         condition: service_healthy
