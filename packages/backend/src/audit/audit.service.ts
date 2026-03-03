@@ -44,11 +44,22 @@ export class AuditService {
   async getRecentInvocations(
     limit = 100,
     offset = 0,
-    filters?: { toolId?: string; status?: InvocationStatus },
+    filters?: {
+      toolId?: string;
+      status?: InvocationStatus;
+      search?: string;
+      connectorId?: string;
+    },
   ) {
     const where: any = {};
     if (filters?.toolId) where.toolId = filters.toolId;
     if (filters?.status) where.status = filters.status;
+    if (filters?.search) {
+      where.tool = { name: { contains: filters.search, mode: 'insensitive' } };
+    }
+    if (filters?.connectorId) {
+      where.tool = { ...where.tool, connectorId: filters.connectorId };
+    }
 
     return this.prisma.toolInvocation.findMany({
       where,
@@ -56,7 +67,13 @@ export class AuditService {
       skip: offset,
       orderBy: { createdAt: 'desc' },
       include: {
-        tool: { select: { name: true, connectorId: true } },
+        tool: {
+          select: {
+            name: true,
+            connectorId: true,
+            connector: { select: { name: true, type: true } },
+          },
+        },
       },
     });
   }

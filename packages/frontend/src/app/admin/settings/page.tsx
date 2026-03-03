@@ -99,7 +99,7 @@ export default function AdminSettingsPage() {
         title="Admin Settings"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
         <div className="space-y-6">
           {/* SMTP Configuration */}
           <div className="border border-[var(--border)] rounded-lg p-6">

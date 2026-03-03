@@ -53,7 +53,7 @@ export function Footer() {
 
   return (
     <footer className="border-t border-[var(--border)] bg-[var(--background)]">
-      <div className="max-w-7xl mx-auto px-6 py-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Left: Legal links */}
           <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--muted-foreground)]">

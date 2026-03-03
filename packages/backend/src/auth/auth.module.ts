@@ -14,12 +14,14 @@ import { PrismaOAuthStore } from './prisma-oauth.store';
 import { ClientCredentialsMiddleware } from './client-credentials.middleware';
 import { UsersModule } from '../users/users.module';
 import { SettingsModule } from '../settings/settings.module';
+import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 
 @Global()
 @Module({
   imports: [
     UsersModule,
     SettingsModule,
+    McpServersModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

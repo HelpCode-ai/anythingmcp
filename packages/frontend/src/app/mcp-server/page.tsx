@@ -1,153 +1,201 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors } from '@/lib/api';
+import { mcpServers } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
 
-export default function McpServerPage() {
+export default function McpServerListPage() {
   const { token } = useAuth();
-  const [toolsList, setToolsList] = useState<any[]>([]);
-  const [copied, setCopied] = useState('');
+  const router = useRouter();
+  const [servers, setServers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
 
   useEffect(() => {
     if (!token) return;
-    connectors.list(token).then((list) => {
-      const allTools: any[] = [];
-      for (const c of list) {
-        for (const t of c.tools || []) {
-          allTools.push({ ...t, connectorName: c.name, connectorType: c.type });
-        }
-      }
-      setToolsList(allTools);
-    }).catch(() => {});
+    mcpServers.list(token).then(setServers).catch(() => {}).finally(() => setLoading(false));
   }, [token]);
 
-  const apiUrl = typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:4000`
-    : 'http://localhost:4000';
-
-  const handleCopy = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(label);
-    setTimeout(() => setCopied(''), 2000);
+  const handleCreate = async () => {
+    if (!token || !newName.trim()) return;
+    setCreating(true);
+    try {
+      const server = await mcpServers.create(
+        { name: newName.trim(), description: newDescription.trim() || undefined },
+        token,
+      );
+      setServers((prev) => [...prev, server]);
+      setNewName('');
+      setNewDescription('');
+      setShowCreate(false);
+      router.push(`/mcp-server/${server.id}`);
+    } catch {
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const claudeConfig = `{
-  "mcpServers": {
-    "anything-to-mcp": {
-      "type": "url",
-      "url": "${apiUrl}/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_TOKEN"
-      }
-    }
-  }
-}`;
+  const filtered = servers.filter((s) => {
+    if (search && !s.name.toLowerCase().includes(search.toLowerCase()) && !(s.slug || '').toLowerCase().includes(search.toLowerCase()) && !(s.description || '').toLowerCase().includes(search.toLowerCase())) return false;
+    if (statusFilter === 'active' && !s.isActive) return false;
+    if (statusFilter === 'inactive' && s.isActive) return false;
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar
         breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
-        title="MCP Server"
+        title="MCP Servers"
+        actions={
+          <button
+            onClick={() => setShowCreate(true)}
+            className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
+          >
+            + New MCP Server
+          </button>
+        }
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6 flex-1 w-full">
-        {/* Server Status */}
-        <div className="border border-[var(--border)] rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium">Server Status</h3>
-            <span className="flex items-center gap-2 text-sm text-[var(--success)] font-medium">
-              <span className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse"></span>
-              Running
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-[var(--muted-foreground)] mb-1">MCP Endpoint (Streamable HTTP)</label>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6 flex-1 w-full">
+        {/* Create dialog */}
+        {showCreate && (
+          <div className="border border-[var(--brand)] rounded-lg p-6 bg-[var(--background)]">
+            <h3 className="text-lg font-medium mb-4">Create MCP Server</h3>
+            <div className="space-y-3 max-w-md">
+              <div>
+                <label className="block text-sm font-medium mb-1">Name</label>
+                <input
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. Production, Development, Sales Tools"
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Description (optional)</label>
+                <input
+                  type="text"
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  placeholder="What this MCP server is for"
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                />
+              </div>
               <div className="flex gap-2">
-                <code className="flex-1 bg-[var(--muted)] px-3 py-2 rounded text-sm font-mono">{apiUrl}/mcp</code>
                 <button
-                  onClick={() => handleCopy(`${apiUrl}/mcp`, 'endpoint')}
-                  className="border border-[var(--border)] px-3 py-2 rounded text-xs hover:bg-[var(--accent)]"
+                  onClick={handleCreate}
+                  disabled={!newName.trim() || creating}
+                  className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
                 >
-                  {copied === 'endpoint' ? 'Copied!' : 'Copy'}
+                  {creating ? 'Creating...' : 'Create'}
+                </button>
+                <button
+                  onClick={() => { setShowCreate(false); setNewName(''); setNewDescription(''); }}
+                  className="border border-[var(--border)] px-4 py-2 rounded-md text-sm hover:bg-[var(--accent)]"
+                >
+                  Cancel
                 </button>
               </div>
             </div>
-            <div>
-              <label className="block text-sm text-[var(--muted-foreground)] mb-1">Server Name</label>
-              <code className="block bg-[var(--muted)] px-3 py-2 rounded text-sm font-mono">anything-to-mcp v0.1.0</code>
-            </div>
           </div>
-        </div>
+        )}
 
-        {/* Connect Your MCP Client */}
-        <div className="border border-[var(--border)] rounded-lg p-6">
-          <h3 className="text-lg font-medium mb-4">Connect Your MCP Client</h3>
-
-          <div className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-sm font-medium">Claude Desktop / Claude Code</h4>
-                <button
-                  onClick={() => handleCopy(claudeConfig, 'claude')}
-                  className="text-xs text-[var(--brand)] hover:underline"
-                >
-                  {copied === 'claude' ? 'Copied!' : 'Copy config'}
-                </button>
-              </div>
-              <pre className="bg-[var(--muted)] p-4 rounded text-xs overflow-x-auto font-mono">{claudeConfig}</pre>
+        {/* Search & filters */}
+        {!loading && servers.length > 0 && (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search MCP servers..."
+                className="w-full border border-[var(--input)] rounded-md pl-10 pr-3 py-2 text-sm bg-[var(--background)]"
+              />
             </div>
-
-            <div>
-              <h4 className="text-sm font-medium mb-2">Cursor IDE</h4>
-              <div className="bg-[var(--muted)] p-4 rounded text-sm">
-                <p>Settings &rarr; MCP &rarr; Add Server &rarr; URL: <code className="font-mono text-xs">{apiUrl}/mcp</code></p>
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-medium mb-2">API Key / Token</h4>
-              <p className="text-sm text-[var(--muted-foreground)]">
-                Set <code className="font-mono text-xs bg-[var(--muted)] px-1.5 py-0.5 rounded">MCP_BEARER_TOKEN</code> or{' '}
-                <code className="font-mono text-xs bg-[var(--muted)] px-1.5 py-0.5 rounded">MCP_API_KEY</code>{' '}
-                in your server&apos;s environment variables to secure the MCP endpoint.
-              </p>
-            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+            >
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
           </div>
-        </div>
+        )}
 
-        {/* Active Tools */}
-        <div className="border border-[var(--border)] rounded-lg p-6">
-          <h3 className="text-lg font-medium mb-4">Active Tools ({toolsList.length})</h3>
-          {toolsList.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-[var(--muted-foreground)] text-sm">
-                No tools configured yet. Add a connector and import its spec to generate MCP tools.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {toolsList.map((t) => (
-                <div key={t.id} className="flex items-center justify-between p-3 bg-[var(--muted)] rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.isEnabled ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
-                    <span className="font-mono text-sm font-medium">{t.name}</span>
-                    <span className="text-xs text-[var(--muted-foreground)]">
-                      {t.connectorName} / {t.connectorType}
+        {/* Server list */}
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2].map((i) => (
+              <div key={i} className="border border-[var(--border)] rounded-lg p-6 animate-pulse">
+                <div className="h-5 bg-[var(--muted)] rounded w-1/4 mb-3" />
+                <div className="h-4 bg-[var(--muted)] rounded w-1/2" />
+              </div>
+            ))}
+          </div>
+        ) : servers.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-[var(--muted-foreground)] mb-4">No MCP servers configured yet.</p>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
+            >
+              Create your first MCP Server
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-[var(--muted-foreground)]">No MCP servers match your search.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {filtered.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => router.push(`/mcp-server/${s.id}`)}
+                className="border border-[var(--border)] rounded-lg p-4 sm:p-6 text-left hover:border-[var(--brand)] hover:bg-[var(--accent)]/50 transition-colors"
+              >
+                <div className="flex items-start sm:items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <h3 className="text-base sm:text-lg font-medium">{s.name}</h3>
+                    <span className="text-xs font-mono text-[var(--muted-foreground)] bg-[var(--muted)] px-2 py-0.5 rounded">
+                      {s.slug}
                     </span>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded ${t.isEnabled ? 'bg-[var(--success-bg)] text-[var(--success-text)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
-                    {t.isEnabled ? 'enabled' : 'disabled'}
+                  <span className={`flex items-center gap-1.5 text-xs font-medium flex-shrink-0 ${s.isActive ? 'text-[var(--success)]' : 'text-[var(--muted-foreground)]'}`}>
+                    <span className={`w-2 h-2 rounded-full ${s.isActive ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
+                    {s.isActive ? 'Active' : 'Inactive'}
                   </span>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+                {s.description && (
+                  <p className="text-sm text-[var(--muted-foreground)] mb-3">{s.description}</p>
+                )}
+                <div className="text-xs font-mono text-[var(--muted-foreground)] bg-[var(--muted)] px-2 py-1 rounded mb-3 truncate">
+                  /mcp/{s.id}
+                </div>
+                <div className="flex gap-4 text-xs text-[var(--muted-foreground)]">
+                  <span>{s._count?.connectors || 0} connectors</span>
+                  <span>{s._count?.apiKeys || 0} API keys</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </main>
       <Footer />
     </div>

@@ -74,7 +74,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-[var(--background)] flex flex-col">
       <NavBar />
 
-      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
         <div className="mb-8">
           <h2 className="text-2xl font-semibold">Welcome back{user?.name ? `, ${user.name}` : ''}</h2>
           <p className="text-[var(--muted-foreground)] mt-1 text-sm">Here&apos;s an overview of your MCP server.</p>

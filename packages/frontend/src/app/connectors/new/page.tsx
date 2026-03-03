@@ -116,7 +116,7 @@ export default function NewConnectorPage() {
         title="New Connector"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
         <h2 className="text-lg font-medium mb-2">Choose connector type</h2>
         <p className="text-sm text-[var(--muted-foreground)] mb-6">Select the type of API you want to connect to.</p>
 

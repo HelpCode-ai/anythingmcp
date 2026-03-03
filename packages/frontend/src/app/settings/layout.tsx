@@ -36,7 +36,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         title="Settings"
       />
 
-      <div className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full flex flex-col lg:flex-row gap-6 lg:gap-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full flex flex-col lg:flex-row gap-6 lg:gap-8">
         {/* Sidebar navigation */}
         <aside className="w-full lg:w-56 flex-shrink-0">
           <nav className="flex lg:flex-col gap-1.5 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0">

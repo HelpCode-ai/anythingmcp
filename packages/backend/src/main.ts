@@ -12,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import cookieParser from 'cookie-parser';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
+import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -31,6 +32,9 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 4000;
   const corsOrigin = configService.get<string>('CORS_ORIGIN') || '*';
+
+  // Add WWW-Authenticate header to MCP 401 responses for OAuth discovery
+  app.useGlobalFilters(new McpAuthExceptionFilter());
 
   // Global validation
   app.useGlobalPipes(
@@ -77,7 +81,8 @@ async function bootstrap() {
   await app.listen(port);
   logger.log(`AnythingToMCP backend running on: http://localhost:${port}`);
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
-  logger.log(`MCP endpoint: http://localhost:${port}/mcp`);
+  logger.log(`MCP endpoint (global): http://localhost:${port}/mcp`);
+  logger.log(`MCP endpoint (per-server): http://localhost:${port}/mcp/:serverId`);
 }
 
 bootstrap();

@@ -10,12 +10,16 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsString } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 import { McpApiKeysService } from './mcp-api-keys.service';
 
 class CreateKeyDto {
   @IsString()
   name: string;
+
+  @IsOptional()
+  @IsString()
+  mcpServerId?: string;
 }
 
 @ApiTags('MCP API Keys')
@@ -40,7 +44,7 @@ export class McpApiKeysController {
   @ApiOperation({ summary: 'Generate a new MCP API key' })
   async generateKey(@Req() req: any, @Body() dto: CreateKeyDto) {
     // Returns the full key — user must save it, it won't be shown again
-    return this.keysService.generate(req.user.sub, dto.name);
+    return this.keysService.generate(req.user.sub, dto.name, dto.mcpServerId);
   }
 
   @Post(':id/revoke')

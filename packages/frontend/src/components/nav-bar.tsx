@@ -29,7 +29,7 @@ function LogoIcon({ size = 28 }: { size?: number }) {
 
 const NAV_ITEMS = [
   { href: '/connectors', label: 'Connectors', icon: CableIcon },
-  { href: '/mcp-server', label: 'MCP Server', icon: ServerIcon },
+  { href: '/mcp-server', label: 'MCP Servers', icon: ServerIcon },
 
   { href: '/logs', label: 'Logs', icon: ListIcon },
   { href: '/settings', label: 'Settings', icon: GearIcon },
@@ -50,7 +50,7 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
 
   return (
     <header className="border-b border-[var(--border)] bg-[var(--background)]/95 backdrop-blur-sm sticky top-0 z-50">
-      <div className="flex items-center justify-between max-w-7xl mx-auto px-6 h-14">
+      <div className="flex items-center justify-between max-w-7xl mx-auto px-4 sm:px-6 h-14">
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2.5 group">
             <span className="transition-transform group-hover:scale-105"><LogoIcon /></span>
@@ -153,7 +153,7 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
 
       {/* Breadcrumbs + Actions bar */}
       {(breadcrumbs || actions) && (
-        <div className="flex items-center justify-between max-w-7xl mx-auto px-6 py-2 text-sm border-t border-[var(--border)]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 max-w-7xl mx-auto px-4 sm:px-6 py-2 text-sm border-t border-[var(--border)]">
           <div className="flex items-center gap-1.5 text-[var(--muted-foreground)]">
             {breadcrumbs?.map((crumb, i) => (
               <span key={crumb.href} className="flex items-center gap-1.5">

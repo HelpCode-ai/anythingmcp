@@ -38,7 +38,7 @@ export class McpAuthMiddleware implements NestMiddleware {
     if (apiKey?.startsWith('mcp_')) {
       const user = await this.mcpApiKeysService.resolveUserByKey(apiKey);
       if (user) {
-        (req as any).user = { sub: user.id, email: user.email, role: user.role, mcpRoleId: user.mcpRoleId };
+        (req as any).user = { sub: user.id, email: user.email, role: user.role, mcpRoleId: user.mcpRoleId, mcpServerId: user.mcpServerId };
         return next();
       }
       // Invalid per-user key — fall through to 401

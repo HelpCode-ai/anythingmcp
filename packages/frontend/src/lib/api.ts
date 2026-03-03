@@ -137,12 +137,14 @@ export const tools = {
 
 // Audit
 export const audit = {
-  invocations: (token: string, params?: { limit?: number; offset?: number; toolId?: string; status?: string }) => {
+  invocations: (token: string, params?: { limit?: number; offset?: number; toolId?: string; status?: string; search?: string; connectorId?: string }) => {
     const query = new URLSearchParams();
     if (params?.limit) query.set('limit', String(params.limit));
     if (params?.offset) query.set('offset', String(params.offset));
     if (params?.toolId) query.set('toolId', params.toolId);
     if (params?.status) query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    if (params?.connectorId) query.set('connectorId', params.connectorId);
     const qs = query.toString();
     return request<any[]>(`/api/audit/invocations${qs ? `?${qs}` : ''}`, { token });
   },
@@ -213,10 +215,30 @@ export const roles = {
 export const mcpKeys = {
   list: (token: string) =>
     request<any[]>('/api/mcp-keys', { token }),
-  generate: (name: string, token: string) =>
-    request<{ id: string; key: string; name: string }>('/api/mcp-keys', { method: 'POST', body: { name }, token }),
+  generate: (name: string, token: string, mcpServerId?: string) =>
+    request<{ id: string; key: string; name: string; mcpServerId?: string }>('/api/mcp-keys', {
+      method: 'POST',
+      body: { name, ...(mcpServerId ? { mcpServerId } : {}) },
+      token,
+    }),
   revoke: (id: string, token: string) =>
     request(`/api/mcp-keys/${id}/revoke`, { method: 'POST', token }),
   delete: (id: string, token: string) =>
     request(`/api/mcp-keys/${id}`, { method: 'DELETE', token }),
+};
+
+// MCP Servers
+export const mcpServers = {
+  list: (token: string) =>
+    request<any[]>('/api/mcp-servers', { token }),
+  get: (id: string, token: string) =>
+    request<any>(`/api/mcp-servers/${id}`, { token }),
+  create: (data: { name: string; slug?: string; description?: string }, token: string) =>
+    request<any>('/api/mcp-servers', { method: 'POST', body: data, token }),
+  update: (id: string, data: { name?: string; slug?: string; description?: string; isActive?: boolean }, token: string) =>
+    request<any>(`/api/mcp-servers/${id}`, { method: 'PUT', body: data, token }),
+  delete: (id: string, token: string) =>
+    request(`/api/mcp-servers/${id}`, { method: 'DELETE', token }),
+  assignConnectors: (id: string, connectorIds: string[], token: string) =>
+    request(`/api/mcp-servers/${id}/connectors`, { method: 'PUT', body: { connectorIds }, token }),
 };
