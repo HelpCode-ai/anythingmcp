@@ -77,7 +77,12 @@ export default function NewConnectorPage() {
         } catch {}
       }
 
-      router.push('/connectors');
+      // For MCP+OAuth2 connectors, redirect to the detail page so the user can authorize
+      if (selectedType === 'MCP' && authType === 'OAUTH2') {
+        router.push(`/connectors/${created.id}`);
+      } else {
+        router.push('/connectors');
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -226,6 +231,12 @@ export default function NewConnectorPage() {
                   <option value="OAUTH2">OAuth 2.0</option>
                 </select>
               </div>
+
+              {selectedType === 'MCP' && authType === 'OAUTH2' && (
+                <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3 text-sm text-blue-700 dark:text-blue-300">
+                  After creating the connector, you will be redirected to authorize with the remote MCP server via OAuth. Tools will be discovered automatically after authorization.
+                </div>
+              )}
 
               {authType === 'API_KEY' && (
                 <div className="grid grid-cols-2 gap-4">

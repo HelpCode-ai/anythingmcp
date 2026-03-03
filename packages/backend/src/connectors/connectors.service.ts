@@ -6,6 +6,7 @@ import { RestEngine } from './engines/rest.engine';
 import { SoapEngine } from './engines/soap.engine';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
+import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class ConnectorsService {
     private readonly soapEngine: SoapEngine,
     private readonly graphqlEngine: GraphqlEngine,
     private readonly databaseEngine: DatabaseEngine,
+    private readonly mcpClientEngine: McpClientEngine,
   ) {
     this.encryptionKey =
       this.configService.get<string>('ENCRYPTION_KEY') ||
@@ -168,6 +170,18 @@ export class ConnectorsService {
             authConfig,
           });
           break;
+        case 'MCP': {
+          const tools = await this.mcpClientEngine.listTools({
+            baseUrl: connector.baseUrl,
+            authType: connector.authType,
+            authConfig,
+            headers: connector.headers as Record<string, string>,
+          });
+          return {
+            ok: true,
+            message: `Connection successful — found ${tools.length} tools on remote MCP server`,
+          };
+        }
         default:
           return {
             ok: true,
@@ -220,6 +234,8 @@ export class ConnectorsService {
         return this.graphqlEngine.execute(config, endpointMapping, mergedParams);
       case 'DATABASE':
         return this.databaseEngine.execute(config, endpointMapping, mergedParams);
+      case 'MCP':
+        return this.mcpClientEngine.execute(config, endpointMapping, mergedParams);
       default:
         throw new NotFoundException(
           `Connector type '${connector.type}' not yet implemented`,

@@ -111,6 +111,16 @@ export const connectors = {
     request<{ message: string; created: number; skipped: number; tools: number }>('/api/connectors/import-all', { method: 'POST', body: data, token }),
   healthCheck: (token: string) =>
     request<{ total: number; healthy: number; unhealthy: number; connectors: any[] }>('/api/connectors/health-check', { token }),
+  oauthAuthorize: (id: string, token: string) =>
+    request<{ authorizationUrl?: string; error?: string }>(
+      `/api/connectors/${id}/oauth/authorize`,
+      { method: 'POST', token },
+    ),
+  discoverTools: (id: string, token: string) =>
+    request<{ message: string; tools: any[]; skipped?: string[]; error?: string }>(
+      `/api/connectors/${id}/discover-tools`,
+      { method: 'POST', token },
+    ),
 };
 
 // Tools

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
+import { ConfigService } from '@nestjs/config';
 import {
   IsString,
   IsEnum,
@@ -26,8 +27,11 @@ import { WsdlParser } from './parsers/wsdl.parser';
 import { GraphqlParser } from './parsers/graphql.parser';
 import { PostmanParser } from './parsers/postman.parser';
 import { CurlParser } from './parsers/curl.parser';
+import { McpClientEngine } from './engines/mcp-client.engine';
+import { McpOAuthService } from './mcp-oauth.service';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
+import { decrypt } from '../common/crypto/encryption.util';
 
 class CreateConnectorDto {
   @IsString()
@@ -100,7 +104,7 @@ class UpdateConnectorDto {
 
 class ImportToolsDto {
   @IsString()
-  source: 'openapi' | 'wsdl' | 'graphql' | 'postman' | 'curl' | 'json';
+  source: 'openapi' | 'wsdl' | 'graphql' | 'postman' | 'curl' | 'json' | 'mcp';
 
   @IsOptional()
   @IsString()
@@ -125,9 +129,18 @@ export class ConnectorsController {
     private readonly graphqlParser: GraphqlParser,
     private readonly postmanParser: PostmanParser,
     private readonly curlParser: CurlParser,
+    private readonly mcpClientEngine: McpClientEngine,
+    private readonly mcpOAuthService: McpOAuthService,
     private readonly prisma: PrismaService,
     private readonly mcpServer: McpServerService,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.encryptionKey =
+      this.configService.get<string>('ENCRYPTION_KEY') ||
+      'default-dev-key-change-in-prod!!';
+  }
+
+  private readonly encryptionKey: string;
 
   @Get()
   @ApiOperation({ summary: 'List all connectors for the current user' })
@@ -284,6 +297,132 @@ export class ConnectorsController {
   @ApiOperation({ summary: 'Test connector connection' })
   async test(@Req() req: any, @Param('id') id: string) {
     return this.connectorsService.testConnection(id, req.user.sub);
+  }
+
+  @Post(':id/oauth/authorize')
+  @ApiOperation({
+    summary: 'Initiate OAuth2 authorization for an MCP connector',
+    description:
+      'Discovers the remote MCP server OAuth endpoints, registers as a client, ' +
+      'and returns an authorization URL for the user to visit.',
+  })
+  async initiateOAuth(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id, req.user.sub);
+
+    if (connector.type !== 'MCP') {
+      return { error: 'OAuth authorization is only available for MCP connectors' };
+    }
+    if (connector.authType !== 'OAUTH2') {
+      return { error: 'Connector auth type must be OAUTH2' };
+    }
+
+    try {
+      // 1. Discover OAuth metadata from remote server
+      const metadata = await this.mcpOAuthService.discoverMetadata(connector.baseUrl);
+      this.logger.log(`OAuth metadata discovered from ${connector.baseUrl}: issuer=${metadata.issuer}`);
+
+      // 2. Register as OAuth client (dynamic registration)
+      const callbackUrl = `${this.configService.get('SERVER_URL') || 'http://localhost:4000'}/api/mcp-oauth/callback`;
+
+      let clientId: string;
+      let clientSecret: string | undefined;
+
+      if (metadata.registration_endpoint) {
+        const registration = await this.mcpOAuthService.registerClient(
+          metadata.registration_endpoint,
+          callbackUrl,
+        );
+        clientId = registration.clientId;
+        clientSecret = registration.clientSecret;
+      } else {
+        // Fallback: use clientId/clientSecret from existing authConfig
+        const authConfig = connector.authConfig
+          ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
+          : {};
+        clientId = String(authConfig.clientId || '');
+        clientSecret = authConfig.clientSecret ? String(authConfig.clientSecret) : undefined;
+        if (!clientId) {
+          return {
+            error: 'Remote server does not support dynamic registration and no clientId is configured',
+          };
+        }
+      }
+
+      // 3. Generate PKCE challenge
+      const codeVerifier = this.mcpOAuthService.generateCodeVerifier();
+      const codeChallenge = this.mcpOAuthService.generateCodeChallenge(codeVerifier);
+      const state = this.mcpOAuthService.generateState();
+
+      // 4. Store pending flow
+      this.mcpOAuthService.storePendingFlow(state, {
+        codeVerifier,
+        connectorId: connector.id,
+        userId: req.user.sub,
+        redirectUri: callbackUrl,
+        clientId,
+        clientSecret,
+        tokenUrl: metadata.token_endpoint,
+        createdAt: Date.now(),
+      });
+
+      // 5. Build authorization URL
+      const authorizationUrl = this.mcpOAuthService.buildAuthorizationUrl({
+        authorizationEndpoint: metadata.authorization_endpoint,
+        clientId,
+        redirectUri: callbackUrl,
+        codeChallenge,
+        state,
+        scope: metadata.scopes_supported?.join(' '),
+      });
+
+      return { authorizationUrl };
+    } catch (error: any) {
+      this.logger.error(`OAuth initiation failed for connector ${id}: ${error.message}`);
+      return { error: `OAuth initiation failed: ${error.message}` };
+    }
+  }
+
+  @Post(':id/discover-tools')
+  @ApiOperation({
+    summary: 'Discover and import tools from a remote MCP server',
+    description:
+      'Connects to the remote MCP server using stored credentials, ' +
+      'lists all available tools, and imports them as MCP tools.',
+  })
+  async discoverMcpTools(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id, req.user.sub);
+
+    if (connector.type !== 'MCP') {
+      return { error: 'Tool discovery is only available for MCP connectors' };
+    }
+
+    try {
+      const authConfig = connector.authConfig
+        ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
+        : undefined;
+
+      const remoteTools = await this.mcpClientEngine.listTools({
+        baseUrl: connector.baseUrl,
+        authType: connector.authType,
+        authConfig,
+        headers: connector.headers as Record<string, string>,
+      });
+
+      const parsedTools = remoteTools.map((rt) => ({
+        name: rt.name,
+        description: rt.description || `MCP tool: ${rt.name}`,
+        parameters: rt.inputSchema || { type: 'object', properties: {} },
+        endpointMapping: {
+          method: rt.name,
+          path: '/mcp',
+        },
+      }));
+
+      return this.createToolsFromParsed(connector.id, parsedTools);
+    } catch (error: any) {
+      this.logger.error(`Tool discovery failed for connector ${id}: ${error.message}`);
+      return { error: `Tool discovery failed: ${error.message}` };
+    }
   }
 
   @Post('import-all')
@@ -467,6 +606,33 @@ export class ConnectorsController {
             }
           } catch (e: any) {
             return { error: `Invalid JSON: ${e.message}` };
+          }
+          break;
+        }
+        case 'mcp': {
+          if (connector.type !== 'MCP') {
+            return { error: 'MCP import source is only available for MCP connectors' };
+          }
+          const authConfig = connector.authConfig
+            ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
+            : undefined;
+          const remoteTools = await this.mcpClientEngine.listTools({
+            baseUrl: connector.baseUrl,
+            authType: connector.authType,
+            authConfig,
+            headers: connector.headers as Record<string, string>,
+            mcpPath: dto.url || '/mcp',
+          });
+          for (const rt of remoteTools) {
+            parsedTools.push({
+              name: rt.name,
+              description: rt.description || `MCP tool: ${rt.name}`,
+              parameters: rt.inputSchema || { type: 'object', properties: {} },
+              endpointMapping: {
+                method: rt.name,
+                path: dto.url || '/mcp',
+              },
+            });
           }
           break;
         }
