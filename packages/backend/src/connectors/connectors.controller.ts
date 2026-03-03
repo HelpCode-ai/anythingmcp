@@ -165,37 +165,6 @@ export class ConnectorsController {
     return connector;
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Get connector details' })
-  async findOne(@Req() req: any, @Param('id') id: string) {
-    return this.connectorsService.findById(id, req.user.sub);
-  }
-
-  @Put(':id')
-  @ApiOperation({ summary: 'Update connector' })
-  async update(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() dto: UpdateConnectorDto,
-  ) {
-    return this.connectorsService.update(id, req.user.sub, dto);
-  }
-
-  @Delete(':id')
-  @ApiOperation({ summary: 'Delete connector' })
-  async remove(@Req() req: any, @Param('id') id: string) {
-    await this.connectorsService.remove(id, req.user.sub);
-    // Unregister tools from in-memory MCP registries after DB cascade delete
-    await this.mcpServer.reloadConnectorTools(id);
-    return { message: 'Connector deleted' };
-  }
-
-  @Post(':id/test')
-  @ApiOperation({ summary: 'Test connector connection' })
-  async test(@Req() req: any, @Param('id') id: string) {
-    return this.connectorsService.testConnection(id, req.user.sub);
-  }
-
   @Get('health-check')
   @ApiOperation({
     summary: 'Test connectivity of all active connectors',
@@ -284,6 +253,37 @@ export class ConnectorsController {
       exportedAt: new Date().toISOString(),
       connectors: exportData,
     };
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get connector details' })
+  async findOne(@Req() req: any, @Param('id') id: string) {
+    return this.connectorsService.findById(id, req.user.sub);
+  }
+
+  @Put(':id')
+  @ApiOperation({ summary: 'Update connector' })
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateConnectorDto,
+  ) {
+    return this.connectorsService.update(id, req.user.sub, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete connector' })
+  async remove(@Req() req: any, @Param('id') id: string) {
+    await this.connectorsService.remove(id, req.user.sub);
+    // Unregister tools from in-memory MCP registries after DB cascade delete
+    await this.mcpServer.reloadConnectorTools(id);
+    return { message: 'Connector deleted' };
+  }
+
+  @Post(':id/test')
+  @ApiOperation({ summary: 'Test connector connection' })
+  async test(@Req() req: any, @Param('id') id: string) {
+    return this.connectorsService.testConnection(id, req.user.sub);
   }
 
   @Post('import-all')
