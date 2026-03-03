@@ -21,6 +21,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
+import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { PrismaService } from '../common/prisma.service';
 import { EmailService } from '../settings/email.service';
 import { Roles, RolesGuard } from './roles.guard';
@@ -92,6 +93,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
+    private readonly mcpServersService: McpServersService,
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
@@ -159,6 +161,9 @@ export class AuthController {
       name: dto.name,
       role: role as any,
     });
+
+    // Create default MCP server for new user
+    await this.mcpServersService.createDefaultForUser(user.id);
 
     const token = this.authService.generateToken({
       sub: user.id,
@@ -294,6 +299,9 @@ export class AuthController {
       name: dto.name,
       role: invite.role,
     });
+
+    // Create default MCP server for new user
+    await this.mcpServersService.createDefaultForUser(user.id);
 
     // Assign MCP role if specified
     if (invite.mcpRoleId) {

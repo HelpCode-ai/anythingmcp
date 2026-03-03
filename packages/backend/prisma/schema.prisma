@@ -118,14 +118,16 @@ model ToolRoleAccess {
 // ── Per-User MCP API Keys ───────────────────────────────────────────────────
 
 model McpApiKey {
-  id         String    @id @default(cuid())
-  userId     String    @map("user_id")
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  key        String    @unique
-  name       String    // label: "Claude Desktop", "Cursor", etc.
-  isActive   Boolean   @default(true) @map("is_active")
-  lastUsedAt DateTime? @map("last_used_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id          String           @id @default(cuid())
+  userId      String           @map("user_id")
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mcpServerId String?          @map("mcp_server_id")
+  mcpServer   McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
+  key         String           @unique
+  name        String           // label: "Claude Desktop", "Cursor", etc.
+  isActive    Boolean          @default(true) @map("is_active")
+  lastUsedAt  DateTime?        @map("last_used_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
 
   @@map("mcp_api_keys")
 }
@@ -181,9 +183,10 @@ model Connector {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tools     McpTool[]
-  resources McpResource[]
-  prompts   McpPrompt[]
+  tools      McpTool[]
+  resources  McpResource[]
+  prompts    McpPrompt[]
+  mcpServers McpServerConnector[]
 
   @@map("connectors")
 }
@@ -278,22 +281,35 @@ model McpServerConfig {
   userId String @map("user_id")
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name      String @default("My MCP Server")
-  version   String @default("1.0.0")
-  isActive  Boolean @default(true) @map("is_active")
-
-  // MCP client authentication
-  authType   AuthType @default(BEARER_TOKEN) @map("auth_type")
-  authConfig String?  @map("auth_config") // encrypted
-
-  // Transport configuration
-  transport String @default("streamable-http")
-  endpoint  String @default("/mcp")
+  name        String  @default("Default")
+  slug        String  @default("default")
+  description String? @db.Text
+  version     String  @default("1.0.0")
+  isActive    Boolean @default(true) @map("is_active")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  connectors McpServerConnector[]
+  apiKeys    McpApiKey[]
+
+  @@unique([userId, slug])
   @@map("mcp_server_configs")
+}
+
+// ── MCP Server ↔ Connector (many-to-many) ───────────────────────────────────
+
+model McpServerConnector {
+  id          String          @id @default(cuid())
+  mcpServerId String          @map("mcp_server_id")
+  mcpServer   McpServerConfig @relation(fields: [mcpServerId], references: [id], onDelete: Cascade)
+  connectorId String          @map("connector_id")
+  connector   Connector       @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([mcpServerId, connectorId])
+  @@map("mcp_server_connectors")
 }
 
 // ── Audit Log ───────────────────────────────────────────────────────────────

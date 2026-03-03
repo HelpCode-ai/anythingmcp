@@ -192,7 +192,7 @@ export default function AdminRolesPage() {
         title="MCP Role Management"
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full space-y-6">
         {msg && (
           <div className="p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)]">
             {msg}

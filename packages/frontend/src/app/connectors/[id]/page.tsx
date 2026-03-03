@@ -313,12 +313,12 @@ export default function ConnectorDetailPage() {
         ]}
         title={connector.name}
         actions={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={handleTest}
               className="border border-[var(--border)] px-3 py-1.5 rounded text-sm hover:bg-[var(--accent)]"
             >
-              Test Connection
+              Test
             </button>
             <button
               onClick={() => setEditing(!editing)}
@@ -336,7 +336,7 @@ export default function ConnectorDetailPage() {
         }
       />
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6 flex-1 w-full">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6 flex-1 w-full">
         {msg && (
           <div className="p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)]">
             {msg}
@@ -442,7 +442,7 @@ export default function ConnectorDetailPage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-[var(--muted-foreground)]">Name</p>
                 <p className="font-medium">{connector.name}</p>
@@ -550,11 +550,11 @@ export default function ConnectorDetailPage() {
 
         {/* Tools Section */}
         <div className="border border-[var(--border)] rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <h3 className="text-lg font-medium">
               MCP Tools ({toolList.length})
             </h3>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setShowImport(!showImport)}
                 className="border border-[var(--border)] px-3 py-1.5 rounded text-sm hover:bg-[var(--accent)]"
@@ -671,28 +671,28 @@ export default function ConnectorDetailPage() {
                     />
                   ) : (
                     <div className="border border-[var(--border)] rounded-md p-3 hover:border-[var(--ring)] transition-colors">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm font-mono">{tool.name}</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm font-mono break-all">{tool.name}</span>
                             {tool.endpointMapping?.method && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--info-bg)] text-[var(--info-text)] font-mono">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--info-bg)] text-[var(--info-text)] font-mono flex-shrink-0">
                                 {tool.endpointMapping.method}
                               </span>
                             )}
                             <span
-                              className={`text-xs px-1.5 py-0.5 rounded ${tool.isEnabled ? 'bg-[var(--success-bg)] text-[var(--success-text)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}
+                              className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${tool.isEnabled ? 'bg-[var(--success-bg)] text-[var(--success-text)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}
                             >
                               {tool.isEnabled ? 'enabled' : 'disabled'}
                             </span>
                           </div>
-                          <p className="text-xs text-[var(--muted-foreground)] mt-0.5 truncate">
+                          <p className="text-xs text-[var(--muted-foreground)] mt-0.5 line-clamp-2 sm:truncate">
                             {tool.description}
                           </p>
                           {/* Show mapping summary */}
-                          <div className="flex gap-3 mt-1.5 text-[10px] text-[var(--muted-foreground)]">
+                          <div className="flex gap-3 mt-1.5 text-[10px] text-[var(--muted-foreground)] flex-wrap">
                             {tool.endpointMapping?.path && (
-                              <span className="font-mono">{tool.endpointMapping.path}</span>
+                              <span className="font-mono break-all">{tool.endpointMapping.path}</span>
                             )}
                             {tool.parameters?.properties && (() => {
                               const allParams = Object.keys(tool.parameters.properties);
@@ -717,7 +717,7 @@ export default function ConnectorDetailPage() {
                             )}
                           </div>
                         </div>
-                        <div className="flex gap-2 ml-4">
+                        <div className="flex gap-2 flex-wrap sm:flex-nowrap sm:ml-4 flex-shrink-0">
                           <button
                             onClick={() => {
                               if (testingToolId === tool.id) {

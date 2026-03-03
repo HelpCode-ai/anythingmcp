@@ -8,6 +8,7 @@ import { decrypt } from '../common/crypto/encryption.util';
 import { ToolRegistry } from './tool-registry';
 import { DynamicMcpTools } from './dynamic-mcp-tools';
 import { RolesService } from '../roles/roles.service';
+import { McpServersService } from '../mcp-servers/mcp-servers.service';
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -22,6 +23,7 @@ export class McpServerService implements OnModuleInit {
     private readonly moduleRef: ModuleRef,
     private readonly configService: ConfigService,
     private readonly rolesService: RolesService,
+    private readonly mcpServersService: McpServersService,
   ) {
     this.encryptionKey =
       this.configService.get<string>('ENCRYPTION_KEY') ||
@@ -174,6 +176,21 @@ export class McpServerService implements OnModuleInit {
                 content: [{ type: 'text' as const, text: JSON.stringify({ error: `Access denied: you do not have permission to use '${name}'.` }) }],
                 isError: true,
               };
+            }
+          }
+
+          // Check MCP server scoping — if the API key is tied to a server,
+          // only allow tools from connectors assigned to that server
+          if (user.mcpServerId) {
+            const tool = this.toolRegistry.getTool(name);
+            if (tool) {
+              const allowedConnectorIds = await this.mcpServersService.getConnectorIds(user.mcpServerId);
+              if (!allowedConnectorIds.includes(tool.connectorId)) {
+                return {
+                  content: [{ type: 'text' as const, text: JSON.stringify({ error: `Tool '${name}' is not available on this MCP server.` }) }],
+                  isError: true,
+                };
+              }
             }
           }
         }
