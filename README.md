@@ -1,6 +1,6 @@
 # AnythingToMCP
 
-> Convert **any** API into an MCP server — self-hosted, open source, AI-assisted.
+> Convert **any** API into an MCP server — self-hosted and open source.
 
 AnythingToMCP is a platform that lets you create dynamic [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers by connecting your existing APIs through a web interface or API calls. It acts as a **bridge** between any API (REST, SOAP, GraphQL, Database, Webhook, other MCP servers) and MCP-compatible AI clients like Claude Desktop, Claude Code, ChatGPT, Cursor, and more.
 
@@ -8,13 +8,12 @@ AnythingToMCP is a platform that lets you create dynamic [MCP (Model Context Pro
 
 ## Features
 
-- **Universal Connectors**: REST (OpenAPI), SOAP (WSDL), GraphQL, MCP-to-MCP bridge, Database (read-only), Webhooks
+- **Universal Connectors**: REST (OpenAPI), SOAP (WSDL), GraphQL, MCP-to-MCP bridge, Database (PostgreSQL & MSSQL, read-only), Webhooks
 - **6 Import Formats**: OpenAPI/Swagger, Postman Collections, cURL commands, WSDL, GraphQL introspection, custom JSON definitions
 - **Dynamic MCP Server**: Tools registered at runtime — no restart required
 - **Visual Tool Editor**: Define parameters and visually configure where each maps in the API request (path, query, body, header)
-- **Environment Variables**: Per-connector `{{VAR_NAME}}` interpolation at runtime
-- **Multi-AI Provider Support**: Claude (Sonnet 4.6, Opus 4.6, Haiku 4.5) and OpenAI (GPT-5, GPT-5.2, GPT-4o) with per-user model selection
-- **AI Chat Assistant**: ChatGPT-style chat interface for AI-assisted tool generation and connector configuration
+- **Database Auto-Tools**: DATABASE connectors auto-generate schema introspection, example queries (editable static text), and dynamic query execution tools
+- **Environment Variables**: Per-connector `{{VAR_NAME}}` interpolation at runtime, with automatic parameter injection for tool inputs matching env var names
 - **Bulk API**: Create connectors and tools programmatically via REST API (for Claude Code, CI/CD, scripts)
 - **Full Auth Support**: JWT + OAuth2/Bearer/API key for MCP clients, AES-256-GCM encrypted credentials
 - **Per-User MCP API Keys**: Generate individual API keys for MCP client authentication with usage tracking
@@ -370,15 +369,6 @@ All API endpoints require JWT authentication (except auth and health). Get a tok
 | GET | `/api/audit/invocations` | List invocations (with filters) |
 | GET | `/api/audit/stats` | Get invocation stats (24h, 7d, total) |
 
-### AI
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/ai/generate-tools` | AI-generate tool definitions from spec |
-| POST | `/api/ai/improve-description` | AI-improve tool description |
-| POST | `/api/ai/configure` | Natural language configuration |
-| GET | `/api/ai/models` | List available AI models per provider |
-
 ### Roles & Access Control
 
 | Method | Endpoint | Description |
@@ -561,7 +551,7 @@ The `$` prefix means "take the value from the tool input parameter with this nam
 | **REST** | HTTP method (GET, POST, etc.) | URL path | Query string params | JSON body fields | HTTP headers |
 | **GraphQL** | `query` or `mutation` | The GraphQL query string | GraphQL variables | — | HTTP headers |
 | **SOAP** | SOAP operation name | Port/path | — | SOAP parameters | HTTP headers |
-| **Database** | `query` | SQL template (`$param` interpolated) | — | — | — |
+| **Database** | `query` or `static` | SQL template (`$param` interpolated) or static text | — | — | — |
 | **Webhook** | HTTP method | URL path | Query params | JSON body | HTTP headers |
 | **MCP** | Tool name on remote server | — | — | Passed through | — |
 
@@ -681,18 +671,14 @@ You can also wrap the array in a `{ "tools": [...] }` object.
 │  - Connector CRUD         ├── Connector Engines      │
 │  - Visual Tool Editor     │   REST / SOAP / GraphQL  │
 │  - Import (6 formats)     │   MCP / Database / Hook  │
-│  - AI Chat Assistant      │                          │
-│  - Env Variables          ├── Import Parsers         │
-│  - Audit Logs             │   OpenAPI / Postman      │
-│  - User Management        │   cURL / WSDL / GraphQL  │
-│  - Role & Access Control  │   JSON definitions       │
-│  - Site Settings          │                          │
-│  - Dark/Light Theme       ├── Dynamic MCP Server     │
+│  - Env Variables          │                          │
+│  - Audit Logs             ├── Import Parsers         │
+│  - User Management        │   OpenAPI / Postman      │
+│  - Role & Access Control  │   cURL / WSDL / GraphQL  │
+│  - Site Settings          │   JSON definitions       │
+│  - Dark/Light Theme       │                          │
+│                           ├── Dynamic MCP Server     │
 │                           │   /mcp (Streamable HTTP) │
-│                           │                          │
-│                           ├── AI Service             │
-│                           │   Claude / OpenAI        │
-│                           │   Multi-model support    │
 │                           │                          │
 │                           ├── Roles & MCP API Keys   │
 │                           │   Tool-level access ctrl │
@@ -728,7 +714,6 @@ You can also wrap the array in a `{ "tools": [...] }` object.
 | MCP SDK | @modelcontextprotocol/sdk (Streamable HTTP) |
 | Database | PostgreSQL 17 + Prisma 7 |
 | Cache | Redis 7 (ioredis) |
-| AI | Anthropic SDK (Claude) + OpenAI SDK v6 |
 | Validation | Zod v4, class-validator |
 | Auth | JWT (passport-jwt), AES-256-GCM encryption |
 | Deploy | Docker + Docker Compose |
@@ -756,10 +741,6 @@ Copy `.env.example` to `.env` and configure:
 | `MCP_API_KEY` | No | API key for MCP endpoint auth (legacy mode) |
 | `SERVER_URL` | No | Server URL for OAuth2 redirects and metadata (default: http://localhost:4000) |
 | `MCP_RATE_LIMIT_PER_MINUTE` | No | Rate limit per client (default: 60) |
-| `ANTHROPIC_API_KEY` | No | Server-level fallback for AI-assisted configuration (Claude) |
-| `OPENAI_API_KEY` | No | Server-level fallback for AI-assisted configuration (OpenAI) |
-
-Users can also configure their own AI API keys and preferred model in the Settings page, which take priority over the server-level keys above.
 
 ---
 

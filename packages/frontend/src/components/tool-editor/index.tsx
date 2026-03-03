@@ -41,6 +41,8 @@ export interface ToolEditorData {
   useBodyTemplate?: boolean;
   /** Body encoding: 'json' (default), 'form-urlencoded', or 'form-data' */
   bodyEncoding?: string;
+  /** Static text response (for DATABASE tools that return text without executing a query) */
+  staticResponse?: string;
 }
 
 interface ToolEditorProps {
@@ -113,7 +115,7 @@ const METHODS_BY_TYPE: Record<string, string[]> = {
   REST: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   GRAPHQL: ['query', 'mutation'],
   SOAP: ['SOAP'],
-  DATABASE: ['query'],
+  DATABASE: ['query', 'static'],
   WEBHOOK: ['GET', 'POST', 'PUT', 'DELETE'],
   MCP: ['invoke'],
 };
@@ -235,7 +237,8 @@ function parseExistingTool(
     params,
     graphqlQuery: connectorType === 'GRAPHQL' ? em.path : undefined,
     soapOperation: connectorType === 'SOAP' ? em.method : undefined,
-    sqlTemplate: connectorType === 'DATABASE' ? em.path : undefined,
+    sqlTemplate: connectorType === 'DATABASE' && em.method !== 'static' ? em.path : undefined,
+    staticResponse: em.staticResponse || undefined,
     cacheTtl: rm?.cacheTtl || 0,
     bodyTemplate: detectedBodyTemplate,
     useBodyTemplate: detectedUseBodyTemplate,
@@ -306,8 +309,13 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
   } else if (connectorType === 'SOAP') {
     method = data.soapOperation || data.method;
   } else if (connectorType === 'DATABASE') {
-    method = 'query';
-    path = data.sqlTemplate || data.path;
+    if (data.method === 'static') {
+      method = 'static';
+      path = '';
+    } else {
+      method = 'query';
+      path = data.sqlTemplate || data.path;
+    }
   }
 
   const endpointMapping: Record<string, unknown> = { method, path };
@@ -321,6 +329,9 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
     }
   }
   if (Object.keys(headers).length > 0) endpointMapping.headers = headers;
+  if (data.method === 'static' && data.staticResponse) {
+    endpointMapping.staticResponse = data.staticResponse;
+  }
 
   const result: {
     name: string;
@@ -370,6 +381,7 @@ export function ToolEditor({
   const [bodyTemplate, setBodyTemplate] = useState('');
   const [useBodyTemplate, setUseBodyTemplate] = useState(false);
   const [bodyEncoding, setBodyEncoding] = useState('json');
+  const [staticResponse, setStaticResponse] = useState('');
 
   // Initialize from existing tool
   useEffect(() => {
@@ -386,6 +398,7 @@ export function ToolEditor({
       if (parsed.bodyTemplate) setBodyTemplate(parsed.bodyTemplate);
       if (parsed.useBodyTemplate) setUseBodyTemplate(true);
       if (parsed.bodyEncoding) setBodyEncoding(parsed.bodyEncoding);
+      if (parsed.staticResponse) setStaticResponse(parsed.staticResponse);
     }
   }, [existingTool, type]);
 
@@ -477,7 +490,8 @@ export function ToolEditor({
       path,
       params,
       graphqlQuery: type === 'GRAPHQL' ? graphqlQuery : undefined,
-      sqlTemplate: type === 'DATABASE' ? sqlTemplate : undefined,
+      sqlTemplate: type === 'DATABASE' && method !== 'static' ? sqlTemplate : undefined,
+      staticResponse: method === 'static' ? staticResponse : undefined,
       cacheTtl,
       bodyTemplate: useBodyTemplate ? bodyTemplate : undefined,
       useBodyTemplate,
@@ -577,18 +591,46 @@ export function ToolEditor({
       ) : type === 'DATABASE' ? (
         <div className="space-y-3">
           <div>
-            <label className="block text-xs font-medium mb-1">SQL Query Template</label>
-            <textarea
-              value={sqlTemplate}
-              onChange={e => setSqlTemplate(e.target.value)}
-              rows={4}
-              placeholder="SELECT * FROM users WHERE name LIKE $search_term LIMIT $limit"
-              className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
-            />
-            <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-              Use $param_name to reference parameters. Only SELECT queries are allowed.
-            </p>
+            <label className="block text-xs font-medium mb-1">Tool Type</label>
+            <select
+              value={method}
+              onChange={e => setMethod(e.target.value)}
+              className="w-48 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+            >
+              {methods.map(m => (
+                <option key={m} value={m}>{m === 'query' ? 'SQL Query' : 'Static Text'}</option>
+              ))}
+            </select>
           </div>
+          {method === 'static' ? (
+            <div>
+              <label className="block text-xs font-medium mb-1">Static Response Text</label>
+              <textarea
+                value={staticResponse}
+                onChange={e => setStaticResponse(e.target.value)}
+                rows={10}
+                placeholder={"# Example Queries\n\n## List all customers\n```sql\nSELECT TOP 10 * FROM customers\n```\n\n## Search by name\n```sql\nSELECT * FROM customers WHERE name LIKE '%search%'\n```"}
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+              />
+              <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
+                This text is returned directly without executing any database query. Use it for guides, examples, or documentation.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium mb-1">SQL Query Template</label>
+              <textarea
+                value={sqlTemplate}
+                onChange={e => setSqlTemplate(e.target.value)}
+                rows={4}
+                placeholder="SELECT * FROM users WHERE name LIKE $search_term LIMIT $limit"
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+              />
+              <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
+                Use $param_name to reference parameters. Only SELECT queries are allowed.
+              </p>
+            </div>
+          )}
         </div>
       ) : type === 'SOAP' ? (
         <div className="grid grid-cols-2 gap-3">
@@ -908,7 +950,7 @@ export function ToolEditor({
           </summary>
           <pre className="mt-2 p-3 bg-[var(--muted)] rounded text-[10px] font-mono overflow-x-auto max-h-48 overflow-y-auto">
             {JSON.stringify(
-              buildToolPayload({ name, description, method, path, params, graphqlQuery, sqlTemplate, cacheTtl, bodyTemplate: useBodyTemplate ? bodyTemplate : undefined, useBodyTemplate, bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined }, type),
+              buildToolPayload({ name, description, method, path, params, graphqlQuery, sqlTemplate, staticResponse: method === 'static' ? staticResponse : undefined, cacheTtl, bodyTemplate: useBodyTemplate ? bodyTemplate : undefined, useBodyTemplate, bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined }, type),
               null,
               2,
             )}
