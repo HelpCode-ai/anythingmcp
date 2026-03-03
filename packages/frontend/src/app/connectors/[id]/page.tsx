@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors, tools } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
@@ -15,17 +15,23 @@ const IMPORT_SOURCES = [
   { id: 'graphql', label: 'GraphQL Introspection', placeholder: 'Enter GraphQL endpoint URL...' },
   { id: 'wsdl', label: 'WSDL', placeholder: 'Enter WSDL URL...' },
   { id: 'json', label: 'JSON Definition', placeholder: '[\n  {\n    "name": "get_users",\n    "description": "Fetch users",\n    "parameters": { "type": "object", "properties": { "limit": { "type": "number" } } },\n    "endpointMapping": { "method": "GET", "path": "/users", "queryParams": { "limit": "$limit" } }\n  }\n]' },
+  { id: 'mcp', label: 'MCP Discovery', placeholder: 'Enter MCP endpoint path (default: /mcp)' },
 ];
 
 export default function ConnectorDetailPage() {
   const { token } = useAuth();
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const id = params.id as string;
 
   const [connector, setConnector] = useState<any>(null);
   const [toolList, setToolList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // OAuth + MCP discovery
+  const [authorizing, setAuthorizing] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editBaseUrl, setEditBaseUrl] = useState('');
@@ -85,6 +91,23 @@ export default function ConnectorDetailPage() {
   };
 
   useEffect(() => {
+    // Handle OAuth callback query params
+    const oauthStatus = searchParams.get('oauth');
+    if (oauthStatus === 'success') {
+      const toolsImported = searchParams.get('tools');
+      setMsg(
+        toolsImported && Number(toolsImported) > 0
+          ? `OAuth2 authorization successful! ${toolsImported} tools discovered and imported.`
+          : 'OAuth2 authorization successful! You can now discover tools.',
+      );
+      // Clean URL
+      window.history.replaceState({}, '', `/connectors/${id}`);
+    } else if (oauthStatus === 'error') {
+      const message = searchParams.get('message') || 'Authorization failed';
+      setMsg(`OAuth2 error: ${message}`);
+      window.history.replaceState({}, '', `/connectors/${id}`);
+    }
+
     fetchConnector();
   }, [token, id]);
 
@@ -290,6 +313,41 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  const handleOAuthAuthorize = async () => {
+    if (!token) return;
+    setAuthorizing(true);
+    try {
+      const result = await connectors.oauthAuthorize(id, token);
+      if (result.authorizationUrl) {
+        window.location.href = result.authorizationUrl;
+      } else if (result.error) {
+        setMsg(result.error);
+      }
+    } catch (err: any) {
+      setMsg(`Authorization failed: ${err.message}`);
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
+  const handleDiscoverTools = async () => {
+    if (!token) return;
+    setDiscovering(true);
+    try {
+      const result = await connectors.discoverTools(id, token);
+      if (result.error) {
+        setMsg(result.error);
+      } else {
+        setMsg(result.message);
+        fetchConnector();
+      }
+    } catch (err: any) {
+      setMsg(`Discovery failed: ${err.message}`);
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
 
   if (loading) {
     return (
@@ -477,6 +535,32 @@ export default function ConnectorDetailPage() {
           )}
         </div>
 
+        {/* OAuth2 Authorization (MCP + OAUTH2 only) */}
+        {connector.type === 'MCP' && connector.authType === 'OAUTH2' && (
+          <div className="border border-[var(--border)] rounded-lg p-6">
+            <h3 className="text-lg font-medium mb-2">OAuth2 Authorization</h3>
+            <p className="text-sm text-[var(--muted-foreground)] mb-4">
+              Authorize this connector to access the remote MCP server. After authorization, tools will be automatically discovered.
+            </p>
+            <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={handleOAuthAuthorize}
+                disabled={authorizing}
+                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+              >
+                {authorizing ? 'Redirecting...' : 'Authorize with Remote Server'}
+              </button>
+              <button
+                onClick={handleDiscoverTools}
+                disabled={discovering}
+                className="border border-[var(--border)] px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--accent)] disabled:opacity-50"
+              >
+                {discovering ? 'Discovering...' : 'Re-discover Tools'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Environment Variables */}
         <div className="border border-[var(--border)] rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
@@ -567,6 +651,15 @@ export default function ConnectorDetailPage() {
                   className="border border-[var(--border)] px-3 py-1.5 rounded text-sm hover:bg-[var(--accent)]"
                 >
                   Auto-Import from Spec
+                </button>
+              )}
+              {connector.type === 'MCP' && (
+                <button
+                  onClick={handleDiscoverTools}
+                  disabled={discovering}
+                  className="border border-purple-300 text-purple-700 dark:border-purple-500/30 dark:text-purple-400 px-3 py-1.5 rounded text-sm hover:bg-purple-50 dark:hover:bg-purple-500/10 disabled:opacity-50"
+                >
+                  {discovering ? 'Discovering...' : 'Discover from MCP Server'}
                 </button>
               )}
               <button

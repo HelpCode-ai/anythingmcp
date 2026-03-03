@@ -14,6 +14,8 @@ import { WsdlParser } from './parsers/wsdl.parser';
 import { GraphqlParser } from './parsers/graphql.parser';
 import { PostmanParser } from './parsers/postman.parser';
 import { CurlParser } from './parsers/curl.parser';
+import { McpOAuthService } from './mcp-oauth.service';
+import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
 
 const ENGINES = [
   RestEngine,
@@ -28,8 +30,8 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
 
 @Module({
   imports: [McpServerModule],
-  controllers: [ConnectorsController, ToolsController],
-  providers: [ConnectorsService, ...ENGINES, ...PARSERS],
-  exports: [ConnectorsService, ...ENGINES],
+  controllers: [ConnectorsController, McpOAuthCallbackController, ToolsController],
+  providers: [ConnectorsService, McpOAuthService, ...ENGINES, ...PARSERS],
+  exports: [ConnectorsService, McpOAuthService, ...ENGINES],
 })
 export class ConnectorsModule {}
