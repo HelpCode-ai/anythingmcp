@@ -12,8 +12,7 @@ const CONNECTOR_TYPES = [
   { id: 'SOAP', name: 'SOAP Service', description: 'Connect to SOAP web services via WSDL.', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/30', iconBg: 'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400' },
   { id: 'GRAPHQL', name: 'GraphQL', description: 'Connect to GraphQL APIs with schema introspection.', color: 'bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-400 dark:border-pink-500/30', iconBg: 'bg-pink-50 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400' },
   { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30', iconBg: 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, or MSSQL for read-only queries.', color: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30', iconBg: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
-  { id: 'WEBHOOK', name: 'Webhook', description: 'Receive events from external services via webhooks.', color: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30', iconBg: 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MSSQL, or MongoDB for read-only queries.', color: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30', iconBg: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
 ];
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -22,7 +21,6 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
   GRAPHQL: <GraphqlIcon />,
   MCP: <McpIcon />,
   DATABASE: <DatabaseIcon />,
-  WEBHOOK: <WebhookIcon />,
 };
 
 export default function NewConnectorPage() {
@@ -338,13 +336,6 @@ function DatabaseIcon() {
       <ellipse cx="12" cy="5" rx="9" ry="3" />
       <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" />
       <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />
-    </svg>
-  );
-}
-function WebhookIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
     </svg>
   );
 }

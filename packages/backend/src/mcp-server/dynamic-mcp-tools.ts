@@ -7,7 +7,6 @@ import { GraphqlEngine } from '../connectors/engines/graphql.engine';
 import { SoapEngine } from '../connectors/engines/soap.engine';
 import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
 import { DatabaseEngine } from '../connectors/engines/database.engine';
-import { WebhookEngine } from '../connectors/engines/webhook.engine';
 import { AuditService } from '../audit/audit.service';
 import { RedisService } from '../common/redis.service';
 import { interpolateConnectorConfig } from '../common/env-interpolation.util';
@@ -31,7 +30,6 @@ export class DynamicMcpTools {
     private readonly soapEngine: SoapEngine,
     private readonly mcpClientEngine: McpClientEngine,
     private readonly databaseEngine: DatabaseEngine,
-    private readonly webhookEngine: WebhookEngine,
   ) {}
 
   /**
@@ -285,8 +283,6 @@ export class DynamicMcpTools {
         return this.mcpClientEngine.execute(config, endpointMapping, params);
       case 'DATABASE':
         return this.databaseEngine.execute(config, endpointMapping, params);
-      case 'WEBHOOK':
-        return this.webhookEngine.execute(config, endpointMapping, params);
       default:
         throw new Error(`Unsupported connector type: ${connectorType}`);
     }
