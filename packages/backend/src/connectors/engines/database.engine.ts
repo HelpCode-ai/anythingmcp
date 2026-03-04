@@ -26,6 +26,11 @@ export class DatabaseEngine {
       return { text: endpointMapping.staticResponse };
     }
 
+    // MongoDB schema introspection
+    if (endpointMapping.method === 'mongo_schema' && this.isMongodb(config.baseUrl)) {
+      return this.getMongoSchema(config);
+    }
+
     // MongoDB uses JSON-based queries, not SQL
     if (this.isMongodb(config.baseUrl)) {
       return this.executeMongodb(config, endpointMapping, params);
@@ -256,6 +261,75 @@ export class DatabaseEngine {
 
       const rows = await cursor.toArray();
       return this.truncateRows(rows as Record<string, unknown>[]);
+    } finally {
+      await client.close();
+    }
+  }
+
+  /**
+   * Introspect a MongoDB database: list collections and sample one document
+   * per collection to infer field names and types.
+   */
+  private async getMongoSchema(
+    config: { baseUrl: string; authConfig?: Record<string, unknown> },
+  ): Promise<unknown> {
+    const client = new MongoClient(config.baseUrl, {
+      serverSelectionTimeoutMS: 10000,
+    });
+
+    try {
+      await client.connect();
+      const db = client.db();
+
+      const collectionInfos = await db.listCollections().toArray();
+      const collections: Array<{
+        name: string;
+        type: string;
+        documentCount?: number;
+        sampleFields: Array<{ field: string; type: string; example?: unknown }>;
+      }> = [];
+
+      for (const info of collectionInfos) {
+        const col = db.collection(info.name);
+        const count = await col.estimatedDocumentCount();
+        const sample = await col.findOne();
+
+        const sampleFields: Array<{ field: string; type: string; example?: unknown }> = [];
+        if (sample) {
+          for (const [key, value] of Object.entries(sample)) {
+            const fieldType = value === null
+              ? 'null'
+              : Array.isArray(value)
+                ? 'array'
+                : typeof value === 'object' && value instanceof Date
+                  ? 'date'
+                  : typeof value === 'object' && (value as any)?._bsontype === 'ObjectId'
+                    ? 'ObjectId'
+                    : typeof value;
+
+            // Provide a short example (truncate strings, stringify objects)
+            let example: unknown = value;
+            if (typeof value === 'string' && value.length > 80) {
+              example = value.slice(0, 80) + '...';
+            } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+              example = `{${Object.keys(value as object).join(', ')}}`;
+            } else if (Array.isArray(value)) {
+              example = `[${value.length} items]`;
+            }
+
+            sampleFields.push({ field: key, type: fieldType, example });
+          }
+        }
+
+        collections.push({
+          name: info.name,
+          type: info.type || 'collection',
+          documentCount: count,
+          sampleFields,
+        });
+      }
+
+      return { collections };
     } finally {
       await client.close();
     }
