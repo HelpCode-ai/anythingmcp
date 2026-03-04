@@ -136,7 +136,7 @@ export default function ResetPasswordPage() {
           <div className="flex justify-center mb-4">
             <LogoIcon size={56} />
           </div>
-          <h1 className="text-2xl font-bold">AnythingToMCP</h1>
+          <h1 className="text-2xl font-bold">AnythingMCP</h1>
         </div>
 
         <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">

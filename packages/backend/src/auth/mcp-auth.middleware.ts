@@ -81,7 +81,7 @@ export class McpAuthMiddleware implements NestMiddleware {
     }
 
     // Auth failed — return 401 with WWW-Authenticate
-    res.setHeader('WWW-Authenticate', 'Bearer realm="AnythingToMCP MCP Server"');
+    res.setHeader('WWW-Authenticate', 'Bearer realm="AnythingMCP MCP Server"');
     res.status(401).json({
       statusCode: 401,
       message: 'Authentication required. Provide a Bearer token or X-API-Key header.',

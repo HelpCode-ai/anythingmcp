@@ -150,7 +150,7 @@ export default function SettingsAdminPage() {
               type="text"
               value={smtpFrom}
               onChange={(e) => setSmtpFrom(e.target.value)}
-              placeholder="AnythingToMCP <noreply@example.com>"
+              placeholder="AnythingMCP <noreply@example.com>"
               className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
             />
           </div>

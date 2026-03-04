@@ -1,5 +1,5 @@
 # =============================================================================
-# AnythingToMCP — Backend (NestJS) Multi-Stage Dockerfile
+# AnythingMCP — Backend (NestJS) Multi-Stage Dockerfile
 # =============================================================================
 
 # ── Stage 1: Dependencies ────────────────────────────────────────────────────

@@ -67,7 +67,7 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2.5 group">
             <span className="transition-transform group-hover:scale-105"><LogoIcon /></span>
-            <span className="text-lg font-bold hidden sm:inline">AnythingToMCP</span>
+            <span className="text-lg font-bold hidden sm:inline">AnythingMCP</span>
           </Link>
           {/* Desktop nav */}
           <nav className="hidden lg:flex items-center gap-1">

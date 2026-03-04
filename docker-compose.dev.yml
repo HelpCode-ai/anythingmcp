@@ -1,5 +1,5 @@
 # =============================================================================
-# AnythingToMCP — Development Overrides
+# AnythingMCP — Development Overrides
 # =============================================================================
 # Usage:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 # Only starts postgres + redis; run frontend/backend locally with hot reload.
