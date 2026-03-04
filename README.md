@@ -1,6 +1,6 @@
 # AnythingToMCP
 
-> Convert **any** API into an MCP server — self-hosted and open source.
+> Convert **any** API into an MCP server — self-hosted and source available.
 
 AnythingToMCP is a platform that lets you create dynamic [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers by connecting your existing APIs through a web interface or API calls. It acts as a **bridge** between any API (REST, SOAP, GraphQL, Database, Webhook, other MCP servers) and MCP-compatible AI clients like Claude Desktop, Claude Code, ChatGPT, Cursor, and more.
 
@@ -45,7 +45,7 @@ AnythingToMCP is a platform that lets you create dynamic [MCP (Model Context Pro
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/kochfreiburg/anything-to-mcp.git
+git clone https://github.com/HelpCode-ai/anything-to-mcp.git
 cd anything-to-mcp
 
 # 2. Configure environment
@@ -746,4 +746,12 @@ Copy `.env.example` to `.env` and configure:
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+This software is licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
+
+- **Free for**: internal use, personal use, development, testing, evaluation, and academic use.
+- **Not permitted**: offering the software as a commercial hosted service to third parties without a separate commercial license.
+- **Change Date**: 2030-03-04 — on this date the license automatically converts to Apache 2.0.
+
+For commercial licensing inquiries, contact [licensing@helpcode.ai](mailto:licensing@helpcode.ai).
+
+Copyright (c) 2026 helpcode.ai GmbH
