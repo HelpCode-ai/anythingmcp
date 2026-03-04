@@ -82,7 +82,7 @@ export default function ConnectorsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `anythingtomcp-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `anythingmcp-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
       setMsg('Configuration exported');

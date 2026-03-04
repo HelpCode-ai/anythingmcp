@@ -103,7 +103,7 @@ export class McpCombinedAuthGuard implements CanActivate {
 
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer realm="AnythingToMCP MCP Server", resource_metadata="${resourceMetadataUrl}"`,
+      `Bearer realm="AnythingMCP MCP Server", resource_metadata="${resourceMetadataUrl}"`,
     );
     res.status(401).json({
       jsonrpc: '2.0',

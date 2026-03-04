@@ -1,5 +1,5 @@
 # =============================================================================
-# AnythingToMCP — Full Stack Deployment
+# AnythingMCP — Full Stack Deployment
 # =============================================================================
 # Usage:  docker compose up -d
 # UI:     http://localhost:3000
@@ -37,7 +37,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=4000
-      - DATABASE_URL=postgresql://atmcp:${POSTGRES_PASSWORD:-atmcp}@postgres:5432/anythingtomcp
+      - DATABASE_URL=postgresql://atmcp:${POSTGRES_PASSWORD:-atmcp}@postgres:5432/anythingmcp
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production-min-32-chars}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-in-production-exactly-32}
@@ -71,9 +71,9 @@ services:
     environment:
       - POSTGRES_USER=atmcp
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-atmcp}
-      - POSTGRES_DB=anythingtomcp
+      - POSTGRES_DB=anythingmcp
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U atmcp -d anythingtomcp"]
+      test: ["CMD-SHELL", "pg_isready -U atmcp -d anythingmcp"]
       interval: 5s
       timeout: 3s
       retries: 5

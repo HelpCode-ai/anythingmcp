@@ -13,7 +13,7 @@ import { McpApiKeysService } from '../roles/mcp-api-keys.service';
  * Guard for the MCP endpoint (/mcp).
  * Supports:
  *   - Per-user MCP API key (mcp_... prefix → resolves user + role)
- *   - Bearer token (JWT from AnythingToMCP auth)
+ *   - Bearer token (JWT from AnythingMCP auth)
  *   - Bearer token (static MCP_BEARER_TOKEN for Claude Desktop)
  *   - X-API-Key header (static MCP_API_KEY for Claude Desktop)
  *
@@ -87,7 +87,7 @@ export class McpAuthGuard implements CanActivate {
     // Set WWW-Authenticate header for proper MCP client auth flow
     response.setHeader(
       'WWW-Authenticate',
-      'Bearer realm="AnythingToMCP MCP Server"',
+      'Bearer realm="AnythingMCP MCP Server"',
     );
 
     this.logger.warn('MCP auth failed — returning 401');

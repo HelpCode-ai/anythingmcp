@@ -43,7 +43,7 @@ export class McpClientEngine {
     });
 
     const client = new Client({
-      name: 'anything-to-mcp-bridge',
+      name: 'anythingmcp-bridge',
       version: '1.0.0',
     });
 
@@ -74,7 +74,7 @@ export class McpClientEngine {
             requestInit: { headers: retryHeaders },
           });
           const retryClient = new Client({
-            name: 'anything-to-mcp-bridge',
+            name: 'anythingmcp-bridge',
             version: '1.0.0',
           });
           try {
@@ -126,7 +126,7 @@ export class McpClientEngine {
     });
 
     const client = new Client({
-      name: 'anything-to-mcp-bridge',
+      name: 'anythingmcp-bridge',
       version: '1.0.0',
     });
 
