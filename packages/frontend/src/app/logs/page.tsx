@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { Fragment, useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { audit, connectors as connectorsApi } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
@@ -137,9 +137,8 @@ export default function LogsPage() {
                   </tr>
                 ) : (
                   logs.map((log) => (
-                    <>
+                    <Fragment key={log.id}>
                       <tr
-                        key={log.id}
                         onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
                         className="border-b border-[var(--border)] hover:bg-[var(--accent)] transition-colors cursor-pointer"
                       >
@@ -161,7 +160,7 @@ export default function LogsPage() {
                         <td className="px-4 py-3 text-[var(--muted-foreground)] text-xs">{log.clientInfo || '-'}</td>
                       </tr>
                       {expandedId === log.id && (
-                        <tr key={`${log.id}-detail`}>
+                        <tr>
                           <td colSpan={6} className="px-4 py-4 bg-[var(--muted)]/50 border-b border-[var(--border)]">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-full">
                               <div>
@@ -189,7 +188,7 @@ export default function LogsPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))
                 )}
               </tbody>
