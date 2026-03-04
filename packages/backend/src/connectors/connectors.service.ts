@@ -262,6 +262,13 @@ export class ConnectorsService {
     parameters: Record<string, unknown>;
     endpointMapping: Record<string, unknown>;
   }> {
+    const isMongo =
+      baseUrl.startsWith('mongodb://') || baseUrl.startsWith('mongodb+srv://');
+
+    if (isMongo) {
+      return this.generateMongoTools();
+    }
+
     const isMssql = baseUrl.startsWith('mssql://');
 
     const schemaQuery = isMssql
@@ -310,6 +317,65 @@ export class ConnectorsService {
             query: {
               type: 'string',
               description: `The SQL SELECT query to execute. Only SELECT is allowed. Example: "${topSyntax} * FROM table_name"`,
+            },
+          },
+          required: ['query'],
+        },
+        endpointMapping: { method: 'query', path: '${query}' },
+      },
+    ];
+  }
+
+  private generateMongoTools(): Array<{
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+    endpointMapping: Record<string, unknown>;
+  }> {
+    return [
+      // 1. Schema introspection (MongoDB-specific)
+      {
+        name: 'get_database_schema',
+        description:
+          `Retrieve the MongoDB database structure: all collections and their document fields inferred from sample documents. ` +
+          `Use this FIRST to understand the database structure before writing any queries. ` +
+          `Returns collection names with sample field names, types, and example values.`,
+        parameters: { type: 'object', properties: {} },
+        endpointMapping: { method: 'mongo_schema', path: '' },
+      },
+      // 2. Example queries (static text, no DB execution)
+      {
+        name: 'get_example_queries',
+        description:
+          `Returns example MongoDB query patterns for this database. ` +
+          `Use this to understand the JSON query format before writing your own. ` +
+          `This tool does NOT execute any query — it returns a text guide with examples.`,
+        parameters: { type: 'object', properties: {} },
+        endpointMapping: {
+          method: 'static',
+          path: '',
+          staticResponse: this.buildMongoExampleQueriesText(),
+        },
+      },
+      // 3. Dynamic query execution
+      {
+        name: 'execute_query',
+        description:
+          `Execute a read-only MongoDB find query. ` +
+          `The query parameter must be a JSON string with the format: { "collection": "name", "filter": {}, "projection": {}, "sort": {}, "limit": 10 }. ` +
+          `Only "collection" is required; filter, projection, sort, and limit are optional. ` +
+          `Always call get_database_schema first to learn collection and field names, then use get_example_queries for syntax guidance. ` +
+          `Results are limited to 1000 documents.`,
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description:
+                'A JSON object describing the MongoDB query. Required field: "collection". ' +
+                'Optional fields: "filter" (match criteria), "projection" (fields to include/exclude), ' +
+                '"sort" (ordering), "limit" (max docs). ' +
+                'Example: {"collection":"users","filter":{"age":{"$gt":18}},"limit":10}',
             },
           },
           required: ['query'],
@@ -392,6 +458,50 @@ export class ConnectorsService {
       'SELECT * FROM table_name ORDER BY id LIMIT 50 OFFSET 0',
       '',
       '> NOTE: Only SELECT queries are allowed. INSERT, UPDATE, DELETE, DROP, and other write operations are blocked.',
+    ].join('\n');
+  }
+
+  private buildMongoExampleQueriesText(): string {
+    return [
+      '# MongoDB Example Queries',
+      '',
+      'Queries are JSON objects with the format:',
+      '  { "collection": "name", "filter": {}, "projection": {}, "sort": {}, "limit": N }',
+      '',
+      '## List first 10 documents in a collection',
+      '{"collection":"users","limit":10}',
+      '',
+      '## Filter by exact field value',
+      '{"collection":"users","filter":{"status":"active"},"limit":50}',
+      '',
+      '## Filter with comparison operators',
+      '{"collection":"orders","filter":{"total":{"$gt":100}},"sort":{"total":-1},"limit":20}',
+      '',
+      '## Search by text (regex, case-insensitive)',
+      '{"collection":"products","filter":{"name":{"$regex":"search_term","$options":"i"}},"limit":50}',
+      '',
+      '## Filter by date range',
+      '{"collection":"events","filter":{"createdAt":{"$gte":{"$date":"2024-01-01T00:00:00Z"},"$lte":{"$date":"2024-12-31T23:59:59Z"}}},"sort":{"createdAt":-1},"limit":100}',
+      '',
+      '## Select specific fields (projection)',
+      '{"collection":"users","filter":{},"projection":{"name":1,"email":1,"_id":0},"limit":20}',
+      '',
+      '## Filter by nested field',
+      '{"collection":"users","filter":{"address.city":"New York"},"limit":20}',
+      '',
+      '## Filter with $in operator (match any of several values)',
+      '{"collection":"products","filter":{"category":{"$in":["electronics","books"]}},"limit":50}',
+      '',
+      '## Filter by existence of a field',
+      '{"collection":"users","filter":{"phone":{"$exists":true}},"limit":50}',
+      '',
+      '## Combine multiple conditions (AND)',
+      '{"collection":"orders","filter":{"status":"completed","total":{"$gt":50}},"sort":{"createdAt":-1},"limit":20}',
+      '',
+      '## OR conditions',
+      '{"collection":"users","filter":{"$or":[{"role":"admin"},{"role":"manager"}]},"limit":50}',
+      '',
+      '> NOTE: Only read-only find queries are supported. Insert, update, delete, and aggregate operations are not allowed.',
     ].join('\n');
   }
 }
