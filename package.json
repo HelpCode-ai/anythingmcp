@@ -1,9 +1,9 @@
 {
-  "name": "anything-to-mcp",
+  "name": "anythingmcp",
   "version": "0.1.0",
-  "description": "Convert any API into an MCP server — self-hosted, open source, AI-assisted",
+  "description": "Convert any API into an MCP server — self-hosted, source available",
   "private": true,
-  "license": "MIT",
+  "license": "BSL-1.1",
   "workspaces": [
     "packages/backend",
     "packages/frontend"

@@ -46,7 +46,7 @@ function LoginForm() {
         <div className="flex justify-center mb-4">
           <LogoIcon size={56} />
         </div>
-        <h1 className="text-2xl font-bold">AnythingToMCP</h1>
+        <h1 className="text-2xl font-bold">AnythingMCP</h1>
         <p className="text-[var(--muted-foreground)] mt-1 text-sm">
           Convert any API into an MCP server
         </p>

@@ -1,5 +1,5 @@
 # =============================================================================
-# AnythingToMCP — Frontend (Next.js) Multi-Stage Dockerfile
+# AnythingMCP — Frontend (Next.js) Multi-Stage Dockerfile
 # =============================================================================
 
 # ── Stage 1: Dependencies ────────────────────────────────────────────────────

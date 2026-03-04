@@ -30,7 +30,7 @@ export class LoginController {
     @Res() res: Response,
   ) {
     const serverName =
-      this.configService.get<string>('MCP_SERVER_NAME') || 'AnythingToMCP';
+      this.configService.get<string>('MCP_SERVER_NAME') || 'AnythingMCP';
 
     res.setHeader('Content-Type', 'text/html');
     res.send(this.renderLoginPage(session, error, serverName));

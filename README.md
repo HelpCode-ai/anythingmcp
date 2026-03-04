@@ -1,8 +1,8 @@
-# AnythingToMCP
+# AnythingMCP
 
-> Convert **any** API into an MCP server — self-hosted and open source.
+> Convert **any** API into an MCP server — self-hosted and source available.
 
-AnythingToMCP is a platform that lets you create dynamic [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers by connecting your existing APIs through a web interface or API calls. It acts as a **bridge** between any API (REST, SOAP, GraphQL, Database, Webhook, other MCP servers) and MCP-compatible AI clients like Claude Desktop, Claude Code, ChatGPT, Cursor, and more.
+AnythingMCP is a platform that lets you create dynamic [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers by connecting your existing APIs through a web interface or API calls. It acts as a **bridge** between any API (REST, SOAP, GraphQL, Database, Webhook, other MCP servers) and MCP-compatible AI clients like Claude Desktop, Claude Code, ChatGPT, Cursor, and more.
 
 ---
 
@@ -45,8 +45,8 @@ AnythingToMCP is a platform that lets you create dynamic [MCP (Model Context Pro
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/kochfreiburg/anything-to-mcp.git
-cd anything-to-mcp
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp
 
 # 2. Configure environment
 cp .env.example .env
@@ -93,7 +93,7 @@ Run PostgreSQL and Redis in Docker, and the frontend/backend locally with hot re
 ### Step-by-Step
 
 ```bash
-cd anything-to-mcp
+cd anythingmcp
 
 # 1. Create your .env file
 cp .env.example .env
@@ -105,7 +105,7 @@ Edit `.env` for local development — note the `localhost:5433` port for Postgre
 NODE_ENV=development
 PORT=4000
 POSTGRES_PASSWORD=your-local-password
-DATABASE_URL=postgresql://atmcp:your-local-password@localhost:5433/anythingtomcp
+DATABASE_URL=postgresql://atmcp:your-local-password@localhost:5433/anythingmcp
 REDIS_URL=redis://localhost:6379
 JWT_SECRET=local-dev-secret-at-least-32-chars!!
 ENCRYPTION_KEY=local-dev-key-exactly-32-chars!!
@@ -282,7 +282,7 @@ Add this to your Claude Desktop configuration (`claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
-    "anything-to-mcp": {
+    "anythingmcp": {
       "type": "url",
       "url": "http://localhost:4000/mcp",
       "headers": {
@@ -296,8 +296,8 @@ Add this to your Claude Desktop configuration (`claude_desktop_config.json`):
 ### Claude Code
 
 ```bash
-# Add AnythingToMCP as an MCP server
-claude mcp add anything-to-mcp \
+# Add AnythingMCP as an MCP server
+claude mcp add anythingmcp \
   --transport http \
   --url http://localhost:4000/mcp \
   --header "Authorization: Bearer YOUR_MCP_BEARER_TOKEN"
@@ -495,7 +495,7 @@ curl -s http://localhost:4000/api/connectors/$CONNECTOR_ID/import \
 
 ## Tool Definition Format
 
-Every MCP tool in AnythingToMCP is defined by three JSON objects:
+Every MCP tool in AnythingMCP is defined by three JSON objects:
 
 ### 1. `parameters` — JSON Schema for tool inputs
 
@@ -514,7 +514,7 @@ What the AI model can pass as input when calling the tool:
 
 ### 2. `endpointMapping` — How parameters map to the API request
 
-This is the **bridge configuration** that tells AnythingToMCP how to transform MCP tool call parameters into actual API requests.
+This is the **bridge configuration** that tells AnythingMCP how to transform MCP tool call parameters into actual API requests.
 
 ```json
 {
@@ -570,7 +570,7 @@ Transform the API response before returning to the AI:
 
 ## Import Formats
 
-AnythingToMCP supports importing tool definitions from 6 sources:
+AnythingMCP supports importing tool definitions from 6 sources:
 
 ### 1. OpenAPI / Swagger
 
@@ -595,7 +595,7 @@ Variables using `{{name}}` pattern are auto-detected and added as tool parameter
 
 ### 4. GraphQL Introspection
 
-Provide the GraphQL endpoint URL. AnythingToMCP runs an introspection query and generates tools for each query and mutation field.
+Provide the GraphQL endpoint URL. AnythingMCP runs an introspection query and generates tools for each query and mutation field.
 
 ### 5. WSDL
 
@@ -664,7 +664,7 @@ You can also wrap the array in a `{ "tools": [...] }` object.
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│                    AnythingToMCP                      │
+│                    AnythingMCP                      │
 │                                                      │
 │  Next.js UI (3000) ◄────► NestJS Backend (4000)      │
 │  - Dashboard              │                          │
@@ -746,4 +746,12 @@ Copy `.env.example` to `.env` and configure:
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+This software is licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
+
+- **Free for**: internal use, personal use, development, testing, evaluation, and academic use.
+- **Not permitted**: offering the software as a commercial hosted service to third parties without a separate commercial license.
+- **Change Date**: 2030-03-04 — on this date the license automatically converts to Apache 2.0.
+
+For commercial licensing inquiries, contact [licensing@helpcode.ai](mailto:licensing@helpcode.ai).
+
+Copyright (c) 2026 helpcode.ai GmbH

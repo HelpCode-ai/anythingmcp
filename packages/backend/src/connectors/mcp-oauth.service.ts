@@ -92,7 +92,7 @@ export class McpOAuthService {
     const response = await axios.post(
       registrationEndpoint,
       {
-        client_name: 'AnythingToMCP Bridge',
+        client_name: 'AnythingMCP Bridge',
         redirect_uris: [callbackUrl],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],

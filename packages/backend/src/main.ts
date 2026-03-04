@@ -54,9 +54,9 @@ async function bootstrap() {
 
   // Swagger documentation
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('AnythingToMCP API')
+    .setTitle('AnythingMCP API')
     .setDescription(
-      'Backend API for AnythingToMCP — convert any API into an MCP server. ' +
+      'Backend API for AnythingMCP — convert any API into an MCP server. ' +
         'Manage connectors, configure MCP tools, and monitor usage.',
     )
     .setVersion('0.1.0')
@@ -79,7 +79,7 @@ async function bootstrap() {
   });
 
   await app.listen(port);
-  logger.log(`AnythingToMCP backend running on: http://localhost:${port}`);
+  logger.log(`AnythingMCP backend running on: http://localhost:${port}`);
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
   logger.log(`MCP endpoint (global): http://localhost:${port}/mcp`);
   logger.log(`MCP endpoint (per-server): http://localhost:${port}/mcp/:serverId`);

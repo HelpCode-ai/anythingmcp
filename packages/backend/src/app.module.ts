@@ -86,7 +86,7 @@ if (useOAuth) {
 
     // MCP Server (dynamic tools registered by McpServerModule)
     McpModule.forRoot({
-      name: 'anything-to-mcp',
+      name: 'anythingmcp',
       version: '0.1.0',
       transport: McpTransportType.STREAMABLE_HTTP,
       mcpEndpoint: '/mcp',

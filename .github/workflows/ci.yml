@@ -5,7 +5,7 @@ on:
 
 defaults:
   run:
-    working-directory: anything-to-mcp
+    working-directory: anythingmcp
 
 jobs:
   backend:
@@ -18,7 +18,7 @@ jobs:
         env:
           POSTGRES_USER: atmcp
           POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: anythingtomcp_test
+          POSTGRES_DB: anythingmcp_test
         ports:
           - 5432:5432
         options: >-
@@ -28,7 +28,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://atmcp:testpassword@localhost:5432/anythingtomcp_test
+      DATABASE_URL: postgresql://atmcp:testpassword@localhost:5432/anythingmcp_test
       JWT_SECRET: ci-test-jwt-secret-at-least-32-chars
       ENCRYPTION_KEY: ci-test-encryption-key-32-chars!
 
@@ -39,26 +39,26 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: anything-to-mcp/package-lock.json
+          cache-dependency-path: anythingmcp/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
       - name: Generate Prisma client
         run: npx prisma generate
-        working-directory: anything-to-mcp/packages/backend
+        working-directory: anythingmcp/packages/backend
 
       - name: Run Prisma migrations
         run: npx prisma migrate deploy
-        working-directory: anything-to-mcp/packages/backend
+        working-directory: anythingmcp/packages/backend
 
       - name: Run tests
         run: npm test
-        working-directory: anything-to-mcp/packages/backend
+        working-directory: anythingmcp/packages/backend
 
       - name: Build backend
         run: npm run build
-        working-directory: anything-to-mcp/packages/backend
+        working-directory: anythingmcp/packages/backend
 
   frontend:
     name: Frontend (build)
@@ -71,14 +71,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: anything-to-mcp/package-lock.json
+          cache-dependency-path: anythingmcp/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build frontend
         run: npm run build
-        working-directory: anything-to-mcp/packages/frontend
+        working-directory: anythingmcp/packages/frontend
         env:
           NEXT_PUBLIC_API_URL: http://localhost:4000
 
@@ -92,9 +92,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build backend image
-        run: docker build -t anything-to-mcp-backend:ci .
-        working-directory: anything-to-mcp
+        run: docker build -t anythingmcp-backend:ci .
+        working-directory: anythingmcp
 
       - name: Build frontend image
-        run: docker build -f Dockerfile.frontend -t anything-to-mcp-frontend:ci .
-        working-directory: anything-to-mcp
+        run: docker build -f Dockerfile.frontend -t anythingmcp-frontend:ci .
+        working-directory: anythingmcp
