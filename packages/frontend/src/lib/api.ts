@@ -147,7 +147,7 @@ export const tools = {
 
 // Audit
 export const audit = {
-  invocations: (token: string, params?: { limit?: number; offset?: number; toolId?: string; status?: string; search?: string; connectorId?: string }) => {
+  invocations: (token: string, params?: { limit?: number; offset?: number; toolId?: string; status?: string; search?: string; connectorId?: string; mcpServerId?: string }) => {
     const query = new URLSearchParams();
     if (params?.limit) query.set('limit', String(params.limit));
     if (params?.offset) query.set('offset', String(params.offset));
@@ -155,6 +155,7 @@ export const audit = {
     if (params?.status) query.set('status', params.status);
     if (params?.search) query.set('search', params.search);
     if (params?.connectorId) query.set('connectorId', params.connectorId);
+    if (params?.mcpServerId) query.set('mcpServerId', params.mcpServerId);
     const qs = query.toString();
     return request<any[]>(`/api/audit/invocations${qs ? `?${qs}` : ''}`, { token });
   },

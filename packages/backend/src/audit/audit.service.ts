@@ -11,6 +11,7 @@ export class AuditService {
   async logInvocation(data: {
     toolId: string;
     userId?: string;
+    mcpServerId?: string;
     input: Record<string, unknown>;
     output?: Record<string, unknown>;
     status: 'SUCCESS' | 'ERROR' | 'TIMEOUT';
@@ -23,6 +24,7 @@ export class AuditService {
         data: {
           toolId: data.toolId,
           userId: data.userId,
+          mcpServerId: data.mcpServerId,
           input: data.input as any,
           output: data.output as any,
           status: data.status as InvocationStatus,
@@ -32,6 +34,29 @@ export class AuditService {
         },
       });
     } catch (error: any) {
+      // FK violation on userId — retry without userId (user info is still in clientInfo)
+      if (error.message?.includes('user_id_fkey') && data.userId) {
+        try {
+          await this.prisma.toolInvocation.create({
+            data: {
+              toolId: data.toolId,
+              mcpServerId: data.mcpServerId,
+              input: data.input as any,
+              output: data.output as any,
+              status: data.status as InvocationStatus,
+              durationMs: data.durationMs,
+              error: data.error,
+              clientInfo: data.clientInfo,
+            },
+          });
+          return;
+        } catch (retryError: any) {
+          this.logger.warn(
+            `Failed to persist invocation for tool ${data.toolId} (retry): ${retryError.message}`,
+          );
+          return;
+        }
+      }
       this.logger.warn(
         `Failed to persist invocation for tool ${data.toolId}: ${error.message}`,
       );
@@ -49,11 +74,13 @@ export class AuditService {
       status?: InvocationStatus;
       search?: string;
       connectorId?: string;
+      mcpServerId?: string;
     },
   ) {
     const where: any = {};
     if (filters?.toolId) where.toolId = filters.toolId;
     if (filters?.status) where.status = filters.status;
+    if (filters?.mcpServerId) where.mcpServerId = filters.mcpServerId;
     if (filters?.search) {
       where.tool = { name: { contains: filters.search, mode: 'insensitive' } };
     }
@@ -73,6 +100,12 @@ export class AuditService {
             connectorId: true,
             connector: { select: { name: true, type: true } },
           },
+        },
+        user: {
+          select: { id: true, email: true, name: true },
+        },
+        mcpServer: {
+          select: { id: true, name: true, slug: true },
         },
       },
     });

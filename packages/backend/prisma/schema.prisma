@@ -288,8 +288,9 @@ model McpServerConfig {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  connectors McpServerConnector[]
-  apiKeys    McpApiKey[]
+  connectors      McpServerConnector[]
+  apiKeys         McpApiKey[]
+  toolInvocations ToolInvocation[]
 
   @@unique([userId, slug])
   @@map("mcp_server_configs")
@@ -325,18 +326,22 @@ model ToolInvocation {
   userId String? @map("user_id")
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  mcpServerId String?          @map("mcp_server_id")
+  mcpServer   McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
+
   input      Json
   output     Json?
   status     InvocationStatus
   durationMs Int?              @map("duration_ms")
   error      String?           @db.Text
 
-  clientInfo String? @map("client_info") // e.g. "Claude Desktop", "Cursor"
+  clientInfo String? @map("client_info") // JSON: {authMethod, apiKeyName, userEmail, mcpServerName}
 
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([toolId, createdAt])
   @@index([userId, createdAt])
+  @@index([mcpServerId, createdAt])
   @@map("tool_invocations")
 }
 

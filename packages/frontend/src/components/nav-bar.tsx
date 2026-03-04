@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 
 /* Inline SVG logo component */
@@ -45,6 +45,19 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const allNavItems = NAV_ITEMS;
 
@@ -80,18 +93,38 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm">
-          <div className="hidden sm:flex items-center gap-2 text-[var(--muted-foreground)]">
-            <div className="w-6 h-6 rounded-full bg-[var(--brand)] text-white flex items-center justify-center text-xs font-medium">
-              {(user?.name || user?.email || '?')[0].toUpperCase()}
-            </div>
-            <span className="max-w-[120px] truncate">{user?.email}</span>
+          {/* User dropdown (desktop) */}
+          <div className="hidden sm:block relative" ref={userMenuRef}>
+            <button
+              onClick={() => setUserMenuOpen((v) => !v)}
+              className="flex items-center gap-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] px-2 py-1.5 rounded-md hover:bg-[var(--accent)] transition-colors"
+            >
+              <div className="w-6 h-6 rounded-full bg-[var(--brand)] text-white flex items-center justify-center text-xs font-medium">
+                {(user?.name || user?.email || '?')[0].toUpperCase()}
+              </div>
+              <span className="max-w-[120px] truncate">{user?.email}</span>
+              <svg className={`w-3.5 h-3.5 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {userMenuOpen && (
+              <div className="absolute right-0 mt-1 w-48 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg py-1 z-50">
+                <div className="px-3 py-2 border-b border-[var(--border)]">
+                  <p className="text-xs font-medium truncate">{user?.name || user?.email}</p>
+                  {user?.name && <p className="text-xs text-[var(--muted-foreground)] truncate">{user?.email}</p>}
+                </div>
+                <button
+                  onClick={() => { setUserMenuOpen(false); logout(); }}
+                  className="w-full text-left px-3 py-2 text-sm text-[var(--destructive)] hover:bg-[var(--accent)] transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  Logout
+                </button>
+              </div>
+            )}
           </div>
-          <button
-            onClick={logout}
-            className="hidden sm:block text-[var(--muted-foreground)] hover:text-[var(--destructive)] px-2 py-1 rounded text-xs"
-          >
-            Logout
-          </button>
           {/* Mobile hamburger */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

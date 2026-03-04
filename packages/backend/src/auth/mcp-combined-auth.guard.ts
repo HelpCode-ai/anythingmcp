@@ -45,6 +45,8 @@ export class McpCombinedAuthGuard implements CanActivate {
           role: user.role,
           mcpRoleId: user.mcpRoleId,
           mcpServerId: user.mcpServerId,
+          authMethod: 'mcp_api_key',
+          apiKeyName: user.apiKeyName,
         };
         return true;
       }
@@ -53,6 +55,7 @@ export class McpCombinedAuthGuard implements CanActivate {
 
     // 2. Check static API key (legacy mode)
     if (apiKey && configuredApiKey && apiKey === configuredApiKey) {
+      req.user = { authMethod: 'static_api_key' };
       return true;
     }
 
@@ -62,13 +65,14 @@ export class McpCombinedAuthGuard implements CanActivate {
 
       // Static MCP bearer token
       if (mcpBearerToken && token === mcpBearerToken) {
+        req.user = { authMethod: 'static_bearer' };
         return true;
       }
 
       // JWT token (OAuth or legacy JWT)
       try {
         const payload = this.authService.verifyToken(token);
-        req.user = payload;
+        req.user = { ...payload, authMethod: 'jwt' };
         return true;
       } catch {
         // Invalid JWT — continue
@@ -77,11 +81,13 @@ export class McpCombinedAuthGuard implements CanActivate {
 
     // 4. If auth mode is 'none', allow all
     if (mode === 'none') {
+      req.user = { authMethod: 'none' };
       return true;
     }
 
     // 5. If no auth is configured at all (dev mode), allow
     if (!configuredApiKey && !mcpBearerToken && mode !== 'oauth2') {
+      req.user = { authMethod: 'none' };
       return true;
     }
 

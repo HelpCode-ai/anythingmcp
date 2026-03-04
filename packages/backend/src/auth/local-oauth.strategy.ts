@@ -38,6 +38,20 @@ export class LocalOAuthStrategy extends Strategy {
   }
 
   authenticate(req: Request): void {
+    // Workaround: @rekog/mcp-nest's authorize endpoint calls
+    // passport.authenticate() without { session: false }, so passport
+    // tries to serialize the user to a session that doesn't exist.
+    // Patch req.logIn to always disable sessions.
+    const origLogIn = req.logIn;
+    if (origLogIn) {
+      req.logIn = function (user: any, optionsOrDone?: any, done?: any) {
+        if (typeof optionsOrDone === 'function') {
+          return origLogIn.call(this, user, { session: false }, optionsOrDone);
+        }
+        return origLogIn.call(this, user, { ...optionsOrDone, session: false }, done);
+      } as any;
+    }
+
     // Check if the user has already authenticated via the login form
     // (login controller sets a signed cookie with user profile)
     const loginUserCookie = (req as any).cookies?.login_user;

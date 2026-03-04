@@ -39,6 +39,14 @@ export class DynamicMcpTools {
   async executeTool(
     toolName: string,
     params: Record<string, unknown>,
+    context?: {
+      userId?: string;
+      userEmail?: string;
+      authMethod?: string;
+      apiKeyName?: string;
+      mcpServerId?: string;
+      mcpServerName?: string;
+    },
   ): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
     const tool = this.toolRegistry.getTool(toolName);
     if (!tool) {
@@ -114,10 +122,18 @@ export class DynamicMcpTools {
 
       await this.auditService.logInvocation({
         toolId: tool.id,
+        userId: context?.userId,
+        mcpServerId: context?.mcpServerId,
         input: params,
         output: result as Record<string, unknown>,
         status: 'SUCCESS',
         durationMs,
+        clientInfo: context ? JSON.stringify({
+          authMethod: context.authMethod,
+          apiKeyName: context.apiKeyName,
+          userEmail: context.userEmail,
+          mcpServerName: context.mcpServerName,
+        }) : undefined,
       });
 
       const resultText = JSON.stringify(result, null, 2);
@@ -140,12 +156,20 @@ export class DynamicMcpTools {
 
       await this.auditService.logInvocation({
         toolId: tool.id,
+        userId: context?.userId,
+        mcpServerId: context?.mcpServerId,
         input: params,
         status: 'ERROR',
         durationMs,
         error: errorDetail.status
           ? `${errorDetail.status} ${errorDetail.statusText || ''}: ${errorDetail.error}`
           : String(errorDetail.error),
+        clientInfo: context ? JSON.stringify({
+          authMethod: context.authMethod,
+          apiKeyName: context.apiKeyName,
+          userEmail: context.userEmail,
+          mcpServerName: context.mcpServerName,
+        }) : undefined,
       });
 
       return {
