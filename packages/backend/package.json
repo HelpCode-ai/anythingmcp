@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "AnythingToMCP — NestJS Backend + Dynamic MCP Server",
   "private": true,
-  "license": "MIT",
+  "license": "BSL-1.1",
   "scripts": {
     "build": "prisma generate && nest build",
     "dev": "nest start --watch",
