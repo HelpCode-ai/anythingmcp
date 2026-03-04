@@ -125,6 +125,17 @@ export class McpEndpointController {
       { name: mcpServerConfig.name, version: mcpServerConfig.version || '1.0.0' },
     );
 
+    // Build invocation context for audit logging
+    // OAuth JWTs store email inside user_data, app JWTs have it top-level
+    const invocationContext = {
+      userId: user?.sub as string | undefined,
+      userEmail: (user?.email || user?.user_data?.email) as string | undefined,
+      authMethod: (user?.authMethod || 'none') as string,
+      apiKeyName: user?.apiKeyName as string | undefined,
+      mcpServerId: mcpServerConfig.id,
+      mcpServerName: mcpServerConfig.name,
+    };
+
     for (const tool of serverTools) {
       // Skip tools not allowed by role
       if (allowedToolIds !== null && !allowedToolIds.includes(tool.id)) {
@@ -135,7 +146,7 @@ export class McpEndpointController {
       const zodShape = this.jsonSchemaToZodShape(schema);
 
       mcpServer.tool(tool.name, tool.description, zodShape, async (args: any) => {
-        const result = await this.toolExecutor.executeTool(tool.name, args);
+        const result = await this.toolExecutor.executeTool(tool.name, args, invocationContext);
         return result;
       });
     }

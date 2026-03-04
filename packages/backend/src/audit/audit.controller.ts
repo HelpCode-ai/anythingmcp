@@ -18,6 +18,7 @@ export class AuditController {
   @ApiQuery({ name: 'status', required: false, enum: ['SUCCESS', 'ERROR', 'TIMEOUT'] })
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'connectorId', required: false, type: String })
+  @ApiQuery({ name: 'mcpServerId', required: false, type: String })
   async listInvocations(
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
@@ -25,11 +26,12 @@ export class AuditController {
     @Query('status') status?: 'SUCCESS' | 'ERROR' | 'TIMEOUT',
     @Query('search') search?: string,
     @Query('connectorId') connectorId?: string,
+    @Query('mcpServerId') mcpServerId?: string,
   ) {
     return this.auditService.getRecentInvocations(
       limit ? parseInt(limit, 10) : 100,
       offset ? parseInt(offset, 10) : 0,
-      { toolId, status: status as any, search, connectorId },
+      { toolId, status: status as any, search, connectorId, mcpServerId },
     );
   }
 

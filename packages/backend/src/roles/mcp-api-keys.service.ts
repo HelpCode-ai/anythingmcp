@@ -78,6 +78,6 @@ export class McpApiKeysService {
       data: { lastUsedAt: new Date() },
     }).catch(() => {});
 
-    return { ...record.user, mcpServerId: record.mcpServerId };
+    return { ...record.user, mcpServerId: record.mcpServerId, apiKeyName: record.name };
   }
 }

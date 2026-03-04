@@ -195,7 +195,16 @@ export class McpServerService implements OnModuleInit {
           }
         }
 
-        return this.toolExecutor.executeTool(name, args);
+        // OAuth JWTs store email inside user_data, app JWTs have it top-level
+        const invocationContext = {
+          userId: user?.sub,
+          userEmail: user?.email || user?.user_data?.email,
+          authMethod: user?.authMethod || 'none',
+          apiKeyName: user?.apiKeyName,
+          mcpServerId: user?.mcpServerId,
+        };
+
+        return this.toolExecutor.executeTool(name, args, invocationContext);
       },
     });
   }

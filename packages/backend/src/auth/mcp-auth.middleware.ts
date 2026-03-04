@@ -38,7 +38,11 @@ export class McpAuthMiddleware implements NestMiddleware {
     if (apiKey?.startsWith('mcp_')) {
       const user = await this.mcpApiKeysService.resolveUserByKey(apiKey);
       if (user) {
-        (req as any).user = { sub: user.id, email: user.email, role: user.role, mcpRoleId: user.mcpRoleId, mcpServerId: user.mcpServerId };
+        (req as any).user = {
+          sub: user.id, email: user.email, role: user.role,
+          mcpRoleId: user.mcpRoleId, mcpServerId: user.mcpServerId,
+          authMethod: 'mcp_api_key', apiKeyName: user.apiKeyName,
+        };
         return next();
       }
       // Invalid per-user key — fall through to 401
@@ -46,11 +50,13 @@ export class McpAuthMiddleware implements NestMiddleware {
 
     // If no auth is configured, allow all (dev mode)
     if (!configuredApiKey && !mcpBearerToken) {
+      (req as any).user = { authMethod: 'none' };
       return next();
     }
 
     // Check static API key
     if (apiKey && configuredApiKey && apiKey === configuredApiKey) {
+      (req as any).user = { authMethod: 'static_api_key' };
       return next();
     }
 
@@ -60,13 +66,14 @@ export class McpAuthMiddleware implements NestMiddleware {
 
       // Static MCP bearer token
       if (mcpBearerToken && token === mcpBearerToken) {
+        (req as any).user = { authMethod: 'static_bearer' };
         return next();
       }
 
       // JWT token
       try {
         const payload = this.authService.verifyToken(token);
-        (req as any).user = payload;
+        (req as any).user = { ...payload, authMethod: 'jwt' };
         return next();
       } catch {
         // Invalid JWT — fall through to 401
