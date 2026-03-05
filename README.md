@@ -7,8 +7,7 @@
   <p align="center">
     <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=social" alt="GitHub Stars"></a>&nbsp;
     <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSL--1.1-blue" alt="License"></a>&nbsp;
-    <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases" alt="Release"></a>&nbsp;
-    <a href="https://discord.gg/anythingmcp"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+    <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases" alt="Release"></a>
   </p>
 </p>
 
@@ -17,10 +16,6 @@
 **AnythingMCP** is a self-hosted, open-source MCP middleware that turns your existing APIs into [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers. Connect **any** API — REST, SOAP, GraphQL, databases, or other MCP servers — and expose them as tools to AI clients like **Claude**, **ChatGPT**, **Gemini**, **Copilot**, **Cursor**, and more.
 
 No SDK. No code changes. Just point, configure, and connect.
-
-<p align="center">
-  <img src="docs/assets/architecture-overview.png" alt="AnythingMCP Architecture" width="700"/>
-</p>
 
 > **Looking for an MCP gateway?** AnythingMCP acts as a universal MCP proxy and API-to-MCP bridge — the missing middleware between your APIs and AI agents.
 
@@ -129,7 +124,7 @@ Each connector type has dedicated documentation with setup instructions, example
                         └─────────────────────────────────┘
                           Single Docker container:
                           Next.js UI + NestJS Backend
-                          PostgreSQL  │  Redis
+                          PostgreSQL  │  Redis (optional)
 ```
 
 **How it works:**
@@ -149,22 +144,9 @@ Each connector type has dedicated documentation with setup instructions, example
 | Backend | NestJS 11, TypeScript |
 | MCP | @modelcontextprotocol/sdk, Streamable HTTP |
 | Database | PostgreSQL 17, Prisma 7 |
-| Cache | Redis 7 |
+| Cache | Redis 7 (optional) |
 | Auth | JWT, OAuth2, AES-256-GCM |
 | Deploy | Docker (single container for app) + Docker Compose |
-
----
-
-## Community
-
-We're building the universal MCP gateway and we need your help!
-
-- **Star this repo** to help others discover AnythingMCP
-- **Join the [Discord community](https://discord.gg/anythingmcp)** to share ideas, get help, and connect with other developers
-- **Open an issue** to report bugs or suggest features
-- **Submit a PR** to contribute code, docs, or connector types
-
-Every star, issue, and conversation helps us build a better MCP ecosystem for everyone.
 
 ---
 
@@ -175,7 +157,7 @@ See the [Deployment Guide](docs/deployment.md#local-development) for full local 
 ```bash
 # Quick local dev setup
 cp .env.example .env
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
 npm install
 ln -sf ../../.env packages/backend/.env
 ln -sf ../../.env packages/frontend/.env
@@ -194,6 +176,6 @@ Licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
 - **Not permitted**: offering as a commercial hosted service without a separate license
 - **Change Date**: 2030-03-04 — converts to Apache 2.0
 
-For commercial licensing: [licensing@helpcode.ai](mailto:licensing@helpcode.ai)
+For commercial licensing: [info@helpcode.ai](mailto:info@helpcode.ai)
 
 Copyright (c) 2026 helpcode.ai GmbH
