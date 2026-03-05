@@ -122,11 +122,13 @@ export class EmailService {
       }
     }
 
-    // Fallback: send via external API
+    // Fallback: send via external API (requires active license)
+    const licenseKey = await this.siteSettings.get('license_key');
     return this.sendViaExternalApi('/api/email/invite', {
       email: to,
       inviterName: invitedByName,
       instanceUrl: inviteUrl,
+      ...(licenseKey ? { licenseKey } : {}),
     });
   }
 
