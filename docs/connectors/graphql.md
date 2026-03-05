@@ -127,7 +127,11 @@ GraphQL connectors support all standard auth types:
 | **Bearer Token** | `"authType": "BEARER_TOKEN", "authConfig": {"token": "..."}` |
 | **API Key** | `"authType": "API_KEY", "authConfig": {"key": "X-API-Key", "value": "..."}` |
 | **Basic Auth** | `"authType": "BASIC_AUTH", "authConfig": {"username": "...", "password": "..."}` |
-| **OAuth2** | `"authType": "OAUTH2", "authConfig": {"tokenUrl": "...", "clientId": "...", "clientSecret": "..."}` |
+| **OAuth2** | `"authType": "OAUTH2", "authConfig": {"clientId": "...", "clientSecret": "...", "authorizationUrl": "...", "tokenUrl": "...", "scopes": "read write"}` |
+
+### OAuth2 Authorization Flow
+
+OAuth2 connectors use the **Authorization Code + PKCE** flow. After creating the connector, click **Authorize with Provider** on the detail page to start the flow. Set `http://localhost:4000/api/mcp-oauth/callback` as the redirect URI in your provider. On 401 responses, the engine automatically refreshes the token and retries.
 
 ---
 

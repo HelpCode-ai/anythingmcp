@@ -277,7 +277,10 @@ export default function NewConnectorPage() {
                     <input type="text" value={oauthScopes} onChange={(e) => setOauthScopes(e.target.value)} placeholder="read write (space-separated, optional)" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
                   </div>
                   <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3 text-sm text-blue-700 dark:text-blue-300">
-                    After creating the connector, you will be redirected to authorize via OAuth2. Tokens will be stored securely.
+                    <p>After creating the connector, you will be redirected to authorize via OAuth2. Tokens will be stored securely.</p>
+                    <p className="mt-1.5 text-xs text-blue-600 dark:text-blue-400">
+                      Set the <strong>Redirect / Callback URI</strong> in your OAuth provider to: <code className="bg-blue-100 dark:bg-blue-900/50 px-1 py-0.5 rounded font-mono">{typeof window !== 'undefined' ? window.location.origin.replace(':3000', ':4000') : 'http://localhost:4000'}/api/mcp-oauth/callback</code>
+                    </p>
                   </div>
                 </div>
               )}

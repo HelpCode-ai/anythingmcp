@@ -83,6 +83,8 @@ curl -s http://localhost:4000/api/auth/invite \
 | POST | `/api/connectors/:id/import-spec` | Auto-import tools from connector's spec URL |
 | POST | `/api/connectors/:id/import` | Import tools from any source |
 | PUT | `/api/connectors/:id/env-vars` | Set environment variables |
+| POST | `/api/connectors/:id/oauth/authorize` | Start OAuth2 authorization flow (returns redirect URL) |
+| GET | `/api/mcp-oauth/callback` | OAuth2 callback — exchanges code for tokens |
 
 ### Create Connector
 
