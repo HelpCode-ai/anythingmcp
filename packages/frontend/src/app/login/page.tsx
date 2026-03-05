@@ -56,14 +56,9 @@ function LoginForm() {
     }
   };
 
-  const handlePersonalUse = async () => {
-    setError('');
-    setLoading(true);
-    try {
-      await license.registerCommunity(authToken);
-    } catch {
-      // Non-blocking — user can still proceed
-    }
+  const handlePersonalUse = () => {
+    // Fire-and-forget: register community license in background, navigate immediately
+    license.registerCommunity(authToken).catch(() => {});
     router.push(redirectTo);
   };
 
