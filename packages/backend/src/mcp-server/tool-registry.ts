@@ -9,7 +9,7 @@ import { Injectable, Logger } from '@nestjs/common';
  * This is the bridge between MCP protocol and the Connector Engine.
  */
 
-interface RegisteredTool {
+export interface RegisteredTool {
   id: string;
   connectorId: string;
   name: string;
