@@ -9,6 +9,7 @@ import { GraphqlEngine } from '../connectors/engines/graphql.engine';
 import { SoapEngine } from '../connectors/engines/soap.engine';
 import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
 import { DatabaseEngine } from '../connectors/engines/database.engine';
+import { OAuth2TokenService } from '../connectors/engines/oauth2-token.service';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 
 const ENGINES = [
@@ -22,7 +23,7 @@ const ENGINES = [
 @Module({
   imports: [McpServersModule],
   controllers: [McpEndpointController],
-  providers: [McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, ...ENGINES],
+  providers: [McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, OAuth2TokenService, ...ENGINES],
   exports: [McpServerService, ToolRegistry],
 })
 export class McpServerModule {}

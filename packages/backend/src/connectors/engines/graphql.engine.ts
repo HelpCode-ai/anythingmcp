@@ -1,13 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
+import { OAuth2TokenService } from './oauth2-token.service';
 
 /**
  * GraphqlEngine — executes GraphQL queries/mutations.
- * Supports query variables, custom headers, and auth injection.
+ * Supports query variables, custom headers, auth injection, and OAuth2 token refresh.
  */
 @Injectable()
 export class GraphqlEngine {
   private readonly logger = new Logger(GraphqlEngine.name);
+
+  constructor(private readonly oauth2TokenService: OAuth2TokenService) {}
 
   async execute(
     config: {
@@ -15,6 +18,7 @@ export class GraphqlEngine {
       authType: string;
       authConfig?: Record<string, unknown>;
       headers?: Record<string, string>;
+      connectorId?: string;
     },
     endpointMapping: {
       method: string; // "query" or "mutation"
@@ -56,6 +60,21 @@ export class GraphqlEngine {
           headers[String(config.authConfig.headerName || 'X-API-Key')] =
             String(config.authConfig.apiKey);
           break;
+        case 'OAUTH2': {
+          const accessToken = this.oauth2TokenService.getAccessToken(
+            config.authConfig,
+            config.connectorId,
+          );
+          headers['Authorization'] = `Bearer ${accessToken}`;
+          break;
+        }
+        case 'BASIC_AUTH': {
+          const username = String(config.authConfig.username || '');
+          const password = String(config.authConfig.password || '');
+          headers['Authorization'] =
+            `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+          break;
+        }
       }
     }
 
@@ -71,21 +90,58 @@ export class GraphqlEngine {
       }
     }
 
-    const response = await axios.post(
-      config.baseUrl,
-      {
-        query: endpointMapping.path, // The GraphQL query
-        variables,
-      },
-      { headers, timeout: 30000 },
-    );
+    const requestConfig = {
+      query: endpointMapping.path,
+      variables,
+    };
 
-    if (response.data.errors) {
-      throw new Error(
-        `GraphQL errors: ${JSON.stringify(response.data.errors)}`,
-      );
+    try {
+      const response = await axios.post(config.baseUrl, requestConfig, {
+        headers,
+        timeout: 30000,
+      });
+
+      if (response.data.errors) {
+        throw new Error(
+          `GraphQL errors: ${JSON.stringify(response.data.errors)}`,
+        );
+      }
+
+      return response.data.data;
+    } catch (error) {
+      // OAuth2 auto-refresh: retry once on 401
+      if (
+        error instanceof AxiosError &&
+        error.response?.status === 401 &&
+        config.authType === 'OAUTH2' &&
+        config.authConfig?.refreshToken &&
+        config.authConfig?.tokenUrl
+      ) {
+        this.logger.debug(
+          'OAuth2: access token expired, attempting refresh...',
+        );
+        const newToken = await this.oauth2TokenService.refreshToken(
+          config.authConfig,
+          config.connectorId,
+        );
+        if (newToken) {
+          headers['Authorization'] = `Bearer ${newToken}`;
+          const retryResponse = await axios.post(
+            config.baseUrl,
+            requestConfig,
+            { headers, timeout: 30000 },
+          );
+
+          if (retryResponse.data.errors) {
+            throw new Error(
+              `GraphQL errors: ${JSON.stringify(retryResponse.data.errors)}`,
+            );
+          }
+
+          return retryResponse.data.data;
+        }
+      }
+      throw error;
     }
-
-    return response.data.data;
   }
 }

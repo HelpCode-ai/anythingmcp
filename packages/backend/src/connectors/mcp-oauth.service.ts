@@ -170,7 +170,10 @@ export class McpOAuthService {
       params.tokenUrl,
       new URLSearchParams(body).toString(),
       {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+        },
         timeout: 10000,
       },
     );

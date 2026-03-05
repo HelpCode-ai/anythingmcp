@@ -301,59 +301,73 @@ export class ConnectorsController {
 
   @Post(':id/oauth/authorize')
   @ApiOperation({
-    summary: 'Initiate OAuth2 authorization for an MCP connector',
+    summary: 'Initiate OAuth2 authorization for a connector',
     description:
-      'Discovers the remote MCP server OAuth endpoints, registers as a client, ' +
-      'and returns an authorization URL for the user to visit.',
+      'For MCP connectors: discovers OAuth endpoints via .well-known and optionally registers dynamically. ' +
+      'For REST/GraphQL connectors: uses authorizationUrl and tokenUrl from authConfig. ' +
+      'Returns an authorization URL for the user to visit.',
   })
   async initiateOAuth(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id, req.user.sub);
 
-    if (connector.type !== 'MCP') {
-      return { error: 'OAuth authorization is only available for MCP connectors' };
-    }
     if (connector.authType !== 'OAUTH2') {
       return { error: 'Connector auth type must be OAUTH2' };
     }
 
     try {
-      // 1. Discover OAuth metadata from remote server
-      const metadata = await this.mcpOAuthService.discoverMetadata(connector.baseUrl);
-      this.logger.log(`OAuth metadata discovered from ${connector.baseUrl}: issuer=${metadata.issuer}`);
-
-      // 2. Register as OAuth client (dynamic registration)
       const callbackUrl = `${this.configService.get('SERVER_URL') || 'http://localhost:4000'}/api/mcp-oauth/callback`;
+      const authConfig = connector.authConfig
+        ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
+        : {};
 
       let clientId: string;
       let clientSecret: string | undefined;
+      let authorizationEndpoint: string;
+      let tokenEndpoint: string;
+      let scope: string | undefined;
 
-      if (metadata.registration_endpoint) {
-        const registration = await this.mcpOAuthService.registerClient(
-          metadata.registration_endpoint,
-          callbackUrl,
-        );
-        clientId = registration.clientId;
-        clientSecret = registration.clientSecret;
+      if (connector.type === 'MCP') {
+        // MCP: discover OAuth metadata from remote server
+        const metadata = await this.mcpOAuthService.discoverMetadata(connector.baseUrl);
+        this.logger.log(`OAuth metadata discovered from ${connector.baseUrl}: issuer=${metadata.issuer}`);
+
+        authorizationEndpoint = metadata.authorization_endpoint;
+        tokenEndpoint = metadata.token_endpoint;
+        scope = metadata.scopes_supported?.join(' ');
+
+        if (metadata.registration_endpoint) {
+          const registration = await this.mcpOAuthService.registerClient(
+            metadata.registration_endpoint,
+            callbackUrl,
+          );
+          clientId = registration.clientId;
+          clientSecret = registration.clientSecret;
+        } else {
+          clientId = String(authConfig.clientId || '');
+          clientSecret = authConfig.clientSecret ? String(authConfig.clientSecret) : undefined;
+        }
       } else {
-        // Fallback: use clientId/clientSecret from existing authConfig
-        const authConfig = connector.authConfig
-          ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
-          : {};
+        // REST/GraphQL: use authConfig values directly
         clientId = String(authConfig.clientId || '');
         clientSecret = authConfig.clientSecret ? String(authConfig.clientSecret) : undefined;
-        if (!clientId) {
-          return {
-            error: 'Remote server does not support dynamic registration and no clientId is configured',
-          };
-        }
+        authorizationEndpoint = String(authConfig.authorizationUrl || '');
+        tokenEndpoint = String(authConfig.tokenUrl || '');
+        scope = authConfig.scopes ? String(authConfig.scopes) : undefined;
       }
 
-      // 3. Generate PKCE challenge
+      if (!clientId) {
+        return { error: 'No clientId configured for this connector' };
+      }
+      if (!authorizationEndpoint) {
+        return { error: 'No authorization URL configured for this connector' };
+      }
+
+      // Generate PKCE challenge
       const codeVerifier = this.mcpOAuthService.generateCodeVerifier();
       const codeChallenge = this.mcpOAuthService.generateCodeChallenge(codeVerifier);
       const state = this.mcpOAuthService.generateState();
 
-      // 4. Store pending flow
+      // Store pending flow
       this.mcpOAuthService.storePendingFlow(state, {
         codeVerifier,
         connectorId: connector.id,
@@ -361,18 +375,18 @@ export class ConnectorsController {
         redirectUri: callbackUrl,
         clientId,
         clientSecret,
-        tokenUrl: metadata.token_endpoint,
+        tokenUrl: tokenEndpoint,
         createdAt: Date.now(),
       });
 
-      // 5. Build authorization URL
+      // Build authorization URL
       const authorizationUrl = this.mcpOAuthService.buildAuthorizationUrl({
-        authorizationEndpoint: metadata.authorization_endpoint,
+        authorizationEndpoint,
         clientId,
         redirectUri: callbackUrl,
         codeChallenge,
         state,
-        scope: metadata.scopes_supported?.join(' '),
+        scope,
       });
 
       return { authorizationUrl };

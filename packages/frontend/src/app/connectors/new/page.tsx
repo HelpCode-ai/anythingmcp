@@ -33,6 +33,11 @@ export default function NewConnectorPage() {
   const [authType, setAuthType] = useState('NONE');
   const [authKey, setAuthKey] = useState('');
   const [authValue, setAuthValue] = useState('');
+  const [oauthClientId, setOauthClientId] = useState('');
+  const [oauthClientSecret, setOauthClientSecret] = useState('');
+  const [oauthAuthUrl, setOauthAuthUrl] = useState('');
+  const [oauthTokenUrl, setOauthTokenUrl] = useState('');
+  const [oauthScopes, setOauthScopes] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -45,6 +50,17 @@ export default function NewConnectorPage() {
         return { token: authValue };
       case 'BASIC_AUTH':
         return { username: authKey, password: authValue };
+      case 'OAUTH2':
+        if (selectedType !== 'MCP') {
+          return {
+            clientId: oauthClientId,
+            clientSecret: oauthClientSecret || undefined,
+            authorizationUrl: oauthAuthUrl,
+            tokenUrl: oauthTokenUrl,
+            scopes: oauthScopes || undefined,
+          };
+        }
+        return undefined;
       default:
         return undefined;
     }
@@ -75,8 +91,8 @@ export default function NewConnectorPage() {
         } catch {}
       }
 
-      // For MCP+OAuth2 connectors, redirect to the detail page so the user can authorize
-      if (selectedType === 'MCP' && authType === 'OAUTH2') {
+      // For OAuth2 connectors, redirect to the detail page so the user can authorize
+      if (authType === 'OAUTH2') {
         router.push(`/connectors/${created.id}`);
       } else {
         router.push('/connectors');
@@ -233,6 +249,36 @@ export default function NewConnectorPage() {
               {selectedType === 'MCP' && authType === 'OAUTH2' && (
                 <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3 text-sm text-blue-700 dark:text-blue-300">
                   After creating the connector, you will be redirected to authorize with the remote MCP server via OAuth. Tools will be discovered automatically after authorization.
+                </div>
+              )}
+
+              {authType === 'OAUTH2' && selectedType !== 'MCP' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Client ID</label>
+                      <input type="text" value={oauthClientId} onChange={(e) => setOauthClientId(e.target.value)} placeholder="your-client-id" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Client Secret</label>
+                      <input type="password" value={oauthClientSecret} onChange={(e) => setOauthClientSecret(e.target.value)} placeholder="optional" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Authorization URL</label>
+                    <input type="text" value={oauthAuthUrl} onChange={(e) => setOauthAuthUrl(e.target.value)} placeholder="https://provider.com/oauth/authorize" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Token URL</label>
+                    <input type="text" value={oauthTokenUrl} onChange={(e) => setOauthTokenUrl(e.target.value)} placeholder="https://provider.com/oauth/token" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Scopes</label>
+                    <input type="text" value={oauthScopes} onChange={(e) => setOauthScopes(e.target.value)} placeholder="read write (space-separated, optional)" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  </div>
+                  <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3 text-sm text-blue-700 dark:text-blue-300">
+                    After creating the connector, you will be redirected to authorize via OAuth2. Tokens will be stored securely.
+                  </div>
                 </div>
               )}
 

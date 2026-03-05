@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosRequestConfig, AxiosError, Method } from 'axios';
 import FormData from 'form-data';
+import { OAuth2TokenService } from './oauth2-token.service';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -12,8 +13,7 @@ import FormData from 'form-data';
 export class RestEngine {
   private readonly logger = new Logger(RestEngine.name);
 
-  // In-memory cache for refreshed tokens (keyed by tokenUrl)
-  private tokenCache = new Map<string, { accessToken: string; expiresAt: number }>();
+  constructor(private readonly oauth2TokenService: OAuth2TokenService) {}
 
   async execute(
     config: {
@@ -21,6 +21,7 @@ export class RestEngine {
       authType: string;
       authConfig?: Record<string, unknown>;
       headers?: Record<string, string>;
+      connectorId?: string;
     },
     endpointMapping: {
       method: string;
@@ -68,7 +69,7 @@ export class RestEngine {
     };
 
     // Inject authentication
-    await this.injectAuth(axiosConfig, config.authType, config.authConfig);
+    this.injectAuth(axiosConfig, config);
 
     // Query parameters
     if (endpointMapping.queryParams) {
@@ -146,7 +147,10 @@ export class RestEngine {
         config.authConfig?.tokenUrl
       ) {
         this.logger.debug('OAuth2: access token expired, attempting refresh...');
-        const newToken = await this.refreshOAuth2Token(config.authConfig);
+        const newToken = await this.oauth2TokenService.refreshToken(
+          config.authConfig,
+          config.connectorId,
+        );
         if (newToken) {
           axiosConfig.headers = {
             ...axiosConfig.headers,
@@ -160,91 +164,48 @@ export class RestEngine {
     }
   }
 
-  private async injectAuth(
-    config: AxiosRequestConfig,
-    authType: string,
-    authConfig?: Record<string, unknown>,
-  ): Promise<void> {
-    if (!authConfig) return;
+  private injectAuth(
+    axiosConfig: AxiosRequestConfig,
+    config: {
+      authType: string;
+      authConfig?: Record<string, unknown>;
+      connectorId?: string;
+    },
+  ): void {
+    if (!config.authConfig) return;
 
-    switch (authType) {
+    switch (config.authType) {
       case 'API_KEY':
-        config.headers = {
-          ...config.headers,
-          [String(authConfig.headerName || 'X-API-Key')]: String(
-            authConfig.apiKey,
+        axiosConfig.headers = {
+          ...axiosConfig.headers,
+          [String(config.authConfig.headerName || 'X-API-Key')]: String(
+            config.authConfig.apiKey,
           ),
         };
         break;
       case 'BEARER_TOKEN':
-        config.headers = {
-          ...config.headers,
-          Authorization: `Bearer ${authConfig.token}`,
+        axiosConfig.headers = {
+          ...axiosConfig.headers,
+          Authorization: `Bearer ${config.authConfig.token}`,
         };
         break;
       case 'BASIC_AUTH':
-        config.auth = {
-          username: String(authConfig.username),
-          password: String(authConfig.password),
+        axiosConfig.auth = {
+          username: String(config.authConfig.username),
+          password: String(config.authConfig.password),
         };
         break;
       case 'OAUTH2': {
-        let accessToken = String(authConfig.accessToken || '');
-
-        // Check if we have a cached (refreshed) token
-        const tokenUrl = String(authConfig.tokenUrl || '');
-        if (tokenUrl) {
-          const cached = this.tokenCache.get(tokenUrl);
-          if (cached && cached.expiresAt > Date.now()) {
-            accessToken = cached.accessToken;
-          }
-        }
-
-        config.headers = {
-          ...config.headers,
+        const accessToken = this.oauth2TokenService.getAccessToken(
+          config.authConfig,
+          config.connectorId,
+        );
+        axiosConfig.headers = {
+          ...axiosConfig.headers,
           Authorization: `Bearer ${accessToken}`,
         };
         break;
       }
-    }
-  }
-
-  private async refreshOAuth2Token(
-    authConfig: Record<string, unknown>,
-  ): Promise<string | null> {
-    const tokenUrl = String(authConfig.tokenUrl);
-    const refreshToken = String(authConfig.refreshToken);
-    const clientId = authConfig.clientId ? String(authConfig.clientId) : undefined;
-    const clientSecret = authConfig.clientSecret ? String(authConfig.clientSecret) : undefined;
-
-    try {
-      const body: Record<string, string> = {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-      };
-      if (clientId) body.client_id = clientId;
-      if (clientSecret) body.client_secret = clientSecret;
-
-      const response = await axios.post(tokenUrl, new URLSearchParams(body).toString(), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 10000,
-      });
-
-      const { access_token, expires_in } = response.data;
-      if (!access_token) return null;
-
-      // Cache the new token (default 1 hour if no expires_in)
-      const expiresInMs = (expires_in || 3600) * 1000;
-      this.tokenCache.set(tokenUrl, {
-        accessToken: access_token,
-        expiresAt: Date.now() + expiresInMs - 60000, // refresh 1 min early
-      });
-
-      this.logger.debug('OAuth2: token refreshed successfully');
-      return access_token;
-    } catch (err: any) {
-      this.logger.warn(`OAuth2 token refresh failed: ${err.message}`);
-      return null;
     }
   }
 
