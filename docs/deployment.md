@@ -21,12 +21,13 @@ The first user to register becomes **Admin**.
 
 ### Docker Services
 
-| Container | Image | Port |
-|-----------|-------|------|
-| `atmcp-frontend` | Next.js 16 (standalone) | 3000 |
-| `atmcp-backend` | NestJS 11 | 4000 |
+| Container | Description | Port |
+|-----------|-------------|------|
+| `atmcp-app` | Next.js 16 + NestJS 11 (single image) | 3000, 4000 |
 | `atmcp-postgres` | PostgreSQL 17 | 5432 |
 | `atmcp-redis` | Redis 7 | 6379 |
+
+> **Note:** Frontend and backend run in a single container since both are Node.js. A lightweight startup script (`start.sh`) manages both processes.
 
 ### Service URLs
 
@@ -74,7 +75,7 @@ CORS_ORIGIN=http://localhost:3000
 ```
 
 ```bash
-# Start PostgreSQL and Redis (dev overlay disables frontend/backend containers)
+# Start PostgreSQL and Redis (dev overlay disables the app container)
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
 
 # Install dependencies
@@ -131,7 +132,7 @@ docker compose up -d --build
 curl http://localhost:4000/health
 ```
 
-The backend runs `prisma migrate deploy` on startup.
+The container runs `prisma migrate deploy` on startup, then launches both backend and frontend.
 
 ### Without Docker
 

@@ -91,10 +91,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build backend image
-        run: docker build -t anythingmcp-backend:ci .
-        working-directory: anythingmcp
-
-      - name: Build frontend image
-        run: docker build -f Dockerfile.frontend -t anythingmcp-frontend:ci .
+      - name: Build unified image
+        run: docker build -t anythingmcp:ci .
         working-directory: anythingmcp

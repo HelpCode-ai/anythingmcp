@@ -127,8 +127,9 @@ Each connector type has dedicated documentation with setup instructions, example
   Cursor ──────────────►│   MCP Protocol (HTTP)           │──── PostgreSQL / MSSQL / MongoDB
   Any MCP Client ──────►│                                 │──── Other MCP Servers
                         └─────────────────────────────────┘
-                          Next.js UI │ NestJS Backend
-                          PostgreSQL │ Redis
+                          Single Docker container:
+                          Next.js UI + NestJS Backend
+                          PostgreSQL  │  Redis
 ```
 
 **How it works:**
@@ -150,7 +151,7 @@ Each connector type has dedicated documentation with setup instructions, example
 | Database | PostgreSQL 17, Prisma 7 |
 | Cache | Redis 7 |
 | Auth | JWT, OAuth2, AES-256-GCM |
-| Deploy | Docker + Docker Compose |
+| Deploy | Docker (single container for app) + Docker Compose |
 
 ---
 
