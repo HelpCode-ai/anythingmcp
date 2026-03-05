@@ -28,7 +28,7 @@ describe('GraphqlParser', () => {
     jest.clearAllMocks();
   });
 
-  describe('parse', () => {
+  describe('parse (introspection path)', () => {
     it('should make introspection query to the endpoint', async () => {
       mockedAxios.post.mockResolvedValue(makeIntrospectionResponse([]));
       await parser.parse('https://api.example.com/graphql');
@@ -232,15 +232,6 @@ describe('GraphqlParser', () => {
       expect(tools[0].endpointMapping.queryParams).toEqual({ id: '$id' });
     });
 
-    it('should throw on introspection errors', async () => {
-      mockedAxios.post.mockResolvedValue({
-        data: { errors: [{ message: 'Unauthorized' }] },
-      });
-      await expect(
-        parser.parse('https://api.example.com/graphql'),
-      ).rejects.toThrow('GraphQL introspection errors');
-    });
-
     it('should handle LIST type in type string', async () => {
       const types = [
         {
@@ -260,6 +251,130 @@ describe('GraphqlParser', () => {
       mockedAxios.post.mockResolvedValue(makeIntrospectionResponse(types));
       const tools = await parser.parse('https://api.example.com/graphql');
       expect(tools[0].endpointMapping.path).toContain('[ID]');
+    });
+  });
+
+  describe('parse (SDL fallback)', () => {
+    it('should fall back to SDL when introspection returns errors', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { errors: [{ message: 'Introspection disabled' }] },
+      });
+      mockedAxios.get.mockResolvedValue({
+        data: `type Query { users: [String] }`,
+      });
+
+      const tools = await parser.parse('https://api.example.com/graphql');
+      expect(tools).toHaveLength(1);
+      expect(tools[0].name).toBe('graphql_users');
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        'https://api.example.com/graphql/schema',
+        expect.any(Object),
+      );
+    });
+
+    it('should fall back to SDL when introspection request fails', async () => {
+      mockedAxios.post.mockRejectedValue(new Error('Network error'));
+      mockedAxios.get.mockResolvedValue({
+        data: `type Query { ping: Boolean }`,
+      });
+
+      const tools = await parser.parse('https://api.example.com/graphql');
+      expect(tools).toHaveLength(1);
+      expect(tools[0].name).toBe('graphql_ping');
+    });
+
+    it('should use specUrl for SDL when provided', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { errors: [{ message: 'Disabled' }] },
+      });
+      mockedAxios.get.mockResolvedValue({
+        data: `type Query { hello: String }`,
+      });
+
+      await parser.parse(
+        'https://api.example.com/graphql',
+        undefined,
+        'https://api.example.com/custom-schema',
+      );
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        'https://api.example.com/custom-schema',
+        expect.any(Object),
+      );
+    });
+
+    it('should throw when both introspection and SDL fail', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { errors: [{ message: 'Disabled' }] },
+      });
+      mockedAxios.get.mockRejectedValue(new Error('404 Not Found'));
+
+      await expect(
+        parser.parse('https://api.example.com/graphql'),
+      ).rejects.toThrow('introspection failed and SDL fallback');
+    });
+  });
+
+  describe('parseFromSdl', () => {
+    it('should extract query tools from SDL', () => {
+      const sdl = `
+        type Query {
+          "Get all users"
+          users(limit: Int): [User]
+          "Get user by ID"
+          user(id: ID!): User
+        }
+        type User { id: ID!, name: String }
+      `;
+      const tools = parser.parseFromSdl(sdl);
+      expect(tools).toHaveLength(2);
+      expect(tools[0].name).toBe('graphql_users');
+      expect(tools[0].description).toBe('Get all users');
+      expect(tools[1].name).toBe('graphql_user');
+      expect((tools[1].parameters as any).required).toEqual(['id']);
+    });
+
+    it('should extract mutation tools from SDL', () => {
+      const sdl = `
+        type Query { _empty: String }
+        type Mutation {
+          createUser(name: String!, email: String!): User
+        }
+        type User { id: ID! }
+      `;
+      const tools = parser.parseFromSdl(sdl);
+      const mutation = tools.find(t => t.name === 'graphql_createuser');
+      expect(mutation).toBeDefined();
+      expect(mutation!.endpointMapping.method).toBe('mutation');
+      expect((mutation!.parameters as any).required).toEqual(expect.arrayContaining(['name', 'email']));
+    });
+
+    it('should map SDL scalar types to JSON types', () => {
+      const sdl = `
+        type Query {
+          test(count: Int, price: Float, active: Boolean, label: String, uid: ID): String
+        }
+      `;
+      const tools = parser.parseFromSdl(sdl);
+      const props = (tools[0].parameters as any).properties;
+      expect(props.count.type).toBe('number');
+      expect(props.price.type).toBe('number');
+      expect(props.active.type).toBe('boolean');
+      expect(props.label.type).toBe('string');
+      expect(props.uid.type).toBe('string');
+    });
+
+    it('should throw on invalid SDL without query type', () => {
+      const sdl = `type User { id: ID!, name: String }`;
+      expect(() => parser.parseFromSdl(sdl)).toThrow();
+    });
+
+    it('should handle large SDL schemas', () => {
+      const fields = Array.from({ length: 50 }, (_, i) =>
+        `field${i}(arg: String): String`,
+      ).join('\n  ');
+      const sdl = `type Query { ${fields} }`;
+      const tools = parser.parseFromSdl(sdl);
+      expect(tools).toHaveLength(50);
     });
   });
 });

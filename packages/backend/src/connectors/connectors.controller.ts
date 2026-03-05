@@ -520,7 +520,9 @@ export class ConnectorsController {
       }
       case 'GRAPHQL': {
         const headers = connector.headers as Record<string, string> | undefined;
-        parsedTools = await this.graphqlParser.parse(connector.baseUrl, headers || undefined);
+        parsedTools = await this.graphqlParser.parse(
+          connector.baseUrl, headers || undefined, connector.specUrl || undefined,
+        );
         break;
       }
       default:
@@ -563,7 +565,9 @@ export class ConnectorsController {
         case 'graphql': {
           const headers = connector.headers as Record<string, string> | undefined;
           const endpoint = dto.url || connector.baseUrl;
-          parsedTools = await this.graphqlParser.parse(endpoint, headers || undefined);
+          parsedTools = await this.graphqlParser.parse(
+            endpoint, headers || undefined, dto.url || undefined,
+          );
           break;
         }
         case 'postman': {
