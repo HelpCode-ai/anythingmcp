@@ -6,11 +6,7 @@
 # =============================================================================
 
 services:
-  frontend:
-    profiles:
-      - disabled
-
-  backend:
+  app:
     profiles:
       - disabled
 
