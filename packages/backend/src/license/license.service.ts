@@ -58,62 +58,34 @@ export class LicenseService implements OnModuleInit {
     return (await this.siteSettings.get('instance_id')) || (await this.ensureInstanceId());
   }
 
-  // ── Community License Registration ─────────────────────────────────────────
+  // ── Community License Request (sends key via email) ───────────────────────
 
-  async registerCommunityLicense(
+  async requestCommunityLicense(
     email: string,
     name: string,
-  ): Promise<LicenseInfo> {
+  ): Promise<{ success: boolean; message: string }> {
     const instanceId = await this.getInstanceId();
 
     try {
-      const { data } = await axios.post(
+      await axios.post(
         `${this.apiBase}/api/license/register`,
         { email, name, instanceId },
         { timeout: 10000 },
       );
 
-      const license = await this.prisma.license.create({
-        data: {
-          licenseKey: data.licenseKey,
-          plan: data.plan || 'community',
-          status: 'active',
-          expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
-          instanceId,
-        },
-      });
-
-      await this.siteSettings.set('license_key', data.licenseKey);
-
-      // Activate in background
-      this.activateLicense(data.licenseKey).catch((err) =>
-        this.logger.warn(`License activation failed: ${err.message}`),
-      );
-
-      return this.toLicenseInfo(license);
+      return {
+        success: true,
+        message: `License key sent to ${email}`,
+      };
     } catch (err: any) {
-      // If remote is unreachable, create a pending license locally
       if (err.response?.status === 409) {
-        // Community license already exists for this email — try to use it
-        throw new Error('A community license already exists for this email');
+        throw new Error('A community license already exists for this email. Check your inbox.');
       }
-
-      this.logger.warn(
-        `Remote license registration failed: ${err.message}. Creating pending license.`,
-      );
-
-      const pendingKey = `AMCP-PEND-${crypto.randomBytes(6).toString('hex').toUpperCase().slice(0, 12).replace(/(.{4})/g, '$1-').slice(0, -1)}`;
-      const license = await this.prisma.license.create({
-        data: {
-          licenseKey: pendingKey,
-          plan: 'community',
-          status: 'pending',
-          instanceId,
-        },
-      });
-
-      await this.siteSettings.set('license_key', pendingKey);
-      return this.toLicenseInfo(license);
+      if (err.response?.status === 429) {
+        throw new Error('Too many requests. Please try again later.');
+      }
+      this.logger.warn(`Remote license registration failed: ${err.message}`);
+      throw new Error('Failed to register license. Please try again later.');
     }
   }
 

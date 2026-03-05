@@ -86,7 +86,7 @@ export class LicenseController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Register a free community license (ADMIN)' })
+  @ApiOperation({ summary: 'Request a free community license (sent via email)' })
   async registerCommunity(@Req() req: any) {
     const user = await this.usersService.findById(req.user.sub);
     if (!user) {
@@ -94,11 +94,11 @@ export class LicenseController {
     }
 
     try {
-      const license = await this.licenseService.registerCommunityLicense(
+      const result = await this.licenseService.requestCommunityLicense(
         user.email,
         user.name || user.email,
       );
-      return { message: 'Community license registered', license };
+      return { message: result.message, email: user.email };
     } catch (err: any) {
       throw new BadRequestException(err.message || 'Failed to register community license');
     }

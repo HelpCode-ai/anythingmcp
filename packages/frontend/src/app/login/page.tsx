@@ -7,7 +7,7 @@ import { auth, license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { LogoIcon } from '@/components/nav-bar';
 
-type SetupStep = 'auth' | 'license-choice' | 'license-key';
+type SetupStep = 'auth' | 'license-choice' | 'license-email-sent' | 'license-key';
 
 function LoginForm() {
   const [email, setEmail] = useState('');
@@ -19,6 +19,7 @@ function LoginForm() {
   const [setupStep, setSetupStep] = useState<SetupStep>('auth');
   const [licenseKey, setLicenseKey] = useState('');
   const [authToken, setAuthToken] = useState('');
+  const [userEmail, setUserEmail] = useState('');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
@@ -56,10 +57,18 @@ function LoginForm() {
     }
   };
 
-  const handlePersonalUse = () => {
-    // Fire-and-forget: register community license in background, navigate immediately
-    license.registerCommunity(authToken).catch(() => {});
-    router.push(redirectTo);
+  const handlePersonalUse = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const result = await license.registerCommunity(authToken);
+      setUserEmail(result.email);
+      setSetupStep('license-email-sent');
+    } catch (err: any) {
+      setError(err.message || 'Failed to request license');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCommercialChoice = () => {
@@ -126,6 +135,69 @@ function LoginForm() {
               <div className="text-xs text-[var(--muted-foreground)] mt-1">
                 For businesses — purchase a license to unlock all features
               </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── License Email Sent Step ────────────────────────────────────────────
+
+  if (setupStep === 'license-email-sent') {
+    return (
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <LogoIcon size={56} />
+          </div>
+          <h1 className="text-2xl font-bold">Check Your Email</h1>
+          <p className="text-[var(--muted-foreground)] mt-1 text-sm">
+            We sent your license key to <strong>{userEmail}</strong>
+          </p>
+        </div>
+
+        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
+          <p className="text-sm text-[var(--muted-foreground)] mb-4">
+            Enter the license key from the email to activate your instance.
+          </p>
+
+          {error && (
+            <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">License Key</label>
+              <input
+                type="text"
+                value={licenseKey}
+                onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+                placeholder="AMCP-XXXX-XXXX-XXXX-XXXX"
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono tracking-wider"
+              />
+            </div>
+
+            <button
+              onClick={handleActivateLicense}
+              disabled={loading || !licenseKey}
+              className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+            >
+              {loading ? 'Activating...' : 'Activate License'}
+            </button>
+          </div>
+
+          <div className="flex justify-between mt-4 text-sm">
+            <p className="text-[var(--muted-foreground)]">
+              Didn&apos;t receive it? Check your spam folder.
+            </p>
+            <button
+              onClick={handleSkip}
+              className="text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline whitespace-nowrap ml-2"
+            >
+              Skip
             </button>
           </div>
         </div>

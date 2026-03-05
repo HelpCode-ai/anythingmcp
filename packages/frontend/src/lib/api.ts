@@ -254,7 +254,7 @@ export const license = {
       token,
     }),
   registerCommunity: (token: string) =>
-    request<{ message: string; license: any }>('/api/license/register-community', {
+    request<{ message: string; email: string }>('/api/license/register-community', {
       method: 'POST',
       token,
     }),
