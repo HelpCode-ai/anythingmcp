@@ -23,9 +23,9 @@ The first user to register becomes **Admin**.
 
 | Container | Description | Port |
 |-----------|-------------|------|
-| `atmcp-app` | Next.js 16 + NestJS 11 (single image) | 3000, 4000 |
-| `atmcp-postgres` | PostgreSQL 17 | 5432 |
-| `atmcp-redis` | Redis 7 (optional) | 6379 |
+| `amcp-app` | Next.js 16 + NestJS 11 (single image) | 3000, 4000 |
+| `amcp-postgres` | PostgreSQL 17 | 5432 |
+| `amcp-redis` | Redis 7 (optional) | 6379 |
 
 > **Note:** Frontend and backend run in a single container since both are Node.js. A lightweight startup script (`start.sh`) manages both processes.
 
@@ -64,7 +64,7 @@ Edit `.env` for local development (note: PostgreSQL on port 5433):
 NODE_ENV=development
 PORT=4000
 POSTGRES_PASSWORD=your-local-password
-DATABASE_URL=postgresql://atmcp:your-local-password@localhost:5433/anythingmcp
+DATABASE_URL=postgresql://amcp:your-local-password@localhost:5433/anythingmcp
 # REDIS_URL=redis://localhost:6379  # Optional — enables caching and rate limiting
 JWT_SECRET=local-dev-secret-at-least-32-chars!!
 ENCRYPTION_KEY=local-dev-key-exactly-32-chars!!

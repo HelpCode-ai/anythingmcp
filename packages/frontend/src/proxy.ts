@@ -17,7 +17,7 @@ export function proxy(request: NextRequest) {
   }
 
   // Check for auth token in cookie (set by auth-context on login)
-  const token = request.cookies.get('atmcp_token')?.value;
+  const token = request.cookies.get('amcp_token')?.value;
 
   if (!token) {
     const loginUrl = new URL('/login', request.url);
