@@ -61,14 +61,17 @@ COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/dist .
 COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/prisma ./backend/prisma
 COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/package.json ./backend/
 
-# Backend node_modules (production deps)
+# Backend node_modules (includes prisma client)
 COPY --from=deps /app/node_modules ./backend/node_modules
 COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/node_modules/.prisma ./backend/node_modules/.prisma
 
 # ── Frontend artifacts (Next.js standalone) ──
-COPY --from=frontend-builder /app/packages/frontend/public ./frontend/public
+# In a monorepo, Next.js standalone output preserves the workspace directory
+# structure: .next/standalone/ contains the workspace root with node_modules,
+# and the app files live at .next/standalone/packages/frontend/.
 COPY --from=frontend-builder --chown=appuser:appuser /app/packages/frontend/.next/standalone ./frontend/
-COPY --from=frontend-builder --chown=appuser:appuser /app/packages/frontend/.next/static ./frontend/.next/static
+COPY --from=frontend-builder --chown=appuser:appuser /app/packages/frontend/.next/static ./frontend/packages/frontend/.next/static
+COPY --from=frontend-builder --chown=appuser:appuser /app/packages/frontend/public ./frontend/packages/frontend/public
 
 # ── Startup script ──
 COPY --chown=appuser:appuser start.sh ./start.sh
