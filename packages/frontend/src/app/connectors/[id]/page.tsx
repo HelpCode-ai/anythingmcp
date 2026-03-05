@@ -487,6 +487,23 @@ export default function ConnectorDetailPage() {
                   </div>
                 </div>
               )}
+              {editAuthType === 'OAUTH2' && connector.type !== 'MCP' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Client ID</label>
+                      <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Client Secret</label>
+                      <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Leave credential fields empty to keep the current values. Authorization URL, Token URL, and Scopes are preserved from initial setup.
+                  </p>
+                </div>
+              )}
               {editAuthType !== 'NONE' && editAuthType !== 'OAUTH2' && (
                 <p className="text-xs text-[var(--muted-foreground)]">
                   Leave credential fields empty to keep the current values.
@@ -535,12 +552,14 @@ export default function ConnectorDetailPage() {
           )}
         </div>
 
-        {/* OAuth2 Authorization (MCP + OAUTH2 only) */}
-        {connector.type === 'MCP' && connector.authType === 'OAUTH2' && (
+        {/* OAuth2 Authorization */}
+        {connector.authType === 'OAUTH2' && (
           <div className="border border-[var(--border)] rounded-lg p-6">
             <h3 className="text-lg font-medium mb-2">OAuth2 Authorization</h3>
             <p className="text-sm text-[var(--muted-foreground)] mb-4">
-              Authorize this connector to access the remote MCP server. After authorization, tools will be automatically discovered.
+              {connector.type === 'MCP'
+                ? 'Authorize this connector to access the remote MCP server. After authorization, tools will be automatically discovered.'
+                : 'Authorize this connector with the OAuth2 provider. After authorization, tokens will be stored securely for API calls.'}
             </p>
             <div className="flex gap-3 flex-wrap">
               <button
@@ -548,15 +567,17 @@ export default function ConnectorDetailPage() {
                 disabled={authorizing}
                 className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
               >
-                {authorizing ? 'Redirecting...' : 'Authorize with Remote Server'}
+                {authorizing ? 'Redirecting...' : connector.type === 'MCP' ? 'Authorize with Remote Server' : 'Authorize with Provider'}
               </button>
-              <button
-                onClick={handleDiscoverTools}
-                disabled={discovering}
-                className="border border-[var(--border)] px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--accent)] disabled:opacity-50"
-              >
-                {discovering ? 'Discovering...' : 'Re-discover Tools'}
-              </button>
+              {connector.type === 'MCP' && (
+                <button
+                  onClick={handleDiscoverTools}
+                  disabled={discovering}
+                  className="border border-[var(--border)] px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--accent)] disabled:opacity-50"
+                >
+                  {discovering ? 'Discovering...' : 'Re-discover Tools'}
+                </button>
+              )}
             </div>
           </div>
         )}

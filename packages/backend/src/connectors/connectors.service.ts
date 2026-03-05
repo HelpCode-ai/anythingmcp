@@ -215,6 +215,7 @@ export class ConnectorsService {
       authConfig,
       headers: connector.headers as Record<string, string>,
       specUrl: connector.specUrl ?? undefined,
+      connectorId: connector.id,
     };
 
     // Inject env vars as parameter defaults

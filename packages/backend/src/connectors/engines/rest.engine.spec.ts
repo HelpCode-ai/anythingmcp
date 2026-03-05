@@ -1,4 +1,5 @@
 import { RestEngine } from './rest.engine';
+import { OAuth2TokenService } from './oauth2-token.service';
 import axios from 'axios';
 
 jest.mock('axios');
@@ -6,9 +7,14 @@ const mockedAxios = axios as jest.MockedFunction<typeof axios>;
 
 describe('RestEngine', () => {
   let engine: RestEngine;
+  let mockOAuth2TokenService: jest.Mocked<OAuth2TokenService>;
 
   beforeEach(() => {
-    engine = new RestEngine();
+    mockOAuth2TokenService = {
+      getAccessToken: jest.fn().mockReturnValue('oauth2-access-token'),
+      refreshToken: jest.fn().mockResolvedValue('new-access-token'),
+    } as any;
+    engine = new RestEngine(mockOAuth2TokenService);
     jest.clearAllMocks();
   });
 

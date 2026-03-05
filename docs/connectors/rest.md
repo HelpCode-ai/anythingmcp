@@ -182,11 +182,19 @@ Optionally filter and transform API responses:
 | **API Key** | `"authType": "API_KEY", "authConfig": {"key": "X-API-Key", "value": "your-key"}` |
 | **Bearer Token** | `"authType": "BEARER_TOKEN", "authConfig": {"token": "your-token"}` |
 | **Basic Auth** | `"authType": "BASIC_AUTH", "authConfig": {"username": "user", "password": "pass"}` |
-| **OAuth2** | `"authType": "OAUTH2", "authConfig": {"tokenUrl": "...", "clientId": "...", "clientSecret": "...", "scope": "..."}` |
+| **OAuth2** | `"authType": "OAUTH2", "authConfig": {"clientId": "...", "clientSecret": "...", "authorizationUrl": "...", "tokenUrl": "...", "scopes": "read write"}` |
 
 All credentials are encrypted with AES-256-GCM at rest.
 
-OAuth2 supports automatic token refresh on 401 responses.
+### OAuth2 Authorization Flow
+
+OAuth2 connectors use the **Authorization Code + PKCE** flow:
+
+1. Create the connector with `authType: "OAUTH2"` and fill in `clientId`, `clientSecret`, `authorizationUrl`, `tokenUrl`, and optionally `scopes`.
+2. Register **`http://localhost:4000/api/mcp-oauth/callback`** as the redirect URI in your OAuth provider settings (use your `SERVER_URL` in production).
+3. From the connector detail page, click **Authorize with Provider** — you will be redirected to the provider's login/consent screen.
+4. After consent, the backend exchanges the authorization code for access and refresh tokens (stored encrypted).
+5. On 401 responses, the engine automatically refreshes the token using the stored refresh token and retries the request.
 
 ---
 
