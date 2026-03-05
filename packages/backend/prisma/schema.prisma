@@ -68,6 +68,24 @@ model SiteSettings {
   @@map("site_settings")
 }
 
+// ── License Management ──────────────────────────────────────────────────────
+
+model License {
+  id             String    @id @default(cuid())
+  licenseKey     String    @unique @map("license_key")
+  plan           String    @default("community")
+  status         String    @default("active")
+  features       Json?
+  expiresAt      DateTime? @map("expires_at")
+  activatedAt    DateTime? @map("activated_at")
+  instanceId     String?   @map("instance_id")
+  lastVerifiedAt DateTime? @map("last_verified_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("licenses")
+}
+
 // ── User Invitation Tokens ──────────────────────────────────────────────────
 
 model InvitationToken {

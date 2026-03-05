@@ -180,6 +180,7 @@ export class AuthController {
         name: user.name,
         role: user.role,
       },
+      isFirstUser: role === 'ADMIN',
     };
   }
 

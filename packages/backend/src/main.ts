@@ -2,6 +2,7 @@
 // (e.g. MCP_AUTH_MODE in app.module.ts) have access to all variables.
 import { config } from 'dotenv';
 import { join } from 'path';
+config({ path: join(__dirname, '..', '..', '..', '..', '.env') });
 config({ path: join(__dirname, '..', '..', '..', '.env') });
 config({ path: '.env' });
 

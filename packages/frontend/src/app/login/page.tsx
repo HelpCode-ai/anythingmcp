@@ -3,9 +3,11 @@
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { auth } from '@/lib/api';
+import { auth, license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { LogoIcon } from '@/components/nav-bar';
+
+type SetupStep = 'auth' | 'license-choice' | 'license-key';
 
 function LoginForm() {
   const [email, setEmail] = useState('');
@@ -14,9 +16,14 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
   const [name, setName] = useState('');
+  const [setupStep, setSetupStep] = useState<SetupStep>('auth');
+  const [licenseKey, setLicenseKey] = useState('');
+  const [authToken, setAuthToken] = useState('');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
+
+  const redirectTo = searchParams.get('redirect') || '/';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,21 +31,189 @@ function LoginForm() {
     setLoading(true);
 
     try {
+      let isFirstUser = false;
       let result;
       if (isRegister) {
-        result = await auth.register(email, password, name);
+        const regResult = await auth.register(email, password, name);
+        result = regResult;
+        isFirstUser = !!regResult.isFirstUser;
       } else {
         result = await auth.login(email, password);
       }
       login(result.accessToken, result.user);
-      const redirectTo = searchParams.get('redirect') || '/';
-      router.push(redirectTo);
+
+      // If this is the first user (admin), show license setup
+      if (isFirstUser) {
+        setAuthToken(result.accessToken);
+        setSetupStep('license-choice');
+      } else {
+        router.push(redirectTo);
+      }
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }
   };
+
+  const handlePersonalUse = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await license.registerCommunity(authToken);
+    } catch {
+      // Non-blocking — user can still proceed
+    }
+    router.push(redirectTo);
+  };
+
+  const handleCommercialChoice = () => {
+    setSetupStep('license-key');
+  };
+
+  const handleActivateLicense = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await license.setKey(licenseKey, authToken);
+      router.push(redirectTo);
+    } catch (err: any) {
+      setError(err.message || 'Failed to activate license');
+      setLoading(false);
+    }
+  };
+
+  const handleSkip = () => {
+    router.push(redirectTo);
+  };
+
+  // ── License Choice Step ─────────────────────────────────────────────────
+
+  if (setupStep === 'license-choice') {
+    return (
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <LogoIcon size={56} />
+          </div>
+          <h1 className="text-2xl font-bold">Welcome to AnythingMCP</h1>
+          <p className="text-[var(--muted-foreground)] mt-1 text-sm">
+            One last step to get started
+          </p>
+        </div>
+
+        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
+          <h2 className="text-lg font-semibold mb-2 text-center">
+            How will you use AnythingMCP?
+          </h2>
+          <p className="text-sm text-[var(--muted-foreground)] mb-6 text-center">
+            Commercial use requires a license from anythingmcp.com
+          </p>
+
+          <div className="space-y-3">
+            <button
+              onClick={handlePersonalUse}
+              disabled={loading}
+              className="w-full border border-[var(--border)] rounded-lg p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors disabled:opacity-50"
+            >
+              <div className="font-medium text-sm">Personal / Non-commercial</div>
+              <div className="text-xs text-[var(--muted-foreground)] mt-1">
+                Free community license — unlimited connectors and users
+              </div>
+            </button>
+
+            <button
+              onClick={handleCommercialChoice}
+              disabled={loading}
+              className="w-full border border-[var(--border)] rounded-lg p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors disabled:opacity-50"
+            >
+              <div className="font-medium text-sm">Commercial</div>
+              <div className="text-xs text-[var(--muted-foreground)] mt-1">
+                For businesses — purchase a license to unlock all features
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── License Key Entry Step ──────────────────────────────────────────────
+
+  if (setupStep === 'license-key') {
+    return (
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <LogoIcon size={56} />
+          </div>
+          <h1 className="text-2xl font-bold">Activate License</h1>
+          <p className="text-[var(--muted-foreground)] mt-1 text-sm">
+            Enter your license key to activate AnythingMCP
+          </p>
+        </div>
+
+        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
+          <p className="text-sm text-[var(--muted-foreground)] mb-4">
+            Purchase a license at{' '}
+            <a
+              href="https://anythingmcp.com/pricing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--brand)] hover:underline font-medium"
+            >
+              anythingmcp.com
+            </a>
+            , then enter your key below.
+          </p>
+
+          {error && (
+            <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">License Key</label>
+              <input
+                type="text"
+                value={licenseKey}
+                onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+                placeholder="AMCP-XXXX-XXXX-XXXX-XXXX"
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono tracking-wider"
+              />
+            </div>
+
+            <button
+              onClick={handleActivateLicense}
+              disabled={loading || !licenseKey}
+              className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+            >
+              {loading ? 'Activating...' : 'Activate License'}
+            </button>
+          </div>
+
+          <div className="flex justify-between mt-4 text-sm">
+            <button
+              onClick={() => setSetupStep('license-choice')}
+              className="text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline"
+            >
+              Back
+            </button>
+            <button
+              onClick={handleSkip}
+              className="text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline"
+            >
+              Skip for now
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Auth Form (Login / Register) ──────────────────────────────────────────
 
   return (
     <div className="w-full max-w-sm">

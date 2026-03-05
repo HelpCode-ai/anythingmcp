@@ -39,7 +39,7 @@ export const auth = {
       body: { email, password },
     }),
   register: (email: string, password: string, name: string) =>
-    request<{ accessToken: string; user: any }>('/api/auth/register', {
+    request<{ accessToken: string; user: any; isFirstUser?: boolean }>('/api/auth/register', {
       method: 'POST',
       body: { email, password, name },
     }),
@@ -236,6 +236,30 @@ export const mcpKeys = {
     request(`/api/mcp-keys/${id}/revoke`, { method: 'POST', token }),
   delete: (id: string, token: string) =>
     request(`/api/mcp-keys/${id}`, { method: 'DELETE', token }),
+};
+
+// License
+export const license = {
+  getStatus: () =>
+    request<{ plan: string | null; status: string; features: any; expiresAt: string | null; lastVerifiedAt: string | null; instanceId: string | null }>('/api/license/status'),
+  setKey: (licenseKey: string, token: string) =>
+    request<{ message: string; license: any }>('/api/license/key', {
+      method: 'PUT',
+      body: { licenseKey },
+      token,
+    }),
+  verify: (token: string) =>
+    request<{ valid: boolean; plan?: string; features?: any; expiresAt?: string; error?: string }>('/api/license/verify', {
+      method: 'POST',
+      token,
+    }),
+  registerCommunity: (token: string) =>
+    request<{ message: string; license: any }>('/api/license/register-community', {
+      method: 'POST',
+      token,
+    }),
+  getInstanceId: () =>
+    request<{ instanceId: string }>('/api/license/instance-id'),
 };
 
 // MCP Servers
