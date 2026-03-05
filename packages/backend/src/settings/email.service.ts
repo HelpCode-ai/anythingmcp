@@ -1,12 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
+import axios from 'axios';
 import { SiteSettingsService } from './site-settings.service';
+
+const LICENSE_API_URL =
+  process.env.NODE_ENV === 'production'
+    ? 'https://anythingmcp.com'
+    : 'http://localhost:3100';
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
+  private readonly apiBase = LICENSE_API_URL;
 
   constructor(private readonly siteSettings: SiteSettingsService) {}
+
+  // ── Password Reset (SMTP only — no external fallback for security) ────────
 
   async sendPasswordResetEmail(
     to: string,
@@ -59,6 +68,8 @@ export class EmailService {
     }
   }
 
+  // ── Invitation Email (SMTP with external API fallback) ────────────────────
+
   private async createTransporter() {
     const smtp = await this.siteSettings.getSmtpConfig();
     if (!smtp) return null;
@@ -80,39 +91,115 @@ export class EmailService {
     roleName: string,
   ): Promise<boolean> {
     const transport = await this.createTransporter();
-    if (!transport) {
-      this.logger.warn('Cannot send invitation email: SMTP not configured');
-      return false;
+
+    if (transport) {
+      try {
+        await transport.transporter.sendMail({
+          from: transport.from,
+          to,
+          subject: 'You\'ve been invited to AnythingMCP',
+          html: `
+            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+              <h2 style="color: #6366f1;">You're Invited!</h2>
+              <p><strong>${invitedByName}</strong> has invited you to join the AnythingMCP workspace as <strong>${roleName}</strong>.</p>
+              <p>Click the button below to create your account. This invitation expires in 48 hours.</p>
+              <a href="${inviteUrl}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
+                Accept Invitation
+              </a>
+              <p style="color: #737373; font-size: 14px;">If you weren't expecting this invite, you can safely ignore this email.</p>
+              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
+            </div>
+          `,
+          text: `You're Invited!\n\n${invitedByName} has invited you to join AnythingMCP as ${roleName}.\n\nAccept your invitation: ${inviteUrl}\n\nThis link expires in 48 hours.`,
+        });
+
+        this.logger.log(`Invitation email sent to ${to}`);
+        return true;
+      } catch (err) {
+        this.logger.error(`Failed to send invitation via SMTP to ${to}: ${err}`);
+        return false;
+      }
     }
 
-    try {
-      await transport.transporter.sendMail({
-        from: transport.from,
-        to,
-        subject: 'You\'ve been invited to AnythingMCP',
-        html: `
-          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-            <h2 style="color: #6366f1;">You're Invited!</h2>
-            <p><strong>${invitedByName}</strong> has invited you to join the AnythingMCP workspace as <strong>${roleName}</strong>.</p>
-            <p>Click the button below to create your account. This invitation expires in 48 hours.</p>
-            <a href="${inviteUrl}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
-              Accept Invitation
-            </a>
-            <p style="color: #737373; font-size: 14px;">If you weren't expecting this invite, you can safely ignore this email.</p>
-            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-            <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-          </div>
-        `,
-        text: `You're Invited!\n\n${invitedByName} has invited you to join AnythingMCP as ${roleName}.\n\nAccept your invitation: ${inviteUrl}\n\nThis link expires in 48 hours.`,
-      });
+    // Fallback: send via external API
+    return this.sendViaExternalApi('/api/email/invite', {
+      email: to,
+      inviterName: invitedByName,
+      instanceUrl: inviteUrl,
+    });
+  }
 
-      this.logger.log(`Invitation email sent to ${to}`);
+  // ── Welcome Email (SMTP with external API fallback) ───────────────────────
+
+  async sendWelcomeEmail(
+    to: string,
+    name: string,
+    licenseKey: string,
+  ): Promise<boolean> {
+    const transport = await this.createTransporter();
+
+    if (transport) {
+      try {
+        await transport.transporter.sendMail({
+          from: transport.from,
+          to,
+          subject: 'Welcome to AnythingMCP — Your License Key',
+          html: `
+            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+              <h2 style="color: #6366f1;">Welcome to AnythingMCP!</h2>
+              <p>Hi ${name},</p>
+              <p>Your license key is:</p>
+              <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; text-align: center; font-family: monospace; font-size: 18px; letter-spacing: 2px; margin: 16px 0;">
+                ${licenseKey}
+              </div>
+              <p>Keep this key safe — you'll need it to activate your AnythingMCP instance.</p>
+              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
+            </div>
+          `,
+          text: `Welcome to AnythingMCP!\n\nHi ${name},\n\nYour license key is: ${licenseKey}\n\nKeep this key safe — you'll need it to activate your AnythingMCP instance.`,
+        });
+
+        this.logger.log(`Welcome email sent to ${to}`);
+        return true;
+      } catch (err) {
+        this.logger.error(`Failed to send welcome email via SMTP to ${to}: ${err}`);
+        return false;
+      }
+    }
+
+    // Fallback: send via external API
+    return this.sendViaExternalApi('/api/email/welcome', {
+      email: to,
+      name,
+      licenseKey,
+    });
+  }
+
+  // ── External API Fallback ─────────────────────────────────────────────────
+
+  private async sendViaExternalApi(
+    endpoint: string,
+    body: Record<string, string>,
+  ): Promise<boolean> {
+    try {
+      await axios.post(`${this.apiBase}${endpoint}`, body, {
+        timeout: 10000,
+      });
+      this.logger.log(
+        `Email sent via external API: ${endpoint} to ${body.email}`,
+      );
       return true;
-    } catch (err) {
-      this.logger.error(`Failed to send invitation to ${to}: ${err}`);
+    } catch (err: any) {
+      this.logger.error(
+        `Failed to send email via external API ${endpoint}: ${err.message}`,
+      );
       return false;
     }
   }
+
+  // ── SMTP Test ─────────────────────────────────────────────────────────────
 
   async testConnection(): Promise<{ ok: boolean; message: string }> {
     const smtp = await this.siteSettings.getSmtpConfig();

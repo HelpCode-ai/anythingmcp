@@ -19,6 +19,7 @@ import { HealthModule } from './health/health.module';
 import { SettingsModule } from './settings/settings.module';
 import { RolesModule } from './roles/roles.module';
 import { McpServersModule } from './mcp-servers/mcp-servers.module';
+import { LicenseModule } from './license/license.module';
 import { PrismaModule } from './common/prisma.module';
 import { RedisModule } from './common/redis.module';
 import { McpAuthMiddleware } from './auth/mcp-auth.middleware';
@@ -70,6 +71,7 @@ if (useOAuth) {
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: [
+        join(__dirname, '..', '..', '..', '..', '.env'),
         join(__dirname, '..', '..', '..', '.env'),
         '.env',
       ],
@@ -110,6 +112,7 @@ if (useOAuth) {
     SettingsModule,
     RolesModule,
     McpServersModule,
+    LicenseModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
