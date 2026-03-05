@@ -34,8 +34,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    const savedToken = localStorage.getItem('atmcp_token');
-    const savedUser = localStorage.getItem('atmcp_user');
+    const savedToken = localStorage.getItem('amcp_token');
+    const savedUser = localStorage.getItem('amcp_user');
     if (savedToken && savedUser) {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
@@ -53,19 +53,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = (newToken: string, newUser: User) => {
     setToken(newToken);
     setUser(newUser);
-    localStorage.setItem('atmcp_token', newToken);
-    localStorage.setItem('atmcp_user', JSON.stringify(newUser));
+    localStorage.setItem('amcp_token', newToken);
+    localStorage.setItem('amcp_user', JSON.stringify(newUser));
     // Set cookie for middleware auth check
-    document.cookie = `atmcp_token=${newToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
+    document.cookie = `amcp_token=${newToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
   };
 
   const logout = () => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem('atmcp_token');
-    localStorage.removeItem('atmcp_user');
+    localStorage.removeItem('amcp_token');
+    localStorage.removeItem('amcp_user');
     // Clear cookie
-    document.cookie = 'atmcp_token=; path=/; max-age=0';
+    document.cookie = 'amcp_token=; path=/; max-age=0';
     router.push('/login');
   };
 

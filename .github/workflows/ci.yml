@@ -16,7 +16,7 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: atmcp
+          POSTGRES_USER: amcp
           POSTGRES_PASSWORD: testpassword
           POSTGRES_DB: anythingmcp_test
         ports:
@@ -28,7 +28,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://atmcp:testpassword@localhost:5432/anythingmcp_test
+      DATABASE_URL: postgresql://amcp:testpassword@localhost:5432/anythingmcp_test
       JWT_SECRET: ci-test-jwt-secret-at-least-32-chars
       ENCRYPTION_KEY: ci-test-encryption-key-32-chars!
 

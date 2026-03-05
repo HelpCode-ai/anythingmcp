@@ -7,7 +7,7 @@
 # MCP:    http://localhost:4000/mcp
 # =============================================================================
 
-name: atmcp
+name: amcp
 
 services:
 
@@ -16,7 +16,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: atmcp-app
+    container_name: amcp-app
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
       - "${BACKEND_PORT:-4000}:4000"
@@ -24,7 +24,7 @@ services:
       - NODE_ENV=production
       - PORT=4000
       - NEXT_PUBLIC_API_URL=http://localhost:4000
-      - DATABASE_URL=postgresql://atmcp:${POSTGRES_PASSWORD:-atmcp}@postgres:5432/anythingmcp
+      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD:-amcp}@postgres:5432/anythingmcp
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production-min-32-chars}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-in-production-exactly-32}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
@@ -51,15 +51,15 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:17-alpine
-    container_name: atmcp-postgres
+    container_name: amcp-postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_USER=atmcp
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-atmcp}
+      - POSTGRES_USER=amcp
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-amcp}
       - POSTGRES_DB=anythingmcp
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U atmcp -d anythingmcp"]
+      test: ["CMD-SHELL", "pg_isready -U amcp -d anythingmcp"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -68,7 +68,7 @@ services:
   # Redis Cache (optional — uncomment to enable response caching and rate limiting)
   # redis:
   #   image: redis:7-alpine
-  #   container_name: atmcp-redis
+  #   container_name: amcp-redis
   #   volumes:
   #     - redis_data:/data
   #   healthcheck:
