@@ -25,7 +25,7 @@ The first user to register becomes **Admin**.
 |-----------|-------------|------|
 | `atmcp-app` | Next.js 16 + NestJS 11 (single image) | 3000, 4000 |
 | `atmcp-postgres` | PostgreSQL 17 | 5432 |
-| `atmcp-redis` | Redis 7 | 6379 |
+| `atmcp-redis` | Redis 7 (optional) | 6379 |
 
 > **Note:** Frontend and backend run in a single container since both are Node.js. A lightweight startup script (`start.sh`) manages both processes.
 
@@ -43,13 +43,13 @@ The first user to register becomes **Admin**.
 
 ## Local Development
 
-Run PostgreSQL and Redis in Docker, frontend and backend locally with hot reload.
+Run PostgreSQL in Docker, frontend and backend locally with hot reload.
 
 ### Prerequisites
 
 - **Node.js** 22+
 - **npm** 9+
-- **Docker** and **Docker Compose** (for PostgreSQL and Redis)
+- **Docker** and **Docker Compose** (for PostgreSQL)
 
 ### Setup
 
@@ -65,7 +65,7 @@ NODE_ENV=development
 PORT=4000
 POSTGRES_PASSWORD=your-local-password
 DATABASE_URL=postgresql://atmcp:your-local-password@localhost:5433/anythingmcp
-REDIS_URL=redis://localhost:6379
+# REDIS_URL=redis://localhost:6379  # Optional — enables caching and rate limiting
 JWT_SECRET=local-dev-secret-at-least-32-chars!!
 ENCRYPTION_KEY=local-dev-key-exactly-32-chars!!
 NEXT_PUBLIC_API_URL=http://localhost:4000
@@ -75,8 +75,8 @@ CORS_ORIGIN=http://localhost:3000
 ```
 
 ```bash
-# Start PostgreSQL and Redis (dev overlay disables the app container)
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+# Start PostgreSQL (dev overlay disables the app container)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
 
 # Install dependencies
 npm install
@@ -137,8 +137,9 @@ The container runs `prisma migrate deploy` on startup, then launches both backen
 ### Without Docker
 
 ```bash
-# Ensure PostgreSQL 17+ and Redis 7+ are running externally
-# Configure .env with correct DATABASE_URL and REDIS_URL
+# Ensure PostgreSQL 17+ is running externally
+# Configure .env with correct DATABASE_URL
+# Optionally run Redis 7+ and set REDIS_URL for caching and rate limiting
 
 # Build
 cd packages/backend && npm ci && npx prisma generate && npm run build
@@ -244,7 +245,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `JWT_SECRET` | Yes | JWT signing secret (min 32 chars) |
 | `ENCRYPTION_KEY` | Yes | AES-256-GCM key (exactly 32 chars) |
 | `PORT` | No | Backend port (default: 4000) |
-| `REDIS_URL` | No | Redis URL (graceful fallback if unavailable) |
+| `REDIS_URL` | No | Redis URL (optional — enables response caching and rate limiting) |
 | `CORS_ORIGIN` | No | Allowed origin (default: `http://localhost:3000`) |
 | `NEXT_PUBLIC_API_URL` | No | Backend URL for frontend (default: `http://localhost:4000`) |
 | `NEXTAUTH_URL` | No | NextAuth callback URL (default: `http://localhost:3000`) |

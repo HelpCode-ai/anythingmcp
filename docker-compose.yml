@@ -25,7 +25,6 @@ services:
       - PORT=4000
       - NEXT_PUBLIC_API_URL=http://localhost:4000
       - DATABASE_URL=postgresql://atmcp:${POSTGRES_PASSWORD:-atmcp}@postgres:5432/anythingmcp
-      - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production-min-32-chars}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-in-production-exactly-32}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
@@ -35,11 +34,11 @@ services:
       - MCP_AUTH_MODE=${MCP_AUTH_MODE:-legacy}
       - MCP_API_KEY=${MCP_API_KEY:-}
       - MCP_BEARER_TOKEN=${MCP_BEARER_TOKEN:-}
+      # Uncomment to enable Redis (optional — used for response caching and rate limiting)
+      # - REDIS_URL=redis://redis:6379
 
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
@@ -66,19 +65,19 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Redis Cache
-  redis:
-    image: redis:7-alpine
-    container_name: atmcp-redis
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
+  # Redis Cache (optional — uncomment to enable response caching and rate limiting)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: atmcp-redis
+  #   volumes:
+  #     - redis_data:/data
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 5
+  #   restart: unless-stopped
 
 volumes:
   postgres_data:
-  redis_data:
+  # redis_data:  # Uncomment if Redis is enabled
