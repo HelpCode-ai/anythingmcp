@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ParsedTool } from './openapi.parser';
+import { buildSchema, introspectionFromSchema } from 'graphql';
 import axios from 'axios';
 
 const INTROSPECTION_QUERY = `
@@ -42,23 +43,69 @@ export class GraphqlParser {
   async parse(
     endpoint: string,
     headers?: Record<string, string>,
+    specUrl?: string,
   ): Promise<ParsedTool[]> {
-    this.logger.debug(`Introspecting GraphQL schema from: ${endpoint}`);
+    // 1. Try standard introspection query
+    try {
+      this.logger.debug(`Introspecting GraphQL schema from: ${endpoint}`);
+      const response = await axios.post(
+        endpoint,
+        { query: INTROSPECTION_QUERY },
+        {
+          headers: { 'Content-Type': 'application/json', ...headers },
+          timeout: 15000,
+        },
+      );
 
-    const response = await axios.post(
-      endpoint,
-      { query: INTROSPECTION_QUERY },
-      {
-        headers: { 'Content-Type': 'application/json', ...headers },
-        timeout: 15000,
-      },
-    );
+      if (!response.data.errors) {
+        return this.extractToolsFromSchema(response.data.data.__schema);
+      }
 
-    if (response.data.errors) {
-      throw new Error(`GraphQL introspection errors: ${JSON.stringify(response.data.errors)}`);
+      this.logger.debug(
+        `Introspection returned errors: ${JSON.stringify(response.data.errors)}`,
+      );
+    } catch (err: any) {
+      this.logger.debug(`Introspection request failed: ${err.message}`);
     }
 
-    const schema = response.data.data.__schema;
+    // 2. Fallback: fetch SDL schema from specUrl or {endpoint}/schema
+    const sdlUrl = specUrl || `${endpoint}/schema`;
+    this.logger.debug(`Falling back to SDL schema from: ${sdlUrl}`);
+
+    try {
+      const sdlResponse = await axios.get(sdlUrl, {
+        headers,
+        timeout: 30000,
+        responseType: 'text',
+      });
+      return this.parseFromSdl(sdlResponse.data);
+    } catch (err: any) {
+      throw new Error(
+        `GraphQL introspection failed and SDL fallback from ${sdlUrl} also failed: ${err.message}`,
+      );
+    }
+  }
+
+  /**
+   * Parse tools from a GraphQL SDL (Schema Definition Language) string.
+   * Converts SDL → GraphQLSchema → introspection result → tools.
+   */
+  parseFromSdl(sdl: string): ParsedTool[] {
+    this.logger.debug('Parsing GraphQL SDL schema');
+
+    const schema = buildSchema(sdl);
+    const introspection = introspectionFromSchema(schema);
+    const tools = this.extractToolsFromSchema(introspection.__schema as any);
+
+    this.logger.log(`Extracted ${tools.length} tools from SDL schema`);
+    return tools;
+  }
+
+  /**
+   * Extract tools from an introspection schema result.
+   * Shared between introspection query path and SDL path.
+   */
+  private extractToolsFromSchema(schema: any): ParsedTool[] {
     const tools: ParsedTool[] = [];
 
     const queryTypeName = schema.queryType?.name || 'Query';
