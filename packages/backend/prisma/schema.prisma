@@ -21,11 +21,12 @@ enum UserRole {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  name         String?
-  role         UserRole @default(EDITOR)
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  name          String?
+  role          UserRole @default(EDITOR)
+  emailVerified Boolean  @default(false) @map("email_verified")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -34,11 +35,12 @@ model User {
   mcpRoleId String? @map("mcp_role_id")
   mcpRole   Role?   @relation(fields: [mcpRoleId], references: [id], onDelete: SetNull)
 
-  connectors          Connector[]
-  mcpServers          McpServerConfig[]
-  toolInvocations     ToolInvocation[]
-  passwordResetTokens PasswordResetToken[]
-  mcpApiKeys          McpApiKey[]
+  connectors               Connector[]
+  mcpServers               McpServerConfig[]
+  toolInvocations          ToolInvocation[]
+  passwordResetTokens      PasswordResetToken[]
+  mcpApiKeys               McpApiKey[]
+  emailVerificationTokens  EmailVerificationToken[]
 
   @@map("users")
 }
@@ -55,6 +57,22 @@ model PasswordResetToken {
   createdAt DateTime  @default(now()) @map("created_at")
 
   @@map("password_reset_tokens")
+}
+
+// ── Email Verification Tokens ───────────────────────────────────────────────
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique // UUID for link verification
+  code      String    // 6-digit numeric code
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, code])
+  @@map("email_verification_tokens")
 }
 
 // ── Site Settings (key-value store) ─────────────────────────────────────────

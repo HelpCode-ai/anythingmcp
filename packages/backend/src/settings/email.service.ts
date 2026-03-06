@@ -179,6 +179,58 @@ export class EmailService {
     });
   }
 
+  // ── Verification Email (SMTP with external API fallback) ─────────────────
+
+  async sendVerificationEmail(
+    to: string,
+    code: string,
+    verifyUrl: string,
+  ): Promise<boolean> {
+    const transport = await this.createTransporter();
+
+    if (transport) {
+      try {
+        await transport.transporter.sendMail({
+          from: transport.from,
+          to,
+          subject: 'Verify Your Email — AnythingMCP',
+          html: `
+            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+              <h2 style="color: #6366f1;">Verify Your Email</h2>
+              <p>Your verification code is:</p>
+              <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; text-align: center; font-family: monospace; font-size: 32px; letter-spacing: 8px; margin: 16px 0; font-weight: bold;">
+                ${code}
+              </div>
+              <p>This code expires in 15 minutes.</p>
+              <p>Or click the button below to verify:</p>
+              <a href="${verifyUrl}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
+                Verify Email
+              </a>
+              <p style="color: #737373; font-size: 14px;">If you didn't create this account, you can safely ignore this email.</p>
+              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
+            </div>
+          `,
+          text: `Verify Your Email\n\nYour verification code: ${code}\n\nOr verify here: ${verifyUrl}\n\nThis code expires in 15 minutes.`,
+        });
+
+        this.logger.log(`Verification email sent to ${to}`);
+        return true;
+      } catch (err) {
+        this.logger.error(
+          `Failed to send verification email via SMTP to ${to}: ${err}`,
+        );
+      }
+    }
+
+    // Fallback: send via external API
+    return this.sendViaExternalApi('/api/email/verify', {
+      email: to,
+      code,
+      verifyUrl,
+    });
+  }
+
   // ── External API Fallback ─────────────────────────────────────────────────
 
   private async sendViaExternalApi(

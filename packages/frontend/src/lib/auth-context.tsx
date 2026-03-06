@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/accept-invite'];
+    const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'];
     if (!isLoading && !token && !publicPaths.includes(pathname)) {
       router.push('/login');
     }

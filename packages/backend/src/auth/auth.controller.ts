@@ -5,6 +5,7 @@ import {
   Body,
   Query,
   Req,
+  Res,
   HttpCode,
   HttpStatus,
   UseGuards,
@@ -15,10 +16,11 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, Equals } from 'class-validator';
 import { UserRole } from '../generated/prisma/client';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
@@ -45,6 +47,15 @@ class RegisterDto {
 
   @IsString()
   name: string;
+
+  @IsBoolean()
+  @Equals(true, { message: 'You must accept the Terms of Use' })
+  acceptTerms: boolean;
+}
+
+class VerifyEmailDto {
+  @IsString()
+  code: string;
 }
 
 class ForgotPasswordDto {
@@ -107,6 +118,31 @@ export class AuthController {
     );
   }
 
+  private async createAndSendVerificationCode(userId: string, email: string): Promise<void> {
+    // Invalidate old tokens
+    await this.prisma.emailVerificationToken.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    // Generate 6-digit code + UUID link token
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const linkToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    await this.prisma.emailVerificationToken.create({
+      data: { userId, token: linkToken, code, expiresAt },
+    });
+
+    // Build verification link URL
+    const verifyUrl = `${this.getFrontendUrl()}/verify-email?token=${linkToken}`;
+
+    // Send email (async, don't block response)
+    this.emailService.sendVerificationEmail(email, code, verifyUrl).catch((err) => {
+      this.logger.error(`Failed to send verification email to ${email}: ${err}`);
+    });
+  }
+
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email and password' })
@@ -131,6 +167,11 @@ export class AuthController {
       mcpRoleId: user.mcpRoleId,
     });
 
+    // If user hasn't verified email, resend a verification code
+    if (!user.emailVerified) {
+      await this.createAndSendVerificationCode(user.id, user.email);
+    }
+
     return {
       accessToken: token,
       user: {
@@ -138,6 +179,7 @@ export class AuthController {
         email: user.email,
         name: user.name,
         role: user.role,
+        emailVerified: user.emailVerified,
       },
     };
   }
@@ -172,6 +214,9 @@ export class AuthController {
       mcpRoleId: user.mcpRoleId,
     });
 
+    // Send verification email
+    await this.createAndSendVerificationCode(user.id, user.email);
+
     return {
       accessToken: token,
       user: {
@@ -179,9 +224,98 @@ export class AuthController {
         email: user.email,
         name: user.name,
         role: user.role,
+        emailVerified: false,
       },
       isFirstUser: role === 'ADMIN',
     };
+  }
+
+  // ── Email Verification ───────────────────────────────────────────────────────
+
+  @Post('verify-email')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify email with 6-digit code' })
+  async verifyEmail(@Req() req: any, @Body() dto: VerifyEmailDto) {
+    const userId = req.user.sub;
+
+    const record = await this.prisma.emailVerificationToken.findFirst({
+      where: {
+        userId,
+        code: dto.code,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!record) {
+      throw new BadRequestException('Invalid or expired verification code');
+    }
+
+    // Mark token as used
+    await this.prisma.emailVerificationToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    });
+
+    // Mark user as verified
+    await this.usersService.update(userId, { emailVerified: true });
+
+    return { message: 'Email verified successfully', emailVerified: true };
+  }
+
+  @Get('verify-email-link')
+  @ApiOperation({ summary: 'Verify email via link token' })
+  async verifyEmailLink(@Query('token') token: string, @Res() res: Response) {
+    if (!token) throw new BadRequestException('Token is required');
+
+    const record = await this.prisma.emailVerificationToken.findUnique({
+      where: { token },
+    });
+
+    if (!record) throw new BadRequestException('Invalid verification token');
+    if (record.usedAt) throw new BadRequestException('This link has already been used');
+    if (record.expiresAt < new Date()) throw new BadRequestException('This link has expired');
+
+    // Mark as used and verify user
+    await this.prisma.emailVerificationToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    });
+    await this.usersService.update(record.userId, { emailVerified: true });
+
+    // Redirect to frontend
+    const frontendUrl = this.getFrontendUrl();
+    return res.redirect(`${frontendUrl}/login?emailVerified=true`);
+  }
+
+  @Post('resend-verification')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Resend email verification code' })
+  async resendVerification(@Req() req: any) {
+    const userId = req.user.sub;
+    const user = await this.usersService.findById(userId);
+
+    if (!user) throw new BadRequestException('User not found');
+    if (user.emailVerified) {
+      return { message: 'Email is already verified' };
+    }
+
+    // Rate limit: max 5 tokens in the last hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentCount = await this.prisma.emailVerificationToken.count({
+      where: { userId, createdAt: { gt: oneHourAgo } },
+    });
+    if (recentCount >= 5) {
+      throw new BadRequestException('Too many verification attempts. Please try again later.');
+    }
+
+    await this.createAndSendVerificationCode(userId, user.email);
+
+    return { message: 'Verification code resent' };
   }
 
   // ── Invitation Flow ─────────────────────────────────────────────────────────
@@ -292,7 +426,7 @@ export class AuthController {
       throw new ConflictException('An account with this email already exists');
     }
 
-    // Create the user with the assigned role and mcpRoleId
+    // Create the user — invited users are already verified (they received the invite email)
     const passwordHash = await this.authService.hashPassword(dto.password);
     const user = await this.usersService.create({
       email: invite.email,
@@ -300,6 +434,9 @@ export class AuthController {
       name: dto.name,
       role: invite.role,
     });
+
+    // Mark email as verified (invited users don't need to verify)
+    await this.usersService.update(user.id, { emailVerified: true });
 
     // Create default MCP server for new user
     await this.mcpServersService.createDefaultForUser(user.id);
@@ -330,6 +467,7 @@ export class AuthController {
         email: user.email,
         name: user.name,
         role: user.role,
+        emailVerified: true,
       },
     };
   }

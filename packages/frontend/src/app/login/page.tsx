@@ -7,11 +7,13 @@ import { auth, license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { LogoIcon } from '@/components/nav-bar';
 
-type SetupStep = 'auth' | 'license-choice' | 'license-email-sent' | 'license-key';
+type SetupStep = 'auth' | 'verify-email' | 'license-choice' | 'license-email-sent' | 'license-key';
 
 function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
@@ -20,11 +22,16 @@ function LoginForm() {
   const [licenseKey, setLicenseKey] = useState('');
   const [authToken, setAuthToken] = useState('');
   const [userEmail, setUserEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [isFirstUserFlag, setIsFirstUserFlag] = useState(false);
+  const [storedUser, setStoredUser] = useState<any>(null);
+  const [resendMessage, setResendMessage] = useState('');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
 
   const redirectTo = searchParams.get('redirect') || '/';
+  const emailVerifiedParam = searchParams.get('emailVerified');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,25 +42,76 @@ function LoginForm() {
       let isFirstUser = false;
       let result;
       if (isRegister) {
-        const regResult = await auth.register(email, password, name);
+        // Validate confirm password
+        if (password !== confirmPassword) {
+          setError('Passwords do not match');
+          setLoading(false);
+          return;
+        }
+        if (!acceptTerms) {
+          setError('You must accept the Terms of Use');
+          setLoading(false);
+          return;
+        }
+        const regResult = await auth.register(email, password, name, acceptTerms);
         result = regResult;
         isFirstUser = !!regResult.isFirstUser;
       } else {
         result = await auth.login(email, password);
       }
-      login(result.accessToken, result.user);
 
-      // If this is the first user (admin), show license setup
-      if (isFirstUser) {
+      // Check if email needs verification
+      if (!result.user.emailVerified) {
         setAuthToken(result.accessToken);
-        setSetupStep('license-choice');
+        setStoredUser(result.user);
+        setUserEmail(result.user.email);
+        setIsFirstUserFlag(isFirstUser);
+        setSetupStep('verify-email');
       } else {
-        router.push(redirectTo);
+        login(result.accessToken, result.user);
+        if (isFirstUser) {
+          setAuthToken(result.accessToken);
+          setSetupStep('license-choice');
+        } else {
+          router.push(redirectTo);
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    setError('');
+    setResendMessage('');
+    setLoading(true);
+    try {
+      await auth.verifyEmail(verificationCode, authToken);
+      // Email verified — now log in and proceed
+      const verifiedUser = { ...storedUser, emailVerified: true };
+      login(authToken, verifiedUser);
+      if (isFirstUserFlag) {
+        setSetupStep('license-choice');
+      } else {
+        router.push(redirectTo);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Invalid verification code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setError('');
+    setResendMessage('');
+    try {
+      await auth.resendVerification(authToken);
+      setResendMessage('A new code has been sent to your email');
+    } catch (err: any) {
+      setError(err.message || 'Failed to resend code');
     }
   };
 
@@ -90,6 +148,72 @@ function LoginForm() {
   const handleSkip = () => {
     router.push(redirectTo);
   };
+
+  // ── Email Verification Step ─────────────────────────────────────────────
+
+  if (setupStep === 'verify-email') {
+    return (
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <LogoIcon size={56} />
+          </div>
+          <h1 className="text-2xl font-bold">Verify Your Email</h1>
+          <p className="text-[var(--muted-foreground)] mt-1 text-sm">
+            We sent a 6-digit code to <strong>{userEmail}</strong>
+          </p>
+        </div>
+
+        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
+          {error && (
+            <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
+              {error}
+            </div>
+          )}
+
+          {resendMessage && (
+            <div className="mb-4 p-3 rounded-md bg-green-50 text-green-800 text-sm border border-green-200 dark:bg-green-950 dark:text-green-200 dark:border-green-800">
+              {resendMessage}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Verification Code</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                className="w-full text-center text-2xl tracking-[0.5em] font-mono border border-[var(--input)] rounded-md px-3 py-3 bg-[var(--background)]"
+                autoFocus
+              />
+            </div>
+
+            <button
+              onClick={handleVerifyCode}
+              disabled={loading || verificationCode.length !== 6}
+              className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+            >
+              {loading ? 'Verifying...' : 'Verify Email'}
+            </button>
+          </div>
+
+          <p className="text-center text-sm text-[var(--muted-foreground)] mt-4">
+            Didn&apos;t receive it?{' '}
+            <button
+              onClick={handleResendCode}
+              className="text-[var(--brand)] hover:underline font-medium"
+            >
+              Resend code
+            </button>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // ── License Choice Step ─────────────────────────────────────────────────
 
@@ -299,6 +423,12 @@ function LoginForm() {
           {isRegister ? 'Create your account' : 'Sign in'}
         </h2>
 
+        {emailVerifiedParam === 'true' && (
+          <div className="mb-4 p-3 rounded-md bg-green-50 text-green-800 text-sm border border-green-200 dark:bg-green-950 dark:text-green-200 dark:border-green-800">
+            Email verified successfully! You can now sign in.
+          </div>
+        )}
+
         {error && (
           <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
             {error}
@@ -344,6 +474,43 @@ function LoginForm() {
               minLength={8}
             />
           </div>
+
+          {isRegister && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">Confirm Password</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat your password"
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  required
+                  minLength={8}
+                />
+              </div>
+
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={acceptTerms}
+                  onChange={(e) => setAcceptTerms(e.target.checked)}
+                  className="mt-0.5 accent-[var(--brand)]"
+                />
+                <span className="text-sm text-[var(--muted-foreground)]">
+                  I accept the{' '}
+                  <a
+                    href="https://anythingmcp.com/en/agb"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[var(--brand)] hover:underline font-medium"
+                  >
+                    Terms of Use
+                  </a>
+                </span>
+              </label>
+            </>
+          )}
 
           <button
             type="submit"

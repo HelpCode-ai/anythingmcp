@@ -38,10 +38,10 @@ export const auth = {
       method: 'POST',
       body: { email, password },
     }),
-  register: (email: string, password: string, name: string) =>
+  register: (email: string, password: string, name: string, acceptTerms: boolean) =>
     request<{ accessToken: string; user: any; isFirstUser?: boolean }>('/api/auth/register', {
       method: 'POST',
-      body: { email, password, name },
+      body: { email, password, name, acceptTerms },
     }),
   forgotPassword: (email: string) =>
     request<{ message: string }>('/api/auth/forgot-password', {
@@ -65,6 +65,17 @@ export const auth = {
     request<{ accessToken: string; user: any }>('/api/auth/accept-invite', {
       method: 'POST',
       body: data,
+    }),
+  verifyEmail: (code: string, token: string) =>
+    request<{ message: string; emailVerified: boolean }>('/api/auth/verify-email', {
+      method: 'POST',
+      body: { code },
+      token,
+    }),
+  resendVerification: (token: string) =>
+    request<{ message: string }>('/api/auth/resend-verification', {
+      method: 'POST',
+      token,
     }),
 };
 
