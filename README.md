@@ -35,7 +35,7 @@ No SDK. No code changes. Just point, configure, and connect.
 
 ## Key Features
 
-- **6 Connector Types** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Database](docs/connectors/database.md) (PostgreSQL, MSSQL, MongoDB), [MCP-to-MCP Bridge](docs/connectors/mcp-bridge.md), Webhook
+- **6 Connector Types** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Database](docs/connectors/database.md) (PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite), [MCP-to-MCP Bridge](docs/connectors/mcp-bridge.md), Webhook
 - **6 Import Formats** — OpenAPI/Swagger, Postman Collections, cURL commands, WSDL, GraphQL introspection, custom JSON
 - **Dynamic MCP Server** — Tools registered at runtime, no restart needed
 - **Visual Tool Editor** — Map parameters to path, query, body, headers visually
@@ -95,7 +95,7 @@ Each connector type has dedicated documentation with setup instructions, example
 | **REST** | HTTP APIs, OpenAPI/Swagger, Postman | [REST Connector Guide](docs/connectors/rest.md) |
 | **SOAP** | WSDL web services, WCF, legacy enterprise APIs | [SOAP Connector Guide](docs/connectors/soap.md) |
 | **GraphQL** | GraphQL endpoints with introspection | [GraphQL Connector Guide](docs/connectors/graphql.md) |
-| **Database** | PostgreSQL, MSSQL, MongoDB queries from AI | [Database Connector Guide](docs/connectors/database.md) |
+| **Database** | PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite | [Database Connector Guide](docs/connectors/database.md) |
 | **MCP Bridge** | Aggregate multiple MCP servers into one | [MCP Bridge Guide](docs/connectors/mcp-bridge.md) |
 
 ---
@@ -119,7 +119,7 @@ Each connector type has dedicated documentation with setup instructions, example
   ChatGPT ─────────────►│         AnythingMCP             │──── REST APIs
   Gemini CLI ──────────►│      (MCP Middleware)            │──── SOAP Services
   GitHub Copilot ──────►│                                 │──── GraphQL Endpoints
-  Cursor ──────────────►│   MCP Protocol (HTTP)           │──── PostgreSQL / MSSQL / MongoDB
+  Cursor ──────────────►│   MCP Protocol (HTTP)           │──── PostgreSQL / MySQL / MSSQL / MongoDB / ...
   Any MCP Client ──────►│                                 │──── Other MCP Servers
                         └─────────────────────────────────┘
                           Single Docker container:

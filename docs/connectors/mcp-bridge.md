@@ -109,7 +109,7 @@ The MCP Bridge supports automatic token refresh for OAuth2-protected remote serv
            │ MCP Bridge #2 ────│──► Slack MCP Server
            │ MCP Bridge #3 ────│──► Custom MCP Server
            │ REST Connector ───│──► Your REST API
-           │ DB Connector ─────│──► PostgreSQL
+           │ DB Connector ─────│──► PostgreSQL / MySQL / MongoDB / ...
            └───────────────────┘
 ```
 

@@ -1,6 +1,6 @@
 # Database Connector — Database to MCP
 
-> Let AI agents query PostgreSQL, MSSQL, and MongoDB through MCP. Auto-generated schema tools + dynamic query execution.
+> Let AI agents query PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, and SQLite through MCP. Auto-generated schema tools + dynamic query execution.
 
 [Back to README](../../README.md)
 
@@ -8,9 +8,9 @@
 
 ## Overview
 
-The Database connector lets AI clients query databases directly through MCP. It auto-generates tools for schema introspection, example queries, and dynamic query execution. Supports **PostgreSQL**, **Microsoft SQL Server**, and **MongoDB**.
+The Database connector lets AI clients query databases directly through MCP. It auto-generates tools for schema introspection, example queries, and dynamic query execution. Supports **PostgreSQL**, **MySQL**, **MariaDB**, **Microsoft SQL Server**, **Oracle**, **MongoDB**, and **SQLite**.
 
-**Keywords:** Database to MCP, PostgreSQL to MCP, SQL to MCP, MongoDB to MCP, MSSQL to MCP, database MCP bridge, query database with AI, natural language SQL MCP
+**Keywords:** Database to MCP, PostgreSQL to MCP, MySQL to MCP, MariaDB to MCP, SQL to MCP, MongoDB to MCP, MSSQL to MCP, Oracle to MCP, SQLite to MCP, database MCP bridge, query database with AI, natural language SQL MCP
 
 ---
 
@@ -19,8 +19,12 @@ The Database connector lets AI clients query databases directly through MCP. It 
 | Database | Connection String Format |
 |----------|------------------------|
 | **PostgreSQL** | `postgresql://user:pass@host:5432/dbname` |
-| **Microsoft SQL Server** | `mssql://user:pass@host:1433/dbname` or `Server=host;Database=dbname;User Id=user;Password=pass;` |
+| **MySQL** | `mysql://user:pass@host:3306/dbname` |
+| **MariaDB** | `mariadb://user:pass@host:3306/dbname` |
+| **Microsoft SQL Server** | `mssql://user:pass@host:1433/dbname` |
+| **Oracle** | `oracle://user:pass@host:1521/service_name` |
 | **MongoDB** | `mongodb://user:pass@host:27017/dbname` or `mongodb+srv://...` |
+| **SQLite** | `sqlite:///absolute/path/to/db.sqlite` |
 
 ---
 
@@ -86,7 +90,7 @@ Description: Show example queries for this database
 
 ### 3. Dynamic Query Tool
 
-Executes arbitrary SQL queries (PostgreSQL/MSSQL) or MongoDB operations.
+Executes arbitrary SQL queries (PostgreSQL/MySQL/MariaDB/MSSQL/Oracle/SQLite) or MongoDB operations.
 
 ```
 Tool: {connector_name}_query
@@ -97,7 +101,7 @@ Parameters:
 
 ---
 
-## SQL Databases (PostgreSQL & MSSQL)
+## SQL Databases (PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SQLite)
 
 ### Endpoint Mapping
 
@@ -201,6 +205,9 @@ MongoDB connectors generate tools that support native MongoDB operations:
 |-------|----------|
 | Connection timeout | Ensure the database is reachable from the AnythingMCP backend container. Check firewall rules |
 | SSL required | Add `?sslmode=require` to PostgreSQL connection strings |
+| MySQL charset issues | Add `?charset=utf8mb4` to MySQL/MariaDB connection strings |
+| Oracle service name | Ensure the service name (not SID) is used in the connection string path |
+| SQLite file not found | Use absolute paths: `sqlite:///absolute/path/to/db.sqlite` |
 | MongoDB auth fails | Ensure `authSource=admin` is in the connection string if using admin database for auth |
 | Schema introspection empty | Check that the database user has read permissions on `information_schema` (SQL) or the target database (MongoDB) |
 
