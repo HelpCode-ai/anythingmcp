@@ -37,6 +37,8 @@ packages/backend/src/generated/
 
 # Docker
 .docker/
+docker-compose.override.yml
+Caddyfile
 
 # Misc
 *.tsbuildinfo

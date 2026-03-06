@@ -11,6 +11,24 @@ name: amcp
 
 services:
 
+  # Caddy Reverse Proxy (optional — enables HTTPS with automatic Let's Encrypt)
+  # Activated by COMPOSE_PROFILES=proxy in .env (setup.sh sets this automatically)
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["proxy"]
+    container_name: amcp-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
   # NestJS Backend + Next.js Frontend (single container)
   app:
     build:
@@ -18,8 +36,8 @@ services:
       dockerfile: Dockerfile
     container_name: amcp-app
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-      - "${BACKEND_PORT:-4000}:4000"
+      - "${APP_BIND_IP:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
+      - "${APP_BIND_IP:-0.0.0.0}:${BACKEND_PORT:-4000}:4000"
     environment:
       - NODE_ENV=production
       - PORT=4000
@@ -80,4 +98,6 @@ services:
 
 volumes:
   postgres_data:
-  # redis_data:  # Uncomment if Redis is enabled
+  caddy_data:     # Let's Encrypt certificates (used when Caddy proxy is enabled)
+  caddy_config:   # Caddy configuration cache
+  # redis_data:   # Uncomment if Redis is enabled

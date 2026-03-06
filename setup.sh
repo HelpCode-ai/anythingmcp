@@ -172,25 +172,41 @@ main() {
   info "Step 2: Domain & Ports"
 
   local HOSTNAME FRONTEND_PORT BACKEND_PORT PROTOCOL
+  local CADDY_ENABLED="false" ACME_EMAIL="" DOMAIN="" APP_BIND_IP="0.0.0.0"
 
   HOSTNAME=$(ask "Hostname or domain" "localhost")
 
   if [ "$HOSTNAME" = "localhost" ] || [ "$HOSTNAME" = "127.0.0.1" ]; then
     PROTOCOL="http"
+    FRONTEND_PORT=$(ask "Frontend port" "3000")
+    BACKEND_PORT=$(ask "Backend port" "4000")
   else
-    if ask_yn "Use HTTPS for $HOSTNAME?" "y"; then
+    if ask_yn "Enable HTTPS with automatic SSL certificate? (recommended)" "y"; then
       PROTOCOL="https"
+      CADDY_ENABLED="true"
+      DOMAIN="$HOSTNAME"
+      ACME_EMAIL=$(ask "Email for Let's Encrypt notifications" "")
+      APP_BIND_IP="127.0.0.1"
+      # Standard ports — Caddy handles 80/443, routes to app internally
+      FRONTEND_PORT="3000"
+      BACKEND_PORT="4000"
+      echo ""
+      success "  Caddy reverse proxy will handle SSL and routing."
+      success "  App ports (3000/4000) will only be accessible from the server."
     else
       PROTOCOL="http"
+      FRONTEND_PORT=$(ask "Frontend port" "3000")
+      BACKEND_PORT=$(ask "Backend port" "4000")
     fi
   fi
 
-  FRONTEND_PORT=$(ask "Frontend port" "3000")
-  BACKEND_PORT=$(ask "Backend port" "4000")
-
   # Build URLs
   local FRONTEND_URL BACKEND_URL
-  if [ "$PROTOCOL" = "https" ]; then
+  if [ "$CADDY_ENABLED" = "true" ]; then
+    # Caddy: single domain, standard ports, same URL for frontend & backend
+    FRONTEND_URL="https://$HOSTNAME"
+    BACKEND_URL="https://$HOSTNAME"
+  elif [ "$PROTOCOL" = "https" ]; then
     if [ "$FRONTEND_PORT" = "443" ]; then
       FRONTEND_URL="https://$HOSTNAME"
     else
@@ -316,6 +332,9 @@ main() {
   echo -e "  Frontend:     ${BOLD}$FRONTEND_URL${NC}"
   echo -e "  Backend:      ${BOLD}$BACKEND_URL${NC}"
   echo -e "  MCP Endpoint: ${BOLD}$BACKEND_URL/mcp${NC}"
+  if [ "$CADDY_ENABLED" = "true" ]; then
+    echo -e "  SSL:          ${BOLD}Caddy (automatic Let's Encrypt)${NC}"
+  fi
   echo -e "  MCP Auth:     ${BOLD}$MCP_AUTH_MODE${NC}"
   echo -e "  Email:        ${BOLD}$EMAIL_CONFIGURED${NC}"
   echo -e "  Redis:        ${BOLD}$([ "$REDIS_ENABLED" = "true" ] && echo "Enabled" || echo "Disabled")${NC}"
@@ -401,6 +420,21 @@ fi)
 FRONTEND_PORT=$FRONTEND_PORT
 BACKEND_PORT=$BACKEND_PORT
 $([ "$MODE" = "local" ] && echo "POSTGRES_PORT=$POSTGRES_PORT" || echo "# POSTGRES_PORT=5433")
+
+# ── Reverse Proxy (Caddy) ───────────────────────────────────────────────────
+$(if [ "$CADDY_ENABLED" = "true" ]; then
+cat << CADDYENVEOF
+COMPOSE_PROFILES=proxy
+DOMAIN=$DOMAIN
+ACME_EMAIL=$ACME_EMAIL
+APP_BIND_IP=$APP_BIND_IP
+CADDYENVEOF
+else
+echo "# COMPOSE_PROFILES=proxy"
+echo "# DOMAIN="
+echo "# ACME_EMAIL="
+echo "# APP_BIND_IP=0.0.0.0"
+fi)
 ENVEOF
 
   success "  .env file created."
@@ -410,6 +444,29 @@ ENVEOF
     # --- Docker Mode ---
     echo ""
     info "Starting Docker services..."
+
+    # Generate Caddyfile if Caddy reverse proxy is enabled
+    if [ "$CADDY_ENABLED" = "true" ]; then
+      cat > Caddyfile << CADDYEOF
+$DOMAIN {
+    tls $ACME_EMAIL
+
+    # Backend API, MCP, OAuth2, health
+    reverse_proxy /api/*          app:4000
+    reverse_proxy /mcp/*          app:4000
+    reverse_proxy /health/*       app:4000
+    reverse_proxy /.well-known/*  app:4000
+    reverse_proxy /authorize      app:4000
+    reverse_proxy /token          app:4000
+    reverse_proxy /register       app:4000
+    reverse_proxy /auth/*         app:4000
+
+    # Frontend (catch-all)
+    reverse_proxy app:3000
+}
+CADDYEOF
+      success "  Caddyfile created (SSL for $DOMAIN)."
+    fi
 
     # Generate docker-compose.override.yml for Redis if enabled
     if [ "$REDIS_ENABLED" = "true" ]; then
