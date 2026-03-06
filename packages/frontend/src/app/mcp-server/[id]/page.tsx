@@ -31,6 +31,7 @@ export default function McpServerDetailPage() {
   const [saving, setSaving] = useState(false);
 
   const [copied, setCopied] = useState('');
+  const [connectClient, setConnectClient] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token || !id) return;
@@ -178,9 +179,11 @@ export default function McpServerDetailPage() {
 
   const endpointUrl = `${apiUrl}/mcp/${id}`;
 
+  const slug = server.slug || 'my-server';
+
   const claudeConfigOAuth = `{
   "mcpServers": {
-    "${server.slug || 'my-server'}": {
+    "${slug}": {
       "type": "url",
       "url": "${endpointUrl}"
     }
@@ -189,7 +192,7 @@ export default function McpServerDetailPage() {
 
   const claudeConfigApiKey = `{
   "mcpServers": {
-    "${server.slug || 'my-server'}": {
+    "${slug}": {
       "type": "url",
       "url": "${endpointUrl}",
       "headers": {
@@ -198,6 +201,220 @@ export default function McpServerDetailPage() {
     }
   }
 }`;
+
+  const windsurfConfig = `{
+  "mcpServers": {
+    "${slug}": {
+      "serverUrl": "${endpointUrl}"
+    }
+  }
+}`;
+
+  const cursorDeepLink = () => {
+    const config = btoa(JSON.stringify({ url: endpointUrl }));
+    return `cursor://anysphere.cursor-deeplink/mcp/install?name=${encodeURIComponent(slug)}&config=${config}`;
+  };
+
+  const vscodeDeepLink = () => {
+    const config = { name: slug, type: 'http', url: endpointUrl };
+    return `vscode:mcp/install?${encodeURIComponent(JSON.stringify(config))}`;
+  };
+
+  const aiClients = [
+    { id: 'cursor', name: 'Cursor' },
+    { id: 'vscode', name: 'VS Code / Copilot' },
+    { id: 'claude-web', name: 'Claude (Web)' },
+    { id: 'claude-desktop', name: 'Claude Desktop' },
+    { id: 'claude-code', name: 'Claude Code' },
+    { id: 'chatgpt', name: 'ChatGPT' },
+    { id: 'gemini', name: 'Gemini CLI' },
+    { id: 'windsurf', name: 'Windsurf' },
+  ];
+
+  const renderModalContent = (clientId: string) => {
+    switch (clientId) {
+      case 'cursor':
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Click the button below to automatically add this MCP server to Cursor. Cursor must be installed on your machine.
+            </p>
+            <a
+              href={cursorDeepLink()}
+              className="inline-flex items-center gap-2 bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
+            >
+              Open in Cursor
+            </a>
+          </div>
+        );
+      case 'vscode':
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Click the button below to automatically add this MCP server to VS Code. GitHub Copilot extension required for MCP support.
+            </p>
+            <a
+              href={vscodeDeepLink()}
+              className="inline-flex items-center gap-2 bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
+            >
+              Open in VS Code
+            </a>
+          </div>
+        );
+      case 'claude-web':
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              1. Click the button below to open Claude&apos;s connector settings.<br />
+              2. Click <strong>Add custom connector</strong>.<br />
+              3. Paste the MCP endpoint URL below.
+            </p>
+            <a
+              href="https://claude.ai/settings/connectors"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
+            >
+              Open Claude Settings
+            </a>
+            <div>
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">MCP Endpoint URL</label>
+              <div className="flex gap-2">
+                <code className="flex-1 bg-[var(--muted)] px-3 py-2 rounded text-xs font-mono break-all">{endpointUrl}</code>
+                <button
+                  onClick={() => handleCopy(endpointUrl, 'modal-endpoint')}
+                  className="border border-[var(--border)] px-3 py-2 rounded text-xs hover:bg-[var(--accent)] flex-shrink-0"
+                >
+                  {copied === 'modal-endpoint' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      case 'claude-desktop':
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Add this to your <code className="font-mono text-xs bg-[var(--muted)] px-1 rounded">claude_desktop_config.json</code>:
+            </p>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-[var(--muted-foreground)]">Config (OAuth)</label>
+                <button
+                  onClick={() => handleCopy(claudeConfigOAuth, 'modal-claude-oauth')}
+                  className="text-xs text-[var(--brand)] hover:underline"
+                >
+                  {copied === 'modal-claude-oauth' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <pre className="bg-[var(--muted)] p-3 rounded text-xs overflow-x-auto font-mono">{claudeConfigOAuth}</pre>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-[var(--muted-foreground)]">Config (API Key)</label>
+                <button
+                  onClick={() => handleCopy(claudeConfigApiKey, 'modal-claude-apikey')}
+                  className="text-xs text-[var(--brand)] hover:underline"
+                >
+                  {copied === 'modal-claude-apikey' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <pre className="bg-[var(--muted)] p-3 rounded text-xs overflow-x-auto font-mono">{claudeConfigApiKey}</pre>
+            </div>
+          </div>
+        );
+      case 'claude-code': {
+        const cmd = `claude mcp add --transport http ${slug} ${endpointUrl}`;
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Run this command in your terminal:
+            </p>
+            <div className="flex gap-2">
+              <code className="flex-1 bg-[var(--muted)] px-3 py-2 rounded text-xs font-mono break-all">{cmd}</code>
+              <button
+                onClick={() => handleCopy(cmd, 'modal-claude-code')}
+                className="border border-[var(--border)] px-3 py-2 rounded text-xs hover:bg-[var(--accent)] flex-shrink-0"
+              >
+                {copied === 'modal-claude-code' ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        );
+      }
+      case 'chatgpt':
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              1. Click the button below to open ChatGPT&apos;s connector settings.<br />
+              2. Click <strong>Add connector</strong> or <strong>Create</strong>.<br />
+              3. Paste the MCP endpoint URL below.
+            </p>
+            <a
+              href="https://chatgpt.com/admin/mcp"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
+            >
+              Open ChatGPT Settings
+            </a>
+            <div>
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">MCP Endpoint URL</label>
+              <div className="flex gap-2">
+                <code className="flex-1 bg-[var(--muted)] px-3 py-2 rounded text-xs font-mono break-all">{endpointUrl}</code>
+                <button
+                  onClick={() => handleCopy(endpointUrl, 'modal-chatgpt-url')}
+                  className="border border-[var(--border)] px-3 py-2 rounded text-xs hover:bg-[var(--accent)] flex-shrink-0"
+                >
+                  {copied === 'modal-chatgpt-url' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      case 'gemini': {
+        const cmd = `gemini mcp add --transport http ${slug} ${endpointUrl}`;
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Run this command in your terminal:
+            </p>
+            <div className="flex gap-2">
+              <code className="flex-1 bg-[var(--muted)] px-3 py-2 rounded text-xs font-mono break-all">{cmd}</code>
+              <button
+                onClick={() => handleCopy(cmd, 'modal-gemini')}
+                className="border border-[var(--border)] px-3 py-2 rounded text-xs hover:bg-[var(--accent)] flex-shrink-0"
+              >
+                {copied === 'modal-gemini' ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        );
+      }
+      case 'windsurf':
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Add this to your <code className="font-mono text-xs bg-[var(--muted)] px-1 rounded">~/.codeium/windsurf/mcp_config.json</code>:
+            </p>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-[var(--muted-foreground)]">Config</label>
+                <button
+                  onClick={() => handleCopy(windsurfConfig, 'modal-windsurf')}
+                  className="text-xs text-[var(--brand)] hover:underline"
+                >
+                  {copied === 'modal-windsurf' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <pre className="bg-[var(--muted)] p-3 rounded text-xs overflow-x-auto font-mono">{windsurfConfig}</pre>
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   // Tools from assigned connectors
   const assignedConnectors = allConnectors.filter((c) => assignedIds.has(c.id));
@@ -285,7 +502,8 @@ export default function McpServerDetailPage() {
         {/* Connection Config */}
         <div className="border border-[var(--border)] rounded-lg p-6">
           <h3 className="text-lg font-medium mb-4">Connect Your MCP Client</h3>
-          <div className="space-y-4">
+          <div className="space-y-5">
+            {/* MCP Endpoint */}
             <div>
               <label className="block text-sm text-[var(--muted-foreground)] mb-1">MCP Endpoint</label>
               <div className="flex gap-2">
@@ -302,43 +520,90 @@ export default function McpServerDetailPage() {
               </p>
             </div>
 
-            {/* OAuth config (Claude Desktop, ChatGPT, Cursor) */}
+            {/* Quick Connect Grid */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-sm font-medium">OAuth (Claude Desktop, ChatGPT, Cursor)</h4>
-                <button
-                  onClick={() => handleCopy(claudeConfigOAuth, 'claude-oauth')}
-                  className="text-xs text-[var(--brand)] hover:underline"
-                >
-                  {copied === 'claude-oauth' ? 'Copied!' : 'Copy config'}
-                </button>
+              <h4 className="text-sm font-medium mb-3">Quick Connect</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {aiClients.map((client) => (
+                  <button
+                    key={client.id}
+                    onClick={() => setConnectClient(client.id)}
+                    className="flex items-center justify-center gap-2 border border-[var(--border)] rounded-lg px-3 py-3 text-sm font-medium hover:bg-[var(--accent)] hover:border-[var(--brand)] transition-colors"
+                  >
+                    {client.name}
+                  </button>
+                ))}
               </div>
-              <pre className="bg-[var(--muted)] p-4 rounded text-xs overflow-x-auto font-mono">{claudeConfigOAuth}</pre>
-              <p className="text-xs text-[var(--muted-foreground)] mt-2">
-                The client will auto-discover OAuth endpoints and prompt you to log in.
-                Requires <code className="font-mono bg-[var(--muted)] px-1 rounded">MCP_AUTH_MODE=oauth2</code> or <code className="font-mono bg-[var(--muted)] px-1 rounded">both</code>.
-              </p>
             </div>
 
-            {/* API Key config */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-sm font-medium">API Key (Claude Code, custom clients)</h4>
-                <button
-                  onClick={() => handleCopy(claudeConfigApiKey, 'claude-apikey')}
-                  className="text-xs text-[var(--brand)] hover:underline"
-                >
-                  {copied === 'claude-apikey' ? 'Copied!' : 'Copy config'}
-                </button>
+            {/* Manual Config (collapsible) */}
+            <details className="group">
+              <summary className="text-sm font-medium cursor-pointer text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">
+                Manual Configuration (Advanced)
+              </summary>
+              <div className="mt-3 space-y-4">
+                {/* OAuth config */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium">OAuth (Claude Desktop, ChatGPT, Cursor)</h4>
+                    <button
+                      onClick={() => handleCopy(claudeConfigOAuth, 'claude-oauth')}
+                      className="text-xs text-[var(--brand)] hover:underline"
+                    >
+                      {copied === 'claude-oauth' ? 'Copied!' : 'Copy config'}
+                    </button>
+                  </div>
+                  <pre className="bg-[var(--muted)] p-4 rounded text-xs overflow-x-auto font-mono">{claudeConfigOAuth}</pre>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-2">
+                    The client will auto-discover OAuth endpoints and prompt you to log in.
+                    Requires <code className="font-mono bg-[var(--muted)] px-1 rounded">MCP_AUTH_MODE=oauth2</code> or <code className="font-mono bg-[var(--muted)] px-1 rounded">both</code>.
+                  </p>
+                </div>
+
+                {/* API Key config */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium">API Key (Claude Code, custom clients)</h4>
+                    <button
+                      onClick={() => handleCopy(claudeConfigApiKey, 'claude-apikey')}
+                      className="text-xs text-[var(--brand)] hover:underline"
+                    >
+                      {copied === 'claude-apikey' ? 'Copied!' : 'Copy config'}
+                    </button>
+                  </div>
+                  <pre className="bg-[var(--muted)] p-4 rounded text-xs overflow-x-auto font-mono">{claudeConfigApiKey}</pre>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-2">
+                    Replace <code className="font-mono bg-[var(--muted)] px-1 rounded">YOUR_MCP_API_KEY</code> with a key generated below.
+                    Requires <code className="font-mono bg-[var(--muted)] px-1 rounded">MCP_AUTH_MODE=legacy</code> or <code className="font-mono bg-[var(--muted)] px-1 rounded">both</code>.
+                  </p>
+                </div>
               </div>
-              <pre className="bg-[var(--muted)] p-4 rounded text-xs overflow-x-auto font-mono">{claudeConfigApiKey}</pre>
-              <p className="text-xs text-[var(--muted-foreground)] mt-2">
-                Replace <code className="font-mono bg-[var(--muted)] px-1 rounded">YOUR_MCP_API_KEY</code> with a key generated below.
-                Requires <code className="font-mono bg-[var(--muted)] px-1 rounded">MCP_AUTH_MODE=legacy</code> or <code className="font-mono bg-[var(--muted)] px-1 rounded">both</code>.
-              </p>
-            </div>
+            </details>
           </div>
         </div>
+
+        {/* Connect Modal */}
+        {connectClient && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setConnectClient(null)}>
+            <div
+              className="bg-[var(--background)] border border-[var(--border)] rounded-xl shadow-xl w-full max-w-lg mx-4 p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium">
+                  Connect to {aiClients.find((c) => c.id === connectClient)?.name}
+                </h3>
+                <button
+                  onClick={() => setConnectClient(null)}
+                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-xl leading-none"
+                >
+                  &times;
+                </button>
+              </div>
+              {renderModalContent(connectClient)}
+            </div>
+          </div>
+        )}
 
         {/* Assigned Connectors */}
         <div className="border border-[var(--border)] rounded-lg p-6">
