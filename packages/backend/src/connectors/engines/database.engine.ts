@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Pool } from 'pg';
 import * as mssql from 'mssql';
 import { MongoClient } from 'mongodb';
+import * as mysql from 'mysql2/promise';
+import * as oracledb from 'oracledb';
+import Database from 'better-sqlite3';
 
 @Injectable()
 export class DatabaseEngine {
@@ -47,6 +50,15 @@ export class DatabaseEngine {
     if (this.isMssql(config.baseUrl)) {
       return this.executeMssql(config, sql);
     }
+    if (this.isMysql(config.baseUrl)) {
+      return this.executeMysql(config, sql);
+    }
+    if (this.isOracle(config.baseUrl)) {
+      return this.executeOracle(config, sql);
+    }
+    if (this.isSqlite(config.baseUrl)) {
+      return this.executeSqlite(config.baseUrl, sql);
+    }
     return this.executePostgres(config.baseUrl, sql);
   }
 
@@ -73,6 +85,29 @@ export class DatabaseEngine {
         await pool.request().query('SELECT 1 AS ok');
       } finally {
         await pool.close();
+      }
+    } else if (this.isMysql(config.baseUrl)) {
+      const conn = await mysql.createConnection(this.mysqlUri(config.baseUrl));
+      try {
+        await conn.query('SELECT 1');
+      } finally {
+        await conn.end();
+      }
+    } else if (this.isOracle(config.baseUrl)) {
+      const oraConfig = this.buildOracleConfig(config);
+      const conn = await oracledb.getConnection(oraConfig);
+      try {
+        await conn.execute('SELECT 1 FROM DUAL');
+      } finally {
+        await conn.close();
+      }
+    } else if (this.isSqlite(config.baseUrl)) {
+      const filePath = this.sqlitePath(config.baseUrl);
+      const db = new Database(filePath, { readonly: true });
+      try {
+        db.prepare('SELECT 1').get();
+      } finally {
+        db.close();
       }
     } else {
       const pool = new Pool({ connectionString: config.baseUrl });
@@ -349,6 +384,116 @@ export class DatabaseEngine {
   }
 
   /* ------------------------------------------------------------------ */
+  /*  MySQL / MariaDB                                                    */
+  /* ------------------------------------------------------------------ */
+
+  private async executeMysql(
+    config: {
+      baseUrl: string;
+      authType: string;
+      authConfig?: Record<string, unknown>;
+    },
+    sql: string,
+  ): Promise<unknown> {
+    const uri = this.mysqlUri(config.baseUrl);
+    this.logger.debug(`MySQL query → ${new URL(uri).hostname}`);
+
+    const conn = await mysql.createConnection(uri);
+    try {
+      const [rows] = await conn.query(sql);
+      const rowArray = Array.isArray(rows) ? rows : [rows];
+      return this.truncateRows(rowArray as Record<string, unknown>[]);
+    } finally {
+      await conn.end();
+    }
+  }
+
+  /** Normalize mariadb:// to mysql:// since mysql2 only understands mysql:// */
+  private mysqlUri(baseUrl: string): string {
+    if (baseUrl.startsWith('mariadb://')) {
+      return 'mysql://' + baseUrl.slice('mariadb://'.length);
+    }
+    return baseUrl;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Oracle                                                             */
+  /* ------------------------------------------------------------------ */
+
+  private async executeOracle(
+    config: {
+      baseUrl: string;
+      authType: string;
+      authConfig?: Record<string, unknown>;
+    },
+    sql: string,
+  ): Promise<unknown> {
+    const oraConfig = this.buildOracleConfig(config);
+    this.logger.debug(`Oracle query → ${oraConfig.connectString}`);
+
+    const conn = await oracledb.getConnection(oraConfig);
+    try {
+      const result = await conn.execute(sql, [], {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      const rows = (result.rows || []) as Record<string, unknown>[];
+      return this.truncateRows(rows);
+    } finally {
+      await conn.close();
+    }
+  }
+
+  /**
+   * Parse oracle://user:pass@host:1521/service_name into oracledb config.
+   */
+  private buildOracleConfig(config: {
+    baseUrl: string;
+    authConfig?: Record<string, unknown>;
+  }): oracledb.ConnectionAttributes {
+    const url = new URL(config.baseUrl.replace(/^oracledb:\/\//, 'oracle://'));
+    const auth = config.authConfig || {};
+
+    const user = (auth.username as string) || decodeURIComponent(url.username) || undefined;
+    const password = (auth.password as string) || decodeURIComponent(url.password) || undefined;
+    const host = url.hostname;
+    const port = url.port || '1521';
+    const serviceName = url.pathname.replace(/^\//, '') || undefined;
+
+    return {
+      user,
+      password,
+      connectString: `${host}:${port}/${serviceName}`,
+    };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  SQLite                                                             */
+  /* ------------------------------------------------------------------ */
+
+  private executeSqlite(baseUrl: string, sql: string): unknown {
+    const filePath = this.sqlitePath(baseUrl);
+    this.logger.debug(`SQLite query → ${filePath}`);
+
+    const db = new Database(filePath, { readonly: true });
+    try {
+      const rows = db.prepare(sql).all() as Record<string, unknown>[];
+      return this.truncateRows(rows);
+    } finally {
+      db.close();
+    }
+  }
+
+  /** Extract file path from sqlite:///absolute/path or sqlite://./relative */
+  private sqlitePath(baseUrl: string): string {
+    // sqlite:///absolute/path → /absolute/path
+    // sqlite://./relative     → ./relative
+    // sqlite:/path            → /path
+    const stripped = baseUrl.replace(/^sqlite:\/\//, '');
+    if (stripped.startsWith('/')) return stripped;
+    return stripped;
+  }
+
+  /* ------------------------------------------------------------------ */
   /*  Shared helpers                                                     */
   /* ------------------------------------------------------------------ */
 
@@ -358,6 +503,18 @@ export class DatabaseEngine {
 
   private isMssql(baseUrl: string): boolean {
     return baseUrl.startsWith('mssql://');
+  }
+
+  private isMysql(baseUrl: string): boolean {
+    return baseUrl.startsWith('mysql://') || baseUrl.startsWith('mariadb://');
+  }
+
+  private isOracle(baseUrl: string): boolean {
+    return baseUrl.startsWith('oracle://') || baseUrl.startsWith('oracledb://');
+  }
+
+  private isSqlite(baseUrl: string): boolean {
+    return baseUrl.startsWith('sqlite://') || baseUrl.startsWith('sqlite:');
   }
 
   private truncateRows(rows: Record<string, unknown>[]): unknown {

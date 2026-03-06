@@ -271,13 +271,35 @@ export class ConnectorsService {
     }
 
     const isMssql = baseUrl.startsWith('mssql://');
+    const isMysql = baseUrl.startsWith('mysql://') || baseUrl.startsWith('mariadb://');
+    const isOracle = baseUrl.startsWith('oracle://') || baseUrl.startsWith('oracledb://');
+    const isSqlite = baseUrl.startsWith('sqlite://') || baseUrl.startsWith('sqlite:');
 
-    const schemaQuery = isMssql
-      ? `SELECT t.TABLE_SCHEMA, t.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 'YES' ELSE 'NO' END AS IS_PRIMARY_KEY FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME LEFT JOIN (SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY') pk ON c.TABLE_SCHEMA = pk.TABLE_SCHEMA AND c.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME WHERE t.TABLE_TYPE = 'BASE TABLE' ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION`
-      : `SELECT t.table_schema, t.table_name, c.column_name, c.data_type, c.character_maximum_length, c.is_nullable, CASE WHEN pk.column_name IS NOT NULL THEN 'YES' ELSE 'NO' END AS is_primary_key FROM information_schema.tables t JOIN information_schema.columns c ON t.table_schema = c.table_schema AND t.table_name = c.table_name LEFT JOIN (SELECT ku.table_schema, ku.table_name, ku.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name WHERE tc.constraint_type = 'PRIMARY KEY') pk ON c.table_schema = pk.table_schema AND c.table_name = pk.table_name AND c.column_name = pk.column_name WHERE t.table_type = 'BASE TABLE' AND t.table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY t.table_schema, t.table_name, c.ordinal_position`;
+    let schemaQuery: string;
+    let dbType: string;
+    let topSyntax: string;
 
-    const dbType = isMssql ? 'SQL Server' : 'PostgreSQL';
-    const topSyntax = isMssql ? 'SELECT TOP 10' : 'SELECT ... LIMIT 10';
+    if (isMssql) {
+      dbType = 'SQL Server';
+      topSyntax = 'SELECT TOP 10';
+      schemaQuery = `SELECT t.TABLE_SCHEMA, t.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 'YES' ELSE 'NO' END AS IS_PRIMARY_KEY FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME LEFT JOIN (SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY') pk ON c.TABLE_SCHEMA = pk.TABLE_SCHEMA AND c.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME WHERE t.TABLE_TYPE = 'BASE TABLE' ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION`;
+    } else if (isMysql) {
+      dbType = baseUrl.startsWith('mariadb://') ? 'MariaDB' : 'MySQL';
+      topSyntax = 'SELECT ... LIMIT 10';
+      schemaQuery = `SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE, CASE WHEN COLUMN_KEY = 'PRI' THEN 'YES' ELSE 'NO' END AS IS_PRIMARY_KEY FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION`;
+    } else if (isOracle) {
+      dbType = 'Oracle';
+      topSyntax = 'SELECT ... FETCH FIRST 10 ROWS ONLY';
+      schemaQuery = `SELECT t.OWNER AS TABLE_SCHEMA, t.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, c.DATA_LENGTH AS CHARACTER_MAXIMUM_LENGTH, c.NULLABLE AS IS_NULLABLE, CASE WHEN cc.COLUMN_NAME IS NOT NULL THEN 'YES' ELSE 'NO' END AS IS_PRIMARY_KEY FROM ALL_TABLES t JOIN ALL_TAB_COLUMNS c ON t.OWNER = c.OWNER AND t.TABLE_NAME = c.TABLE_NAME LEFT JOIN (SELECT acc.OWNER, acc.TABLE_NAME, acc.COLUMN_NAME FROM ALL_CONSTRAINTS ac JOIN ALL_CONS_COLUMNS acc ON ac.CONSTRAINT_NAME = acc.CONSTRAINT_NAME AND ac.OWNER = acc.OWNER WHERE ac.CONSTRAINT_TYPE = 'P') cc ON c.OWNER = cc.OWNER AND c.TABLE_NAME = cc.TABLE_NAME AND c.COLUMN_NAME = cc.COLUMN_NAME WHERE t.OWNER NOT IN ('SYS','SYSTEM','MDSYS','CTXSYS','XDB','WMSYS','DBSNMP','OUTLN') ORDER BY t.OWNER, t.TABLE_NAME, c.COLUMN_ID`;
+    } else if (isSqlite) {
+      dbType = 'SQLite';
+      topSyntax = 'SELECT ... LIMIT 10';
+      schemaQuery = `SELECT '' AS table_schema, m.name AS table_name, p.name AS column_name, p.type AS data_type, NULL AS character_maximum_length, CASE WHEN p."notnull" = 0 THEN 'YES' ELSE 'NO' END AS is_nullable, CASE WHEN p.pk > 0 THEN 'YES' ELSE 'NO' END AS is_primary_key FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%' ORDER BY m.name, p.cid`;
+    } else {
+      dbType = 'PostgreSQL';
+      topSyntax = 'SELECT ... LIMIT 10';
+      schemaQuery = `SELECT t.table_schema, t.table_name, c.column_name, c.data_type, c.character_maximum_length, c.is_nullable, CASE WHEN pk.column_name IS NOT NULL THEN 'YES' ELSE 'NO' END AS is_primary_key FROM information_schema.tables t JOIN information_schema.columns c ON t.table_schema = c.table_schema AND t.table_name = c.table_name LEFT JOIN (SELECT ku.table_schema, ku.table_name, ku.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name WHERE tc.constraint_type = 'PRIMARY KEY') pk ON c.table_schema = pk.table_schema AND c.table_name = pk.table_name AND c.column_name = pk.column_name WHERE t.table_type = 'BASE TABLE' AND t.table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY t.table_schema, t.table_name, c.ordinal_position`;
+    }
 
     return [
       // 1. Schema introspection
@@ -301,7 +323,7 @@ export class ConnectorsService {
         endpointMapping: {
           method: 'static',
           path: '',
-          staticResponse: this.buildExampleQueriesText(isMssql),
+          staticResponse: this.buildExampleQueriesText({ isMssql, isMysql, isOracle, isSqlite, dbType }),
         },
       },
       // 3. Dynamic query execution
@@ -386,8 +408,16 @@ export class ConnectorsService {
     ];
   }
 
-  private buildExampleQueriesText(isMssql: boolean): string {
-    if (isMssql) {
+  private buildExampleQueriesText(opts: {
+    isMssql: boolean;
+    isMysql: boolean;
+    isOracle: boolean;
+    isSqlite: boolean;
+    dbType: string;
+  }): string {
+    const note = '> NOTE: Only SELECT queries are allowed. INSERT, UPDATE, DELETE, DROP, and other write operations are blocked.';
+
+    if (opts.isMssql) {
       return [
         '# SQL Server Example Queries',
         '',
@@ -421,10 +451,125 @@ export class ConnectorsService {
         '## Pagination (SQL Server 2012+)',
         'SELECT * FROM [dbo].[TableName] ORDER BY Id OFFSET 0 ROWS FETCH NEXT 50 ROWS ONLY',
         '',
-        '> NOTE: Only SELECT queries are allowed. INSERT, UPDATE, DELETE, DROP, and other write operations are blocked.',
+        note,
       ].join('\n');
     }
 
+    if (opts.isMysql) {
+      return [
+        `# ${opts.dbType} Example Queries`,
+        '',
+        '## List all tables',
+        'SHOW TABLES',
+        '',
+        '## Preview table data (first 10 rows)',
+        'SELECT * FROM table_name LIMIT 10',
+        '',
+        '## Describe table structure',
+        'DESCRIBE table_name',
+        '',
+        '## Count rows in a table',
+        'SELECT COUNT(*) AS total FROM table_name',
+        '',
+        '## Search by text column (case-insensitive by default with utf8)',
+        "SELECT * FROM table_name WHERE column_name LIKE '%search_term%' LIMIT 50",
+        '',
+        '## Filter by date range',
+        "SELECT * FROM table_name WHERE date_column BETWEEN '2024-01-01' AND '2024-12-31' ORDER BY date_column DESC",
+        '',
+        '## Join two tables',
+        'SELECT a.*, b.column_name FROM table_a a JOIN table_b b ON a.foreign_key = b.primary_key',
+        '',
+        '## Aggregate with GROUP BY',
+        'SELECT category, COUNT(*) AS cnt, SUM(amount) AS total FROM table_name GROUP BY category ORDER BY total DESC',
+        '',
+        '## Distinct values in a column',
+        'SELECT DISTINCT column_name FROM table_name ORDER BY column_name',
+        '',
+        '## Pagination',
+        'SELECT * FROM table_name ORDER BY id LIMIT 50 OFFSET 0',
+        '',
+        note,
+      ].join('\n');
+    }
+
+    if (opts.isOracle) {
+      return [
+        '# Oracle Example Queries',
+        '',
+        '## List all user tables',
+        'SELECT table_name FROM user_tables ORDER BY table_name',
+        '',
+        '## Preview table data (first 10 rows)',
+        'SELECT * FROM table_name FETCH FIRST 10 ROWS ONLY',
+        '',
+        '## Count rows in a table',
+        'SELECT COUNT(*) AS total FROM table_name',
+        '',
+        '## Search by text column (case-insensitive)',
+        "SELECT * FROM table_name WHERE LOWER(column_name) LIKE '%search_term%' FETCH FIRST 50 ROWS ONLY",
+        '',
+        '## Filter by date range',
+        "SELECT * FROM table_name WHERE date_column BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' ORDER BY date_column DESC",
+        '',
+        '## Join two tables',
+        'SELECT a.*, b.column_name FROM table_a a JOIN table_b b ON a.foreign_key = b.primary_key',
+        '',
+        '## Aggregate with GROUP BY',
+        'SELECT category, COUNT(*) AS cnt, SUM(amount) AS total FROM table_name GROUP BY category ORDER BY total DESC',
+        '',
+        '## Describe table columns',
+        "SELECT column_name, data_type, data_length, nullable FROM all_tab_columns WHERE table_name = 'YOUR_TABLE' ORDER BY column_id",
+        '',
+        '## Distinct values in a column',
+        'SELECT DISTINCT column_name FROM table_name ORDER BY column_name',
+        '',
+        '## Pagination',
+        'SELECT * FROM table_name ORDER BY id OFFSET 0 ROWS FETCH NEXT 50 ROWS ONLY',
+        '',
+        note,
+      ].join('\n');
+    }
+
+    if (opts.isSqlite) {
+      return [
+        '# SQLite Example Queries',
+        '',
+        '## List all tables',
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        '',
+        '## Preview table data (first 10 rows)',
+        'SELECT * FROM table_name LIMIT 10',
+        '',
+        '## Count rows in a table',
+        'SELECT COUNT(*) AS total FROM table_name',
+        '',
+        '## Search by text column (case-insensitive)',
+        "SELECT * FROM table_name WHERE column_name LIKE '%search_term%' LIMIT 50",
+        '',
+        '## Filter by date range',
+        "SELECT * FROM table_name WHERE date_column BETWEEN '2024-01-01' AND '2024-12-31' ORDER BY date_column DESC",
+        '',
+        '## Join two tables',
+        'SELECT a.*, b.column_name FROM table_a a JOIN table_b b ON a.foreign_key = b.primary_key',
+        '',
+        '## Aggregate with GROUP BY',
+        'SELECT category, COUNT(*) AS cnt, SUM(amount) AS total FROM table_name GROUP BY category ORDER BY total DESC',
+        '',
+        '## Table info (columns and types)',
+        "SELECT name, type, pk FROM pragma_table_info('table_name')",
+        '',
+        '## Distinct values in a column',
+        'SELECT DISTINCT column_name FROM table_name ORDER BY column_name',
+        '',
+        '## Pagination',
+        'SELECT * FROM table_name ORDER BY id LIMIT 50 OFFSET 0',
+        '',
+        note,
+      ].join('\n');
+    }
+
+    // PostgreSQL (default)
     return [
       '# PostgreSQL Example Queries',
       '',
@@ -458,7 +603,7 @@ export class ConnectorsService {
       '## Pagination',
       'SELECT * FROM table_name ORDER BY id LIMIT 50 OFFSET 0',
       '',
-      '> NOTE: Only SELECT queries are allowed. INSERT, UPDATE, DELETE, DROP, and other write operations are blocked.',
+      note,
     ].join('\n');
   }
 
