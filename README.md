@@ -57,13 +57,19 @@ cd anythingmcp
 ./setup.sh                 # Interactive setup — generates .env, starts Docker
 ```
 
-The setup script asks a few questions (ports, auth mode, email, etc.), auto-generates all secrets, and starts the application. First user to register becomes Admin.
+The setup script configures everything interactively: deployment mode, domain/SSL, auth, email, Redis, and more. All secrets are auto-generated. First user to register becomes Admin.
+
+**What `setup.sh` handles:**
+- Domain and HTTPS — for production domains, enables **Caddy** reverse proxy with automatic Let's Encrypt SSL
+- Secrets — generates JWT, encryption keys, and database passwords
+- MCP authentication mode — OAuth 2.0, API Key, or both
+- Optional SMTP and Redis configuration
 
 > **Prefer manual setup?** Copy `.env.example` to `.env`, edit the values, and run `docker compose up -d`. See the [Deployment Guide](docs/deployment.md) for details.
 
-| Service | URL |
-|---------|-----|
-| Web UI | `http://localhost:3000` |
+| Service | Default URL |
+|---------|-------------|
+| Web UI | `http://localhost:3000` (or `https://yourdomain.com` with Caddy) |
 | Backend API | `http://localhost:4000` |
 | MCP Endpoint | `http://localhost:4000/mcp` |
 | Swagger Docs | `http://localhost:4000/api/docs` |
@@ -124,7 +130,7 @@ Each connector type has dedicated documentation with setup instructions, example
   Cursor ──────────────►│   MCP Protocol (HTTP)           │──── PostgreSQL / MySQL / MSSQL / MongoDB / ...
   Any MCP Client ──────►│                                 │──── Other MCP Servers
                         └─────────────────────────────────┘
-                          Single Docker container:
+                          Caddy (optional) │ automatic HTTPS
                           Next.js UI + NestJS Backend
                           PostgreSQL  │  Redis (optional)
 ```
@@ -147,6 +153,7 @@ Each connector type has dedicated documentation with setup instructions, example
 | MCP | @modelcontextprotocol/sdk, Streamable HTTP |
 | Database | PostgreSQL 17, Prisma 7 |
 | Cache | Redis 7 (optional) |
+| Reverse Proxy | Caddy 2 (optional — automatic HTTPS via Let's Encrypt) |
 | Auth | JWT, OAuth2, AES-256-GCM |
 | Deploy | Docker (single container for app) + Docker Compose |
 
@@ -154,19 +161,14 @@ Each connector type has dedicated documentation with setup instructions, example
 
 ## Development
 
-See the [Deployment Guide](docs/deployment.md#local-development) for full local development setup.
+The easiest way to set up local development:
 
 ```bash
-# Quick local dev setup
-cp .env.example .env
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
-npm install
-ln -sf ../../.env packages/backend/.env
-ln -sf ../../.env packages/frontend/.env
-export $(grep -v '^#' .env | grep -v '^$' | xargs)
-cd packages/backend && npx prisma migrate dev && npx prisma generate && cd ../..
+./setup.sh    # Choose "Local development" mode
 npm run dev
 ```
+
+Or see the [Deployment Guide](docs/deployment.md#local-development) for manual setup.
 
 ---
 

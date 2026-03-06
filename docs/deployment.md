@@ -8,16 +8,23 @@
 
 ## Quick Start (Docker)
 
+The fastest way to get started — the interactive setup script handles everything:
+
 ```bash
 git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp
-cp .env.example .env
-# Edit .env — set JWT_SECRET, ENCRYPTION_KEY, POSTGRES_PASSWORD
-docker compose up -d
-open http://localhost:3000
+./setup.sh
 ```
 
+The script asks a few questions and then:
+- Generates `.env` with all secrets (JWT, encryption keys, DB password)
+- For production domains: generates a `Caddyfile` and enables Caddy reverse proxy with automatic HTTPS
+- Starts all services via Docker Compose
+- Waits for the health check to pass
+
 The first user to register becomes **Admin**.
+
+> **Prefer manual setup?** Copy `.env.example` to `.env`, edit the values, and run `docker compose up -d`.
 
 ### Docker Services
 
@@ -25,19 +32,20 @@ The first user to register becomes **Admin**.
 |-----------|-------------|------|
 | `amcp-app` | Next.js 16 + NestJS 11 (single image) | 3000, 4000 |
 | `amcp-postgres` | PostgreSQL 17 | 5432 |
+| `amcp-caddy` | Caddy 2 reverse proxy (optional — HTTPS) | 80, 443 |
 | `amcp-redis` | Redis 7 (optional) | 6379 |
 
-> **Note:** Frontend and backend run in a single container since both are Node.js. A lightweight startup script (`start.sh`) manages both processes.
+> **Note:** Frontend and backend run in a single container since both are Node.js. A lightweight startup script (`start.sh`) manages both processes. Caddy is optional and only starts when `COMPOSE_PROFILES=proxy` is set.
 
 ### Service URLs
 
-| Service | URL |
-|---------|-----|
-| Web UI | `http://localhost:3000` |
-| Backend API | `http://localhost:4000` |
-| MCP Endpoint | `http://localhost:4000/mcp` |
-| Swagger Docs | `http://localhost:4000/api/docs` |
-| Health Check | `http://localhost:4000/health` |
+| Service | URL (localhost) | URL (with Caddy) |
+|---------|-----------------|-------------------|
+| Web UI | `http://localhost:3000` | `https://yourdomain.com` |
+| Backend API | `http://localhost:4000` | `https://yourdomain.com/api` |
+| MCP Endpoint | `http://localhost:4000/mcp` | `https://yourdomain.com/mcp` |
+| Swagger Docs | `http://localhost:4000/api/docs` | `https://yourdomain.com/api/docs` |
+| Health Check | `http://localhost:4000/health` | `https://yourdomain.com/health` |
 
 ---
 
@@ -51,7 +59,19 @@ Run PostgreSQL in Docker, frontend and backend locally with hot reload.
 - **npm** 9+
 - **Docker** and **Docker Compose** (for PostgreSQL)
 
-### Setup
+### Setup (Automated)
+
+The easiest way — use the setup script and choose "Local development":
+
+```bash
+cd anythingmcp
+./setup.sh    # Choose option 2: "Local development"
+npm run dev
+```
+
+The script generates `.env` with auto-generated secrets, starts PostgreSQL in Docker, installs npm dependencies, and runs database migrations.
+
+### Setup (Manual)
 
 ```bash
 cd anythingmcp
@@ -122,7 +142,15 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v # Stop + 
 
 ## Production Deployment
 
-### With Docker (Recommended)
+### With Docker + Setup Script (Recommended)
+
+```bash
+./setup.sh    # Choose Docker mode, enter your domain, enable HTTPS
+```
+
+When you enter a domain (not `localhost`), the script offers to enable **Caddy** reverse proxy with automatic Let's Encrypt SSL. This generates a `Caddyfile` and sets `COMPOSE_PROFILES=proxy` in `.env` so Caddy starts automatically.
+
+### With Docker (Manual)
 
 ```bash
 cp .env.example .env
@@ -155,37 +183,91 @@ cd packages/frontend && npm start
 
 ---
 
-## Reverse Proxy (nginx)
+## Reverse Proxy & HTTPS
+
+### Caddy (Recommended — Automatic SSL)
+
+The setup script (`./setup.sh`) automatically generates a `Caddyfile` and enables Caddy when you choose HTTPS for a production domain. Caddy handles:
+
+- **Automatic Let's Encrypt certificates** — no manual cert management
+- **HTTP → HTTPS redirect** — all traffic encrypted
+- **Path-based routing** — backend API, MCP, OAuth2 endpoints routed to port 4000; everything else to the frontend
+
+The generated `Caddyfile` looks like:
+
+```caddyfile
+yourdomain.com {
+    tls admin@yourdomain.com
+
+    # Backend API, MCP, OAuth2, health
+    reverse_proxy /api/*          app:4000
+    reverse_proxy /mcp/*          app:4000
+    reverse_proxy /health/*       app:4000
+    reverse_proxy /.well-known/*  app:4000
+    reverse_proxy /authorize      app:4000
+    reverse_proxy /token          app:4000
+    reverse_proxy /register       app:4000
+    reverse_proxy /auth/*         app:4000
+
+    # Frontend (catch-all)
+    reverse_proxy app:3000
+}
+```
+
+To enable Caddy manually (without the setup script), add these to your `.env`:
+
+```env
+COMPOSE_PROFILES=proxy
+DOMAIN=yourdomain.com
+ACME_EMAIL=admin@yourdomain.com
+APP_BIND_IP=127.0.0.1
+```
+
+Then create a `Caddyfile` in the project root (see example above) and run `docker compose up -d`.
+
+> **Note:** When Caddy is enabled, `APP_BIND_IP=127.0.0.1` restricts the app's ports (3000/4000) to localhost only. All external traffic goes through Caddy on ports 80/443.
+
+### nginx (Alternative)
+
+If you prefer nginx, configure it to route backend paths to port 4000 and everything else to port 3000:
 
 ```nginx
 server {
     listen 443 ssl;
     server_name mcp.yourdomain.com;
 
-    # Frontend
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-    }
-
-    # Backend API
+    # Backend API, MCP, OAuth2
     location /api/ {
         proxy_pass http://localhost:4000;
     }
-
-    # MCP endpoint
     location /mcp {
         proxy_pass http://localhost:4000;
         proxy_http_version 1.1;
         proxy_set_header Connection '';
         proxy_buffering off;
     }
-
-    # Health check
     location /health {
         proxy_pass http://localhost:4000;
+    }
+    location /.well-known/ {
+        proxy_pass http://localhost:4000;
+    }
+    location /authorize {
+        proxy_pass http://localhost:4000;
+    }
+    location /token {
+        proxy_pass http://localhost:4000;
+    }
+    location /auth/ {
+        proxy_pass http://localhost:4000;
+    }
+
+    # Frontend (catch-all)
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
     }
 }
 ```
@@ -256,6 +338,10 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `MCP_API_KEY` | No | API key for legacy MCP auth |
 | `SERVER_URL` | No | Server URL for OAuth2 metadata (default: `http://localhost:4000`) |
 | `MCP_RATE_LIMIT_PER_MINUTE` | No | Rate limit per client (default: 60) |
+| `COMPOSE_PROFILES` | No | Set to `proxy` to enable Caddy reverse proxy |
+| `DOMAIN` | No | Domain for Caddy SSL certificate (e.g., `example.com`) |
+| `ACME_EMAIL` | No | Email for Let's Encrypt certificate notifications |
+| `APP_BIND_IP` | No | Bind IP for app ports (default: `0.0.0.0`, set `127.0.0.1` behind Caddy) |
 
 ---
 
