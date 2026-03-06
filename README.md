@@ -54,10 +54,12 @@ No SDK. No code changes. Just point, configure, and connect.
 ```bash
 git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp
-cp .env.example .env       # Edit: JWT_SECRET, ENCRYPTION_KEY, POSTGRES_PASSWORD
-docker compose up -d
-open http://localhost:3000  # First user becomes Admin
+./setup.sh                 # Interactive setup — generates .env, starts Docker
 ```
+
+The setup script asks a few questions (ports, auth mode, email, etc.), auto-generates all secrets, and starts the application. First user to register becomes Admin.
+
+> **Prefer manual setup?** Copy `.env.example` to `.env`, edit the values, and run `docker compose up -d`. See the [Deployment Guide](docs/deployment.md) for details.
 
 | Service | URL |
 |---------|-----|
