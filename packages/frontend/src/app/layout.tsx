@@ -5,7 +5,7 @@ import { Providers } from './providers';
 export const metadata: Metadata = {
   title: 'AnythingMCP',
   description: 'Convert any API into an MCP server',
-  icons: { icon: '/logo.svg' },
+  icons: { icon: '/icon.svg', apple: '/apple-icon.svg' },
 };
 
 // Inline script to prevent FOUC — runs before React hydrates
