@@ -21,6 +21,19 @@ No SDK. No code changes. Just point, configure, and connect.
 
 ---
 
+## Deploy on Railway
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.app/template/XXXXXX?referralCode=YYYYYY)
+
+1. Click the button above to open the Railway template.
+2. Fill in the required environment variables (secrets are auto-generated for you).
+3. Click **Deploy** — Railway will build the container and provision a managed PostgreSQL database.
+4. Once the deploy is complete (2-3 minutes), open the generated URL and register your admin account.
+
+> **Self-hosting instead?** Run `./setup.sh` for the interactive Docker setup. See [Quick Start](#quick-start) below.
+
+---
+
 ## Why AnythingMCP?
 
 | Problem | Solution |
