@@ -46,10 +46,10 @@ export class EmailService {
         subject: 'Password Reset — AnythingMCP',
         html: `
           <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-            <h2 style="color: #6366f1;">Password Reset</h2>
+            <h2 style="color: #2563eb;">Password Reset</h2>
             <p>You requested a password reset for your AnythingMCP account.</p>
             <p>Click the button below to set a new password. This link expires in 1 hour.</p>
-            <a href="${resetUrl}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
+            <a href="${resetUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
               Reset Password
             </a>
             <p style="color: #737373; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
@@ -100,10 +100,10 @@ export class EmailService {
           subject: 'You\'ve been invited to AnythingMCP',
           html: `
             <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-              <h2 style="color: #6366f1;">You're Invited!</h2>
+              <h2 style="color: #2563eb;">You're Invited!</h2>
               <p><strong>${invitedByName}</strong> has invited you to join the AnythingMCP workspace as <strong>${roleName}</strong>.</p>
               <p>Click the button below to create your account. This invitation expires in 48 hours.</p>
-              <a href="${inviteUrl}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
+              <a href="${inviteUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
                 Accept Invitation
               </a>
               <p style="color: #737373; font-size: 14px;">If you weren't expecting this invite, you can safely ignore this email.</p>
@@ -149,7 +149,7 @@ export class EmailService {
           subject: 'Welcome to AnythingMCP — Your License Key',
           html: `
             <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-              <h2 style="color: #6366f1;">Welcome to AnythingMCP!</h2>
+              <h2 style="color: #2563eb;">Welcome to AnythingMCP!</h2>
               <p>Hi ${name},</p>
               <p>Your license key is:</p>
               <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; text-align: center; font-family: monospace; font-size: 18px; letter-spacing: 2px; margin: 16px 0;">
@@ -188,6 +188,13 @@ export class EmailService {
   ): Promise<boolean> {
     const transport = await this.createTransporter();
 
+    if (!transport) {
+      // Log verification code to console so developers can verify manually
+      this.logger.warn(
+        `SMTP not configured — verification code for ${to}: ${code}`,
+      );
+    }
+
     if (transport) {
       try {
         await transport.transporter.sendMail({
@@ -196,14 +203,14 @@ export class EmailService {
           subject: 'Verify Your Email — AnythingMCP',
           html: `
             <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-              <h2 style="color: #6366f1;">Verify Your Email</h2>
+              <h2 style="color: #2563eb;">Verify Your Email</h2>
               <p>Your verification code is:</p>
               <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; text-align: center; font-family: monospace; font-size: 32px; letter-spacing: 8px; margin: 16px 0; font-weight: bold;">
                 ${code}
               </div>
               <p>This code expires in 15 minutes.</p>
               <p>Or click the button below to verify:</p>
-              <a href="${verifyUrl}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
+              <a href="${verifyUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
                 Verify Email
               </a>
               <p style="color: #737373; font-size: 14px;">If you didn't create this account, you can safely ignore this email.</p>
