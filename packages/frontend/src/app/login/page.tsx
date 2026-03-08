@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { auth, license } from '@/lib/api';
@@ -26,6 +26,7 @@ function LoginForm() {
   const [isFirstUserFlag, setIsFirstUserFlag] = useState(false);
   const [storedUser, setStoredUser] = useState<any>(null);
   const [resendMessage, setResendMessage] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
@@ -66,6 +67,7 @@ function LoginForm() {
         setStoredUser(result.user);
         setUserEmail(result.user.email);
         setIsFirstUserFlag(isFirstUser);
+        setResendCooldown(60);
         setSetupStep('verify-email');
       } else {
         login(result.accessToken, result.user);
@@ -104,16 +106,24 @@ function LoginForm() {
     }
   };
 
-  const handleResendCode = async () => {
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
+
+  const handleResendCode = useCallback(async () => {
+    if (resendCooldown > 0) return;
     setError('');
     setResendMessage('');
     try {
       await auth.resendVerification(authToken);
       setResendMessage('A new code has been sent to your email');
+      setResendCooldown(60);
     } catch (err: any) {
       setError(err.message || 'Failed to resend code');
     }
-  };
+  }, [resendCooldown, authToken]);
 
   const handlePersonalUse = async () => {
     setError('');
@@ -205,9 +215,10 @@ function LoginForm() {
             Didn&apos;t receive it?{' '}
             <button
               onClick={handleResendCode}
-              className="text-[var(--brand)] hover:underline font-medium"
+              disabled={resendCooldown > 0}
+              className="text-[var(--brand)] hover:underline font-medium disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
             >
-              Resend code
+              {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
             </button>
           </p>
         </div>
