@@ -85,8 +85,8 @@ export class McpCombinedAuthGuard implements CanActivate {
       return true;
     }
 
-    // 5. If no auth is configured at all (dev mode), allow
-    if (!configuredApiKey && !mcpBearerToken && mode !== 'oauth2') {
+    // 5. If legacy mode but no credentials configured (dev mode), allow
+    if (!configuredApiKey && !mcpBearerToken && mode === 'legacy') {
       req.user = { authMethod: 'none' };
       return true;
     }
