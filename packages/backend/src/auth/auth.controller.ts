@@ -125,7 +125,7 @@ export class AuthController {
     );
   }
 
-  private async createAndSendVerificationCode(userId: string, email: string): Promise<void> {
+  private async createAndSendVerificationCode(userId: string, email: string): Promise<boolean> {
     // Invalidate old tokens
     await this.prisma.emailVerificationToken.updateMany({
       where: { userId, usedAt: null },
@@ -144,10 +144,13 @@ export class AuthController {
     // Build verification link URL
     const verifyUrl = `${this.getFrontendUrl()}/verify-email?token=${linkToken}`;
 
-    // Send email (async, don't block response)
-    this.emailService.sendVerificationEmail(email, code, verifyUrl).catch((err) => {
+    // Send email
+    try {
+      return await this.emailService.sendVerificationEmail(email, code, verifyUrl);
+    } catch (err) {
       this.logger.error(`Failed to send verification email to ${email}: ${err}`);
-    });
+      return false;
+    }
   }
 
   @Post('login')
@@ -320,7 +323,11 @@ export class AuthController {
       throw new BadRequestException('Too many verification attempts. Please try again later.');
     }
 
-    await this.createAndSendVerificationCode(userId, user.email);
+    const sent = await this.createAndSendVerificationCode(userId, user.email);
+
+    if (!sent) {
+      throw new BadRequestException('Failed to send verification email. SMTP may not be configured.');
+    }
 
     return { message: 'Verification code resent' };
   }
