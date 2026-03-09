@@ -92,7 +92,7 @@
         },
         "MCP_AUTH_MODE": {
           "description": "MCP endpoint authentication mode: oauth2, legacy, both, or none.",
-          "default": "oauth2",
+          "default": "both",
           "required": true
         },
         "MCP_BEARER_TOKEN": {
