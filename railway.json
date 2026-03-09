@@ -35,7 +35,7 @@
       "networking": {
         "serviceDomains": {
           "app": {
-            "port": 4000
+            "port": 3000
           }
         }
       },
@@ -72,11 +72,6 @@
         },
         "FRONTEND_URL": {
           "description": "Public URL of the frontend (e.g. https://your-app.up.railway.app). Update after deploy.",
-          "default": "https://${{RAILWAY_PUBLIC_DOMAIN}}",
-          "required": true
-        },
-        "NEXT_PUBLIC_API_URL": {
-          "description": "Public URL of the backend API. Same as FRONTEND_URL since Railway routes both ports.",
           "default": "https://${{RAILWAY_PUBLIC_DOMAIN}}",
           "required": true
         },

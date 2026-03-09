@@ -1,4 +1,6 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+// Use relative paths so requests go to the same origin.
+// In production (Docker / Railway) Next.js rewrites proxy /api/* to the backend.
+const API_BASE = '';
 
 interface RequestOptions {
   method?: string;
