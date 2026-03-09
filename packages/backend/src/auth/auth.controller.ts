@@ -26,6 +26,7 @@ import { UsersService } from '../users/users.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { PrismaService } from '../common/prisma.service';
 import { EmailService } from '../settings/email.service';
+import { SiteSettingsService } from '../settings/site-settings.service';
 import { Roles, RolesGuard } from './roles.guard';
 
 class LoginDto {
@@ -115,6 +116,7 @@ export class AuthController {
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly siteSettings: SiteSettingsService,
   ) {}
 
   private getFrontendUrl(): string {
@@ -182,6 +184,15 @@ export class AuthController {
       await this.createAndSendVerificationCode(user.id, user.email);
     }
 
+    // Check if ADMIN needs to complete license setup
+    let needsLicenseSetup = false;
+    if (user.role === 'ADMIN') {
+      const licenseKey = await this.siteSettings.get('license_key');
+      if (!licenseKey) {
+        needsLicenseSetup = true;
+      }
+    }
+
     return {
       accessToken: token,
       user: {
@@ -191,6 +202,7 @@ export class AuthController {
         role: user.role,
         emailVerified: user.emailVerified,
       },
+      ...(needsLicenseSetup && { needsLicenseSetup: true }),
     };
   }
 
