@@ -36,7 +36,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 // Auth
 export const auth = {
   login: (email: string, password: string) =>
-    request<{ accessToken: string; user: any }>('/api/auth/login', {
+    request<{ accessToken: string; user: any; needsLicenseSetup?: boolean }>('/api/auth/login', {
       method: 'POST',
       body: { email, password },
     }),

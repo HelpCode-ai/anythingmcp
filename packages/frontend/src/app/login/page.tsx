@@ -40,7 +40,7 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      let isFirstUser = false;
+      let needsLicenseSetup = false;
       let result;
       if (isRegister) {
         // Validate password strength
@@ -63,9 +63,11 @@ function LoginForm() {
         }
         const regResult = await auth.register(email, password, name, acceptTerms);
         result = regResult;
-        isFirstUser = !!regResult.isFirstUser;
+        needsLicenseSetup = !!regResult.isFirstUser;
       } else {
-        result = await auth.login(email, password);
+        const loginResult = await auth.login(email, password);
+        result = loginResult;
+        needsLicenseSetup = !!loginResult.needsLicenseSetup;
       }
 
       // Check if email needs verification
@@ -73,12 +75,12 @@ function LoginForm() {
         setAuthToken(result.accessToken);
         setStoredUser(result.user);
         setUserEmail(result.user.email);
-        setIsFirstUserFlag(isFirstUser);
+        setIsFirstUserFlag(needsLicenseSetup);
         setResendCooldown(60);
         setSetupStep('verify-email');
       } else {
         login(result.accessToken, result.user);
-        if (isFirstUser) {
+        if (needsLicenseSetup) {
           setAuthToken(result.accessToken);
           setSetupStep('license-choice');
         } else {
