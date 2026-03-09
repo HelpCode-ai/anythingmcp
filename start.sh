@@ -18,7 +18,7 @@ cd /app/backend
 npx prisma migrate deploy
 
 echo "==> Starting backend (port 4000)..."
-node dist/main.js &
+node dist/src/main.js &
 BACKEND_PID=$!
 
 echo "==> Starting frontend (port 3000)..."
