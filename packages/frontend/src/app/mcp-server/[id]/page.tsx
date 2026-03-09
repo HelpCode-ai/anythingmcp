@@ -272,7 +272,7 @@ export default function McpServerDetailPage() {
               3. Paste the MCP endpoint URL below.
             </p>
             <a
-              href="https://claude.ai/settings/connectors"
+              href="https://claude.ai/customize/connectors"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
