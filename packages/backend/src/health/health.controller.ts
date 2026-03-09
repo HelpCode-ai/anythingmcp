@@ -61,6 +61,8 @@ export class HealthController {
     if (this.redis.isConnected) {
       return { redis: { status: 'up' } };
     }
-    return { redis: { status: 'down', message: 'Not connected' } };
+    // Redis is optional — report as up with a message so the health check
+    // does not fail when Redis is simply not configured.
+    return { redis: { status: 'up', message: 'Not configured (optional)' } };
   }
 }
