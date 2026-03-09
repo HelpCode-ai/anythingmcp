@@ -62,11 +62,11 @@ RUN addgroup --system --gid 1001 appuser && \
 # ── Backend artifacts ──
 COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/dist ./backend/dist
 COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/prisma ./backend/prisma
+COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/prisma.config.ts ./backend/
 COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/package.json ./backend/
 
-# Backend node_modules (includes prisma client)
+# Backend node_modules (Prisma 7 client is compiled into dist/ by NestJS build)
 COPY --from=deps /app/node_modules ./backend/node_modules
-COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/node_modules/.prisma ./backend/node_modules/.prisma
 
 # ── Frontend artifacts (Next.js standalone) ──
 # In a monorepo, Next.js standalone output preserves the workspace directory
