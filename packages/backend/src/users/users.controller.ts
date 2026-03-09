@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsString, IsOptional, IsEmail, IsEnum, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsEnum, MinLength, Matches } from 'class-validator';
 import { UserRole } from '../generated/prisma/client';
 import { UsersService } from './users.service';
 import { AuthService } from '../auth/auth.service';
@@ -26,6 +26,10 @@ class UpdateProfileDto {
   email?: string;
 }
 
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/;
+const PASSWORD_MESSAGE =
+  'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
+
 class ChangePasswordDto {
   @IsString()
   @MinLength(8)
@@ -33,6 +37,7 @@ class ChangePasswordDto {
 
   @IsString()
   @MinLength(8)
+  @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
   newPassword: string;
 }
 
