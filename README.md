@@ -28,7 +28,7 @@ No SDK. No code changes. Just point, configure, and connect.
 1. Click the button above to open the Railway template.
 2. Fill in the required environment variables (secrets are auto-generated for you).
 3. Click **Deploy** — Railway will build the container and provision a managed PostgreSQL database.
-4. Once the deploy is complete (2-3 minutes), open the generated URL and register your admin account.
+4. Once the deploy is complete (2-3 minutes), open the generated URL and register your admin account. By default, only the admin can self-register — invite other users from the admin panel. Set `ALLOW_OPEN_REGISTRATION=true` to allow anyone to register.
 
 > **Self-hosting instead?** Run `./setup.sh` for the interactive Docker setup. See [Quick Start](#quick-start) below.
 

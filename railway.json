@@ -137,6 +137,11 @@
           "description": "Sender display name in outgoing emails.",
           "default": "AnythingMCP",
           "required": false
+        },
+        "ALLOW_OPEN_REGISTRATION": {
+          "description": "Allow anyone to register an account. When false (default), only the first user can self-register; subsequent users must be invited by an admin.",
+          "default": "false",
+          "required": false
         }
       }
     },

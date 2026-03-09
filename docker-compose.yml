@@ -52,6 +52,8 @@ services:
       - MCP_AUTH_MODE=${MCP_AUTH_MODE:-legacy}
       - MCP_API_KEY=${MCP_API_KEY:-}
       - MCP_BEARER_TOKEN=${MCP_BEARER_TOKEN:-}
+      # Registration (false = invite-only after first admin, true = anyone can register)
+      - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-false}
       # Uncomment to enable Redis (optional — used for response caching and rate limiting)
       # - REDIS_URL=redis://redis:6379
 

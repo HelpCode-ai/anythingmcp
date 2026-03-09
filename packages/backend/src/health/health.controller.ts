@@ -9,6 +9,7 @@ import {
 } from '@nestjs/terminus';
 import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
+import { UsersService } from '../users/users.service';
 
 @ApiTags('Health')
 @Controller('health')
@@ -18,16 +19,20 @@ export class HealthController {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly configService: ConfigService,
+    private readonly usersService: UsersService,
   ) {}
 
   @Get('server-info')
-  getServerInfo() {
+  async getServerInfo() {
     const authMode = this.configService.get<string>('MCP_AUTH_MODE') || 'none';
     const serverUrl = this.configService.get<string>('SERVER_URL') || '';
+    const userCount = await this.usersService.count();
+    const allowOpen = this.configService.get<string>('ALLOW_OPEN_REGISTRATION') === 'true';
     return {
       mcpAuthMode: authMode,
       serverUrl,
       mcpEndpoint: '/mcp',
+      registrationEnabled: userCount === 0 || allowOpen,
       oauthEndpoints: authMode === 'oauth2' || authMode === 'both'
         ? {
             wellKnown: '/.well-known/oauth-authorization-server',
