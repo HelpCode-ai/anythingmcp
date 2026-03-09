@@ -12,7 +12,7 @@ const AUTH_MODE_LABELS: Record<string, string> = {
 };
 
 export default function SettingsPage() {
-  const { token, user } = useAuth();
+  const { token, user, updateUser } = useAuth();
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileMsg, setProfileMsg] = useState('');
   // Change password
@@ -37,6 +37,7 @@ export default function SettingsPage() {
     if (!token) return;
     try {
       await users.updateProfile({ name: profileName }, token);
+      updateUser({ name: profileName });
       setProfileMsg('Profile updated');
       setTimeout(() => setProfileMsg(''), 3000);
     } catch (err: any) {
