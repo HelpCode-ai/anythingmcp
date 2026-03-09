@@ -39,6 +39,7 @@ export default function ConnectorDetailPage() {
   const [editAuthType, setEditAuthType] = useState('NONE');
   const [editAuthKey, setEditAuthKey] = useState('');
   const [editAuthValue, setEditAuthValue] = useState('');
+  const [editDbReadOnly, setEditDbReadOnly] = useState(true);
   const [msg, setMsg] = useState('');
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -77,6 +78,7 @@ export default function ConnectorDetailPage() {
       // Don't pre-fill credentials — they are encrypted on the server
       setEditAuthKey('');
       setEditAuthValue('');
+      setEditDbReadOnly((c.config as any)?.readOnly !== false);
       setToolList(c.tools || []);
       // Load env vars
       const ev = c.envVars as Record<string, string> | null;
@@ -140,6 +142,9 @@ export default function ConnectorDetailPage() {
       };
       const authConfig = buildAuthConfig();
       if (authConfig) data.authConfig = authConfig;
+      if (connector.type === 'DATABASE') {
+        data.config = { readOnly: editDbReadOnly };
+      }
       await connectors.update(id, data, token);
       setMsg('Connector updated');
       setEditing(false);
@@ -443,6 +448,40 @@ export default function ConnectorDetailPage() {
                 />
                 <label htmlFor="isActive" className="text-sm">Active</label>
               </div>
+              {connector.type === 'DATABASE' && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Access Mode</label>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditDbReadOnly(true)}
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
+                        editDbReadOnly
+                          ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
+                          : 'border-[var(--border)] hover:bg-[var(--accent)]'
+                      }`}
+                    >
+                      Read-only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditDbReadOnly(false)}
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
+                        !editDbReadOnly
+                          ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
+                          : 'border-[var(--border)] hover:bg-[var(--accent)]'
+                      }`}
+                    >
+                      Read &amp; Write
+                    </button>
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-1.5">
+                    {editDbReadOnly
+                      ? 'Only SELECT queries are allowed. Safe for analytics and reporting.'
+                      : 'All SQL operations (SELECT, INSERT, UPDATE, DELETE) are allowed. Use with caution.'}
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium mb-1">Authentication</label>
                 <select
@@ -538,6 +577,24 @@ export default function ConnectorDetailPage() {
                 <p className="text-[var(--muted-foreground)]">Status</p>
                 <p className="font-medium">{connector.isActive ? 'Active' : 'Inactive'}</p>
               </div>
+              {connector.type === 'DATABASE' && (
+                <div>
+                  <p className="text-[var(--muted-foreground)]">Access Mode</p>
+                  <p className="font-medium">
+                    {(connector.config as any)?.readOnly === false ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                        Read &amp; Write
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        Read-only
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
               <div>
                 <p className="text-[var(--muted-foreground)]">Created</p>
                 <p className="font-medium">{new Date(connector.createdAt).toLocaleDateString()}</p>

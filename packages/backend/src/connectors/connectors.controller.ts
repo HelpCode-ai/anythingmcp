@@ -155,7 +155,8 @@ export class ConnectorsController {
 
     // Auto-create default tools for DATABASE connectors
     if (dto.type === 'DATABASE') {
-      const defaultTools = this.connectorsService.generateDefaultDatabaseTools(dto.baseUrl);
+      const readOnly = (dto.config as any)?.readOnly !== false;
+      const defaultTools = this.connectorsService.generateDefaultDatabaseTools(dto.baseUrl, readOnly);
       for (const tool of defaultTools) {
         try {
           await this.prisma.mcpTool.create({

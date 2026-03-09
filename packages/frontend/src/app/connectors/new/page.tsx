@@ -12,7 +12,7 @@ const CONNECTOR_TYPES = [
   { id: 'SOAP', name: 'SOAP Service', description: 'Connect to SOAP web services via WSDL.', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/30', iconBg: 'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400' },
   { id: 'GRAPHQL', name: 'GraphQL', description: 'Connect to GraphQL APIs with schema introspection.', color: 'bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-400 dark:border-pink-500/30', iconBg: 'bg-pink-50 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400' },
   { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30', iconBg: 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, or SQLite for read-only queries.', color: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30', iconBg: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, or SQLite. Supports read-only or read-write mode.', color: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30', iconBg: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
 ];
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -38,6 +38,7 @@ export default function NewConnectorPage() {
   const [oauthAuthUrl, setOauthAuthUrl] = useState('');
   const [oauthTokenUrl, setOauthTokenUrl] = useState('');
   const [oauthScopes, setOauthScopes] = useState('');
+  const [dbReadOnly, setDbReadOnly] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -82,6 +83,9 @@ export default function NewConnectorPage() {
       const authConfig = buildAuthConfig();
       if (authConfig) data.authConfig = authConfig;
       if (specUrl) data.specUrl = specUrl;
+      if (selectedType === 'DATABASE') {
+        data.config = { readOnly: dbReadOnly };
+      }
 
       const created = await connectors.create(data, token);
 
@@ -202,6 +206,41 @@ export default function NewConnectorPage() {
                   required
                 />
               </div>
+
+              {selectedType === 'DATABASE' && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Access Mode</label>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setDbReadOnly(true)}
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
+                        dbReadOnly
+                          ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
+                          : 'border-[var(--border)] hover:bg-[var(--accent)]'
+                      }`}
+                    >
+                      Read-only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDbReadOnly(false)}
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
+                        !dbReadOnly
+                          ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
+                          : 'border-[var(--border)] hover:bg-[var(--accent)]'
+                      }`}
+                    >
+                      Read &amp; Write
+                    </button>
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-1.5">
+                    {dbReadOnly
+                      ? 'Only SELECT queries will be allowed. Safe for analytics and reporting.'
+                      : 'All SQL operations (SELECT, INSERT, UPDATE, DELETE) will be allowed. Use with caution.'}
+                  </p>
+                </div>
+              )}
 
               {(selectedType === 'REST' || selectedType === 'SOAP' || selectedType === 'GRAPHQL') && (
                 <div>

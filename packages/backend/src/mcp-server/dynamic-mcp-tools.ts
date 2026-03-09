@@ -116,6 +116,7 @@ export class DynamicMcpTools {
         engineConfig,
         interpolatedMapping,
         mergedParams,
+        { connectorConfig: tool.connectorConfig.config },
       );
 
       const durationMs = Date.now() - startTime;
@@ -295,6 +296,7 @@ export class DynamicMcpTools {
     config: any,
     endpointMapping: any,
     params: Record<string, unknown>,
+    extra?: { connectorConfig?: Record<string, unknown> },
   ): Promise<unknown> {
     // Static response tools — return text immediately without engine dispatch
     if (endpointMapping.method === 'static' && endpointMapping.staticResponse) {
@@ -310,8 +312,10 @@ export class DynamicMcpTools {
         return this.soapEngine.execute(config, endpointMapping, params);
       case 'MCP':
         return this.mcpClientEngine.execute(config, endpointMapping, params);
-      case 'DATABASE':
-        return this.databaseEngine.execute(config, endpointMapping, params);
+      case 'DATABASE': {
+        const readOnly = (extra?.connectorConfig as any)?.readOnly !== false;
+        return this.databaseEngine.execute(config, endpointMapping, params, { readOnly });
+      }
       default:
         throw new Error(`Unsupported connector type: ${connectorType}`);
     }
