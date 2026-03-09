@@ -48,7 +48,9 @@ export default function McpServerDetailPage() {
   }, [token, id]);
 
   const apiUrl = typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:4000`
+    ? window.location.hostname === 'localhost'
+      ? `${window.location.protocol}//${window.location.hostname}:4000`
+      : window.location.origin
     : 'http://localhost:4000';
 
   const handleSave = async () => {
