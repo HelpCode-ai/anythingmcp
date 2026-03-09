@@ -66,6 +66,7 @@ export class McpServerService implements OnModuleInit {
             headers: connector.headers as Record<string, string> | undefined,
             envVars: connector.envVars as Record<string, string> | undefined,
             specUrl: connector.specUrl ?? undefined,
+            config: connector.config as Record<string, unknown> | undefined,
           },
           endpointMapping: tool.endpointMapping as any,
           responseMapping: tool.responseMapping as
@@ -121,6 +122,7 @@ export class McpServerService implements OnModuleInit {
             headers: connector.headers as Record<string, string> | undefined,
             envVars: connector.envVars as Record<string, string> | undefined,
             specUrl: connector.specUrl ?? undefined,
+            config: connector.config as Record<string, unknown> | undefined,
           },
           endpointMapping: tool.endpointMapping as any,
           responseMapping: tool.responseMapping as

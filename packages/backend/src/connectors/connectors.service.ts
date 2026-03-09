@@ -239,8 +239,10 @@ export class ConnectorsService {
         return this.soapEngine.execute(config, endpointMapping, mergedParams);
       case 'GRAPHQL':
         return this.graphqlEngine.execute(config, endpointMapping, mergedParams);
-      case 'DATABASE':
-        return this.databaseEngine.execute(config, endpointMapping, mergedParams);
+      case 'DATABASE': {
+        const readOnly = (connector.config as any)?.readOnly !== false;
+        return this.databaseEngine.execute(config, endpointMapping, mergedParams, { readOnly });
+      }
       case 'MCP':
         return this.mcpClientEngine.execute(config, endpointMapping, mergedParams);
       default:
@@ -263,7 +265,7 @@ export class ConnectorsService {
    *   2. get_example_queries — return static example SQL patterns
    *   3. execute_query — run an arbitrary SELECT query
    */
-  generateDefaultDatabaseTools(baseUrl: string): Array<{
+  generateDefaultDatabaseTools(baseUrl: string, readOnly = true): Array<{
     name: string;
     description: string;
     parameters: Record<string, unknown>;
@@ -273,7 +275,7 @@ export class ConnectorsService {
       baseUrl.startsWith('mongodb://') || baseUrl.startsWith('mongodb+srv://');
 
     if (isMongo) {
-      return this.generateMongoTools();
+      return this.generateMongoTools(readOnly);
     }
 
     const isMssql = baseUrl.startsWith('mssql://');
@@ -307,6 +309,20 @@ export class ConnectorsService {
       schemaQuery = `SELECT t.table_schema, t.table_name, c.column_name, c.data_type, c.character_maximum_length, c.is_nullable, CASE WHEN pk.column_name IS NOT NULL THEN 'YES' ELSE 'NO' END AS is_primary_key FROM information_schema.tables t JOIN information_schema.columns c ON t.table_schema = c.table_schema AND t.table_name = c.table_name LEFT JOIN (SELECT ku.table_schema, ku.table_name, ku.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name WHERE tc.constraint_type = 'PRIMARY KEY') pk ON c.table_schema = pk.table_schema AND c.table_name = pk.table_name AND c.column_name = pk.column_name WHERE t.table_type = 'BASE TABLE' AND t.table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY t.table_schema, t.table_name, c.ordinal_position`;
     }
 
+    const executeQueryDesc = readOnly
+      ? `Execute a read-only SQL query against the ${dbType} database. ` +
+        `IMPORTANT: Only SELECT statements are allowed. ` +
+        `Always call get_database_schema first to learn the table/column names, then use get_example_queries for syntax guidance. ` +
+        `Results are limited to 1000 rows.`
+      : `Execute a SQL query against the ${dbType} database. ` +
+        `Supports SELECT, INSERT, UPDATE, DELETE, and other SQL statements. ` +
+        `Always call get_database_schema first to learn the table/column names, then use get_example_queries for syntax guidance. ` +
+        `SELECT results are limited to 1000 rows. Write operations return affected row counts.`;
+
+    const queryParamDesc = readOnly
+      ? `The SQL SELECT query to execute. Only SELECT is allowed. Example: "${topSyntax} * FROM table_name"`
+      : `The SQL query to execute. Supports SELECT, INSERT, UPDATE, DELETE, and other statements. Example: "${topSyntax} * FROM table_name"`;
+
     return [
       // 1. Schema introspection
       {
@@ -329,23 +345,19 @@ export class ConnectorsService {
         endpointMapping: {
           method: 'static',
           path: '',
-          staticResponse: this.buildExampleQueriesText({ isMssql, isMysql, isOracle, isSqlite, dbType }),
+          staticResponse: this.buildExampleQueriesText({ isMssql, isMysql, isOracle, isSqlite, dbType, readOnly }),
         },
       },
       // 3. Dynamic query execution
       {
         name: 'execute_query',
-        description:
-          `Execute a read-only SQL query against the ${dbType} database. ` +
-          `IMPORTANT: Only SELECT statements are allowed. ` +
-          `Always call get_database_schema first to learn the table/column names, then use get_example_queries for syntax guidance. ` +
-          `Results are limited to 1000 rows.`,
+        description: executeQueryDesc,
         parameters: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: `The SQL SELECT query to execute. Only SELECT is allowed. Example: "${topSyntax} * FROM table_name"`,
+              description: queryParamDesc,
             },
           },
           required: ['query'],
@@ -355,12 +367,24 @@ export class ConnectorsService {
     ];
   }
 
-  private generateMongoTools(): Array<{
+  private generateMongoTools(readOnly = true): Array<{
     name: string;
     description: string;
     parameters: Record<string, unknown>;
     endpointMapping: Record<string, unknown>;
   }> {
+    const executeDesc = readOnly
+      ? `Execute a read-only MongoDB find query. ` +
+        `The query parameter must be a JSON string with the format: { "collection": "name", "filter": {}, "projection": {}, "sort": {}, "limit": 10 }. ` +
+        `Only "collection" is required; filter, projection, sort, and limit are optional. ` +
+        `Always call get_database_schema first to learn collection and field names, then use get_example_queries for syntax guidance. ` +
+        `Results are limited to 1000 documents.`
+      : `Execute a MongoDB query. ` +
+        `The query parameter must be a JSON string with the format: { "collection": "name", "filter": {}, "projection": {}, "sort": {}, "limit": 10 }. ` +
+        `Only "collection" is required; filter, projection, sort, and limit are optional. ` +
+        `Always call get_database_schema first to learn collection and field names, then use get_example_queries for syntax guidance. ` +
+        `Results are limited to 1000 documents.`;
+
     return [
       // 1. Schema introspection (MongoDB-specific)
       {
@@ -383,18 +407,13 @@ export class ConnectorsService {
         endpointMapping: {
           method: 'static',
           path: '',
-          staticResponse: this.buildMongoExampleQueriesText(),
+          staticResponse: this.buildMongoExampleQueriesText(readOnly),
         },
       },
       // 3. Dynamic query execution
       {
         name: 'execute_query',
-        description:
-          `Execute a read-only MongoDB find query. ` +
-          `The query parameter must be a JSON string with the format: { "collection": "name", "filter": {}, "projection": {}, "sort": {}, "limit": 10 }. ` +
-          `Only "collection" is required; filter, projection, sort, and limit are optional. ` +
-          `Always call get_database_schema first to learn collection and field names, then use get_example_queries for syntax guidance. ` +
-          `Results are limited to 1000 documents.`,
+        description: executeDesc,
         parameters: {
           type: 'object',
           properties: {
@@ -420,8 +439,12 @@ export class ConnectorsService {
     isOracle: boolean;
     isSqlite: boolean;
     dbType: string;
+    readOnly?: boolean;
   }): string {
-    const note = '> NOTE: Only SELECT queries are allowed. INSERT, UPDATE, DELETE, DROP, and other write operations are blocked.';
+    const readOnly = opts.readOnly !== false;
+    const note = readOnly
+      ? '> NOTE: Only SELECT queries are allowed. INSERT, UPDATE, DELETE, DROP, and other write operations are blocked.'
+      : '> NOTE: This connector supports both read and write operations (SELECT, INSERT, UPDATE, DELETE, etc.). Use write operations with caution.';
 
     if (opts.isMssql) {
       return [
@@ -613,7 +636,11 @@ export class ConnectorsService {
     ].join('\n');
   }
 
-  private buildMongoExampleQueriesText(): string {
+  private buildMongoExampleQueriesText(readOnly = true): string {
+    const note = readOnly
+      ? '> NOTE: Only read-only find queries are supported. Insert, update, delete, and aggregate operations are not allowed.'
+      : '> NOTE: This connector supports read operations via find queries. Write operations are not yet supported through this interface.';
+
     return [
       '# MongoDB Example Queries',
       '',
@@ -653,7 +680,7 @@ export class ConnectorsService {
       '## OR conditions',
       '{"collection":"users","filter":{"$or":[{"role":"admin"},{"role":"manager"}]},"limit":50}',
       '',
-      '> NOTE: Only read-only find queries are supported. Insert, update, delete, and aggregate operations are not allowed.',
+      note,
     ].join('\n');
   }
 }

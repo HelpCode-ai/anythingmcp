@@ -22,6 +22,7 @@ export interface RegisteredTool {
     authConfig?: string; // decrypted JSON string
     headers?: Record<string, string>;
     envVars?: Record<string, string>; // runtime environment variables
+    config?: Record<string, unknown>; // connector-specific settings (e.g. readOnly for DATABASE)
   };
   endpointMapping: {
     method: string;

@@ -203,6 +203,65 @@ describe('DatabaseEngine', () => {
     });
   });
 
+  describe('read-write mode (readOnly: false)', () => {
+    it('should allow INSERT queries when readOnly is false', async () => {
+      mockQuery.mockResolvedValue({ rows: [], rowCount: 1, command: 'INSERT' });
+      const result = await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        { method: 'query', path: 'INSERT INTO users (name) VALUES (\'John\')' },
+        {},
+        { readOnly: false },
+      );
+      expect(mockQuery).toHaveBeenCalledWith("INSERT INTO users (name) VALUES ('John')");
+      expect(result).toEqual({ rowCount: 1, command: 'INSERT' });
+    });
+
+    it('should allow UPDATE queries when readOnly is false', async () => {
+      mockQuery.mockResolvedValue({ rows: [], rowCount: 3, command: 'UPDATE' });
+      const result = await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        { method: 'query', path: 'UPDATE users SET name = \'x\'' },
+        {},
+        { readOnly: false },
+      );
+      expect(mockQuery).toHaveBeenCalled();
+      expect(result).toEqual({ rowCount: 3, command: 'UPDATE' });
+    });
+
+    it('should allow DELETE queries when readOnly is false', async () => {
+      mockQuery.mockResolvedValue({ rows: [], rowCount: 2, command: 'DELETE' });
+      const result = await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        { method: 'query', path: 'DELETE FROM users WHERE id = 1' },
+        {},
+        { readOnly: false },
+      );
+      expect(mockQuery).toHaveBeenCalled();
+      expect(result).toEqual({ rowCount: 2, command: 'DELETE' });
+    });
+
+    it('should still block write queries when readOnly is true (default)', async () => {
+      await expect(
+        engine.execute(
+          { baseUrl: 'postgres://host/db', authType: 'NONE' },
+          { method: 'query', path: 'INSERT INTO users VALUES (1)' },
+          {},
+          { readOnly: true },
+        ),
+      ).rejects.toThrow('Only SELECT queries are allowed');
+    });
+
+    it('should default to read-only when no options provided', async () => {
+      await expect(
+        engine.execute(
+          { baseUrl: 'postgres://host/db', authType: 'NONE' },
+          { method: 'query', path: 'INSERT INTO users VALUES (1)' },
+          {},
+        ),
+      ).rejects.toThrow('Only SELECT queries are allowed');
+    });
+  });
+
   describe('raw param reference', () => {
     it('should use raw param value as SQL when path is ${param}', async () => {
       mockQuery.mockResolvedValue({ rows: [] });

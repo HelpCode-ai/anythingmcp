@@ -23,7 +23,9 @@ export class DatabaseEngine {
       staticResponse?: string;
     },
     params: Record<string, unknown>,
+    options?: { readOnly?: boolean },
   ): Promise<unknown> {
+    const readOnly = options?.readOnly !== false; // default true
     // Static response tools (e.g. example queries) — return text without DB execution
     if (endpointMapping.method === 'static' && endpointMapping.staticResponse) {
       return { text: endpointMapping.staticResponse };
@@ -45,7 +47,9 @@ export class DatabaseEngine {
     const sql = rawParamMatch
       ? String(params[rawParamMatch[1]] || '')
       : this.interpolateParams(endpointMapping.path, params);
-    this.validateQuery(sql);
+    if (readOnly) {
+      this.validateQuery(sql);
+    }
 
     if (this.isMssql(config.baseUrl)) {
       return this.executeMssql(config, sql);
@@ -57,7 +61,7 @@ export class DatabaseEngine {
       return this.executeOracle(config, sql);
     }
     if (this.isSqlite(config.baseUrl)) {
-      return this.executeSqlite(config.baseUrl, sql);
+      return this.executeSqlite(config.baseUrl, sql, readOnly);
     }
     return this.executePostgres(config.baseUrl, sql);
   }
@@ -133,8 +137,12 @@ export class DatabaseEngine {
     const pool = new Pool({ connectionString });
     try {
       const result = await pool.query(sql);
-      const rows = Array.isArray(result.rows) ? result.rows : [result.rows];
-      return this.truncateRows(rows);
+      if (result.rows && result.rows.length > 0) {
+        const rows = Array.isArray(result.rows) ? result.rows : [result.rows];
+        return this.truncateRows(rows);
+      }
+      // Write operations return rowCount instead of rows
+      return { rowCount: result.rowCount, command: result.command };
     } finally {
       await pool.end();
     }
@@ -158,8 +166,11 @@ export class DatabaseEngine {
     const pool = await mssql.connect(mssqlConfig);
     try {
       const result = await pool.request().query(sql);
-      const rows = result.recordset ?? [];
-      return this.truncateRows(rows);
+      if (result.recordset && result.recordset.length > 0) {
+        return this.truncateRows(result.recordset);
+      }
+      // Write operations return rowsAffected
+      return { rowsAffected: result.rowsAffected?.[0] ?? 0 };
     } finally {
       await pool.close();
     }
@@ -400,9 +411,13 @@ export class DatabaseEngine {
 
     const conn = await mysql.createConnection(uri);
     try {
-      const [rows] = await conn.query(sql);
-      const rowArray = Array.isArray(rows) ? rows : [rows];
-      return this.truncateRows(rowArray as Record<string, unknown>[]);
+      const [result] = await conn.query(sql);
+      if (Array.isArray(result)) {
+        return this.truncateRows(result as Record<string, unknown>[]);
+      }
+      // Write operations return OkPacket
+      const info = result as any;
+      return { affectedRows: info.affectedRows, insertId: info.insertId };
     } finally {
       await conn.end();
     }
@@ -435,9 +450,13 @@ export class DatabaseEngine {
     try {
       const result = await conn.execute(sql, [], {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
+        autoCommit: true,
       });
-      const rows = (result.rows || []) as Record<string, unknown>[];
-      return this.truncateRows(rows);
+      if (result.rows && result.rows.length > 0) {
+        return this.truncateRows(result.rows as Record<string, unknown>[]);
+      }
+      // Write operations return rowsAffected
+      return { rowsAffected: result.rowsAffected ?? 0 };
     } finally {
       await conn.close();
     }
@@ -470,14 +489,20 @@ export class DatabaseEngine {
   /*  SQLite                                                             */
   /* ------------------------------------------------------------------ */
 
-  private executeSqlite(baseUrl: string, sql: string): unknown {
+  private executeSqlite(baseUrl: string, sql: string, readOnly = true): unknown {
     const filePath = this.sqlitePath(baseUrl);
     this.logger.debug(`SQLite query → ${filePath}`);
 
-    const db = new Database(filePath, { readonly: true });
+    const db = new Database(filePath, { readonly: readOnly });
     try {
-      const rows = db.prepare(sql).all() as Record<string, unknown>[];
-      return this.truncateRows(rows);
+      const stmt = db.prepare(sql);
+      if (stmt.reader) {
+        const rows = stmt.all() as Record<string, unknown>[];
+        return this.truncateRows(rows);
+      }
+      // Write statement (INSERT, UPDATE, DELETE, etc.)
+      const info = stmt.run();
+      return { changes: info.changes, lastInsertRowid: info.lastInsertRowid };
     } finally {
       db.close();
     }
