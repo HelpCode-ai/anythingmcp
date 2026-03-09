@@ -12,6 +12,7 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -214,9 +215,15 @@ export class AuthController {
       throw new ConflictException('Email already registered');
     }
 
-    // First user becomes ADMIN
+    // First user becomes ADMIN; subsequent self-registration requires ALLOW_OPEN_REGISTRATION=true
     const userCount = await this.usersService.count();
     const role = userCount === 0 ? 'ADMIN' : 'EDITOR';
+
+    if (userCount > 0 && this.configService.get<string>('ALLOW_OPEN_REGISTRATION') !== 'true') {
+      throw new ForbiddenException(
+        'Registration is disabled. Please contact an administrator for an invitation.',
+      );
+    }
 
     const passwordHash = await this.authService.hashPassword(dto.password);
     const user = await this.usersService.create({

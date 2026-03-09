@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { auth, license } from '@/lib/api';
+import { auth, license, server } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { LogoIcon } from '@/components/nav-bar';
 
@@ -27,12 +27,19 @@ function LoginForm() {
   const [storedUser, setStoredUser] = useState<any>(null);
   const [resendMessage, setResendMessage] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
 
   const redirectTo = searchParams.get('redirect') || '/';
   const emailVerifiedParam = searchParams.get('emailVerified');
+
+  useEffect(() => {
+    server.info().then((info) => {
+      setRegistrationEnabled(info.registrationEnabled);
+    }).catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -564,15 +571,17 @@ function LoginForm() {
           </p>
         )}
 
-        <p className="text-center text-sm text-[var(--muted-foreground)] mt-3">
-          {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
-          <button
-            onClick={() => { setIsRegister(!isRegister); setError(''); }}
-            className="text-[var(--brand)] hover:underline font-medium"
-          >
-            {isRegister ? 'Sign In' : 'Register'}
-          </button>
-        </p>
+        {(registrationEnabled || isRegister) && (
+          <p className="text-center text-sm text-[var(--muted-foreground)] mt-3">
+            {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
+            <button
+              onClick={() => { setIsRegister(!isRegister); setError(''); }}
+              className="text-[var(--brand)] hover:underline font-medium"
+            >
+              {isRegister ? 'Sign In' : 'Register'}
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );
