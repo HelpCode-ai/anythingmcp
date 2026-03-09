@@ -14,7 +14,9 @@ const nextConfig: NextConfig = {
       { source: '/mcp', destination: `${BACKEND_URL}/mcp` },
       { source: '/mcp/:path*', destination: `${BACKEND_URL}/mcp/:path*` },
       { source: '/.well-known/:path*', destination: `${BACKEND_URL}/.well-known/:path*` },
+      { source: '/auth/:path*', destination: `${BACKEND_URL}/auth/:path*` },
       { source: '/authorize', destination: `${BACKEND_URL}/authorize` },
+      { source: '/callback', destination: `${BACKEND_URL}/callback` },
       { source: '/token', destination: `${BACKEND_URL}/token` },
       { source: '/register', destination: `${BACKEND_URL}/register` },
     ];
