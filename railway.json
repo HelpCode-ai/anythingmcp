@@ -1,0 +1,155 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
+  },
+  "deploy": {
+    "startCommand": "./start.sh",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 300,
+    "numReplicas": 1,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 5
+  },
+  "services": [
+    {
+      "name": "app",
+      "description": "AnythingMCP — NestJS Backend + Next.js Frontend",
+      "icon": "https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/packages/frontend/public/logo.svg",
+      "source": {
+        "repo": "HelpCode-ai/anythingmcp"
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "Dockerfile"
+      },
+      "deploy": {
+        "startCommand": "./start.sh",
+        "healthcheckPath": "/health",
+        "healthcheckTimeout": 300,
+        "numReplicas": 1,
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 5
+      },
+      "networking": {
+        "serviceDomains": {
+          "app": {
+            "port": 4000
+          }
+        }
+      },
+      "variables": {
+        "NODE_ENV": {
+          "description": "Application environment",
+          "default": "production",
+          "required": true
+        },
+        "PORT": {
+          "description": "Backend server port",
+          "default": "4000",
+          "required": true
+        },
+        "DATABASE_URL": {
+          "description": "PostgreSQL connection string (auto-populated by Railway)",
+          "default": "${{postgres.DATABASE_URL}}",
+          "required": true
+        },
+        "JWT_SECRET": {
+          "description": "JWT signing secret (min 32 characters). Auto-generated if left empty.",
+          "required": true,
+          "generator": "secret"
+        },
+        "ENCRYPTION_KEY": {
+          "description": "AES-256-GCM encryption key for stored credentials (exactly 32 characters). Auto-generated if left empty.",
+          "required": true,
+          "generator": "secret"
+        },
+        "NEXTAUTH_SECRET": {
+          "description": "NextAuth.js session encryption secret. Auto-generated if left empty.",
+          "required": true,
+          "generator": "secret"
+        },
+        "FRONTEND_URL": {
+          "description": "Public URL of the frontend (e.g. https://your-app.up.railway.app). Update after deploy.",
+          "default": "https://${{RAILWAY_PUBLIC_DOMAIN}}",
+          "required": true
+        },
+        "NEXT_PUBLIC_API_URL": {
+          "description": "Public URL of the backend API. Same as FRONTEND_URL since Railway routes both ports.",
+          "default": "https://${{RAILWAY_PUBLIC_DOMAIN}}",
+          "required": true
+        },
+        "NEXTAUTH_URL": {
+          "description": "NextAuth.js base URL. Same as FRONTEND_URL.",
+          "default": "https://${{RAILWAY_PUBLIC_DOMAIN}}",
+          "required": true
+        },
+        "CORS_ORIGIN": {
+          "description": "Allowed CORS origin. Should match the frontend URL.",
+          "default": "https://${{RAILWAY_PUBLIC_DOMAIN}}",
+          "required": true
+        },
+        "SERVER_URL": {
+          "description": "Backend server URL for OAuth2 metadata and redirects.",
+          "default": "https://${{RAILWAY_PUBLIC_DOMAIN}}",
+          "required": true
+        },
+        "MCP_AUTH_MODE": {
+          "description": "MCP endpoint authentication mode: oauth2, legacy, both, or none.",
+          "default": "oauth2",
+          "required": true
+        },
+        "MCP_BEARER_TOKEN": {
+          "description": "Static bearer token for MCP legacy auth. Only used when MCP_AUTH_MODE is 'legacy' or 'both'.",
+          "required": false
+        },
+        "MCP_API_KEY": {
+          "description": "Static API key for MCP legacy auth. Only used when MCP_AUTH_MODE is 'legacy' or 'both'.",
+          "required": false
+        },
+        "MCP_RATE_LIMIT_PER_MINUTE": {
+          "description": "Max MCP requests per minute per client. Requires Redis.",
+          "default": "60",
+          "required": false
+        },
+        "REDIS_URL": {
+          "description": "Redis connection URL for caching and rate limiting (optional). Use ${{redis.REDIS_URL}} if you add a Redis service.",
+          "required": false
+        },
+        "SMTP_HOST": {
+          "description": "SMTP server hostname for sending emails (e.g. smtp.gmail.com).",
+          "required": false
+        },
+        "SMTP_PORT": {
+          "description": "SMTP server port (e.g. 587 for TLS, 465 for SSL).",
+          "default": "587",
+          "required": false
+        },
+        "SMTP_USER": {
+          "description": "SMTP authentication username.",
+          "required": false
+        },
+        "SMTP_PASS": {
+          "description": "SMTP authentication password.",
+          "required": false
+        },
+        "SMTP_FROM": {
+          "description": "Sender email address (e.g. noreply@yourdomain.com).",
+          "required": false
+        },
+        "SMTP_FROM_NAME": {
+          "description": "Sender display name in outgoing emails.",
+          "default": "AnythingMCP",
+          "required": false
+        }
+      }
+    },
+    {
+      "name": "postgres",
+      "description": "PostgreSQL 17 — managed database with automatic backups",
+      "plugin": "postgresql",
+      "pluginVersion": "17"
+    }
+  ]
+}

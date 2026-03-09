@@ -1,0 +1,18 @@
+# =============================================================================
+# AnythingMCP — Railway Deployment Configuration
+# =============================================================================
+# This file configures how Railway builds and deploys the AnythingMCP app.
+# It does NOT replace docker-compose.yml, which is used for self-hosted setups.
+# =============================================================================
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "./start.sh"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+numReplicas = 1
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
