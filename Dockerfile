@@ -28,6 +28,9 @@ COPY package.json package-lock.json ./
 COPY packages/backend/ ./packages/backend/
 
 WORKDIR /app/packages/backend
+# Dummy URL so prisma.config.ts can resolve DATABASE_URL at generate time
+# (no actual connection is made during generate)
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 RUN npx prisma generate
 RUN npm run build
 
