@@ -43,6 +43,13 @@ function LoginForm() {
       let isFirstUser = false;
       let result;
       if (isRegister) {
+        // Validate password strength
+        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/;
+        if (!passwordRegex.test(password)) {
+          setError('Password must be at least 8 characters and include uppercase, lowercase, number, and special character');
+          setLoading(false);
+          return;
+        }
         // Validate confirm password
         if (password !== confirmPassword) {
           setError('Passwords do not match');
@@ -484,6 +491,21 @@ function LoginForm() {
               required
               minLength={8}
             />
+            {isRegister && password.length > 0 && (
+              <ul className="mt-1.5 space-y-0.5 text-xs">
+                {[
+                  [password.length >= 8, 'At least 8 characters'],
+                  [/[A-Z]/.test(password), 'One uppercase letter'],
+                  [/[a-z]/.test(password), 'One lowercase letter'],
+                  [/\d/.test(password), 'One number'],
+                  [/[^a-zA-Z0-9]/.test(password), 'One special character'],
+                ].map(([ok, label]) => (
+                  <li key={label as string} className={ok ? 'text-green-500' : 'text-[var(--muted-foreground)]'}>
+                    {ok ? '\u2713' : '\u2022'} {label as string}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {isRegister && (

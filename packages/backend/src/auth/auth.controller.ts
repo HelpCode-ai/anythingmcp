@@ -16,7 +16,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, Equals } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, Equals, Matches } from 'class-validator';
 import { UserRole } from '../generated/prisma/client';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
@@ -37,12 +37,17 @@ class LoginDto {
   password: string;
 }
 
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/;
+const PASSWORD_MESSAGE =
+  'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
+
 class RegisterDto {
   @IsEmail()
   email: string;
 
   @IsString()
   @MinLength(8)
+  @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
   password: string;
 
   @IsString()
@@ -69,6 +74,7 @@ class ResetPasswordDto {
 
   @IsString()
   @MinLength(8)
+  @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
   newPassword: string;
 }
 
@@ -90,6 +96,7 @@ class AcceptInviteDto {
 
   @IsString()
   @MinLength(8)
+  @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
   password: string;
 
   @IsString()
