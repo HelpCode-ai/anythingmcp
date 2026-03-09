@@ -296,6 +296,11 @@ export class DynamicMcpTools {
     endpointMapping: any,
     params: Record<string, unknown>,
   ): Promise<unknown> {
+    // Static response tools — return text immediately without engine dispatch
+    if (endpointMapping.method === 'static' && endpointMapping.staticResponse) {
+      return { text: endpointMapping.staticResponse };
+    }
+
     switch (connectorType) {
       case 'REST':
         return this.restEngine.execute(config, endpointMapping, params);

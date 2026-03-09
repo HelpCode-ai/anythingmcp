@@ -41,7 +41,7 @@ export interface ToolEditorData {
   useBodyTemplate?: boolean;
   /** Body encoding: 'json' (default), 'form-urlencoded', or 'form-data' */
   bodyEncoding?: string;
-  /** Static text response (for DATABASE tools that return text without executing a query) */
+  /** Static text response (returned directly without any API/DB call) */
   staticResponse?: string;
 }
 
@@ -112,13 +112,25 @@ const DEFAULT_TARGET: Record<string, string> = {
 };
 
 const METHODS_BY_TYPE: Record<string, string[]> = {
-  REST: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  GRAPHQL: ['query', 'mutation'],
-  SOAP: ['SOAP'],
+  REST: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'static'],
+  GRAPHQL: ['query', 'mutation', 'static'],
+  SOAP: ['SOAP', 'static'],
   DATABASE: ['query', 'static'],
-  WEBHOOK: ['GET', 'POST', 'PUT', 'DELETE'],
-  MCP: ['invoke'],
+  WEBHOOK: ['GET', 'POST', 'PUT', 'DELETE', 'static'],
+  MCP: ['invoke', 'static'],
 };
+
+function getNativeLabel(connectorType: string): string {
+  switch (connectorType) {
+    case 'REST': return 'API Call';
+    case 'GRAPHQL': return 'GraphQL Operation';
+    case 'SOAP': return 'SOAP Operation';
+    case 'DATABASE': return 'SQL Query';
+    case 'MCP': return 'Remote Tool Call';
+    case 'WEBHOOK': return 'Webhook';
+    default: return 'Native';
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /*  Helpers: parse existing backend tool → editor state               */
@@ -303,19 +315,18 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
   let method = data.method;
   let path = data.path;
 
-  if (connectorType === 'GRAPHQL') {
+  // Static mode works the same for all connector types
+  if (data.method === 'static') {
+    method = 'static';
+    path = '';
+  } else if (connectorType === 'GRAPHQL') {
     method = data.method || 'query';
     path = data.graphqlQuery || data.path;
   } else if (connectorType === 'SOAP') {
     method = data.soapOperation || data.method;
   } else if (connectorType === 'DATABASE') {
-    if (data.method === 'static') {
-      method = 'static';
-      path = '';
-    } else {
-      method = 'query';
-      path = data.sqlTemplate || data.path;
-    }
+    method = 'query';
+    path = data.sqlTemplate || data.path;
   }
 
   const endpointMapping: Record<string, unknown> = { method, path };
@@ -560,134 +571,142 @@ export function ToolEditor({
       </div>
 
       {/* Endpoint Configuration - varies by connector type */}
-      {type === 'GRAPHQL' ? (
-        <div className="space-y-3">
+      <div className="space-y-3">
+        {/* Tool Type selector — available for all connector types */}
+        <div>
+          <label className="block text-xs font-medium mb-1">Tool Type</label>
+          <select
+            value={method === 'static' ? 'static' : 'native'}
+            onChange={e => {
+              if (e.target.value === 'static') {
+                setMethod('static');
+              } else {
+                // Reset to the default native method for this connector type
+                const nativeMethods = methods.filter(m => m !== 'static');
+                setMethod(nativeMethods[0] || methods[0]);
+              }
+            }}
+            className="w-56 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+          >
+            <option value="native">{getNativeLabel(type)}</option>
+            <option value="static">Static Text</option>
+          </select>
+        </div>
+
+        {method === 'static' ? (
+          /* Static Response — same for all connector types */
           <div>
-            <label className="block text-xs font-medium mb-1">Operation Type</label>
-            <select
-              value={method}
-              onChange={e => setMethod(e.target.value)}
-              className="w-48 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-            >
-              {methods.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">GraphQL Query / Mutation</label>
+            <label className="block text-xs font-medium mb-1">Static Response Text</label>
             <textarea
-              value={graphqlQuery}
-              onChange={e => setGraphqlQuery(e.target.value)}
-              rows={5}
-              placeholder={`query GetUsers($limit: Int, $offset: Int) {\n  users(limit: $limit, offset: $offset) {\n    id\n    name\n    email\n  }\n}`}
-              className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+              value={staticResponse}
+              onChange={e => setStaticResponse(e.target.value)}
+              rows={10}
+              placeholder={"# Instructions\n\nDescribe how to use this tool or provide hardcoded information.\n\nMarkdown formatting is supported."}
+              className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
             />
             <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-              Use $variables in the query — map them to parameters below as &quot;GraphQL Variable&quot;
+              This text is returned directly without making any API call. Use it for instructions, documentation, or hardcoded responses.
             </p>
           </div>
-        </div>
-      ) : type === 'DATABASE' ? (
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium mb-1">Tool Type</label>
-            <select
-              value={method}
-              onChange={e => setMethod(e.target.value)}
-              className="w-48 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-            >
-              {methods.map(m => (
-                <option key={m} value={m}>{m === 'query' ? 'SQL Query' : 'Static Text'}</option>
-              ))}
-            </select>
-          </div>
-          {method === 'static' ? (
+        ) : type === 'GRAPHQL' ? (
+          <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium mb-1">Static Response Text</label>
-              <textarea
-                value={staticResponse}
-                onChange={e => setStaticResponse(e.target.value)}
-                rows={10}
-                placeholder={"# Example Queries\n\n## List all customers\n```sql\nSELECT TOP 10 * FROM customers\n```\n\n## Search by name\n```sql\nSELECT * FROM customers WHERE name LIKE '%search%'\n```"}
-                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-              />
-              <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-                This text is returned directly without executing any database query. Use it for guides, examples, or documentation.
-              </p>
+              <label className="block text-xs font-medium mb-1">Operation Type</label>
+              <select
+                value={method}
+                onChange={e => setMethod(e.target.value)}
+                className="w-48 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+              >
+                {methods.filter(m => m !== 'static').map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
             </div>
-          ) : (
             <div>
-              <label className="block text-xs font-medium mb-1">SQL Query Template</label>
+              <label className="block text-xs font-medium mb-1">GraphQL Query / Mutation</label>
               <textarea
-                value={sqlTemplate}
-                onChange={e => setSqlTemplate(e.target.value)}
-                rows={4}
-                placeholder="SELECT * FROM users WHERE name LIKE $search_term LIMIT $limit"
+                value={graphqlQuery}
+                onChange={e => setGraphqlQuery(e.target.value)}
+                rows={5}
+                placeholder={`query GetUsers($limit: Int, $offset: Int) {\n  users(limit: $limit, offset: $offset) {\n    id\n    name\n    email\n  }\n}`}
                 className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
               />
               <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-                Use $param_name to reference parameters. Only SELECT queries are allowed.
+                Use $variables in the query — map them to parameters below as &quot;GraphQL Variable&quot;
               </p>
             </div>
-          )}
-        </div>
-      ) : type === 'SOAP' ? (
-        <div className="grid grid-cols-2 gap-3">
+          </div>
+        ) : type === 'DATABASE' ? (
           <div>
-            <label className="block text-xs font-medium mb-1">SOAP Operation</label>
-            <input
-              type="text"
-              value={method}
-              onChange={e => setMethod(e.target.value)}
-              placeholder="GetWeather"
+            <label className="block text-xs font-medium mb-1">SQL Query Template</label>
+            <textarea
+              value={sqlTemplate}
+              onChange={e => setSqlTemplate(e.target.value)}
+              rows={4}
+              placeholder="SELECT * FROM users WHERE name LIKE $search_term LIMIT $limit"
               className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
             />
             <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-              The SOAP operation/method name from the WSDL
+              Use $param_name to reference parameters. Only SELECT queries are allowed.
             </p>
           </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">Port / Path</label>
-            <input
-              type="text"
-              value={path}
-              onChange={e => setPath(e.target.value)}
-              placeholder="WeatherServicePort"
-              className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
-            />
+        ) : type === 'SOAP' ? (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium mb-1">SOAP Operation</label>
+              <input
+                type="text"
+                value={method}
+                onChange={e => setMethod(e.target.value)}
+                placeholder="GetWeather"
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+              />
+              <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
+                The SOAP operation/method name from the WSDL
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Port / Path</label>
+              <input
+                type="text"
+                value={path}
+                onChange={e => setPath(e.target.value)}
+                placeholder="WeatherServicePort"
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+              />
+            </div>
           </div>
-        </div>
-      ) : (
-        /* REST / WEBHOOK / MCP */
-        <div className="grid grid-cols-[120px_1fr] gap-3">
-          <div>
-            <label className="block text-xs font-medium mb-1">Method</label>
-            <select
-              value={method}
-              onChange={e => setMethod(e.target.value)}
-              className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-            >
-              {methods.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+        ) : (
+          /* REST / WEBHOOK / MCP */
+          <div className="grid grid-cols-[120px_1fr] gap-3">
+            <div>
+              <label className="block text-xs font-medium mb-1">Method</label>
+              <select
+                value={method}
+                onChange={e => setMethod(e.target.value)}
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+              >
+                {methods.filter(m => m !== 'static').map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Path</label>
+              <input
+                type="text"
+                value={path}
+                onChange={e => handlePathChange(e.target.value)}
+                placeholder="/users/{id}/posts"
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+              />
+              <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
+                Use {'{param}'} for path parameters — they auto-create parameters below
+              </p>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">Path</label>
-            <input
-              type="text"
-              value={path}
-              onChange={e => handlePathChange(e.target.value)}
-              placeholder="/users/{id}/posts"
-              className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
-            />
-            <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
-              Use {'{param}'} for path parameters — they auto-create parameters below
-            </p>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Body Mode — only for REST/WEBHOOK write methods */}
       {(type === 'REST' || type === 'WEBHOOK') && ['POST', 'PUT', 'PATCH'].includes(method) && (

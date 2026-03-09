@@ -202,6 +202,7 @@ export class ConnectorsService {
       queryParams?: Record<string, unknown>;
       bodyMapping?: Record<string, unknown>;
       headers?: Record<string, string>;
+      staticResponse?: string;
     },
     params: Record<string, unknown>,
   ): Promise<unknown> {
@@ -225,6 +226,11 @@ export class ConnectorsService {
           Object.entries(envVars).filter(([k]) => params[k] === undefined),
         ) }
       : params;
+
+    // Static response tools — return text immediately without engine dispatch
+    if (endpointMapping.method === 'static' && endpointMapping.staticResponse) {
+      return { text: endpointMapping.staticResponse };
+    }
 
     switch (connector.type) {
       case 'REST':
