@@ -26,6 +26,7 @@ export default function SettingsUsersPage() {
   const [inviteMcpRoleId, setInviteMcpRoleId] = useState('');
   const [inviting, setInviting] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
+  const [inviteEmailError, setInviteEmailError] = useState('');
 
   const loadData = async () => {
     if (!token) return;
@@ -88,6 +89,7 @@ export default function SettingsUsersPage() {
     if (!token || !inviteEmail.trim()) return;
     setInviting(true);
     setInviteUrl('');
+    setInviteEmailError('');
     try {
       const result = await auth.inviteUser(
         {
@@ -98,13 +100,9 @@ export default function SettingsUsersPage() {
         token,
       );
       setMsg(result.message);
-      if (result.inviteUrl) {
-        setInviteUrl(result.inviteUrl);
-      } else {
-        setInviteEmail('');
-        setInviteRole('EDITOR');
-        setInviteMcpRoleId('');
-        setShowInvite(false);
+      setInviteUrl(result.inviteUrl);
+      if (result.emailError) {
+        setInviteEmailError(result.emailError);
       }
       // Reload invitations to show the new one
       users.invitations(token).then(setInvitationList).catch(() => {});
@@ -197,13 +195,23 @@ export default function SettingsUsersPage() {
           </div>
 
           {inviteUrl && (
-            <div className="border border-[var(--success-border)] bg-[var(--success-bg)] rounded-md p-3">
-              <p className="text-xs font-medium text-[var(--success-text)] mb-1">
-                SMTP not configured. Share this invitation link manually:
-              </p>
-              <code className="text-xs font-mono bg-[var(--background)] px-3 py-2 rounded border border-[var(--border)] select-all break-all block">
-                {inviteUrl}
-              </code>
+            <div className="space-y-2">
+              {inviteEmailError && (
+                <div className="border border-[var(--destructive)] bg-[var(--destructive-bg)] rounded-md p-3">
+                  <p className="text-xs font-medium text-[var(--destructive)] mb-1">
+                    Failed to send email:
+                  </p>
+                  <p className="text-xs text-[var(--destructive)]">{inviteEmailError}</p>
+                </div>
+              )}
+              <div className="border border-[var(--border)] bg-[var(--muted)] rounded-md p-3">
+                <p className="text-xs font-medium text-[var(--foreground)] mb-1">
+                  Invitation link (share manually):
+                </p>
+                <code className="text-xs font-mono bg-[var(--background)] px-3 py-2 rounded border border-[var(--border)] select-all break-all block">
+                  {inviteUrl}
+                </code>
+              </div>
             </div>
           )}
 

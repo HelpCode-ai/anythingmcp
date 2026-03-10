@@ -422,7 +422,7 @@ export class AuthController {
     }
 
     // Send email
-    const sent = await this.emailService.sendInvitationEmail(
+    const emailResult = await this.emailService.sendInvitationEmail(
       dto.email,
       inviteUrl,
       inviterName,
@@ -430,10 +430,12 @@ export class AuthController {
     );
 
     return {
-      message: sent
+      message: emailResult.sent
         ? `Invitation sent to ${dto.email}`
-        : `Invitation created for ${dto.email} (email could not be sent — SMTP not configured). Share this link manually.`,
-      inviteUrl: sent ? undefined : inviteUrl,
+        : `Invitation created for ${dto.email}, but the email could not be sent. Share the link manually.`,
+      inviteUrl,
+      emailSent: emailResult.sent,
+      ...(emailResult.error ? { emailError: emailResult.error } : {}),
     };
   }
 
