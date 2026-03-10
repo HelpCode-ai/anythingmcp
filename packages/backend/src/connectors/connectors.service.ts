@@ -28,17 +28,16 @@ export class ConnectorsService {
       'default-dev-key-change-in-prod!!';
   }
 
-  async findAllByUser(userId: string): Promise<Connector[]> {
+  async findAll(): Promise<Connector[]> {
     return this.prisma.connector.findMany({
-      where: { userId },
       include: { tools: true },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findById(id: string, userId: string): Promise<Connector> {
-    const connector = await this.prisma.connector.findFirst({
-      where: { id, userId },
+  async findById(id: string): Promise<Connector> {
+    const connector = await this.prisma.connector.findUnique({
+      where: { id },
       include: { tools: true, resources: true, prompts: true },
     });
     if (!connector) {
@@ -94,7 +93,6 @@ export class ConnectorsService {
 
   async update(
     id: string,
-    userId: string,
     data: Partial<{
       name: string;
       baseUrl: string;
@@ -106,7 +104,7 @@ export class ConnectorsService {
       envVars: Record<string, string>;
     }>,
   ): Promise<Connector> {
-    await this.findById(id, userId);
+    await this.findById(id);
 
     const updateData: any = { ...data };
     if (data.authConfig) {
@@ -122,16 +120,15 @@ export class ConnectorsService {
     });
   }
 
-  async remove(id: string, userId: string): Promise<void> {
-    await this.findById(id, userId);
+  async remove(id: string): Promise<void> {
+    await this.findById(id);
     await this.prisma.connector.delete({ where: { id } });
   }
 
   async testConnection(
     id: string,
-    userId: string,
   ): Promise<{ ok: boolean; message: string }> {
-    const connector = await this.findById(id, userId);
+    const connector = await this.findById(id);
 
     try {
       const authConfig = connector.authConfig
