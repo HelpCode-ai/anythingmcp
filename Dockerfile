@@ -21,7 +21,8 @@ COPY packages/backend/package.json ./packages/backend/
 COPY packages/frontend/package.json ./packages/frontend/
 
 # Install all workspace dependencies
-RUN npm ci
+# Extended timeout for ARM64 QEMU emulation in CI
+RUN npm ci --network-timeout 600000
 
 # ── Stage 2: Build Backend ──────────────────────────────────────────────────
 FROM node:22-alpine AS backend-builder
