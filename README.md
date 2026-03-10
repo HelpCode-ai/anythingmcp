@@ -31,7 +31,7 @@ No SDK. No code changes. Just point, configure, and connect.
 
 ## Deploy on Railway
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/kSBHWk?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
 1. Click the button above to open the Railway template.
 2. Fill in the required environment variables (secrets are auto-generated for you).
