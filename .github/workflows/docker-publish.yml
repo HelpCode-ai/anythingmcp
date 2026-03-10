@@ -6,10 +6,6 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-defaults:
-  run:
-    working-directory: anythingmcp
-
 jobs:
   publish:
     name: Build & Push to Docker Hub
@@ -47,7 +43,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: anythingmcp
+          context: .
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
