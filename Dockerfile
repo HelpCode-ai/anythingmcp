@@ -5,6 +5,11 @@
 # Next.js frontend (port 3000) on the same Node.js runtime.
 # =============================================================================
 
+# ── OCI Image Labels ──────────────────────────────────────────────────────────
+# These labels follow the OCI image spec and are used by Docker Hub, GitHub
+# Container Registry, and other registries to display image metadata.
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Stage 1: Install ALL dependencies ───────────────────────────────────────
 FROM node:22-alpine AS deps
 RUN apk add --no-cache libc6-compat python3 make g++
@@ -79,6 +84,14 @@ COPY --from=frontend-builder --chown=appuser:appuser /app/packages/frontend/publ
 # ── Startup script ──
 COPY --chown=appuser:appuser start.sh ./start.sh
 RUN chmod +x ./start.sh
+
+LABEL org.opencontainers.image.title="AnythingMCP" \
+      org.opencontainers.image.description="Convert any API into an MCP server — REST, SOAP, GraphQL, Database, MCP Bridge. Self-hosted MCP middleware." \
+      org.opencontainers.image.url="https://github.com/HelpCode-ai/anythingmcp" \
+      org.opencontainers.image.source="https://github.com/HelpCode-ai/anythingmcp" \
+      org.opencontainers.image.documentation="https://github.com/HelpCode-ai/anythingmcp#readme" \
+      org.opencontainers.image.vendor="helpcode.ai GmbH" \
+      org.opencontainers.image.licenses="BSL-1.1"
 
 USER appuser
 EXPOSE 3000 4000
