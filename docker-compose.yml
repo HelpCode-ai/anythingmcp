@@ -31,6 +31,7 @@ services:
 
   # NestJS Backend + Next.js Frontend (single container)
   app:
+    image: helpcodeai/anythingmcp:latest
     build:
       context: .
       dockerfile: Dockerfile
