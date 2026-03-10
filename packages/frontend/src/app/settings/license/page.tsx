@@ -127,7 +127,7 @@ export default function LicenseSettingsPage() {
       <div>
         <h1 className="text-xl font-semibold">License & Plan</h1>
         <p className="text-sm text-[var(--muted-foreground)] mt-1">
-          Manage your AnythingMCP license
+          Manage your Anything MCP license
         </p>
       </div>
 

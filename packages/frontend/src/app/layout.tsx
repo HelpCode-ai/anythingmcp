@@ -3,7 +3,7 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  title: 'AnythingMCP',
+  title: 'Anything MCP',
   description: 'Convert any API into an MCP server',
   icons: { icon: '/icon.svg', apple: '/apple-icon.svg' },
 };

@@ -63,7 +63,7 @@ function AcceptInviteContent() {
       <div className="text-center mb-8">
         <h1 className="text-2xl font-bold">Accept Invitation</h1>
         <p className="text-[var(--muted-foreground)] text-sm mt-1">
-          Create your AnythingMCP account
+          Create your Anything<span className="text-[var(--brand)]">MCP</span> account
         </p>
       </div>
 

@@ -251,7 +251,7 @@ function LoginForm() {
           <div className="flex justify-center mb-4">
             <LogoIcon size={56} />
           </div>
-          <h1 className="text-2xl font-bold">Welcome to AnythingMCP</h1>
+          <h1 className="text-2xl font-bold">Welcome to Anything<span className="text-[var(--brand)]">MCP</span></h1>
           <p className="text-[var(--muted-foreground)] mt-1 text-sm">
             One last step to get started
           </p>
@@ -259,11 +259,17 @@ function LoginForm() {
 
         <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
           <h2 className="text-lg font-semibold mb-2 text-center">
-            How will you use AnythingMCP?
+            How will you use Anything<span className="text-[var(--brand)]">MCP</span>?
           </h2>
           <p className="text-sm text-[var(--muted-foreground)] mb-6 text-center">
             Commercial use requires a license from anythingmcp.com
           </p>
+
+          {error && (
+            <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
+              {error}
+            </div>
+          )}
 
           <div className="space-y-3">
             <button
@@ -288,6 +294,17 @@ function LoginForm() {
               </div>
             </button>
           </div>
+
+          {error && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={handleSkip}
+                className="text-sm text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline"
+              >
+                Skip for now
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -367,7 +384,7 @@ function LoginForm() {
           </div>
           <h1 className="text-2xl font-bold">Activate License</h1>
           <p className="text-[var(--muted-foreground)] mt-1 text-sm">
-            Enter your license key to activate AnythingMCP
+            Enter your license key to activate Anything<span className="text-[var(--brand)]">MCP</span>
           </p>
         </div>
 
@@ -439,7 +456,7 @@ function LoginForm() {
         <div className="flex justify-center mb-4">
           <LogoIcon size={56} />
         </div>
-        <h1 className="text-2xl font-bold">AnythingMCP</h1>
+        <h1 className="text-2xl font-bold">Anything<span className="text-[var(--brand)]">MCP</span></h1>
         <p className="text-[var(--muted-foreground)] mt-1 text-sm">
           Convert any API into an MCP server
         </p>
