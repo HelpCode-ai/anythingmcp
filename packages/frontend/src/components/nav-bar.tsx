@@ -93,15 +93,11 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
           <div className="hidden sm:block relative" ref={userMenuRef}>
             <button
               onClick={() => setUserMenuOpen((v) => !v)}
-              className="flex items-center gap-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] px-2 py-1.5 rounded-md hover:bg-[var(--accent)] transition-colors"
+              className="flex items-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] p-1.5 rounded-full hover:bg-[var(--accent)] transition-colors"
             >
-              <div className="w-6 h-6 rounded-full bg-[var(--brand)] text-white flex items-center justify-center text-xs font-medium">
+              <div className="w-7 h-7 rounded-full bg-[var(--brand)] text-white flex items-center justify-center text-xs font-medium">
                 {(user?.name || user?.email || '?')[0].toUpperCase()}
               </div>
-              <span className="max-w-[120px] truncate">{user?.email}</span>
-              <svg className={`w-3.5 h-3.5 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
             </button>
             {userMenuOpen && (
               <div className="absolute right-0 mt-1 w-48 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg py-1 z-50">
