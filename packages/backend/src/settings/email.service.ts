@@ -89,7 +89,7 @@ export class EmailService {
     inviteUrl: string,
     invitedByName: string,
     roleName: string,
-  ): Promise<boolean> {
+  ): Promise<{ sent: boolean; error?: string }> {
     const transport = await this.createTransporter();
 
     if (transport) {
@@ -115,10 +115,10 @@ export class EmailService {
         });
 
         this.logger.log(`Invitation email sent to ${to}`);
-        return true;
-      } catch (err) {
+        return { sent: true };
+      } catch (err: any) {
         this.logger.error(`Failed to send invitation via SMTP to ${to}: ${err}`);
-        return false;
+        return { sent: false, error: err.message || 'SMTP delivery failed' };
       }
     }
 
@@ -127,7 +127,7 @@ export class EmailService {
     this.logger.log(
       `SMTP not configured, using external API fallback (licenseKey ${licenseKey ? 'present' : 'MISSING'})`,
     );
-    return this.sendViaExternalApi('/api/email/invite', {
+    return this.sendViaExternalApiWithError('/api/email/invite', {
       email: to,
       inviterName: invitedByName,
       instanceUrl: inviteUrl,
@@ -263,6 +263,29 @@ export class EmailService {
         `Failed to send email via external API ${endpoint} (${err.response?.status || 'N/A'}): ${detail}`,
       );
       return false;
+    }
+  }
+
+  private async sendViaExternalApiWithError(
+    endpoint: string,
+    body: Record<string, string>,
+  ): Promise<{ sent: boolean; error?: string }> {
+    try {
+      await axios.post(`${this.apiBase}${endpoint}`, body, {
+        timeout: 10000,
+      });
+      this.logger.log(
+        `Email sent via external API: ${endpoint} to ${body.email}`,
+      );
+      return { sent: true };
+    } catch (err: any) {
+      const detail = err.response?.data
+        ? JSON.stringify(err.response.data)
+        : err.message;
+      this.logger.error(
+        `Failed to send email via external API ${endpoint} (${err.response?.status || 'N/A'}): ${detail}`,
+      );
+      return { sent: false, error: detail };
     }
   }
 

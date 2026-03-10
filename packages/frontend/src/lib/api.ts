@@ -56,7 +56,7 @@ export const auth = {
       body: { token, newPassword },
     }),
   inviteUser: (data: { email: string; role: string; mcpRoleId?: string }, token: string) =>
-    request<{ message: string; inviteUrl?: string }>('/api/auth/invite', {
+    request<{ message: string; inviteUrl: string; emailSent: boolean; emailError?: string }>('/api/auth/invite', {
       method: 'POST',
       body: data,
       token,
