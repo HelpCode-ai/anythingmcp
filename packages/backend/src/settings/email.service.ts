@@ -1,74 +1,90 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
-import axios from 'axios';
+import { Resend } from 'resend';
 import { SiteSettingsService } from './site-settings.service';
 
-const LICENSE_API_URL =
-  process.env.NODE_ENV === 'production'
-    ? 'https://anythingmcp.com'
-    : 'http://localhost:3100';
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const RESEND_FROM = process.env.RESEND_FROM_EMAIL || 'Anything MCP <noreply@anythingmcp.com>';
+
+const EMAIL_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52" width="36" height="36" fill="none" style="vertical-align: middle; margin-right: 8px;">
+  <line x1="26" y1="26" x2="26" y2="9" stroke="#2563EB" stroke-width="1.5" stroke-linecap="round" style="opacity: 0.55" />
+  <line x1="26" y1="26" x2="10" y2="40" stroke="#2563EB" stroke-width="1.5" stroke-linecap="round" style="opacity: 0.55" />
+  <line x1="26" y1="26" x2="42" y2="40" stroke="#2563EB" stroke-width="1.5" stroke-linecap="round" style="opacity: 0.55" />
+  <circle cx="26" cy="9" r="5" fill="#2563EB" style="opacity: 0.65" />
+  <circle cx="10" cy="40" r="5" fill="#2563EB" style="opacity: 0.65" />
+  <circle cx="42" cy="40" r="5" fill="#2563EB" style="opacity: 0.65" />
+  <circle cx="26" cy="26" r="10" fill="#2563EB" />
+  <circle cx="26" cy="26" r="5.5" fill="#FFFFFF" />
+</svg>`;
+
+const EMAIL_HEADER = `<div style="margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e5e5e5;">
+  ${EMAIL_LOGO_SVG}<span style="font-size: 20px; font-weight: bold; vertical-align: middle;"><span style="color: #111827;">Anything</span><span style="color: #2563eb;">MCP</span></span>
+</div>`;
+
+const EMAIL_FOOTER = `<hr style="border: none; border-top: 1px solid #e5e5e5; margin: 32px 0;" />
+<p style="color: #737373; font-size: 14px;">
+  helpcode.ai GmbH &mdash; <a href="https://anythingmcp.com" style="color: #2563eb;">anythingmcp.com</a>
+</p>`;
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private readonly apiBase = LICENSE_API_URL;
+  private resend: Resend | null = null;
 
-  constructor(private readonly siteSettings: SiteSettingsService) {}
-
-  // ── Password Reset (SMTP only — no external fallback for security) ────────
-
-  async sendPasswordResetEmail(
-    to: string,
-    resetUrl: string,
-  ): Promise<boolean> {
-    const smtp = await this.siteSettings.getSmtpConfig();
-    if (!smtp) {
-      this.logger.warn(
-        'Cannot send password reset email: SMTP not configured',
-      );
-      return false;
-    }
-
-    try {
-      const transporter = nodemailer.createTransport({
-        host: smtp.host,
-        port: smtp.port,
-        secure: smtp.secure,
-        auth: {
-          user: smtp.user,
-          pass: smtp.pass,
-        },
-      });
-
-      await transporter.sendMail({
-        from: smtp.from || `AnythingMCP <${smtp.user}>`,
-        to,
-        subject: 'Password Reset — AnythingMCP',
-        html: `
-          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-            <h2 style="color: #2563eb;">Password Reset</h2>
-            <p>You requested a password reset for your AnythingMCP account.</p>
-            <p>Click the button below to set a new password. This link expires in 1 hour.</p>
-            <a href="${resetUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
-              Reset Password
-            </a>
-            <p style="color: #737373; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
-            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-            <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-          </div>
-        `,
-        text: `Password Reset\n\nYou requested a password reset. Click here to set a new password: ${resetUrl}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, ignore this email.`,
-      });
-
-      this.logger.log(`Password reset email sent to ${to}`);
-      return true;
-    } catch (err) {
-      this.logger.error(`Failed to send email to ${to}: ${err}`);
-      return false;
+  constructor(private readonly siteSettings: SiteSettingsService) {
+    if (RESEND_API_KEY) {
+      this.resend = new Resend(RESEND_API_KEY);
+      this.logger.log('Resend email provider configured');
     }
   }
 
-  // ── Invitation Email (SMTP with external API fallback) ────────────────────
+  // ── Core send method (Resend → SMTP fallback) ─────────────────────────────
+
+  private async send(
+    to: string,
+    subject: string,
+    html: string,
+    text: string,
+  ): Promise<boolean> {
+    // Try Resend first
+    if (this.resend) {
+      try {
+        const { error } = await this.resend.emails.send({
+          from: RESEND_FROM,
+          to: [to],
+          subject,
+          html,
+          text,
+        });
+        if (error) throw new Error(error.message);
+        this.logger.log(`Email sent via Resend to ${to}: ${subject}`);
+        return true;
+      } catch (err: any) {
+        this.logger.error(`Resend failed for ${to}: ${err.message}`);
+      }
+    }
+
+    // Fallback to SMTP
+    const transport = await this.createTransporter();
+    if (transport) {
+      try {
+        await transport.transporter.sendMail({
+          from: transport.from,
+          to,
+          subject,
+          html,
+          text,
+        });
+        this.logger.log(`Email sent via SMTP to ${to}: ${subject}`);
+        return true;
+      } catch (err: any) {
+        this.logger.error(`SMTP failed for ${to}: ${err.message}`);
+      }
+    }
+
+    this.logger.warn(`No email provider available — could not send to ${to}`);
+    return false;
+  }
 
   private async createTransporter() {
     const smtp = await this.siteSettings.getSmtpConfig();
@@ -80,9 +96,37 @@ export class EmailService {
         secure: smtp.secure,
         auth: { user: smtp.user, pass: smtp.pass },
       }),
-      from: smtp.from || `AnythingMCP <${smtp.user}>`,
+      from: smtp.from || `Anything MCP <${smtp.user}>`,
     };
   }
+
+  // ── Password Reset ────────────────────────────────────────────────────────
+
+  async sendPasswordResetEmail(
+    to: string,
+    resetUrl: string,
+  ): Promise<boolean> {
+    return this.send(
+      to,
+      'Password Reset — Anything MCP',
+      `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+        ${EMAIL_HEADER}
+        <h1 style="color: #2563eb;">Password Reset</h1>
+        <p>You requested a password reset for your <span style="color: #111827;">Anything</span><span style="color: #2563eb;">MCP</span> account.</p>
+        <p>Click the button below to set a new password. This link expires in 1 hour.</p>
+        <div style="margin: 24px 0;">
+          <a href="${resetUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600;">
+            Reset Password
+          </a>
+        </div>
+        <p style="color: #737373; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
+        ${EMAIL_FOOTER}
+      </div>`,
+      `Password Reset\n\nYou requested a password reset. Click here to set a new password: ${resetUrl}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, ignore this email.`,
+    );
+  }
+
+  // ── Invitation Email ──────────────────────────────────────────────────────
 
   async sendInvitationEmail(
     to: string,
@@ -90,182 +134,103 @@ export class EmailService {
     invitedByName: string,
     roleName: string,
   ): Promise<boolean> {
-    const transport = await this.createTransporter();
-
-    if (transport) {
-      try {
-        await transport.transporter.sendMail({
-          from: transport.from,
-          to,
-          subject: 'You\'ve been invited to AnythingMCP',
-          html: `
-            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-              <h2 style="color: #2563eb;">You're Invited!</h2>
-              <p><strong>${invitedByName}</strong> has invited you to join the AnythingMCP workspace as <strong>${roleName}</strong>.</p>
-              <p>Click the button below to create your account. This invitation expires in 48 hours.</p>
-              <a href="${inviteUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
-                Accept Invitation
-              </a>
-              <p style="color: #737373; font-size: 14px;">If you weren't expecting this invite, you can safely ignore this email.</p>
-              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-            </div>
-          `,
-          text: `You're Invited!\n\n${invitedByName} has invited you to join AnythingMCP as ${roleName}.\n\nAccept your invitation: ${inviteUrl}\n\nThis link expires in 48 hours.`,
-        });
-
-        this.logger.log(`Invitation email sent to ${to}`);
-        return true;
-      } catch (err) {
-        this.logger.error(`Failed to send invitation via SMTP to ${to}: ${err}`);
-        return false;
-      }
-    }
-
-    // Fallback: send via external API (requires active license)
-    const licenseKey = await this.siteSettings.get('license_key');
-    return this.sendViaExternalApi('/api/email/invite', {
-      email: to,
-      inviterName: invitedByName,
-      instanceUrl: inviteUrl,
-      ...(licenseKey ? { licenseKey } : {}),
-    });
+    return this.send(
+      to,
+      `${invitedByName} invited you to Anything MCP`,
+      `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+        ${EMAIL_HEADER}
+        <h1 style="color: #2563eb;">You've been invited!</h1>
+        <p><strong>${invitedByName}</strong> has invited you to join their <span style="color: #111827;">Anything</span><span style="color: #2563eb;">MCP</span> instance as <strong>${roleName}</strong>.</p>
+        <p>Click the button below to create your account. This invitation expires in 48 hours.</p>
+        <div style="margin: 24px 0;">
+          <a href="${inviteUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600;">
+            Accept Invitation
+          </a>
+        </div>
+        <p style="color: #737373; font-size: 14px;">If you weren't expecting this invite, you can safely ignore this email.</p>
+        ${EMAIL_FOOTER}
+      </div>`,
+      `You're Invited!\n\n${invitedByName} has invited you to join Anything MCP as ${roleName}.\n\nAccept your invitation: ${inviteUrl}\n\nThis link expires in 48 hours.`,
+    );
   }
 
-  // ── Welcome Email (SMTP with external API fallback) ───────────────────────
+  // ── Welcome Email ─────────────────────────────────────────────────────────
 
   async sendWelcomeEmail(
     to: string,
     name: string,
     licenseKey: string,
   ): Promise<boolean> {
-    const transport = await this.createTransporter();
-
-    if (transport) {
-      try {
-        await transport.transporter.sendMail({
-          from: transport.from,
-          to,
-          subject: 'Welcome to AnythingMCP — Your License Key',
-          html: `
-            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-              <h2 style="color: #2563eb;">Welcome to AnythingMCP!</h2>
-              <p>Hi ${name},</p>
-              <p>Your license key is:</p>
-              <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; text-align: center; font-family: monospace; font-size: 18px; letter-spacing: 2px; margin: 16px 0;">
-                ${licenseKey}
-              </div>
-              <p>Keep this key safe — you'll need it to activate your AnythingMCP instance.</p>
-              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-            </div>
-          `,
-          text: `Welcome to AnythingMCP!\n\nHi ${name},\n\nYour license key is: ${licenseKey}\n\nKeep this key safe — you'll need it to activate your AnythingMCP instance.`,
-        });
-
-        this.logger.log(`Welcome email sent to ${to}`);
-        return true;
-      } catch (err) {
-        this.logger.error(`Failed to send welcome email via SMTP to ${to}: ${err}`);
-        return false;
-      }
-    }
-
-    // Fallback: send via external API
-    return this.sendViaExternalApi('/api/email/welcome', {
-      email: to,
-      name,
-      licenseKey,
-    });
+    return this.send(
+      to,
+      'Welcome to Anything MCP — Your License Key',
+      `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+        ${EMAIL_HEADER}
+        <h1 style="color: #2563eb;">Welcome!</h1>
+        <p>Hi ${name},</p>
+        <p>Thank you for registering. Here is your license key:</p>
+        <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 24px 0; text-align: center;">
+          <code style="font-size: 18px; font-weight: bold; letter-spacing: 2px;">${licenseKey}</code>
+        </div>
+        <p>To get started:</p>
+        <ol>
+          <li>Copy your license key above</li>
+          <li>Enter it in your <span style="color: #111827;">Anything</span><span style="color: #2563eb;">MCP</span> instance settings</li>
+          <li>Follow our <a href="https://anythingmcp.com/docs/getting-started" style="color: #2563eb;">Getting Started Guide</a></li>
+        </ol>
+        ${EMAIL_FOOTER}
+      </div>`,
+      `Welcome to Anything MCP!\n\nHi ${name},\n\nYour license key is: ${licenseKey}\n\nKeep this key safe — you'll need it to activate your Anything MCP instance.`,
+    );
   }
 
-  // ── Verification Email (SMTP with external API fallback) ─────────────────
+  // ── Verification Email ────────────────────────────────────────────────────
 
   async sendVerificationEmail(
     to: string,
     code: string,
     verifyUrl: string,
   ): Promise<boolean> {
-    const transport = await this.createTransporter();
-
-    if (!transport) {
-      // Log verification code to console so developers can verify manually
+    if (!this.resend && !(await this.siteSettings.getSmtpConfig())) {
       this.logger.warn(
-        `SMTP not configured — verification code for ${to}: ${code}`,
+        `No email provider configured — verification code for ${to}: ${code}`,
       );
     }
 
-    if (transport) {
-      try {
-        await transport.transporter.sendMail({
-          from: transport.from,
-          to,
-          subject: 'Verify Your Email — AnythingMCP',
-          html: `
-            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-              <h2 style="color: #2563eb;">Verify Your Email</h2>
-              <p>Your verification code is:</p>
-              <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; text-align: center; font-family: monospace; font-size: 32px; letter-spacing: 8px; margin: 16px 0; font-weight: bold;">
-                ${code}
-              </div>
-              <p>This code expires in 15 minutes.</p>
-              <p>Or click the button below to verify:</p>
-              <a href="${verifyUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
-                Verify Email
-              </a>
-              <p style="color: #737373; font-size: 14px;">If you didn't create this account, you can safely ignore this email.</p>
-              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-            </div>
-          `,
-          text: `Verify Your Email\n\nYour verification code: ${code}\n\nOr verify here: ${verifyUrl}\n\nThis code expires in 15 minutes.`,
-        });
-
-        this.logger.log(`Verification email sent to ${to}`);
-        return true;
-      } catch (err) {
-        this.logger.error(
-          `Failed to send verification email via SMTP to ${to}: ${err}`,
-        );
-      }
-    }
-
-    // Fallback: send via external API
-    return this.sendViaExternalApi('/api/email/verify', {
-      email: to,
-      code,
-      verifyUrl,
-    });
-  }
-
-  // ── External API Fallback ─────────────────────────────────────────────────
-
-  private async sendViaExternalApi(
-    endpoint: string,
-    body: Record<string, string>,
-  ): Promise<boolean> {
-    try {
-      await axios.post(`${this.apiBase}${endpoint}`, body, {
-        timeout: 10000,
-      });
-      this.logger.log(
-        `Email sent via external API: ${endpoint} to ${body.email}`,
-      );
-      return true;
-    } catch (err: any) {
-      this.logger.error(
-        `Failed to send email via external API ${endpoint}: ${err.message}`,
-      );
-      return false;
-    }
+    return this.send(
+      to,
+      'Verify Your Email — Anything MCP',
+      `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+        ${EMAIL_HEADER}
+        <h1 style="color: #2563eb;">Verify Your Email</h1>
+        <p>Your verification code is:</p>
+        <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 24px 0; text-align: center;">
+          <code style="font-size: 32px; font-weight: bold; letter-spacing: 8px;">${code}</code>
+        </div>
+        <p>This code expires in 15 minutes.</p>
+        <p>Or click the button below to verify:</p>
+        <div style="margin: 24px 0;">
+          <a href="${verifyUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600;">
+            Verify Email
+          </a>
+        </div>
+        <p style="color: #737373; font-size: 14px;">If you didn't create this account, you can safely ignore this email.</p>
+        ${EMAIL_FOOTER}
+      </div>`,
+      `Verify Your Email\n\nYour verification code: ${code}\n\nOr verify here: ${verifyUrl}\n\nThis code expires in 15 minutes.`,
+    );
   }
 
   // ── SMTP Test ─────────────────────────────────────────────────────────────
 
   async testConnection(): Promise<{ ok: boolean; message: string }> {
+    if (this.resend) {
+      return { ok: true, message: 'Resend configured (RESEND_API_KEY set)' };
+    }
+
     const smtp = await this.siteSettings.getSmtpConfig();
     if (!smtp) {
-      return { ok: false, message: 'SMTP not configured' };
+      return { ok: false, message: 'No email provider configured (set RESEND_API_KEY or configure SMTP)' };
     }
 
     try {
@@ -273,12 +238,8 @@ export class EmailService {
         host: smtp.host,
         port: smtp.port,
         secure: smtp.secure,
-        auth: {
-          user: smtp.user,
-          pass: smtp.pass,
-        },
+        auth: { user: smtp.user, pass: smtp.pass },
       });
-
       await transporter.verify();
       return { ok: true, message: 'SMTP connection successful' };
     } catch (err: any) {
