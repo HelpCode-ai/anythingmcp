@@ -120,7 +120,22 @@ export class AuthController {
     private readonly siteSettings: SiteSettingsService,
   ) {}
 
-  private getFrontendUrl(): string {
+  private getFrontendUrl(req?: any): string {
+    // Derive from the incoming request so links match the domain the user is on,
+    // even when FRONTEND_URL env var is stale or misconfigured.
+    if (req?.headers) {
+      const origin = req.headers['origin'];
+      if (origin) return origin.replace(/\/+$/, '');
+
+      const referer = req.headers['referer'];
+      if (referer) {
+        try {
+          const url = new URL(referer);
+          return url.origin;
+        } catch {}
+      }
+    }
+
     return (
       this.configService.get<string>('FRONTEND_URL') ||
       this.configService.get<string>('SERVER_URL') ||
@@ -128,7 +143,7 @@ export class AuthController {
     );
   }
 
-  private async createAndSendVerificationCode(userId: string, email: string): Promise<boolean> {
+  private async createAndSendVerificationCode(userId: string, email: string, req?: any): Promise<boolean> {
     // Invalidate old tokens
     await this.prisma.emailVerificationToken.updateMany({
       where: { userId, usedAt: null },
@@ -145,7 +160,7 @@ export class AuthController {
     });
 
     // Build verification link URL
-    const verifyUrl = `${this.getFrontendUrl()}/verify-email?token=${linkToken}`;
+    const verifyUrl = `${this.getFrontendUrl(req)}/verify-email?token=${linkToken}`;
 
     // Send email
     try {
@@ -159,7 +174,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email and password' })
-  async login(@Body() dto: LoginDto) {
+  async login(@Req() req: any, @Body() dto: LoginDto) {
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
@@ -182,7 +197,7 @@ export class AuthController {
 
     // If user hasn't verified email, resend a verification code
     if (!user.emailVerified) {
-      await this.createAndSendVerificationCode(user.id, user.email);
+      await this.createAndSendVerificationCode(user.id, user.email, req);
     }
 
     // Check if ADMIN needs to complete license setup
@@ -209,7 +224,7 @@ export class AuthController {
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user account' })
-  async register(@Body() dto: RegisterDto) {
+  async register(@Req() req: any, @Body() dto: RegisterDto) {
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
       throw new ConflictException('Email already registered');
@@ -244,7 +259,7 @@ export class AuthController {
     });
 
     // Send verification email
-    await this.createAndSendVerificationCode(user.id, user.email);
+    await this.createAndSendVerificationCode(user.id, user.email, req);
 
     return {
       accessToken: token,
@@ -296,7 +311,7 @@ export class AuthController {
 
   @Get('verify-email-link')
   @ApiOperation({ summary: 'Verify email via link token' })
-  async verifyEmailLink(@Query('token') token: string, @Res() res: Response) {
+  async verifyEmailLink(@Req() req: any, @Query('token') token: string, @Res() res: Response) {
     if (!token) throw new BadRequestException('Token is required');
 
     const record = await this.prisma.emailVerificationToken.findUnique({
@@ -315,7 +330,7 @@ export class AuthController {
     await this.usersService.update(record.userId, { emailVerified: true });
 
     // Redirect to frontend
-    const frontendUrl = this.getFrontendUrl();
+    const frontendUrl = this.getFrontendUrl(req);
     return res.redirect(`${frontendUrl}/login?emailVerified=true`);
   }
 
@@ -342,7 +357,7 @@ export class AuthController {
       throw new BadRequestException('Too many verification attempts. Please try again later.');
     }
 
-    const sent = await this.createAndSendVerificationCode(userId, user.email);
+    const sent = await this.createAndSendVerificationCode(userId, user.email, req);
 
     if (!sent) {
       throw new BadRequestException('Failed to send verification email. SMTP may not be configured.');
@@ -393,7 +408,7 @@ export class AuthController {
     });
 
     // Build invitation URL
-    const inviteUrl = `${this.getFrontendUrl()}/accept-invite?token=${inviteToken}`;
+    const inviteUrl = `${this.getFrontendUrl(req)}/accept-invite?token=${inviteToken}`;
 
     // Get inviter's name for the email
     const inviter = await this.usersService.findById(req.user.sub);
@@ -510,7 +525,7 @@ export class AuthController {
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request password reset email' })
-  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+  async forgotPassword(@Req() req: any, @Body() dto: ForgotPasswordDto) {
     // Always return success to prevent email enumeration
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
@@ -531,7 +546,7 @@ export class AuthController {
     });
 
     // Build reset URL
-    const resetUrl = `${this.getFrontendUrl()}/reset-password?token=${resetToken}`;
+    const resetUrl = `${this.getFrontendUrl(req)}/reset-password?token=${resetToken}`;
 
     // Send email
     const sent = await this.emailService.sendPasswordResetEmail(
