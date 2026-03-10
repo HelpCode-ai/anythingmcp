@@ -24,6 +24,22 @@ COPY packages/frontend/package.json ./packages/frontend/
 # Extended timeout for ARM64 QEMU emulation in CI
 RUN npm ci --network-timeout 600000
 
+# ── Stage 1b: Backend production deps only ────────────────────────────────
+FROM node:22-alpine AS backend-prod-deps
+RUN apk add --no-cache libc6-compat python3 make g++
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY packages/backend/package.json ./packages/backend/
+
+# Stub the frontend workspace with zero deps so npm won't hoist any frontend
+# packages — only backend production dependencies end up in node_modules.
+RUN mkdir -p packages/frontend && \
+    echo '{"name":"@anythingmcp/frontend","version":"0.1.1","private":true}' > packages/frontend/package.json
+
+RUN npm install --omit=dev --network-timeout=600000 && \
+    rm -rf node_modules/typescript node_modules/react-dom node_modules/react
+
 # ── Stage 2: Build Backend ──────────────────────────────────────────────────
 FROM node:22-alpine AS backend-builder
 WORKDIR /app
@@ -71,8 +87,8 @@ COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/prisma
 COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/prisma.config.ts ./backend/
 COPY --from=backend-builder --chown=appuser:appuser /app/packages/backend/package.json ./backend/
 
-# Backend node_modules (Prisma 7 client is compiled into dist/ by NestJS build)
-COPY --from=deps /app/node_modules ./backend/node_modules
+# Backend node_modules — only backend production deps (no frontend, no devDeps)
+COPY --from=backend-prod-deps /app/node_modules ./backend/node_modules
 
 # ── Frontend artifacts (Next.js standalone) ──
 # In a monorepo, Next.js standalone output preserves the workspace directory
