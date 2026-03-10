@@ -1,8 +1,8 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "DOCKERIMAGE",
-    "dockerImage": "helpcodeai/anythingmcp:latest"
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
   },
   "deploy": {
     "startCommand": "./start.sh",
@@ -18,7 +18,11 @@
       "description": "AnythingMCP — NestJS Backend + Next.js Frontend",
       "icon": "https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/packages/frontend/public/logo.svg",
       "source": {
-        "image": "helpcodeai/anythingmcp:latest"
+        "repo": "HelpCode-ai/anythingmcp"
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "Dockerfile"
       },
       "deploy": {
         "startCommand": "./start.sh",

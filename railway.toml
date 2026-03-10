@@ -6,8 +6,8 @@
 # =============================================================================
 
 [build]
-builder = "DOCKERIMAGE"
-dockerImage = "helpcodeai/anythingmcp:latest"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "./start.sh"
