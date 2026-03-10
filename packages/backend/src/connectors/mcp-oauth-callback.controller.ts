@@ -73,7 +73,6 @@ export class McpOAuthCallbackController {
       // 2. Store tokens (encrypted) in the connector's authConfig
       await this.connectorsService.update(
         flow.connectorId,
-        flow.userId,
         {
           authConfig: {
             accessToken: tokens.accessToken,

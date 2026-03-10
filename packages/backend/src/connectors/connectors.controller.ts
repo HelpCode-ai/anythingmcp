@@ -9,6 +9,7 @@ import {
   Req,
   UseGuards,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -142,10 +143,16 @@ export class ConnectorsController {
 
   private readonly encryptionKey: string;
 
+  private assertOwnerOrAdmin(connector: any, req: any) {
+    if (connector.userId !== req.user.sub && req.user.role !== 'ADMIN') {
+      throw new ForbiddenException('Only the connector owner or an admin can modify this connector');
+    }
+  }
+
   @Get()
-  @ApiOperation({ summary: 'List all connectors for the current user' })
-  async list(@Req() req: any) {
-    return this.connectorsService.findAllByUser(req.user.sub);
+  @ApiOperation({ summary: 'List all connectors' })
+  async list() {
+    return this.connectorsService.findAll();
   }
 
   @Post()
@@ -185,15 +192,15 @@ export class ConnectorsController {
     description:
       'Runs a health check against all active connectors and returns their status.',
   })
-  async healthCheck(@Req() req: any) {
-    const allConnectors = await this.connectorsService.findAllByUser(req.user.sub);
+  async healthCheck() {
+    const allConnectors = await this.connectorsService.findAll();
     const active = allConnectors.filter((c) => c.isActive);
 
     const results = await Promise.allSettled(
       active.map(async (c) => {
         const start = Date.now();
         try {
-          const result = await this.connectorsService.testConnection(c.id, req.user.sub);
+          const result = await this.connectorsService.testConnection(c.id);
           return {
             id: c.id,
             name: c.name,
@@ -236,9 +243,8 @@ export class ConnectorsController {
       'Returns all connectors with their tools, environment variables, ' +
       'and configuration. Auth credentials are excluded for security.',
   })
-  async exportAll(@Req() req: any) {
+  async exportAll() {
     const allConnectors = await this.prisma.connector.findMany({
-      where: { userId: req.user.sub },
       include: { tools: true },
     });
 
@@ -271,8 +277,8 @@ export class ConnectorsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get connector details' })
-  async findOne(@Req() req: any, @Param('id') id: string) {
-    return this.connectorsService.findById(id, req.user.sub);
+  async findOne(@Param('id') id: string) {
+    return this.connectorsService.findById(id);
   }
 
   @Put(':id')
@@ -282,13 +288,17 @@ export class ConnectorsController {
     @Param('id') id: string,
     @Body() dto: UpdateConnectorDto,
   ) {
-    return this.connectorsService.update(id, req.user.sub, dto);
+    const connector = await this.connectorsService.findById(id);
+    this.assertOwnerOrAdmin(connector, req);
+    return this.connectorsService.update(id, dto);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete connector' })
   async remove(@Req() req: any, @Param('id') id: string) {
-    await this.connectorsService.remove(id, req.user.sub);
+    const connector = await this.connectorsService.findById(id);
+    this.assertOwnerOrAdmin(connector, req);
+    await this.connectorsService.remove(id);
     // Unregister tools from in-memory MCP registries after DB cascade delete
     await this.mcpServer.reloadConnectorTools(id);
     return { message: 'Connector deleted' };
@@ -296,8 +306,8 @@ export class ConnectorsController {
 
   @Post(':id/test')
   @ApiOperation({ summary: 'Test connector connection' })
-  async test(@Req() req: any, @Param('id') id: string) {
-    return this.connectorsService.testConnection(id, req.user.sub);
+  async test(@Param('id') id: string) {
+    return this.connectorsService.testConnection(id);
   }
 
   @Post(':id/oauth/authorize')
@@ -309,7 +319,8 @@ export class ConnectorsController {
       'Returns an authorization URL for the user to visit.',
   })
   async initiateOAuth(@Req() req: any, @Param('id') id: string) {
-    const connector = await this.connectorsService.findById(id, req.user.sub);
+    const connector = await this.connectorsService.findById(id);
+    this.assertOwnerOrAdmin(connector, req);
 
     if (connector.authType !== 'OAUTH2') {
       return { error: 'Connector auth type must be OAUTH2' };
@@ -405,7 +416,8 @@ export class ConnectorsController {
       'lists all available tools, and imports them as MCP tools.',
   })
   async discoverMcpTools(@Req() req: any, @Param('id') id: string) {
-    const connector = await this.connectorsService.findById(id, req.user.sub);
+    const connector = await this.connectorsService.findById(id);
+    this.assertOwnerOrAdmin(connector, req);
 
     if (connector.type !== 'MCP') {
       return { error: 'Tool discovery is only available for MCP connectors' };
@@ -513,7 +525,8 @@ export class ConnectorsController {
   @Post(':id/import-spec')
   @ApiOperation({ summary: 'Auto-generate MCP tools from API specification' })
   async importSpec(@Req() req: any, @Param('id') id: string) {
-    const connector = await this.connectorsService.findById(id, req.user.sub);
+    const connector = await this.connectorsService.findById(id);
+    this.assertOwnerOrAdmin(connector, req);
 
     let parsedTools: any[] = [];
 
@@ -556,7 +569,8 @@ export class ConnectorsController {
     @Param('id') id: string,
     @Body() dto: ImportToolsDto,
   ) {
-    const connector = await this.connectorsService.findById(id, req.user.sub);
+    const connector = await this.connectorsService.findById(id);
+    this.assertOwnerOrAdmin(connector, req);
 
     let parsedTools: any[] = [];
 
@@ -673,7 +687,9 @@ export class ConnectorsController {
     @Param('id') id: string,
     @Body() body: { envVars: Record<string, string> },
   ) {
-    const updated = await this.connectorsService.update(id, req.user.sub, {
+    const connector = await this.connectorsService.findById(id);
+    this.assertOwnerOrAdmin(connector, req);
+    const updated = await this.connectorsService.update(id, {
       envVars: body.envVars,
     });
     await this.mcpServer.reloadConnectorTools(id);
