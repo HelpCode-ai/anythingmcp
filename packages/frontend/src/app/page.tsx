@@ -24,6 +24,7 @@ export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [healthResult, setHealthResult] = useState<HealthResult>(null);
   const [checkingHealth, setCheckingHealth] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => {
     if (!token) return;
@@ -49,6 +50,8 @@ export default function DashboardPage() {
         }
       } catch {
         // Backend may not be running
+      } finally {
+        setDataLoading(false);
       }
     };
     load();
@@ -88,24 +91,28 @@ export default function DashboardPage() {
             value={String(stats.connectors)}
             icon={<CableStatIcon />}
             color="brand"
+            loading={dataLoading}
           />
           <StatCard
             title="MCP Tools"
             value={String(stats.tools)}
             icon={<WrenchStatIcon />}
             color="success"
+            loading={dataLoading}
           />
           <StatCard
             title="Invocations (24h)"
             value={String(stats.invocations24h)}
             icon={<ActivityStatIcon />}
             color="brand"
+            loading={dataLoading}
           />
           <StatCard
             title="Errors (24h)"
             value={String(stats.errors24h)}
             icon={<AlertStatIcon />}
             color={stats.errors24h > 0 ? 'destructive' : 'success'}
+            loading={dataLoading}
           />
         </div>
 
@@ -261,7 +268,23 @@ export default function DashboardPage() {
                   {checkingHealth ? 'Checking...' : 'Refresh'}
                 </button>
               </div>
-              {healthResult ? (
+              {dataLoading ? (
+                <div className="space-y-3 animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-2 bg-[var(--muted)] rounded-full" />
+                    <div className="h-4 w-8 bg-[var(--muted)] rounded" />
+                  </div>
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-1.5 h-1.5 rounded-full bg-[var(--muted)]" />
+                        <div className="h-3 w-24 bg-[var(--muted)] rounded" />
+                      </div>
+                      <div className="h-3 w-10 bg-[var(--muted)] rounded" />
+                    </div>
+                  ))}
+                </div>
+              ) : healthResult ? (
                 <div>
                   <div className="flex items-center gap-3 mb-3">
                     <div className="flex-1 h-2 bg-[var(--muted)] rounded-full overflow-hidden">
@@ -291,7 +314,24 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {recentConnectors.length > 0 && (
+            {dataLoading ? (
+              <div className="border border-[var(--border)] rounded-lg p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-medium">Recent Connectors</h3>
+                </div>
+                <div className="space-y-2 animate-pulse">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center justify-between p-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-5 w-10 bg-[var(--muted)] rounded" />
+                        <div className="h-4 w-32 bg-[var(--muted)] rounded" />
+                      </div>
+                      <div className="h-3 w-14 bg-[var(--muted)] rounded" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : recentConnectors.length > 0 ? (
               <div className="border border-[var(--border)] rounded-lg p-6">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-lg font-medium">Recent Connectors</h3>
@@ -313,7 +353,7 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </main>
@@ -322,7 +362,7 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ title, value, icon, color }: { title: string; value: string; icon: React.ReactNode; color: string }) {
+function StatCard({ title, value, icon, color, loading }: { title: string; value: string; icon: React.ReactNode; color: string; loading?: boolean }) {
   const colorMap: Record<string, string> = {
     brand: 'text-[var(--brand)] bg-[var(--brand-light)]',
     success: 'text-[var(--success)] bg-[var(--success-light)]',
@@ -337,7 +377,11 @@ function StatCard({ title, value, icon, color }: { title: string; value: string;
           {icon}
         </div>
       </div>
-      <p className="text-3xl font-bold">{value}</p>
+      {loading ? (
+        <div className="h-9 w-16 bg-[var(--muted)] rounded animate-pulse" />
+      ) : (
+        <p className="text-3xl font-bold">{value}</p>
+      )}
     </div>
   );
 }
