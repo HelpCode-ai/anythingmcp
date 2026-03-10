@@ -345,4 +345,72 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 
 ---
 
+## External Services
+
+AnythingMCP is fully self-hosted, but makes **optional** network calls to `anythingmcp.com` in two specific cases. This section documents exactly what is sent and when, so you can make an informed decision.
+
+### License Verification
+
+**When:** Only if you activate a license key (community or commercial). Not called if no license key is configured.
+
+**What happens:**
+- On startup (at most once every 24 hours), the backend verifies the license key against `anythingmcp.com/api/license/verify`
+- When you activate a license, a request is sent to `anythingmcp.com/api/license/activate`
+- When you request a community license, a request is sent to `anythingmcp.com/api/license/register`
+
+**Data sent:**
+- License key
+- Instance ID (a random UUID generated on first startup, used to identify the installation)
+- Email and name (only during community license registration)
+
+**Data NOT sent:** No API credentials, connector configurations, tool definitions, user data, audit logs, or any operational data.
+
+**If the service is unreachable:** The application continues to work normally. License verification failures are logged as warnings and do not block functionality.
+
+### Email Fallback
+
+**When:** Only if SMTP is **not** configured and the application needs to send an email (invitations, welcome emails, email verification).
+
+**What happens:**
+- The backend sends the email content to `anythingmcp.com/api/email/*` endpoints
+- The external service delivers the email on behalf of the instance
+
+**Data sent:**
+- Recipient email address
+- Email content (invitation URL, verification code, welcome message, license key)
+- License key (if configured)
+
+**How to disable:** Configure SMTP in your `.env` or via the admin UI. When SMTP is configured, the external email fallback is never used. Password reset emails are **never** sent through the external fallback, only via SMTP.
+
+### Network Diagram
+
+```
+AnythingMCP Instance                    anythingmcp.com
+┌──────────────────┐                   ┌──────────────────┐
+│                  │── license/verify ──►│                  │
+│  License Service │── license/activate ►│  License API     │
+│                  │── license/register ►│                  │
+│                  │                    │                  │
+│  Email Service   │── email/invite ────►│  Email Relay     │
+│  (SMTP fallback) │── email/welcome ───►│  (fallback only) │
+│                  │── email/verify ────►│                  │
+└──────────────────┘                   └──────────────────┘
+        │
+        │  Your API credentials, tool definitions,
+        │  audit logs, and user data NEVER leave
+        │  your instance.
+        │
+```
+
+### Fully Offline Mode
+
+To run AnythingMCP with zero external calls:
+
+1. **Skip license activation** — The application works without a license key (community features)
+2. **Configure SMTP** — Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` in your environment or via the admin Settings page
+
+With both of these in place, AnythingMCP makes no outbound connections to `anythingmcp.com`.
+
+---
+
 [Back to README](../README.md) | [API Reference](api-reference.md) | [Integration Guides](../README.md#connect-your-ai-client)

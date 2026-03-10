@@ -13,11 +13,19 @@
 
 ---
 
-**AnythingMCP** is a self-hosted, open-source MCP middleware that turns your existing APIs into [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers. Connect **any** API — REST, SOAP, GraphQL, databases, or other MCP servers — and expose them as tools to AI clients like **Claude**, **ChatGPT**, **Gemini**, **Copilot**, **Cursor**, and more.
+**AnythingMCP** is a self-hosted, source-available MCP middleware that turns your existing APIs into [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers. Connect **any** API — REST, SOAP, GraphQL, databases, or other MCP servers — and expose them as tools to AI clients like **Claude**, **ChatGPT**, **Gemini**, **Copilot**, **Cursor**, and more.
 
 No SDK. No code changes. Just point, configure, and connect.
 
 > **Looking for an MCP gateway?** AnythingMCP acts as a universal MCP proxy and API-to-MCP bridge — the missing middleware between your APIs and AI agents.
+
+<p align="center">
+  <a href="docs/assets/demo.mp4">
+    <img src="docs/assets/demo-thumbnail.png" alt="AnythingMCP Demo" width="720" />
+    <br/>
+    <strong>Watch the demo (1 min)</strong>
+  </a>
+</p>
 
 ---
 
@@ -187,12 +195,22 @@ Or see the [Deployment Guide](docs/deployment.md#local-development) for manual s
 
 ## License
 
-Licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
+AnythingMCP is **source-available** under the [Business Source License 1.1](LICENSE) (BSL-1.1). This is _not_ an OSI-approved open-source license — see the [License FAQ](docs/license-faq.md) for a plain-language explanation.
 
 - **Free for**: internal use, personal use, development, testing, evaluation, academic use
-- **Not permitted**: offering as a commercial hosted service without a separate license
-- **Change Date**: 2030-03-04 — converts to Apache 2.0
+- **Not permitted**: offering as a commercial hosted service (SaaS) without a separate license
+- **Change Date**: 2030-03-04 — on this date the license automatically converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 
 For commercial licensing: [info@helpcode.ai](mailto:info@helpcode.ai)
 
+> **Transparency note:** AnythingMCP makes optional network calls to `anythingmcp.com` for license verification and email delivery when SMTP is not configured. No API credentials or tool invocation data is ever sent. See [External Services](docs/deployment.md#external-services) for full details.
+
 Copyright (c) 2026 helpcode.ai GmbH
+
+---
+
+## Contributing
+
+We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) before submitting a PR.
+
+For security issues, see [SECURITY.md](SECURITY.md).
