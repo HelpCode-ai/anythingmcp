@@ -54,4 +54,15 @@ export class UsersService {
   async delete(userId: string): Promise<void> {
     await this.prisma.user.delete({ where: { id: userId } });
   }
+
+  async findAllInvitations() {
+    return this.prisma.invitationToken.findMany({
+      where: { usedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async deleteInvitation(id: string): Promise<void> {
+    await this.prisma.invitationToken.delete({ where: { id } });
+  }
 }

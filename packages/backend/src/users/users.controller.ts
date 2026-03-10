@@ -106,6 +106,23 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
+  @Get('invitations')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'List pending/expired invitations (ADMIN only)' })
+  async listInvitations() {
+    return this.usersService.findAllInvitations();
+  }
+
+  @Delete('invitations/:id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Revoke an invitation (ADMIN only)' })
+  async deleteInvitation(@Param('id') id: string) {
+    await this.usersService.deleteInvitation(id);
+    return { message: 'Invitation revoked' };
+  }
+
   @Put(':id/role')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
