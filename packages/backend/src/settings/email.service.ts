@@ -24,7 +24,7 @@ export class EmailService {
     const smtp = await this.siteSettings.getSmtpConfig();
     if (!smtp) {
       this.logger.warn(
-        'Cannot send password reset email: SMTP not configured',
+        'SMTP not configured for password reset, no fallback available',
       );
       return false;
     }
@@ -124,6 +124,9 @@ export class EmailService {
 
     // Fallback: send via external API (requires active license)
     const licenseKey = await this.siteSettings.get('license_key');
+    this.logger.log(
+      `SMTP not configured, using external API fallback (licenseKey ${licenseKey ? 'present' : 'MISSING'})`,
+    );
     return this.sendViaExternalApi('/api/email/invite', {
       email: to,
       inviterName: invitedByName,
@@ -253,8 +256,11 @@ export class EmailService {
       );
       return true;
     } catch (err: any) {
+      const detail = err.response?.data
+        ? JSON.stringify(err.response.data)
+        : err.message;
       this.logger.error(
-        `Failed to send email via external API ${endpoint}: ${err.message}`,
+        `Failed to send email via external API ${endpoint} (${err.response?.status || 'N/A'}): ${detail}`,
       );
       return false;
     }
