@@ -96,6 +96,10 @@ export const users = {
     request(`/api/users/${id}/role`, { method: 'PUT', body: { role }, token }),
   delete: (id: string, token: string) =>
     request(`/api/users/${id}`, { method: 'DELETE', token }),
+  invitations: (token: string) =>
+    request<any[]>('/api/users/invitations', { token }),
+  deleteInvitation: (id: string, token: string) =>
+    request(`/api/users/invitations/${id}`, { method: 'DELETE', token }),
 };
 
 // Connectors

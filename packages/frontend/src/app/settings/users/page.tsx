@@ -7,9 +7,14 @@ import { users, auth, roles } from '@/lib/api';
 
 const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
 
+function getInvitationStatus(invite: any): 'pending' | 'expired' {
+  return new Date(invite.expiresAt) < new Date() ? 'expired' : 'pending';
+}
+
 export default function SettingsUsersPage() {
   const { token, user: currentUser } = useAuth();
   const [userList, setUserList] = useState<any[]>([]);
+  const [invitationList, setInvitationList] = useState<any[]>([]);
   const [roleList, setRoleList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
@@ -25,12 +30,14 @@ export default function SettingsUsersPage() {
   const loadData = async () => {
     if (!token) return;
     try {
-      const [userData, roleData] = await Promise.all([
+      const [userData, roleData, invitationData] = await Promise.all([
         users.list(token),
         roles.list(token).catch(() => []),
+        users.invitations(token).catch(() => []),
       ]);
       setUserList(userData);
       setRoleList(roleData);
+      setInvitationList(invitationData);
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
     } finally {
@@ -66,6 +73,17 @@ export default function SettingsUsersPage() {
     }
   };
 
+  const handleRevokeInvitation = async (inviteId: string, email: string) => {
+    if (!token || !confirm(`Revoke invitation for ${email}?`)) return;
+    try {
+      await users.deleteInvitation(inviteId, token);
+      setInvitationList((prev) => prev.filter((i) => i.id !== inviteId));
+      setMsg('Invitation revoked');
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    }
+  };
+
   const handleInvite = async () => {
     if (!token || !inviteEmail.trim()) return;
     setInviting(true);
@@ -88,6 +106,8 @@ export default function SettingsUsersPage() {
         setInviteMcpRoleId('');
         setShowInvite(false);
       }
+      // Reload invitations to show the new one
+      users.invitations(token).then(setInvitationList).catch(() => {});
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
     } finally {
@@ -106,6 +126,8 @@ export default function SettingsUsersPage() {
       </div>
     );
   }
+
+  const totalCount = userList.length + invitationList.length;
 
   return (
     <div className="space-y-6">
@@ -204,9 +226,10 @@ export default function SettingsUsersPage() {
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Email</th>
                 <th className="text-left px-4 py-3 font-medium">Name</th>
+                <th className="text-left px-4 py-3 font-medium">Status</th>
                 <th className="text-left px-4 py-3 font-medium">Role</th>
                 <th className="text-left px-4 py-3 font-medium">MCP Role</th>
-                <th className="text-left px-4 py-3 font-medium">Joined</th>
+                <th className="text-left px-4 py-3 font-medium">Date</th>
                 <th className="text-right px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
@@ -220,6 +243,11 @@ export default function SettingsUsersPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">{u.name || '—'}</td>
+                  <td className="px-4 py-3">
+                    <span className="text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full">
+                      Active
+                    </span>
+                  </td>
                   <td className="px-4 py-3">
                     {u.id === currentUser?.id ? (
                       <span className="text-xs font-medium bg-[var(--muted)] px-2 py-1 rounded">{u.role}</span>
@@ -259,13 +287,58 @@ export default function SettingsUsersPage() {
                   </td>
                 </tr>
               ))}
+              {invitationList.map((inv) => {
+                const status = getInvitationStatus(inv);
+                return (
+                  <tr key={`inv-${inv.id}`} className="border-t border-[var(--border)] opacity-75">
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-xs">{inv.email}</span>
+                    </td>
+                    <td className="px-4 py-3 text-[var(--muted-foreground)]">—</td>
+                    <td className="px-4 py-3">
+                      {status === 'pending' ? (
+                        <span className="text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 px-2 py-0.5 rounded-full">
+                          Pending
+                        </span>
+                      ) : (
+                        <span className="text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-full">
+                          Expired
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-medium bg-[var(--muted)] px-2 py-1 rounded">{inv.role}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs text-[var(--muted-foreground)]">—</span>
+                    </td>
+                    <td className="px-4 py-3 text-[var(--muted-foreground)]">
+                      <span title={`Expires: ${new Date(inv.expiresAt).toLocaleString()}`}>
+                        {new Date(inv.createdAt).toLocaleDateString()}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => handleRevokeInvitation(inv.id, inv.email)}
+                        className="border border-[var(--destructive)] text-[var(--destructive)] px-2 py-1 rounded text-xs hover:bg-[var(--destructive-bg)]"
+                      >
+                        Revoke
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
       <p className="text-xs text-[var(--muted-foreground)]">
-        {userList.length} user{userList.length !== 1 ? 's' : ''} total.
+        {userList.length} user{userList.length !== 1 ? 's' : ''}
+        {invitationList.length > 0 && (
+          <>, {invitationList.length} pending invitation{invitationList.length !== 1 ? 's' : ''}</>
+        )}
+        {' '}total.
         The first registered user automatically becomes ADMIN.
       </p>
     </div>
