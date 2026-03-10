@@ -432,7 +432,7 @@ export class AuthController {
     return {
       message: sent
         ? `Invitation sent to ${dto.email}`
-        : `Invitation created for ${dto.email} (email could not be sent). Share this link manually.`,
+        : `Invitation created for ${dto.email} (email could not be sent — SMTP not configured). Share this link manually.`,
       inviteUrl: sent ? undefined : inviteUrl,
     };
   }
