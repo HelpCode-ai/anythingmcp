@@ -45,7 +45,11 @@ No SDK. No code changes. Just point, configure, and connect.
 > **Looking for an MCP gateway?** AnythingMCP acts as a universal MCP proxy and API-to-MCP bridge — the missing middleware between your APIs and AI agents.
 
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="AnythingMCP Demo" width="720" />
+  <a href="https://anythingmcp.com/en/video-promo">
+    <img src="docs/assets/demo.gif" alt="AnythingMCP Demo" width="720" />
+    <br/>
+    <strong>Watch the demo video</strong>
+  </a>
 </p>
 
 ---
@@ -238,12 +242,6 @@ npm run dev
 ```
 
 Or see the [Deployment Guide](docs/deployment.md#local-development) for manual setup.
-
----
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date)](https://star-history.com/#HelpCode-ai/anythingmcp&Date)
 
 ---
 
