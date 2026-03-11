@@ -45,11 +45,9 @@ No SDK. No code changes. Just point, configure, and connect.
 > **Looking for an MCP gateway?** AnythingMCP acts as a universal MCP proxy and API-to-MCP bridge — the missing middleware between your APIs and AI agents.
 
 <p align="center">
-  <a href="https://anythingmcp.com/en/video-promo">
-    <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo.gif" alt="AnythingMCP Demo" />
-    <br/>
-    <strong>Watch the demo video</strong>
-  </a>
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo.gif" alt="AnythingMCP Demo" />
+  <br/>
+  <a href="https://anythingmcp.com/en/video-promo"><strong>Watch the demo video</strong></a>
 </p>
 
 ---
