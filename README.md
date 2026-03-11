@@ -1,5 +1,4 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP Banner" width="100%" />
   <h1 align="center">AnythingMCP</h1>
   <p align="center">
     <strong>Convert any API into an MCP server in minutes.</strong><br/>
@@ -22,6 +21,10 @@
 
 <p align="center">
   <strong>⭐ Star this repo if you find it useful — it helps others discover AnythingMCP!</strong>
+</p>
+
+<p align="center">
+  <img src="docs/assets/banner.png" alt="AnythingMCP Banner" width="100%" />
 </p>
 
 ---
