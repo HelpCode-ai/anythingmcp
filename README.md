@@ -46,7 +46,7 @@ No SDK. No code changes. Just point, configure, and connect.
 
 <p align="center">
   <a href="https://anythingmcp.com/en/video-promo">
-    <img src="docs/assets/demo.gif" alt="AnythingMCP Demo" width="720" />
+    <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo.gif" alt="AnythingMCP Demo" width="720" />
     <br/>
     <strong>Watch the demo video</strong>
   </a>
