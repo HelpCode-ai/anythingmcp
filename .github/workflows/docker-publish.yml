@@ -1,10 +1,12 @@
 name: Publish Docker Image
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag override (leave empty for default tagging)"
+        required: false
+        type: string
 
 jobs:
   publish:
@@ -32,11 +34,10 @@ jobs:
         with:
           images: helpcodeai/anythingmcp
           tags: |
-            # "latest" on every push to main
-            type=raw,value=latest,enable={{is_default_branch}}
-            # semver tags: v1.2.3 → 1.2.3, 1.2, 1
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            # "latest" when no custom tag is provided
+            type=raw,value=latest,enable=${{ inputs.tag == '' }}
+            # custom tag from workflow input
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
             # short SHA for traceability
             type=sha,prefix=
 
@@ -57,7 +58,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: helpcodeai/anythingmcp
-          short-description: "Convert any API into an MCP server — REST, SOAP, GraphQL, Database. Self-hosted MCP middleware."
+          short-description: "Convert any API into an MCP server in minutes. REST, SOAP, GraphQL, Database to MCP. Self-hosted gateway & middleware for AI agents."
           readme-filepath: ./README.md
 
       - name: Set Docker Hub categories

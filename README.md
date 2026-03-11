@@ -7,9 +7,34 @@
   <p align="center">
     <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=social" alt="GitHub Stars"></a>&nbsp;
     <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSL--1.1-blue" alt="License"></a>&nbsp;
-    <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases" alt="Release"></a>
+    <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases" alt="Release"></a>&nbsp;
+    <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/badge/docker-ready-blue?logo=docker" alt="Docker Ready"></a>&nbsp;
+    <img src="https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript&logoColor=white" alt="TypeScript">&nbsp;
+    <img src="https://img.shields.io/badge/NestJS-11-red?logo=nestjs&logoColor=white" alt="NestJS">&nbsp;
+    <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white" alt="Next.js">&nbsp;
+    <a href="https://github.com/HelpCode-ai/anythingmcp/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome"></a>&nbsp;
+    <a href="https://github.com/HelpCode-ai/anythingmcp/graphs/contributors"><img src="https://img.shields.io/badge/contributors-welcome-orange" alt="Contributors Welcome"></a>&nbsp;
+    <a href="https://github.com/HelpCode-ai/anythingmcp/commits/main"><img src="https://img.shields.io/github/last-commit/HelpCode-ai/anythingmcp" alt="Last Commit"></a>&nbsp;
+    <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/release-date/HelpCode-ai/anythingmcp" alt="Release Date"></a>
   </p>
 </p>
+
+<p align="center">
+  <strong>⭐ Star this repo if you find it useful — it helps others discover AnythingMCP!</strong>
+</p>
+
+---
+
+## Deploy in One Click
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
+1. Click the button above to open the Railway template.
+2. Fill in the required environment variables (secrets are auto-generated for you).
+3. Click **Deploy** — Railway will build the container and provision a managed PostgreSQL database.
+4. Once the deploy is complete (2-3 minutes), open the generated URL and register your admin account. By default, only the admin can self-register — invite other users from the admin panel. Set `ALLOW_OPEN_REGISTRATION=true` to allow anyone to register.
+
+> **Self-hosting instead?** Run `./setup.sh` for the interactive Docker setup. See [Quick Start](#quick-start) below.
 
 ---
 
@@ -29,16 +54,29 @@ No SDK. No code changes. Just point, configure, and connect.
 
 ---
 
-## Deploy on Railway
+> 🏭 **Built for production** — AnythingMCP was born from real-world needs at a German industrial group connecting 15+ legacy systems (ERP, CRM, IoT) to AI agents.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
+---
 
-1. Click the button above to open the Railway template.
-2. Fill in the required environment variables (secrets are auto-generated for you).
-3. Click **Deploy** — Railway will build the container and provision a managed PostgreSQL database.
-4. Once the deploy is complete (2-3 minutes), open the generated URL and register your admin account. By default, only the admin can self-register — invite other users from the admin panel. Set `ALLOW_OPEN_REGISTRATION=true` to allow anyone to register.
+## Get Started in 60 Seconds
 
-> **Self-hosting instead?** Run `./setup.sh` for the interactive Docker setup. See [Quick Start](#quick-start) below.
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && ./setup.sh
+# Open http://localhost:3000 — done!
+```
+
+See the full [Quick Start](#quick-start) below for detailed configuration options.
+
+---
+
+## Use Cases
+
+- **Talk to your ERP from Claude Desktop** — connect SAP, Oracle, or any REST/SOAP ERP and query it conversationally
+- **Let AI agents query your production database safely** — read-only database connectors with audit logging
+- **Bridge legacy SOAP services to modern AI workflows** — automatic WSDL parsing, no code changes
+- **Aggregate multiple MCP servers behind one gateway** — MCP-to-MCP bridge for unified tool access
+- **Import your Postman collection and get MCP tools instantly** — zero-config API onboarding
 
 ---
 
@@ -51,6 +89,20 @@ No SDK. No code changes. Just point, configure, and connect.
 | You need to query databases from AI agents | **Database to MCP** with auto-generated query tools |
 | You want one MCP gateway for all your APIs | **MCP middleware** that aggregates multiple connectors |
 | You need auth, audit logs, and role-based access | Built-in **enterprise governance** layer |
+
+---
+
+## How AnythingMCP Compares
+
+| Feature | AnythingMCP | Custom MCP Server | Other Gateways |
+|---------|:-----------:|:-----------------:|:--------------:|
+| No-code setup | ✅ Visual editor | ❌ Write code | ⚠️ Config files |
+| SOAP / WSDL support | ✅ Built-in | ❌ Manual | ❌ Rare |
+| Database connectors | ✅ 7 engines | ❌ Build yourself | ⚠️ Limited |
+| Visual tool editor | ✅ | ❌ | ❌ |
+| Auth & audit trail | ✅ OAuth2, RBAC, logs | ❌ DIY | ⚠️ Partial |
+| Self-hosted | ✅ Docker / Railway | ✅ | ⚠️ Often SaaS-only |
+| Multi-client support | ✅ Claude, ChatGPT, Gemini, Copilot, Cursor | ✅ | ⚠️ Varies |
 
 ---
 
@@ -129,17 +181,6 @@ Each connector type has dedicated documentation with setup instructions, example
 
 ---
 
-## Documentation
-
-| Topic | Description |
-|-------|-------------|
-| [API Reference](docs/api-reference.md) | Full REST API for connectors, tools, auth, audit |
-| [Tool Definition Format](docs/tool-definition.md) | Parameters, endpoint mapping, response mapping |
-| [Deployment Guide](docs/deployment.md) | Docker, production setup, reverse proxy, env vars |
-| [Authentication](docs/deployment.md#authentication) | OAuth2, JWT, API keys, MCP auth modes |
-
----
-
 ## Architecture
 
 ```
@@ -162,6 +203,17 @@ Each connector type has dedicated documentation with setup instructions, example
 2. **Import or Define Tools** — Auto-import from OpenAPI/Postman/WSDL/GraphQL or define manually
 3. **Connect AI Clients** — Point your MCP client to `http://your-server:4000/mcp`
 4. **AI calls tools** — AnythingMCP translates MCP tool calls into actual API requests and returns results
+
+---
+
+## Documentation
+
+| Topic | Description |
+|-------|-------------|
+| [API Reference](docs/api-reference.md) | Full REST API for connectors, tools, auth, audit |
+| [Tool Definition Format](docs/tool-definition.md) | Parameters, endpoint mapping, response mapping |
+| [Deployment Guide](docs/deployment.md) | Docker, production setup, reverse proxy, env vars |
+| [Authentication](docs/deployment.md#authentication) | OAuth2, JWT, API keys, MCP auth modes |
 
 ---
 
@@ -193,6 +245,35 @@ Or see the [Deployment Guide](docs/deployment.md#local-development) for manual s
 
 ---
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date)](https://star-history.com/#HelpCode-ai/anythingmcp&Date)
+
+---
+
+## Community & Support
+
+- **Questions & Discussions** — [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions)
+- **Bug Reports** — [Open an issue](https://github.com/HelpCode-ai/anythingmcp/issues)
+- **Feature Requests** — [Request a feature](https://github.com/HelpCode-ai/anythingmcp/issues/new?labels=enhancement&template=feature_request.md)
+- **Built by** [helpcode.ai](https://helpcode.ai) — AI-powered software development from Germany
+
+---
+
+## Contributing
+
+We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) before submitting a PR.
+
+For security issues, see [SECURITY.md](SECURITY.md).
+
+---
+
+## GitHub Topics
+
+> **Maintainer note:** Consider adding these GitHub topics to maximize discoverability: `api-to-mcp`, `mcp-gateway`, `mcp-middleware`, `openapi`, `ai-agents`, `llm-tools`, `mcp-server`, `model-context-protocol`
+
+---
+
 ## License
 
 AnythingMCP is **source-available** under the [Business Source License 1.1](LICENSE) (BSL-1.1). This is _not_ an OSI-approved open-source license — see the [License FAQ](docs/license-faq.md) for a plain-language explanation.
@@ -206,11 +287,3 @@ For commercial licensing: [info@helpcode.ai](mailto:info@helpcode.ai)
 > **Transparency note:** AnythingMCP makes optional network calls to `anythingmcp.com` for license verification and email delivery when SMTP is not configured. No API credentials or tool invocation data is ever sent. See [External Services](docs/deployment.md#external-services) for full details.
 
 Copyright (c) 2026 helpcode.ai GmbH
-
----
-
-## Contributing
-
-We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) before submitting a PR.
-
-For security issues, see [SECURITY.md](SECURITY.md).
