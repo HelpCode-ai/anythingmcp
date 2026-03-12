@@ -32,11 +32,21 @@
 ## Deploy in One Click
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
+&nbsp;&nbsp;
+[![Install on DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://marketplace.digitalocean.com/apps/anythingmcp)
 
-1. Click the button above to open the Railway template.
+### Railway
+
+1. Click the Railway button above to open the Railway template.
 2. Fill in the required environment variables (secrets are auto-generated for you).
 3. Click **Deploy** — Railway will build the container and provision a managed PostgreSQL database.
 4. Once the deploy is complete (2-3 minutes), open the generated URL and register your admin account. By default, only the admin can self-register — invite other users from the admin panel. Set `ALLOW_OPEN_REGISTRATION=true` to allow anyone to register.
+
+### DigitalOcean Marketplace
+
+1. Click the DigitalOcean button above to open the [AnythingMCP listing on the DigitalOcean Marketplace](https://marketplace.digitalocean.com/apps/anythingmcp).
+2. Click **Create AnythingMCP Droplet** and choose your preferred droplet size and region.
+3. Once the droplet is ready, open the droplet IP in your browser and register your admin account.
 
 > **Self-hosting instead?** Run `./setup.sh` for the interactive Docker setup. See [Quick Start](#quick-start) below.
 
@@ -103,7 +113,7 @@ See the full [Quick Start](#quick-start) below for detailed configuration option
 | Database connectors | ✅ 7 engines | ❌ Build yourself | ⚠️ Limited |
 | Visual tool editor | ✅ | ❌ | ❌ |
 | Auth & audit trail | ✅ OAuth2, RBAC, logs | ❌ DIY | ⚠️ Partial |
-| Self-hosted | ✅ Docker / Railway | ✅ | ⚠️ Often SaaS-only |
+| Self-hosted | ✅ Docker / Railway / DigitalOcean | ✅ | ⚠️ Often SaaS-only |
 | Multi-client support | ✅ Claude, ChatGPT, Gemini, Copilot, Cursor | ✅ | ⚠️ Varies |
 
 ---
