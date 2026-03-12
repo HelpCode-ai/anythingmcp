@@ -6,6 +6,22 @@
 
 ---
 
+## One-Click Deploy
+
+The fastest way to get AnythingMCP running — no local setup required:
+
+| Platform | Link |
+|----------|------|
+| **Railway** | [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic) |
+| **DigitalOcean Marketplace** | [![Install on DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://marketplace.digitalocean.com/apps/anythingmcp) |
+
+- **Railway** builds the container and provisions a managed PostgreSQL database automatically. Fill in the environment variables and click Deploy.
+- **DigitalOcean Marketplace** creates a pre-configured Droplet with AnythingMCP installed. Choose your droplet size and region, then open the droplet IP in your browser.
+
+In both cases, the first user to register becomes **Admin**.
+
+---
+
 ## Quick Start (Docker)
 
 The fastest way to get started — the interactive setup script handles everything:
