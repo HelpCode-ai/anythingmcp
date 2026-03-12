@@ -50,6 +50,8 @@ export default function SettingsRolesPage() {
   const [managingToolsForRole, setManagingToolsForRole] = useState<string | null>(null);
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>([]);
   const [savingTools, setSavingTools] = useState(false);
+  const [collapsedConnectors, setCollapsedConnectors] = useState<Set<string>>(new Set());
+  const [toolSearch, setToolSearch] = useState('');
 
   const loadData = async () => {
     if (!token) return;
@@ -122,6 +124,14 @@ export default function SettingsRolesPage() {
   const handleManageTools = async (roleId: string) => {
     if (!token) return;
     setManagingToolsForRole(roleId);
+    setToolSearch('');
+    // Auto-collapse all connectors when there are many tools to avoid overflow
+    if (allTools.length > 10) {
+      const allConnectors = new Set(allTools.map((t) => t.connectorName));
+      setCollapsedConnectors(allConnectors);
+    } else {
+      setCollapsedConnectors(new Set());
+    }
     try {
       const access = await roles.getToolAccess(roleId, token);
       setSelectedToolIds(access.map((a: any) => a.tool.id));
@@ -166,6 +176,42 @@ export default function SettingsRolesPage() {
     setSelectedToolIds((prev) =>
       prev.includes(toolId) ? prev.filter((id) => id !== toolId) : [...prev, toolId],
     );
+  };
+
+  // Group tools by connector
+  const toolsByConnector = allTools.reduce<Record<string, ToolItem[]>>((acc, tool) => {
+    if (!acc[tool.connectorName]) acc[tool.connectorName] = [];
+    acc[tool.connectorName].push(tool);
+    return acc;
+  }, {});
+  const connectorNames = Object.keys(toolsByConnector).sort();
+
+  const toggleConnector = (connectorName: string) => {
+    setCollapsedConnectors((prev) => {
+      const next = new Set(prev);
+      if (next.has(connectorName)) next.delete(connectorName);
+      else next.add(connectorName);
+      return next;
+    });
+  };
+
+  const selectAllForConnector = (connectorName: string) => {
+    const ids = toolsByConnector[connectorName].map((t) => t.id);
+    setSelectedToolIds((prev) => [...new Set([...prev, ...ids])]);
+  };
+
+  const deselectAllForConnector = (connectorName: string) => {
+    const ids = new Set(toolsByConnector[connectorName].map((t) => t.id));
+    setSelectedToolIds((prev) => prev.filter((id) => !ids.has(id)));
+  };
+
+  const connectorSelectedCount = (connectorName: string) =>
+    toolsByConnector[connectorName].filter((t) => selectedToolIds.includes(t.id)).length;
+
+  const filteredToolsByConnector = (connectorName: string) => {
+    if (!toolSearch.trim()) return toolsByConnector[connectorName];
+    const q = toolSearch.toLowerCase();
+    return toolsByConnector[connectorName].filter((t) => t.name.toLowerCase().includes(q));
   };
 
   if (currentUser?.role !== 'ADMIN') {
@@ -331,34 +377,101 @@ export default function SettingsRolesPage() {
                           <p className="text-xs text-[var(--muted-foreground)]">No tools available. Create connectors and tools first.</p>
                         ) : (
                           <>
-                            <div className="flex gap-2 mb-3">
-                              <button
-                                onClick={() => setSelectedToolIds(allTools.map((t) => t.id))}
-                                className="text-xs text-[var(--brand)] hover:underline"
-                              >
-                                Select all
-                              </button>
-                              <button
-                                onClick={() => setSelectedToolIds([])}
-                                className="text-xs text-[var(--brand)] hover:underline"
-                              >
-                                Deselect all
-                              </button>
+                            {/* Global actions and search */}
+                            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                              <div className="flex gap-3 items-center">
+                                <button
+                                  onClick={() => setSelectedToolIds(allTools.map((t) => t.id))}
+                                  className="text-xs text-[var(--brand)] hover:underline font-medium"
+                                >
+                                  Select all ({allTools.length})
+                                </button>
+                                <button
+                                  onClick={() => setSelectedToolIds([])}
+                                  className="text-xs text-[var(--brand)] hover:underline font-medium"
+                                >
+                                  Deselect all
+                                </button>
+                                <span className="text-xs text-[var(--muted-foreground)]">
+                                  {selectedToolIds.length}/{allTools.length} selected
+                                </span>
+                              </div>
+                              <input
+                                type="text"
+                                value={toolSearch}
+                                onChange={(e) => setToolSearch(e.target.value)}
+                                placeholder="Search tools..."
+                                className="border border-[var(--input)] rounded-md px-2.5 py-1 text-xs bg-[var(--background)] w-48"
+                              />
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-60 overflow-auto">
-                              {allTools.map((tool) => (
-                                <label key={tool.id} className="flex items-center gap-2 text-sm cursor-pointer p-1.5 rounded hover:bg-[var(--accent)]">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedToolIds.includes(tool.id)}
-                                    onChange={() => toggleToolId(tool.id)}
-                                  />
-                                  <div className="min-w-0">
-                                    <span className="font-mono text-xs">{tool.name}</span>
-                                    <span className="text-[10px] text-[var(--muted-foreground)] ml-1">({tool.connectorName})</span>
+
+                            {/* Connectors accordion */}
+                            <div className="max-h-80 overflow-auto border border-[var(--border)] rounded-lg divide-y divide-[var(--border)]">
+                              {connectorNames.map((connectorName) => {
+                                const tools = filteredToolsByConnector(connectorName);
+                                const total = toolsByConnector[connectorName].length;
+                                const selected = connectorSelectedCount(connectorName);
+                                const isCollapsed = collapsedConnectors.has(connectorName);
+
+                                if (toolSearch.trim() && tools.length === 0) return null;
+
+                                return (
+                                  <div key={connectorName}>
+                                    {/* Connector header */}
+                                    <div className="flex items-center justify-between px-3 py-2.5 bg-[var(--muted)] hover:bg-[var(--accent)] transition-colors">
+                                      <button
+                                        onClick={() => toggleConnector(connectorName)}
+                                        className="flex items-center gap-2 flex-1 text-left"
+                                      >
+                                        <svg
+                                          className={`w-3.5 h-3.5 text-[var(--muted-foreground)] transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                                          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                                        >
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                        </svg>
+                                        <span className="text-sm font-medium">{connectorName}</span>
+                                        <span className="text-[10px] text-[var(--muted-foreground)] bg-[var(--background)] px-1.5 py-0.5 rounded-full">
+                                          {selected}/{total}
+                                        </span>
+                                      </button>
+                                      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                          onClick={() => selectAllForConnector(connectorName)}
+                                          className="text-[10px] text-[var(--brand)] hover:underline"
+                                        >
+                                          All
+                                        </button>
+                                        <button
+                                          onClick={() => deselectAllForConnector(connectorName)}
+                                          className="text-[10px] text-[var(--brand)] hover:underline"
+                                        >
+                                          None
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Tools list */}
+                                    {!isCollapsed && (
+                                      <div className="px-3 py-2 grid grid-cols-1 sm:grid-cols-2 gap-0.5">
+                                        {tools.map((tool) => (
+                                          <label
+                                            key={tool.id}
+                                            className="flex items-center gap-2 text-sm cursor-pointer px-2 py-1.5 rounded hover:bg-[var(--accent)]"
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={selectedToolIds.includes(tool.id)}
+                                              onChange={() => toggleToolId(tool.id)}
+                                              className="shrink-0"
+                                            />
+                                            <span className="font-mono text-xs truncate">{tool.name}</span>
+                                          </label>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
-                                </label>
-                              ))}
+                                );
+                              })}
                             </div>
                           </>
                         )}
