@@ -69,7 +69,7 @@ export class RestEngine {
     };
 
     // Inject authentication
-    this.injectAuth(axiosConfig, config);
+    await this.injectAuth(axiosConfig, config);
 
     // Query parameters
     if (endpointMapping.queryParams) {
@@ -164,14 +164,14 @@ export class RestEngine {
     }
   }
 
-  private injectAuth(
+  private async injectAuth(
     axiosConfig: AxiosRequestConfig,
     config: {
       authType: string;
       authConfig?: Record<string, unknown>;
       connectorId?: string;
     },
-  ): void {
+  ): Promise<void> {
     if (!config.authConfig) return;
 
     switch (config.authType) {
@@ -196,7 +196,7 @@ export class RestEngine {
         };
         break;
       case 'OAUTH2': {
-        const accessToken = this.oauth2TokenService.getAccessToken(
+        const accessToken = await this.oauth2TokenService.getAccessToken(
           config.authConfig,
           config.connectorId,
         );

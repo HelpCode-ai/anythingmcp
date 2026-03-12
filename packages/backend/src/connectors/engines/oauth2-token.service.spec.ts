@@ -33,20 +33,21 @@ describe('OAuth2TokenService', () => {
   });
 
   describe('getAccessToken', () => {
-    it('should return accessToken from authConfig when no cached token', () => {
-      const result = service.getAccessToken(
-        { accessToken: 'stored-token', tokenUrl: 'https://auth/token' },
+    it('should return accessToken from authConfig when no cached token and no expiry info', async () => {
+      // No expiresAt, no refreshToken → returns stored token (no refresh attempt)
+      const result = await service.getAccessToken(
+        { accessToken: 'stored-token' },
         'conn-1',
       );
       expect(result).toBe('stored-token');
     });
 
-    it('should return empty string when no accessToken in authConfig', () => {
-      const result = service.getAccessToken({}, 'conn-1');
+    it('should return empty string when no accessToken in authConfig', async () => {
+      const result = await service.getAccessToken({}, 'conn-1');
       expect(result).toBe('');
     });
 
-    it('should return cached token after a successful refresh', async () => {
+    it('should return cached token when well within validity', async () => {
       mockedAxios.post.mockResolvedValue({
         data: {
           access_token: 'refreshed-token',
@@ -62,11 +63,121 @@ describe('OAuth2TokenService', () => {
         'conn-1',
       );
 
-      const result = service.getAccessToken(
+      const result = await service.getAccessToken(
         { accessToken: 'old-token', tokenUrl: 'https://auth/token' },
         'conn-1',
       );
       expect(result).toBe('refreshed-token');
+    });
+
+    it('should proactively refresh when token is near expiry', async () => {
+      // First, populate the cache with a token that expires in 2 minutes (within 5-min buffer)
+      mockedAxios.post.mockResolvedValue({
+        data: {
+          access_token: 'first-token',
+          expires_in: 120, // 2 minutes — within 5-min buffer
+        },
+      });
+
+      await service.refreshToken(
+        { tokenUrl: 'https://auth/token', refreshToken: 'rt-123' },
+        'conn-1',
+      );
+
+      // Now mock the second refresh
+      mockedAxios.post.mockResolvedValue({
+        data: {
+          access_token: 'proactively-refreshed',
+          expires_in: 3600,
+        },
+      });
+
+      const result = await service.getAccessToken(
+        {
+          accessToken: 'old-token',
+          tokenUrl: 'https://auth/token',
+          refreshToken: 'rt-123',
+        },
+        'conn-1',
+      );
+
+      expect(result).toBe('proactively-refreshed');
+      // Two POST calls total: initial + proactive
+      expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+    });
+
+    it('should proactively refresh when authConfig.expiresAt is near expiry', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: {
+          access_token: 'proactive-token',
+          expires_in: 3600,
+        },
+      });
+
+      const result = await service.getAccessToken(
+        {
+          accessToken: 'old-token',
+          tokenUrl: 'https://auth/token',
+          refreshToken: 'rt-123',
+          expiresAt: Date.now() + 60000, // 1 minute — within 5-min buffer
+        },
+        'conn-1',
+      );
+
+      expect(result).toBe('proactive-token');
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('should fall back to stored token when proactive refresh fails', async () => {
+      mockedAxios.post.mockRejectedValue(new Error('Network error'));
+
+      const result = await service.getAccessToken(
+        {
+          accessToken: 'stored-token',
+          tokenUrl: 'https://auth/token',
+          refreshToken: 'rt-123',
+          expiresAt: Date.now() + 60000, // near expiry
+        },
+        'conn-1',
+      );
+
+      expect(result).toBe('stored-token');
+    });
+
+    it('should deduplicate concurrent refresh calls (mutex)', async () => {
+      let resolveRefresh: (value: any) => void;
+      const refreshPromise = new Promise((resolve) => {
+        resolveRefresh = resolve;
+      });
+
+      mockedAxios.post.mockImplementation(() => refreshPromise as any);
+
+      const authConfig = {
+        accessToken: 'old-token',
+        tokenUrl: 'https://auth/token',
+        refreshToken: 'rt-123',
+        expiresAt: Date.now() - 1000, // expired
+      };
+
+      // Launch two concurrent getAccessToken calls
+      const p1 = service.getAccessToken(authConfig, 'conn-1');
+      const p2 = service.getAccessToken(authConfig, 'conn-1');
+
+      // Resolve the single refresh
+      resolveRefresh!({
+        data: {
+          access_token: 'deduped-token',
+          expires_in: 3600,
+        },
+      });
+
+      const [r1, r2] = await Promise.all([p1, p2]);
+
+      // Both should get the same token
+      expect(r1).toBe('deduped-token');
+      expect(r2).toBe('deduped-token');
+      // Only one POST call should have been made
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -154,7 +265,7 @@ describe('OAuth2TokenService', () => {
       );
 
       // Should return cached token, not the one from authConfig
-      const token = service.getAccessToken(
+      const token = await service.getAccessToken(
         { accessToken: 'old', tokenUrl: 'https://auth/token' },
         'conn-1',
       );
@@ -238,9 +349,6 @@ describe('OAuth2TokenService', () => {
         'conn-1',
       );
 
-      // DB update should have been called (we verify the refresh token was preserved
-      // by checking the mock was called — detailed verification of encrypted content
-      // would require decrypting, which the service handles internally)
       expect(mockPrisma.connector.update).toHaveBeenCalled();
     });
   });

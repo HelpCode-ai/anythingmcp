@@ -11,7 +11,7 @@ describe('RestEngine', () => {
 
   beforeEach(() => {
     mockOAuth2TokenService = {
-      getAccessToken: jest.fn().mockReturnValue('oauth2-access-token'),
+      getAccessToken: jest.fn().mockResolvedValue('oauth2-access-token'),
       refreshToken: jest.fn().mockResolvedValue('new-access-token'),
     } as any;
     engine = new RestEngine(mockOAuth2TokenService);

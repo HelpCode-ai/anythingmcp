@@ -61,7 +61,7 @@ export class GraphqlEngine {
             String(config.authConfig.apiKey);
           break;
         case 'OAUTH2': {
-          const accessToken = this.oauth2TokenService.getAccessToken(
+          const accessToken = await this.oauth2TokenService.getAccessToken(
             config.authConfig,
             config.connectorId,
           );

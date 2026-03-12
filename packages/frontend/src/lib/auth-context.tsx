@@ -1,7 +1,8 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { users, AUTH_EXPIRED_EVENT } from './api';
 
 interface User {
   id: string;
@@ -35,15 +36,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const logout = useCallback(() => {
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem('amcp_token');
+    localStorage.removeItem('amcp_user');
+    // Clear cookie
+    document.cookie = 'amcp_token=; path=/; max-age=0';
+    router.push('/login');
+  }, [router]);
+
+  // On mount: restore saved token and validate it against the backend
   useEffect(() => {
     const savedToken = localStorage.getItem('amcp_token');
     const savedUser = localStorage.getItem('amcp_user');
+
     if (savedToken && savedUser) {
+      // Optimistically set state for instant UI
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
+
+      // Validate the token is still accepted by the backend
+      users.me(savedToken).then((freshUser) => {
+        setUser(freshUser);
+        localStorage.setItem('amcp_user', JSON.stringify(freshUser));
+        setIsLoading(false);
+      }).catch(() => {
+        // Token rejected — clear and redirect to login
+        setToken(null);
+        setUser(null);
+        localStorage.removeItem('amcp_token');
+        localStorage.removeItem('amcp_user');
+        document.cookie = 'amcp_token=; path=/; max-age=0';
+        setIsLoading(false);
+      });
+    } else {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for 401 events from api.ts to auto-logout
+  useEffect(() => {
+    const handleAuthExpired = () => logout();
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+  }, [logout]);
 
   useEffect(() => {
     const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'];
@@ -68,16 +105,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('amcp_user', JSON.stringify(updated));
       return updated;
     });
-  };
-
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem('amcp_token');
-    localStorage.removeItem('amcp_user');
-    // Clear cookie
-    document.cookie = 'amcp_token=; path=/; max-age=0';
-    router.push('/login');
   };
 
   return (
