@@ -11,7 +11,7 @@ describe('GraphqlEngine', () => {
 
   beforeEach(() => {
     mockOAuth2TokenService = {
-      getAccessToken: jest.fn().mockReturnValue('oauth2-access-token'),
+      getAccessToken: jest.fn().mockResolvedValue('oauth2-access-token'),
       refreshToken: jest.fn().mockResolvedValue('new-access-token'),
     } as any;
     engine = new GraphqlEngine(mockOAuth2TokenService);
@@ -203,7 +203,7 @@ describe('GraphqlEngine', () => {
   });
 
   it('should inject OAUTH2 auth using OAuth2TokenService', async () => {
-    mockOAuth2TokenService.getAccessToken.mockReturnValue('my-oauth-token');
+    mockOAuth2TokenService.getAccessToken.mockResolvedValue('my-oauth-token');
     mockedAxios.post.mockResolvedValue({ data: { data: { me: {} } } });
 
     await engine.execute(
@@ -254,7 +254,7 @@ describe('GraphqlEngine', () => {
   });
 
   it('should refresh OAuth2 token and retry on 401', async () => {
-    mockOAuth2TokenService.getAccessToken.mockReturnValue('expired-token');
+    mockOAuth2TokenService.getAccessToken.mockResolvedValue('expired-token');
     mockOAuth2TokenService.refreshToken.mockResolvedValue('fresh-token');
 
     // AxiosError is auto-mocked, so create instance and set properties manually

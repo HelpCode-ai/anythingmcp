@@ -81,6 +81,7 @@ export class McpOAuthCallbackController {
             clientId: flow.clientId,
             clientSecret: flow.clientSecret,
             expiresIn: tokens.expiresIn,
+            expiresAt: Date.now() + (tokens.expiresIn || 3600) * 1000,
             authorizedAt: new Date().toISOString(),
           },
         },

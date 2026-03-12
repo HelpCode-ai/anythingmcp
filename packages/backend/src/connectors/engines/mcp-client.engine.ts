@@ -1,17 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
-import axios from 'axios';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { OAuth2TokenService } from './oauth2-token.service';
 
 @Injectable()
 export class McpClientEngine {
   private readonly logger = new Logger(McpClientEngine.name);
 
-  // In-memory cache for refreshed OAuth2 tokens (keyed by tokenUrl)
-  private tokenCache = new Map<
-    string,
-    { accessToken: string; expiresAt: number }
-  >();
+  constructor(private readonly oauth2TokenService: OAuth2TokenService) {}
 
   async execute(
     config: {
@@ -19,6 +15,7 @@ export class McpClientEngine {
       authType: string;
       authConfig?: Record<string, unknown>;
       headers?: Record<string, string>;
+      connectorId?: string;
     },
     endpointMapping: {
       method: string; // MCP tool name on remote server
@@ -36,7 +33,7 @@ export class McpClientEngine {
     );
 
     const headers: Record<string, string> = { ...config.headers };
-    this.injectAuth(headers, config.authType, config.authConfig);
+    await this.injectAuth(headers, config.authType, config.authConfig, config.connectorId);
 
     const transport = new StreamableHTTPClientTransport(mcpUrl, {
       requestInit: { headers },
@@ -57,15 +54,18 @@ export class McpClientEngine {
 
       return result;
     } catch (error: any) {
-      // OAuth2 auto-refresh: retry once on auth error
+      // OAuth2 safety-net: retry once on auth error
       if (
         config.authType === 'OAUTH2' &&
         config.authConfig?.refreshToken &&
         config.authConfig?.tokenUrl &&
         error?.message?.includes?.('401')
       ) {
-        this.logger.debug('MCP OAuth2: token may be expired, attempting refresh...');
-        const newToken = await this.refreshOAuth2Token(config.authConfig);
+        this.logger.debug('MCP OAuth2: 401 despite proactive refresh, retrying...');
+        const newToken = await this.oauth2TokenService.refreshToken(
+          config.authConfig,
+          config.connectorId,
+        );
         if (newToken) {
           const retryHeaders: Record<string, string> = { ...config.headers };
           retryHeaders['Authorization'] = `Bearer ${newToken}`;
@@ -107,6 +107,7 @@ export class McpClientEngine {
     authConfig?: Record<string, unknown>;
     headers?: Record<string, string>;
     mcpPath?: string;
+    connectorId?: string;
   }): Promise<
     Array<{
       name: string;
@@ -119,7 +120,7 @@ export class McpClientEngine {
     this.logger.debug(`MCP listTools: ${mcpUrl.toString()}`);
 
     const headers: Record<string, string> = { ...config.headers };
-    this.injectAuth(headers, config.authType, config.authConfig);
+    await this.injectAuth(headers, config.authType, config.authConfig, config.connectorId);
 
     const transport = new StreamableHTTPClientTransport(mcpUrl, {
       requestInit: { headers },
@@ -151,11 +152,12 @@ export class McpClientEngine {
     }
   }
 
-  private injectAuth(
+  private async injectAuth(
     headers: Record<string, string>,
     authType: string,
     authConfig?: Record<string, unknown>,
-  ): void {
+    connectorId?: string,
+  ): Promise<void> {
     if (!authConfig) return;
 
     switch (authType) {
@@ -168,69 +170,15 @@ export class McpClientEngine {
         );
         break;
       case 'OAUTH2': {
-        let accessToken = String(authConfig.accessToken || '');
-
-        // Check if we have a cached (refreshed) token
-        const tokenUrl = String(authConfig.tokenUrl || '');
-        if (tokenUrl) {
-          const cached = this.tokenCache.get(tokenUrl);
-          if (cached && cached.expiresAt > Date.now()) {
-            accessToken = cached.accessToken;
-          }
-        }
-
+        const accessToken = await this.oauth2TokenService.getAccessToken(
+          authConfig,
+          connectorId,
+        );
         if (accessToken) {
           headers['Authorization'] = `Bearer ${accessToken}`;
         }
         break;
       }
-    }
-  }
-
-  private async refreshOAuth2Token(
-    authConfig: Record<string, unknown>,
-  ): Promise<string | null> {
-    const tokenUrl = String(authConfig.tokenUrl);
-    const refreshToken = String(authConfig.refreshToken);
-    const clientId = authConfig.clientId
-      ? String(authConfig.clientId)
-      : undefined;
-    const clientSecret = authConfig.clientSecret
-      ? String(authConfig.clientSecret)
-      : undefined;
-
-    try {
-      const body: Record<string, string> = {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-      };
-      if (clientId) body.client_id = clientId;
-      if (clientSecret) body.client_secret = clientSecret;
-
-      const response = await axios.post(
-        tokenUrl,
-        new URLSearchParams(body).toString(),
-        {
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          timeout: 10000,
-        },
-      );
-
-      const { access_token, expires_in } = response.data;
-      if (!access_token) return null;
-
-      // Cache the new token (default 1 hour if no expires_in)
-      const expiresInMs = (expires_in || 3600) * 1000;
-      this.tokenCache.set(tokenUrl, {
-        accessToken: access_token,
-        expiresAt: Date.now() + expiresInMs - 60000, // refresh 1 min early
-      });
-
-      this.logger.debug('MCP OAuth2: token refreshed successfully');
-      return access_token;
-    } catch (err: any) {
-      this.logger.warn(`MCP OAuth2 token refresh failed: ${err.message}`);
-      return null;
     }
   }
 }

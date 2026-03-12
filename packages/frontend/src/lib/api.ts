@@ -8,6 +8,9 @@ interface RequestOptions {
   token?: string;
 }
 
+// Emitted when any authenticated request gets a 401 — auth-context listens for this.
+export const AUTH_EXPIRED_EVENT = 'amcp:auth-expired';
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, token } = options;
 
@@ -26,6 +29,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   });
 
   if (!response.ok) {
+    // Auto-logout on 401 for authenticated requests
+    if (response.status === 401 && token) {
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+    }
     const error = await response.json().catch(() => ({ message: response.statusText }));
     throw new Error(error.message || `API error: ${response.status}`);
   }
