@@ -159,8 +159,10 @@ export class AuthController {
       data: { userId, token: linkToken, code, expiresAt },
     });
 
-    // Build verification link URL
-    const verifyUrl = `${this.getFrontendUrl(req)}/verify-email?token=${linkToken}`;
+    // Build verification link URL — route through anythingmcp.com so the
+    // link domain matches the Resend sending domain (avoids spam filters).
+    const instanceUrl = this.getFrontendUrl(req);
+    const verifyUrl = `https://anythingmcp.com/verify-email?token=${linkToken}&instance=${encodeURIComponent(instanceUrl)}`;
 
     // Send email
     try {
@@ -407,8 +409,10 @@ export class AuthController {
       },
     });
 
-    // Build invitation URL
-    const inviteUrl = `${this.getFrontendUrl(req)}/accept-invite?token=${inviteToken}`;
+    // Build invitation URL — route through anythingmcp.com so the
+    // link domain matches the Resend sending domain (avoids spam filters).
+    const instanceUrl = this.getFrontendUrl(req);
+    const inviteUrl = `https://anythingmcp.com/accept-invite?token=${inviteToken}&instance=${encodeURIComponent(instanceUrl)}`;
 
     // Get inviter's name for the email
     const inviter = await this.usersService.findById(req.user.sub);

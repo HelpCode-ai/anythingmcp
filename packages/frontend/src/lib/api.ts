@@ -202,6 +202,7 @@ export const server = {
       mcpAuthMode: string;
       serverUrl: string;
       mcpEndpoint: string;
+      hasUsers: boolean;
       registrationEnabled: boolean;
       oauthEndpoints: { wellKnown: string; authorize: string; token: string; register: string } | null;
     }>('/health/server-info'),
