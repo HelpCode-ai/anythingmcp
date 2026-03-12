@@ -38,6 +38,9 @@ function LoginForm() {
   useEffect(() => {
     server.info().then((info) => {
       setRegistrationEnabled(info.registrationEnabled);
+      if (!info.hasUsers) {
+        setIsRegister(true);
+      }
     }).catch(() => {});
   }, []);
 
@@ -237,6 +240,20 @@ function LoginForm() {
               {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
             </button>
           </p>
+
+          {isFirstUserFlag && (
+            <div className="text-center mt-3">
+              <button
+                onClick={() => {
+                  login(authToken, storedUser);
+                  setSetupStep('license-choice');
+                }}
+                className="text-sm text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline"
+              >
+                Skip for now
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );

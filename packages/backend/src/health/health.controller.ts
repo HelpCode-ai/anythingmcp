@@ -32,6 +32,7 @@ export class HealthController {
       mcpAuthMode: authMode,
       serverUrl,
       mcpEndpoint: '/mcp',
+      hasUsers: userCount > 0,
       registrationEnabled: userCount === 0 || allowOpen,
       oauthEndpoints: authMode === 'oauth2' || authMode === 'both'
         ? {
