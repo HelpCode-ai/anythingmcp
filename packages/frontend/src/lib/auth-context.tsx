@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { users, AUTH_EXPIRED_EVENT } from './api';
+import { users, server, AUTH_EXPIRED_EVENT } from './api';
 
 interface User {
   id: string;
@@ -18,6 +18,7 @@ interface AuthContextType {
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   isLoading: boolean;
+  deploymentMode: string;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -27,12 +28,14 @@ const AuthContext = createContext<AuthContextType>({
   logout: () => {},
   updateUser: () => {},
   isLoading: true,
+  deploymentMode: 'self-hosted',
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [deploymentMode, setDeploymentMode] = useState('self-hosted');
   const router = useRouter();
   const pathname = usePathname();
 
@@ -75,6 +78,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fetch deployment mode on mount
+  useEffect(() => {
+    server.info().then((info) => {
+      setDeploymentMode(info.deploymentMode || 'self-hosted');
+    }).catch(() => {});
+  }, []);
+
   // Listen for 401 events from api.ts to auto-logout
   useEffect(() => {
     const handleAuthExpired = () => logout();
@@ -108,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout, updateUser, isLoading }}>
+    <AuthContext.Provider value={{ token, user, login, logout, updateUser, isLoading, deploymentMode }}>
       {children}
     </AuthContext.Provider>
   );

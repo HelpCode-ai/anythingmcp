@@ -11,16 +11,19 @@ interface LicenseStatus {
   expiresAt: string | null;
   lastVerifiedAt: string | null;
   instanceId: string | null;
+  trialDaysLeft?: number;
 }
 
 export default function LicenseSettingsPage() {
-  const { token, user } = useAuth();
+  const { token, user, deploymentMode } = useAuth();
   const [status, setStatus] = useState<LicenseStatus | null>(null);
   const [licenseKey, setLicenseKey] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
+
+  const isCloud = deploymentMode === 'cloud';
 
   useEffect(() => {
     loadStatus();
@@ -83,6 +86,22 @@ export default function LicenseSettingsPage() {
       await loadStatus();
     } catch (err: any) {
       setError(err.message || 'Failed to register community license');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleActivateTrial = async () => {
+    if (!token) return;
+    setError('');
+    setMessage('');
+    setLoading(true);
+    try {
+      const result = await license.activateTrial(token);
+      setMessage(result.message);
+      await loadStatus();
+    } catch (err: any) {
+      setError(err.message || 'Failed to activate trial');
     } finally {
       setLoading(false);
     }
@@ -152,13 +171,23 @@ export default function LicenseSettingsPage() {
             <p className="text-sm text-[var(--muted-foreground)]">
               No license registered yet.
             </p>
-            <button
-              onClick={handleRegisterCommunity}
-              disabled={loading}
-              className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
-            >
-              {loading ? 'Registering...' : 'Register Free Community License'}
-            </button>
+            {isCloud ? (
+              <button
+                onClick={handleActivateTrial}
+                disabled={loading}
+                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+              >
+                {loading ? 'Activating...' : 'Start 7-Day Free Trial'}
+              </button>
+            ) : (
+              <button
+                onClick={handleRegisterCommunity}
+                disabled={loading}
+                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+              >
+                {loading ? 'Registering...' : 'Register Free Community License'}
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
@@ -180,10 +209,20 @@ export default function LicenseSettingsPage() {
               <div className="text-[var(--muted-foreground)] text-xs mb-0.5">Last Verified</div>
               <div>{formatDate(status.lastVerifiedAt)}</div>
             </div>
-            <div className="sm:col-span-2">
-              <div className="text-[var(--muted-foreground)] text-xs mb-0.5">Instance ID</div>
-              <div className="font-mono text-xs break-all">{status.instanceId || '—'}</div>
-            </div>
+            {status.trialDaysLeft !== undefined && (
+              <div>
+                <div className="text-[var(--muted-foreground)] text-xs mb-0.5">Trial Days Left</div>
+                <div className={`font-medium ${status.trialDaysLeft <= 2 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {status.trialDaysLeft} days
+                </div>
+              </div>
+            )}
+            {!isCloud && (
+              <div className="sm:col-span-2">
+                <div className="text-[var(--muted-foreground)] text-xs mb-0.5">Instance ID</div>
+                <div className="font-mono text-xs break-all">{status.instanceId || '—'}</div>
+              </div>
+            )}
           </div>
         )}
 
@@ -220,39 +259,59 @@ export default function LicenseSettingsPage() {
       )}
 
       {/* Change License Key */}
-      <section className="border border-[var(--border)] rounded-lg p-5 bg-[var(--card)]">
-        <h2 className="text-sm font-semibold mb-4">
-          {status?.plan ? 'Change License Key' : 'Activate License Key'}
-        </h2>
-        <p className="text-sm text-[var(--muted-foreground)] mb-4">
-          Purchase a license at{' '}
+      {!isCloud && (
+        <section className="border border-[var(--border)] rounded-lg p-5 bg-[var(--card)]">
+          <h2 className="text-sm font-semibold mb-4">
+            {status?.plan ? 'Change License Key' : 'Activate License Key'}
+          </h2>
+          <p className="text-sm text-[var(--muted-foreground)] mb-4">
+            Purchase a license at{' '}
+            <a
+              href="https://anythingmcp.com/pricing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--brand)] hover:underline font-medium"
+            >
+              anythingmcp.com
+            </a>
+          </p>
+
+          <div className="flex gap-3">
+            <input
+              type="text"
+              value={licenseKey}
+              onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+              placeholder="AMCP-XXXX-XXXX-XXXX-XXXX"
+              className="flex-1 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono tracking-wider"
+            />
+            <button
+              onClick={handleActivate}
+              disabled={loading || !licenseKey}
+              className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50 whitespace-nowrap"
+            >
+              {loading ? 'Activating...' : 'Activate'}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* Upgrade Plan (Cloud mode) */}
+      {isCloud && status?.plan === 'trial' && (
+        <section className="border border-[var(--border)] rounded-lg p-5 bg-[var(--card)]">
+          <h2 className="text-sm font-semibold mb-4">Upgrade Plan</h2>
+          <p className="text-sm text-[var(--muted-foreground)] mb-4">
+            Upgrade to a paid plan to continue using AnythingMCP Cloud after your trial ends.
+          </p>
           <a
             href="https://anythingmcp.com/pricing"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[var(--brand)] hover:underline font-medium"
+            className="inline-block bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"
           >
-            anythingmcp.com
+            View Plans
           </a>
-        </p>
-
-        <div className="flex gap-3">
-          <input
-            type="text"
-            value={licenseKey}
-            onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
-            placeholder="AMCP-XXXX-XXXX-XXXX-XXXX"
-            className="flex-1 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono tracking-wider"
-          />
-          <button
-            onClick={handleActivate}
-            disabled={loading || !licenseKey}
-            className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50 whitespace-nowrap"
-          >
-            {loading ? 'Activating...' : 'Activate'}
-          </button>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }
