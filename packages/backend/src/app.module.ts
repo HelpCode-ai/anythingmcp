@@ -29,6 +29,11 @@ import { LocalOAuthProvider } from './auth/local-oauth.provider';
 import { PrismaOAuthStore } from './auth/prisma-oauth.store';
 import { PrismaService } from './common/prisma.service';
 import { OAuthUrlRewriteInterceptor } from './auth/oauth-url-rewrite.interceptor';
+import { CloudModule } from './cloud/cloud.module';
+
+// Determine deployment and auth mode from env
+const useCloud = process.env.DEPLOYMENT_MODE === 'cloud';
+const cloudImports = useCloud ? [CloudModule] : [];
 
 // Determine auth mode from env
 const authMode = process.env.MCP_AUTH_MODE || 'none';
@@ -113,6 +118,9 @@ if (useOAuth) {
     RolesModule,
     McpServersModule,
     LicenseModule,
+
+    // Cloud-specific modules (conditionally loaded)
+    ...cloudImports,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

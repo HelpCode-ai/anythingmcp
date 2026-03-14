@@ -16,6 +16,7 @@ import { PostmanParser } from './parsers/postman.parser';
 import { CurlParser } from './parsers/curl.parser';
 import { McpOAuthService } from './mcp-oauth.service';
 import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
+import { LicenseModule } from '../license/license.module';
 
 const ENGINES = [
   RestEngine,
@@ -28,7 +29,7 @@ const ENGINES = [
 const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlParser];
 
 @Module({
-  imports: [McpServerModule],
+  imports: [McpServerModule, LicenseModule],
   controllers: [ConnectorsController, McpOAuthCallbackController, ToolsController],
   providers: [ConnectorsService, McpOAuthService, OAuth2TokenService, ...ENGINES, ...PARSERS],
   exports: [ConnectorsService, McpOAuthService, OAuth2TokenService, ...ENGINES],

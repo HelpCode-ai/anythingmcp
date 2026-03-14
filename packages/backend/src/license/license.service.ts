@@ -89,6 +89,63 @@ export class LicenseService implements OnModuleInit {
     }
   }
 
+  // ── Cloud Trial License ──────────────────────────────────────────────────
+
+  async requestTrialLicense(
+    email: string,
+    name: string,
+  ): Promise<{ licenseKey: string; plan: string; expiresAt: string; trialDaysLeft: number }> {
+    const instanceId = await this.getInstanceId();
+
+    try {
+      const { data } = await axios.post(
+        `${this.apiBase}/api/license/trial`,
+        { email, name, instanceId },
+        { timeout: 10000 },
+      );
+
+      // Auto-activate the trial key locally
+      await this.prisma.license.upsert({
+        where: { licenseKey: data.licenseKey },
+        update: {
+          plan: 'trial',
+          status: 'active',
+          features: data.features || undefined,
+          expiresAt: new Date(data.expiresAt),
+          lastVerifiedAt: new Date(),
+          instanceId,
+        },
+        create: {
+          licenseKey: data.licenseKey,
+          plan: 'trial',
+          status: 'active',
+          features: data.features || undefined,
+          expiresAt: new Date(data.expiresAt),
+          lastVerifiedAt: new Date(),
+          instanceId,
+        },
+      });
+
+      await this.siteSettings.set('license_key', data.licenseKey);
+
+      return {
+        licenseKey: data.licenseKey,
+        plan: data.plan,
+        expiresAt: data.expiresAt,
+        trialDaysLeft: data.trialDaysLeft,
+      };
+    } catch (err: any) {
+      if (err.response?.status === 409) {
+        throw new Error('A trial license already exists for this email.');
+      }
+      if (err.response?.status === 429) {
+        throw new Error('Too many requests. Please try again later.');
+      }
+      this.logger.warn(`Trial license request failed: ${err.message}`);
+      throw new Error('Failed to start trial. Please try again later.');
+    }
+  }
+
   // ── License Activation ─────────────────────────────────────────────────────
 
   async activateLicense(licenseKey: string): Promise<boolean> {

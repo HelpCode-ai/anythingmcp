@@ -7,6 +7,7 @@ import {
   Req,
   UseGuards,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -15,6 +16,7 @@ import { IsString, Matches } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { LicenseService } from './license.service';
 import { UsersService } from '../users/users.service';
+import { DeploymentService } from '../common/deployment.service';
 
 class SetLicenseKeyDto {
   @IsString()
@@ -32,6 +34,7 @@ export class LicenseController {
   constructor(
     private readonly licenseService: LicenseService,
     private readonly usersService: UsersService,
+    private readonly deployment: DeploymentService,
   ) {}
 
   @Get('status')
@@ -41,6 +44,12 @@ export class LicenseController {
     if (!license) {
       return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
     }
+
+    const trialDaysLeft =
+      license.plan === 'trial' && license.expiresAt
+        ? Math.max(0, Math.ceil((new Date(license.expiresAt).getTime() - Date.now()) / 86400000))
+        : undefined;
+
     return {
       plan: license.plan,
       status: license.status,
@@ -48,6 +57,7 @@ export class LicenseController {
       expiresAt: license.expiresAt,
       lastVerifiedAt: license.lastVerifiedAt,
       instanceId: license.instanceId,
+      ...(trialDaysLeft !== undefined && { trialDaysLeft }),
     };
   }
 
@@ -80,6 +90,35 @@ export class LicenseController {
   async verifyLicense() {
     const result = await this.licenseService.verifyLicense();
     return result;
+  }
+
+  @Post('activate-trial')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Start a 7-day cloud trial (cloud mode only)' })
+  async activateTrial(@Req() req: any) {
+    if (!this.deployment.isCloud()) {
+      throw new ForbiddenException('Trial activation is only available in cloud mode');
+    }
+
+    const user = await this.usersService.findById(req.user.sub);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    try {
+      const result = await this.licenseService.requestTrialLicense(
+        user.email,
+        user.name || user.email,
+      );
+      return {
+        message: 'Trial activated successfully',
+        trialStarted: true,
+        ...result,
+      };
+    } catch (err: any) {
+      throw new BadRequestException(err.message || 'Failed to activate trial');
+    }
   }
 
   @Post('register-community')

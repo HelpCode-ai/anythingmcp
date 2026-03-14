@@ -15,6 +15,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsOptional, IsBoolean, IsArray } from 'class-validator';
 import { McpServersService } from './mcp-servers.service';
+import { LicenseGuardService } from '../license/license-guard.service';
 
 class CreateMcpServerDto {
   @IsString()
@@ -58,7 +59,10 @@ class AssignConnectorsDto {
 @UseGuards(AuthGuard('jwt'))
 @Controller('api/mcp-servers')
 export class McpServersController {
-  constructor(private readonly mcpServersService: McpServersService) {}
+  constructor(
+    private readonly mcpServersService: McpServersService,
+    private readonly licenseGuard: LicenseGuardService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List MCP servers for current user' })
@@ -69,6 +73,7 @@ export class McpServersController {
   @Post()
   @ApiOperation({ summary: 'Create a new MCP server' })
   async create(@Req() req: any, @Body() dto: CreateMcpServerDto) {
+    await this.licenseGuard.checkCanCreateMcpServer(req.user.sub);
     return this.mcpServersService.create(req.user.sub, dto);
   }
 

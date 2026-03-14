@@ -7,7 +7,7 @@ import { auth, license, server } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { LogoIcon } from '@/components/nav-bar';
 
-type SetupStep = 'auth' | 'verify-email' | 'license-choice' | 'license-email-sent' | 'license-key';
+type SetupStep = 'auth' | 'verify-email' | 'license-choice' | 'license-email-sent' | 'license-key' | 'trial-activated';
 
 function LoginForm() {
   const [email, setEmail] = useState('');
@@ -28,6 +28,8 @@ function LoginForm() {
   const [resendMessage, setResendMessage] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  const [isCloudMode, setIsCloudMode] = useState(false);
+  const [trialDaysLeft, setTrialDaysLeft] = useState(0);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
@@ -38,6 +40,7 @@ function LoginForm() {
   useEffect(() => {
     server.info().then((info) => {
       setRegistrationEnabled(info.registrationEnabled);
+      setIsCloudMode(info.deploymentMode === 'cloud');
       if (!info.hasUsers) {
         setIsRegister(true);
       }
@@ -90,7 +93,17 @@ function LoginForm() {
         setSetupStep('verify-email');
       } else {
         login(result.accessToken, result.user);
-        if (needsLicenseSetup) {
+        if (isCloudMode && needsLicenseSetup) {
+          // Cloud mode: auto-activate trial for verified users
+          setAuthToken(result.accessToken);
+          try {
+            const trialResult = await license.activateTrial(result.accessToken);
+            setTrialDaysLeft(trialResult.trialDaysLeft);
+            setSetupStep('trial-activated');
+          } catch {
+            router.push(redirectTo);
+          }
+        } else if (needsLicenseSetup) {
           setAuthToken(result.accessToken);
           setSetupStep('license-choice');
         } else {
@@ -113,7 +126,18 @@ function LoginForm() {
       // Email verified — now log in and proceed
       const verifiedUser = { ...storedUser, emailVerified: true };
       login(authToken, verifiedUser);
-      if (isFirstUserFlag) {
+
+      if (isCloudMode) {
+        // Cloud mode: auto-activate trial
+        try {
+          const trialResult = await license.activateTrial(authToken);
+          setTrialDaysLeft(trialResult.trialDaysLeft);
+          setSetupStep('trial-activated');
+        } catch (trialErr: any) {
+          // Trial may already exist (e.g. returning user) — go to dashboard
+          router.push(redirectTo);
+        }
+      } else if (isFirstUserFlag) {
         setSetupStep('license-choice');
       } else {
         router.push(redirectTo);
@@ -254,6 +278,62 @@ function LoginForm() {
               </button>
             </div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Trial Activated Step (Cloud Mode) ───────────────────────────────────
+
+  if (setupStep === 'trial-activated') {
+    return (
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <LogoIcon size={56} />
+          </div>
+          <h1 className="text-2xl font-bold">Trial Activated!</h1>
+          <p className="text-[var(--muted-foreground)] mt-1 text-sm">
+            Your 7-day free trial is now active
+          </p>
+        </div>
+
+        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
+          <div className="text-center mb-4">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-900 mb-3">
+              <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p className="text-sm text-[var(--muted-foreground)]">
+              You have <strong>{trialDaysLeft} days</strong> to explore AnythingMCP Cloud.
+            </p>
+          </div>
+
+          <div className="bg-[var(--background)] rounded-md p-4 mb-4">
+            <p className="text-xs font-medium text-[var(--muted-foreground)] mb-2">YOUR TRIAL INCLUDES</p>
+            <ul className="space-y-1.5 text-sm">
+              <li className="flex items-center gap-2">
+                <span className="text-green-500">&#10003;</span> Up to 2 connectors
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-green-500">&#10003;</span> Up to 2 MCP servers
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-green-500">&#10003;</span> 1 user seat
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-green-500">&#10003;</span> Full audit log
+              </li>
+            </ul>
+          </div>
+
+          <button
+            onClick={() => router.push(redirectTo)}
+            className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90"
+          >
+            Get Started
+          </button>
         </div>
       </div>
     );

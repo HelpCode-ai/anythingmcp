@@ -9,6 +9,7 @@ import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
 import { DatabaseEngine } from '../connectors/engines/database.engine';
 import { AuditService } from '../audit/audit.service';
 import { RedisService } from '../common/redis.service';
+import { LicenseGuardService } from '../license/license-guard.service';
 import { interpolateConnectorConfig } from '../common/env-interpolation.util';
 
 /**
@@ -25,6 +26,7 @@ export class DynamicMcpTools {
     private readonly toolRegistry: ToolRegistry,
     private readonly auditService: AuditService,
     private readonly redisService: RedisService,
+    private readonly licenseGuard: LicenseGuardService,
     private readonly restEngine: RestEngine,
     private readonly graphqlEngine: GraphqlEngine,
     private readonly soapEngine: SoapEngine,
@@ -48,6 +50,23 @@ export class DynamicMcpTools {
       mcpServerName?: string;
     },
   ): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
+    // Check license before executing tool (cloud mode only)
+    try {
+      await this.licenseGuard.checkLicenseActive();
+    } catch (err: any) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: err.message || 'Your license has expired. Please purchase a license at anythingmcp.com/pricing',
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
+
     const tool = this.toolRegistry.getTool(toolName);
     if (!tool) {
       return {

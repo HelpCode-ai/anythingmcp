@@ -32,6 +32,7 @@ import { McpClientEngine } from './engines/mcp-client.engine';
 import { McpOAuthService } from './mcp-oauth.service';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
+import { LicenseGuardService } from '../license/license-guard.service';
 import { decrypt } from '../common/crypto/encryption.util';
 
 class CreateConnectorDto {
@@ -135,6 +136,7 @@ export class ConnectorsController {
     private readonly prisma: PrismaService,
     private readonly mcpServer: McpServerService,
     private readonly configService: ConfigService,
+    private readonly licenseGuard: LicenseGuardService,
   ) {
     this.encryptionKey =
       this.configService.get<string>('ENCRYPTION_KEY') ||
@@ -158,6 +160,7 @@ export class ConnectorsController {
   @Post()
   @ApiOperation({ summary: 'Create a new connector' })
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
+    await this.licenseGuard.checkCanCreateConnector(req.user.sub);
     const connector = await this.connectorsService.create(req.user.sub, dto);
 
     // Auto-create default tools for DATABASE connectors

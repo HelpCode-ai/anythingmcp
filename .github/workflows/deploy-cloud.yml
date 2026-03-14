@@ -1,0 +1,45 @@
+name: Deploy Cloud
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Docker image tag to deploy (default: latest)"
+        required: false
+        default: "latest"
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy to Cloud Droplet
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.CLOUD_HOST }}
+          username: root
+          key: ${{ secrets.CLOUD_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/anythingmcp-cloud
+
+            # Pull latest image
+            docker pull helpcodeai/anythingmcp:${{ inputs.tag }}
+
+            # Update compose and Caddyfile from repo
+            curl -fsSL -H "Authorization: token ${{ secrets.GH_DEPLOY_TOKEN }}" \
+              -o docker-compose.cloud.yml \
+              "https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/${{ github.sha }}/docker-compose.cloud.yml"
+            curl -fsSL -H "Authorization: token ${{ secrets.GH_DEPLOY_TOKEN }}" \
+              -o Caddyfile \
+              "https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/${{ github.sha }}/deploy/cloud/Caddyfile"
+
+            # Restart services
+            docker compose -f docker-compose.cloud.yml up -d --remove-orphans
+            docker image prune -f
+
+            echo "Deployment complete"

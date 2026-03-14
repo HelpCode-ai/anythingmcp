@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Providers } from './providers';
+import { TrialBanner } from '@/components/trial-banner';
+import { LicenseWall } from '@/components/license-wall';
 
 export const metadata: Metadata = {
   title: 'Anything MCP',
@@ -22,7 +24,11 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          <TrialBanner />
+          <LicenseWall />
+          {children}
+        </Providers>
       </body>
     </html>
   );

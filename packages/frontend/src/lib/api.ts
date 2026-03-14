@@ -1,6 +1,6 @@
 // Use relative paths so requests go to the same origin.
 // In production (Docker / Railway) Next.js rewrites proxy /api/* to the backend.
-const API_BASE = '';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
 interface RequestOptions {
   method?: string;
@@ -202,6 +202,7 @@ export const server = {
       mcpAuthMode: string;
       serverUrl: string;
       mcpEndpoint: string;
+      deploymentMode: string;
       hasUsers: boolean;
       registrationEnabled: boolean;
       oauthEndpoints: { wellKnown: string; authorize: string; token: string; register: string } | null;
@@ -267,7 +268,12 @@ export const mcpKeys = {
 // License
 export const license = {
   getStatus: () =>
-    request<{ plan: string | null; status: string; features: any; expiresAt: string | null; lastVerifiedAt: string | null; instanceId: string | null }>('/api/license/status'),
+    request<{ plan: string | null; status: string; features: any; expiresAt: string | null; lastVerifiedAt: string | null; instanceId: string | null; trialDaysLeft?: number }>('/api/license/status'),
+  activateTrial: (token: string) =>
+    request<{ message: string; trialStarted: boolean; licenseKey: string; plan: string; expiresAt: string; trialDaysLeft: number }>('/api/license/activate-trial', {
+      method: 'POST',
+      token,
+    }),
   setKey: (licenseKey: string, token: string) =>
     request<{ message: string; license: any }>('/api/license/key', {
       method: 'PUT',

@@ -10,6 +10,7 @@ import {
 import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { UsersService } from '../users/users.service';
+import { DeploymentService } from '../common/deployment.service';
 
 @ApiTags('Health')
 @Controller('health')
@@ -20,6 +21,7 @@ export class HealthController {
     private readonly redis: RedisService,
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
+    private readonly deployment: DeploymentService,
   ) {}
 
   @Get('server-info')
@@ -32,6 +34,7 @@ export class HealthController {
       mcpAuthMode: authMode,
       serverUrl,
       mcpEndpoint: '/mcp',
+      deploymentMode: this.deployment.mode,
       hasUsers: userCount > 0,
       registrationEnabled: userCount === 0 || allowOpen,
       oauthEndpoints: authMode === 'oauth2' || authMode === 'both'
