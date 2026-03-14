@@ -1,0 +1,20 @@
+{$DOMAIN} {
+	# Backend API, health, MCP endpoints
+	handle /api/* {
+		reverse_proxy app:4000
+	}
+	handle /health* {
+		reverse_proxy app:4000
+	}
+	handle /mcp* {
+		reverse_proxy app:4000
+	}
+	handle /.well-known/* {
+		reverse_proxy app:4000
+	}
+
+	# Frontend (Next.js)
+	handle {
+		reverse_proxy app:3000
+	}
+}

@@ -1,0 +1,97 @@
+# =============================================================================
+# AnythingMCP Cloud — Managed SaaS Deployment
+# =============================================================================
+# Usage:  docker compose -f docker-compose.cloud.yml up -d
+# Domain: cloud.anythingmcp.com
+# =============================================================================
+
+name: amcp-cloud
+
+services:
+
+  # Caddy Reverse Proxy — automatic HTTPS via Let's Encrypt
+  caddy:
+    image: caddy:2-alpine
+    container_name: amcp-cloud-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # NestJS Backend + Next.js Frontend (single container)
+  app:
+    image: helpcodeai/anythingmcp:latest
+    container_name: amcp-cloud-app
+    expose:
+      - "3000"
+      - "4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - DEPLOYMENT_MODE=cloud
+      - NEXT_PUBLIC_API_URL=https://${DOMAIN}
+      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - CORS_ORIGIN=https://${DOMAIN}
+      - SERVER_URL=https://${DOMAIN}
+      - FRONTEND_URL=https://${DOMAIN}
+      - MCP_AUTH_MODE=${MCP_AUTH_MODE:-oauth2}
+      - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-true}
+      - LICENSE_API_URL=${LICENSE_API_URL:-https://anythingmcp.com}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: amcp-cloud-postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=amcp
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=anythingmcp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amcp -d anythingmcp"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache — caching & rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: amcp-cloud-redis
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
