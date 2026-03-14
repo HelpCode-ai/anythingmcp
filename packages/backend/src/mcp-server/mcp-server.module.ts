@@ -11,6 +11,7 @@ import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
 import { DatabaseEngine } from '../connectors/engines/database.engine';
 import { OAuth2TokenService } from '../connectors/engines/oauth2-token.service';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
+import { LicenseModule } from '../license/license.module';
 
 const ENGINES = [
   RestEngine,
@@ -21,7 +22,7 @@ const ENGINES = [
 ];
 
 @Module({
-  imports: [McpServersModule],
+  imports: [McpServersModule, LicenseModule],
   controllers: [McpEndpointController],
   providers: [McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, OAuth2TokenService, ...ENGINES],
   exports: [McpServerService, ToolRegistry],
