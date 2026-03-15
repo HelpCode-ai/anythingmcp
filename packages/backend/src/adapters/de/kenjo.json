@@ -1,0 +1,125 @@
+{
+  "slug": "kenjo",
+  "name": "Kenjo HR",
+  "description": "Access Kenjo HR data including employees, absences, time tracking, departments, and recruiting. German HR software for manufacturing, services, and retail companies.",
+  "region": "de",
+  "category": "hr",
+  "icon": "kenjo",
+  "docsUrl": "https://kenjo.readme.io/reference",
+  "requiredEnvVars": ["KENJO_API_KEY"],
+  "connector": {
+    "name": "Kenjo HR",
+    "type": "REST",
+    "baseUrl": "https://api.kenjo.io/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{KENJO_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "kenjo_list_employees",
+      "description": "List employees from Kenjo HR. Returns employee name, email, department, position, and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Results per page (default: 25)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/employees",
+        "queryParams": {
+          "page": "${page}",
+          "limit": "${limit}"
+        }
+      }
+    },
+    {
+      "name": "kenjo_get_employee",
+      "description": "Get detailed information about a specific employee including personal data, work info, and department.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employeeId": {
+            "type": "string",
+            "description": "The Kenjo employee ID"
+          }
+        },
+        "required": ["employeeId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/employees/${employeeId}"
+      }
+    },
+    {
+      "name": "kenjo_list_departments",
+      "description": "List departments from Kenjo HR. Returns department name, head, and employee count.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments"
+      }
+    },
+    {
+      "name": "kenjo_list_offices",
+      "description": "List office locations from Kenjo HR.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offices"
+      }
+    },
+    {
+      "name": "kenjo_list_positions",
+      "description": "List open recruiting positions (job openings) from Kenjo. Returns position title, department, and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Results per page (default: 25)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recruiting/positions",
+        "queryParams": {
+          "page": "${page}",
+          "limit": "${limit}"
+        }
+      }
+    },
+    {
+      "name": "kenjo_list_teams",
+      "description": "List teams from Kenjo HR.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams"
+      }
+    }
+  ]
+}

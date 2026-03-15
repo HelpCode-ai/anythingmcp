@@ -1,0 +1,38 @@
+---
+title: "DATEV mit KI-Agenten via MCP verbinden — KI für die Buchhaltung"
+description: "DATEV Buchhaltung über MCP mit KI-Agenten verbinden. Mandanten, Belege und Lohndaten per natürlicher Sprache abrufen. Der erste DATEV MCP Server."
+category: "connectors"
+keyword: "DATEV MCP Server, DATEV KI, DATEV mit Claude, DATEV ChatGPT, DATEV Schnittstelle KI, Steuerberater KI"
+publishedAt: "2026-03-15"
+adapterSlug: "datev"
+---
+
+## DATEV mit KI-Agenten verbinden
+
+DATEV ist die dominierende Buchhaltungs- und Steuersoftware in Deutschland — genutzt von fast jedem Steuerberater und Tausenden von Unternehmen. Trotz seiner Marktdominanz gab es bisher keinen MCP-Server für DATEV.
+
+Mit AnythingMCP verbinden Sie die offiziellen DATEV Online APIs mit jedem MCP-kompatiblen KI-Agenten (Claude, ChatGPT, Gemini usw.).
+
+## Schnelleinrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Registrieren Sie sich im [DATEV Developer Portal](https://developer.datev.de), erstellen Sie eine Anwendung und importieren Sie den DATEV-Adapter.
+
+## Verfügbare Tools
+
+| Tool | Beschreibung |
+|------|-------------|
+| `datev_list_clients` | Mandanten auflisten |
+| `datev_list_documents` | Belege eines Mandanten auflisten |
+| `datev_get_document` | Belegdetails per GUID abrufen |
+| `datev_upload_document` | Rechnungen/Belege in DATEV Belege online hochladen |
+
+## KI-Anwendungsfälle
+
+- **"Liste alle meine DATEV-Mandanten"**
+- **"Zeige die Belege dieses Monats für Mandant Müller"**
+- **"Lade diese Rechnung in DATEV Belege online hoch"**

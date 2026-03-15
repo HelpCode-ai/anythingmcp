@@ -1,0 +1,35 @@
+---
+title: "How to Connect ScopeVisio to Claude for AI-Powered ERP"
+description: "Connect ScopeVisio cloud ERP to Claude AI using MCP. Manage contacts, invoices, and projects with natural language."
+category: "connectors"
+keyword: "ScopeVisio Claude, ScopeVisio AI, connect ScopeVisio to Claude, ScopeVisio MCP"
+publishedAt: "2026-03-15"
+adapterSlug: "scopevisio"
+---
+
+## Connect ScopeVisio to Claude
+
+ScopeVisio is a German cloud ERP platform. With AnythingMCP, connect it to Claude and query your business data in natural language.
+
+### Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Import the **ScopeVisio** adapter, enter your Bearer token, and connect Claude.
+
+```json
+{
+  "mcpServers": {
+    "scopevisio": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+### Use Cases
+
+- **"List all contacts tagged as customers"**
+- **"Show outgoing invoices from this quarter"**
+- **"What projects are behind schedule?"**

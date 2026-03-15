@@ -1,0 +1,45 @@
+---
+title: "How to Connect DATEV to Claude — AI for German Accounting"
+description: "Connect DATEV to Claude AI using MCP. Access accounting clients, documents, and payroll data with natural language. Step-by-step guide."
+category: "connectors"
+keyword: "DATEV Claude, DATEV AI, connect DATEV to Claude, DATEV MCP Claude, DATEV Steuerberater KI"
+publishedAt: "2026-03-15"
+adapterSlug: "datev"
+---
+
+## Connect DATEV to Claude
+
+DATEV is the backbone of German accounting — used by nearly every tax consultant. With AnythingMCP, you can connect DATEV's Online APIs to Claude and manage accounting data with natural language.
+
+### What You Can Do
+
+- "List all my DATEV clients"
+- "Show documents uploaded this month for client Müller"
+- "Upload this receipt to DATEV Belege online"
+- "Which clients have pending documents?"
+
+### Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+1. Register at the [DATEV Developer Portal](https://developer.datev.de) and create an application
+2. Import the **DATEV** adapter in the store
+3. Enter your OAuth 2.0 credentials (Client ID, Client Secret, Auth URL, Token URL)
+4. Assign to an MCP server
+
+### Connect Claude
+
+```json
+{
+  "mcpServers": {
+    "datev": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+### Why This Matters
+
+DATEV has 15+ REST APIs but no MCP server. AnythingMCP bridges this gap, giving tax consultants and businesses AI-powered access to their DATEV data for the first time.

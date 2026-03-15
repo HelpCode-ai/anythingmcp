@@ -1,0 +1,111 @@
+{
+  "slug": "datev",
+  "name": "DATEV Accounting",
+  "description": "Connect to DATEV accounting systems via the official DATEV Online APIs. Access accounting documents, clients, payroll data, and HR reporting. Used by nearly every German tax consultant.",
+  "region": "de",
+  "category": "accounting",
+  "icon": "datev",
+  "docsUrl": "https://developer.datev.de/en/products",
+  "requiredEnvVars": ["DATEV_CLIENT_ID", "DATEV_CLIENT_SECRET", "DATEV_TOKEN_URL", "DATEV_AUTH_URL"],
+  "connector": {
+    "name": "DATEV Online APIs",
+    "type": "REST",
+    "baseUrl": "https://accounting-documents.api.datev.de/platform/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{DATEV_CLIENT_ID}}",
+      "clientSecret": "{{DATEV_CLIENT_SECRET}}",
+      "tokenUrl": "{{DATEV_TOKEN_URL}}",
+      "authorizationUrl": "{{DATEV_AUTH_URL}}",
+      "scopes": "openid accounting:documents"
+    }
+  },
+  "tools": [
+    {
+      "name": "datev_list_clients",
+      "description": "List DATEV accounting clients. Returns client number, name, and ID for use with other DATEV API calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients",
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "datev_upload_document",
+      "description": "Upload an accounting document (invoice, receipt) to DATEV Belege online for a specific client.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": "string",
+            "description": "The DATEV client ID"
+          },
+          "documentGuid": {
+            "type": "string",
+            "description": "Unique GUID for the document (RFC4122 format: 8-4-4-4-12)"
+          }
+        },
+        "required": ["clientId", "documentGuid"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/clients/${clientId}/documents/${documentGuid}",
+        "headers": {
+          "Content-Type": "application/octet-stream"
+        }
+      }
+    },
+    {
+      "name": "datev_list_documents",
+      "description": "List accounting documents for a DATEV client. Returns document metadata including type, date, and processing status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": "string",
+            "description": "The DATEV client ID"
+          }
+        },
+        "required": ["clientId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/${clientId}/documents",
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "datev_get_document",
+      "description": "Get details of a specific accounting document by GUID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": "string",
+            "description": "The DATEV client ID"
+          },
+          "documentGuid": {
+            "type": "string",
+            "description": "The document GUID"
+          }
+        },
+        "required": ["clientId", "documentGuid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/${clientId}/documents/${documentGuid}",
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    }
+  ]
+}

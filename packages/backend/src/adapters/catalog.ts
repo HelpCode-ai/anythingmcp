@@ -10,6 +10,9 @@ import * as immobilienscout24 from './de/immobilienscout24.json';
 import * as mfrFieldservice from './de/mfr-fieldservice.json';
 import * as fastbill from './de/fastbill.json';
 import * as billomat from './de/billomat.json';
+import * as datev from './de/datev.json';
+import * as scopevisio from './de/scopevisio.json';
+import * as kenjo from './de/kenjo.json';
 
 export interface AdapterMeta {
   slug: string;
@@ -57,6 +60,9 @@ const ALL_ADAPTERS: AdapterDefinition[] = [
   mfrFieldservice as unknown as AdapterDefinition,
   fastbill as unknown as AdapterDefinition,
   billomat as unknown as AdapterDefinition,
+  datev as unknown as AdapterDefinition,
+  scopevisio as unknown as AdapterDefinition,
+  kenjo as unknown as AdapterDefinition,
 ];
 
 export function listAdapters(): AdapterMeta[] {

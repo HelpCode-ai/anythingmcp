@@ -25,6 +25,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   remote: 'Remote Access',
   'real-estate': 'Real Estate',
   'field-service': 'Field Service',
+  accounting: 'Accounting',
+  hr: 'HR',
 };
 
 const AUTH_LABELS: Record<string, string> = {
@@ -420,7 +422,7 @@ export default function AdapterStorePage() {
 /** Convert ENV_VAR_NAME to a human-readable label */
 function formatEnvVarLabel(envVar: string): string {
   return envVar
-    .replace(/^(PAYONE_|DHL_|IS24_|WECLAPP_|DESTATIS_|N26_|TEAMVIEWER_|MFR_|FASTBILL_|BILLOMAT_)/, '')
+    .replace(/^(PAYONE_|DHL_|IS24_|WECLAPP_|DESTATIS_|N26_|TEAMVIEWER_|MFR_|FASTBILL_|BILLOMAT_|DATEV_|SCOPEVISIO_|KENJO_)/, '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }

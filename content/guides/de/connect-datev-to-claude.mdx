@@ -1,0 +1,35 @@
+---
+title: "DATEV mit Claude verbinden — KI für deutsche Buchhaltung"
+description: "DATEV mit Claude AI über MCP verbinden. Mandanten, Belege und Lohndaten per natürlicher Sprache verwalten."
+category: "connectors"
+keyword: "DATEV Claude, DATEV KI, DATEV mit Claude nutzen, DATEV MCP Server, Steuerberater Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "datev"
+---
+
+## DATEV mit Claude verbinden
+
+DATEV ist das Rückgrat der deutschen Buchhaltung. Mit AnythingMCP verbinden Sie DATEV direkt mit Claude — der erste DATEV MCP Server überhaupt.
+
+### Was Sie fragen können
+
+- **"Liste alle meine DATEV-Mandanten"**
+- **"Zeige Belege dieses Monats für Mandant Müller"**
+- **"Lade diese Rechnung in DATEV Belege online hoch"**
+
+### Einrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Registrieren Sie sich im [DATEV Developer Portal](https://developer.datev.de), importieren Sie den DATEV-Adapter und geben Sie Ihre OAuth 2.0 Zugangsdaten ein.
+
+```json
+{
+  "mcpServers": {
+    "datev": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```

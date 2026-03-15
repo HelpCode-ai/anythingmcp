@@ -1,0 +1,169 @@
+{
+  "slug": "scopevisio",
+  "name": "ScopeVisio Cloud ERP",
+  "description": "Access ScopeVisio cloud ERP and CRM data including contacts, invoices, projects, and accounting. German cloud business software for SMBs.",
+  "region": "de",
+  "category": "erp",
+  "icon": "scopevisio",
+  "docsUrl": "https://appload.scopevisio.com/static/swagger/index.html",
+  "requiredEnvVars": ["SCOPEVISIO_BEARER_TOKEN"],
+  "connector": {
+    "name": "ScopeVisio ERP",
+    "type": "REST",
+    "baseUrl": "https://appload.scopevisio.com/rest",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SCOPEVISIO_BEARER_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "scopevisio_list_contacts",
+      "description": "List contacts (customers, suppliers, leads) from ScopeVisio. Returns name, company, email, phone, and contact type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageSize": {
+            "type": "number",
+            "description": "Number of results per page (default: 50)"
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 0)"
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search across contact fields"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/list",
+        "body": {
+          "pageSize": "${pageSize}",
+          "page": "${page}",
+          "search": "${search}"
+        }
+      }
+    },
+    {
+      "name": "scopevisio_get_contact",
+      "description": "Get detailed information about a specific contact by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "string",
+            "description": "The ScopeVisio contact ID"
+          }
+        },
+        "required": ["contactId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/${contactId}"
+      }
+    },
+    {
+      "name": "scopevisio_list_outgoing_invoices",
+      "description": "List outgoing invoices (Ausgangsrechnungen) from ScopeVisio. Returns invoice number, date, amount, customer, and payment status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageSize": {
+            "type": "number",
+            "description": "Number of results per page (default: 50)"
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 0)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/outgoinginvoice/list",
+        "body": {
+          "pageSize": "${pageSize}",
+          "page": "${page}"
+        }
+      }
+    },
+    {
+      "name": "scopevisio_list_incoming_invoices",
+      "description": "List incoming invoices (Eingangsrechnungen) from ScopeVisio. Returns invoice number, date, amount, vendor, and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageSize": {
+            "type": "number",
+            "description": "Number of results per page (default: 50)"
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 0)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/incominginvoice/list",
+        "body": {
+          "pageSize": "${pageSize}",
+          "page": "${page}"
+        }
+      }
+    },
+    {
+      "name": "scopevisio_list_projects",
+      "description": "List projects from ScopeVisio. Returns project name, status, budget, and assigned team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageSize": {
+            "type": "number",
+            "description": "Number of results per page (default: 50)"
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 0)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/project/list",
+        "body": {
+          "pageSize": "${pageSize}",
+          "page": "${page}"
+        }
+      }
+    },
+    {
+      "name": "scopevisio_list_tasks",
+      "description": "List tasks from ScopeVisio. Returns task title, status, due date, and assignee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageSize": {
+            "type": "number",
+            "description": "Number of results per page (default: 50)"
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 0)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/task/list",
+        "body": {
+          "pageSize": "${pageSize}",
+          "page": "${page}"
+        }
+      }
+    }
+  ]
+}

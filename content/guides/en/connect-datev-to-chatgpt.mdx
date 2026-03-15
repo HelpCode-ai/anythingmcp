@@ -1,0 +1,29 @@
+---
+title: "How to Connect DATEV to ChatGPT — AI for German Accounting"
+description: "Connect DATEV to ChatGPT using MCP. Access accounting documents and client data with natural language. No MCP server needed — use AnythingMCP."
+category: "connectors"
+keyword: "DATEV ChatGPT, DATEV AI, connect DATEV to ChatGPT, DATEV MCP ChatGPT"
+publishedAt: "2026-03-15"
+adapterSlug: "datev"
+---
+
+## Connect DATEV to ChatGPT
+
+DATEV is Germany's most widely used accounting platform. Using AnythingMCP, you can expose DATEV data to ChatGPT through MCP — no custom code needed.
+
+### Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+1. Import the **DATEV** adapter and enter your OAuth 2.0 credentials
+2. Assign to an MCP server
+3. Connect ChatGPT to your AnythingMCP endpoint
+
+### Use Cases
+
+- **"List all my accounting clients"** — Quick client overview
+- **"Show recent documents for client 12345"** — Document tracking
+- **"Upload this invoice to DATEV"** — Automated document processing

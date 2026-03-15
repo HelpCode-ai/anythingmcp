@@ -1,0 +1,38 @@
+---
+title: "How to Connect Kenjo HR to MCP for AI-Powered Human Resources"
+description: "Connect Kenjo HR to MCP. Access employees, departments, teams, and recruiting data with AI agents. German HR software meets AI."
+category: "connectors"
+keyword: "Kenjo MCP Server, Kenjo HR API AI, Kenjo Claude, Kenjo ChatGPT, HR MCP"
+publishedAt: "2026-03-15"
+adapterSlug: "kenjo"
+---
+
+## Kenjo HR with AI Agents
+
+Kenjo is a German HR platform for manufacturing, services, and retail companies. With AnythingMCP, connect its API to any MCP-compatible AI agent.
+
+## Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Import the Kenjo adapter and enter your API key (Settings → Integrations → API in Kenjo).
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `kenjo_list_employees` | List all employees |
+| `kenjo_get_employee` | Get employee details |
+| `kenjo_list_departments` | List departments |
+| `kenjo_list_offices` | List office locations |
+| `kenjo_list_positions` | List open job positions |
+| `kenjo_list_teams` | List teams |
+
+## Use Cases
+
+- **"How many employees do we have per department?"**
+- **"List all open recruiting positions"**
+- **"Show employee details for Max Mustermann"**
