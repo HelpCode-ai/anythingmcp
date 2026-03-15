@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { adapters } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
+import { McpAssignModal } from '@/components/mcp-assign-modal';
 
 const REGION_LABELS: Record<string, string> = {
   de: 'Germany',
@@ -71,6 +72,9 @@ export default function AdapterStorePage() {
   const [credentialValues, setCredentialValues] = useState<Record<string, string>>({});
   const [configLoading, setConfigLoading] = useState(false);
 
+  // MCP assignment modal state
+  const [importedConnector, setImportedConnector] = useState<{ id: string; name: string } | null>(null);
+
   useEffect(() => {
     if (!token) return;
     adapters
@@ -113,11 +117,12 @@ export default function AdapterStorePage() {
     setMsg('');
     setConfigAdapter(null);
     try {
+      const adapter = list.find((a) => a.slug === slug);
       const result = await adapters.import(slug, token, credentials);
       setMsg(result.message);
-      setTimeout(() => {
-        router.push(`/connectors/${result.connectorId}`);
-      }, 1500);
+      setImporting(null);
+      // Show MCP assignment modal
+      setImportedConnector({ id: result.connectorId, name: adapter?.name || slug });
     } catch (err: any) {
       setMsg(`Import failed: ${err.message}`);
       setImporting(null);
@@ -384,6 +389,27 @@ export default function AdapterStorePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MCP Server Assignment Modal */}
+      {importedConnector && token && (
+        <McpAssignModal
+          connectorId={importedConnector.id}
+          connectorName={importedConnector.name}
+          token={token}
+          onDone={(mcpServerId) => {
+            setImportedConnector(null);
+            if (mcpServerId) {
+              router.push(`/mcp-server/${mcpServerId}`);
+            } else {
+              router.push(`/connectors/${importedConnector.id}`);
+            }
+          }}
+          onClose={() => {
+            setImportedConnector(null);
+            router.push(`/connectors/${importedConnector.id}`);
+          }}
+        />
       )}
 
       <Footer />

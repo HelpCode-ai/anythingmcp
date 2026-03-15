@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { connectors } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
+import { McpAssignModal } from '@/components/mcp-assign-modal';
 
 const CONNECTOR_TYPES = [
   { id: 'REST', name: 'REST API', description: 'Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually.', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30', iconBg: 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' },
@@ -42,6 +43,7 @@ export default function NewConnectorPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [createdConnector, setCreatedConnector] = useState<{ id: string; name: string } | null>(null);
 
   const buildAuthConfig = () => {
     switch (authType) {
@@ -95,12 +97,8 @@ export default function NewConnectorPage() {
         } catch {}
       }
 
-      // For OAuth2 connectors, redirect to the detail page so the user can authorize
-      if (authType === 'OAUTH2') {
-        router.push(`/connectors/${created.id}`);
-      } else {
-        router.push('/connectors');
-      }
+      // Show MCP assignment modal so the user can assign the connector to an MCP server
+      setCreatedConnector({ id: created.id, name: name || created.name });
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -376,6 +374,28 @@ export default function NewConnectorPage() {
           </div>
         )}
       </main>
+
+      {/* MCP Server Assignment Modal */}
+      {createdConnector && token && (
+        <McpAssignModal
+          connectorId={createdConnector.id}
+          connectorName={createdConnector.name}
+          token={token}
+          onDone={(mcpServerId) => {
+            setCreatedConnector(null);
+            if (mcpServerId) {
+              router.push(`/mcp-server/${mcpServerId}`);
+            } else {
+              router.push(`/connectors/${createdConnector.id}`);
+            }
+          }}
+          onClose={() => {
+            setCreatedConnector(null);
+            router.push(`/connectors/${createdConnector.id}`);
+          }}
+        />
+      )}
+
       <Footer />
     </div>
   );

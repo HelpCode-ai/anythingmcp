@@ -36,6 +36,7 @@ function LoginForm() {
 
   const redirectTo = searchParams.get('redirect') || '/';
   const emailVerifiedParam = searchParams.get('emailVerified');
+  const modeParam = searchParams.get('mode'); // 'register' or 'login'
 
   useEffect(() => {
     server.info().then((info) => {
@@ -43,9 +44,13 @@ function LoginForm() {
       setIsCloudMode(info.deploymentMode === 'cloud');
       if (!info.hasUsers) {
         setIsRegister(true);
+      } else if (modeParam === 'register' && info.registrationEnabled) {
+        setIsRegister(true);
+      } else if (modeParam === 'login') {
+        setIsRegister(false);
       }
     }).catch(() => {});
-  }, []);
+  }, [modeParam]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
