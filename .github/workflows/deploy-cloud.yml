@@ -45,8 +45,8 @@ jobs:
             cp /tmp/anythingmcp-deploy/deploy/cloud/Caddyfile ./Caddyfile
             rm -rf /tmp/anythingmcp-deploy
 
-            # Restart services
-            docker compose -f docker-compose.cloud.yml up -d --remove-orphans
+            # Restart services (force-recreate to pick up new image and config)
+            docker compose -f docker-compose.cloud.yml up -d --force-recreate --remove-orphans
             docker image prune -f
 
             echo "Deployment complete"
