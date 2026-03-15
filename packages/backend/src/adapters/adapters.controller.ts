@@ -12,6 +12,24 @@ import { AuthGuard } from '@nestjs/passport';
 import { AdaptersService } from './adapters.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 
+// Public endpoints (no auth required) — used by the marketing website
+@ApiTags('Adapters')
+@Controller('api/adapters')
+export class AdaptersPublicController {
+  constructor(private readonly adaptersService: AdaptersService) {}
+
+  @Get()
+  @ApiOperation({
+    summary: 'List all available built-in adapters',
+    description:
+      'Returns metadata for all pre-configured adapters. This endpoint is public so the marketing website can render the marketplace dynamically.',
+  })
+  list() {
+    return this.adaptersService.listAll();
+  }
+}
+
+// Authenticated endpoints
 @ApiTags('Adapters')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
@@ -21,16 +39,6 @@ export class AdaptersController {
     private readonly adaptersService: AdaptersService,
     private readonly licenseGuard: LicenseGuardService,
   ) {}
-
-  @Get()
-  @ApiOperation({
-    summary: 'List all available built-in adapters',
-    description:
-      'Returns metadata for all pre-configured adapters that can be imported with a single click.',
-  })
-  list() {
-    return this.adaptersService.listAll();
-  }
 
   @Get(':slug')
   @ApiOperation({
