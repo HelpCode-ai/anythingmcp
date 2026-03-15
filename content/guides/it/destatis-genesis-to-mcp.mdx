@@ -1,0 +1,41 @@
+---
+title: "Come collegare Destatis GENESIS a MCP per agenti AI"
+description: "Accedi alle statistiche federali tedesche ufficiali dal Statistisches Bundesamt via agenti AI e MCP. Popolazione, economia, commercio."
+category: "connectors"
+keyword: "Destatis MCP Server, GENESIS API AI, statistiche tedesche MCP"
+publishedAt: "2026-03-15"
+adapterSlug: "destatis-genesis"
+---
+
+## Statistiche Destatis GENESIS con Agenti AI
+
+Il Destatis (Statistisches Bundesamt) offre accesso a dati ufficiali su popolazione, economia, commercio e mercato del lavoro tedesco tramite l'API GENESIS.
+
+## Configurazione Rapida
+
+### Passo 1: Distribuisci AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Passo 2: Importa l'Adattatore Destatis
+
+Apri `http://localhost:3000/connectors/store` e clicca **Import**. Inserisci username e password GENESIS.
+
+### Passo 3: Collega al Tuo Agente AI
+
+```json
+{
+  "mcpServers": {
+    "destatis": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Casi d'Uso
+
+- **"Qual è la popolazione attuale della Germania?"**
+- **"Mostra la crescita del PIL degli ultimi 10 anni"**
+- **"Cerca dati sull'indice dei prezzi al consumo"**

@@ -1,0 +1,53 @@
+---
+title: "How to Connect Deutsche Bundesbank Statistics to MCP"
+description: "Access ECB exchange rates, interest rates, and macroeconomic data from the Bundesbank via AI agents and MCP. Free public API, no key required."
+category: "connectors"
+keyword: "Bundesbank MCP Server, ECB exchange rates API, Bundesbank statistics AI, German financial data MCP"
+publishedAt: "2026-03-15"
+adapterSlug: "bundesbank"
+---
+
+## Bundesbank Statistics with AI Agents
+
+The Deutsche Bundesbank provides free access to macroeconomic data, exchange rates, interest rates, and financial statistics via the SDMX REST API. No API key required — connect and start querying immediately.
+
+## Quick Setup with Built-in Adapter
+
+### Step 1: Deploy AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Step 2: Import the Bundesbank Adapter
+
+Open `http://localhost:3000/connectors/store` and click **Import** on the Deutsche Bundesbank Statistics adapter. Since this is a free public API, no credentials are needed — the connector is ready immediately.
+
+### Step 3: Connect to Your AI Agent
+
+```json
+{
+  "mcpServers": {
+    "bundesbank": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `bundesbank_get_exchange_rates` | Get current and historical euro exchange rates (USD, GBP, CHF, JPY, etc.) |
+| `bundesbank_get_interest_rates` | Get ECB key interest rates (refinancing rate, deposit facility, marginal lending) |
+| `bundesbank_search_statistics` | Search for available statistical series by keyword |
+| `bundesbank_get_timeseries` | Retrieve data for a specific time series by ID |
+
+## AI Agent Use Cases
+
+- **"What's the current EUR/USD exchange rate?"**
+- **"Show me the ECB interest rate history for the last 5 years"**
+- **"What was the EUR/GBP rate on January 15, 2025?"**
+- **"Search for money supply statistics"**

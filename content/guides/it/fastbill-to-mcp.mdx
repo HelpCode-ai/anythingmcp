@@ -1,0 +1,36 @@
+---
+title: "Come collegare FastBill a MCP per agenti AI"
+description: "Gestisci fatture, clienti e spese con agenti AI via MCP. FastBill è un popolare strumento di fatturazione per freelancer e piccole imprese tedesche."
+category: "connectors"
+keyword: "FastBill MCP Server, FastBill API AI, fatturazione MCP, FastBill con Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "fastbill"
+---
+
+## Fatturazione FastBill con Agenti AI
+
+FastBill è una piattaforma di fatturazione e contabilità popolare tra freelancer e piccole imprese tedesche. Collegando la sua API a MCP, gli agenti AI possono consultare clienti, fatture, spese e ricavi.
+
+## Configurazione Rapida
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Apri `http://localhost:3000/connectors/store`, importa l'adattatore FastBill e inserisci email e API key.
+
+```json
+{
+  "mcpServers": {
+    "fastbill": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Casi d'Uso
+
+- **"Mostra tutte le fatture non pagate di questo mese"**
+- **"Quanti ricavi ho generato nel Q1?"**
+- **"Lista tutti i clienti di Monaco"**
+- **"Quali sono le spese totali per marzo 2026?"**

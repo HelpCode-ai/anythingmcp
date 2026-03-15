@@ -1,0 +1,37 @@
+---
+title: "MFR Mobile Field Report mit KI-Agenten via MCP verbinden"
+description: "Serviceeinsätze mit KI-Agenten über MCP verwalten. Serviceaufträge, Termine, Techniker und Checklisten von Mobile Field Report abrufen."
+category: "connectors"
+keyword: "MFR MCP Server, Mobile Field Report API KI, Außendienst MCP, MFR mit Claude nutzen"
+publishedAt: "2026-03-15"
+adapterSlug: "mfr-fieldservice"
+---
+
+## MFR Mobile Field Report mit KI-Agenten
+
+Mobile Field Report (MFR) ist eine deutsche Plattform für das Field-Service-Management. Die Verbindung der OData-API mit MCP ermöglicht KI-Agenten den Zugriff auf Serviceaufträge, Termine, Checklisten und Zeiterfassung.
+
+## Schnelleinrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffnen Sie `http://localhost:3000/connectors/store`, importieren Sie den MFR-Adapter und geben Sie Ihren Benutzernamen und Ihr Passwort ein.
+
+```json
+{
+  "mcpServers": {
+    "mfr": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## KI-Anwendungsfälle
+
+- **"Zeige alle offenen Serviceaufträge dieser Woche"**
+- **"Welcher Techniker hat heute die meisten Termine?"**
+- **"Liste alle Serviceobjekte der Firma Müller GmbH"**
+- **"Welche Checklisten-Schritte sind bei Auftrag SR-12345 noch offen?"**
+- **"Wie viele Stunden hat Techniker Max letzten Monat gearbeitet?"**

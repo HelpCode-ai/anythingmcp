@@ -1,0 +1,140 @@
+{
+  "slug": "destatis-genesis",
+  "name": "Destatis GENESIS Statistics",
+  "description": "Access official German federal statistics from Destatis (Statistisches Bundesamt) via the GENESIS API. Population, economy, trade, labor market, prices, and more.",
+  "region": "de",
+  "category": "government",
+  "icon": "destatis",
+  "docsUrl": "https://www-genesis.destatis.de/genesis/misc/GENESIS-Webservices_Einfuehrung.pdf",
+  "requiredEnvVars": ["DESTATIS_USERNAME", "DESTATIS_PASSWORD"],
+  "connector": {
+    "name": "Destatis GENESIS",
+    "type": "REST",
+    "baseUrl": "https://www-genesis.destatis.de/genesisWS/rest/2020",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "destatis_search_tables",
+      "description": "Search for statistical tables in the Destatis GENESIS database by keyword. Returns table codes, titles, and metadata. Use this to find the right table before retrieving data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "searchterm": {
+            "type": "string",
+            "description": "Search keyword (e.g. 'Bevölkerung', 'Inflation', 'Arbeitsmarkt', 'BIP')"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language: 'de' for German or 'en' for English. Default: 'de'"
+          }
+        },
+        "required": ["searchterm"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/find/find",
+        "queryParams": {
+          "username": "{{DESTATIS_USERNAME}}",
+          "password": "{{DESTATIS_PASSWORD}}",
+          "term": "${searchterm}",
+          "category": "tables",
+          "language": "${language}"
+        }
+      }
+    },
+    {
+      "name": "destatis_get_table",
+      "description": "Retrieve data from a specific Destatis GENESIS table by its code. Use destatis_search_tables first to find the table code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "GENESIS table code (e.g. '12411-0001' for population data, '61111-0001' for consumer price index)"
+          },
+          "startyear": {
+            "type": "string",
+            "description": "Start year (e.g. '2020')"
+          },
+          "endyear": {
+            "type": "string",
+            "description": "End year (e.g. '2024')"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language: 'de' or 'en'. Default: 'de'"
+          }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/table",
+        "queryParams": {
+          "username": "{{DESTATIS_USERNAME}}",
+          "password": "{{DESTATIS_PASSWORD}}",
+          "name": "${name}",
+          "startyear": "${startyear}",
+          "endyear": "${endyear}",
+          "language": "${language}"
+        }
+      }
+    },
+    {
+      "name": "destatis_get_table_metadata",
+      "description": "Get metadata and structure of a Destatis GENESIS table, including available dimensions, time ranges, and variable descriptions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "GENESIS table code (e.g. '12411-0001')"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language: 'de' or 'en'. Default: 'de'"
+          }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metadata/table",
+        "queryParams": {
+          "username": "{{DESTATIS_USERNAME}}",
+          "password": "{{DESTATIS_PASSWORD}}",
+          "name": "${name}",
+          "language": "${language}"
+        }
+      }
+    },
+    {
+      "name": "destatis_list_statistics",
+      "description": "List available statistics categories in the Destatis GENESIS database. Returns statistic codes and descriptions that can be used to browse available data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "searchterm": {
+            "type": "string",
+            "description": "Optional filter keyword"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language: 'de' or 'en'. Default: 'de'"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/catalogue/statistics",
+        "queryParams": {
+          "username": "{{DESTATIS_USERNAME}}",
+          "password": "{{DESTATIS_PASSWORD}}",
+          "selection": "${searchterm}",
+          "language": "${language}"
+        }
+      }
+    }
+  ]
+}

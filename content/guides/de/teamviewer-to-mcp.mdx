@@ -1,0 +1,45 @@
+---
+title: "TeamViewer mit KI-Agenten via MCP verbinden"
+description: "TeamViewer-Geräte, Kontakte und Remote-Sitzungen über KI-Agenten und MCP verwalten. Gerätestatus überwachen und Support-Sitzungen erstellen."
+category: "connectors"
+keyword: "TeamViewer MCP Server, TeamViewer API KI, Fernzugriff MCP, TeamViewer mit Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "teamviewer"
+---
+
+## TeamViewer mit KI-Agenten
+
+TeamViewer ist eine führende Plattform für Fernzugriff und Support. Die Verbindung der Web API mit MCP ermöglicht KI-Agenten die Verwaltung von Geräten und Remote-Support-Sitzungen.
+
+## Schnelleinrichtung
+
+### Schritt 1: AnythingMCP bereitstellen
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Schritt 2: TeamViewer-Adapter importieren
+
+Öffnen Sie `http://localhost:3000/connectors/store` und klicken Sie auf **Import**. Geben Sie Ihren TeamViewer Access Token ein.
+
+### Schritt 3: Access Token generieren
+
+Erstellen Sie einen Script Token in der TeamViewer Management Console unter **Profil > Apps > Script Token erstellen**.
+
+### Schritt 4: Mit KI-Agent verbinden
+
+```json
+{
+  "mcpServers": {
+    "teamviewer": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## KI-Anwendungsfälle
+
+- **"Welche meiner Geräte sind gerade online?"**
+- **"Zeige mir die Details von Gerät XYZ"**
+- **"Liste alle aktiven Remote-Support-Sitzungen"**

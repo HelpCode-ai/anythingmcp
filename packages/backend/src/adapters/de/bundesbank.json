@@ -1,0 +1,144 @@
+{
+  "slug": "bundesbank",
+  "name": "Deutsche Bundesbank Statistics",
+  "description": "Access macroeconomic data, exchange rates, interest rates, and financial statistics from the Deutsche Bundesbank via the SDMX REST API.",
+  "region": "de",
+  "category": "finance",
+  "icon": "bundesbank",
+  "docsUrl": "https://api.statistiken.bundesbank.de/doc/index.html",
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "Bundesbank Statistics",
+    "type": "REST",
+    "baseUrl": "https://api.statistiken.bundesbank.de/rest",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "bundesbank_get_exchange_rates",
+      "description": "Get current and historical euro exchange rates from the Bundesbank. Returns daily exchange rates for major currencies (USD, GBP, CHF, JPY, etc.).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency code (e.g. 'USD', 'GBP', 'CHF', 'JPY'). Use 'USD' for EUR/USD rate."
+          },
+          "startPeriod": {
+            "type": "string",
+            "description": "Start date in YYYY-MM-DD format (e.g. '2024-01-01')"
+          },
+          "endPeriod": {
+            "type": "string",
+            "description": "End date in YYYY-MM-DD format (e.g. '2024-12-31')"
+          }
+        },
+        "required": ["currency"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/BBEX3/D.${currency}.EUR.BB.AC.000",
+        "queryParams": {
+          "startPeriod": "${startPeriod}",
+          "endPeriod": "${endPeriod}",
+          "detail": "dataonly"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "bundesbank_get_interest_rates",
+      "description": "Get key interest rate data from the Bundesbank and ECB, including the main refinancing rate, deposit facility rate, and marginal lending rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "startPeriod": {
+            "type": "string",
+            "description": "Start date in YYYY-MM-DD format"
+          },
+          "endPeriod": {
+            "type": "string",
+            "description": "End date in YYYY-MM-DD format"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/BBK01/SU0202",
+        "queryParams": {
+          "startPeriod": "${startPeriod}",
+          "endPeriod": "${endPeriod}",
+          "detail": "dataonly"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "bundesbank_search_statistics",
+      "description": "Search for available statistical series in the Bundesbank database by keyword. Returns matching time series with their IDs, titles, and metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search keyword (e.g. 'inflation', 'GDP', 'money supply', 'Geldmenge')"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results to return (default: 10, max: 100)"
+          }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metadata/series",
+        "queryParams": {
+          "q": "${query}",
+          "limit": "${limit}"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "bundesbank_get_timeseries",
+      "description": "Retrieve data for a specific Bundesbank time series by its ID. Use bundesbank_search_statistics first to find the series ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seriesId": {
+            "type": "string",
+            "description": "The Bundesbank time series ID (e.g. 'BBEX3.D.USD.EUR.BB.AC.000')"
+          },
+          "startPeriod": {
+            "type": "string",
+            "description": "Start date in YYYY-MM-DD format"
+          },
+          "endPeriod": {
+            "type": "string",
+            "description": "End date in YYYY-MM-DD format"
+          }
+        },
+        "required": ["seriesId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/${seriesId}",
+        "queryParams": {
+          "startPeriod": "${startPeriod}",
+          "endPeriod": "${endPeriod}",
+          "detail": "dataonly"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    }
+  ]
+}

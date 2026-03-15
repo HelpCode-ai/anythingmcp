@@ -1,0 +1,57 @@
+---
+title: "How to Connect Destatis GENESIS Statistics to MCP"
+description: "Access official German federal statistics from the Statistisches Bundesamt via AI agents and MCP. Population, economy, trade, labor market data."
+category: "connectors"
+keyword: "Destatis MCP Server, GENESIS API AI, German statistics MCP, Statistisches Bundesamt API"
+publishedAt: "2026-03-15"
+adapterSlug: "destatis-genesis"
+---
+
+## Destatis GENESIS Statistics with AI Agents
+
+Destatis (Statistisches Bundesamt) is Germany's federal statistics office. The GENESIS API provides access to official data on population, economy, trade, labor market, prices, and more.
+
+## Quick Setup with Built-in Adapter
+
+### Step 1: Deploy AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Step 2: Import the Destatis Adapter
+
+Open `http://localhost:3000/connectors/store` and click **Import** on the Destatis GENESIS Statistics adapter. Enter your GENESIS username and password when prompted.
+
+### Step 3: Get GENESIS Credentials
+
+Register for a free account at [www-genesis.destatis.de](https://www-genesis.destatis.de/) to get API access credentials.
+
+### Step 4: Connect to Your AI Agent
+
+```json
+{
+  "mcpServers": {
+    "destatis": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `destatis_search_tables` | Search for statistical tables by keyword |
+| `destatis_get_table` | Retrieve data from a specific statistical table |
+| `destatis_get_metadata` | Get metadata and definitions for a table |
+| `destatis_list_statistics` | List all available statistics catalogs |
+
+## AI Agent Use Cases
+
+- **"What is Germany's current population?"**
+- **"Show GDP growth for the last 10 years"**
+- **"What's the unemployment rate in Bavaria?"**
+- **"Search for consumer price index data"**

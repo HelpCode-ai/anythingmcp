@@ -1,0 +1,38 @@
+---
+title: "How to Connect ScopeVisio to MCP for AI-Powered ERP"
+description: "Connect ScopeVisio cloud ERP to MCP. Access contacts, invoices, projects, and tasks with AI agents. German cloud business software meets AI."
+category: "connectors"
+keyword: "ScopeVisio MCP Server, ScopeVisio API AI, ScopeVisio Claude, ScopeVisio ChatGPT"
+publishedAt: "2026-03-15"
+adapterSlug: "scopevisio"
+---
+
+## ScopeVisio Cloud ERP with AI Agents
+
+ScopeVisio is a German cloud ERP and CRM platform. With AnythingMCP, connect its REST API to any MCP-compatible AI agent.
+
+## Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Import the ScopeVisio adapter and enter your Bearer token.
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `scopevisio_list_contacts` | List customers, suppliers, leads |
+| `scopevisio_get_contact` | Get contact details |
+| `scopevisio_list_outgoing_invoices` | List outgoing invoices |
+| `scopevisio_list_incoming_invoices` | List incoming invoices |
+| `scopevisio_list_projects` | List projects |
+| `scopevisio_list_tasks` | List tasks |
+
+## Use Cases
+
+- **"Show all overdue outgoing invoices"**
+- **"List contacts tagged as leads"**
+- **"What projects are currently active?"**

@@ -1,0 +1,35 @@
+---
+title: "How to Connect Kenjo HR to Claude for AI-Powered HR Management"
+description: "Connect Kenjo HR to Claude AI using MCP. Query employees, departments, and recruiting data with natural language."
+category: "connectors"
+keyword: "Kenjo Claude, Kenjo HR AI, connect Kenjo to Claude, Kenjo MCP"
+publishedAt: "2026-03-15"
+adapterSlug: "kenjo"
+---
+
+## Connect Kenjo to Claude
+
+Kenjo is a German HR platform. With AnythingMCP, connect it to Claude and manage HR data with natural language.
+
+### Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Import the **Kenjo** adapter, enter your API key, and connect Claude.
+
+```json
+{
+  "mcpServers": {
+    "kenjo": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+### Use Cases
+
+- **"How many employees per department?"**
+- **"List open positions in engineering"**
+- **"Show all office locations"**

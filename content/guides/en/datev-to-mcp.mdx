@@ -1,0 +1,44 @@
+---
+title: "How to Connect DATEV to MCP for AI-Powered Accounting"
+description: "Connect DATEV accounting to MCP. Access clients, documents, payroll data, and HR reporting with AI agents. The first DATEV MCP integration."
+category: "connectors"
+keyword: "DATEV MCP Server, DATEV API AI, DATEV mit Claude, DATEV ChatGPT, DATEV Schnittstelle KI"
+publishedAt: "2026-03-15"
+adapterSlug: "datev"
+---
+
+## DATEV with AI Agents via MCP
+
+DATEV is the dominant accounting and tax software platform in Germany, used by nearly every tax consultant (Steuerberater) and thousands of businesses. Despite its market dominance, there has been no MCP server for DATEV — until now.
+
+With AnythingMCP, you can connect DATEV's official Online APIs to any MCP-compatible AI agent (Claude, ChatGPT, Gemini, etc.).
+
+## Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Open `http://localhost:3000/connectors/store`, import the DATEV adapter, and configure your OAuth 2.0 credentials from the [DATEV Developer Portal](https://developer.datev.de).
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `datev_list_clients` | List accounting clients |
+| `datev_list_documents` | List accounting documents for a client |
+| `datev_get_document` | Get document details by GUID |
+| `datev_upload_document` | Upload invoices/receipts to DATEV Belege online |
+
+## Prerequisites
+
+1. Register at the [DATEV Developer Portal](https://developer.datev.de)
+2. Create an application to get OAuth 2.0 credentials
+3. Your clients must be on DATEV Unternehmen online
+
+## Use Cases
+
+- **"List all accounting clients"**
+- **"Show documents uploaded this month for client 12345"**
+- **"Upload this invoice to DATEV Belege online"**

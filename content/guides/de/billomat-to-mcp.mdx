@@ -1,0 +1,36 @@
+---
+title: "Billomat mit KI-Agenten via MCP verbinden"
+description: "Rechnungen, Kunden, Artikel und Angebote mit KI-Agenten über MCP verwalten. Billomat ist eine deutsche Online-Rechnungs- und Buchhaltungsplattform."
+category: "connectors"
+keyword: "Billomat MCP Server, Billomat API KI, Rechnungen MCP, Billomat mit Claude nutzen"
+publishedAt: "2026-03-15"
+adapterSlug: "billomat"
+---
+
+## Billomat Rechnungen mit KI-Agenten
+
+Billomat ist eine deutsche Online-Rechnungs- und Buchhaltungsplattform für Freelancer und KMU. Die Verbindung mit MCP ermöglicht KI-Agenten den Zugriff auf Kunden, Rechnungen, Artikel und Angebote.
+
+## Schnelleinrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffnen Sie `http://localhost:3000/connectors/store`, importieren Sie den Billomat-Adapter und geben Sie Ihre Subdomain und Ihren API-Key ein.
+
+```json
+{
+  "mcpServers": {
+    "billomat": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## KI-Anwendungsfälle
+
+- **"Zeige alle überfälligen Rechnungen"**
+- **"Wie viele offene Angebote haben wir?"**
+- **"Liste alle Kunden mit ihren Rechnungsbeträgen"**
+- **"Welche Artikel haben wir im Katalog?"**

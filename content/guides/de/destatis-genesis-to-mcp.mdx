@@ -1,0 +1,46 @@
+---
+title: "Destatis GENESIS Statistiken mit KI-Agenten via MCP nutzen"
+description: "Offizielle deutsche Bundesstatistiken vom Statistischen Bundesamt über KI-Agenten und MCP abrufen. Bevölkerung, Wirtschaft, Handel, Arbeitsmarkt."
+category: "connectors"
+keyword: "Destatis MCP Server, GENESIS API KI, Statistisches Bundesamt MCP, deutsche Statistiken KI"
+publishedAt: "2026-03-15"
+adapterSlug: "destatis-genesis"
+---
+
+## Destatis GENESIS Statistiken mit KI-Agenten
+
+Das Statistische Bundesamt (Destatis) bietet über die GENESIS-API Zugang zu offiziellen Daten zu Bevölkerung, Wirtschaft, Handel, Arbeitsmarkt und Preisen.
+
+## Schnelleinrichtung
+
+### Schritt 1: AnythingMCP bereitstellen
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Schritt 2: Destatis-Adapter importieren
+
+Öffnen Sie `http://localhost:3000/connectors/store` und klicken Sie auf **Import**. Geben Sie Ihren GENESIS-Benutzernamen und Passwort ein.
+
+### Schritt 3: GENESIS-Zugangsdaten erhalten
+
+Registrieren Sie sich kostenlos auf [www-genesis.destatis.de](https://www-genesis.destatis.de/).
+
+### Schritt 4: Mit KI-Agent verbinden
+
+```json
+{
+  "mcpServers": {
+    "destatis": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## KI-Anwendungsfälle
+
+- **"Wie viele Einwohner hat Deutschland aktuell?"**
+- **"Zeige das BIP-Wachstum der letzten 10 Jahre"**
+- **"Wie hoch ist die Arbeitslosenquote in Bayern?"**
+- **"Suche nach Verbraucherpreisindex-Daten"**

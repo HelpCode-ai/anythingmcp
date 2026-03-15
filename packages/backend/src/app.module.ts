@@ -29,6 +29,7 @@ import { LocalOAuthProvider } from './auth/local-oauth.provider';
 import { PrismaOAuthStore } from './auth/prisma-oauth.store';
 import { PrismaService } from './common/prisma.service';
 import { OAuthUrlRewriteInterceptor } from './auth/oauth-url-rewrite.interceptor';
+import { AdaptersModule } from './adapters/adapters.module';
 import { CloudModule } from './cloud/cloud.module';
 
 // Determine deployment and auth mode from env
@@ -110,6 +111,7 @@ if (useOAuth) {
     AuthModule,
     UsersModule,
     ConnectorsModule,
+    AdaptersModule,
     McpServerModule,
 
     AuditModule,

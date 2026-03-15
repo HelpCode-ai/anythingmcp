@@ -1,0 +1,35 @@
+---
+title: "ImmobilienScout24 mit KI-Agenten via MCP verbinden"
+description: "Immobilien auf ImmobilienScout24 über KI-Agenten und MCP suchen und durchstöbern. Wohnungen, Häuser und Gewerbeimmobilien in Deutschland finden."
+category: "connectors"
+keyword: "ImmobilienScout24 MCP Server, IS24 API KI, Immobilien MCP, Immobiliensuche mit Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "immobilienscout24"
+---
+
+## ImmobilienScout24 mit KI-Agenten
+
+ImmobilienScout24 ist Deutschlands größtes Immobilienportal. Die Verbindung der API mit MCP ermöglicht KI-Agenten die Immobiliensuche und detaillierte Objektinformationen.
+
+## Schnelleinrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffnen Sie `http://localhost:3000/connectors/store`, importieren Sie den ImmobilienScout24-Adapter und geben Sie Ihre OAuth Client ID und Client Secret ein.
+
+```json
+{
+  "mcpServers": {
+    "is24": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## KI-Anwendungsfälle
+
+- **"Finde 3-Zimmer-Wohnungen zur Miete in Berlin Mitte unter 1.500 €"**
+- **"Zeige Häuser zum Kauf in München mit Garten"**
+- **"Was ist die durchschnittliche Miete für Wohnungen in Hamburg?"**

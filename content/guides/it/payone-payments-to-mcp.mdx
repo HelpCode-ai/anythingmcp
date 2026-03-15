@@ -1,0 +1,35 @@
+---
+title: "Come collegare PAYONE Pagamenti a MCP per agenti AI"
+description: "Gestisci pagamenti e-commerce via agenti AI e MCP. Lista transazioni, cattura e rimborsa pagamenti tramite l'API PAYONE."
+category: "connectors"
+keyword: "PAYONE MCP Server, PAYONE API AI, pagamenti MCP, PAYONE con Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "payone"
+---
+
+## Pagamenti PAYONE con Agenti AI
+
+PAYONE è un fornitore leader di servizi di pagamento europeo. Collegando la sua API a MCP, gli agenti AI possono monitorare transazioni, catturare pagamenti ed elaborare rimborsi.
+
+## Configurazione Rapida
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Apri `http://localhost:3000/connectors/store`, importa l'adattatore PAYONE e inserisci Merchant ID, API Key, Portal ID e Account ID.
+
+```json
+{
+  "mcpServers": {
+    "payone": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Casi d'Uso
+
+- **"Mostra tutte le transazioni di oggi"**
+- **"Qual è lo stato della transazione XYZ?"**
+- **"Cattura il pagamento pendente per l'ordine 12345"**

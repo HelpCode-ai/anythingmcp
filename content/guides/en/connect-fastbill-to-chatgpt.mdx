@@ -1,0 +1,53 @@
+---
+title: "How to Connect FastBill to ChatGPT for AI-Powered Invoicing"
+description: "Connect FastBill invoicing to ChatGPT using MCP. Query customers, invoices, and expenses with natural language. Works with ChatGPT Desktop and API."
+category: "connectors"
+keyword: "FastBill ChatGPT, FastBill AI, connect FastBill to ChatGPT, FastBill MCP ChatGPT"
+publishedAt: "2026-03-15"
+adapterSlug: "fastbill"
+---
+
+## Connect FastBill to ChatGPT
+
+FastBill is a popular German invoicing platform. With AnythingMCP, you can expose FastBill data as MCP tools that ChatGPT can call directly — no custom code needed.
+
+### What You Can Do
+
+Once connected, ask ChatGPT:
+- "Show all unpaid invoices from this month"
+- "How much revenue did I make in Q1?"
+- "List expenses over 500€ from last quarter"
+- "Which customers have the most open invoices?"
+
+### Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+1. Open `http://localhost:3000/connectors/store` and import the **FastBill** adapter
+2. Enter your FastBill email and API key
+3. Assign the connector to an MCP server
+
+### Connect to ChatGPT
+
+ChatGPT supports MCP servers via its remote server configuration. Point it at your AnythingMCP endpoint:
+
+```json
+{
+  "mcpServers": {
+    "fastbill": { "url": "https://your-anythingmcp-instance.com/mcp" }
+  }
+}
+```
+
+For ChatGPT Desktop, add the server URL in Settings → Connected Tools → Add MCP Server.
+
+### Available Tools
+
+- **fastbill_list_customers** — Search customers
+- **fastbill_list_invoices** — Filter invoices by customer, month, year
+- **fastbill_get_invoice** — Full invoice details with line items
+- **fastbill_list_expenses** — Expenses by period
+- **fastbill_list_revenues** — Revenue tracking

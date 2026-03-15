@@ -1,0 +1,66 @@
+---
+title: "How to Connect FastBill to Claude for AI-Powered Invoicing"
+description: "Connect FastBill invoicing to Claude AI using MCP. Query customers, invoices, expenses and revenue data with natural language. Step-by-step guide."
+category: "connectors"
+keyword: "FastBill Claude, FastBill AI, FastBill MCP, connect FastBill to Claude, FastBill API Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "fastbill"
+---
+
+## Connect FastBill to Claude
+
+FastBill is one of Germany's most popular invoicing tools for freelancers and small businesses. With AnythingMCP, you can connect FastBill's API directly to Claude, enabling natural language queries over your financial data.
+
+### What You Can Do
+
+Once connected, ask Claude things like:
+- "Show me all unpaid invoices from this quarter"
+- "How much revenue did customer Müller GmbH generate last year?"
+- "List my top 10 customers by invoice volume"
+- "What are my total expenses for March?"
+
+### Step 1: Set Up AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Or use [AnythingMCP Cloud](https://cloud.anythingmcp.com) for instant setup without Docker.
+
+### Step 2: Import the FastBill Adapter
+
+1. Open `http://localhost:3000/connectors/store`
+2. Find **FastBill Invoicing** in the adapter list
+3. Click **Import** — you'll be prompted for your credentials
+4. Enter your **FastBill email** and **API key** (find it in FastBill under Settings → API)
+
+### Step 3: Assign to an MCP Server
+
+After import, choose which MCP server should expose FastBill tools. You can select an existing one or create a new MCP server.
+
+### Step 4: Connect Claude
+
+Add the MCP server to your Claude Desktop configuration:
+
+```json
+{
+  "mcpServers": {
+    "fastbill": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `fastbill_list_customers` | Search and list customers |
+| `fastbill_list_invoices` | List invoices by customer, month, or year |
+| `fastbill_get_invoice` | Get full invoice details with line items |
+| `fastbill_list_expenses` | List expenses by period |
+| `fastbill_list_revenues` | List revenue entries |
+
+### Why AnythingMCP?
+
+Unlike building a custom integration, AnythingMCP gives you a pre-built FastBill adapter with one-click import. Your API credentials are encrypted, and all requests are logged in the audit trail. You can combine FastBill with other connectors (DHL, weclapp, etc.) in a single MCP server.

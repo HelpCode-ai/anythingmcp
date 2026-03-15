@@ -1,0 +1,36 @@
+---
+title: "Come collegare Billomat a MCP per agenti AI"
+description: "Gestisci fatture, clienti, articoli e preventivi con agenti AI via MCP. Billomat è una piattaforma tedesca di fatturazione e contabilità online."
+category: "connectors"
+keyword: "Billomat MCP Server, Billomat API AI, fatturazione MCP, Billomat con Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "billomat"
+---
+
+## Fatturazione Billomat con Agenti AI
+
+Billomat è una piattaforma tedesca di fatturazione e contabilità online per freelancer e PMI. Collegando la sua API REST a MCP, gli agenti AI possono gestire clienti, fatture, articoli e preventivi.
+
+## Configurazione Rapida
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Apri `http://localhost:3000/connectors/store`, importa l'adattatore Billomat e inserisci il sottodominio e l'API key.
+
+```json
+{
+  "mcpServers": {
+    "billomat": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Casi d'Uso
+
+- **"Mostra tutte le fatture scadute"**
+- **"Quanti preventivi aperti abbiamo?"**
+- **"Lista tutti i clienti con i relativi importi fatturati"**
+- **"Quali articoli abbiamo nel catalogo?"**

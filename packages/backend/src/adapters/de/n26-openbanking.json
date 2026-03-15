@@ -1,0 +1,90 @@
+{
+  "slug": "n26-openbanking",
+  "name": "N26 Open Banking (PSD2)",
+  "description": "Access N26 bank account data via the PSD2 Open Banking API. View account balances, transactions, and account details with proper authorization.",
+  "region": "de",
+  "category": "banking",
+  "icon": "n26",
+  "docsUrl": "https://docs.tech26.de/",
+  "requiredEnvVars": ["N26_CLIENT_ID", "N26_CLIENT_SECRET"],
+  "connector": {
+    "name": "N26 Open Banking",
+    "type": "REST",
+    "baseUrl": "https://xs2a.tech26.de",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{N26_CLIENT_ID}}",
+      "clientSecret": "{{N26_CLIENT_SECRET}}",
+      "authorizationUrl": "https://xs2a.tech26.de/oauth2/authorize",
+      "tokenUrl": "https://xs2a.tech26.de/oauth2/token",
+      "scopes": "aisp"
+    }
+  },
+  "tools": [
+    {
+      "name": "n26_get_accounts",
+      "description": "List all accounts associated with the authorized N26 user. Returns account IDs, IBANs, currency, and account type.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/berlin-group/accounts"
+      }
+    },
+    {
+      "name": "n26_get_account_balances",
+      "description": "Get current balances for a specific N26 account including booked balance and available balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "description": "The N26 account ID (obtained from n26_get_accounts)"
+          }
+        },
+        "required": ["accountId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/berlin-group/accounts/${accountId}/balances"
+      }
+    },
+    {
+      "name": "n26_get_transactions",
+      "description": "Get transactions for a specific N26 account. Returns transaction details including amount, date, counterparty, and booking status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "description": "The N26 account ID"
+          },
+          "dateFrom": {
+            "type": "string",
+            "description": "Start date in YYYY-MM-DD format"
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "End date in YYYY-MM-DD format"
+          },
+          "bookingStatus": {
+            "type": "string",
+            "description": "Filter by booking status: 'booked', 'pending', or 'both'. Default: 'booked'"
+          }
+        },
+        "required": ["accountId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/berlin-group/accounts/${accountId}/transactions",
+        "queryParams": {
+          "dateFrom": "${dateFrom}",
+          "dateTo": "${dateTo}",
+          "bookingStatus": "${bookingStatus}"
+        }
+      }
+    }
+  ]
+}

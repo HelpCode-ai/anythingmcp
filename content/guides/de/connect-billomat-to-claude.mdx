@@ -1,0 +1,36 @@
+---
+title: "Billomat mit Claude verbinden — KI-gestützte Buchhaltung"
+description: "Billomat mit Claude AI über MCP verbinden. Kunden, Rechnungen, Artikel und Angebote per natürlicher Sprache verwalten."
+category: "connectors"
+keyword: "Billomat Claude, Billomat KI, Billomat mit Claude nutzen, Billomat MCP Server"
+publishedAt: "2026-03-15"
+adapterSlug: "billomat"
+---
+
+## Billomat mit Claude verbinden
+
+Billomat ist eine deutsche Online-Rechnungsplattform für Freelancer und KMU. Mit AnythingMCP verbinden Sie Billomat direkt mit Claude.
+
+### Was Sie fragen können
+
+- **"Zeige alle überfälligen Rechnungen"**
+- **"Kundendetails für Müller GmbH"**
+- **"Wie viele offene Angebote haben wir?"**
+- **"Welche Artikel sind im Katalog?"**
+
+### Einrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Importieren Sie den **Billomat**-Adapter, geben Sie Ihre Subdomain und Ihren API-Key ein, und verbinden Sie Claude.
+
+```json
+{
+  "mcpServers": {
+    "billomat": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```

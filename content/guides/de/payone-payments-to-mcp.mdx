@@ -1,0 +1,36 @@
+---
+title: "PAYONE Zahlungen mit KI-Agenten via MCP verwalten"
+description: "E-Commerce-Zahlungen über KI-Agenten und MCP verarbeiten. Transaktionen auflisten, Zahlungen erfassen und Rückerstattungen über die PAYONE API."
+category: "connectors"
+keyword: "PAYONE MCP Server, PAYONE API KI, Zahlungsabwicklung MCP, PAYONE mit Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "payone"
+---
+
+## PAYONE Zahlungen mit KI-Agenten
+
+PAYONE ist ein führender europäischer Zahlungsdienstleister. Die Verbindung mit MCP ermöglicht KI-Agenten die Überwachung von Transaktionen, Zahlungserfassung und Rückerstattungen.
+
+## Schnelleinrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffnen Sie `http://localhost:3000/connectors/store`, importieren Sie den PAYONE-Adapter und geben Sie Merchant ID, API Key, Portal ID und Account ID ein.
+
+```json
+{
+  "mcpServers": {
+    "payone": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## KI-Anwendungsfälle
+
+- **"Zeige alle Transaktionen von heute"**
+- **"Was ist der Status der Transaktion XYZ?"**
+- **"Erfasse die ausstehende Zahlung für Bestellung 12345"**
+- **"Erstatte die letzte Transaktion für Kunde Müller"**

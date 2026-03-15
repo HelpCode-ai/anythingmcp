@@ -1,0 +1,51 @@
+---
+title: "How to Connect Billomat to Claude for AI-Powered Accounting"
+description: "Connect Billomat invoicing to Claude AI using MCP. Manage clients, invoices, articles, and offers with natural language. Step-by-step setup guide."
+category: "connectors"
+keyword: "Billomat Claude, Billomat AI, Billomat MCP, connect Billomat to Claude, Billomat API Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "billomat"
+---
+
+## Connect Billomat to Claude
+
+Billomat is a German online invoicing and accounting platform. With AnythingMCP, you can connect Billomat to Claude AI and manage your invoices, clients, and quotes using natural language.
+
+### What You Can Do
+
+- "List all overdue invoices"
+- "Show me client details for Müller GmbH"
+- "How many open offers do we have this month?"
+- "What articles are in our catalog?"
+
+### Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+1. Open `http://localhost:3000/connectors/store` and import the **Billomat** adapter
+2. Enter your **Billomat subdomain** (e.g., `mycompany` from `mycompany.billomat.net`) and **API key**
+3. Assign the connector to an MCP server
+
+### Connect Claude
+
+```json
+{
+  "mcpServers": {
+    "billomat": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `billomat_list_clients` | List and search clients |
+| `billomat_get_client` | Get client details |
+| `billomat_list_invoices` | Filter invoices by status or client |
+| `billomat_get_invoice` | Full invoice with line items |
+| `billomat_list_articles` | List products and services |
+| `billomat_list_offers` | List quotes and offers |

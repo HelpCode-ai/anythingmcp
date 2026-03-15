@@ -1,0 +1,55 @@
+---
+title: "How to Connect N26 Open Banking to MCP for AI Agents"
+description: "Access N26 bank account data via AI agents and MCP using the PSD2 Open Banking API. View balances, transactions, and account details."
+category: "connectors"
+keyword: "N26 MCP Server, N26 Open Banking API, PSD2 MCP integration, N26 mit Claude nutzen"
+publishedAt: "2026-03-15"
+adapterSlug: "n26-openbanking"
+---
+
+## N26 Open Banking with AI Agents
+
+N26 is a leading European neobank. Through the PSD2 Open Banking API, AI agents can access account information, balances, and transaction history with proper authorization.
+
+## Quick Setup with Built-in Adapter
+
+### Step 1: Deploy AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Step 2: Import the N26 Adapter
+
+Open `http://localhost:3000/connectors/store` and click **Import** on the N26 Open Banking (PSD2) adapter. Enter your OAuth Client ID and Client Secret when prompted.
+
+### Step 3: Get PSD2 API Access
+
+Apply for API access through N26's PSD2 developer portal. You'll need to be a registered AISP (Account Information Service Provider) under PSD2 regulation.
+
+### Step 4: Connect to Your AI Agent
+
+```json
+{
+  "mcpServers": {
+    "n26": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `n26_get_accounts` | List all accounts linked to the consent |
+| `n26_get_balances` | Get current account balances |
+| `n26_get_transactions` | Get transaction history with filters |
+
+## AI Agent Use Cases
+
+- **"What's my current N26 account balance?"**
+- **"Show my transactions from last week"**
+- **"List all accounts linked to my profile"**

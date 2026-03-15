@@ -1,0 +1,41 @@
+---
+title: "Come collegare NINA Avvisi Emergenza a MCP per agenti AI"
+description: "Ricevi avvisi di emergenza tedeschi ufficiali via agenti AI e MCP. Alluvioni, tempeste, incendi in tempo reale. API pubblica gratuita."
+category: "connectors"
+keyword: "NINA MCP Server, avvisi emergenza Germania AI, BBK MCP"
+publishedAt: "2026-03-15"
+adapterSlug: "nina-warnung"
+---
+
+## Avvisi Emergenza NINA con Agenti AI
+
+NINA è il sistema ufficiale di avvisi di emergenza tedesco del BBK. L'API fornisce accesso in tempo reale ad avvisi su alluvioni, tempeste, incendi e altre emergenze. Nessuna chiave API necessaria.
+
+## Configurazione Rapida
+
+### Passo 1: Distribuisci AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Passo 2: Importa l'Adattatore NINA
+
+Apri `http://localhost:3000/connectors/store` e clicca **Import**. Non servono credenziali.
+
+### Passo 3: Collega al Tuo Agente AI
+
+```json
+{
+  "mcpServers": {
+    "nina": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Casi d'Uso
+
+- **"Ci sono avvisi di alluvione a Berlino?"**
+- **"Mostra tutti gli avvisi di emergenza attivi in Germania"**
+- **"Ci sono avvisi di tempesta per Amburgo oggi?"**

@@ -1,0 +1,41 @@
+---
+title: "NINA Warnungen mit KI-Agenten via MCP nutzen"
+description: "Offizielle deutsche Katastrophenwarnungen und Notfallmeldungen über KI-Agenten und MCP abrufen. Hochwasser, Stürme, Brände in Echtzeit."
+category: "connectors"
+keyword: "NINA MCP Server, BBK Warnungen KI, Katastrophenwarnungen MCP, NINA Warn-App API"
+publishedAt: "2026-03-15"
+adapterSlug: "nina-warnung"
+---
+
+## NINA Katastrophenwarnungen mit KI-Agenten
+
+NINA (Notfall-Informations- und Nachrichten-App) ist das offizielle Warnsystem des BBK. Die API bietet Echtzeit-Zugang zu Warnungen über Hochwasser, Stürme, Brände und andere Notfälle. Kein API-Schlüssel erforderlich.
+
+## Schnelleinrichtung
+
+### Schritt 1: AnythingMCP bereitstellen
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Schritt 2: NINA-Adapter importieren
+
+Öffnen Sie `http://localhost:3000/connectors/store` und klicken Sie auf **Import**. Keine Zugangsdaten erforderlich.
+
+### Schritt 3: Mit KI-Agent verbinden
+
+```json
+{
+  "mcpServers": {
+    "nina": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## KI-Anwendungsfälle
+
+- **"Gibt es aktuelle Hochwasserwarnungen in Berlin?"**
+- **"Zeige alle aktuellen Warnmeldungen in Deutschland"**
+- **"Gibt es Sturmwarnungen für Hamburg heute?"**

@@ -1,0 +1,27 @@
+---
+title: "ScopeVisio mit KI-Agenten via MCP verbinden"
+description: "ScopeVisio Cloud ERP über MCP mit KI-Agenten verbinden. Kontakte, Rechnungen und Projekte per natürlicher Sprache verwalten."
+category: "connectors"
+keyword: "ScopeVisio MCP Server, ScopeVisio KI, ScopeVisio mit Claude nutzen, ScopeVisio API"
+publishedAt: "2026-03-15"
+adapterSlug: "scopevisio"
+---
+
+## ScopeVisio mit KI-Agenten verbinden
+
+ScopeVisio ist eine deutsche Cloud-ERP- und CRM-Plattform. Mit AnythingMCP verbinden Sie die REST API mit jedem MCP-kompatiblen KI-Agenten.
+
+### Einrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Importieren Sie den **ScopeVisio**-Adapter und geben Sie Ihren Bearer Token ein.
+
+### KI-Anwendungsfälle
+
+- **"Zeige alle überfälligen Ausgangsrechnungen"**
+- **"Liste Kontakte nach Firmenname"**
+- **"Welche Projekte sind aktuell aktiv?"**

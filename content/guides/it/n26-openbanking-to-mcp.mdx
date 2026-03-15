@@ -1,0 +1,35 @@
+---
+title: "Come collegare N26 Open Banking a MCP per agenti AI"
+description: "Accedi ai dati del conto N26 via agenti AI e MCP usando l'API PSD2 Open Banking. Saldi, transazioni e dettagli del conto."
+category: "connectors"
+keyword: "N26 MCP Server, N26 Open Banking AI, PSD2 MCP, N26 con Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "n26-openbanking"
+---
+
+## N26 Open Banking con Agenti AI
+
+N26 è una neobank europea leader. Tramite l'API PSD2 Open Banking, gli agenti AI possono accedere a informazioni sul conto, saldi e storico transazioni.
+
+## Configurazione Rapida
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Apri `http://localhost:3000/connectors/store`, importa l'adattatore N26 e inserisci Client ID e Client Secret OAuth.
+
+```json
+{
+  "mcpServers": {
+    "n26": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Casi d'Uso
+
+- **"Qual è il mio saldo N26 attuale?"**
+- **"Mostra le transazioni dell'ultima settimana"**
+- **"Lista tutti i conti collegati"**
