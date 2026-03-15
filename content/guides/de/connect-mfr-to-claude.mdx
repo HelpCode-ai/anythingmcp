@@ -1,0 +1,36 @@
+---
+title: "MFR Mobile Field Report mit Claude verbinden — KI für den Außendienst"
+description: "MFR Außendienst-Software mit Claude AI über MCP verbinden. Serviceaufträge, Termine und Techniker per natürlicher Sprache verwalten."
+category: "connectors"
+keyword: "MFR Claude, Mobile Field Report KI, MFR mit Claude nutzen, Außendienst MCP"
+publishedAt: "2026-03-15"
+adapterSlug: "mfr-fieldservice"
+---
+
+## MFR mit Claude verbinden
+
+Mobile Field Report (MFR) ist eine deutsche Plattform für das Field-Service-Management. Mit AnythingMCP verbinden Sie MFR direkt mit Claude.
+
+### Was Sie fragen können
+
+- **"Zeige alle offenen Serviceaufträge dieser Woche"**
+- **"Welcher Techniker hat heute die meisten Termine?"**
+- **"Serviceobjekte der Firma Müller GmbH"**
+- **"Wie viele Stunden hat das Team letzten Monat gearbeitet?"**
+
+### Einrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Importieren Sie den **MFR**-Adapter, geben Sie Ihren Benutzernamen und Ihr Passwort ein, und verbinden Sie Claude.
+
+```json
+{
+  "mcpServers": {
+    "mfr": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```

@@ -1,0 +1,41 @@
+---
+title: "How to Connect MFR Mobile Field Report to ChatGPT for AI Field Service"
+description: "Connect MFR field service to ChatGPT using MCP. Manage service requests, appointments, and technician schedules with natural language."
+category: "connectors"
+keyword: "MFR ChatGPT, Mobile Field Report ChatGPT, MFR MCP, connect MFR to ChatGPT, field service ChatGPT"
+publishedAt: "2026-03-15"
+adapterSlug: "mfr-fieldservice"
+---
+
+## Connect MFR to ChatGPT
+
+Mobile Field Report (MFR) is a field service management platform. Using AnythingMCP, you can expose MFR's OData API to ChatGPT through MCP — manage service operations with natural language.
+
+### Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+1. Open `http://localhost:3000/connectors/store` and import the **MFR** adapter
+2. Enter your MFR username and password
+3. Assign to an MCP server
+
+### Connect to ChatGPT
+
+```json
+{
+  "mcpServers": {
+    "mfr": { "url": "https://your-anythingmcp-instance.com/mcp" }
+  }
+}
+```
+
+### Use Cases
+
+- **"Show all open service requests"** — Overview of pending work
+- **"Which technician is available tomorrow?"** — Schedule planning
+- **"List all service objects at Müller GmbH"** — Equipment tracking
+- **"Show time entries for last week"** — Workload analysis
+- **"What's the status of request SR-12345?"** — Quick lookup

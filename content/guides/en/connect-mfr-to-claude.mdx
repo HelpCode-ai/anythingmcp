@@ -1,0 +1,64 @@
+---
+title: "How to Connect MFR Mobile Field Report to Claude for AI-Powered Field Service"
+description: "Connect MFR field service management to Claude AI using MCP. Query service requests, appointments, technicians, and checklists with natural language."
+category: "connectors"
+keyword: "MFR Claude, Mobile Field Report AI, MFR MCP, connect MFR to Claude, field service AI"
+publishedAt: "2026-03-15"
+adapterSlug: "mfr-fieldservice"
+---
+
+## Connect MFR to Claude
+
+Mobile Field Report (MFR) is a German field service management platform used by technicians and service companies. With AnythingMCP, you can connect MFR's OData API to Claude and manage field operations with natural language.
+
+### What You Can Do
+
+- "Show all open service requests for this week"
+- "Which technician has the most appointments today?"
+- "List service objects for company Müller GmbH"
+- "What checklist steps are incomplete for request SR-12345?"
+- "How many hours did the team work last month?"
+
+### Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+1. Open `http://localhost:3000/connectors/store` and import the **MFR Mobile Field Report** adapter
+2. Enter your **MFR username** and **password**
+3. Assign to an MCP server
+
+### Connect Claude
+
+```json
+{
+  "mcpServers": {
+    "mfr": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `mfr_list_service_requests` | List work orders with OData filtering |
+| `mfr_get_service_request` | Get request details with linked data |
+| `mfr_list_appointments` | View scheduled technician appointments |
+| `mfr_list_companies` | List customer companies |
+| `mfr_list_contacts` | List contacts for companies |
+| `mfr_list_users` | List technicians and users |
+| `mfr_list_service_objects` | List equipment being serviced |
+| `mfr_list_steps` | View checklist steps |
+| `mfr_list_time_events` | Track working hours |
+| `mfr_list_invoices` | View service invoices |
+
+### OData Filtering
+
+MFR's OData API supports powerful filtering. Claude can use expressions like:
+- `$filter=Status eq 'Open'` — Filter by status
+- `$orderby=CreatedDate desc` — Sort by date
+- `$expand=Company,Appointments` — Include related data
+- `$top=10` — Limit results

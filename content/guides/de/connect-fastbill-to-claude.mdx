@@ -1,0 +1,41 @@
+---
+title: "FastBill mit Claude verbinden — KI-gestützte Rechnungsstellung"
+description: "FastBill mit Claude AI über MCP verbinden. Kunden, Rechnungen und Ausgaben per natürlicher Sprache abfragen. Schritt-für-Schritt-Anleitung."
+category: "connectors"
+keyword: "FastBill Claude, FastBill KI, FastBill mit Claude nutzen, FastBill MCP Server"
+publishedAt: "2026-03-15"
+adapterSlug: "fastbill"
+---
+
+## FastBill mit Claude verbinden
+
+FastBill ist eines der beliebtesten Rechnungstools für Freelancer und Kleinunternehmen in Deutschland. Mit AnythingMCP verbinden Sie FastBill direkt mit Claude.
+
+### Was Sie fragen können
+
+- **"Zeige alle unbezahlten Rechnungen dieses Quartals"**
+- **"Wie viel Umsatz hat Kunde Müller GmbH letztes Jahr gemacht?"**
+- **"Was sind meine Gesamtausgaben für März?"**
+- **"Liste die Top 10 Kunden nach Rechnungsvolumen"**
+
+### Schnelleinrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+1. Öffnen Sie `http://localhost:3000/connectors/store`
+2. Importieren Sie den **FastBill**-Adapter
+3. Geben Sie Ihre FastBill-E-Mail und Ihren API-Key ein
+4. Weisen Sie den Connector einem MCP-Server zu
+
+### Claude verbinden
+
+```json
+{
+  "mcpServers": {
+    "fastbill": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```

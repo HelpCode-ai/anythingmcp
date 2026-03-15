@@ -1,0 +1,40 @@
+---
+title: "How to Connect Billomat to ChatGPT for AI-Powered Accounting"
+description: "Connect Billomat invoicing to ChatGPT using MCP. Query clients, invoices, and offers with natural language. No coding required."
+category: "connectors"
+keyword: "Billomat ChatGPT, Billomat AI, connect Billomat to ChatGPT, Billomat MCP ChatGPT"
+publishedAt: "2026-03-15"
+adapterSlug: "billomat"
+---
+
+## Connect Billomat to ChatGPT
+
+Billomat is a German invoicing platform for freelancers and SMBs. Using AnythingMCP, you can expose Billomat data to ChatGPT through MCP — ask questions about invoices, clients, and quotes in natural language.
+
+### Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+1. Open `http://localhost:3000/connectors/store` and import the **Billomat** adapter
+2. Enter your Billomat subdomain and API key
+3. Assign to an MCP server
+
+### Connect to ChatGPT
+
+```json
+{
+  "mcpServers": {
+    "billomat": { "url": "https://your-anythingmcp-instance.com/mcp" }
+  }
+}
+```
+
+### Use Cases
+
+- **"Show all overdue invoices"** — Instant overview of payment status
+- **"List clients with total revenue over 10,000€"** — Customer analysis
+- **"What open offers do we have?"** — Pipeline visibility
+- **"Get invoice #2024-0042 details"** — Quick lookup with line items
