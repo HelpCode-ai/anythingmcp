@@ -17,6 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Copy config files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.CLOUD_HOST }}
+          username: root
+          key: ${{ secrets.CLOUD_SSH_KEY }}
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile"
+          target: /tmp/anythingmcp-deploy
+          overwrite: true
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -30,13 +40,10 @@ jobs:
             # Pull latest image
             docker pull helpcodeai/anythingmcp:${{ inputs.tag }}
 
-            # Update compose and Caddyfile from repo
-            curl -fsSL -H "Authorization: token ${{ secrets.GH_DEPLOY_TOKEN }}" \
-              -o docker-compose.cloud.yml \
-              "https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/${{ github.sha }}/docker-compose.cloud.yml"
-            curl -fsSL -H "Authorization: token ${{ secrets.GH_DEPLOY_TOKEN }}" \
-              -o Caddyfile \
-              "https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/${{ github.sha }}/deploy/cloud/Caddyfile"
+            # Update compose and Caddyfile from checkout
+            cp /tmp/anythingmcp-deploy/docker-compose.cloud.yml ./docker-compose.cloud.yml
+            cp /tmp/anythingmcp-deploy/deploy/cloud/Caddyfile ./Caddyfile
+            rm -rf /tmp/anythingmcp-deploy
 
             # Restart services
             docker compose -f docker-compose.cloud.yml up -d --remove-orphans
