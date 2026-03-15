@@ -1,0 +1,57 @@
+---
+title: "Come collegare DHL Tracking a MCP per agenti AI"
+description: "Traccia le spedizioni DHL con agenti AI via MCP. L'adattatore DHL integrato in AnythingMCP permette la configurazione istantanea senza codice."
+category: "connectors"
+keyword: "DHL MCP Server, DHL tracking AI, DHL tracciamento spedizioni, DHL con Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "dhl-tracking"
+---
+
+## Tracciamento Spedizioni DHL con Agenti AI
+
+DHL è la più grande azienda di logistica al mondo. Collegando l'API DHL Unified Tracking a MCP, i tuoi agenti AI possono tracciare spedizioni, monitorare lo stato delle consegne e fornire aggiornamenti logistici in tempo reale.
+
+## Configurazione Rapida con Adattatore Integrato
+
+AnythingMCP include un adattatore DHL preconfigurato. Nessuna configurazione API manuale necessaria.
+
+### Passo 1: Distribuisci AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Passo 2: Importa l'Adattatore DHL
+
+Apri la dashboard AnythingMCP su `http://localhost:3000/connectors/store` e clicca **Import** sull'adattatore DHL Shipment Tracking. Inserisci la tua chiave API DHL quando richiesto.
+
+### Passo 3: Ottieni la Chiave API DHL
+
+Registrati sul [DHL Developer Portal](https://developer.dhl.com/) e crea un'applicazione per la Unified Tracking API.
+
+### Passo 4: Collega al Tuo Agente AI
+
+```json
+{
+  "mcpServers": {
+    "dhl": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Tools Disponibili
+
+| Tool | Descrizione |
+|------|-------------|
+| `dhl_track_shipment` | Traccia una singola spedizione per numero di tracciamento |
+| `dhl_track_multiple` | Traccia più spedizioni contemporaneamente (fino a 20) |
+
+## Casi d'Uso con Agenti AI
+
+- **"Traccia il mio pacco DHL 1234567890"**
+- **"Qual è lo stato di consegna di questi 5 pacchi?"**
+- **"Quando arriverà il mio pacco?"**
+- **"Mostra tutti gli eventi di consegna per il tracking XYZ"**

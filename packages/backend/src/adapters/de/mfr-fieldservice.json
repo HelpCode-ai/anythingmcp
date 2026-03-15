@@ -1,0 +1,320 @@
+{
+  "slug": "mfr-fieldservice",
+  "name": "MFR Mobile Field Report",
+  "description": "Manage field service operations with Mobile Field Report (MFR). Access service requests, appointments, companies, contacts, technicians, checklists, and reports via OData API.",
+  "region": "de",
+  "category": "field-service",
+  "icon": "mfr",
+  "docsUrl": "https://portal.mobilefieldreport.com/",
+  "requiredEnvVars": ["MFR_USERNAME", "MFR_PASSWORD"],
+  "connector": {
+    "name": "MFR Field Service",
+    "type": "REST",
+    "baseUrl": "https://portal.mobilefieldreport.com/odata",
+    "authType": "BASIC",
+    "authConfig": {
+      "username": "{{MFR_USERNAME}}",
+      "password": "{{MFR_PASSWORD}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "mfr_list_service_requests",
+      "description": "List service requests (work orders). Returns request number, status, description, assigned technician, and linked company. Supports OData filtering and sorting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": {
+            "type": "number",
+            "description": "Number of results to return (default: 20)"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Number of results to skip for pagination"
+          },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter expression (e.g. \"Status eq 'Open'\")"
+          },
+          "$orderby": {
+            "type": "string",
+            "description": "OData ordering (e.g. \"CreatedDate desc\")"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand related entities (e.g. \"Company,Appointments\")"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ServiceRequests",
+        "queryParams": {
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}",
+          "$orderby": "${$orderby}",
+          "$expand": "${$expand}"
+        }
+      }
+    },
+    {
+      "name": "mfr_get_service_request",
+      "description": "Get detailed information about a specific service request by ID, including all fields, linked company, and appointments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "description": "The service request ID (GUID)"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand related entities (e.g. \"Company,Appointments,Steps\")"
+          }
+        },
+        "required": ["requestId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ServiceRequests(guid'${requestId}')",
+        "queryParams": {
+          "$expand": "${$expand}"
+        }
+      }
+    },
+    {
+      "name": "mfr_list_appointments",
+      "description": "List scheduled appointments for field technicians. Returns date, time, duration, assigned technician, and linked service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": {
+            "type": "number",
+            "description": "Number of results to return (default: 20)"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Number of results to skip"
+          },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter (e.g. \"StartDateTime ge datetime'2026-03-01T00:00:00'\")"
+          },
+          "$orderby": {
+            "type": "string",
+            "description": "OData ordering (e.g. \"StartDateTime asc\")"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Appointments",
+        "queryParams": {
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}",
+          "$orderby": "${$orderby}"
+        }
+      }
+    },
+    {
+      "name": "mfr_list_companies",
+      "description": "List companies (customers/clients) in MFR. Returns company name, address, contact info, and ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": {
+            "type": "number",
+            "description": "Number of results to return (default: 20)"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Number of results to skip"
+          },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter (e.g. \"Name eq 'Mustermann GmbH'\")"
+          },
+          "$search": {
+            "type": "string",
+            "description": "Free text search across company fields"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Companies",
+        "queryParams": {
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}",
+          "$search": "${$search}"
+        }
+      }
+    },
+    {
+      "name": "mfr_list_contacts",
+      "description": "List contacts (people associated with companies). Returns name, email, phone, role, and linked company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": {
+            "type": "number",
+            "description": "Number of results to return (default: 20)"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Number of results to skip"
+          },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter expression"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Contacts",
+        "queryParams": {
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}"
+        }
+      }
+    },
+    {
+      "name": "mfr_list_users",
+      "description": "List technicians and users in the MFR system. Returns name, email, role, and qualifications.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": {
+            "type": "number",
+            "description": "Number of results to return"
+          },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter expression"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Users",
+        "queryParams": {
+          "$top": "${$top}",
+          "$filter": "${$filter}"
+        }
+      }
+    },
+    {
+      "name": "mfr_list_service_objects",
+      "description": "List service objects (equipment, machines, devices being serviced). Returns object name, serial number, location, and linked company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": {
+            "type": "number",
+            "description": "Number of results to return"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Number of results to skip"
+          },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter expression"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand related entities (e.g. \"Company\")"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ServiceObjects",
+        "queryParams": {
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}",
+          "$expand": "${$expand}"
+        }
+      }
+    },
+    {
+      "name": "mfr_list_steps",
+      "description": "List checklist steps for a service request. Returns step name, type, status (done/not done), and any entered values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "serviceRequestId": {
+            "type": "string",
+            "description": "The service request ID (GUID) to get steps for"
+          }
+        },
+        "required": ["serviceRequestId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ServiceRequests(guid'${serviceRequestId}')/Steps"
+      }
+    },
+    {
+      "name": "mfr_list_time_events",
+      "description": "List time tracking events. Returns start/end times, duration, technician, and linked service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": {
+            "type": "number",
+            "description": "Number of results to return"
+          },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter (e.g. \"StartDateTime ge datetime'2026-03-01T00:00:00'\")"
+          },
+          "$orderby": {
+            "type": "string",
+            "description": "OData ordering"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/TimeEvents",
+        "queryParams": {
+          "$top": "${$top}",
+          "$filter": "${$filter}",
+          "$orderby": "${$orderby}"
+        }
+      }
+    },
+    {
+      "name": "mfr_list_invoices",
+      "description": "List invoices generated from service requests. Returns invoice number, amount, date, and payment status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": {
+            "type": "number",
+            "description": "Number of results to return"
+          },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter expression"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Invoices",
+        "queryParams": {
+          "$top": "${$top}",
+          "$filter": "${$filter}"
+        }
+      }
+    }
+  ]
+}

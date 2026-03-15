@@ -1,0 +1,59 @@
+---
+title: "How to Connect TeamViewer to MCP for AI Agents"
+description: "Manage TeamViewer devices, contacts, and remote sessions via AI agents and MCP. Monitor device status and create support sessions."
+category: "connectors"
+keyword: "TeamViewer MCP Server, TeamViewer API AI, remote access MCP, TeamViewer mit Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "teamviewer"
+---
+
+## TeamViewer with AI Agents
+
+TeamViewer is a leading remote access and support platform. Connecting its Web API to MCP enables AI agents to manage devices, monitor online status, and create remote support sessions.
+
+## Quick Setup with Built-in Adapter
+
+### Step 1: Deploy AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Step 2: Import the TeamViewer Adapter
+
+Open `http://localhost:3000/connectors/store` and click **Import** on the TeamViewer API adapter. Enter your TeamViewer access token when prompted.
+
+### Step 3: Get Your Access Token
+
+Generate a Script Token in TeamViewer Management Console under **Profile > Apps > Create script token**. Grant access to devices, contacts, and sessions.
+
+### Step 4: Connect to Your AI Agent
+
+```json
+{
+  "mcpServers": {
+    "teamviewer": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `teamviewer_list_devices` | List all managed devices with online status |
+| `teamviewer_get_device` | Get details of a specific device |
+| `teamviewer_list_contacts` | List contacts in your address book |
+| `teamviewer_list_groups` | List device groups |
+| `teamviewer_get_account` | Get current account information |
+| `teamviewer_list_sessions` | List active remote sessions |
+
+## AI Agent Use Cases
+
+- **"Which of my devices are currently online?"**
+- **"Show me the details of device XYZ"**
+- **"How many devices are in the 'Servers' group?"**
+- **"List all active remote support sessions"**

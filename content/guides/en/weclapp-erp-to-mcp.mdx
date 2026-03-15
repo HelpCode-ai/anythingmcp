@@ -1,0 +1,59 @@
+---
+title: "How to Connect weclapp Cloud ERP to MCP for AI Agents"
+description: "Access weclapp ERP data including customers, orders, invoices, and articles via AI agents and MCP. Popular cloud ERP for German SMBs."
+category: "connectors"
+keyword: "weclapp MCP Server, weclapp API AI, Cloud ERP MCP, weclapp mit Claude nutzen"
+publishedAt: "2026-03-15"
+adapterSlug: "weclapp"
+---
+
+## weclapp Cloud ERP with AI Agents
+
+weclapp is a popular cloud ERP solution for German small and medium businesses. Connecting its API to MCP enables AI agents to query customers, orders, invoices, and inventory data.
+
+## Quick Setup with Built-in Adapter
+
+### Step 1: Deploy AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Step 2: Import the weclapp Adapter
+
+Open `http://localhost:3000/connectors/store` and click **Import** on the weclapp Cloud ERP adapter. Enter your weclapp tenant name and API token when prompted.
+
+### Step 3: Get weclapp API Token
+
+In weclapp, go to **My Settings > API Tokens** and generate a new token. Your tenant name is the subdomain (e.g., `yourcompany` from `yourcompany.weclapp.com`).
+
+### Step 4: Connect to Your AI Agent
+
+```json
+{
+  "mcpServers": {
+    "weclapp": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `weclapp_list_customers` | List customers with contact info and IDs |
+| `weclapp_get_customer` | Get detailed customer information |
+| `weclapp_list_sales_orders` | List sales orders with amounts and status |
+| `weclapp_list_invoices` | List invoices with payment status |
+| `weclapp_list_articles` | List articles/products with stock levels |
+| `weclapp_get_article` | Get detailed article info including warehouse data |
+
+## AI Agent Use Cases
+
+- **"Show me all open orders from this month"**
+- **"What's the current stock for article ABC?"**
+- **"List all unpaid invoices over €1,000"**
+- **"How many customers do we have in Munich?"**

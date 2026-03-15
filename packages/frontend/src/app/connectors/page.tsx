@@ -175,6 +175,14 @@ export default function ConnectorsPage() {
               <span className="hidden sm:inline">Import</span>
             </button>
             <Link
+              href="/connectors/store"
+              className="border border-[var(--border)] px-3 py-2 rounded-md text-sm hover:bg-[var(--accent)] flex items-center gap-1.5"
+              title="Browse pre-built adapter recipes"
+            >
+              <StoreIcon />
+              <span className="hidden sm:inline">Adapters</span>
+            </Link>
+            <Link
               href="/connectors/new"
               className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 flex items-center gap-1.5"
             >
@@ -339,6 +347,13 @@ export default function ConnectorsPage() {
                 <PlusIcon />
                 Add Connector
               </Link>
+              <Link
+                href="/connectors/store"
+                className="inline-flex items-center gap-1.5 border border-[var(--border)] px-4 py-2 rounded-md text-sm hover:bg-[var(--accent)]"
+              >
+                <StoreIcon />
+                Browse Adapters
+              </Link>
               <button
                 onClick={() => setShowImportModal(true)}
                 className="inline-flex items-center gap-1.5 border border-[var(--border)] px-4 py-2 rounded-md text-sm hover:bg-[var(--accent)]"
@@ -485,6 +500,18 @@ function CloseIcon() {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+function StoreIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" />
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" />
+      <path d="M2 7h20" />
+      <path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7" />
     </svg>
   );
 }

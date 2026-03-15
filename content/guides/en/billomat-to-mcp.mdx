@@ -1,0 +1,47 @@
+---
+title: "How to Connect Billomat to MCP for AI Agents"
+description: "Manage invoices, clients, articles, and offers with AI agents via MCP. Billomat is a German online invoicing and accounting platform."
+category: "connectors"
+keyword: "Billomat MCP Server, Billomat API AI, invoicing MCP, Billomat mit Claude nutzen"
+publishedAt: "2026-03-15"
+adapterSlug: "billomat"
+---
+
+## Billomat Invoicing with AI Agents
+
+Billomat is a German online invoicing and accounting platform for freelancers and SMBs. By connecting its REST API to MCP, AI agents can manage clients, create and track invoices, view articles, and handle offers.
+
+## Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Open `http://localhost:3000/connectors/store`, import the Billomat adapter, and enter your Billomat subdomain and API key.
+
+```json
+{
+  "mcpServers": {
+    "billomat": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `billomat_list_clients` | List clients with name filtering |
+| `billomat_get_client` | Get detailed client information |
+| `billomat_list_invoices` | List invoices filtered by client or status |
+| `billomat_get_invoice` | Get full invoice details with line items |
+| `billomat_list_articles` | List products and services |
+| `billomat_list_offers` | List quotes/offers by client |
+
+## Use Cases
+
+- **"Show all overdue invoices"**
+- **"How many open offers do we have?"**
+- **"List all clients and their total invoice amounts"**
+- **"What articles do we have in the catalog?"**

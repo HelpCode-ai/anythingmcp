@@ -1,0 +1,52 @@
+---
+title: "How to Connect MFR Mobile Field Report to MCP for AI Agents"
+description: "Manage field service operations with AI agents via MCP. Access service requests, appointments, technicians, and checklists from Mobile Field Report."
+category: "connectors"
+keyword: "MFR MCP Server, Mobile Field Report API AI, field service MCP, MFR mit Claude nutzen"
+publishedAt: "2026-03-15"
+adapterSlug: "mfr-fieldservice"
+---
+
+## MFR Mobile Field Report with AI Agents
+
+Mobile Field Report (MFR) is a German field service management platform used by technicians and service companies. By connecting its OData API to MCP, AI agents can query service requests, manage appointments, view checklists, and track technician time.
+
+## Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Open `http://localhost:3000/connectors/store`, import the MFR adapter, and enter your MFR username and password.
+
+```json
+{
+  "mcpServers": {
+    "mfr": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `mfr_list_service_requests` | List work orders with OData filtering and sorting |
+| `mfr_get_service_request` | Get details of a specific service request |
+| `mfr_list_appointments` | View scheduled technician appointments |
+| `mfr_list_companies` | List customer companies |
+| `mfr_list_contacts` | List contacts associated with companies |
+| `mfr_list_users` | List technicians and system users |
+| `mfr_list_service_objects` | List equipment and devices being serviced |
+| `mfr_list_steps` | View checklist steps for a service request |
+| `mfr_list_time_events` | Track technician working hours |
+| `mfr_list_invoices` | View invoices from service requests |
+
+## Use Cases
+
+- **"Show all open service requests for this week"**
+- **"Which technician has the most appointments today?"**
+- **"List all service objects for company Müller GmbH"**
+- **"What checklist steps are incomplete for request SR-12345?"**
+- **"How many hours did technician Max work last month?"**

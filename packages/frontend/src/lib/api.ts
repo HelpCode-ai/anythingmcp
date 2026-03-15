@@ -147,6 +147,19 @@ export const connectors = {
     ),
 };
 
+// Adapters (built-in connector recipes)
+export const adapters = {
+  list: (token: string) =>
+    request<any[]>('/api/adapters', { token }),
+  get: (slug: string, token: string) =>
+    request<any>(`/api/adapters/${slug}`, { token }),
+  import: (slug: string, token: string, credentials?: Record<string, string>) =>
+    request<{ message: string; connectorId: string; toolsCreated: number }>(
+      `/api/adapters/${slug}/import`,
+      { method: 'POST', token, body: credentials ? { credentials } : undefined },
+    ),
+};
+
 // Tools
 export const tools = {
   list: (connectorId: string, token: string) =>

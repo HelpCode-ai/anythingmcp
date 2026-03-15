@@ -1,0 +1,36 @@
+---
+title: "weclapp Cloud ERP mit KI-Agenten via MCP verbinden"
+description: "weclapp ERP-Daten wie Kunden, Bestellungen, Rechnungen und Artikel über KI-Agenten und MCP abrufen. Beliebtes Cloud-ERP für deutsche KMU."
+category: "connectors"
+keyword: "weclapp MCP Server, weclapp API KI, Cloud ERP MCP, weclapp mit Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "weclapp"
+---
+
+## weclapp Cloud ERP mit KI-Agenten
+
+weclapp ist eine beliebte Cloud-ERP-Lösung für deutsche KMU. Die Verbindung mit MCP ermöglicht KI-Agenten Zugriff auf Kunden, Bestellungen, Rechnungen und Lagerbestandsdaten.
+
+## Schnelleinrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffnen Sie `http://localhost:3000/connectors/store`, importieren Sie den weclapp-Adapter und geben Sie Ihren Tenant-Namen und API-Token ein.
+
+```json
+{
+  "mcpServers": {
+    "weclapp": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## KI-Anwendungsfälle
+
+- **"Zeige alle offenen Bestellungen dieses Monats"**
+- **"Wie ist der aktuelle Bestand für Artikel ABC?"**
+- **"Liste alle unbezahlten Rechnungen über 1.000 €"**
+- **"Wie viele Kunden haben wir in München?"**

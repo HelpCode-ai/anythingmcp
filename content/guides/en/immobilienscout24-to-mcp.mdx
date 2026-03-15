@@ -1,0 +1,56 @@
+---
+title: "How to Connect ImmobilienScout24 to MCP for AI Agents"
+description: "Search and browse real estate listings on ImmobilienScout24 via AI agents and MCP. Find apartments, houses, and commercial properties in Germany."
+category: "connectors"
+keyword: "ImmobilienScout24 MCP Server, IS24 API AI, real estate MCP, Immobilien mit Claude suchen"
+publishedAt: "2026-03-15"
+adapterSlug: "immobilienscout24"
+---
+
+## ImmobilienScout24 with AI Agents
+
+ImmobilienScout24 is Germany's largest real estate portal. Connecting its API to MCP enables AI agents to search properties, browse listings, and get detailed property information.
+
+## Quick Setup with Built-in Adapter
+
+### Step 1: Deploy AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Step 2: Import the ImmobilienScout24 Adapter
+
+Open `http://localhost:3000/connectors/store` and click **Import** on the ImmobilienScout24 API adapter. Enter your OAuth Client ID and Client Secret when prompted.
+
+### Step 3: Get API Access
+
+Register at the [IS24 Developer Center](https://api.immobilienscout24.de/) and create an application to get OAuth credentials.
+
+### Step 4: Connect to Your AI Agent
+
+```json
+{
+  "mcpServers": {
+    "is24": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `is24_search_properties` | Search listings by location, type, price, size |
+| `is24_search_locations` | Find GeoCode IDs for locations (needed for search) |
+| `is24_get_property` | Get full details of a specific listing |
+
+## AI Agent Use Cases
+
+- **"Find 3-room apartments for rent in Berlin Mitte under €1,500"**
+- **"Show me houses for sale in Munich with a garden"**
+- **"What's the average rent for apartments in Hamburg?"**
+- **"Get details for listing 123456789"**

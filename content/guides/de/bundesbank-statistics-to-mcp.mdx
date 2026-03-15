@@ -1,0 +1,53 @@
+---
+title: "Deutsche Bundesbank Statistiken mit KI-Agenten via MCP nutzen"
+description: "EZB-Wechselkurse, Zinssätze und makroökonomische Daten der Bundesbank über KI-Agenten und MCP abrufen. Kostenlose öffentliche API, kein Schlüssel erforderlich."
+category: "connectors"
+keyword: "Bundesbank MCP Server, EZB Wechselkurse API KI, Bundesbank Statistik MCP, Deutsche Finanzaten MCP"
+publishedAt: "2026-03-15"
+adapterSlug: "bundesbank"
+---
+
+## Bundesbank-Statistiken mit KI-Agenten
+
+Die Deutsche Bundesbank bietet freien Zugang zu makroökonomischen Daten, Wechselkursen, Zinssätzen und Finanzstatistiken über die SDMX REST API. Kein API-Schlüssel erforderlich — sofort verbinden und abfragen.
+
+## Schnelleinrichtung mit integriertem Adapter
+
+### Schritt 1: AnythingMCP bereitstellen
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Schritt 2: Bundesbank-Adapter importieren
+
+Öffnen Sie `http://localhost:3000/connectors/store` und klicken Sie auf **Import** beim Deutsche Bundesbank Statistics Adapter. Da es sich um eine kostenlose öffentliche API handelt, sind keine Zugangsdaten erforderlich.
+
+### Schritt 3: Mit KI-Agent verbinden
+
+```json
+{
+  "mcpServers": {
+    "bundesbank": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Verfügbare Tools
+
+| Tool | Beschreibung |
+|------|-------------|
+| `bundesbank_get_exchange_rates` | Aktuelle und historische Euro-Wechselkurse abrufen |
+| `bundesbank_get_interest_rates` | EZB-Leitzinsen abrufen (Hauptrefinanzierungssatz, Einlagefazilität) |
+| `bundesbank_search_statistics` | Verfügbare Statistikreihen nach Stichwort suchen |
+| `bundesbank_get_timeseries` | Daten einer bestimmten Zeitreihe nach ID abrufen |
+
+## KI-Anwendungsfälle
+
+- **"Wie ist der aktuelle EUR/USD-Wechselkurs?"**
+- **"Zeige mir die EZB-Zinsentwicklung der letzten 5 Jahre"**
+- **"Was war der EUR/GBP-Kurs am 15. Januar 2025?"**
+- **"Suche nach Geldmengenstatistiken"**

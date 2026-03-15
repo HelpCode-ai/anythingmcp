@@ -1,0 +1,36 @@
+---
+title: "Come collegare MFR Mobile Field Report a MCP per agenti AI"
+description: "Gestisci operazioni di assistenza tecnica con agenti AI via MCP. Accedi a richieste di servizio, appuntamenti, tecnici e checklist da Mobile Field Report."
+category: "connectors"
+keyword: "MFR MCP Server, Mobile Field Report API AI, assistenza tecnica MCP, MFR con Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "mfr-fieldservice"
+---
+
+## MFR Mobile Field Report con Agenti AI
+
+Mobile Field Report (MFR) è una piattaforma tedesca per la gestione del servizio tecnico sul campo. Collegando la sua API OData a MCP, gli agenti AI possono accedere a richieste di servizio, appuntamenti, checklist e tracciamento ore.
+
+## Configurazione Rapida
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Apri `http://localhost:3000/connectors/store`, importa l'adattatore MFR e inserisci nome utente e password.
+
+```json
+{
+  "mcpServers": {
+    "mfr": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Casi d'Uso
+
+- **"Mostra tutte le richieste di servizio aperte di questa settimana"**
+- **"Quale tecnico ha più appuntamenti oggi?"**
+- **"Lista tutti gli oggetti di servizio della ditta Müller GmbH"**
+- **"Quali passi della checklist sono incompleti per la richiesta SR-12345?"**

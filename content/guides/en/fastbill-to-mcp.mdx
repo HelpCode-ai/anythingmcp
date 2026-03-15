@@ -1,0 +1,46 @@
+---
+title: "How to Connect FastBill to MCP for AI Agents"
+description: "Manage invoices, customers, and expenses with AI agents via MCP. FastBill is a popular invoicing tool for German freelancers and small businesses."
+category: "connectors"
+keyword: "FastBill MCP Server, FastBill API AI, invoicing MCP, FastBill mit Claude nutzen"
+publishedAt: "2026-03-15"
+adapterSlug: "fastbill"
+---
+
+## FastBill Invoicing with AI Agents
+
+FastBill is a popular invoicing and bookkeeping platform for German freelancers and small businesses. By connecting its API to MCP, AI agents can query customers, list invoices, track expenses, and analyze revenue.
+
+## Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Open `http://localhost:3000/connectors/store`, import the FastBill adapter, and enter your FastBill email and API key.
+
+```json
+{
+  "mcpServers": {
+    "fastbill": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `fastbill_list_customers` | List customers with search filtering |
+| `fastbill_list_invoices` | List invoices filtered by customer, month, or year |
+| `fastbill_get_invoice` | Get full invoice details with line items |
+| `fastbill_list_expenses` | List expenses filtered by period |
+| `fastbill_list_revenues` | List revenue entries |
+
+## Use Cases
+
+- **"Show all unpaid invoices from this month"**
+- **"How much revenue did I generate in Q1?"**
+- **"List all customers from Munich"**
+- **"What are my total expenses for March 2026?"**

@@ -1,0 +1,61 @@
+---
+title: "How to Connect DHL Tracking to MCP for AI Agents"
+description: "Track DHL shipments with AI agents via MCP. Use the built-in DHL adapter in AnythingMCP for instant setup — no code required."
+category: "connectors"
+keyword: "DHL MCP Server, DHL tracking AI, DHL shipment tracking API, connect DHL to Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "dhl-tracking"
+---
+
+## DHL Shipment Tracking with AI Agents
+
+DHL is the world's largest logistics company, handling millions of shipments daily. By connecting DHL's Unified Tracking API to MCP, your AI agents can track shipments, monitor delivery status, and provide real-time logistics updates.
+
+## Quick Setup with Built-in Adapter
+
+AnythingMCP includes a pre-configured DHL adapter. No manual API configuration needed.
+
+### Step 1: Deploy AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Step 2: Import the DHL Adapter
+
+Open the AnythingMCP dashboard at `http://localhost:3000/connectors/store` and click **Import** on the DHL Shipment Tracking adapter. Enter your DHL API key when prompted.
+
+### Step 3: Get Your DHL API Key
+
+Register at the [DHL Developer Portal](https://developer.dhl.com/) and create an application to get your API key for the Unified Tracking API.
+
+### Step 4: Connect to Your AI Agent
+
+```json
+{
+  "mcpServers": {
+    "dhl": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `dhl_track_shipment` | Track a single shipment by tracking number |
+| `dhl_track_multiple` | Track multiple shipments at once (up to 20) |
+
+## AI Agent Use Cases
+
+- **"Track my DHL shipment 1234567890"**
+- **"What's the delivery status of these 5 packages?"**
+- **"When will my parcel arrive?"**
+- **"Show all delivery events for tracking number XYZ"**
+
+## Next Steps
+
+- [REST API to MCP Guide](/guides/rest-api-to-mcp) — Custom REST connector patterns

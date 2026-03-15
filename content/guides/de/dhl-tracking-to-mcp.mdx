@@ -1,0 +1,57 @@
+---
+title: "DHL Sendungsverfolgung mit KI-Agenten via MCP verbinden"
+description: "DHL Pakete mit KI-Agenten tracken via MCP. Der integrierte DHL-Adapter in AnythingMCP ermöglicht sofortige Einrichtung ohne Programmierung."
+category: "connectors"
+keyword: "DHL MCP Server, DHL Sendungsverfolgung KI, DHL mit Claude nutzen, DHL API Integration"
+publishedAt: "2026-03-15"
+adapterSlug: "dhl-tracking"
+---
+
+## DHL Sendungsverfolgung mit KI-Agenten
+
+DHL ist das weltweit größte Logistikunternehmen. Durch die Verbindung der DHL Unified Tracking API mit MCP können Ihre KI-Agenten Sendungen verfolgen, den Lieferstatus überwachen und Echtzeit-Logistikupdates bereitstellen.
+
+## Schnelleinrichtung mit integriertem Adapter
+
+AnythingMCP enthält einen vorkonfigurierten DHL-Adapter. Keine manuelle API-Konfiguration erforderlich.
+
+### Schritt 1: AnythingMCP bereitstellen
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Schritt 2: DHL-Adapter importieren
+
+Öffnen Sie das AnythingMCP-Dashboard unter `http://localhost:3000/connectors/store` und klicken Sie auf **Import** beim DHL Shipment Tracking Adapter. Geben Sie Ihren DHL API-Schlüssel ein.
+
+### Schritt 3: DHL API-Schlüssel erhalten
+
+Registrieren Sie sich beim [DHL Developer Portal](https://developer.dhl.com/) und erstellen Sie eine Anwendung für die Unified Tracking API.
+
+### Schritt 4: Mit KI-Agent verbinden
+
+```json
+{
+  "mcpServers": {
+    "dhl": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Verfügbare Tools
+
+| Tool | Beschreibung |
+|------|-------------|
+| `dhl_track_shipment` | Einzelne Sendung per Trackingnummer verfolgen |
+| `dhl_track_multiple` | Mehrere Sendungen gleichzeitig verfolgen (bis zu 20) |
+
+## KI-Anwendungsfälle
+
+- **"Verfolge mein DHL-Paket 1234567890"**
+- **"Was ist der Lieferstatus dieser 5 Pakete?"**
+- **"Wann kommt mein Paket an?"**
+- **"Zeige alle Zustellereignisse für Sendungsnummer XYZ"**

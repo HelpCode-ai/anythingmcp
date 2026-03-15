@@ -1,0 +1,158 @@
+{
+  "slug": "weclapp",
+  "name": "weclapp Cloud ERP",
+  "description": "Access weclapp Cloud ERP data including customers, orders, invoices, articles, and warehouse management. Popular ERP for German SMBs.",
+  "region": "de",
+  "category": "erp",
+  "icon": "weclapp",
+  "docsUrl": "https://www.weclapp.com/api2/",
+  "requiredEnvVars": ["WECLAPP_TENANT", "WECLAPP_API_TOKEN"],
+  "connector": {
+    "name": "weclapp ERP",
+    "type": "REST",
+    "baseUrl": "https://{{WECLAPP_TENANT}}.weclapp.com/webapp/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "AuthenticationToken",
+      "apiKey": "{{WECLAPP_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "weclapp_list_customers",
+      "description": "List customers from weclapp ERP. Returns customer names, IDs, contact info, and customer numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 25, max: 100)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customer",
+        "queryParams": {
+          "page": "${page}",
+          "pageSize": "${pageSize}"
+        }
+      }
+    },
+    {
+      "name": "weclapp_get_customer",
+      "description": "Get detailed information about a specific customer by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "description": "The weclapp customer ID"
+          }
+        },
+        "required": ["customerId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customer/id/${customerId}"
+      }
+    },
+    {
+      "name": "weclapp_list_sales_orders",
+      "description": "List sales orders from weclapp ERP. Returns order numbers, customer info, amounts, and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 25, max: 100)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/salesOrder",
+        "queryParams": {
+          "page": "${page}",
+          "pageSize": "${pageSize}"
+        }
+      }
+    },
+    {
+      "name": "weclapp_list_invoices",
+      "description": "List invoices from weclapp ERP. Returns invoice numbers, amounts, due dates, and payment status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 25, max: 100)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/salesInvoice",
+        "queryParams": {
+          "page": "${page}",
+          "pageSize": "${pageSize}"
+        }
+      }
+    },
+    {
+      "name": "weclapp_list_articles",
+      "description": "List articles (products) from weclapp ERP. Returns article numbers, names, prices, and stock levels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 25, max: 100)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/article",
+        "queryParams": {
+          "page": "${page}",
+          "pageSize": "${pageSize}"
+        }
+      }
+    },
+    {
+      "name": "weclapp_get_article",
+      "description": "Get detailed information about a specific article (product) by ID, including stock, pricing, and warehouse data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "articleId": {
+            "type": "string",
+            "description": "The weclapp article ID"
+          }
+        },
+        "required": ["articleId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/article/id/${articleId}"
+      }
+    }
+  ]
+}

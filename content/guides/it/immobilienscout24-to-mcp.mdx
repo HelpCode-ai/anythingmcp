@@ -1,0 +1,35 @@
+---
+title: "Come collegare ImmobilienScout24 a MCP per agenti AI"
+description: "Cerca e sfoglia annunci immobiliari su ImmobilienScout24 via agenti AI e MCP. Trova appartamenti, case e immobili commerciali in Germania."
+category: "connectors"
+keyword: "ImmobilienScout24 MCP Server, IS24 API AI, immobili MCP, cercare immobili con Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "immobilienscout24"
+---
+
+## ImmobilienScout24 con Agenti AI
+
+ImmobilienScout24 è il più grande portale immobiliare tedesco. Collegando la sua API a MCP, gli agenti AI possono cercare proprietà, sfogliare annunci e ottenere informazioni dettagliate.
+
+## Configurazione Rapida
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Apri `http://localhost:3000/connectors/store`, importa l'adattatore ImmobilienScout24 e inserisci Client ID e Client Secret OAuth.
+
+```json
+{
+  "mcpServers": {
+    "is24": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Casi d'Uso
+
+- **"Trova appartamenti di 3 stanze in affitto a Berlino Mitte sotto 1.500 €"**
+- **"Mostra case in vendita a Monaco con giardino"**
+- **"Qual è l'affitto medio per appartamenti ad Amburgo?"**

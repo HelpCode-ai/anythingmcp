@@ -1,0 +1,41 @@
+---
+title: "Come collegare TeamViewer a MCP per agenti AI"
+description: "Gestisci dispositivi TeamViewer, contatti e sessioni remote via agenti AI e MCP. Monitora lo stato dei dispositivi."
+category: "connectors"
+keyword: "TeamViewer MCP Server, TeamViewer API AI, accesso remoto MCP"
+publishedAt: "2026-03-15"
+adapterSlug: "teamviewer"
+---
+
+## TeamViewer con Agenti AI
+
+TeamViewer è una piattaforma leader per l'accesso remoto. Collegando la sua Web API a MCP, gli agenti AI possono gestire dispositivi, monitorare lo stato online e creare sessioni di supporto.
+
+## Configurazione Rapida
+
+### Passo 1: Distribuisci AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Passo 2: Importa l'Adattatore TeamViewer
+
+Apri `http://localhost:3000/connectors/store` e clicca **Import**. Inserisci il tuo access token TeamViewer.
+
+### Passo 3: Collega al Tuo Agente AI
+
+```json
+{
+  "mcpServers": {
+    "teamviewer": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Casi d'Uso
+
+- **"Quali dei miei dispositivi sono online?"**
+- **"Mostra i dettagli del dispositivo XYZ"**
+- **"Lista tutte le sessioni di supporto remoto attive"**

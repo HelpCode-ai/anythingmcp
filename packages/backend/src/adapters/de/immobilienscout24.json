@@ -1,0 +1,124 @@
+{
+  "slug": "immobilienscout24",
+  "name": "ImmobilienScout24 API",
+  "description": "Search and manage real estate listings on ImmobilienScout24, Germany's largest property portal. Browse apartments, houses, and commercial properties.",
+  "region": "de",
+  "category": "real-estate",
+  "icon": "immobilienscout24",
+  "docsUrl": "https://api.immobilienscout24.de/our-apis.html",
+  "requiredEnvVars": ["IS24_CLIENT_ID", "IS24_CLIENT_SECRET"],
+  "connector": {
+    "name": "ImmobilienScout24",
+    "type": "REST",
+    "baseUrl": "https://rest.immobilienscout24.de/restapi/api",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{IS24_CLIENT_ID}}",
+      "clientSecret": "{{IS24_CLIENT_SECRET}}",
+      "authorizationUrl": "https://rest.immobilienscout24.de/restapi/security/oauth/confirm_access",
+      "tokenUrl": "https://rest.immobilienscout24.de/restapi/security/oauth/access_token"
+    }
+  },
+  "tools": [
+    {
+      "name": "is24_search_properties",
+      "description": "Search for real estate listings on ImmobilienScout24 by location and filters. Returns property titles, prices, sizes, and listing IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "geocode": {
+            "type": "string",
+            "description": "GeoCode ID for the search location (e.g. '1276003001' for Berlin Mitte). Use is24_search_locations to find the code."
+          },
+          "realestatetype": {
+            "type": "string",
+            "description": "Property type: 'apartmentrent', 'apartmentbuy', 'houserent', 'housebuy', 'office', 'store', 'gastronomy'"
+          },
+          "price_min": {
+            "type": "number",
+            "description": "Minimum price (rent per month or purchase price)"
+          },
+          "price_max": {
+            "type": "number",
+            "description": "Maximum price"
+          },
+          "livingspace_min": {
+            "type": "number",
+            "description": "Minimum living space in sqm"
+          },
+          "numberofrooms_min": {
+            "type": "number",
+            "description": "Minimum number of rooms"
+          },
+          "pagenumber": {
+            "type": "number",
+            "description": "Page number for pagination (default: 1)"
+          }
+        },
+        "required": ["geocode", "realestatetype"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/v1.0/search/region",
+        "queryParams": {
+          "geocodes": "${geocode}",
+          "realestatetype": "${realestatetype}",
+          "price.min": "${price_min}",
+          "price.max": "${price_max}",
+          "livingspace.min": "${livingspace_min}",
+          "numberofrooms.min": "${numberofrooms_min}",
+          "pagenumber": "${pagenumber}",
+          "pagesize": "20"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "is24_search_locations",
+      "description": "Search for ImmobilienScout24 GeoCode IDs by location name. Use this to find the geocode parameter needed for property searches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Location name to search (e.g. 'Berlin', 'München Schwabing', 'Hamburg Altona')"
+          }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/gis/v1.0/geo/autocomplete",
+        "queryParams": {
+          "i": "${query}"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "is24_get_property",
+      "description": "Get detailed information about a specific real estate listing by its expose ID. Returns full property details including description, equipment, energy certificate, and contact info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exposeId": {
+            "type": "string",
+            "description": "The ImmobilienScout24 expose ID (listing ID)"
+          }
+        },
+        "required": ["exposeId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/v1.0/expose/${exposeId}",
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    }
+  ]
+}

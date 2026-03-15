@@ -1,0 +1,52 @@
+---
+title: "Come collegare le Statistiche Bundesbank a MCP per agenti AI"
+description: "Accedi ai tassi di cambio BCE, tassi di interesse e dati macroeconomici dalla Bundesbank via agenti AI e MCP. API pubblica gratuita."
+category: "connectors"
+keyword: "Bundesbank MCP Server, tassi cambio BCE AI, statistiche Bundesbank MCP, dati finanziari tedeschi"
+publishedAt: "2026-03-15"
+adapterSlug: "bundesbank"
+---
+
+## Statistiche Bundesbank con Agenti AI
+
+La Deutsche Bundesbank offre accesso gratuito a dati macroeconomici, tassi di cambio, tassi di interesse e statistiche finanziarie tramite l'API REST SDMX. Nessuna chiave API necessaria — collegati e inizia subito a interrogare i dati.
+
+## Configurazione Rapida con Adattatore Integrato
+
+### Passo 1: Distribuisci AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Passo 2: Importa l'Adattatore Bundesbank
+
+Apri `http://localhost:3000/connectors/store` e clicca **Import** sull'adattatore Deutsche Bundesbank Statistics. Essendo un'API pubblica gratuita, non servono credenziali.
+
+### Passo 3: Collega al Tuo Agente AI
+
+```json
+{
+  "mcpServers": {
+    "bundesbank": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Tools Disponibili
+
+| Tool | Descrizione |
+|------|-------------|
+| `bundesbank_get_exchange_rates` | Tassi di cambio euro attuali e storici |
+| `bundesbank_get_interest_rates` | Tassi di interesse chiave BCE |
+| `bundesbank_search_statistics` | Cerca serie statistiche per parola chiave |
+| `bundesbank_get_timeseries` | Recupera dati di una specifica serie temporale |
+
+## Casi d'Uso con Agenti AI
+
+- **"Qual è il tasso di cambio EUR/USD attuale?"**
+- **"Mostrami la storia dei tassi BCE degli ultimi 5 anni"**
+- **"Cerca statistiche sulla massa monetaria"**

@@ -1,0 +1,196 @@
+{
+  "slug": "billomat",
+  "name": "Billomat Invoicing",
+  "description": "Manage invoices, clients, articles, and accounting with Billomat. German online invoicing and bookkeeping platform for freelancers and SMBs.",
+  "region": "de",
+  "category": "finance",
+  "icon": "billomat",
+  "docsUrl": "https://www.billomat.com/en/api/",
+  "requiredEnvVars": ["BILLOMAT_SUBDOMAIN", "BILLOMAT_API_KEY"],
+  "connector": {
+    "name": "Billomat",
+    "type": "REST",
+    "baseUrl": "https://{{BILLOMAT_SUBDOMAIN}}.billomat.net/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-BillomatApiKey",
+      "apiKey": "{{BILLOMAT_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "billomat_list_clients",
+      "description": "List clients from Billomat. Returns client name, number, address, email, and payment terms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)"
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Results per page (default: 25, max: 100)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Filter by client name"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients",
+        "queryParams": {
+          "page": "${page}",
+          "per_page": "${per_page}",
+          "name": "${name}"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "billomat_get_client",
+      "description": "Get detailed information about a specific client by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": "string",
+            "description": "The Billomat client ID"
+          }
+        },
+        "required": ["clientId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/${clientId}",
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "billomat_list_invoices",
+      "description": "List invoices from Billomat. Returns invoice number, date, total, status, and client info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)"
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Results per page (default: 25, max: 100)"
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Filter by client ID"
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status: DRAFT, OPEN, OVERDUE, PAID, CANCELED"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "page": "${page}",
+          "per_page": "${per_page}",
+          "client_id": "${client_id}",
+          "status": "${status}"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "billomat_get_invoice",
+      "description": "Get detailed information about a specific invoice including line items, taxes, and payment info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "string",
+            "description": "The Billomat invoice ID"
+          }
+        },
+        "required": ["invoiceId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/${invoiceId}",
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "billomat_list_articles",
+      "description": "List articles (products/services) from Billomat. Returns article number, title, unit price, and tax info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)"
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Results per page (default: 25, max: 100)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles",
+        "queryParams": {
+          "page": "${page}",
+          "per_page": "${per_page}"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "billomat_list_offers",
+      "description": "List offers (quotes) from Billomat. Returns offer number, date, total, status, and client info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)"
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Results per page (default: 25, max: 100)"
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Filter by client ID"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers",
+        "queryParams": {
+          "page": "${page}",
+          "per_page": "${per_page}",
+          "client_id": "${client_id}"
+        },
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    }
+  ]
+}

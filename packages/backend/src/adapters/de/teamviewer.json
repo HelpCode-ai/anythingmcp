@@ -1,0 +1,107 @@
+{
+  "slug": "teamviewer",
+  "name": "TeamViewer API",
+  "description": "Manage TeamViewer devices, contacts, and sessions via the TeamViewer Web API. List devices, check online status, create remote support sessions.",
+  "region": "de",
+  "category": "remote",
+  "icon": "teamviewer",
+  "docsUrl": "https://www.teamviewer.com/en/for-developers/",
+  "requiredEnvVars": ["TEAMVIEWER_API_TOKEN"],
+  "connector": {
+    "name": "TeamViewer",
+    "type": "REST",
+    "baseUrl": "https://webapi.teamviewer.com/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TEAMVIEWER_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "teamviewer_list_devices",
+      "description": "List all devices registered in your TeamViewer account. Returns device IDs, aliases, online status, and last seen timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "online_state": {
+            "type": "string",
+            "description": "Filter by online status: 'online' or 'offline'. Leave empty for all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/devices",
+        "queryParams": {
+          "online_state": "${online_state}"
+        }
+      }
+    },
+    {
+      "name": "teamviewer_get_device",
+      "description": "Get detailed information about a specific TeamViewer device by its ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string",
+            "description": "The TeamViewer device ID"
+          }
+        },
+        "required": ["deviceId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/devices/${deviceId}"
+      }
+    },
+    {
+      "name": "teamviewer_list_contacts",
+      "description": "List all contacts in your TeamViewer account. Returns contact names, IDs, and online status.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts"
+      }
+    },
+    {
+      "name": "teamviewer_list_groups",
+      "description": "List all device groups in your TeamViewer account.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups"
+      }
+    },
+    {
+      "name": "teamviewer_get_account_info",
+      "description": "Get information about the TeamViewer account associated with the API token, including name, email, and company.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account"
+      }
+    },
+    {
+      "name": "teamviewer_list_sessions",
+      "description": "List active and recent remote support sessions.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sessions"
+      }
+    }
+  ]
+}

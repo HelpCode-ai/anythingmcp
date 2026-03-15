@@ -1,0 +1,186 @@
+{
+  "slug": "fastbill",
+  "name": "FastBill Invoicing",
+  "description": "Manage invoices, customers, expenses, and revenue with FastBill. Popular invoicing and bookkeeping tool for German freelancers and small businesses.",
+  "region": "de",
+  "category": "finance",
+  "icon": "fastbill",
+  "docsUrl": "https://apidocs.fastbill.com/fastbill/",
+  "requiredEnvVars": ["FASTBILL_EMAIL", "FASTBILL_API_KEY"],
+  "connector": {
+    "name": "FastBill",
+    "type": "REST",
+    "baseUrl": "https://my.fastbill.com/api/1.0",
+    "authType": "BASIC",
+    "authConfig": {
+      "username": "{{FASTBILL_EMAIL}}",
+      "password": "{{FASTBILL_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "fastbill_list_customers",
+      "description": "List customers from FastBill. Returns customer number, name, address, email, and payment terms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "LIMIT": {
+            "type": "number",
+            "description": "Maximum number of results (default: 25)"
+          },
+          "OFFSET": {
+            "type": "number",
+            "description": "Offset for pagination"
+          },
+          "TERM": {
+            "type": "string",
+            "description": "Search term to filter customers"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api.php",
+        "body": {
+          "SERVICE": "customer.get",
+          "LIMIT": "${LIMIT}",
+          "OFFSET": "${OFFSET}",
+          "FILTER": {
+            "TERM": "${TERM}"
+          }
+        }
+      }
+    },
+    {
+      "name": "fastbill_list_invoices",
+      "description": "List invoices from FastBill. Returns invoice number, date, amount, tax, payment status, and customer info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "LIMIT": {
+            "type": "number",
+            "description": "Maximum number of results (default: 25)"
+          },
+          "OFFSET": {
+            "type": "number",
+            "description": "Offset for pagination"
+          },
+          "CUSTOMER_ID": {
+            "type": "string",
+            "description": "Filter by customer ID"
+          },
+          "MONTH": {
+            "type": "number",
+            "description": "Filter by month (1-12)"
+          },
+          "YEAR": {
+            "type": "number",
+            "description": "Filter by year"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api.php",
+        "body": {
+          "SERVICE": "invoice.get",
+          "LIMIT": "${LIMIT}",
+          "OFFSET": "${OFFSET}",
+          "FILTER": {
+            "CUSTOMER_ID": "${CUSTOMER_ID}",
+            "MONTH": "${MONTH}",
+            "YEAR": "${YEAR}"
+          }
+        }
+      }
+    },
+    {
+      "name": "fastbill_list_expenses",
+      "description": "List expenses from FastBill. Returns expense date, amount, category, and vendor info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "LIMIT": {
+            "type": "number",
+            "description": "Maximum number of results (default: 25)"
+          },
+          "OFFSET": {
+            "type": "number",
+            "description": "Offset for pagination"
+          },
+          "MONTH": {
+            "type": "number",
+            "description": "Filter by month (1-12)"
+          },
+          "YEAR": {
+            "type": "number",
+            "description": "Filter by year"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api.php",
+        "body": {
+          "SERVICE": "expense.get",
+          "LIMIT": "${LIMIT}",
+          "OFFSET": "${OFFSET}",
+          "FILTER": {
+            "MONTH": "${MONTH}",
+            "YEAR": "${YEAR}"
+          }
+        }
+      }
+    },
+    {
+      "name": "fastbill_list_revenues",
+      "description": "List revenue entries from FastBill. Returns revenue date, amount, invoice reference, and category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "LIMIT": {
+            "type": "number",
+            "description": "Maximum number of results (default: 25)"
+          },
+          "OFFSET": {
+            "type": "number",
+            "description": "Offset for pagination"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api.php",
+        "body": {
+          "SERVICE": "revenue.get",
+          "LIMIT": "${LIMIT}",
+          "OFFSET": "${OFFSET}"
+        }
+      }
+    },
+    {
+      "name": "fastbill_get_invoice",
+      "description": "Get a specific invoice by ID with full details including line items, taxes, and payment information.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "INVOICE_ID": {
+            "type": "string",
+            "description": "The FastBill invoice ID"
+          }
+        },
+        "required": ["INVOICE_ID"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api.php",
+        "body": {
+          "SERVICE": "invoice.get",
+          "FILTER": {
+            "INVOICE_ID": "${INVOICE_ID}"
+          }
+        }
+      }
+    }
+  ]
+}

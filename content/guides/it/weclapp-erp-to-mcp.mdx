@@ -1,0 +1,35 @@
+---
+title: "Come collegare weclapp Cloud ERP a MCP per agenti AI"
+description: "Accedi ai dati ERP weclapp inclusi clienti, ordini, fatture e articoli via agenti AI e MCP. ERP cloud popolare per PMI tedesche."
+category: "connectors"
+keyword: "weclapp MCP Server, weclapp API AI, Cloud ERP MCP, weclapp con Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "weclapp"
+---
+
+## weclapp Cloud ERP con Agenti AI
+
+weclapp è una soluzione ERP cloud popolare per le PMI tedesche. Collegando la sua API a MCP, gli agenti AI possono interrogare clienti, ordini, fatture e dati di inventario.
+
+## Configurazione Rapida
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Apri `http://localhost:3000/connectors/store`, importa l'adattatore weclapp e inserisci il nome del tenant e il token API.
+
+```json
+{
+  "mcpServers": {
+    "weclapp": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Casi d'Uso
+
+- **"Mostra tutti gli ordini aperti di questo mese"**
+- **"Qual è lo stock attuale per l'articolo ABC?"**
+- **"Lista tutte le fatture non pagate sopra i 1.000 €"**

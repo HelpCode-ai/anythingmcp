@@ -1,0 +1,36 @@
+---
+title: "FastBill mit KI-Agenten via MCP verbinden"
+description: "Rechnungen, Kunden und Ausgaben mit KI-Agenten über MCP verwalten. FastBill ist ein beliebtes Rechnungstool für deutsche Freelancer und Kleinunternehmen."
+category: "connectors"
+keyword: "FastBill MCP Server, FastBill API KI, Rechnungen MCP, FastBill mit Claude nutzen"
+publishedAt: "2026-03-15"
+adapterSlug: "fastbill"
+---
+
+## FastBill Rechnungen mit KI-Agenten
+
+FastBill ist eine beliebte Rechnungs- und Buchhaltungsplattform für deutsche Freelancer und Kleinunternehmen. Die Verbindung mit MCP ermöglicht KI-Agenten den Zugriff auf Kunden, Rechnungen, Ausgaben und Umsatzdaten.
+
+## Schnelleinrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffnen Sie `http://localhost:3000/connectors/store`, importieren Sie den FastBill-Adapter und geben Sie Ihre E-Mail und Ihren API-Key ein.
+
+```json
+{
+  "mcpServers": {
+    "fastbill": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## KI-Anwendungsfälle
+
+- **"Zeige alle unbezahlten Rechnungen dieses Monats"**
+- **"Wie viel Umsatz habe ich in Q1 gemacht?"**
+- **"Liste alle Kunden aus München"**
+- **"Was sind meine Gesamtausgaben für März 2026?"**

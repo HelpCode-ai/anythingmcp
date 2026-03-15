@@ -1,0 +1,35 @@
+---
+title: "N26 Open Banking mit KI-Agenten via MCP nutzen"
+description: "N26 Kontodaten über KI-Agenten und MCP via PSD2 Open Banking API abrufen. Kontostände, Transaktionen und Kontodetails."
+category: "connectors"
+keyword: "N26 MCP Server, N26 Open Banking KI, PSD2 MCP Integration, N26 mit Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "n26-openbanking"
+---
+
+## N26 Open Banking mit KI-Agenten
+
+N26 ist eine führende europäische Neobank. Über die PSD2 Open Banking API können KI-Agenten auf Kontoinformationen, Salden und Transaktionshistorie zugreifen.
+
+## Schnelleinrichtung
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffnen Sie `http://localhost:3000/connectors/store`, importieren Sie den N26-Adapter und geben Sie Ihre OAuth Client ID und Client Secret ein.
+
+```json
+{
+  "mcpServers": {
+    "n26": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## KI-Anwendungsfälle
+
+- **"Wie ist mein aktueller N26-Kontostand?"**
+- **"Zeige meine Transaktionen der letzten Woche"**
+- **"Liste alle verknüpften Konten auf"**

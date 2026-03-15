@@ -1,0 +1,57 @@
+---
+title: "How to Connect PAYONE Payments to MCP for AI Agents"
+description: "Process and manage e-commerce payments via AI agents and MCP. List transactions, capture and refund payments through the PAYONE API."
+category: "connectors"
+keyword: "PAYONE MCP Server, PAYONE API AI, payment processing MCP, PAYONE mit Claude"
+publishedAt: "2026-03-15"
+adapterSlug: "payone"
+---
+
+## PAYONE Payments with AI Agents
+
+PAYONE is a leading European payment service provider. Connecting its API to MCP enables AI agents to monitor transactions, capture payments, and process refunds.
+
+## Quick Setup with Built-in Adapter
+
+### Step 1: Deploy AnythingMCP
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+### Step 2: Import the PAYONE Adapter
+
+Open `http://localhost:3000/connectors/store` and click **Import** on the PAYONE Payments adapter. Enter your Merchant ID, API Key, Portal ID, and Account ID when prompted.
+
+### Step 3: Get PAYONE API Credentials
+
+Log in to the [PAYONE Merchant Interface](https://pmi.pay1.de/) to find your API credentials under Configuration > Payment portals.
+
+### Step 4: Connect to Your AI Agent
+
+```json
+{
+  "mcpServers": {
+    "payone": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `payone_list_transactions` | List recent payment transactions |
+| `payone_get_transaction` | Get details of a specific transaction |
+| `payone_capture_payment` | Capture an authorized payment |
+| `payone_refund_payment` | Refund a captured payment |
+
+## AI Agent Use Cases
+
+- **"Show me all transactions from today"**
+- **"What's the status of transaction XYZ?"**
+- **"Capture the pending payment for order 12345"**
+- **"Refund the last transaction for customer Müller"**
