@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useRef } from 'react';
+import { Suspense, useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { adapters } from '@/lib/api';
@@ -60,6 +60,14 @@ interface AdapterDetail extends AdapterItem {
 }
 
 export default function AdapterStorePage() {
+  return (
+    <Suspense>
+      <AdapterStoreContent />
+    </Suspense>
+  );
+}
+
+function AdapterStoreContent() {
   const { token } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
