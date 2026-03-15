@@ -95,7 +95,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'];
     if (!isLoading && !token && !publicPaths.includes(pathname)) {
-      router.push('/login');
+      const currentUrl = typeof window !== 'undefined' ? window.location.pathname + window.location.search : pathname;
+      router.push(`/login?redirect=${encodeURIComponent(currentUrl)}`);
     }
   }, [isLoading, token, pathname, router]);
 

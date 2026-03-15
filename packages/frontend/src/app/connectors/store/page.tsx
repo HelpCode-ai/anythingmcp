@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { adapters } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
@@ -62,6 +62,7 @@ interface AdapterDetail extends AdapterItem {
 export default function AdapterStorePage() {
   const { token } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [list, setList] = useState<AdapterItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -77,6 +78,9 @@ export default function AdapterStorePage() {
   // MCP assignment modal state
   const [importedConnector, setImportedConnector] = useState<{ id: string; name: string } | null>(null);
 
+  // Track whether auto-install from ?install= param has been triggered
+  const autoInstallTriggered = useRef(false);
+
   useEffect(() => {
     if (!token) return;
     adapters
@@ -85,6 +89,17 @@ export default function AdapterStorePage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [token]);
+
+  // Auto-import when ?install=<slug> is present (e.g. from website marketplace)
+  useEffect(() => {
+    if (autoInstallTriggered.current || loading || !token || list.length === 0) return;
+    const installSlug = searchParams.get('install');
+    if (!installSlug) return;
+    const adapter = list.find((a) => a.slug === installSlug);
+    if (!adapter) return;
+    autoInstallTriggered.current = true;
+    handleImportClick(adapter);
+  }, [loading, list, token, searchParams]);
 
   const handleImportClick = async (adapter: AdapterItem) => {
     if (!token) return;
