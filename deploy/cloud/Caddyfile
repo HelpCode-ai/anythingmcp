@@ -6,7 +6,10 @@
 	handle /health* {
 		reverse_proxy app:4000
 	}
-	handle /mcp* {
+	handle /mcp {
+		reverse_proxy app:4000
+	}
+	handle /mcp/* {
 		reverse_proxy app:4000
 	}
 	handle /.well-known/* {
