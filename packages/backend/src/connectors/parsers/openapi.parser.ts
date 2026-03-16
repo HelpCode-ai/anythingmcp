@@ -119,6 +119,8 @@ export class OpenApiParser {
       '/openapi.json',
       '/swagger.json',
       '/api-docs',
+      '/docs-json',
+      '/docs-yaml',
       '/api/swagger.json',
       '/v1/openapi.json',
       '/v2/openapi.json',
