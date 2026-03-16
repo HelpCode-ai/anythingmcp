@@ -1,6 +1,6 @@
 {
   "name": "@anythingmcp/backend",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "AnythingMCP — NestJS Backend + Dynamic MCP Server",
   "private": true,
   "license": "BSL-1.1",
