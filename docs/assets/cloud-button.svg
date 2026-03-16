@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="42" viewBox="0 0 220 42" fill="none">
+  <rect width="220" height="42" rx="6" fill="#6C3FE3"/>
+  <path d="M30 14.5c0-3.59 2.91-6.5 6.5-6.5 2.68 0 4.97 1.62 5.96 3.93A4.49 4.49 0 0 1 47 16.5c0 2.49-2.01 4.5-4.5 4.5h-12A3.5 3.5 0 0 1 27 17.5c0-1.58 1.06-2.92 2.5-3.34A6.6 6.6 0 0 1 30 14.5z" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M33 25v4m0 0l-2-2m2 2l2-2M39 25v4m0 0l-2-2m2 2l2-2" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="56" y="26" fill="white" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600">Try on Cloud</text>
+</svg>
