@@ -52,13 +52,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Update Docker Hub description
+      - name: Update Docker Hub description from README
         uses: peter-evans/dockerhub-description@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: helpcodeai/anythingmcp
-          short-description: "Convert any API into an MCP server in minutes. REST, SOAP, GraphQL, Database to MCP. Self-hosted gateway & middleware for AI agents."
           readme-filepath: ./README.md
 
       - name: Set Docker Hub categories
@@ -74,9 +73,3 @@ jobs:
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"categories": [{"slug": "api-management"}, {"slug": "integration-and-delivery"}]}'
-
-      - name: Trigger Railway redeploy
-        if: env.RAILWAY_WEBHOOK_URL != ''
-        env:
-          RAILWAY_WEBHOOK_URL: ${{ secrets.RAILWAY_WEBHOOK_URL }}
-        run: curl -fsSL -X POST "$RAILWAY_WEBHOOK_URL"
