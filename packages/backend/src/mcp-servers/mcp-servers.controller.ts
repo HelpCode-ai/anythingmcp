@@ -28,6 +28,10 @@ class CreateMcpServerDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  instructions?: string;
 }
 
 class UpdateMcpServerDto {
@@ -42,6 +46,10 @@ class UpdateMcpServerDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  instructions?: string;
 
   @IsOptional()
   @IsBoolean()

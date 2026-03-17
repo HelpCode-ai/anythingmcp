@@ -44,7 +44,7 @@ export class McpServersService {
     });
   }
 
-  async create(userId: string, data: { name: string; slug?: string; description?: string }) {
+  async create(userId: string, data: { name: string; slug?: string; description?: string; instructions?: string }) {
     const slug = data.slug || this.generateSlug(data.name);
     return this.prisma.mcpServerConfig.create({
       data: {
@@ -52,6 +52,7 @@ export class McpServersService {
         name: data.name,
         slug,
         description: data.description,
+        instructions: data.instructions,
       },
       include: {
         _count: { select: { connectors: true, apiKeys: true } },
@@ -59,7 +60,7 @@ export class McpServersService {
     });
   }
 
-  async update(id: string, data: { name?: string; slug?: string; description?: string; isActive?: boolean }) {
+  async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean }) {
     return this.prisma.mcpServerConfig.update({
       where: { id },
       data,
@@ -93,6 +94,40 @@ export class McpServersService {
       select: { connectorId: true },
     });
     return rows.map((r) => r.connectorId);
+  }
+
+  /**
+   * Compose MCP server instructions from the server's own instructions
+   * plus all assigned connectors' instructions.
+   */
+  async getComposedInstructions(serverId: string): Promise<string | undefined> {
+    const server = await this.prisma.mcpServerConfig.findUnique({
+      where: { id: serverId },
+      select: { instructions: true },
+    });
+
+    const serverConnectors = await this.prisma.mcpServerConnector.findMany({
+      where: { mcpServerId: serverId },
+      include: {
+        connector: {
+          select: { name: true, instructions: true },
+        },
+      },
+    });
+
+    const parts: string[] = [];
+
+    if (server?.instructions) {
+      parts.push(server.instructions);
+    }
+
+    for (const sc of serverConnectors) {
+      if (sc.connector.instructions) {
+        parts.push(`## ${sc.connector.name}\n${sc.connector.instructions}`);
+      }
+    }
+
+    return parts.length > 0 ? parts.join('\n\n') : undefined;
   }
 
   async createDefaultForUser(userId: string) {
