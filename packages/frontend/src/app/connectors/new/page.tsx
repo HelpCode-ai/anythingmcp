@@ -97,8 +97,15 @@ export default function NewConnectorPage() {
         } catch {}
       }
 
-      // Show MCP assignment modal so the user can assign the connector to an MCP server
-      setCreatedConnector({ id: created.id, name: name || created.name });
+      // Check if the connector has tools — only show MCP assignment if it does
+      const full = await connectors.get(created.id, token);
+      const hasTools = (full.tools?.length || 0) > 0;
+
+      if (hasTools) {
+        setCreatedConnector({ id: created.id, name: name || created.name });
+      } else {
+        router.push(`/connectors/${created.id}`);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {

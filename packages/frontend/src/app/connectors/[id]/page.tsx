@@ -7,6 +7,7 @@ import { connectors, tools } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
 import { ToolEditor } from '@/components/tool-editor';
+import { McpAssignModal } from '@/components/mcp-assign-modal';
 
 const IMPORT_SOURCES = [
   { id: 'openapi', label: 'OpenAPI / Swagger', placeholder: 'Paste OpenAPI JSON/YAML or enter URL...' },
@@ -40,6 +41,7 @@ export default function ConnectorDetailPage() {
   const [editAuthKey, setEditAuthKey] = useState('');
   const [editAuthValue, setEditAuthValue] = useState('');
   const [editDbReadOnly, setEditDbReadOnly] = useState(true);
+  const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -61,6 +63,9 @@ export default function ConnectorDetailPage() {
   const [importUrl, setImportUrl] = useState('');
   const [importing, setImporting] = useState(false);
 
+  // MCP assign modal — shown when tools are added and connector is not yet assigned
+  const [showMcpAssign, setShowMcpAssign] = useState(false);
+
   // Environment variables
   const [showEnvVars, setShowEnvVars] = useState(false);
   const [envVarEntries, setEnvVarEntries] = useState<{ key: string; value: string }[]>([]);
@@ -75,6 +80,7 @@ export default function ConnectorDetailPage() {
       setEditBaseUrl(c.baseUrl);
       setEditActive(c.isActive);
       setEditAuthType(c.authType || 'NONE');
+      setEditInstructions(c.instructions || '');
       // Don't pre-fill credentials — they are encrypted on the server
       setEditAuthKey('');
       setEditAuthValue('');
@@ -139,6 +145,7 @@ export default function ConnectorDetailPage() {
         baseUrl: editBaseUrl,
         isActive: editActive,
         authType: editAuthType,
+        instructions: editInstructions.trim() || null,
       };
       const authConfig = buildAuthConfig();
       if (authConfig) data.authConfig = authConfig;
@@ -165,6 +172,19 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  /** Check if connector is assigned to any MCP server; if not, show the assign modal */
+  const promptMcpAssignIfNeeded = async () => {
+    if (!token) return;
+    try {
+      const fresh = await connectors.get(id, token);
+      const isAssigned = (fresh.mcpServers?.length || 0) > 0;
+      const hasTools = (fresh.tools?.length || 0) > 0;
+      if (!isAssigned && hasTools) {
+        setShowMcpAssign(true);
+      }
+    } catch {}
+  };
+
   const handleImportSpec = async () => {
     if (!token) return;
     setMsg('Importing specification...');
@@ -172,6 +192,7 @@ export default function ConnectorDetailPage() {
       const result = await connectors.importSpec(id, token);
       setMsg(result.message);
       fetchConnector();
+      promptMcpAssignIfNeeded();
     } catch (err: any) {
       setMsg(`Import failed: ${err.message}`);
     }
@@ -198,6 +219,7 @@ export default function ConnectorDetailPage() {
         setImportContent('');
         setImportUrl('');
         fetchConnector();
+        promptMcpAssignIfNeeded();
       }
     } catch (err: any) {
       setMsg(`Import failed: ${err.message}`);
@@ -267,6 +289,7 @@ export default function ConnectorDetailPage() {
       setShowNewTool(false);
       setMsg('Tool created successfully');
       fetchConnector();
+      promptMcpAssignIfNeeded();
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
     } finally {
@@ -548,6 +571,19 @@ export default function ConnectorDetailPage() {
                   Leave credential fields empty to keep the current values.
                 </p>
               )}
+              <div>
+                <label className="block text-sm font-medium mb-1">Instructions</label>
+                <textarea
+                  value={editInstructions}
+                  onChange={(e) => setEditInstructions(e.target.value)}
+                  placeholder="Instructions sent to AI clients when using this connector's tools (e.g. date formats, field values, API conventions)."
+                  rows={4}
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] resize-y"
+                />
+                <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                  Sent via MCP protocol to help AI understand how to use this connector.
+                </p>
+              </div>
               <button
                 onClick={handleSave}
                 className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"
@@ -603,6 +639,12 @@ export default function ConnectorDetailPage() {
                 <div className="col-span-2">
                   <p className="text-[var(--muted-foreground)]">Spec URL</p>
                   <p className="font-medium font-mono text-xs break-all">{connector.specUrl}</p>
+                </div>
+              )}
+              {connector.instructions && (
+                <div className="col-span-2">
+                  <p className="text-[var(--muted-foreground)]">Instructions</p>
+                  <p className="font-medium text-xs whitespace-pre-wrap">{connector.instructions}</p>
                 </div>
               )}
             </div>
@@ -1005,6 +1047,18 @@ export default function ConnectorDetailPage() {
           )}
         </div>
       </main>
+
+      {/* MCP Server Assignment Modal — shown after tools are added and connector is unassigned */}
+      {showMcpAssign && connector && token && (
+        <McpAssignModal
+          connectorId={id}
+          connectorName={connector.name}
+          token={token}
+          onDone={() => setShowMcpAssign(false)}
+          onClose={() => setShowMcpAssign(false)}
+        />
+      )}
+
       <Footer />
     </div>
   );

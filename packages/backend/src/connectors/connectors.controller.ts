@@ -68,6 +68,10 @@ class CreateConnectorDto {
   @IsOptional()
   @IsObject()
   envVars?: Record<string, string>;
+
+  @IsOptional()
+  @IsString()
+  instructions?: string;
 }
 
 class UpdateConnectorDto {
@@ -102,6 +106,10 @@ class UpdateConnectorDto {
   @IsOptional()
   @IsObject()
   envVars?: Record<string, string>;
+
+  @IsOptional()
+  @IsString()
+  instructions?: string;
 }
 
 class ImportToolsDto {

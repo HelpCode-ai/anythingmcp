@@ -18,6 +18,7 @@ export interface AdapterMeta {
   slug: string;
   name: string;
   description: string;
+  instructions?: string;
   region: string;
   category: string;
   icon: string;
@@ -27,6 +28,7 @@ export interface AdapterMeta {
 }
 
 export interface AdapterDefinition extends AdapterMeta {
+  instructions?: string;
   connector: {
     name: string;
     type: string;
@@ -70,6 +72,7 @@ export function listAdapters(): AdapterMeta[] {
     slug: adapter.slug,
     name: adapter.name,
     description: adapter.description,
+    instructions: adapter.instructions,
     region: adapter.region,
     category: adapter.category,
     icon: adapter.icon,

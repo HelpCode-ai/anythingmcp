@@ -38,7 +38,7 @@ export class ConnectorsService {
   async findById(id: string): Promise<Connector> {
     const connector = await this.prisma.connector.findUnique({
       where: { id },
-      include: { tools: true, resources: true, prompts: true },
+      include: { tools: true, resources: true, prompts: true, mcpServers: { select: { mcpServerId: true } } },
     });
     if (!connector) {
       throw new NotFoundException(`Connector ${id} not found`);
@@ -69,6 +69,7 @@ export class ConnectorsService {
       headers?: Record<string, string>;
       config?: Record<string, unknown>;
       envVars?: Record<string, string>;
+      instructions?: string;
     },
   ): Promise<Connector> {
     const encryptedAuth = data.authConfig
@@ -87,6 +88,7 @@ export class ConnectorsService {
         headers: data.headers as any,
         config: data.config as any,
         envVars: data.envVars as any,
+        instructions: data.instructions,
       },
     });
   }
@@ -102,6 +104,7 @@ export class ConnectorsService {
       headers: Record<string, string>;
       config: Record<string, unknown>;
       envVars: Record<string, string>;
+      instructions: string;
     }>,
   ): Promise<Connector> {
     await this.findById(id);

@@ -214,6 +214,9 @@ model Connector {
   // Environment variables for runtime interpolation of {{VAR_NAME}} patterns
   envVars Json? @map("env_vars")
 
+  // AI instructions — contextual guidance for LLMs using this connector's tools
+  instructions String? @db.Text
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -315,11 +318,12 @@ model McpServerConfig {
   userId String @map("user_id")
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name        String  @default("Default")
-  slug        String  @default("default")
-  description String? @db.Text
-  version     String  @default("1.0.0")
-  isActive    Boolean @default(true) @map("is_active")
+  name         String  @default("Default")
+  slug         String  @default("default")
+  description  String? @db.Text
+  version      String  @default("1.0.0")
+  isActive     Boolean @default(true) @map("is_active")
+  instructions String? @db.Text // custom instructions prepended to composed connector instructions
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

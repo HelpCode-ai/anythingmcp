@@ -60,6 +60,7 @@ export class AdaptersService {
         isActive: true,
         authType: (adapter.connector.authType as any) || 'NONE',
         authConfig: encryptedAuth,
+        instructions: adapter.instructions || null,
       },
     });
 

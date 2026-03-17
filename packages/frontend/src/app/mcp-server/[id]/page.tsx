@@ -19,6 +19,7 @@ export default function McpServerDetailPage() {
   // Edit state
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [editInstructions, setEditInstructions] = useState('');
   const [saveMsg, setSaveMsg] = useState('');
 
   // API key state
@@ -42,6 +43,7 @@ export default function McpServerDetailPage() {
       setServer(srv);
       setEditName(srv.name);
       setEditDescription(srv.description || '');
+      setEditInstructions(srv.instructions || '');
       setAllConnectors(conns);
       setAssignedIds(new Set(srv.connectors?.map((c: any) => c.connector.id) || []));
     }).catch(() => {}).finally(() => setLoading(false));
@@ -59,6 +61,7 @@ export default function McpServerDetailPage() {
       const updated = await mcpServers.update(id, {
         name: editName.trim(),
         description: editDescription.trim() || undefined,
+        instructions: editInstructions.trim() || undefined,
       }, token);
       setServer((prev: any) => ({ ...prev, ...updated }));
       setSaveMsg('Saved');
@@ -486,6 +489,19 @@ export default function McpServerDetailPage() {
                 placeholder="What this MCP server is for"
                 className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Instructions</label>
+              <textarea
+                value={editInstructions}
+                onChange={(e) => setEditInstructions(e.target.value)}
+                placeholder="Custom instructions sent to AI clients when they connect to this MCP server. These are combined with instructions from assigned connectors."
+                rows={4}
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] resize-y"
+              />
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                Sent to AI clients via the MCP protocol during initialization. Combined with connector-level instructions.
+              </p>
             </div>
             {saveMsg && (
               <p className={`text-sm ${saveMsg.startsWith('Error') ? 'text-[var(--destructive)]' : 'text-[var(--success)]'}`}>

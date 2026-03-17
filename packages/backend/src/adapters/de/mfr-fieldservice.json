@@ -1,7 +1,8 @@
 {
   "slug": "mfr-fieldservice",
   "name": "MFR Mobile Field Report",
-  "description": "Manage field service operations with Mobile Field Report (MFR). Access service requests, appointments, companies, contacts, technicians, checklists, and reports via OData API.",
+  "description": "Manage field service operations with Mobile Field Report (MFR). Access service requests, appointments, companies, contacts, technicians, service objects, products, documents, time tracking, invoices, checklists, items, tags, qualifications, cost centers, and reports via OData API.",
+  "instructions": "This connector uses the MFR OData v3 REST API. Key conventions:\n\n**Date format**: Use `datetime'YYYY-MM-DDTHH:mm:ssZ'` for all date filters (e.g. `DateModified gt datetime'2025-01-01T00:00:00Z'`).\n\n**ID format**: Entity IDs are numeric. When used in URL paths, append an 'L' suffix (e.g. `/ServiceRequests(11164418048L)`). The tools handle this automatically.\n\n**OData filtering**: All list endpoints support `$filter`, `$orderby`, `$top`, `$skip`, `$select`, and `$expand`. Combine filters with `and`/`or`. Operators: `eq`, `ne`, `gt`, `ge`, `lt`, `le`.\n\n**Common entity states**:\n- ServiceRequest: ReadyForScheduling, Scheduled, InProgress, Released, Closed\n- Appointment: NotVisited, InProgress, IsWorkDone, Rejected\n- Invoice: eIsDraft, eIsPaid, eIsSent, eIsOverdue\n\n**Pagination**: Use `$top` (max 100) and `$skip` for pagination. Default is 20 results.\n\n**Expanding relations**: Use `$expand` to include related entities in a single request (e.g. `$expand=Appointments,Customer,Tags`). This avoids N+1 queries.\n\n**Workflow**: A typical field service flow is: Create ServiceRequest → Create Appointment(s) → Assign technician → Track time → Complete steps → Generate report → Create invoice.",
   "region": "de",
   "category": "field-service",
   "icon": "mfr",
@@ -20,29 +21,33 @@
   "tools": [
     {
       "name": "mfr_list_service_requests",
-      "description": "List service requests (work orders). Returns request number, status, description, assigned technician, and linked company. Supports OData filtering and sorting.",
+      "description": "List service requests (work orders). Returns Id, Name, ExternalId, State, Type, Description, CustomerId, TargetTimeInMinutes, DueDateRangeStart/End, ClosedAt, ReleasedAt, WorkDoneAt, DateOfCreation, DateModified, CurrentOwnerId, CostCenterId, PortalLink, and IsTemplate. Supports OData $filter, $expand, $orderby, $top, $skip, and $select.",
       "parameters": {
         "type": "object",
         "properties": {
           "$top": {
             "type": "number",
-            "description": "Number of results to return (default: 20)"
+            "description": "Max number of results to return (default: 20, max: 100)"
           },
           "$skip": {
             "type": "number",
-            "description": "Number of results to skip for pagination"
+            "description": "Number of results to skip for pagination (e.g. 20 for page 2 with $top=20)"
           },
           "$filter": {
             "type": "string",
-            "description": "OData filter expression (e.g. \"Status eq 'Open'\")"
+            "description": "OData filter expression. Filterable fields: State (values: 'ReadyForScheduling', 'Scheduled', 'InProgress', 'Released', 'Closed'), Type ('IsServiceRequest'), ExternalId, Name, IsTemplate (true/false), DateModified, DateOfCreation, CustomerId, CurrentOwnerId, CostCenterId. Date format: datetime'YYYY-MM-DDTHH:mm:ss'. Examples: \"State eq 'InProgress'\", \"DateModified gt datetime'2025-01-01T00:00:00'\", \"State eq 'Closed' and DateModified gt datetime'2025-07-12T13:15:58Z'\", \"IsTemplate eq true\", \"ExternalId eq 'T-5432'\". Operators: eq, ne, gt, ge, lt, le, and, or, not."
           },
           "$orderby": {
             "type": "string",
-            "description": "OData ordering (e.g. \"CreatedDate desc\")"
+            "description": "Sort results. Examples: 'DateModified desc', 'DateOfCreation asc', 'Name asc'"
           },
           "$expand": {
             "type": "string",
-            "description": "Expand related entities (e.g. \"Company,Appointments\")"
+            "description": "Expand related entities (comma-separated). Options: ServiceObjects, Customer, Reports, Items, Steps, Comments, Appointments, Appointments/Contacts, Tags, Qualifications"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields to return (comma-separated). Example: 'Id,Name,State,DateModified'"
           }
         }
       },
@@ -54,56 +59,371 @@
           "$skip": "${$skip}",
           "$filter": "${$filter}",
           "$orderby": "${$orderby}",
-          "$expand": "${$expand}"
+          "$expand": "${$expand}",
+          "$select": "${$select}"
         }
       }
     },
     {
       "name": "mfr_get_service_request",
-      "description": "Get detailed information about a specific service request by ID, including all fields, linked company, and appointments.",
+      "description": "Get a single service request by its numeric ID. Returns all fields including Id, Name, ExternalId, State, Type, Description, CustomerId, TargetTimeInMinutes, DueDateRangeStart/End, ClosedAt, ReleasedAt, WorkDoneAt, DateOfCreation, DateModified, CurrentOwnerId, CostCenterId, PortalLink, Location, CustomValues, Version, and IsTemplate.",
       "parameters": {
         "type": "object",
         "properties": {
           "requestId": {
             "type": "string",
-            "description": "The service request ID (GUID)"
+            "description": "The service request numeric ID (e.g. '11164418048'). Use the 'L' suffix in the URL path."
           },
           "$expand": {
             "type": "string",
-            "description": "Expand related entities (e.g. \"Company,Appointments,Steps\")"
+            "description": "Expand related entities. Options: ServiceObjects, Customer, Reports, Items, Steps, Comments, Appointments, Appointments/Contacts, Tags, Qualifications"
           }
         },
         "required": ["requestId"]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/ServiceRequests(guid'${requestId}')",
+        "path": "/ServiceRequests(${requestId}L)",
         "queryParams": {
           "$expand": "${$expand}"
         }
       }
     },
     {
+      "name": "mfr_get_service_request_by_external_id",
+      "description": "Find a service request by its external ID (your system's reference). Returns matching service requests.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "externalId": {
+            "type": "string",
+            "description": "The external ID to search for (e.g. 'T-5432')"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand related entities. Options: ServiceObjects, Customer, Reports, Items, Steps, Comments, Appointments, Appointments/Contacts, Tags, Qualifications"
+          }
+        },
+        "required": ["externalId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ServiceRequests",
+        "queryParams": {
+          "$filter": "ExternalId eq '${externalId}'",
+          "$expand": "${$expand}"
+        }
+      }
+    },
+    {
+      "name": "mfr_create_service_request",
+      "description": "Create a new service request (work order). Returns the created service request with its Id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": {
+            "type": "string",
+            "description": "Title/name of the service request"
+          },
+          "Description": {
+            "type": "string",
+            "description": "Detailed description (HTML supported)"
+          },
+          "ExternalId": {
+            "type": "string",
+            "description": "Your system's reference ID"
+          },
+          "TargetTimeInMinutes": {
+            "type": "number",
+            "description": "Estimated time to complete in minutes"
+          },
+          "CustomerId": {
+            "type": "string",
+            "description": "Company/customer ID to link"
+          },
+          "CurrentOwnerId": {
+            "type": "string",
+            "description": "Contact ID of the responsible technician"
+          },
+          "DueDateRangeEnd": {
+            "type": "string",
+            "description": "Due date in ISO 8601 format (e.g. '2026-06-15T00:00:00Z')"
+          },
+          "DueDateRangeStart": {
+            "type": "string",
+            "description": "Start of due date range in ISO 8601 format"
+          },
+          "CostCenterId": {
+            "type": "string",
+            "description": "Cost center ID (use '0' for none)"
+          },
+          "IsTemplate": {
+            "type": "boolean",
+            "description": "Set to true to create a template instead of a regular request"
+          },
+          "Type": {
+            "type": "string",
+            "description": "Request type. Values: 'IsServiceRequest' (default), 'IsStandardTemplate' (for templates)"
+          },
+          "CreateFromServiceRequestTemplateId": {
+            "type": "string",
+            "description": "Create from an existing template by providing the template's ID"
+          }
+        },
+        "required": ["Name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ServiceRequests"
+      }
+    },
+    {
+      "name": "mfr_update_service_request",
+      "description": "Update an existing service request. Only include fields you want to change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          },
+          "Name": {
+            "type": "string",
+            "description": "Updated title/name"
+          },
+          "Description": {
+            "type": "string",
+            "description": "Updated description (HTML supported)"
+          },
+          "ExternalId": {
+            "type": "string",
+            "description": "Updated external reference ID"
+          },
+          "TargetTimeInMinutes": {
+            "type": "string",
+            "description": "Updated estimated time in minutes"
+          },
+          "CustomerId": {
+            "type": "string",
+            "description": "Updated company/customer ID"
+          },
+          "CurrentOwnerId": {
+            "type": "string",
+            "description": "Updated responsible technician contact ID"
+          },
+          "DueDateRangeEnd": {
+            "type": "string",
+            "description": "Updated due date (ISO 8601)"
+          },
+          "CostCenterId": {
+            "type": "string",
+            "description": "Updated cost center ID"
+          }
+        },
+        "required": ["requestId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ServiceRequests(${requestId}L)"
+      }
+    },
+    {
+      "name": "mfr_delete_service_request",
+      "description": "Delete a service request by its numeric ID. This action is irreversible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "description": "The service request numeric ID to delete"
+          }
+        },
+        "required": ["requestId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/ServiceRequests(${requestId}L)"
+      }
+    },
+    {
+      "name": "mfr_link_service_request_service_object",
+      "description": "Link a service object (equipment/device) to a service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          },
+          "serviceObjectId": {
+            "type": "string",
+            "description": "The service object numeric ID to link"
+          }
+        },
+        "required": ["requestId", "serviceObjectId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ServiceRequests(${requestId}L)/$links/ServiceObjects",
+        "body": {
+          "url": "https://portal.mobilefieldreport.com/odata/ServiceObjects(${serviceObjectId}L)"
+        }
+      }
+    },
+    {
+      "name": "mfr_link_service_request_document",
+      "description": "Link a document to a service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          },
+          "documentId": {
+            "type": "string",
+            "description": "The document numeric ID to link"
+          }
+        },
+        "required": ["requestId", "documentId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ServiceRequests(${requestId}L)/$links/Documents",
+        "body": {
+          "url": "https://portal.mobilefieldreport.com/odata/Documents(${documentId}L)"
+        }
+      }
+    },
+    {
+      "name": "mfr_add_tags_to_service_request",
+      "description": "Add a tag to a service request. The tag must already exist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          },
+          "tagId": {
+            "type": "string",
+            "description": "The tag numeric ID to add"
+          }
+        },
+        "required": ["requestId", "tagId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ServiceRequests(${requestId}L)/$links/Tags",
+        "body": {
+          "url": "https://portal.mobilefieldreport.com/odata/Tags(${tagId}L)"
+        }
+      }
+    },
+    {
+      "name": "mfr_remove_tag_from_service_request",
+      "description": "Remove a tag from a service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          },
+          "tagId": {
+            "type": "string",
+            "description": "The tag numeric ID to remove"
+          }
+        },
+        "required": ["requestId", "tagId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ServiceRequests(${requestId}L)/$links/RemoveTags",
+        "body": {
+          "url": "https://portal.mobilefieldreport.com/odata/Tags(${tagId}L)"
+        }
+      }
+    },
+    {
+      "name": "mfr_add_qualification_to_service_request",
+      "description": "Add a required qualification to a service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          },
+          "qualificationId": {
+            "type": "string",
+            "description": "The qualification numeric ID to add"
+          }
+        },
+        "required": ["requestId", "qualificationId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ServiceRequests(${requestId}L)/$links/Qualifications",
+        "body": {
+          "url": "https://portal.mobilefieldreport.com/odata/Qualifications(${qualificationId}L)"
+        }
+      }
+    },
+    {
+      "name": "mfr_remove_qualification_from_service_request",
+      "description": "Remove a qualification from a service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          },
+          "qualificationId": {
+            "type": "string",
+            "description": "The qualification numeric ID to remove"
+          }
+        },
+        "required": ["requestId", "qualificationId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ServiceRequests(${requestId}L)/$links/RemoveQualifications",
+        "body": {
+          "url": "https://portal.mobilefieldreport.com/odata/Qualifications(${qualificationId}L)"
+        }
+      }
+    },
+    {
       "name": "mfr_list_appointments",
-      "description": "List scheduled appointments for field technicians. Returns date, time, duration, assigned technician, and linked service request.",
+      "description": "List scheduled appointments for field technicians. Returns Id, State, Type/AppointmentType, StartDateTime, EndDateTime, ContactId, ContactIds, ServiceRequestId, Note, ExternalId, DrivingDistanceFrom/To, CreatedAt, and Version.",
       "parameters": {
         "type": "object",
         "properties": {
           "$top": {
             "type": "number",
-            "description": "Number of results to return (default: 20)"
+            "description": "Max number of results to return"
           },
           "$skip": {
             "type": "number",
-            "description": "Number of results to skip"
+            "description": "Number of results to skip for pagination"
           },
           "$filter": {
             "type": "string",
-            "description": "OData filter (e.g. \"StartDateTime ge datetime'2026-03-01T00:00:00'\")"
+            "description": "OData filter. Filterable fields: State ('NotVisited', 'InProgress', 'IsWorkDone', 'Rejected'), Type/AppointmentType ('Standard', 'Vacation', 'Illness', 'Other', 'Task'), StartDateTime, EndDateTime, ContactId, ServiceRequestId. Examples: \"State eq 'InProgress'\", \"StartDateTime ge datetime'2026-03-01T00:00:00' and StartDateTime le datetime'2026-03-31T23:59:59'\", \"ContactId eq '410583043'\", \"Type eq 'Vacation'\""
           },
           "$orderby": {
             "type": "string",
-            "description": "OData ordering (e.g. \"StartDateTime asc\")"
+            "description": "Sort results. Examples: 'StartDateTime asc', 'EndDateTime desc', 'CreatedAt desc'"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand related entities. Options: Contacts"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields (comma-separated)"
           }
         }
       },
@@ -114,31 +434,147 @@
           "$top": "${$top}",
           "$skip": "${$skip}",
           "$filter": "${$filter}",
-          "$orderby": "${$orderby}"
+          "$orderby": "${$orderby}",
+          "$expand": "${$expand}",
+          "$select": "${$select}"
         }
       }
     },
     {
+      "name": "mfr_create_appointment",
+      "description": "Create a new appointment (standard, vacation, illness, or other).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Type": {
+            "type": "string",
+            "description": "Appointment type. Values: 'Standard' (field work), 'Vacation', 'Illness', 'Other', 'Task'"
+          },
+          "StartDateTime": {
+            "type": "string",
+            "description": "Start date/time in ISO 8601 (e.g. '2026-06-15T08:00:00Z')"
+          },
+          "EndDateTime": {
+            "type": "string",
+            "description": "End date/time in ISO 8601 (e.g. '2026-06-15T16:00:00Z')"
+          },
+          "ContactId": {
+            "type": "string",
+            "description": "Primary technician/contact ID"
+          },
+          "ContactIds": {
+            "type": "array",
+            "description": "Array of contact IDs for multiple assigned technicians (e.g. ['410583043', '1767604224'])"
+          },
+          "ServiceRequestId": {
+            "type": "string",
+            "description": "Service request ID to link (use '0' for standalone appointments like vacation)"
+          },
+          "State": {
+            "type": "string",
+            "description": "Initial state. Values: 'NotVisited' (default), 'InProgress', 'IsWorkDone', 'Rejected'"
+          },
+          "Note": {
+            "type": "string",
+            "description": "Additional notes for the appointment"
+          }
+        },
+        "required": ["Type", "StartDateTime", "EndDateTime", "ContactId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Appointments"
+      }
+    },
+    {
+      "name": "mfr_update_appointment",
+      "description": "Update an existing appointment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointmentId": {
+            "type": "string",
+            "description": "The appointment numeric ID"
+          },
+          "Type": {
+            "type": "string",
+            "description": "Updated type: 'Standard', 'Vacation', 'Illness', 'Other', 'Task'"
+          },
+          "State": {
+            "type": "string",
+            "description": "Updated state: 'NotVisited', 'InProgress', 'IsWorkDone', 'Rejected'"
+          },
+          "StartDateTime": {
+            "type": "string",
+            "description": "Updated start (ISO 8601)"
+          },
+          "EndDateTime": {
+            "type": "string",
+            "description": "Updated end (ISO 8601)"
+          },
+          "ContactId": {
+            "type": "string",
+            "description": "Updated technician/contact ID"
+          },
+          "Note": {
+            "type": "string",
+            "description": "Updated notes"
+          }
+        },
+        "required": ["appointmentId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Appointments(${appointmentId}L)"
+      }
+    },
+    {
+      "name": "mfr_delete_appointment",
+      "description": "Delete an appointment by its numeric ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointmentId": {
+            "type": "string",
+            "description": "The appointment numeric ID to delete"
+          }
+        },
+        "required": ["appointmentId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/Appointments(${appointmentId}L)"
+      }
+    },
+    {
       "name": "mfr_list_companies",
-      "description": "List companies (customers/clients) in MFR. Returns company name, address, contact info, and ID.",
+      "description": "List companies (customers/clients). Returns Id, Name, ExternalId, Location (Address, Postal, City, Country, Lat/Long), Note, BillingAddress, SupportTelephone, SupportFax, SupportMail, IsPhysicalPerson, IsSupplier, IsOwner, IsEmailInvoicingActive, MainContactId, MappingId, DateOfCreation, DateModified, CustomValues, and Version.",
       "parameters": {
         "type": "object",
         "properties": {
           "$top": {
             "type": "number",
-            "description": "Number of results to return (default: 20)"
+            "description": "Max number of results to return"
           },
           "$skip": {
             "type": "number",
-            "description": "Number of results to skip"
+            "description": "Number of results to skip for pagination"
           },
           "$filter": {
             "type": "string",
-            "description": "OData filter (e.g. \"Name eq 'Mustermann GmbH'\")"
+            "description": "OData filter. Filterable fields: Name, ExternalId, IsPhysicalPerson (true/false), IsSupplier (true/false), DateModified. Examples: \"Name eq 'Mustermann GmbH'\", \"substringof('Muster', Name)\", \"IsSupplier eq true\", \"DateModified gt datetime'2025-01-01T00:00:00'\""
           },
-          "$search": {
+          "$orderby": {
             "type": "string",
-            "description": "Free text search across company fields"
+            "description": "Sort results. Examples: 'Name asc', 'DateModified desc'"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand related entities. Options: Contacts, Tags, ServiceObjects, MainContact"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields (comma-separated)"
           }
         }
       },
@@ -149,28 +585,147 @@
           "$top": "${$top}",
           "$skip": "${$skip}",
           "$filter": "${$filter}",
-          "$search": "${$search}"
+          "$orderby": "${$orderby}",
+          "$expand": "${$expand}",
+          "$select": "${$select}"
         }
       }
     },
     {
-      "name": "mfr_list_contacts",
-      "description": "List contacts (people associated with companies). Returns name, email, phone, role, and linked company.",
+      "name": "mfr_get_company",
+      "description": "Get a single company by its numeric ID with all details.",
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": {
-            "type": "number",
-            "description": "Number of results to return (default: 20)"
+          "companyId": {
+            "type": "string",
+            "description": "The company numeric ID"
           },
-          "$skip": {
-            "type": "number",
-            "description": "Number of results to skip"
+          "$expand": {
+            "type": "string",
+            "description": "Expand related entities. Options: Contacts, Tags, ServiceObjects, MainContact"
+          }
+        },
+        "required": ["companyId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Companies(${companyId}L)",
+        "queryParams": {
+          "$expand": "${$expand}"
+        }
+      }
+    },
+    {
+      "name": "mfr_create_company",
+      "description": "Create a new company (customer/client).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": {
+            "type": "string",
+            "description": "Company name"
           },
+          "ExternalId": {
+            "type": "string",
+            "description": "Your system's reference ID"
+          },
+          "IsPhysicalPerson": {
+            "type": "boolean",
+            "description": "True if this is an individual person, false for a company (default: false)"
+          },
+          "IsSupplier": {
+            "type": "boolean",
+            "description": "True if this company is a supplier (default: false)"
+          },
+          "Note": {
+            "type": "string",
+            "description": "Internal notes"
+          },
+          "SupportTelephone": {
+            "type": "string",
+            "description": "Phone number"
+          },
+          "SupportFax": {
+            "type": "string",
+            "description": "Fax number"
+          },
+          "SupportMail": {
+            "type": "string",
+            "description": "Email address"
+          },
+          "MainContactId": {
+            "type": "string",
+            "description": "Main contact ID (use '0' for none)"
+          },
+          "Location": {
+            "type": "object",
+            "description": "Address object with fields: AddressString (street), Postal (zip code), City, State, Country (ISO code e.g. 'DE', 'GB')"
+          }
+        },
+        "required": ["Name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Companies"
+      }
+    },
+    {
+      "name": "mfr_update_company",
+      "description": "Update an existing company. Only include fields you want to change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "description": "The company numeric ID"
+          },
+          "Name": { "type": "string", "description": "Updated company name" },
+          "ExternalId": { "type": "string", "description": "Updated external ID" },
+          "IsPhysicalPerson": { "type": "boolean", "description": "Is individual person" },
+          "Note": { "type": "string", "description": "Updated notes" },
+          "SupportTelephone": { "type": "string", "description": "Updated phone" },
+          "SupportFax": { "type": "string", "description": "Updated fax" },
+          "SupportMail": { "type": "string", "description": "Updated email" },
+          "Location": { "type": "object", "description": "Updated address: {AddressString, Postal, City, State, Country}" }
+        },
+        "required": ["companyId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Companies(${companyId}L)"
+      }
+    },
+    {
+      "name": "mfr_delete_company",
+      "description": "Delete a company by its numeric ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": { "type": "string", "description": "The company numeric ID to delete" }
+        },
+        "required": ["companyId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/Companies(${companyId}L)"
+      }
+    },
+    {
+      "name": "mfr_list_contacts",
+      "description": "List contacts (people linked to companies). Returns Id, FirstName, LastName, Email, JobTitle, MobilePhone, Telephone, Fax, Note, Gender, CompanyId, IsUser, UserId, ExternalId, GroupId, DateModified, CustomValues, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": { "type": "number", "description": "Max results to return" },
+          "$skip": { "type": "number", "description": "Results to skip for pagination" },
           "$filter": {
             "type": "string",
-            "description": "OData filter expression"
-          }
+            "description": "OData filter. Filterable fields: FirstName, LastName, Email, CompanyId, IsUser (true/false), Gender ('Male', 'Female'), ExternalId, DateModified. Examples: \"CompanyId eq '6026428432'\", \"LastName eq 'Smith'\", \"IsUser eq true\", \"DateModified gt datetime'2025-01-01T00:00:00'\""
+          },
+          "$orderby": { "type": "string", "description": "Sort: 'LastName asc', 'DateModified desc'" },
+          "$expand": { "type": "string", "description": "Expand: Company, User" },
+          "$select": { "type": "string", "description": "Select specific fields" }
         }
       },
       "endpointMapping": {
@@ -179,141 +734,948 @@
         "queryParams": {
           "$top": "${$top}",
           "$skip": "${$skip}",
-          "$filter": "${$filter}"
+          "$filter": "${$filter}",
+          "$orderby": "${$orderby}",
+          "$expand": "${$expand}",
+          "$select": "${$select}"
         }
       }
     },
     {
-      "name": "mfr_list_users",
-      "description": "List technicians and users in the MFR system. Returns name, email, role, and qualifications.",
+      "name": "mfr_get_contact",
+      "description": "Get a single contact by its numeric ID.",
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": {
-            "type": "number",
-            "description": "Number of results to return"
-          },
-          "$filter": {
-            "type": "string",
-            "description": "OData filter expression"
-          }
-        }
+          "contactId": { "type": "string", "description": "The contact numeric ID" },
+          "$expand": { "type": "string", "description": "Expand: Company, User" }
+        },
+        "required": ["contactId"]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/Users",
-        "queryParams": {
-          "$top": "${$top}",
-          "$filter": "${$filter}"
-        }
+        "path": "/Contacts(${contactId}L)",
+        "queryParams": { "$expand": "${$expand}" }
+      }
+    },
+    {
+      "name": "mfr_create_contact",
+      "description": "Create a new contact (person).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "FirstName": { "type": "string", "description": "First name" },
+          "LastName": { "type": "string", "description": "Last name" },
+          "Email": { "type": "string", "description": "Email address" },
+          "JobTitle": { "type": "string", "description": "Job title/role" },
+          "MobilePhone": { "type": "string", "description": "Mobile phone number" },
+          "Telephone": { "type": "string", "description": "Landline phone number" },
+          "Fax": { "type": "string", "description": "Fax number" },
+          "Note": { "type": "string", "description": "Internal notes" },
+          "Gender": { "type": "string", "description": "Gender: 'Male' or 'Female'" },
+          "CompanyId": { "type": "string", "description": "Company ID to link (use '0' for no company)" },
+          "IsUser": { "type": "boolean", "description": "Whether this contact is also a system user (default: false)" },
+          "ExternalId": { "type": "string", "description": "Your system's reference ID" }
+        },
+        "required": ["FirstName", "LastName"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Contacts"
+      }
+    },
+    {
+      "name": "mfr_update_contact",
+      "description": "Update an existing contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": { "type": "string", "description": "The contact numeric ID" },
+          "FirstName": { "type": "string", "description": "Updated first name" },
+          "LastName": { "type": "string", "description": "Updated last name" },
+          "Email": { "type": "string", "description": "Updated email" },
+          "JobTitle": { "type": "string", "description": "Updated job title" },
+          "MobilePhone": { "type": "string", "description": "Updated mobile phone" },
+          "Telephone": { "type": "string", "description": "Updated phone" },
+          "Note": { "type": "string", "description": "Updated notes" },
+          "Gender": { "type": "string", "description": "'Male' or 'Female'" },
+          "ExternalId": { "type": "string", "description": "Updated external ID" }
+        },
+        "required": ["contactId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Contacts(${contactId}L)"
       }
     },
     {
       "name": "mfr_list_service_objects",
-      "description": "List service objects (equipment, machines, devices being serviced). Returns object name, serial number, location, and linked company.",
+      "description": "List service objects (equipment, machines, devices). Returns Id, Name, ExternalId, Note, Location (Address, Postal, City, Country, Lat/Long), CompanyId, ParentServiceObjectId, IsWarehouse, IsProduct, ProductId, MappingId, QuickSearch, DateOfCreation, DateModified, CustomValues, and Version.",
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": {
-            "type": "number",
-            "description": "Number of results to return"
-          },
-          "$skip": {
-            "type": "number",
-            "description": "Number of results to skip"
-          },
+          "$top": { "type": "number", "description": "Max results to return" },
+          "$skip": { "type": "number", "description": "Results to skip for pagination" },
           "$filter": {
             "type": "string",
-            "description": "OData filter expression"
+            "description": "OData filter. Filterable fields: Name, ExternalId, CompanyId (use Company/Id), IsWarehouse, IsProduct, DateModified. Examples: \"Company/Id eq 10981310465L\", \"Name eq 'Generator A1'\", \"IsWarehouse eq true\", \"DateModified gt datetime'2025-01-01T00:00:00'\""
           },
-          "$expand": {
-            "type": "string",
-            "description": "Expand related entities (e.g. \"Company\")"
-          }
+          "$orderby": { "type": "string", "description": "Sort: 'Name asc', 'DateModified desc'" },
+          "$expand": { "type": "string", "description": "Expand: Contacts, Company, Product, Tags" },
+          "$select": { "type": "string", "description": "Select specific fields" }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/ServiceObjects",
         "queryParams": {
-          "$top": "${$top}",
-          "$skip": "${$skip}",
-          "$filter": "${$filter}",
-          "$expand": "${$expand}"
+          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
+          "$orderby": "${$orderby}", "$expand": "${$expand}", "$select": "${$select}"
         }
       }
     },
     {
-      "name": "mfr_list_steps",
-      "description": "List checklist steps for a service request. Returns step name, type, status (done/not done), and any entered values.",
+      "name": "mfr_get_service_object",
+      "description": "Get a single service object by its numeric ID.",
       "parameters": {
         "type": "object",
         "properties": {
-          "serviceRequestId": {
-            "type": "string",
-            "description": "The service request ID (GUID) to get steps for"
-          }
+          "serviceObjectId": { "type": "string", "description": "The service object numeric ID" },
+          "$expand": { "type": "string", "description": "Expand: Contacts, Company, Product, Tags" }
         },
-        "required": ["serviceRequestId"]
+        "required": ["serviceObjectId"]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/ServiceRequests(guid'${serviceRequestId}')/Steps"
+        "path": "/ServiceObjects(${serviceObjectId}L)",
+        "queryParams": { "$expand": "${$expand}" }
+      }
+    },
+    {
+      "name": "mfr_create_service_object",
+      "description": "Create a new service object (equipment/device).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string", "description": "Object name" },
+          "ExternalId": { "type": "string", "description": "Your system's reference ID" },
+          "CompanyId": { "type": "string", "description": "Company ID that owns this object" },
+          "Note": { "type": "string", "description": "Internal notes" },
+          "ParentServiceObjectId": { "type": "string", "description": "Parent object ID for hierarchy (use '0' for root)" },
+          "ProductId": { "type": "string", "description": "Product catalog ID to link (use '0' for none)" },
+          "Location": { "type": "object", "description": "Address: {AddressString, Postal, City, State, Country}" }
+        },
+        "required": ["Name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ServiceObjects"
+      }
+    },
+    {
+      "name": "mfr_update_service_object",
+      "description": "Update an existing service object.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "serviceObjectId": { "type": "string", "description": "The service object numeric ID" },
+          "Name": { "type": "string", "description": "Updated name" },
+          "ExternalId": { "type": "string", "description": "Updated external ID" },
+          "CompanyId": { "type": "string", "description": "Updated company ID" },
+          "Note": { "type": "string", "description": "Updated notes" },
+          "ParentServiceObjectId": { "type": "string", "description": "Updated parent ID" },
+          "Location": { "type": "object", "description": "Updated address" }
+        },
+        "required": ["serviceObjectId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ServiceObjects(${serviceObjectId}L)"
+      }
+    },
+    {
+      "name": "mfr_delete_service_object",
+      "description": "Delete a service object by its numeric ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "serviceObjectId": { "type": "string", "description": "The service object numeric ID to delete" }
+        },
+        "required": ["serviceObjectId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/ServiceObjects(${serviceObjectId}L)"
+      }
+    },
+    {
+      "name": "mfr_list_users",
+      "description": "List system users (technicians, dispatchers). Returns Id, UserName, IsActive, IsMobile, IsSystem, IsApproved, ContactId, PreferedLanguage, TimeZone, PreferedCulture, CreationDate, LastLoginDate, EmailChannelEnabled, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": { "type": "number", "description": "Max results to return" },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter. Filterable fields: UserName, IsActive (true/false), IsMobile (true/false), IsSystem (true/false), ContactId. Examples: \"IsActive eq true\", \"IsMobile eq true\", \"UserName eq '1demo@simplias.com'\""
+          },
+          "$expand": { "type": "string", "description": "Expand: Contact" },
+          "$select": { "type": "string", "description": "Select specific fields" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Users",
+        "queryParams": {
+          "$top": "${$top}", "$filter": "${$filter}",
+          "$expand": "${$expand}", "$select": "${$select}"
+        }
+      }
+    },
+    {
+      "name": "mfr_activate_deactivate_user",
+      "description": "Activate or deactivate a user account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "description": "The user numeric ID" },
+          "IsActive": { "type": "boolean", "description": "Set to true to activate, false to deactivate" },
+          "ContactId": { "type": "string", "description": "The user's contact ID" }
+        },
+        "required": ["userId", "IsActive", "ContactId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Users(${userId}L)"
+      }
+    },
+    {
+      "name": "mfr_list_products",
+      "description": "List products from the product catalog. Returns Id, Name, SubKey, Description, DateModified, MappingId, CustomValueStepTemplateId, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": { "type": "number", "description": "Max results to return" },
+          "$skip": { "type": "number", "description": "Results to skip for pagination" },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter. Filterable fields: Name, SubKey, DateModified. Examples: \"Name eq 'Heat Pump X200'\", \"DateModified gt datetime'2025-01-01T00:00:00'\""
+          },
+          "$expand": { "type": "string", "description": "Expand: CustomValueStepTemplate/Steps" },
+          "$select": { "type": "string", "description": "Select specific fields" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Products",
+        "queryParams": {
+          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
+          "$expand": "${$expand}", "$select": "${$select}"
+        }
+      }
+    },
+    {
+      "name": "mfr_get_product",
+      "description": "Get a single product by its numeric ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "string", "description": "The product numeric ID" },
+          "$expand": { "type": "string", "description": "Expand: CustomValueStepTemplate/Steps" }
+        },
+        "required": ["productId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Products(${productId}L)",
+        "queryParams": { "$expand": "${$expand}" }
+      }
+    },
+    {
+      "name": "mfr_create_product",
+      "description": "Create a new product in the product catalog.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string", "description": "Product name" },
+          "SubKey": { "type": "string", "description": "Sub-key/model number" },
+          "Description": { "type": "string", "description": "Product description" }
+        },
+        "required": ["Name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Products"
+      }
+    },
+    {
+      "name": "mfr_list_documents",
+      "description": "List documents (PDFs, images, attachments). Returns Id, FileName, URI (download link), ContentType, State, ExternalId, IsGlobal, IsLink, StartDateTime, EndDateTime, UploadDate, DateModified, ServiceRequestId, Note, HTMLCode, CustomValues, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": { "type": "number", "description": "Max results to return" },
+          "$skip": { "type": "number", "description": "Results to skip" },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter. Filterable fields: FileName, ContentType, IsGlobal, ExternalId, ServiceRequestId, DateModified. Examples: \"ContentType eq 'application/pdf'\", \"IsGlobal eq true\", \"ServiceRequestId eq '11164418048'\""
+          },
+          "$expand": { "type": "string", "description": "Expand: ServiceRequest" },
+          "$select": { "type": "string", "description": "Select specific fields" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Documents",
+        "queryParams": {
+          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
+          "$expand": "${$expand}", "$select": "${$select}"
+        }
+      }
+    },
+    {
+      "name": "mfr_get_document",
+      "description": "Get a single document by its numeric ID. The URI field contains the download link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "The document numeric ID" },
+          "$expand": { "type": "string", "description": "Expand: ServiceRequest" }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Documents(${documentId}L)",
+        "queryParams": { "$expand": "${$expand}" }
+      }
+    },
+    {
+      "name": "mfr_update_document",
+      "description": "Update document metadata (not the file content).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "The document numeric ID" },
+          "FileName": { "type": "string", "description": "Updated file name" },
+          "ExternalId": { "type": "string", "description": "Updated external ID" },
+          "Note": { "type": "string", "description": "Updated notes" },
+          "IsGlobal": { "type": "boolean", "description": "Set to true to make globally available" }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Documents(${documentId}L)"
+      }
+    },
+    {
+      "name": "mfr_delete_document",
+      "description": "Delete a document by its numeric ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "The document numeric ID to delete" }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/Documents(${documentId}L)"
       }
     },
     {
       "name": "mfr_list_time_events",
-      "description": "List time tracking events. Returns start/end times, duration, technician, and linked service request.",
+      "description": "List time tracking events. Returns Id, TimeEventType, State, IsApproved, IsManual, StartDateTime, EndDateTime, ContactId, ServiceRequestId, Description, ExternalId, ProposedDrivingDistance, DateModified, and Version.",
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": {
-            "type": "number",
-            "description": "Number of results to return"
-          },
+          "$top": { "type": "number", "description": "Max results to return" },
+          "$skip": { "type": "number", "description": "Results to skip" },
           "$filter": {
             "type": "string",
-            "description": "OData filter (e.g. \"StartDateTime ge datetime'2026-03-01T00:00:00'\")"
+            "description": "OData filter. Filterable fields: TimeEventType ('eWorking', 'eDriving', 'ePause', 'eVacation', 'eIllness', 'eOther', 'eCustomTimeEvent'), StartDateTime, EndDateTime, ContactId (use Contact/Id), ServiceRequestId, IsApproved, DateModified. Examples: \"StartDateTime gt datetime'2025-01-01T00:00:00'\", \"Contact/Id eq 410583043L\", \"TimeEventType eq 'eWorking'\", \"IsApproved eq true\""
           },
-          "$orderby": {
-            "type": "string",
-            "description": "OData ordering"
-          }
+          "$orderby": { "type": "string", "description": "Sort: 'StartDateTime desc', 'EndDateTime asc'" },
+          "$expand": { "type": "string", "description": "Expand: Contact, ServiceRequest" },
+          "$select": { "type": "string", "description": "Select specific fields" }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/TimeEvents",
         "queryParams": {
-          "$top": "${$top}",
-          "$filter": "${$filter}",
-          "$orderby": "${$orderby}"
+          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
+          "$orderby": "${$orderby}", "$expand": "${$expand}", "$select": "${$select}"
         }
       }
     },
     {
-      "name": "mfr_list_invoices",
-      "description": "List invoices generated from service requests. Returns invoice number, amount, date, and payment status.",
+      "name": "mfr_get_time_events_for_service_request",
+      "description": "Get all time events linked to a specific service request.",
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": {
-            "type": "number",
-            "description": "Number of results to return"
+          "serviceRequestId": { "type": "string", "description": "The service request numeric ID" }
+        },
+        "required": ["serviceRequestId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ServiceRequests(${serviceRequestId}L)",
+        "queryParams": {
+          "$expand": "TimeEvents",
+          "$select": "TimeEvents"
+        }
+      }
+    },
+    {
+      "name": "mfr_create_time_event",
+      "description": "Create a time tracking event for a service request or standalone (vacation, illness, etc.).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "TimeEventType": {
+            "type": "string",
+            "description": "Type of time event. Values: 'eWorking' (on-site work), 'eDriving' (travel), 'ePause' (break), 'eVacation', 'eIllness', 'eOther', 'eCustomTimeEvent'"
           },
+          "StartDateTime": { "type": "string", "description": "Start time in ISO 8601 (e.g. '2026-06-15T08:00:00Z')" },
+          "EndDateTime": { "type": "string", "description": "End time in ISO 8601" },
+          "ContactId": { "type": "string", "description": "Technician/contact ID" },
+          "ServiceRequestId": { "type": "string", "description": "Linked service request ID (use '0' for standalone events like vacation)" },
+          "Description": { "type": "string", "description": "Description of work done" },
+          "IsApproved": { "type": "boolean", "description": "Whether this time event is pre-approved (default: false)" }
+        },
+        "required": ["TimeEventType", "StartDateTime", "EndDateTime", "ContactId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/TimeEvents"
+      }
+    },
+    {
+      "name": "mfr_list_steps",
+      "description": "List checklist steps for a service request. Returns Id, Name, Type, IsDone, IsVisible, HasError, SortOrder, Data (JSON with field definitions), Description, Comment, InternalComment, ServiceObjectId, StepListTemplateId, ParentId, TrackingId, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "serviceRequestId": { "type": "string", "description": "The service request numeric ID" }
+        },
+        "required": ["serviceRequestId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ServiceRequests(${serviceRequestId}L)",
+        "queryParams": {
+          "$expand": "Steps",
+          "$select": "Steps"
+        }
+      }
+    },
+    {
+      "name": "mfr_get_step",
+      "description": "Get a single step by its numeric ID, with attachments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stepId": { "type": "string", "description": "The step numeric ID" },
+          "$expand": { "type": "string", "description": "Expand: Attachments" }
+        },
+        "required": ["stepId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Steps(${stepId}L)",
+        "queryParams": { "$expand": "${$expand}" }
+      }
+    },
+    {
+      "name": "mfr_create_step",
+      "description": "Create a new checklist step in a service request or step list template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string", "description": "Step name/title" },
+          "Type": {
+            "type": "string",
+            "description": "Step type. Values: 'EnterValue' (data entry fields), 'Choice' (selection), 'Picture' (photo capture), 'SignDocument' (signature), 'Material' (material tracking), 'Group' (group container for sub-steps)"
+          },
+          "Description": { "type": "string", "description": "Step description (HTML supported)" },
+          "Comment": { "type": "string", "description": "Technician comment" },
+          "ServiceRequestId": { "type": "string", "description": "Service request ID (for request checklist steps)" },
+          "StepListTemplateId": { "type": "string", "description": "Template ID (for template steps)" },
+          "ParentId": { "type": "string", "description": "Parent step ID for nested steps within a Group (use '0' for root level)" },
+          "Data": { "type": "string", "description": "JSON string defining step fields. For EnterValue: {\"fields\": [{\"isRequired\": true, \"name\": \"Field name\", \"type\": \"text|choice|float\", \"enumeration\": \"Opt1;Opt2\", \"unit\": \"kg\"}]}" }
+        },
+        "required": ["Name", "Type"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Steps"
+      }
+    },
+    {
+      "name": "mfr_update_step",
+      "description": "Update a checklist step (e.g. mark as done, add comment).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stepId": { "type": "string", "description": "The step numeric ID" },
+          "Name": { "type": "string", "description": "Updated step name" },
+          "IsDone": { "type": "boolean", "description": "Mark step as completed (true) or incomplete (false)" },
+          "HasError": { "type": "boolean", "description": "Flag step as having an error" },
+          "Comment": { "type": "string", "description": "Technician comment" },
+          "Description": { "type": "string", "description": "Updated description" },
+          "Data": { "type": "string", "description": "Updated JSON field data" },
+          "ServiceRequestId": { "type": "string", "description": "Service request ID" }
+        },
+        "required": ["stepId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Steps(${stepId}L)"
+      }
+    },
+    {
+      "name": "mfr_delete_step",
+      "description": "Delete a checklist step by its numeric ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stepId": { "type": "string", "description": "The step numeric ID to delete" }
+        },
+        "required": ["stepId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/Steps(${stepId}L)"
+      }
+    },
+    {
+      "name": "mfr_list_item_types",
+      "description": "List item types (material/service catalog). Returns Id, NameOrNumber, ExternalId, Type, Description, Manufacture, Price, Costs, VAT, Discount, ListPrice, GlobalTradeItemNr, IsPortalOnly, IsDiscontinued, IsWarehouse, UnitId, UnitString, DateModified, CustomValues, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": { "type": "number", "description": "Max results to return" },
+          "$skip": { "type": "number", "description": "Results to skip" },
           "$filter": {
             "type": "string",
-            "description": "OData filter expression"
-          }
+            "description": "OData filter. Filterable fields: NameOrNumber, ExternalId, Type ('Material', 'QuickFilter'), IsDiscontinued, DateModified. Examples: \"Type eq 'Material'\", \"substringof('Pump', NameOrNumber)\""
+          },
+          "$expand": { "type": "string", "description": "Expand: Unit" },
+          "$select": { "type": "string", "description": "Select specific fields" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ItemTypes",
+        "queryParams": {
+          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
+          "$expand": "${$expand}", "$select": "${$select}"
+        }
+      }
+    },
+    {
+      "name": "mfr_get_item_type",
+      "description": "Get a single item type by its numeric ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemTypeId": { "type": "string", "description": "The item type numeric ID" },
+          "$expand": { "type": "string", "description": "Expand: Unit" }
+        },
+        "required": ["itemTypeId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ItemTypes(${itemTypeId}L)",
+        "queryParams": { "$expand": "${$expand}" }
+      }
+    },
+    {
+      "name": "mfr_create_item_type",
+      "description": "Create a new item type in the material/service catalog.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "NameOrNumber": { "type": "string", "description": "Item name or article number" },
+          "Type": { "type": "string", "description": "Type: 'Material' or 'QuickFilter'" },
+          "ExternalId": { "type": "string", "description": "Your system's article ID" },
+          "Description": { "type": "string", "description": "Item description" },
+          "Manufacture": { "type": "string", "description": "Manufacturer/brand" },
+          "Price": { "type": "string", "description": "Selling price (e.g. '5.99')" },
+          "Costs": { "type": "string", "description": "Cost price (e.g. '3.00')" },
+          "VAT": { "type": "string", "description": "VAT percentage (e.g. '19' for 19%)" },
+          "UnitId": { "type": "string", "description": "Unit ID from ItemUnits (use '0' for default)" },
+          "GlobalTradeItemNr": { "type": "string", "description": "GTIN/EAN barcode number" }
+        },
+        "required": ["NameOrNumber", "Type"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ItemTypes"
+      }
+    },
+    {
+      "name": "mfr_update_item_type",
+      "description": "Update an existing item type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemTypeId": { "type": "string", "description": "The item type numeric ID" },
+          "NameOrNumber": { "type": "string" }, "Type": { "type": "string" },
+          "Description": { "type": "string" }, "Manufacture": { "type": "string" },
+          "Price": { "type": "string" }, "Costs": { "type": "string" },
+          "VAT": { "type": "string" }, "ExternalId": { "type": "string" },
+          "UnitId": { "type": "string" }, "GlobalTradeItemNr": { "type": "string" }
+        },
+        "required": ["itemTypeId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ItemTypes(${itemTypeId}L)"
+      }
+    },
+    {
+      "name": "mfr_delete_item_type",
+      "description": "Delete an item type by its numeric ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemTypeId": { "type": "string", "description": "The item type numeric ID" }
+        },
+        "required": ["itemTypeId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/ItemTypes(${itemTypeId}L)"
+      }
+    },
+    {
+      "name": "mfr_list_items_in_service_request",
+      "description": "List items (materials/services used) in a specific service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "serviceRequestId": { "type": "string", "description": "The service request numeric ID" }
+        },
+        "required": ["serviceRequestId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ServiceRequests(${serviceRequestId}L)",
+        "queryParams": {
+          "$expand": "Items",
+          "$select": "Items"
+        }
+      }
+    },
+    {
+      "name": "mfr_create_item",
+      "description": "Create an item (material/service entry) in a service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ServiceRequestId": { "type": "string", "description": "Service request ID" },
+          "ItemTypeId": { "type": "string", "description": "Item type ID from catalog (use '0' for ad-hoc)" },
+          "NameOrNumber": { "type": "string", "description": "Item name or article number" },
+          "Type": { "type": "string", "description": "Type: 'Material', 'Equipment', 'Service'" },
+          "QuantityHours": { "type": "string", "description": "Quantity or hours used (e.g. '2.50')" },
+          "PlannedQuantityHours": { "type": "string", "description": "Planned quantity/hours" },
+          "Price": { "type": "string", "description": "Unit price" },
+          "Costs": { "type": "string", "description": "Unit cost" },
+          "Discount": { "type": "string", "description": "Discount percentage (e.g. '10.00')" },
+          "VAT": { "type": "string", "description": "VAT rate (e.g. '0.19' for 19%)" },
+          "Manufacture": { "type": "string", "description": "Manufacturer reference" },
+          "Note": { "type": "string", "description": "Notes" },
+          "ExternalId": { "type": "string", "description": "External reference" },
+          "UnitId": { "type": "string", "description": "Unit ID" },
+          "UnitString": { "type": "string", "description": "Unit display string (e.g. 'pcs', 'kg', 'm', 'h')" },
+          "ServiceObjectId": { "type": "string", "description": "Linked service object ID (use '0' for none)" }
+        },
+        "required": ["ServiceRequestId", "NameOrNumber", "Type"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Items"
+      }
+    },
+    {
+      "name": "mfr_update_item",
+      "description": "Update an item in a service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": { "type": "string", "description": "The item numeric ID" },
+          "QuantityHours": { "type": "string" }, "Price": { "type": "string" },
+          "Discount": { "type": "string" }, "Note": { "type": "string" },
+          "NameOrNumber": { "type": "string" }, "ExternalId": { "type": "string" }
+        },
+        "required": ["itemId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Items(${itemId}L)"
+      }
+    },
+    {
+      "name": "mfr_delete_item",
+      "description": "Delete an item from a service request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": { "type": "string", "description": "The item numeric ID" }
+        },
+        "required": ["itemId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/Items(${itemId}L)"
+      }
+    },
+    {
+      "name": "mfr_list_item_units",
+      "description": "List available item units (pcs, kg, m, h, etc.).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ItemUnits"
+      }
+    },
+    {
+      "name": "mfr_create_item_unit",
+      "description": "Create a new item unit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string", "description": "Unit name (e.g. 'pieces', 'kg', 'meters', 'hours', 'daily')" }
+        },
+        "required": ["Name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ItemUnits"
+      }
+    },
+    {
+      "name": "mfr_list_invoices",
+      "description": "List invoices. Returns Id, InvoiceId (number), InvoiceState, URI (download link), DocumentName, InvoiceBalance, InvoiceBalanceNetto, WageBalanceNet, InvoiceDate, DueDate, DatePayed, PerformanceDate, DateOfCreation, WithoutVAT, Skonto, PartialPayment, Note, FileType, ReportDefinitionCode, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$top": { "type": "number", "description": "Max results to return" },
+          "$skip": { "type": "number", "description": "Results to skip" },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter. Filterable fields: InvoiceState ('eIsDraft', 'eIsPaid', 'eIsSent', 'eIsOverdue'), InvoiceDate, DueDate, DatePayed, InvoiceBalance. Examples: \"InvoiceState eq 'eIsPaid'\", \"InvoiceDate gt datetime'2025-01-01T00:00:00'\", \"InvoiceBalance gt 1000\""
+          },
+          "$orderby": { "type": "string", "description": "Sort: 'InvoiceDate desc', 'InvoiceBalance desc'" },
+          "$select": { "type": "string", "description": "Select specific fields" }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/Invoices",
         "queryParams": {
-          "$top": "${$top}",
-          "$filter": "${$filter}"
+          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
+          "$orderby": "${$orderby}", "$select": "${$select}"
         }
+      }
+    },
+    {
+      "name": "mfr_list_tags",
+      "description": "List tags. Returns Id, Name, GrpName, ColorDefinition, Type ('ServiceRequest'), IsHidden, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$filter": {
+            "type": "string",
+            "description": "OData filter. Examples: \"Type eq 'ServiceRequest'\", \"Name eq 'Urgent'\""
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Tags",
+        "queryParams": { "$filter": "${$filter}" }
+      }
+    },
+    {
+      "name": "mfr_create_tag",
+      "description": "Create a new tag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string", "description": "Tag name" },
+          "ColorDefinition": { "type": "string", "description": "Color hex code (e.g. '#1491ad', '#ff0000')" },
+          "Type": { "type": "string", "description": "Tag type: 'ServiceRequest'" }
+        },
+        "required": ["Name", "Type"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Tags"
+      }
+    },
+    {
+      "name": "mfr_list_qualifications",
+      "description": "List technician qualifications. Returns Id, Name, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$filter": { "type": "string", "description": "OData filter. Example: \"Name eq 'Electrician'\"" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Qualifications",
+        "queryParams": { "$filter": "${$filter}" }
+      }
+    },
+    {
+      "name": "mfr_create_qualification",
+      "description": "Create a new technician qualification.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string", "description": "Qualification name (e.g. 'Electrician', 'HVAC Certified')" }
+        },
+        "required": ["Name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Qualifications"
+      }
+    },
+    {
+      "name": "mfr_update_qualification",
+      "description": "Update a qualification.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "qualificationId": { "type": "string", "description": "The qualification numeric ID" },
+          "Name": { "type": "string", "description": "Updated name" }
+        },
+        "required": ["qualificationId", "Name"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Qualifications(${qualificationId}L)"
+      }
+    },
+    {
+      "name": "mfr_delete_qualification",
+      "description": "Delete a qualification by its numeric ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "qualificationId": { "type": "string", "description": "The qualification numeric ID" }
+        },
+        "required": ["qualificationId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/Qualifications(${qualificationId}L)"
+      }
+    },
+    {
+      "name": "mfr_list_cost_centers",
+      "description": "List cost centers. Returns Id, Name, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/CostCenters"
+      }
+    },
+    {
+      "name": "mfr_create_cost_center",
+      "description": "Create a new cost center.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string", "description": "Cost center name" }
+        },
+        "required": ["Name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/CostCenters"
+      }
+    },
+    {
+      "name": "mfr_list_step_list_templates",
+      "description": "List step list templates (reusable checklists). Returns Id, Name, MappingId, IsReleased, IsDurable, DateModified, and Version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "$expand": { "type": "string", "description": "Expand: Steps (to include template steps)" },
+          "$filter": {
+            "type": "string",
+            "description": "OData filter. Examples: \"IsReleased eq true\", \"Name eq 'Safety Check'\""
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/StepListTemplates",
+        "queryParams": { "$expand": "${$expand}", "$filter": "${$filter}" }
+      }
+    },
+    {
+      "name": "mfr_get_step_list_template",
+      "description": "Get a single step list template by its numeric ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "templateId": { "type": "string", "description": "The template numeric ID" },
+          "$expand": { "type": "string", "description": "Expand: Steps" }
+        },
+        "required": ["templateId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/StepListTemplates(${templateId}L)",
+        "queryParams": { "$expand": "${$expand}" }
+      }
+    },
+    {
+      "name": "mfr_create_step_list_template",
+      "description": "Create a new reusable step list template (checklist).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string", "description": "Template name" },
+          "MappingId": { "type": "string", "description": "External mapping/reference ID" },
+          "IsReleased": { "type": "boolean", "description": "Whether the template is released for use (default: false)" }
+        },
+        "required": ["Name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/StepListTemplates"
+      }
+    },
+    {
+      "name": "mfr_generate_report",
+      "description": "Generate a PDF report for a service request using a report definition. Returns a hash/URL to download the generated report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "serviceRequestId": { "type": "string", "description": "The service request numeric ID" },
+          "reportDefinitionId": { "type": "string", "description": "The report definition ID to use for generation" }
+        },
+        "required": ["serviceRequestId", "reportDefinitionId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ServiceRequests(${serviceRequestId}L)/GenerateReportHash"
       }
     }
   ]

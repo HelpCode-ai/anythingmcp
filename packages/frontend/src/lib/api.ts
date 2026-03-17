@@ -313,9 +313,9 @@ export const mcpServers = {
     request<any[]>('/api/mcp-servers', { token }),
   get: (id: string, token: string) =>
     request<any>(`/api/mcp-servers/${id}`, { token }),
-  create: (data: { name: string; slug?: string; description?: string }, token: string) =>
+  create: (data: { name: string; slug?: string; description?: string; instructions?: string }, token: string) =>
     request<any>('/api/mcp-servers', { method: 'POST', body: data, token }),
-  update: (id: string, data: { name?: string; slug?: string; description?: string; isActive?: boolean }, token: string) =>
+  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean }, token: string) =>
     request<any>(`/api/mcp-servers/${id}`, { method: 'PUT', body: data, token }),
   delete: (id: string, token: string) =>
     request(`/api/mcp-servers/${id}`, { method: 'DELETE', token }),

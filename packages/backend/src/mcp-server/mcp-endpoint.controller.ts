@@ -106,8 +106,11 @@ export class McpEndpointController {
       });
     }
 
-    // 2. Get connector IDs assigned to this server
-    const connectorIds = await this.mcpServersService.getConnectorIds(serverId);
+    // 2. Get connector IDs and composed instructions for this server
+    const [connectorIds, instructions] = await Promise.all([
+      this.mcpServersService.getConnectorIds(serverId),
+      this.mcpServersService.getComposedInstructions(serverId),
+    ]);
 
     // 3. Filter tools to only those from assigned connectors
     const allTools = this.toolRegistry.getAllTools();
@@ -123,6 +126,7 @@ export class McpEndpointController {
     // 5. Create a per-request MCP server with only the assigned tools
     const mcpServer = new McpServer(
       { name: mcpServerConfig.name, version: mcpServerConfig.version || '1.0.0' },
+      { instructions },
     );
 
     // Build invocation context for audit logging
