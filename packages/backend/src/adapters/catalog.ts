@@ -13,6 +13,7 @@ import * as billomat from './de/billomat.json';
 import * as datev from './de/datev.json';
 import * as scopevisio from './de/scopevisio.json';
 import * as kenjo from './de/kenjo.json';
+import * as planradar from './de/planradar.json';
 
 export interface AdapterMeta {
   slug: string;
@@ -65,6 +66,7 @@ const ALL_ADAPTERS: AdapterDefinition[] = [
   datev as unknown as AdapterDefinition,
   scopevisio as unknown as AdapterDefinition,
   kenjo as unknown as AdapterDefinition,
+  planradar as unknown as AdapterDefinition,
 ];
 
 export function listAdapters(): AdapterMeta[] {
