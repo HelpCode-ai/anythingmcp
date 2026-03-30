@@ -1,0 +1,336 @@
+{
+  "slug": "planradar",
+  "name": "PlanRadar",
+  "description": "Manage construction and real estate projects with PlanRadar. Access projects, tickets (defects/tasks), users, documents, and schedules via REST API. Ideal for quality management, defect tracking, inspections, and field reporting in the Bau sector.",
+  "instructions": "This connector uses the PlanRadar REST API v1. Key conventions:\n\n**Authentication**: Uses API Key via the `X-PlanRadar-API-Key` header. Generate a Personal Access Token from PlanRadar Settings > API Access.\n\n**Base URL structure**: All endpoints are scoped to a customer: `/api/v1/{customer_id}/...`. The customer_id is set via the PLANRADAR_CUSTOMER_ID environment variable.\n\n**Response format**: Responses follow the JSON:API specification. Data is wrapped in a `data` object (or array) with `id`, `type`, and `attributes` fields. Example: `{ \"data\": { \"id\": \"123\", \"type\": \"projects\", \"attributes\": { \"name\": \"My Project\" } } }`.\n\n**Request format**: The API accepts form-encoded request bodies for POST/PUT operations.\n\n**Rate limiting**: Maximum 30 requests per minute. Exceeding this disables your token for 5 minutes.\n\n**Pagination**: Use `page` and `per_page` query parameters. Default page size varies by endpoint.\n\n**Ticket predefined fields**: Title (mandatory), Assignee, Receiver (CC), Due date, Status, Priority, Progress, Parent Ticket, Layer. Only Title is required for creation.\n\n**Ticket statuses**: Open, In Progress, Resolved, Feedback, Closed, Rejected.\n\n**Custom fields**: Tickets support project-specific custom fields of types: Date, Time, List, Text, Number, Decimal, Checkbox. Custom field values are returned in ticket attributes.\n\n**Layers**: Every ticket must be associated with a layer (floor plan/drawing). When creating tickets, specify the layer_id.\n\n**Project attributes**: id, name, homepage, country, projectnumber, description, city, zipcode, street, author-id.\n\n**API versions**: PlanRadar is migrating to v2. This adapter uses v1 which is stable and fully supported.\n\n**Workflow**: Typical flow is: List projects → Select project → List layers → Create/list tickets (on a layer) → Assign users → Set status/priority/progress → Manage documents → Generate reports.",
+  "region": "de",
+  "category": "construction",
+  "icon": "planradar",
+  "docsUrl": "https://help.planradar.com/hc/en-gb/articles/15480453097373-Open-API-Overview",
+  "requiredEnvVars": ["PLANRADAR_API_KEY", "PLANRADAR_CUSTOMER_ID"],
+  "connector": {
+    "name": "PlanRadar Construction",
+    "type": "REST",
+    "baseUrl": "https://www.planradar.com/api/v1/{{PLANRADAR_CUSTOMER_ID}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-PlanRadar-API-Key",
+      "apiKey": "{{PLANRADAR_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "planradar_list_projects",
+      "description": "List all projects accessible to the authenticated user. Returns project data in JSON:API format with attributes: id, name, homepage, country, projectnumber, description, city, zipcode, street, author-id. Supports pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number for pagination (starts at 1)"
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Number of results per page"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "page": "${page}",
+          "per_page": "${per_page}"
+        }
+      }
+    },
+    {
+      "name": "planradar_get_project",
+      "description": "Get a single project by its ID. Returns full project details including id, name, homepage, country, projectnumber, description, city, zipcode, street, and author-id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "The project ID"
+          }
+        },
+        "required": ["project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}"
+      }
+    },
+    {
+      "name": "planradar_list_tickets",
+      "description": "List tickets (defects, tasks, issues) within a specific project. Returns ticket data with predefined fields (Title, Assignee, Status, Priority, Progress, Due date, Layer, Parent Ticket) and custom fields. Statuses: Open, In Progress, Resolved, Feedback, Closed, Rejected. Supports pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "The project ID to list tickets from"
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number for pagination (starts at 1)"
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Number of results per page"
+          }
+        },
+        "required": ["project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/tickets",
+        "queryParams": {
+          "page": "${page}",
+          "per_page": "${per_page}"
+        }
+      }
+    },
+    {
+      "name": "planradar_get_ticket",
+      "description": "Get a single ticket by its ID within a project. Returns full ticket details including all predefined fields (Title, Assignee, Status, Priority, Progress, Due date, Layer, Parent Ticket) and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "The project ID"
+          },
+          "ticket_id": {
+            "type": "string",
+            "description": "The ticket ID"
+          }
+        },
+        "required": ["project_id", "ticket_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/tickets/{ticket_id}"
+      }
+    },
+    {
+      "name": "planradar_create_ticket",
+      "description": "Create a new ticket (defect, task, issue) in a project. Title is the only mandatory field. Tickets must be associated with a layer (floor plan). Available statuses: Open, In Progress, Resolved, Feedback, Closed, Rejected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "The project ID to create the ticket in"
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the ticket (mandatory)"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed description of the ticket"
+          },
+          "status": {
+            "type": "string",
+            "description": "Ticket status. Values: Open, In Progress, Resolved, Feedback, Closed, Rejected",
+            "enum": ["Open", "In Progress", "Resolved", "Feedback", "Closed", "Rejected"]
+          },
+          "priority": {
+            "type": "string",
+            "description": "Ticket priority level"
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User ID to assign the ticket to"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date in ISO 8601 format (e.g. '2025-12-31')"
+          },
+          "layer_id": {
+            "type": "string",
+            "description": "Layer ID (floor plan/drawing) to associate the ticket with"
+          },
+          "progress": {
+            "type": "number",
+            "description": "Progress percentage (0-100)"
+          }
+        },
+        "required": ["project_id", "title"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/tickets",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "title": "${title}",
+          "description": "${description}",
+          "status": "${status}",
+          "priority": "${priority}",
+          "assignee_id": "${assignee_id}",
+          "due_date": "${due_date}",
+          "layer_id": "${layer_id}",
+          "progress": "${progress}"
+        }
+      }
+    },
+    {
+      "name": "planradar_update_ticket",
+      "description": "Update an existing ticket in a project. Only include fields you want to change. Available statuses: Open, In Progress, Resolved, Feedback, Closed, Rejected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "The project ID"
+          },
+          "ticket_id": {
+            "type": "string",
+            "description": "The ticket ID to update"
+          },
+          "title": {
+            "type": "string",
+            "description": "Updated title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Updated description"
+          },
+          "status": {
+            "type": "string",
+            "description": "Updated status. Values: Open, In Progress, Resolved, Feedback, Closed, Rejected",
+            "enum": ["Open", "In Progress", "Resolved", "Feedback", "Closed", "Rejected"]
+          },
+          "priority": {
+            "type": "string",
+            "description": "Updated priority"
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "Updated assignee user ID"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Updated due date in ISO 8601 format (e.g. '2025-12-31')"
+          },
+          "progress": {
+            "type": "number",
+            "description": "Progress percentage (0-100)"
+          }
+        },
+        "required": ["project_id", "ticket_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/projects/{project_id}/tickets/{ticket_id}",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "title": "${title}",
+          "description": "${description}",
+          "status": "${status}",
+          "priority": "${priority}",
+          "assignee_id": "${assignee_id}",
+          "due_date": "${due_date}",
+          "progress": "${progress}"
+        }
+      }
+    },
+    {
+      "name": "planradar_list_users",
+      "description": "List all users in the account. Returns user data including names, email addresses, roles, and permissions. Users can be in-house users or subcontractors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number for pagination (starts at 1)"
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Number of results per page"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "page": "${page}",
+          "per_page": "${per_page}"
+        }
+      }
+    },
+    {
+      "name": "planradar_get_user",
+      "description": "Get a single user by their ID. Returns full user details including name, email, role, and permissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The user ID"
+          }
+        },
+        "required": ["user_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "planradar_list_documents",
+      "description": "List documents (plans, photos, attachments) within a specific project. Supports pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "The project ID to list documents from"
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number for pagination (starts at 1)"
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Number of results per page"
+          }
+        },
+        "required": ["project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/documents",
+        "queryParams": {
+          "page": "${page}",
+          "per_page": "${per_page}"
+        }
+      }
+    },
+    {
+      "name": "planradar_get_document",
+      "description": "Get a single document by its ID within a project. Returns document metadata and download information.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "The project ID"
+          },
+          "document_id": {
+            "type": "string",
+            "description": "The document ID"
+          }
+        },
+        "required": ["project_id", "document_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/documents/{document_id}"
+      }
+    }
+  ]
+}
