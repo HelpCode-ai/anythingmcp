@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { LogoIcon } from '@/components/nav-bar';
@@ -8,6 +10,7 @@ import { LogoIcon } from '@/components/nav-bar';
 export function LicenseWall() {
   const { token } = useAuth();
   const [blocked, setBlocked] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!token) return;
@@ -25,7 +28,8 @@ export function LicenseWall() {
     }).catch(() => {});
   }, [token]);
 
-  if (!blocked) return null;
+  // Don't block the license settings page so users can enter a license key
+  if (!blocked || pathname === '/settings/license') return null;
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -53,12 +57,12 @@ export function LicenseWall() {
 
           <p className="text-xs text-[var(--muted-foreground)]">
             Already purchased?{' '}
-            <a
+            <Link
               href="/settings/license"
               className="text-[var(--brand)] hover:underline"
             >
               Enter your license key
-            </a>
+            </Link>
           </p>
         </div>
       </div>

@@ -259,7 +259,7 @@ export default function LicenseSettingsPage() {
       )}
 
       {/* Change License Key */}
-      {!isCloud && (
+      {(!isCloud || status?.status === 'expired' || (status?.plan === 'trial' && status?.trialDaysLeft !== undefined && status?.trialDaysLeft <= 0)) && (
         <section className="border border-[var(--border)] rounded-lg p-5 bg-[var(--card)]">
           <h2 className="text-sm font-semibold mb-4">
             {status?.plan ? 'Change License Key' : 'Activate License Key'}
