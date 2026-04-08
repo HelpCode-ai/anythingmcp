@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { organizations } from '@/lib/api';
 
 /* Inline SVG logo component */
 function LogoIcon({ size = 28 }: { size?: number }) {
@@ -43,7 +44,7 @@ interface NavBarProps {
 }
 
 export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
-  const { user, logout } = useAuth();
+  const { user, orgName, orgs, switchOrg, logout } = useAuth();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -105,7 +106,36 @@ export function NavBar({ breadcrumbs, title, actions }: NavBarProps) {
               </div>
             </button>
             {userMenuOpen && (
-              <div className="absolute right-0 mt-1 w-48 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg py-1 z-50">
+              <div className="absolute right-0 mt-1 w-64 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg py-1 z-50">
+                {/* Organization switcher */}
+                {orgs && orgs.length > 0 && (
+                  <div className="border-b border-[var(--border)]">
+                    <p className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-[var(--muted-foreground)]">Organizations</p>
+                    {orgs.map((org) => {
+                      const isActive = org.id === user?.organizationId;
+                      return (
+                        <button
+                          key={org.id}
+                          onClick={() => {
+                            if (!isActive) {
+                              setUserMenuOpen(false);
+                              switchOrg(org.id);
+                            }
+                          }}
+                          className={`w-full text-left px-3 py-1.5 text-sm flex items-center justify-between gap-2 transition-colors ${
+                            isActive
+                              ? 'bg-[var(--brand-light)] text-[var(--brand)] font-medium'
+                              : 'text-[var(--foreground)] hover:bg-[var(--accent)]'
+                          }`}
+                        >
+                          <span className="truncate">{org.name}</span>
+                          <span className="text-[10px] uppercase tracking-wider opacity-60 flex-shrink-0">{org.role}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {/* User info */}
                 <div className="px-3 py-2 border-b border-[var(--border)]">
                   <p className="text-xs font-medium truncate">{user?.name || user?.email}</p>
                   {user?.name && <p className="text-xs text-[var(--muted-foreground)] truncate">{user?.email}</p>}

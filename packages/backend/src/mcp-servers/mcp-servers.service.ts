@@ -17,6 +17,16 @@ export class McpServersService {
     });
   }
 
+  async findAllByOrg(organizationId: string) {
+    return this.prisma.mcpServerConfig.findMany({
+      where: { organizationId },
+      include: {
+        _count: { select: { connectors: true, apiKeys: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   async findById(id: string) {
     return this.prisma.mcpServerConfig.findUnique({
       where: { id },
@@ -44,11 +54,12 @@ export class McpServersService {
     });
   }
 
-  async create(userId: string, data: { name: string; slug?: string; description?: string; instructions?: string }) {
+  async create(userId: string, organizationId: string, data: { name: string; slug?: string; description?: string; instructions?: string }) {
     const slug = data.slug || this.generateSlug(data.name);
     return this.prisma.mcpServerConfig.create({
       data: {
         userId,
+        organizationId,
         name: data.name,
         slug,
         description: data.description,
@@ -130,18 +141,32 @@ export class McpServersService {
     return parts.length > 0 ? parts.join('\n\n') : undefined;
   }
 
-  async createDefaultForUser(userId: string) {
+  async createDefaultForUser(userId: string, organizationId: string) {
     // Check if user already has a default server (idempotent)
     const existing = await this.prisma.mcpServerConfig.findFirst({
-      where: { userId, slug: 'default' },
+      where: { userId, slug: { startsWith: 'default' } },
     });
     if (existing) return existing;
+
+    // Generate a unique slug within the org
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+    const userLabel = user?.name || user?.email?.split('@')[0] || userId.slice(-6);
+    let slug = 'default';
+
+    // Check if 'default' slug already exists in this org
+    const slugExists = await this.prisma.mcpServerConfig.findFirst({
+      where: { organizationId, slug: 'default' },
+    });
+    if (slugExists) {
+      slug = `default-${this.generateSlug(userLabel)}`;
+    }
 
     return this.prisma.mcpServerConfig.create({
       data: {
         userId,
-        name: 'Default',
-        slug: 'default',
+        organizationId,
+        name: `Default (${userLabel})`,
+        slug,
       },
     });
   }

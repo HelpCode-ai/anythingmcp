@@ -2,18 +2,30 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { users, server, AUTH_EXPIRED_EVENT } from './api';
+import { users, server, organizations, AUTH_EXPIRED_EVENT } from './api';
 
 interface User {
   id: string;
   email: string;
   name: string;
   role: string;
+  organizationId: string;
+}
+
+interface OrgInfo {
+  id: string;
+  name: string;
+  role: string;
+  joinedAt: string;
 }
 
 interface AuthContextType {
   token: string | null;
   user: User | null;
+  orgName: string | null;
+  orgs: OrgInfo[] | null;
+  setOrgName: (name: string) => void;
+  switchOrg: (organizationId: string) => Promise<void>;
   login: (token: string, user: User) => void;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
@@ -24,6 +36,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   token: null,
   user: null,
+  orgName: null,
+  orgs: null,
+  setOrgName: () => {},
+  switchOrg: async () => {},
   login: () => {},
   logout: () => {},
   updateUser: () => {},
@@ -35,16 +51,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [orgName, setOrgName] = useState<string | null>(null);
+  const [orgs, setOrgs] = useState<OrgInfo[] | null>(null);
   const [deploymentMode, setDeploymentMode] = useState('self-hosted');
   const router = useRouter();
   const pathname = usePathname();
 
+  const fetchOrgData = useCallback(async (t: string) => {
+    try {
+      const [orgInfo, orgList] = await Promise.all([
+        organizations.getCurrent(t),
+        organizations.listMine(t),
+      ]);
+      setOrgName(orgInfo.name);
+      setOrgs(orgList);
+    } catch {}
+  }, []);
+
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
+    setOrgName(null);
+    setOrgs(null);
     localStorage.removeItem('amcp_token');
     localStorage.removeItem('amcp_user');
-    // Clear cookie
     document.cookie = 'amcp_token=; path=/; max-age=0';
     router.push('/login');
   }, [router]);
@@ -55,17 +85,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const savedUser = localStorage.getItem('amcp_user');
 
     if (savedToken && savedUser) {
-      // Optimistically set state for instant UI
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
 
-      // Validate the token is still accepted by the backend
       users.me(savedToken).then((freshUser) => {
         setUser(freshUser);
         localStorage.setItem('amcp_user', JSON.stringify(freshUser));
+        fetchOrgData(savedToken);
         setIsLoading(false);
       }).catch(() => {
-        // Token rejected — clear and redirect to login
         setToken(null);
         setUser(null);
         localStorage.removeItem('amcp_token');
@@ -105,8 +133,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(newUser);
     localStorage.setItem('amcp_token', newToken);
     localStorage.setItem('amcp_user', JSON.stringify(newUser));
-    // Set cookie for middleware auth check
     document.cookie = `amcp_token=${newToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
+    fetchOrgData(newToken);
+  };
+
+  const switchOrg = async (organizationId: string) => {
+    if (!token) return;
+    try {
+      const result = await organizations.switchOrg(organizationId, token);
+      // Store new token and user from the switch response
+      setToken(result.accessToken);
+      setUser(result.user);
+      localStorage.setItem('amcp_token', result.accessToken);
+      localStorage.setItem('amcp_user', JSON.stringify(result.user));
+      document.cookie = `amcp_token=${result.accessToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
+      // Update org data
+      setOrgName(result.organization?.name || null);
+      await fetchOrgData(result.accessToken);
+      // Reload the page to refresh all data
+      window.location.href = '/';
+    } catch (err) {
+      console.error('Failed to switch org:', err);
+    }
   };
 
   const updateUser = (updates: Partial<User>) => {
@@ -119,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout, updateUser, isLoading, deploymentMode }}>
+    <AuthContext.Provider value={{ token, user, orgName, orgs, setOrgName, switchOrg, login, logout, updateUser, isLoading, deploymentMode }}>
       {children}
     </AuthContext.Provider>
   );

@@ -109,6 +109,22 @@ export const users = {
     request(`/api/users/invitations/${id}`, { method: 'DELETE', token }),
 };
 
+// Organizations
+export const organizations = {
+  getCurrent: (token: string) =>
+    request<{ id: string; name: string; createdAt: string }>('/api/organizations/current', { token }),
+  updateCurrent: (data: { name?: string }, token: string) =>
+    request<{ id: string; name: string }>('/api/organizations/current', { method: 'PUT', body: data, token }),
+  listMine: (token: string) =>
+    request<Array<{ id: string; name: string; role: string; joinedAt: string }>>('/api/organizations/mine', { token }),
+  switchOrg: (organizationId: string, token: string) =>
+    request<{ accessToken: string; user: any; organization: any }>('/api/organizations/switch', {
+      method: 'POST', body: { organizationId }, token,
+    }),
+  create: (name: string, token: string) =>
+    request<{ id: string; name: string }>('/api/organizations', { method: 'POST', body: { name }, token }),
+};
+
 // Connectors
 export const connectors = {
   list: (token: string) =>

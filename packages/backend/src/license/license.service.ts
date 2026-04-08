@@ -244,7 +244,7 @@ export class LicenseService implements OnModuleInit {
 
   // ── Admin: Set License Key ─────────────────────────────────────────────────
 
-  async setLicenseKey(licenseKey: string): Promise<LicenseInfo> {
+  async setLicenseKey(licenseKey: string, organizationId?: string): Promise<LicenseInfo> {
     // Verify remotely first
     const verification = await this.verifyLicense(licenseKey);
 
@@ -266,6 +266,7 @@ export class LicenseService implements OnModuleInit {
           : null,
         lastVerifiedAt: new Date(),
         instanceId,
+        organizationId: organizationId || undefined,
       },
       create: {
         licenseKey,
@@ -277,6 +278,7 @@ export class LicenseService implements OnModuleInit {
           : null,
         lastVerifiedAt: new Date(),
         instanceId,
+        organizationId: organizationId || undefined,
       },
     });
 
@@ -292,7 +294,17 @@ export class LicenseService implements OnModuleInit {
 
   // ── Get Current License ────────────────────────────────────────────────────
 
-  async getCurrentLicense(): Promise<LicenseInfo | null> {
+  async getCurrentLicense(organizationId?: string): Promise<LicenseInfo | null> {
+    // Per-org: find license by organizationId
+    if (organizationId) {
+      const license = await this.prisma.license.findFirst({
+        where: { organizationId, status: 'active' },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (license) return this.toLicenseInfo(license);
+    }
+
+    // Fallback to global license (self-hosted or no org-specific license)
     const licenseKey = await this.siteSettings.get('license_key');
     if (!licenseKey) return null;
 

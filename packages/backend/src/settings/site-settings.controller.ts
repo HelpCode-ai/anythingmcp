@@ -4,6 +4,7 @@ import {
   Put,
   Post,
   Body,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
@@ -12,6 +13,7 @@ import { IsString, IsNumber, IsOptional, IsBoolean, IsArray, ValidateNested } fr
 import { Type } from 'class-transformer';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { SiteSettingsService } from './site-settings.service';
+import { OrgSettingsService } from './org-settings.service';
 import { EmailService } from './email.service';
 
 class SmtpConfigDto {
@@ -75,15 +77,15 @@ export class SiteSettingsPublicController {
 export class SiteSettingsAdminController {
   constructor(
     private readonly siteSettings: SiteSettingsService,
+    private readonly orgSettings: OrgSettingsService,
     private readonly emailService: EmailService,
   ) {}
 
   @Get('smtp')
-  @ApiOperation({ summary: 'Get SMTP configuration (ADMIN)' })
-  async getSmtpConfig() {
-    const config = await this.siteSettings.getSmtpConfig();
+  @ApiOperation({ summary: 'Get SMTP configuration for current organization (ADMIN)' })
+  async getSmtpConfig(@Req() req: any) {
+    const config = await this.orgSettings.getSmtpConfig(req.user.organizationId);
     if (!config) return { configured: false };
-    // Mask password
     return {
       configured: true,
       host: config.host,
@@ -95,9 +97,9 @@ export class SiteSettingsAdminController {
   }
 
   @Put('smtp')
-  @ApiOperation({ summary: 'Update SMTP configuration (ADMIN)' })
-  async updateSmtpConfig(@Body() dto: SmtpConfigDto) {
-    await this.siteSettings.setJson('smtp_config', {
+  @ApiOperation({ summary: 'Update SMTP configuration for current organization (ADMIN)' })
+  async updateSmtpConfig(@Req() req: any, @Body() dto: SmtpConfigDto) {
+    await this.orgSettings.setJson(req.user.organizationId, 'smtp_config', {
       host: dto.host,
       port: dto.port,
       user: dto.user,
@@ -115,15 +117,15 @@ export class SiteSettingsAdminController {
   }
 
   @Get('footer-links')
-  @ApiOperation({ summary: 'Get footer links (ADMIN)' })
-  async getFooterLinks() {
-    return this.siteSettings.getFooterLinks();
+  @ApiOperation({ summary: 'Get footer links for current organization (ADMIN)' })
+  async getFooterLinks(@Req() req: any) {
+    return this.orgSettings.getFooterLinks(req.user.organizationId) || [];
   }
 
   @Put('footer-links')
-  @ApiOperation({ summary: 'Update footer links (ADMIN)' })
-  async updateFooterLinks(@Body() dto: FooterLinksDto) {
-    await this.siteSettings.setJson('footer_links', dto.links);
+  @ApiOperation({ summary: 'Update footer links for current organization (ADMIN)' })
+  async updateFooterLinks(@Req() req: any, @Body() dto: FooterLinksDto) {
+    await this.orgSettings.setJson(req.user.organizationId, 'footer_links', dto.links);
     return { message: 'Footer links saved' };
   }
 }

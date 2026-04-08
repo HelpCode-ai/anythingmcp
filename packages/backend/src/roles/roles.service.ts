@@ -7,8 +7,11 @@ export class RolesService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
+  async findAll(organizationId?: string) {
     return this.prisma.role.findMany({
+      where: organizationId
+        ? { OR: [{ organizationId }, { isSystem: true }] }
+        : undefined,
       include: {
         _count: { select: { users: true, toolAccess: true } },
       },
@@ -28,9 +31,9 @@ export class RolesService {
     });
   }
 
-  async create(data: { name: string; description?: string }) {
+  async create(data: { name: string; description?: string; organizationId?: string }) {
     return this.prisma.role.create({
-      data: { name: data.name, description: data.description },
+      data: { name: data.name, description: data.description, organizationId: data.organizationId },
     });
   }
 
@@ -140,11 +143,14 @@ export class RolesService {
     ];
 
     for (const role of systemRoles) {
-      await this.prisma.role.upsert({
-        where: { name: role.name },
-        create: { ...role, isSystem: true },
-        update: {},
+      const existing = await this.prisma.role.findFirst({
+        where: { name: role.name, isSystem: true },
       });
+      if (!existing) {
+        await this.prisma.role.create({
+          data: { ...role, isSystem: true },
+        });
+      }
     }
   }
 }

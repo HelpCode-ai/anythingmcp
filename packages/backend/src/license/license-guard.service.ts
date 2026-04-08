@@ -11,13 +11,10 @@ export class LicenseGuardService {
     private readonly deployment: DeploymentService,
   ) {}
 
-  /**
-   * Check if the license is active. Only enforced in cloud mode.
-   */
-  async checkLicenseActive(): Promise<void> {
+  async checkLicenseActive(organizationId?: string): Promise<void> {
     if (!this.deployment.isCloud()) return;
 
-    const license = await this.licenseService.getCurrentLicense();
+    const license = await this.licenseService.getCurrentLicense(organizationId);
     if (!license) {
       throw new ForbiddenException(
         'No active license. Please purchase a license at anythingmcp.com/pricing',
@@ -30,7 +27,6 @@ export class LicenseGuardService {
       );
     }
 
-    // Check if trial has expired by date
     if (license.plan === 'trial' && license.expiresAt) {
       if (new Date(license.expiresAt) < new Date()) {
         throw new ForbiddenException(
@@ -40,18 +36,17 @@ export class LicenseGuardService {
     }
   }
 
-  /**
-   * Check if the user can create a new connector. Only enforced in cloud mode.
-   */
-  async checkCanCreateConnector(userId: string): Promise<void> {
+  async checkCanCreateConnector(userId: string, organizationId?: string): Promise<void> {
     if (!this.deployment.isCloud()) return;
 
-    await this.checkLicenseActive();
+    await this.checkLicenseActive(organizationId);
 
-    const license = await this.licenseService.getCurrentLicense();
+    const license = await this.licenseService.getCurrentLicense(organizationId);
     const maxConnectors = (license?.features as any)?.maxConnectors;
     if (maxConnectors != null) {
-      const count = await this.prisma.connector.count({ where: { userId } });
+      const count = await this.prisma.connector.count({
+        where: organizationId ? { organizationId } : { userId },
+      });
       if (count >= maxConnectors) {
         throw new ForbiddenException(
           `You have reached the maximum of ${maxConnectors} connectors on your current plan. Upgrade at anythingmcp.com/pricing`,
@@ -60,18 +55,17 @@ export class LicenseGuardService {
     }
   }
 
-  /**
-   * Check if the user can create a new MCP server. Only enforced in cloud mode.
-   */
-  async checkCanCreateMcpServer(userId: string): Promise<void> {
+  async checkCanCreateMcpServer(userId: string, organizationId?: string): Promise<void> {
     if (!this.deployment.isCloud()) return;
 
-    await this.checkLicenseActive();
+    await this.checkLicenseActive(organizationId);
 
-    const license = await this.licenseService.getCurrentLicense();
+    const license = await this.licenseService.getCurrentLicense(organizationId);
     const maxMcpServers = (license?.features as any)?.maxMcpServers;
     if (maxMcpServers != null) {
-      const count = await this.prisma.mcpServerConfig.count({ where: { userId } });
+      const count = await this.prisma.mcpServerConfig.count({
+        where: organizationId ? { organizationId } : { userId },
+      });
       if (count >= maxMcpServers) {
         throw new ForbiddenException(
           `You have reached the maximum of ${maxMcpServers} MCP servers on your current plan. Upgrade at anythingmcp.com/pricing`,

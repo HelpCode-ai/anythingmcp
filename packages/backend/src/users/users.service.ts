@@ -21,6 +21,7 @@ export class UsersService {
     passwordHash: string;
     name: string;
     role?: UserRole;
+    organizationId: string;
   }): Promise<User> {
     return this.prisma.user.create({ data });
   }
@@ -29,13 +30,15 @@ export class UsersService {
     return this.prisma.user.count();
   }
 
-  async findAll() {
+  async findAll(organizationId?: string) {
     return this.prisma.user.findMany({
+      where: organizationId ? { organizationId } : undefined,
       select: {
         id: true,
         email: true,
         name: true,
         role: true,
+        organizationId: true,
         mcpRoleId: true,
         mcpRole: { select: { id: true, name: true } },
         createdAt: true,
@@ -55,9 +58,9 @@ export class UsersService {
     await this.prisma.user.delete({ where: { id: userId } });
   }
 
-  async findAllInvitations() {
+  async findAllInvitations(organizationId?: string) {
     return this.prisma.invitationToken.findMany({
-      where: { usedAt: null },
+      where: { usedAt: null, ...(organizationId ? { organizationId } : {}) },
       orderBy: { createdAt: 'desc' },
     });
   }

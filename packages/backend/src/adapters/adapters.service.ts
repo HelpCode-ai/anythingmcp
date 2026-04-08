@@ -35,6 +35,7 @@ export class AdaptersService {
   async importAdapter(
     slug: string,
     userId: string,
+    organizationId: string,
     credentials?: Record<string, string>,
   ): Promise<{ connectorId: string; toolsCreated: number }> {
     const adapter = this.getBySlug(slug);
@@ -54,6 +55,7 @@ export class AdaptersService {
     const connector = await this.prisma.connector.create({
       data: {
         userId,
+        organizationId,
         name: adapter.connector.name,
         type: adapter.connector.type as any,
         baseUrl: resolvedBaseUrl,

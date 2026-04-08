@@ -62,10 +62,11 @@ export class AdaptersController {
     @Param('slug') slug: string,
     @Body() body: { credentials?: Record<string, string> },
   ) {
-    await this.licenseGuard.checkCanCreateConnector(req.user.sub);
+    await this.licenseGuard.checkCanCreateConnector(req.user.sub, req.user.organizationId);
     const result = await this.adaptersService.importAdapter(
       slug,
       req.user.sub,
+      req.user.organizationId,
       body?.credentials,
     );
     return {

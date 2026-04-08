@@ -31,7 +31,7 @@ describe('McpApiKeysService', () => {
         });
       });
 
-      const result = await service.generate('user-1', 'My Key');
+      const result = await service.generate('user-1', 'org-1', 'My Key');
       expect(result.key).toMatch(/^mcp_[0-9a-f]{64}$/);
       expect(result.name).toBe('My Key');
     });
@@ -41,7 +41,7 @@ describe('McpApiKeysService', () => {
         Promise.resolve({ id: 'key-1', key: args.data.key, mcpServerId: args.data.mcpServerId }),
       );
 
-      const result = await service.generate('user-1', 'Key');
+      const result = await service.generate('user-1', 'org-1', 'Key');
       expect(result.mcpServerId).toBeNull();
     });
 
@@ -50,7 +50,7 @@ describe('McpApiKeysService', () => {
         Promise.resolve({ id: 'key-1', key: args.data.key, mcpServerId: args.data.mcpServerId }),
       );
 
-      const result = await service.generate('user-1', 'Key', 'server-1');
+      const result = await service.generate('user-1', 'org-1', 'Key', 'server-1');
       expect(result.mcpServerId).toBe('server-1');
     });
   });

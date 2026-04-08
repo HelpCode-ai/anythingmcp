@@ -66,6 +66,11 @@ export class AuditService {
     );
   }
 
+  private orgScope(organizationId?: string): any {
+    if (!organizationId) return {};
+    return { tool: { connector: { organizationId } } };
+  }
+
   async getRecentInvocations(
     limit = 100,
     offset = 0,
@@ -75,14 +80,15 @@ export class AuditService {
       search?: string;
       connectorId?: string;
       mcpServerId?: string;
+      organizationId?: string;
     },
   ) {
-    const where: any = {};
+    const where: any = { ...this.orgScope(filters?.organizationId) };
     if (filters?.toolId) where.toolId = filters.toolId;
     if (filters?.status) where.status = filters.status;
     if (filters?.mcpServerId) where.mcpServerId = filters.mcpServerId;
     if (filters?.search) {
-      where.tool = { name: { contains: filters.search, mode: 'insensitive' } };
+      where.tool = { ...where.tool, name: { contains: filters.search, mode: 'insensitive' } };
     }
     if (filters?.connectorId) {
       where.tool = { ...where.tool, connectorId: filters.connectorId };
@@ -111,22 +117,23 @@ export class AuditService {
     });
   }
 
-  async getStats() {
+  async getStats(organizationId?: string) {
     const now = new Date();
     const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const scope = this.orgScope(organizationId);
 
     const [total24h, errors24h, total7d, totalAll] = await Promise.all([
       this.prisma.toolInvocation.count({
-        where: { createdAt: { gte: last24h } },
+        where: { createdAt: { gte: last24h }, ...scope },
       }),
       this.prisma.toolInvocation.count({
-        where: { createdAt: { gte: last24h }, status: 'ERROR' },
+        where: { createdAt: { gte: last24h }, status: 'ERROR', ...scope },
       }),
       this.prisma.toolInvocation.count({
-        where: { createdAt: { gte: last7d } },
+        where: { createdAt: { gte: last7d }, ...scope },
       }),
-      this.prisma.toolInvocation.count(),
+      this.prisma.toolInvocation.count({ where: scope }),
     ]);
 
     return {
@@ -141,13 +148,14 @@ export class AuditService {
    * Analytics: time-series invocation data for the last 7 days,
    * grouped by day and status. Also returns top tools by usage.
    */
-  async getAnalytics() {
+  async getAnalytics(organizationId?: string) {
     const now = new Date();
     const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const scope = this.orgScope(organizationId);
 
     // Get all invocations for the last 7 days
     const invocations = await this.prisma.toolInvocation.findMany({
-      where: { createdAt: { gte: last7d } },
+      where: { createdAt: { gte: last7d }, ...scope },
       select: {
         status: true,
         durationMs: true,

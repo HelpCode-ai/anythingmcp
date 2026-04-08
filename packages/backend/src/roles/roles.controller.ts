@@ -58,14 +58,14 @@ export class RolesController {
 
   @Get()
   @ApiOperation({ summary: 'List all roles (ADMIN)' })
-  async listRoles() {
-    return this.rolesService.findAll();
+  async listRoles(@Req() req: any) {
+    return this.rolesService.findAll(req.user.organizationId);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a custom role (ADMIN)' })
-  async createRole(@Body() dto: CreateRoleDto) {
-    return this.rolesService.create(dto);
+  async createRole(@Req() req: any, @Body() dto: CreateRoleDto) {
+    return this.rolesService.create({ ...dto, organizationId: req.user.organizationId });
   }
 
   @Get(':id')
