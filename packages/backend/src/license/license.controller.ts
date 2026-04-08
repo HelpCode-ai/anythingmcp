@@ -51,6 +51,12 @@ export class LicenseController {
         organizationId = payload.organizationId;
       } catch {}
     }
+
+    // In cloud mode, require auth — don't leak license status to unauthenticated users
+    if (this.deployment.isCloud() && !organizationId) {
+      return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
+    }
+
     const license = await this.licenseService.getCurrentLicense(organizationId);
     if (!license) {
       return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
