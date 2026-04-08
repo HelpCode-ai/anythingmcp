@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import axios from 'axios';
 import { SiteSettingsService } from './site-settings.service';
+import { PrismaService } from '../common/prisma.service';
 
 const LICENSE_API_URL =
   process.env.NODE_ENV === 'production'
@@ -13,7 +14,10 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private readonly apiBase = LICENSE_API_URL;
 
-  constructor(private readonly siteSettings: SiteSettingsService) {}
+  constructor(
+    private readonly siteSettings: SiteSettingsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   // ── Password Reset (SMTP only — no external fallback for security) ────────
 
@@ -123,7 +127,16 @@ export class EmailService {
     }
 
     // Fallback: send via external API (requires active license)
-    const licenseKey = await this.siteSettings.get('license_key');
+    // Try to find a valid license key: first any active license in DB, then site_settings
+    let licenseKey = await this.siteSettings.get('license_key');
+    if (!licenseKey) {
+      const activeLicense = await this.prisma.license.findFirst({
+        where: { status: 'active' },
+        orderBy: { createdAt: 'desc' },
+        select: { licenseKey: true },
+      });
+      if (activeLicense) licenseKey = activeLicense.licenseKey;
+    }
     this.logger.log(
       `SMTP not configured, using external API fallback (licenseKey ${licenseKey ? 'present' : 'MISSING'})`,
     );
