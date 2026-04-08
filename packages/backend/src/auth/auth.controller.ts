@@ -236,19 +236,18 @@ export class AuthController {
       throw new ConflictException('Email already registered');
     }
 
-    // First user becomes ADMIN; subsequent self-registration requires ALLOW_OPEN_REGISTRATION=true
     const userCount = await this.usersService.count();
-    const role = userCount === 0 ? 'ADMIN' : 'EDITOR';
+    const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
+
+    // In cloud mode: every self-registered user is ADMIN of their own org
+    // In self-hosted: first user is ADMIN, others are EDITOR
+    const role = (isCloud || userCount === 0) ? 'ADMIN' : 'EDITOR';
 
     if (userCount > 0 && this.configService.get<string>('ALLOW_OPEN_REGISTRATION') !== 'true') {
       throw new ForbiddenException(
         'Registration is disabled. Please contact an administrator for an invitation.',
       );
     }
-
-    // In self-hosted mode with open registration, join the existing org
-    // In cloud mode (or first user), create a new organization
-    const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
     let organizationId: string;
 
     if (!isCloud && userCount > 0) {

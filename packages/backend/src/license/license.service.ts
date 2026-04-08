@@ -295,7 +295,7 @@ export class LicenseService implements OnModuleInit {
   // ── Get Current License ────────────────────────────────────────────────────
 
   async getCurrentLicense(organizationId?: string): Promise<LicenseInfo | null> {
-    // Per-org: find license by organizationId
+    // 1. Per-org: find license directly assigned to this organization
     if (organizationId) {
       const license = await this.prisma.license.findFirst({
         where: { organizationId, status: 'active' },
@@ -304,15 +304,40 @@ export class LicenseService implements OnModuleInit {
       if (license) return this.toLicenseInfo(license);
     }
 
-    // Fallback to global license (self-hosted or no org-specific license)
+    // 2. Fallback: global license via site_settings key
     const licenseKey = await this.siteSettings.get('license_key');
-    if (!licenseKey) return null;
+    if (licenseKey) {
+      const license = await this.prisma.license.findUnique({
+        where: { licenseKey },
+      });
+      if (license) {
+        // Auto-assign unassigned license to the requesting org
+        if (organizationId && !license.organizationId) {
+          await this.prisma.license.update({
+            where: { id: license.id },
+            data: { organizationId },
+          }).catch(() => {});
+        }
+        return this.toLicenseInfo(license);
+      }
+    }
 
-    const license = await this.prisma.license.findUnique({
-      where: { licenseKey },
+    // 3. Fallback: any active license without an org (migrated but unassigned)
+    const unassigned = await this.prisma.license.findFirst({
+      where: { status: 'active', organizationId: null },
+      orderBy: { createdAt: 'desc' },
     });
+    if (unassigned) {
+      if (organizationId) {
+        await this.prisma.license.update({
+          where: { id: unassigned.id },
+          data: { organizationId },
+        }).catch(() => {});
+      }
+      return this.toLicenseInfo(unassigned);
+    }
 
-    return license ? this.toLicenseInfo(license) : null;
+    return null;
   }
 
   // ── Commercial Use Flag ────────────────────────────────────────────────────

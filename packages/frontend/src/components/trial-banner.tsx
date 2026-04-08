@@ -10,7 +10,7 @@ export function TrialBanner() {
   const [plan, setPlan] = useState<string | null>(null);
 
   useEffect(() => {
-    license.getStatus().then((status) => {
+    license.getStatus(token || undefined).then((status) => {
       setPlan(status.plan);
       if (status.trialDaysLeft !== undefined) {
         setDaysLeft(status.trialDaysLeft);
