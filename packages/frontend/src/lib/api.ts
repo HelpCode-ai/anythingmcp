@@ -296,8 +296,8 @@ export const mcpKeys = {
 
 // License
 export const license = {
-  getStatus: () =>
-    request<{ plan: string | null; status: string; features: any; expiresAt: string | null; lastVerifiedAt: string | null; instanceId: string | null; trialDaysLeft?: number }>('/api/license/status'),
+  getStatus: (token?: string) =>
+    request<{ plan: string | null; status: string; features: any; expiresAt: string | null; lastVerifiedAt: string | null; instanceId: string | null; trialDaysLeft?: number }>('/api/license/status', { token }),
   activateTrial: (token: string) =>
     request<{ message: string; trialStarted: boolean; licenseKey: string; plan: string; expiresAt: string; trialDaysLeft: number }>('/api/license/activate-trial', {
       method: 'POST',

@@ -15,6 +15,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { IsString, Matches } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { LicenseService } from './license.service';
+import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
 import { DeploymentService } from '../common/deployment.service';
 
@@ -33,16 +34,24 @@ export class LicenseController {
 
   constructor(
     private readonly licenseService: LicenseService,
+    private readonly authService: AuthService,
     private readonly usersService: UsersService,
     private readonly deployment: DeploymentService,
   ) {}
 
   @Get('status')
-  @UseGuards(AuthGuard('jwt'))
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get current license status' })
+  @ApiOperation({ summary: 'Get current license status (optional auth for org-scoped results)' })
   async getStatus(@Req() req: any) {
-    const license = await this.licenseService.getCurrentLicense(req.user?.organizationId);
+    // Optional auth: extract organizationId from JWT if present
+    let organizationId: string | undefined;
+    const authHeader = req.headers?.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      try {
+        const payload = this.authService.verifyToken(authHeader.substring(7));
+        organizationId = payload.organizationId;
+      } catch {}
+    }
+    const license = await this.licenseService.getCurrentLicense(organizationId);
     if (!license) {
       return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
     }

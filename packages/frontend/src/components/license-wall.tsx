@@ -15,7 +15,7 @@ export function LicenseWall() {
   useEffect(() => {
     if (!token) return;
 
-    license.getStatus().then((status) => {
+    license.getStatus(token || undefined).then((status) => {
       if (!status.plan) return;
       // Block when trial is expired
       if (status.plan === 'trial' && status.trialDaysLeft !== undefined && status.trialDaysLeft <= 0) {

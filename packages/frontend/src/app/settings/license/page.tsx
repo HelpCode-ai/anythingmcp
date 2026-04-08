@@ -31,7 +31,7 @@ export default function LicenseSettingsPage() {
 
   const loadStatus = async () => {
     try {
-      const data = await license.getStatus();
+      const data = await license.getStatus(token || undefined);
       setStatus(data);
     } catch {
       // ignore
