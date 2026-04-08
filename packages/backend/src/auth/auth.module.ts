@@ -15,6 +15,7 @@ import { ClientCredentialsMiddleware } from './client-credentials.middleware';
 import { UsersModule } from '../users/users.module';
 import { SettingsModule } from '../settings/settings.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
 
 @Global()
 @Module({
@@ -22,6 +23,7 @@ import { McpServersModule } from '../mcp-servers/mcp-servers.module';
     UsersModule,
     SettingsModule,
     McpServersModule,
+    OrganizationsModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

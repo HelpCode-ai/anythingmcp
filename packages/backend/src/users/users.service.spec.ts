@@ -63,6 +63,7 @@ describe('UsersService', () => {
         email: 'new@example.com',
         passwordHash: 'hash',
         name: 'New User',
+        organizationId: 'org-1',
       };
       mockPrisma.user.create.mockResolvedValue({ ...mockUser, ...data });
       const result = await service.create(data);

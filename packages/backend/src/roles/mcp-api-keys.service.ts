@@ -12,11 +12,11 @@ export class McpApiKeysService {
    * Generate a new MCP API key for a user.
    * Key format: mcp_<32 random hex chars>
    */
-  async generate(userId: string, name: string, mcpServerId?: string) {
+  async generate(userId: string, organizationId: string, name: string, mcpServerId?: string) {
     const key = `mcp_${randomBytes(32).toString('hex')}`;
 
     return this.prisma.mcpApiKey.create({
-      data: { userId, key, name, mcpServerId: mcpServerId || null },
+      data: { userId, organizationId, key, name, mcpServerId: mcpServerId || null },
       select: { id: true, key: true, name: true, isActive: true, mcpServerId: true, createdAt: true },
     });
   }
@@ -64,6 +64,7 @@ export class McpApiKeysService {
             id: true,
             email: true,
             role: true,
+            organizationId: true,
             mcpRoleId: true,
           },
         },

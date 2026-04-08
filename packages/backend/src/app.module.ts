@@ -30,6 +30,7 @@ import { PrismaOAuthStore } from './auth/prisma-oauth.store';
 import { PrismaService } from './common/prisma.service';
 import { OAuthUrlRewriteInterceptor } from './auth/oauth-url-rewrite.interceptor';
 import { AdaptersModule } from './adapters/adapters.module';
+import { OrganizationsModule } from './organizations/organizations.module';
 import { CloudModule } from './cloud/cloud.module';
 
 // Determine deployment and auth mode from env
@@ -114,6 +115,7 @@ if (useOAuth) {
     AdaptersModule,
     McpServerModule,
 
+    OrganizationsModule,
     AuditModule,
     HealthModule,
     SettingsModule,

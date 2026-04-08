@@ -8,6 +8,7 @@ import {
   Param,
   Req,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -79,9 +80,28 @@ export class ToolsController {
     private readonly connectorsService: ConnectorsService,
   ) {}
 
+  private async assertConnectorOrgMatch(connectorId: string, req: any) {
+    const connector = await this.connectorsService.findById(connectorId);
+    if (connector.organizationId !== req.user.organizationId) {
+      throw new ForbiddenException('Resource not found');
+    }
+    return connector;
+  }
+
+  private async assertCanWriteConnector(connectorId: string, req: any) {
+    const connector = await this.assertConnectorOrgMatch(connectorId, req);
+    if (req.user.role === 'VIEWER') {
+      throw new ForbiddenException('Viewers cannot modify tools');
+    }
+    if (connector.userId !== req.user.sub && req.user.role !== 'ADMIN') {
+      throw new ForbiddenException('Only the connector owner or an admin can modify this resource');
+    }
+  }
+
   @Get()
   @ApiOperation({ summary: 'List tools for a connector' })
-  async list(@Param('connectorId') connectorId: string) {
+  async list(@Req() req: any, @Param('connectorId') connectorId: string) {
+    await this.assertConnectorOrgMatch(connectorId, req);
     return this.prisma.mcpTool.findMany({
       where: { connectorId },
       orderBy: { createdAt: 'desc' },
@@ -91,9 +111,11 @@ export class ToolsController {
   @Post()
   @ApiOperation({ summary: 'Create a new MCP tool for a connector' })
   async create(
+    @Req() req: any,
     @Param('connectorId') connectorId: string,
     @Body() dto: CreateToolDto,
   ) {
+    await this.assertCanWriteConnector(connectorId, req);
     const tool = await this.prisma.mcpTool.create({
       data: {
         connectorId,
@@ -118,9 +140,11 @@ export class ToolsController {
       'Skips duplicates (by name) and returns created + skipped counts.',
   })
   async bulkCreate(
+    @Req() req: any,
     @Param('connectorId') connectorId: string,
     @Body() body: { tools: CreateToolDto[] },
   ) {
+    await this.assertCanWriteConnector(connectorId, req);
     const toolDefs = body.tools;
     if (!Array.isArray(toolDefs) || toolDefs.length === 0) {
       return { error: 'Provide a "tools" array with at least one tool definition' };
@@ -163,10 +187,12 @@ export class ToolsController {
   @Put(':toolId')
   @ApiOperation({ summary: 'Update an MCP tool' })
   async update(
+    @Req() req: any,
     @Param('toolId') toolId: string,
     @Param('connectorId') connectorId: string,
     @Body() dto: UpdateToolDto,
   ) {
+    await this.assertCanWriteConnector(connectorId, req);
     const tool = await this.prisma.mcpTool.update({
       where: { id: toolId },
       data: dto as any,
@@ -189,6 +215,8 @@ export class ToolsController {
     @Req() req: any,
     @Body() body: { params?: Record<string, unknown> },
   ) {
+    await this.assertCanWriteConnector(connectorId, req);
+
     const tool = await this.prisma.mcpTool.findUnique({
       where: { id: toolId },
       include: { connector: true },
@@ -239,9 +267,11 @@ export class ToolsController {
   @Delete(':toolId')
   @ApiOperation({ summary: 'Delete an MCP tool' })
   async remove(
+    @Req() req: any,
     @Param('toolId') toolId: string,
     @Param('connectorId') connectorId: string,
   ) {
+    await this.assertCanWriteConnector(connectorId, req);
     await this.prisma.mcpTool.delete({ where: { id: toolId } });
     await this.mcpServer.reloadConnectorTools(connectorId);
     return { message: 'Tool deleted' };

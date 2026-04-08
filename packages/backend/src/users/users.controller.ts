@@ -101,17 +101,17 @@ export class UsersController {
   @Get()
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'List all users (ADMIN only)' })
-  async listUsers() {
-    return this.usersService.findAll();
+  @ApiOperation({ summary: 'List all users in organization (ADMIN only)' })
+  async listUsers(@Req() req: any) {
+    return this.usersService.findAll(req.user.organizationId);
   }
 
   @Get('invitations')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
   @ApiOperation({ summary: 'List pending/expired invitations (ADMIN only)' })
-  async listInvitations() {
-    return this.usersService.findAllInvitations();
+  async listInvitations(@Req() req: any) {
+    return this.usersService.findAllInvitations(req.user.organizationId);
   }
 
   @Delete('invitations/:id')

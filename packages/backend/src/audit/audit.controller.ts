@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AuditService } from './audit.service';
@@ -20,6 +20,7 @@ export class AuditController {
   @ApiQuery({ name: 'connectorId', required: false, type: String })
   @ApiQuery({ name: 'mcpServerId', required: false, type: String })
   async listInvocations(
+    @Req() req: any,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('toolId') toolId?: string,
@@ -31,14 +32,14 @@ export class AuditController {
     return this.auditService.getRecentInvocations(
       limit ? parseInt(limit, 10) : 100,
       offset ? parseInt(offset, 10) : 0,
-      { toolId, status: status as any, search, connectorId, mcpServerId },
+      { toolId, status: status as any, search, connectorId, mcpServerId, organizationId: req.user.organizationId },
     );
   }
 
   @Get('stats')
   @ApiOperation({ summary: 'Get invocation statistics' })
-  async getStats() {
-    return this.auditService.getStats();
+  async getStats(@Req() req: any) {
+    return this.auditService.getStats(req.user.organizationId);
   }
 
   @Get('analytics')
@@ -48,7 +49,7 @@ export class AuditController {
       'Returns 7-day daily breakdown of invocations by status, ' +
       'top 10 most-used tools, success rate, and average duration.',
   })
-  async getAnalytics() {
-    return this.auditService.getAnalytics();
+  async getAnalytics(@Req() req: any) {
+    return this.auditService.getAnalytics(req.user.organizationId);
   }
 }

@@ -43,6 +43,7 @@ export class McpCombinedAuthGuard implements CanActivate {
           sub: user.id,
           email: user.email,
           role: user.role,
+          organizationId: user.organizationId,
           mcpRoleId: user.mcpRoleId,
           mcpServerId: user.mcpServerId,
           authMethod: 'mcp_api_key',

@@ -35,6 +35,22 @@ export class ConnectorsService {
     });
   }
 
+  async findByUser(userId: string): Promise<Connector[]> {
+    return this.prisma.connector.findMany({
+      where: { userId },
+      include: { tools: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findByOrg(organizationId: string): Promise<Connector[]> {
+    return this.prisma.connector.findMany({
+      where: { organizationId },
+      include: { tools: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async findById(id: string): Promise<Connector> {
     const connector = await this.prisma.connector.findUnique({
       where: { id },
@@ -59,6 +75,7 @@ export class ConnectorsService {
 
   async create(
     userId: string,
+    organizationId: string,
     data: {
       name: string;
       type: ConnectorType;
@@ -79,6 +96,7 @@ export class ConnectorsService {
     return this.prisma.connector.create({
       data: {
         userId,
+        organizationId,
         name: data.name,
         type: data.type,
         baseUrl: data.baseUrl,

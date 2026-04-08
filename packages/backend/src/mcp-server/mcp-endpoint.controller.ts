@@ -106,6 +106,16 @@ export class McpEndpointController {
       });
     }
 
+    // Verify the authenticated user belongs to the same organization as the MCP server
+    const user = (req as any).user;
+    if (user?.organizationId && mcpServerConfig.organizationId !== user.organizationId) {
+      return res.status(403).json({
+        jsonrpc: '2.0',
+        error: { code: -32001, message: 'Access denied' },
+        id: null,
+      });
+    }
+
     // 2. Get connector IDs and composed instructions for this server
     const [connectorIds, instructions] = await Promise.all([
       this.mcpServersService.getConnectorIds(serverId),
@@ -117,7 +127,6 @@ export class McpEndpointController {
     const serverTools = allTools.filter((t) => connectorIds.includes(t.connectorId));
 
     // 4. Further filter by role-based access if user is identified
-    const user = (req as any).user;
     let allowedToolIds: string[] | null = null;
     if (user?.sub) {
       allowedToolIds = await this.rolesService.getAllowedToolIds(user.sub);

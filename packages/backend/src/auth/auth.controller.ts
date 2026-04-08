@@ -28,6 +28,7 @@ import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { PrismaService } from '../common/prisma.service';
 import { EmailService } from '../settings/email.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { Roles, RolesGuard } from './roles.guard';
 
 class LoginDto {
@@ -118,6 +119,7 @@ export class AuthController {
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
     private readonly siteSettings: SiteSettingsService,
+    private readonly organizationsService: OrganizationsService,
   ) {}
 
   private getFrontendUrl(req?: any): string {
@@ -194,6 +196,7 @@ export class AuthController {
       sub: user.id,
       email: user.email,
       role: user.role,
+      organizationId: user.organizationId,
       mcpRoleId: user.mcpRoleId,
     });
 
@@ -218,6 +221,7 @@ export class AuthController {
         email: user.email,
         name: user.name,
         role: user.role,
+        organizationId: user.organizationId,
         emailVerified: user.emailVerified,
       },
       ...(needsLicenseSetup && { needsLicenseSetup: true }),
@@ -242,21 +246,42 @@ export class AuthController {
       );
     }
 
+    // In self-hosted mode with open registration, join the existing org
+    // In cloud mode (or first user), create a new organization
+    const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
+    let organizationId: string;
+
+    if (!isCloud && userCount > 0) {
+      // Self-hosted: join the existing (first) organization
+      const existingOrg = await this.prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } });
+      organizationId = existingOrg!.id;
+    } else {
+      // Cloud or first user: create a new organization
+      const orgName = `${dto.name || dto.email.split('@')[0]}'s Workspace`;
+      const org = await this.organizationsService.create(orgName);
+      organizationId = org.id;
+    }
+
     const passwordHash = await this.authService.hashPassword(dto.password);
     const user = await this.usersService.create({
       email: dto.email,
       passwordHash,
       name: dto.name,
       role: role as any,
+      organizationId,
     });
 
+    // Create organization membership
+    await this.organizationsService.addMember(user.id, organizationId, role as any);
+
     // Create default MCP server for new user
-    await this.mcpServersService.createDefaultForUser(user.id);
+    await this.mcpServersService.createDefaultForUser(user.id, organizationId);
 
     const token = this.authService.generateToken({
       sub: user.id,
       email: user.email,
       role: user.role,
+      organizationId,
       mcpRoleId: user.mcpRoleId,
     });
 
@@ -270,6 +295,7 @@ export class AuthController {
         email: user.email,
         name: user.name,
         role: user.role,
+        organizationId,
         emailVerified: false,
       },
       isFirstUser: role === 'ADMIN',
@@ -376,16 +402,21 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Invite a user to the workspace (ADMIN only)' })
   async inviteUser(@Req() req: any, @Body() dto: InviteUserDto) {
-    // Check if user already exists
+    // Check if user already exists in THIS organization
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
-      throw new ConflictException('A user with this email already exists');
+      const membership = await this.organizationsService.getMembership(existing.id, req.user.organizationId);
+      if (membership) {
+        throw new ConflictException('This user is already a member of your organization');
+      }
+      // User exists but not in this org — allow invitation for multi-org membership
     }
 
-    // Check for existing pending invitation
+    // Check for existing pending invitation to this org
     const existingInvite = await this.prisma.invitationToken.findFirst({
       where: {
         email: dto.email,
+        organizationId: req.user.organizationId,
         usedAt: null,
         expiresAt: { gt: new Date() },
       },
@@ -405,6 +436,7 @@ export class AuthController {
         role: dto.role,
         mcpRoleId: dto.mcpRoleId || null,
         invitedBy: req.user.sub,
+        organizationId: req.user.organizationId,
         expiresAt,
       },
     });
@@ -476,28 +508,41 @@ export class AuthController {
 
     // Check if email already registered
     const existing = await this.usersService.findByEmail(invite.email);
+
+    let user: any;
     if (existing) {
-      throw new ConflictException('An account with this email already exists');
-    }
+      // Existing user — add to the new organization (multi-org)
+      const alreadyMember = await this.organizationsService.getMembership(existing.id, invite.organizationId);
+      if (alreadyMember) {
+        throw new ConflictException('You are already a member of this organization');
+      }
+      await this.organizationsService.addMember(existing.id, invite.organizationId, invite.role);
+      // Switch their active org to the newly joined one
+      user = await this.organizationsService.switchOrg(existing.id, invite.organizationId);
+    } else {
+      // New user — create account and join the organization
+      const passwordHash = await this.authService.hashPassword(dto.password);
+      user = await this.usersService.create({
+        email: invite.email,
+        passwordHash,
+        name: dto.name,
+        role: invite.role,
+        organizationId: invite.organizationId,
+      });
 
-    // Create the user — invited users are already verified (they received the invite email)
-    const passwordHash = await this.authService.hashPassword(dto.password);
-    const user = await this.usersService.create({
-      email: invite.email,
-      passwordHash,
-      name: dto.name,
-      role: invite.role,
-    });
+      // Create organization membership
+      await this.organizationsService.addMember(user.id, invite.organizationId, invite.role);
 
-    // Mark email as verified (invited users don't need to verify)
-    await this.usersService.update(user.id, { emailVerified: true });
+      // Mark email as verified (invited users don't need to verify)
+      await this.usersService.update(user.id, { emailVerified: true });
 
-    // Create default MCP server for new user
-    await this.mcpServersService.createDefaultForUser(user.id);
+      // Create default MCP server for new user
+      await this.mcpServersService.createDefaultForUser(user.id, invite.organizationId);
 
-    // Assign MCP role if specified
-    if (invite.mcpRoleId) {
-      await this.usersService.update(user.id, { mcpRoleId: invite.mcpRoleId });
+      // Assign MCP role if specified
+      if (invite.mcpRoleId) {
+        await this.usersService.update(user.id, { mcpRoleId: invite.mcpRoleId });
+      }
     }
 
     // Mark invitation as used
@@ -511,7 +556,8 @@ export class AuthController {
       sub: user.id,
       email: user.email,
       role: user.role,
-      mcpRoleId: invite.mcpRoleId,
+      organizationId: invite.organizationId,
+      mcpRoleId: user.mcpRoleId,
     });
 
     return {
@@ -521,6 +567,7 @@ export class AuthController {
         email: user.email,
         name: user.name,
         role: user.role,
+        organizationId: invite.organizationId,
         emailVerified: true,
       },
     };

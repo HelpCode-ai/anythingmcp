@@ -44,7 +44,7 @@ export class McpApiKeysController {
   @ApiOperation({ summary: 'Generate a new MCP API key' })
   async generateKey(@Req() req: any, @Body() dto: CreateKeyDto) {
     // Returns the full key — user must save it, it won't be shown again
-    return this.keysService.generate(req.user.sub, dto.name, dto.mcpServerId);
+    return this.keysService.generate(req.user.sub, req.user.organizationId, dto.name, dto.mcpServerId);
   }
 
   @Post(':id/revoke')

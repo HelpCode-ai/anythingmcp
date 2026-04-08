@@ -38,9 +38,11 @@ export class LicenseController {
   ) {}
 
   @Get('status')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current license status' })
-  async getStatus() {
-    const license = await this.licenseService.getCurrentLicense();
+  async getStatus(@Req() req: any) {
+    const license = await this.licenseService.getCurrentLicense(req.user?.organizationId);
     if (!license) {
       return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
     }
@@ -73,9 +75,9 @@ export class LicenseController {
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Set and activate a license key (ADMIN)' })
-  async setLicenseKey(@Body() dto: SetLicenseKeyDto) {
+  async setLicenseKey(@Req() req: any, @Body() dto: SetLicenseKeyDto) {
     try {
-      const license = await this.licenseService.setLicenseKey(dto.licenseKey);
+      const license = await this.licenseService.setLicenseKey(dto.licenseKey, req.user.organizationId);
       return { message: 'License activated successfully', license };
     } catch (err: any) {
       throw new BadRequestException(err.message || 'Failed to activate license');

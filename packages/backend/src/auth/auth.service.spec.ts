@@ -31,7 +31,7 @@ describe('AuthService', () => {
 
   describe('generateToken / verifyToken', () => {
     it('should generate and verify a JWT token', () => {
-      const payload = { sub: 'user-1', email: 'a@b.com', role: 'ADMIN' };
+      const payload = { sub: 'user-1', email: 'a@b.com', role: 'ADMIN', organizationId: 'org-1' };
       const token = authService.generateToken(payload);
 
       expect(typeof token).toBe('string');

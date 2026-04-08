@@ -12,6 +12,58 @@ datasource db {
   provider = "postgresql"
 }
 
+// ── Organization (multi-tenancy) ────────────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users            User[]
+  members          OrganizationMember[]
+  connectors       Connector[]
+  mcpServers       McpServerConfig[]
+  roles            Role[]
+  mcpApiKeys       McpApiKey[]
+  invitationTokens InvitationToken[]
+  licenses         License[]
+  orgSettings      OrgSettings[]
+
+  @@map("organizations")
+}
+
+// ── Organization Membership (many-to-many with per-org role) ────────────────
+
+model OrganizationMember {
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           UserRole     @default(EDITOR)
+  joinedAt       DateTime     @default(now()) @map("joined_at")
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("organization_members")
+}
+
+// ── Per-Organization Settings (key-value store) ─────────────────────────────
+
+model OrgSettings {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  key            String
+  value          String       @db.Text
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@unique([organizationId, key])
+  @@map("org_settings")
+}
+
 // ── User Management ─────────────────────────────────────────────────────────
 
 enum UserRole {
@@ -21,12 +73,14 @@ enum UserRole {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  passwordHash  String   @map("password_hash")
-  name          String?
-  role          UserRole @default(EDITOR)
-  emailVerified Boolean  @default(false) @map("email_verified")
+  id             String   @id @default(cuid())
+  email          String   @unique
+  passwordHash   String   @map("password_hash")
+  name           String?
+  role           UserRole @default(EDITOR)
+  emailVerified  Boolean  @default(false) @map("email_verified")
+  organizationId String   @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -35,6 +89,7 @@ model User {
   mcpRoleId String? @map("mcp_role_id")
   mcpRole   Role?   @relation(fields: [mcpRoleId], references: [id], onDelete: SetNull)
 
+  memberships              OrganizationMember[]
   connectors               Connector[]
   mcpServers               McpServerConfig[]
   toolInvocations          ToolInvocation[]
@@ -42,6 +97,7 @@ model User {
   mcpApiKeys               McpApiKey[]
   emailVerificationTokens  EmailVerificationToken[]
 
+  @@index([organizationId])
   @@map("users")
 }
 
@@ -89,33 +145,38 @@ model SiteSettings {
 // ── License Management ──────────────────────────────────────────────────────
 
 model License {
-  id             String    @id @default(cuid())
-  licenseKey     String    @unique @map("license_key")
-  plan           String    @default("community")
-  status         String    @default("active")
+  id             String        @id @default(cuid())
+  licenseKey     String        @unique @map("license_key")
+  plan           String        @default("community")
+  status         String        @default("active")
   features       Json?
-  expiresAt      DateTime? @map("expires_at")
-  activatedAt    DateTime? @map("activated_at")
-  instanceId     String?   @map("instance_id")
-  lastVerifiedAt DateTime? @map("last_verified_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  expiresAt      DateTime?     @map("expires_at")
+  activatedAt    DateTime?     @map("activated_at")
+  instanceId     String?       @map("instance_id")
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  lastVerifiedAt DateTime?     @map("last_verified_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
 
+  @@index([organizationId])
   @@map("licenses")
 }
 
 // ── User Invitation Tokens ──────────────────────────────────────────────────
 
 model InvitationToken {
-  id        String    @id @default(cuid())
-  email     String
-  token     String    @unique
-  role      UserRole  @default(EDITOR)
-  mcpRoleId String?   @map("mcp_role_id")
-  invitedBy String    @map("invited_by") // admin user id
-  expiresAt DateTime  @map("expires_at")
-  usedAt    DateTime? @map("used_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+  id             String    @id @default(cuid())
+  email          String
+  token          String    @unique
+  role           UserRole  @default(EDITOR)
+  mcpRoleId      String?   @map("mcp_role_id")
+  invitedBy      String    @map("invited_by") // admin user id
+  organizationId String    @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  expiresAt      DateTime  @map("expires_at")
+  usedAt         DateTime? @map("used_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
   @@map("invitation_tokens")
 }
@@ -123,16 +184,19 @@ model InvitationToken {
 // ── MCP Governance: Custom Roles ────────────────────────────────────────────
 
 model Role {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?  @db.Text
-  isSystem    Boolean  @default(false) @map("is_system")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id             String        @id @default(cuid())
+  name           String
+  description    String?       @db.Text
+  isSystem       Boolean       @default(false) @map("is_system")
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
 
   users      User[]
   toolAccess ToolRoleAccess[]
 
+  @@unique([organizationId, name])
   @@map("roles")
 }
 
@@ -154,17 +218,20 @@ model ToolRoleAccess {
 // ── Per-User MCP API Keys ───────────────────────────────────────────────────
 
 model McpApiKey {
-  id          String           @id @default(cuid())
-  userId      String           @map("user_id")
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mcpServerId String?          @map("mcp_server_id")
-  mcpServer   McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
-  key         String           @unique
-  name        String           // label: "Claude Desktop", "Cursor", etc.
-  isActive    Boolean          @default(true) @map("is_active")
-  lastUsedAt  DateTime?        @map("last_used_at")
-  createdAt   DateTime         @default(now()) @map("created_at")
+  id             String           @id @default(cuid())
+  userId         String           @map("user_id")
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String           @map("organization_id")
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mcpServerId    String?          @map("mcp_server_id")
+  mcpServer      McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
+  key            String           @unique
+  name           String           // label: "Claude Desktop", "Cursor", etc.
+  isActive       Boolean          @default(true) @map("is_active")
+  lastUsedAt     DateTime?        @map("last_used_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
 
+  @@index([organizationId])
   @@map("mcp_api_keys")
 }
 
@@ -190,9 +257,11 @@ enum AuthType {
 }
 
 model Connector {
-  id   String        @id @default(cuid())
-  userId String      @map("user_id")
-  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String        @id @default(cuid())
+  userId         String        @map("user_id")
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String        @map("organization_id")
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   name     String
   type     ConnectorType
@@ -225,6 +294,7 @@ model Connector {
   prompts    McpPrompt[]
   mcpServers McpServerConnector[]
 
+  @@index([organizationId])
   @@map("connectors")
 }
 
@@ -314,9 +384,11 @@ model McpPrompt {
 // ── MCP Server Configuration ────────────────────────────────────────────────
 
 model McpServerConfig {
-  id     String @id @default(cuid())
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   name         String  @default("Default")
   slug         String  @default("default")
@@ -332,7 +404,8 @@ model McpServerConfig {
   apiKeys         McpApiKey[]
   toolInvocations ToolInvocation[]
 
-  @@unique([userId, slug])
+  @@unique([organizationId, slug])
+  @@index([organizationId])
   @@map("mcp_server_configs")
 }
 

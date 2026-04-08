@@ -16,6 +16,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsOptional, IsBoolean, IsArray } from 'class-validator';
 import { McpServersService } from './mcp-servers.service';
 import { LicenseGuardService } from '../license/license-guard.service';
+import { PrismaService } from '../common/prisma.service';
 
 class CreateMcpServerDto {
   @IsString()
@@ -70,19 +71,36 @@ export class McpServersController {
   constructor(
     private readonly mcpServersService: McpServersService,
     private readonly licenseGuard: LicenseGuardService,
+    private readonly prisma: PrismaService,
   ) {}
 
+  private assertOrgMatch(server: any, req: any) {
+    if (server.organizationId !== req.user.organizationId) {
+      throw new NotFoundException('MCP server not found');
+    }
+  }
+
+  private assertCanWrite(server: any, req: any) {
+    this.assertOrgMatch(server, req);
+    if (req.user.role === 'VIEWER') {
+      throw new ForbiddenException('Viewers cannot modify MCP servers');
+    }
+    if (server.userId !== req.user.sub && req.user.role !== 'ADMIN') {
+      throw new ForbiddenException();
+    }
+  }
+
   @Get()
-  @ApiOperation({ summary: 'List MCP servers for current user' })
+  @ApiOperation({ summary: 'List MCP servers for current organization' })
   async list(@Req() req: any) {
-    return this.mcpServersService.findAllByUser(req.user.sub);
+    return this.mcpServersService.findAllByOrg(req.user.organizationId);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a new MCP server' })
   async create(@Req() req: any, @Body() dto: CreateMcpServerDto) {
-    await this.licenseGuard.checkCanCreateMcpServer(req.user.sub);
-    return this.mcpServersService.create(req.user.sub, dto);
+    await this.licenseGuard.checkCanCreateMcpServer(req.user.sub, req.user.organizationId);
+    return this.mcpServersService.create(req.user.sub, req.user.organizationId, dto);
   }
 
   @Get(':id')
@@ -90,7 +108,7 @@ export class McpServersController {
   async get(@Req() req: any, @Param('id') id: string) {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
-    if (server.userId !== req.user.sub) throw new ForbiddenException();
+    this.assertOrgMatch(server, req);
     return server;
   }
 
@@ -99,7 +117,7 @@ export class McpServersController {
   async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateMcpServerDto) {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
-    if (server.userId !== req.user.sub) throw new ForbiddenException();
+    this.assertCanWrite(server, req);
     return this.mcpServersService.update(id, dto);
   }
 
@@ -108,7 +126,7 @@ export class McpServersController {
   async delete(@Req() req: any, @Param('id') id: string) {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
-    if (server.userId !== req.user.sub) throw new ForbiddenException();
+    this.assertCanWrite(server, req);
     await this.mcpServersService.delete(id);
     return { message: 'MCP server deleted' };
   }
@@ -122,7 +140,18 @@ export class McpServersController {
   ) {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
-    if (server.userId !== req.user.sub) throw new ForbiddenException();
+    this.assertCanWrite(server, req);
+
+    // Validate that all connectors belong to the same organization
+    if (dto.connectorIds.length > 0) {
+      const orgCount = await this.prisma.connector.count({
+        where: { id: { in: dto.connectorIds }, organizationId: req.user.organizationId },
+      });
+      if (orgCount !== dto.connectorIds.length) {
+        throw new NotFoundException('One or more connectors not found');
+      }
+    }
+
     await this.mcpServersService.assignConnectors(id, dto.connectorIds);
     return { message: 'Connectors assigned' };
   }

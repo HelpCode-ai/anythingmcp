@@ -153,23 +153,33 @@ export class ConnectorsController {
 
   private readonly encryptionKey: string;
 
-  private assertOwnerOrAdmin(connector: any, req: any) {
+  private assertOrgMatch(connector: any, req: any) {
+    if (connector.organizationId !== req.user.organizationId) {
+      throw new ForbiddenException('Resource not found');
+    }
+  }
+
+  private assertCanWrite(connector: any, req: any) {
+    this.assertOrgMatch(connector, req);
+    if (req.user.role === 'VIEWER') {
+      throw new ForbiddenException('Viewers cannot modify connectors');
+    }
     if (connector.userId !== req.user.sub && req.user.role !== 'ADMIN') {
       throw new ForbiddenException('Only the connector owner or an admin can modify this connector');
     }
   }
 
   @Get()
-  @ApiOperation({ summary: 'List all connectors' })
-  async list() {
-    return this.connectorsService.findAll();
+  @ApiOperation({ summary: 'List connectors for current organization' })
+  async list(@Req() req: any) {
+    return this.connectorsService.findByOrg(req.user.organizationId);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a new connector' })
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
-    await this.licenseGuard.checkCanCreateConnector(req.user.sub);
-    const connector = await this.connectorsService.create(req.user.sub, dto);
+    await this.licenseGuard.checkCanCreateConnector(req.user.sub, req.user.organizationId);
+    const connector = await this.connectorsService.create(req.user.sub, req.user.organizationId, dto);
 
     // Auto-create default tools for DATABASE connectors
     if (dto.type === 'DATABASE') {
@@ -203,8 +213,8 @@ export class ConnectorsController {
     description:
       'Runs a health check against all active connectors and returns their status.',
   })
-  async healthCheck() {
-    const allConnectors = await this.connectorsService.findAll();
+  async healthCheck(@Req() req: any) {
+    const allConnectors = await this.connectorsService.findByOrg(req.user.organizationId);
     const active = allConnectors.filter((c) => c.isActive);
 
     const results = await Promise.allSettled(
@@ -254,8 +264,9 @@ export class ConnectorsController {
       'Returns all connectors with their tools, environment variables, ' +
       'and configuration. Auth credentials are excluded for security.',
   })
-  async exportAll() {
+  async exportAll(@Req() req: any) {
     const allConnectors = await this.prisma.connector.findMany({
+      where: { organizationId: req.user.organizationId },
       include: { tools: true },
     });
 
@@ -288,8 +299,10 @@ export class ConnectorsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get connector details' })
-  async findOne(@Param('id') id: string) {
-    return this.connectorsService.findById(id);
+  async findOne(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertOrgMatch(connector, req);
+    return connector;
   }
 
   @Put(':id')
@@ -300,7 +313,7 @@ export class ConnectorsController {
     @Body() dto: UpdateConnectorDto,
   ) {
     const connector = await this.connectorsService.findById(id);
-    this.assertOwnerOrAdmin(connector, req);
+    this.assertCanWrite(connector, req);
     return this.connectorsService.update(id, dto);
   }
 
@@ -308,7 +321,7 @@ export class ConnectorsController {
   @ApiOperation({ summary: 'Delete connector' })
   async remove(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
-    this.assertOwnerOrAdmin(connector, req);
+    this.assertCanWrite(connector, req);
     await this.connectorsService.remove(id);
     // Unregister tools from in-memory MCP registries after DB cascade delete
     await this.mcpServer.reloadConnectorTools(id);
@@ -317,7 +330,9 @@ export class ConnectorsController {
 
   @Post(':id/test')
   @ApiOperation({ summary: 'Test connector connection' })
-  async test(@Param('id') id: string) {
+  async test(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
     return this.connectorsService.testConnection(id);
   }
 
@@ -331,7 +346,7 @@ export class ConnectorsController {
   })
   async initiateOAuth(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
-    this.assertOwnerOrAdmin(connector, req);
+    this.assertCanWrite(connector, req);
 
     if (connector.authType !== 'OAUTH2') {
       return { error: 'Connector auth type must be OAUTH2' };
@@ -428,7 +443,7 @@ export class ConnectorsController {
   })
   async discoverMcpTools(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
-    this.assertOwnerOrAdmin(connector, req);
+    this.assertCanWrite(connector, req);
 
     if (connector.type !== 'MCP') {
       return { error: 'Tool discovery is only available for MCP connectors' };
@@ -482,6 +497,7 @@ export class ConnectorsController {
         const connector = await this.prisma.connector.create({
           data: {
             userId: req.user.sub,
+            organizationId: req.user.organizationId,
             name: c.name,
             type: c.type,
             baseUrl: c.baseUrl,
@@ -537,7 +553,7 @@ export class ConnectorsController {
   @ApiOperation({ summary: 'Auto-generate MCP tools from API specification' })
   async importSpec(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
-    this.assertOwnerOrAdmin(connector, req);
+    this.assertCanWrite(connector, req);
 
     let parsedTools: any[] = [];
 
@@ -581,7 +597,7 @@ export class ConnectorsController {
     @Body() dto: ImportToolsDto,
   ) {
     const connector = await this.connectorsService.findById(id);
-    this.assertOwnerOrAdmin(connector, req);
+    this.assertCanWrite(connector, req);
 
     let parsedTools: any[] = [];
 
@@ -699,7 +715,7 @@ export class ConnectorsController {
     @Body() body: { envVars: Record<string, string> },
   ) {
     const connector = await this.connectorsService.findById(id);
-    this.assertOwnerOrAdmin(connector, req);
+    this.assertCanWrite(connector, req);
     const updated = await this.connectorsService.update(id, {
       envVars: body.envVars,
     });

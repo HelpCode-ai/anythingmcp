@@ -12,23 +12,39 @@ interface SidebarItem {
   description: string;
   icon: React.ComponentType<{ size?: number }>;
   exact?: boolean;
-  adminOnly?: boolean;
 }
 
-const SIDEBAR_ITEMS: SidebarItem[] = [
-  { href: '/settings', label: 'General', description: 'Profile, password, AI & MCP keys', icon: GearIcon, exact: true },
-  { href: '/settings/users', label: 'Users', description: 'Manage users and invitations', icon: UsersIcon, adminOnly: true },
-  { href: '/settings/roles', label: 'Roles', description: 'MCP tool access control', icon: ShieldIcon, adminOnly: true },
-  { href: '/settings/license', label: 'License', description: 'Plan, license key, features', icon: KeyIcon, adminOnly: true },
-  { href: '/settings/admin', label: 'Administration', description: 'SMTP, footer links', icon: WrenchIcon, adminOnly: true },
+interface SidebarSection {
+  title?: string;
+  icon?: React.ComponentType<{ size?: number }>;
+  adminOnly?: boolean;
+  items: SidebarItem[];
+}
+
+const SIDEBAR_SECTIONS: SidebarSection[] = [
+  {
+    items: [
+      { href: '/settings', label: 'Profile', description: 'Name, email, password', icon: GearIcon, exact: true },
+    ],
+  },
+  {
+    title: 'Organization',
+    icon: BuildingIcon,
+    adminOnly: true,
+    items: [
+      { href: '/settings/organization', label: 'General', description: 'Workspace name and info', icon: BuildingIcon },
+      { href: '/settings/users', label: 'Users', description: 'Members and invitations', icon: UsersIcon },
+      { href: '/settings/roles', label: 'Roles', description: 'MCP tool access control', icon: ShieldIcon },
+      { href: '/settings/license', label: 'License', description: 'Plan, features', icon: KeyIcon },
+      { href: '/settings/admin', label: 'Administration', description: 'SMTP, footer links', icon: WrenchIcon },
+    ],
+  },
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
-
-  const visibleItems = SIDEBAR_ITEMS.filter((item) => !item.adminOnly || isAdmin);
 
   return (
     <div className="min-h-screen bg-[var(--background)] flex flex-col">
@@ -40,27 +56,43 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full flex flex-col lg:flex-row gap-6 lg:gap-8">
         {/* Sidebar navigation */}
         <aside className="w-full lg:w-56 flex-shrink-0">
-          <nav className="flex lg:flex-col gap-1.5 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0">
-            {visibleItems.map((item) => {
-              const isActive = item.exact
-                ? pathname === item.href
-                : pathname.startsWith(item.href);
+          <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0">
+            {SIDEBAR_SECTIONS.map((section, si) => {
+              if (section.adminOnly && !isAdmin) return null;
+
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors flex-shrink-0 ${
-                    isActive
-                      ? 'bg-[var(--brand-light)] text-[var(--brand)] font-medium'
-                      : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)]'
-                  }`}
-                >
-                  <item.icon size={16} />
-                  <div className="min-w-0">
-                    <div className="truncate">{item.label}</div>
-                    <div className="text-xs opacity-70 truncate hidden lg:block">{item.description}</div>
-                  </div>
-                </Link>
+                <div key={si}>
+                  {section.title && (
+                    <div className="hidden lg:flex items-center gap-1.5 px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-wider font-semibold text-[var(--muted-foreground)]">
+                      {section.icon && <section.icon size={12} />}
+                      {section.title}
+                    </div>
+                  )}
+                  {section.items.map((item) => {
+                    const isActive = item.exact
+                      ? pathname === item.href
+                      : pathname.startsWith(item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors flex-shrink-0 ${
+                          section.title ? 'lg:pl-5' : ''
+                        } ${
+                          isActive
+                            ? 'bg-[var(--brand-light)] text-[var(--brand)] font-medium'
+                            : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)]'
+                        }`}
+                      >
+                        <item.icon size={15} />
+                        <div className="min-w-0">
+                          <div className="truncate">{item.label}</div>
+                          <div className="text-xs opacity-70 truncate hidden lg:block">{item.description}</div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
               );
             })}
           </nav>
@@ -78,6 +110,18 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
 }
 
 /* Sidebar icon components */
+
+function BuildingIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
+      <path d="M9 22v-4h6v4" />
+      <path d="M8 6h.01" /><path d="M16 6h.01" />
+      <path d="M8 10h.01" /><path d="M16 10h.01" />
+      <path d="M8 14h.01" /><path d="M16 14h.01" />
+    </svg>
+  );
+}
 
 function GearIcon({ size = 16 }: { size?: number }) {
   return (
