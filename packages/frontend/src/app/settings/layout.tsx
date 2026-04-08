@@ -12,6 +12,7 @@ interface SidebarItem {
   description: string;
   icon: React.ComponentType<{ size?: number }>;
   exact?: boolean;
+  adminOnly?: boolean;
 }
 
 interface SidebarSection {
@@ -30,13 +31,12 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
   {
     title: 'Organization',
     icon: BuildingIcon,
-    adminOnly: true,
     items: [
-      { href: '/settings/organization', label: 'General', description: 'Workspace name and info', icon: BuildingIcon },
-      { href: '/settings/users', label: 'Users', description: 'Members and invitations', icon: UsersIcon },
-      { href: '/settings/roles', label: 'Roles', description: 'MCP tool access control', icon: ShieldIcon },
-      { href: '/settings/license', label: 'License', description: 'Plan, features', icon: KeyIcon },
-      { href: '/settings/admin', label: 'Administration', description: 'SMTP, footer links', icon: WrenchIcon },
+      { href: '/settings/organization', label: 'General', description: 'Workspace and new orgs', icon: BuildingIcon },
+      { href: '/settings/users', label: 'Users', description: 'Members and invitations', icon: UsersIcon, adminOnly: true },
+      { href: '/settings/roles', label: 'Roles', description: 'MCP tool access control', icon: ShieldIcon, adminOnly: true },
+      { href: '/settings/license', label: 'License', description: 'Plan, features', icon: KeyIcon, adminOnly: true },
+      { href: '/settings/admin', label: 'Administration', description: 'SMTP, footer links', icon: WrenchIcon, adminOnly: true },
     ],
   },
 ];
@@ -69,6 +69,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                     </div>
                   )}
                   {section.items.map((item) => {
+                    if (item.adminOnly && !isAdmin) return null;
                     const isActive = item.exact
                       ? pathname === item.href
                       : pathname.startsWith(item.href);

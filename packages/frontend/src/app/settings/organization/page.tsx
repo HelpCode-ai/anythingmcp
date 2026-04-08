@@ -18,6 +18,8 @@ export default function OrganizationSettingsPage() {
   const [creating, setCreating] = useState(false);
   const [createMessage, setCreateMessage] = useState('');
 
+  const isAdmin = user?.role === 'ADMIN';
+
   useEffect(() => {
     if (!token) return;
     organizations.getCurrent(token).then((org) => {
@@ -52,7 +54,6 @@ export default function OrganizationSettingsPage() {
       setCreateMessage('Organization created! Switching...');
       setNewOrgName('');
       setShowCreateForm(false);
-      // Switch to the new org
       await switchOrg(newOrg.id);
     } catch (err: any) {
       setCreateMessage(err.message || 'Failed to create organization');
@@ -60,35 +61,34 @@ export default function OrganizationSettingsPage() {
     }
   };
 
-  if (user?.role !== 'ADMIN') {
-    return (
-      <div className="text-center py-12 text-[var(--muted-foreground)]">
-        <p className="text-lg font-medium">Access Denied</p>
-        <p className="text-sm mt-1">Only administrators can manage the organization.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
         <h2 className="text-lg font-semibold">Organization</h2>
         <p className="text-sm text-[var(--muted-foreground)]">
-          Manage your workspace settings. All members of this organization share connectors, MCP servers, and tools.
+          {isAdmin
+            ? 'Manage your workspace settings. All members of this organization share connectors, MCP servers, and tools.'
+            : 'View your current organization and create new workspaces.'}
         </p>
       </div>
 
-      {/* Current organization */}
+      {/* Current organization — editable only for ADMIN */}
       <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5 space-y-4">
         <div>
           <label className="block text-sm font-medium mb-1">Organization Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand)] focus:border-transparent outline-none"
-            placeholder="My Workspace"
-          />
+          {isAdmin ? (
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand)] focus:border-transparent outline-none"
+              placeholder="My Workspace"
+            />
+          ) : (
+            <p className="px-3 py-2 bg-[var(--accent)] border border-[var(--border)] rounded-lg text-sm text-[var(--muted-foreground)]">
+              {name}
+            </p>
+          )}
         </div>
 
         <div>
@@ -99,6 +99,11 @@ export default function OrganizationSettingsPage() {
             readOnly
             className="w-full px-3 py-2 bg-[var(--accent)] border border-[var(--border)] rounded-lg text-sm text-[var(--muted-foreground)] cursor-not-allowed"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">Your Role</label>
+          <p className="text-sm text-[var(--muted-foreground)]">{user?.role}</p>
         </div>
 
         {createdAt && (
@@ -116,24 +121,26 @@ export default function OrganizationSettingsPage() {
           </p>
         )}
 
-        <div className="pt-2">
-          <button
-            onClick={handleSave}
-            disabled={saving || !name.trim()}
-            className="px-4 py-2 bg-[var(--brand)] text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="pt-2">
+            <button
+              onClick={handleSave}
+              disabled={saving || !name.trim()}
+              className="px-4 py-2 bg-[var(--brand)] text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Create new organization */}
+      {/* Create new organization — available to ALL users */}
       <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5 space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold">Create New Organization</h3>
             <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-              Create a separate workspace with its own connectors, MCP servers, and team.
+              Create a separate workspace with its own connectors, MCP servers, and team. You will be the admin.
             </p>
           </div>
           {!showCreateForm && (
@@ -185,7 +192,7 @@ export default function OrganizationSettingsPage() {
         )}
       </div>
 
-      {/* My organizations list */}
+      {/* My organizations list — available to ALL users */}
       {orgs && orgs.length > 1 && (
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5 space-y-3">
           <h3 className="text-sm font-semibold">My Organizations</h3>
