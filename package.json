@@ -1,6 +1,6 @@
 {
   "name": "anythingmcp",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Convert any API into an MCP server — self-hosted, source available",
   "private": true,
   "license": "BSL-1.1",
