@@ -138,7 +138,7 @@ export class McpEndpointController {
       { instructions },
     );
 
-    // Build invocation context for audit logging
+    // Build invocation context for audit logging and tool scoping
     // OAuth JWTs store email inside user_data, app JWTs have it top-level
     const invocationContext = {
       userId: user?.sub as string | undefined,
@@ -147,6 +147,7 @@ export class McpEndpointController {
       apiKeyName: user?.apiKeyName as string | undefined,
       mcpServerId: mcpServerConfig.id,
       mcpServerName: mcpServerConfig.name,
+      connectorIds,
     };
 
     for (const tool of serverTools) {
