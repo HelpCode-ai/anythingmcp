@@ -34,9 +34,9 @@ jobs:
         with:
           images: helpcodeai/anythingmcp
           tags: |
-            # "latest" when no custom tag is provided
-            type=raw,value=latest,enable=${{ inputs.tag == '' }}
-            # custom tag from workflow input
+            # always tag as latest
+            type=raw,value=latest
+            # version tag from workflow input (if provided)
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
             # short SHA for traceability
             type=sha,prefix=

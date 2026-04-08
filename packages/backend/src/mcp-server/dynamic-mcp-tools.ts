@@ -48,6 +48,7 @@ export class DynamicMcpTools {
       apiKeyName?: string;
       mcpServerId?: string;
       mcpServerName?: string;
+      connectorIds?: string[];
     },
   ): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
     // Check license before executing tool (cloud mode only)
@@ -67,7 +68,7 @@ export class DynamicMcpTools {
       };
     }
 
-    const tool = this.toolRegistry.getTool(toolName);
+    const tool = this.toolRegistry.getTool(toolName, context?.connectorIds);
     if (!tool) {
       return {
         content: [

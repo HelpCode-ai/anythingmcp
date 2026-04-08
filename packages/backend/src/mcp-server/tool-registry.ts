@@ -37,46 +37,64 @@ export interface RegisteredTool {
 @Injectable()
 export class ToolRegistry {
   private readonly logger = new Logger(ToolRegistry.name);
-  private readonly tools = new Map<string, RegisteredTool>();
+  // Keyed by tool.id (globally unique) to prevent cross-org name collisions
+  private readonly toolsById = new Map<string, RegisteredTool>();
+  // Secondary index by name for backward-compatible lookups (within a filtered set)
+  private readonly toolsByName = new Map<string, RegisteredTool[]>();
 
   /**
    * Register a tool in the runtime registry.
    */
   registerTool(tool: RegisteredTool): void {
-    this.tools.set(tool.name, tool);
-    this.logger.debug(`Registered MCP tool: ${tool.name}`);
+    this.toolsById.set(tool.id, tool);
+    // Append to name index (multiple tools can share a name across orgs)
+    const existing = this.toolsByName.get(tool.name) || [];
+    existing.push(tool);
+    this.toolsByName.set(tool.name, existing);
+    this.logger.debug(`Registered MCP tool: ${tool.name} (${tool.id})`);
   }
 
   /**
    * Unregister all tools belonging to a connector.
    */
   unregisterConnectorTools(connectorId: string): void {
-    for (const [name, tool] of this.tools.entries()) {
+    for (const [id, tool] of this.toolsById.entries()) {
       if (tool.connectorId === connectorId) {
-        this.tools.delete(name);
-        this.logger.debug(`Unregistered MCP tool: ${name}`);
+        this.toolsById.delete(id);
+        this.logger.debug(`Unregistered MCP tool: ${tool.name} (${id})`);
       }
+    }
+    // Rebuild name index
+    this.toolsByName.clear();
+    for (const tool of this.toolsById.values()) {
+      const existing = this.toolsByName.get(tool.name) || [];
+      existing.push(tool);
+      this.toolsByName.set(tool.name, existing);
     }
   }
 
   /**
-   * Get a tool definition by name.
+   * Get a tool definition by name, optionally scoped to connector IDs.
+   * When connectorIds is provided, only returns a tool from those connectors.
    */
-  getTool(name: string): RegisteredTool | undefined {
-    return this.tools.get(name);
+  getTool(name: string, connectorIds?: string[]): RegisteredTool | undefined {
+    const candidates = this.toolsByName.get(name);
+    if (!candidates || candidates.length === 0) return undefined;
+    if (!connectorIds) return candidates[0];
+    return candidates.find((t) => connectorIds.includes(t.connectorId));
   }
 
   /**
    * Get all registered tools.
    */
   getAllTools(): RegisteredTool[] {
-    return Array.from(this.tools.values());
+    return Array.from(this.toolsById.values());
   }
 
   /**
    * Get the count of registered tools.
    */
   getToolCount(): number {
-    return this.tools.size;
+    return this.toolsById.size;
   }
 }

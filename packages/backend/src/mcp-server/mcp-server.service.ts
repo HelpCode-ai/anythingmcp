@@ -184,9 +184,9 @@ export class McpServerService implements OnModuleInit {
           // Check MCP server scoping — if the API key is tied to a server,
           // only allow tools from connectors assigned to that server
           if (user.mcpServerId) {
-            const tool = this.toolRegistry.getTool(name);
+            const allowedConnectorIds = await this.mcpServersService.getConnectorIds(user.mcpServerId);
+            const tool = this.toolRegistry.getTool(name, allowedConnectorIds);
             if (tool) {
-              const allowedConnectorIds = await this.mcpServersService.getConnectorIds(user.mcpServerId);
               if (!allowedConnectorIds.includes(tool.connectorId)) {
                 return {
                   content: [{ type: 'text' as const, text: JSON.stringify({ error: `Tool '${name}' is not available on this MCP server.` }) }],
