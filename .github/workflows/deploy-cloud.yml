@@ -37,8 +37,11 @@ jobs:
             set -e
             cd /opt/anythingmcp-cloud
 
-            # Pull latest image
+            # Pull the requested tag AND refresh :latest, since
+            # docker-compose.cloud.yml references :latest. Without this
+            # the local :latest tag can point to an older image.
             docker pull helpcodeai/anythingmcp:${{ inputs.tag }}
+            docker pull helpcodeai/anythingmcp:latest
 
             # Update compose and Caddyfile from checkout
             cp /tmp/anythingmcp-deploy/docker-compose.cloud.yml ./docker-compose.cloud.yml
