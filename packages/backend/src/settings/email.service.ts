@@ -19,57 +19,78 @@ export class EmailService {
     private readonly prisma: PrismaService,
   ) {}
 
-  // ── Password Reset (SMTP only — no external fallback for security) ────────
+  // ── Password Reset (SMTP with external API fallback) ─────────────────────
 
   async sendPasswordResetEmail(
     to: string,
     resetUrl: string,
   ): Promise<boolean> {
     const smtp = await this.siteSettings.getSmtpConfig();
-    if (!smtp) {
+
+    if (smtp) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: smtp.host,
+          port: smtp.port,
+          secure: smtp.secure,
+          auth: {
+            user: smtp.user,
+            pass: smtp.pass,
+          },
+        });
+
+        await transporter.sendMail({
+          from: smtp.from || `AnythingMCP <${smtp.user}>`,
+          to,
+          subject: 'Password Reset — AnythingMCP',
+          html: `
+            <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+              <h2 style="color: #2563eb;">Password Reset</h2>
+              <p>You requested a password reset for your AnythingMCP account.</p>
+              <p>Click the button below to set a new password. This link expires in 1 hour.</p>
+              <a href="${resetUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
+                Reset Password
+              </a>
+              <p style="color: #737373; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
+              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+              <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
+            </div>
+          `,
+          text: `Password Reset\n\nYou requested a password reset. Click here to set a new password: ${resetUrl}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, ignore this email.`,
+        });
+
+        this.logger.log(`Password reset email sent to ${to}`);
+        return true;
+      } catch (err) {
+        this.logger.error(`Failed to send password reset via SMTP to ${to}: ${err}`);
+        return false;
+      }
+    }
+
+    // Fallback: send via external API (requires active license)
+    let licenseKey = await this.siteSettings.get('license_key');
+    if (!licenseKey) {
+      const activeLicense = await this.prisma.license.findFirst({
+        where: { status: 'active' },
+        orderBy: { createdAt: 'desc' },
+        select: { licenseKey: true },
+      });
+      if (activeLicense) licenseKey = activeLicense.licenseKey;
+    }
+    if (!licenseKey) {
       this.logger.warn(
-        'SMTP not configured for password reset, no fallback available',
+        `SMTP not configured and no license key available — cannot send password reset to ${to}`,
       );
       return false;
     }
-
-    try {
-      const transporter = nodemailer.createTransport({
-        host: smtp.host,
-        port: smtp.port,
-        secure: smtp.secure,
-        auth: {
-          user: smtp.user,
-          pass: smtp.pass,
-        },
-      });
-
-      await transporter.sendMail({
-        from: smtp.from || `AnythingMCP <${smtp.user}>`,
-        to,
-        subject: 'Password Reset — AnythingMCP',
-        html: `
-          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-            <h2 style="color: #2563eb;">Password Reset</h2>
-            <p>You requested a password reset for your AnythingMCP account.</p>
-            <p>Click the button below to set a new password. This link expires in 1 hour.</p>
-            <a href="${resetUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
-              Reset Password
-            </a>
-            <p style="color: #737373; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
-            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-            <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
-          </div>
-        `,
-        text: `Password Reset\n\nYou requested a password reset. Click here to set a new password: ${resetUrl}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, ignore this email.`,
-      });
-
-      this.logger.log(`Password reset email sent to ${to}`);
-      return true;
-    } catch (err) {
-      this.logger.error(`Failed to send email to ${to}: ${err}`);
-      return false;
-    }
+    this.logger.log(
+      `SMTP not configured, using external API fallback for password reset to ${to}`,
+    );
+    return this.sendViaExternalApi('/api/email/password-reset', {
+      email: to,
+      resetUrl,
+      licenseKey,
+    });
   }
 
   // ── Invitation Email (SMTP with external API fallback) ────────────────────
