@@ -6,7 +6,12 @@
   "category": "accounting",
   "icon": "datev",
   "docsUrl": "https://developer.datev.de/en/products",
-  "requiredEnvVars": ["DATEV_CLIENT_ID", "DATEV_CLIENT_SECRET", "DATEV_TOKEN_URL", "DATEV_AUTH_URL"],
+  "requiredEnvVars": [
+    "DATEV_CLIENT_ID",
+    "DATEV_CLIENT_SECRET",
+    "DATEV_TOKEN_URL",
+    "DATEV_AUTH_URL"
+  ],
   "connector": {
     "name": "DATEV Online APIs",
     "type": "REST",
@@ -51,11 +56,14 @@
             "description": "Unique GUID for the document (RFC4122 format: 8-4-4-4-12)"
           }
         },
-        "required": ["clientId", "documentGuid"]
+        "required": [
+          "clientId",
+          "documentGuid"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/clients/${clientId}/documents/${documentGuid}",
+        "path": "/clients/{clientId}/documents/{documentGuid}",
         "headers": {
           "Content-Type": "application/octet-stream"
         }
@@ -72,11 +80,13 @@
             "description": "The DATEV client ID"
           }
         },
-        "required": ["clientId"]
+        "required": [
+          "clientId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/clients/${clientId}/documents",
+        "path": "/clients/{clientId}/documents",
         "headers": {
           "Accept": "application/json"
         }
@@ -97,11 +107,14 @@
             "description": "The document GUID"
           }
         },
-        "required": ["clientId", "documentGuid"]
+        "required": [
+          "clientId",
+          "documentGuid"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/clients/${clientId}/documents/${documentGuid}",
+        "path": "/clients/{clientId}/documents/{documentGuid}",
         "headers": {
           "Accept": "application/json"
         }

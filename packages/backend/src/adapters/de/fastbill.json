@@ -6,12 +6,15 @@
   "category": "finance",
   "icon": "fastbill",
   "docsUrl": "https://apidocs.fastbill.com/fastbill/",
-  "requiredEnvVars": ["FASTBILL_EMAIL", "FASTBILL_API_KEY"],
+  "requiredEnvVars": [
+    "FASTBILL_EMAIL",
+    "FASTBILL_API_KEY"
+  ],
   "connector": {
     "name": "FastBill",
     "type": "REST",
     "baseUrl": "https://my.fastbill.com/api/1.0",
-    "authType": "BASIC",
+    "authType": "BASIC_AUTH",
     "authConfig": {
       "username": "{{FASTBILL_EMAIL}}",
       "password": "{{FASTBILL_API_KEY}}"
@@ -41,12 +44,12 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/api.php",
-        "body": {
+        "bodyMapping": {
           "SERVICE": "customer.get",
-          "LIMIT": "${LIMIT}",
-          "OFFSET": "${OFFSET}",
+          "LIMIT": "$LIMIT",
+          "OFFSET": "$OFFSET",
           "FILTER": {
-            "TERM": "${TERM}"
+            "TERM": "$TERM"
           }
         }
       }
@@ -82,14 +85,14 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/api.php",
-        "body": {
+        "bodyMapping": {
           "SERVICE": "invoice.get",
-          "LIMIT": "${LIMIT}",
-          "OFFSET": "${OFFSET}",
+          "LIMIT": "$LIMIT",
+          "OFFSET": "$OFFSET",
           "FILTER": {
-            "CUSTOMER_ID": "${CUSTOMER_ID}",
-            "MONTH": "${MONTH}",
-            "YEAR": "${YEAR}"
+            "CUSTOMER_ID": "$CUSTOMER_ID",
+            "MONTH": "$MONTH",
+            "YEAR": "$YEAR"
           }
         }
       }
@@ -121,13 +124,13 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/api.php",
-        "body": {
+        "bodyMapping": {
           "SERVICE": "expense.get",
-          "LIMIT": "${LIMIT}",
-          "OFFSET": "${OFFSET}",
+          "LIMIT": "$LIMIT",
+          "OFFSET": "$OFFSET",
           "FILTER": {
-            "MONTH": "${MONTH}",
-            "YEAR": "${YEAR}"
+            "MONTH": "$MONTH",
+            "YEAR": "$YEAR"
           }
         }
       }
@@ -151,10 +154,10 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/api.php",
-        "body": {
+        "bodyMapping": {
           "SERVICE": "revenue.get",
-          "LIMIT": "${LIMIT}",
-          "OFFSET": "${OFFSET}"
+          "LIMIT": "$LIMIT",
+          "OFFSET": "$OFFSET"
         }
       }
     },
@@ -169,15 +172,17 @@
             "description": "The FastBill invoice ID"
           }
         },
-        "required": ["INVOICE_ID"]
+        "required": [
+          "INVOICE_ID"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/api.php",
-        "body": {
+        "bodyMapping": {
           "SERVICE": "invoice.get",
           "FILTER": {
-            "INVOICE_ID": "${INVOICE_ID}"
+            "INVOICE_ID": "$INVOICE_ID"
           }
         }
       }

@@ -37,11 +37,13 @@
             "description": "The 12-digit AGS code of the region (e.g. '091620000000' for Munich, '110000000000' for Berlin). Use 5 digits + trailing zeros."
           }
         },
-        "required": ["ags"]
+        "required": [
+          "ags"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/dashboard/${ags}.json"
+        "path": "/dashboard/{ags}.json"
       }
     },
     {
@@ -55,11 +57,13 @@
             "description": "The warning ID (obtained from dashboard or region warnings)"
           }
         },
-        "required": ["warningId"]
+        "required": [
+          "warningId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/warnings/${warningId}.json"
+        "path": "/warnings/{warningId}.json"
       }
     },
     {
@@ -73,11 +77,13 @@
             "description": "The 12-digit AGS code of the region"
           }
         },
-        "required": ["ags"]
+        "required": [
+          "ags"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/appdata/covid/covidrules/DE/${ags}.json"
+        "path": "/appdata/covid/covidrules/DE/{ags}.json"
       }
     }
   ]

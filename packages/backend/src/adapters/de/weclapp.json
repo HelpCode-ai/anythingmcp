@@ -6,7 +6,10 @@
   "category": "erp",
   "icon": "weclapp",
   "docsUrl": "https://www.weclapp.com/api2/",
-  "requiredEnvVars": ["WECLAPP_TENANT", "WECLAPP_API_TOKEN"],
+  "requiredEnvVars": [
+    "WECLAPP_TENANT",
+    "WECLAPP_API_TOKEN"
+  ],
   "connector": {
     "name": "weclapp ERP",
     "type": "REST",
@@ -38,8 +41,8 @@
         "method": "GET",
         "path": "/customer",
         "queryParams": {
-          "page": "${page}",
-          "pageSize": "${pageSize}"
+          "page": "$page",
+          "pageSize": "$pageSize"
         }
       }
     },
@@ -54,11 +57,13 @@
             "description": "The weclapp customer ID"
           }
         },
-        "required": ["customerId"]
+        "required": [
+          "customerId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/customer/id/${customerId}"
+        "path": "/customer/id/{customerId}"
       }
     },
     {
@@ -81,8 +86,8 @@
         "method": "GET",
         "path": "/salesOrder",
         "queryParams": {
-          "page": "${page}",
-          "pageSize": "${pageSize}"
+          "page": "$page",
+          "pageSize": "$pageSize"
         }
       }
     },
@@ -106,8 +111,8 @@
         "method": "GET",
         "path": "/salesInvoice",
         "queryParams": {
-          "page": "${page}",
-          "pageSize": "${pageSize}"
+          "page": "$page",
+          "pageSize": "$pageSize"
         }
       }
     },
@@ -131,8 +136,8 @@
         "method": "GET",
         "path": "/article",
         "queryParams": {
-          "page": "${page}",
-          "pageSize": "${pageSize}"
+          "page": "$page",
+          "pageSize": "$pageSize"
         }
       }
     },
@@ -147,11 +152,13 @@
             "description": "The weclapp article ID"
           }
         },
-        "required": ["articleId"]
+        "required": [
+          "articleId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/article/id/${articleId}"
+        "path": "/article/id/{articleId}"
       }
     }
   ]

@@ -33,14 +33,16 @@
             "description": "End date in YYYY-MM-DD format (e.g. '2024-12-31')"
           }
         },
-        "required": ["currency"]
+        "required": [
+          "currency"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/data/BBEX3/D.${currency}.EUR.BB.AC.000",
+        "path": "/data/BBEX3/D.{currency}.EUR.BB.AC.000",
         "queryParams": {
-          "startPeriod": "${startPeriod}",
-          "endPeriod": "${endPeriod}",
+          "startPeriod": "$startPeriod",
+          "endPeriod": "$endPeriod",
           "detail": "dataonly"
         },
         "headers": {
@@ -68,8 +70,8 @@
         "method": "GET",
         "path": "/data/BBK01/SU0202",
         "queryParams": {
-          "startPeriod": "${startPeriod}",
-          "endPeriod": "${endPeriod}",
+          "startPeriod": "$startPeriod",
+          "endPeriod": "$endPeriod",
           "detail": "dataonly"
         },
         "headers": {
@@ -92,14 +94,16 @@
             "description": "Maximum number of results to return (default: 10, max: 100)"
           }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/metadata/series",
         "queryParams": {
-          "q": "${query}",
-          "limit": "${limit}"
+          "q": "$query",
+          "limit": "$limit"
         },
         "headers": {
           "Accept": "application/json"
@@ -125,14 +129,16 @@
             "description": "End date in YYYY-MM-DD format"
           }
         },
-        "required": ["seriesId"]
+        "required": [
+          "seriesId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/data/${seriesId}",
+        "path": "/data/{seriesId}",
         "queryParams": {
-          "startPeriod": "${startPeriod}",
-          "endPeriod": "${endPeriod}",
+          "startPeriod": "$startPeriod",
+          "endPeriod": "$endPeriod",
           "detail": "dataonly"
         },
         "headers": {

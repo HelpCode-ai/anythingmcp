@@ -6,7 +6,9 @@
   "category": "erp",
   "icon": "scopevisio",
   "docsUrl": "https://appload.scopevisio.com/static/swagger/index.html",
-  "requiredEnvVars": ["SCOPEVISIO_BEARER_TOKEN"],
+  "requiredEnvVars": [
+    "SCOPEVISIO_BEARER_TOKEN"
+  ],
   "connector": {
     "name": "ScopeVisio ERP",
     "type": "REST",
@@ -40,10 +42,10 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/contacts/list",
-        "body": {
-          "pageSize": "${pageSize}",
-          "page": "${page}",
-          "search": "${search}"
+        "bodyMapping": {
+          "pageSize": "$pageSize",
+          "page": "$page",
+          "search": "$search"
         }
       }
     },
@@ -58,11 +60,13 @@
             "description": "The ScopeVisio contact ID"
           }
         },
-        "required": ["contactId"]
+        "required": [
+          "contactId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/contacts/${contactId}"
+        "path": "/contacts/{contactId}"
       }
     },
     {
@@ -84,9 +88,9 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/outgoinginvoice/list",
-        "body": {
-          "pageSize": "${pageSize}",
-          "page": "${page}"
+        "bodyMapping": {
+          "pageSize": "$pageSize",
+          "page": "$page"
         }
       }
     },
@@ -109,9 +113,9 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/incominginvoice/list",
-        "body": {
-          "pageSize": "${pageSize}",
-          "page": "${page}"
+        "bodyMapping": {
+          "pageSize": "$pageSize",
+          "page": "$page"
         }
       }
     },
@@ -134,9 +138,9 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/project/list",
-        "body": {
-          "pageSize": "${pageSize}",
-          "page": "${page}"
+        "bodyMapping": {
+          "pageSize": "$pageSize",
+          "page": "$page"
         }
       }
     },
@@ -159,9 +163,9 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/task/list",
-        "body": {
-          "pageSize": "${pageSize}",
-          "page": "${page}"
+        "bodyMapping": {
+          "pageSize": "$pageSize",
+          "page": "$page"
         }
       }
     }

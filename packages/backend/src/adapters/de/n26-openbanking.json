@@ -6,7 +6,10 @@
   "category": "banking",
   "icon": "n26",
   "docsUrl": "https://docs.tech26.de/",
-  "requiredEnvVars": ["N26_CLIENT_ID", "N26_CLIENT_SECRET"],
+  "requiredEnvVars": [
+    "N26_CLIENT_ID",
+    "N26_CLIENT_SECRET"
+  ],
   "connector": {
     "name": "N26 Open Banking",
     "type": "REST",
@@ -44,11 +47,13 @@
             "description": "The N26 account ID (obtained from n26_get_accounts)"
           }
         },
-        "required": ["accountId"]
+        "required": [
+          "accountId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/v1/berlin-group/accounts/${accountId}/balances"
+        "path": "/v1/berlin-group/accounts/{accountId}/balances"
       }
     },
     {
@@ -74,15 +79,17 @@
             "description": "Filter by booking status: 'booked', 'pending', or 'both'. Default: 'booked'"
           }
         },
-        "required": ["accountId"]
+        "required": [
+          "accountId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/v1/berlin-group/accounts/${accountId}/transactions",
+        "path": "/v1/berlin-group/accounts/{accountId}/transactions",
         "queryParams": {
-          "dateFrom": "${dateFrom}",
-          "dateTo": "${dateTo}",
-          "bookingStatus": "${bookingStatus}"
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "bookingStatus": "$bookingStatus"
         }
       }
     }

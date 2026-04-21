@@ -1,0 +1,41 @@
+{
+  "slug": "dpd-germany",
+  "name": "DPD Germany Tracking",
+  "description": "Track DPD (Dynamic Parcel Distribution) shipments in Germany using the public Parcel Life Cycle REST API. Retrieves full event history, current status, sender/recipient, scan-point locations, and predicted delivery time for any DPD parcel.",
+  "instructions": "This connector uses DPD's public Parcel Life Cycle (PLC) REST endpoint — free and without authentication.\n\n**Parcel number format**: 14-digit numeric string (e.g. '01234567890123'). DPD also supports partial matches — the API will return the best match.\n\n**Supported languages**: `de_DE` (German), `en_DE` (English), `fr_FR`, `it_IT`, `es_ES`, `pl_PL`, `cs_CZ`, `nl_NL`. Pass without country code (e.g. 'en') and the API maps to country defaults.\n\n**Events returned**: each event has a timestamp, scan-point (depot/city), status code, and localized description — cover the full parcel journey from pickup through sorting to delivery.\n\n**Limitations**: the public endpoint rate-limits aggressive polling. For large-scale tracking integrations, DPD offers a contract-based SOAP API (WebConnect) — not covered by this adapter.",
+  "region": "de",
+  "category": "logistics",
+  "icon": "dpd",
+  "docsUrl": "https://www.dpd.com/de/de/hilfe-service/entwickler-api/",
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "DPD Germany Tracking",
+    "type": "REST",
+    "baseUrl": "https://tracking.dpd.de/rest/plc",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "dpd_track_parcel",
+      "description": "Track a DPD parcel by its parcel label number. Returns the full Parcel Life Cycle: each scan event with timestamp, location (depot/city), status code, and human-readable description, plus current state and estimated delivery.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcelNumber": {
+            "type": "string",
+            "description": "The 14-digit DPD parcel number from the shipping label."
+          },
+          "language": {
+            "type": "string",
+            "description": "Locale for event descriptions: 'de_DE', 'en_DE', 'fr_FR', 'it_IT', etc. Defaults to 'en_DE'."
+          }
+        },
+        "required": ["parcelNumber"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{language}/{parcelNumber}"
+      }
+    }
+  ]
+}

@@ -6,7 +6,9 @@
   "category": "hr",
   "icon": "kenjo",
   "docsUrl": "https://kenjo.readme.io/reference",
-  "requiredEnvVars": ["KENJO_API_KEY"],
+  "requiredEnvVars": [
+    "KENJO_API_KEY"
+  ],
   "connector": {
     "name": "Kenjo HR",
     "type": "REST",
@@ -37,8 +39,8 @@
         "method": "GET",
         "path": "/employees",
         "queryParams": {
-          "page": "${page}",
-          "limit": "${limit}"
+          "page": "$page",
+          "limit": "$limit"
         }
       }
     },
@@ -53,11 +55,13 @@
             "description": "The Kenjo employee ID"
           }
         },
-        "required": ["employeeId"]
+        "required": [
+          "employeeId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/employees/${employeeId}"
+        "path": "/employees/{employeeId}"
       }
     },
     {
@@ -104,8 +108,8 @@
         "method": "GET",
         "path": "/recruiting/positions",
         "queryParams": {
-          "page": "${page}",
-          "limit": "${limit}"
+          "page": "$page",
+          "limit": "$limit"
         }
       }
     },

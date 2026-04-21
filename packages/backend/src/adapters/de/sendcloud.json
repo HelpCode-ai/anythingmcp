@@ -1,0 +1,155 @@
+{
+  "slug": "sendcloud",
+  "name": "Sendcloud Multi-Carrier Shipping",
+  "description": "Create parcels, print labels, track shipments, and manage returns across major EU carriers (DHL, DPD, UPS, PostNL, Hermes, Colissimo, Bpost and 40+ more) through Sendcloud — the largest multi-carrier shipping platform in EU.",
+  "instructions": "This connector uses the Sendcloud v2 REST API.\n\n**Credentials** (two values, Basic auth): generate an API key pair at https://panel.sendcloud.sc/#/settings/integrations → 'Sendcloud API'. Paste the public key into `SENDCLOUD_PUBLIC_KEY` and the secret into `SENDCLOUD_SECRET_KEY` when importing.\n\n**Carriers covered**: DHL, DPD, UPS, PostNL, Hermes, Colissimo, Bpost, GLS, Chronopost, Mondial Relay, and 40+ more across EU. Use `sendcloud_list_shipping_methods` to get IDs and pricing per carrier.\n\n**Typical flow**:\n1. `sendcloud_list_shipping_methods` → pick a `shipping_method_id`\n2. `sendcloud_create_parcel` with `request_label: true` → returns parcel id + label URL + tracking number\n3. `sendcloud_get_parcel` → check current status (polled from carrier)\n\n**Test mode**: set `request_label: false` on create_parcel to get a price quote without generating a label (no billing).\n\n**Returns portal**: Sendcloud also provides a branded returns portal — configuration is done in the dashboard, not via this adapter.",
+  "region": "eu",
+  "category": "logistics",
+  "icon": "sendcloud",
+  "docsUrl": "https://api.sendcloud.dev/docs/sendcloud-public-api/",
+  "requiredEnvVars": ["SENDCLOUD_PUBLIC_KEY", "SENDCLOUD_SECRET_KEY"],
+  "connector": {
+    "name": "Sendcloud",
+    "type": "REST",
+    "baseUrl": "https://panel.sendcloud.sc/api/v2",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{SENDCLOUD_PUBLIC_KEY}}",
+      "password": "{{SENDCLOUD_SECRET_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "sendcloud_list_shipping_methods",
+      "description": "List all shipping methods available for the account, with carrier, service (e.g. 'DHL Express Domestic'), min/max weight, and price per destination country.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to_country": {
+            "type": "string",
+            "description": "Destination country ISO 2-letter code (e.g. 'DE', 'FR') — filters methods available for that country."
+          },
+          "from_country": {
+            "type": "string",
+            "description": "Origin country ISO 2-letter code."
+          },
+          "is_return": {
+            "type": "boolean",
+            "description": "If true, return only return-shipment methods."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping_methods",
+        "queryParams": {
+          "to_country": "$to_country",
+          "from_country": "$from_country",
+          "is_return": "$is_return"
+        }
+      }
+    },
+    {
+      "name": "sendcloud_create_parcel",
+      "description": "Create a parcel and optionally generate a shipping label. Returns parcel id, tracking_number, tracking_url, label URL, and price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcel": {
+            "type": "object",
+            "description": "Parcel object: { name, company_name?, address, address_2?, house_number, city, postal_code, country (ISO-2), email?, telephone?, weight (kg), length?, width?, height? (cm), order_number?, shipment: { id: shipping_method_id } }."
+          },
+          "request_label": {
+            "type": "boolean",
+            "description": "If true, generate a real label and bill. If false (default), creates an 'announced' parcel without a label."
+          }
+        },
+        "required": ["parcel"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/parcels",
+        "bodyMapping": {
+          "parcel": "$parcel",
+          "request_label": "$request_label"
+        }
+      }
+    },
+    {
+      "name": "sendcloud_get_parcel",
+      "description": "Retrieve a parcel by its Sendcloud id. Returns full parcel data including tracking number, current status, label URL, and tracking events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Sendcloud parcel id."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parcels/{id}"
+      }
+    },
+    {
+      "name": "sendcloud_list_parcels",
+      "description": "List recent parcels, filterable by order number, tracking number, or creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Filter by your shop order number."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Filter by the carrier's tracking number."
+          },
+          "created_at__gte": {
+            "type": "string",
+            "description": "Created at or after this ISO 8601 datetime (e.g. '2026-04-01T00:00:00Z')."
+          },
+          "created_at__lte": {
+            "type": "string",
+            "description": "Created at or before this ISO 8601 datetime."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parcels",
+        "queryParams": {
+          "order_number": "$order_number",
+          "tracking_number": "$tracking_number",
+          "created_at__gte": "$created_at__gte",
+          "created_at__lte": "$created_at__lte",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "sendcloud_get_parcel_status",
+      "description": "Get the current status and event timeline of a parcel — includes scan-point locations, timestamps, and status codes from the underlying carrier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Sendcloud parcel id."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parcels/{id}/status"
+      }
+    }
+  ]
+}

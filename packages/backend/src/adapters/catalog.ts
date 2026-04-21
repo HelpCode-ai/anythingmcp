@@ -14,6 +14,19 @@ import * as datev from './de/datev.json';
 import * as scopevisio from './de/scopevisio.json';
 import * as kenjo from './de/kenjo.json';
 import * as planradar from './de/planradar.json';
+import * as viesVat from './de/vies-vat.json';
+import * as handelsregister from './de/handelsregister.json';
+import * as deutscheBahn from './de/deutsche-bahn.json';
+import * as openplz from './de/openplz.json';
+import * as oxomi from './de/oxomi.json';
+import * as dpdGermany from './de/dpd-germany.json';
+import * as glsTracking from './de/gls-tracking.json';
+import * as shipcloud from './de/shipcloud.json';
+import * as sendcloud from './de/sendcloud.json';
+import * as xentral from './de/xentral.json';
+import * as shopware6 from './de/shopware-6.json';
+import * as hereGeocoding from './de/here-geocoding.json';
+import * as personio from './de/personio.json';
 
 export interface AdapterMeta {
   slug: string;
@@ -67,6 +80,19 @@ const ALL_ADAPTERS: AdapterDefinition[] = [
   scopevisio as unknown as AdapterDefinition,
   kenjo as unknown as AdapterDefinition,
   planradar as unknown as AdapterDefinition,
+  viesVat as unknown as AdapterDefinition,
+  handelsregister as unknown as AdapterDefinition,
+  deutscheBahn as unknown as AdapterDefinition,
+  openplz as unknown as AdapterDefinition,
+  oxomi as unknown as AdapterDefinition,
+  dpdGermany as unknown as AdapterDefinition,
+  glsTracking as unknown as AdapterDefinition,
+  shipcloud as unknown as AdapterDefinition,
+  sendcloud as unknown as AdapterDefinition,
+  xentral as unknown as AdapterDefinition,
+  shopware6 as unknown as AdapterDefinition,
+  hereGeocoding as unknown as AdapterDefinition,
+  personio as unknown as AdapterDefinition,
 ];
 
 export function listAdapters(): AdapterMeta[] {

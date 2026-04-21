@@ -139,4 +139,137 @@ describe('RestEngine', () => {
       }),
     );
   });
+
+  it('should recursively resolve $param references in nested bodyMapping', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+
+    await engine.execute(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' },
+      {
+        method: 'POST',
+        path: '/api.php',
+        bodyMapping: {
+          SERVICE: 'customer.get',
+          LIMIT: '$LIMIT',
+          FILTER: { TERM: '$TERM', COUNTRY: 'DE' },
+        },
+      },
+      { LIMIT: 25, TERM: 'acme' },
+    );
+
+    expect(mockedAxios).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          SERVICE: 'customer.get',
+          LIMIT: 25,
+          FILTER: { TERM: 'acme', COUNTRY: 'DE' },
+        },
+      }),
+    );
+  });
+
+  it('should drop missing params from nested bodyMapping instead of sending "$TERM" literals', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+
+    await engine.execute(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' },
+      {
+        method: 'POST',
+        path: '/api.php',
+        bodyMapping: {
+          SERVICE: 'customer.get',
+          FILTER: { TERM: '$TERM' },
+        },
+      },
+      {},
+    );
+
+    expect(mockedAxios).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { SERVICE: 'customer.get', FILTER: {} },
+      }),
+    );
+  });
+
+  it('should inject QUERY_AUTH credentials as query parameters and merge with endpoint queryParams', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+
+    await engine.execute(
+      {
+        baseUrl: 'https://api.example.com',
+        authType: 'QUERY_AUTH',
+        authConfig: { username: 'alice', password: 'secret' },
+      },
+      {
+        method: 'GET',
+        path: '/find',
+        queryParams: { term: '$searchterm' },
+      },
+      { searchterm: 'hello' },
+    );
+
+    expect(mockedAxios).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: { username: 'alice', password: 'secret', term: 'hello' },
+      }),
+    );
+  });
+
+  it('should interpolate embedded ${param} references inside query param strings', async () => {
+    mockedAxios.mockResolvedValue({ data: [] });
+
+    await engine.execute(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' },
+      {
+        method: 'GET',
+        path: '/ServiceRequests',
+        queryParams: { $filter: "ExternalId eq '${externalId}'" },
+      },
+      { externalId: 'T-5432' },
+    );
+
+    expect(mockedAxios).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: { $filter: "ExternalId eq 'T-5432'" },
+      }),
+    );
+  });
+
+  it('should drop query param when an embedded placeholder is missing', async () => {
+    mockedAxios.mockResolvedValue({ data: [] });
+
+    await engine.execute(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' },
+      {
+        method: 'GET',
+        path: '/ServiceRequests',
+        queryParams: { $filter: "ExternalId eq '${externalId}'" },
+      },
+      {},
+    );
+
+    expect(mockedAxios).toHaveBeenCalledWith(
+      expect.objectContaining({ params: {} }),
+    );
+  });
+
+  it('should drop optional query params when the value is undefined', async () => {
+    mockedAxios.mockResolvedValue({ data: [] });
+
+    await engine.execute(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' },
+      {
+        method: 'GET',
+        path: '/search',
+        queryParams: { q: '$query', limit: '$limit' },
+      },
+      { query: 'hello' },
+    );
+
+    expect(mockedAxios).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: { q: 'hello' },
+      }),
+    );
+  });
 });

@@ -1,0 +1,176 @@
+{
+  "slug": "personio",
+  "name": "Personio HR",
+  "description": "Access employee records, attendances, absences, and time-offs via the Personio REST API. Personio is the dominant HR platform for DACH SMBs.",
+  "instructions": "This connector uses the Personio v1 REST API.\n\n**Authentication model — IMPORTANT**: Personio's /auth endpoint is not a standard OAuth2 flow. You POST {client_id, client_secret} once and get back a short-lived bearer token, which is then passed as `Authorization: Bearer <token>` on every request. Each successful API response ALSO returns a new token in its Authorization response header that must be used for the next call — effectively a token-rotation scheme. This adapter uses a single long-lived bearer token supplied by you (`PERSONIO_TOKEN`).\n\n**Getting a token**: in Personio admin → Settings → Integrations → API credentials, create a new set, then exchange them for a token via `curl -X POST https://api.personio.de/v1/auth -d 'client_id=...&client_secret=...'`. Paste the returned `token` as `PERSONIO_TOKEN` when importing the connector.\n\n**Token rotation limitation**: because the adapter sends the SAME token on each call, the first call succeeds but subsequent ones may fail once Personio starts rotating. In practice Personio tolerates the same token for a few minutes — good enough for ad-hoc AI workflows but not high-volume integrations. For production, generate a fresh token per session or wrap this adapter in a custom proxy.\n\n**Scopes**: the token inherits the API credential's configured scopes (Employees, Attendances, Absences, Time Offs). Configure these in Personio before generating the token.\n\n**Rate limit**: 10 requests/second per API credential.",
+  "region": "de",
+  "category": "hr",
+  "icon": "personio",
+  "docsUrl": "https://developer.personio.de/reference",
+  "requiredEnvVars": ["PERSONIO_TOKEN"],
+  "connector": {
+    "name": "Personio",
+    "type": "REST",
+    "baseUrl": "https://api.personio.de/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{PERSONIO_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "personio_list_employees",
+      "description": "List all employees. Returns id, first/last name, email, position, department, office, hire date, status (active/inactive/onboarding/leave/offboarded) and supervisor. Supports filtering by email, department, or status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Filter by employee email (exact match)."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default: 200, max: 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Offset for pagination."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/employees",
+        "queryParams": {
+          "email": "$email",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "personio_get_employee",
+      "description": "Retrieve a single employee by id. Returns all custom attributes, contract details, salary band (if token has permission), and personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Personio employee id."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/employees/{id}"
+      }
+    },
+    {
+      "name": "personio_list_absences",
+      "description": "List absences (Abwesenheiten) — vacation, sick leave, parental leave, etc. Returns type, start/end date, half-day flag, certificate URL, and approval status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Filter: absences overlapping on or after this ISO date (e.g. '2026-01-01')."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Filter: absences overlapping on or before this date."
+          },
+          "employees": {
+            "type": "string",
+            "description": "Comma-separated employee ids to filter by."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Offset for pagination."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/time-offs",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "employees": "$employees",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "personio_list_attendances",
+      "description": "List attendance records (working hours). Returns date, employee, start/end time, break minutes, project (if project tracking enabled), and comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Earliest attendance date (ISO, e.g. '2026-04-01'). Required."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Latest attendance date (ISO). Required."
+          },
+          "employees": {
+            "type": "string",
+            "description": "Comma-separated employee ids to scope the query."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Offset for pagination."
+          }
+        },
+        "required": ["start_date", "end_date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/attendances",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "employees": "$employees",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "personio_list_absence_types",
+      "description": "List the configured absence types (vacation, sick, parental leave, etc.) with id, name, category, and unit (days vs hours). Use ids when creating new absences.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Max results."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Offset for pagination."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/time-off-types",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

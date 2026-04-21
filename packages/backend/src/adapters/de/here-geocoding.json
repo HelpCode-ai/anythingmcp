@@ -1,0 +1,216 @@
+{
+  "slug": "here-geocoding",
+  "name": "HERE Geocoding & Search",
+  "description": "Geocode addresses, reverse-geocode coordinates, autocomplete addresses as-you-type, and search places via the HERE Location Services API. Useful for address validation, delivery-route planning, and storefront locators. Free tier covers 250k requests/month.",
+  "instructions": "This connector uses the HERE Geocoding & Search v7 REST API.\n\n**Credentials**: generate a REST API key at https://platform.here.com → Projects → API Keys. Paste it into `HERE_API_KEY` when importing. The key is passed as a query parameter (`apiKey`), not as a header.\n\n**Pricing**: HERE's Freemium plan includes 250,000 requests/month free. Bulk batch geocoding requires a paid plan.\n\n**Countries**: worldwide coverage. Use `in=countryCode:DEU` or ISO 3-letter country filter for scope.\n\n**Addressing strategies**:\n- `/geocode` — full forward geocoding (structured or unstructured input)\n- `/autocomplete` — very fast address autocomplete, returns short snippets\n- `/autosuggest` — richer suggestions including POIs, chains, addresses\n- `/revgeocode` — coordinates → address\n- `/discover` — place search with categories, brands, opening hours\n\n**Languages**: add `lang=de` or any BCP-47 tag to localise labels.\n\n**In Germany / Baustoff use-case**: use `in=countryCode:DEU&lang=de` to force German labels on addresses for consistency with ERP records.",
+  "region": "global",
+  "category": "mapping",
+  "icon": "here",
+  "docsUrl": "https://www.here.com/docs/bundle/geocoding-and-search-api-developer-guide/page/README.html",
+  "requiredEnvVars": ["HERE_API_KEY"],
+  "connector": {
+    "name": "HERE Geocoding",
+    "type": "REST",
+    "baseUrl": "https://geocode.search.hereapi.com/v1",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "apiKey": "{{HERE_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "here_geocode",
+      "description": "Forward-geocode an address to coordinates. Returns matches with position, label, address components (country, state, city, postalCode, street, houseNumber), result type, and match quality score.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Free-form address query (e.g. 'Kaiser-Joseph-Straße 1, 79098 Freiburg')."
+          },
+          "qq": {
+            "type": "string",
+            "description": "Qualified query — structured address as key=value;… pairs (e.g. 'city=Freiburg;street=Kaiser-Joseph-Straße;houseNumber=1'). Use for disambiguation."
+          },
+          "in": {
+            "type": "string",
+            "description": "Area filter (e.g. 'countryCode:DEU' to scope to Germany, or 'bbox:w,s,e,n')."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default: 20, max: 100)."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Response language BCP-47 tag (e.g. 'de', 'en-US')."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/geocode",
+        "queryParams": {
+          "q": "$q",
+          "qq": "$qq",
+          "in": "$in",
+          "limit": "$limit",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "here_reverse_geocode",
+      "description": "Reverse-geocode coordinates to a human-readable address. Returns the nearest address with full components.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "description": "Coordinates as 'lat,lng' (e.g. '47.9959,7.8522' for Freiburg Münster)."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default: 1)."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Response language."
+          }
+        },
+        "required": ["at"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/revgeocode",
+        "queryParams": {
+          "at": "$at",
+          "limit": "$limit",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "here_autocomplete",
+      "description": "Fast address-only autocomplete for as-you-type address fields. Returns short labelled snippets. Use when you only need addresses and want the lowest latency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Partial address query."
+          },
+          "at": {
+            "type": "string",
+            "description": "Optional anchor coordinates 'lat,lng' — biases results near the given point."
+          },
+          "in": {
+            "type": "string",
+            "description": "Area filter like 'countryCode:DEU'."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max suggestions (default: 5, max: 20)."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Response language."
+          }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autocomplete",
+        "queryParams": {
+          "q": "$q",
+          "at": "$at",
+          "in": "$in",
+          "limit": "$limit",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "here_autosuggest",
+      "description": "Rich autosuggest — returns addresses AND places/POIs (shops, chains, landmarks). Ideal for search bars where users might type either an address or a business name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Partial query (address, POI name, category)."
+          },
+          "at": {
+            "type": "string",
+            "description": "Required for place results — anchor coordinates 'lat,lng'."
+          },
+          "in": {
+            "type": "string",
+            "description": "Area filter."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max suggestions."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Response language."
+          }
+        },
+        "required": ["q", "at"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autosuggest",
+        "queryParams": {
+          "q": "$q",
+          "at": "$at",
+          "in": "$in",
+          "limit": "$limit",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "here_discover",
+      "description": "Discover places, POIs, and businesses near a location or within an area — filterable by category (e.g. 'building-material' Baustoffhandel), chain, or brand. Returns each match with position, contact info, opening hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search term (place name, category, brand)."
+          },
+          "at": {
+            "type": "string",
+            "description": "Anchor coordinates 'lat,lng' — required if `in` is not provided."
+          },
+          "in": {
+            "type": "string",
+            "description": "Area filter (bbox or circle) — required if `at` is not provided."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default 20)."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Response language."
+          }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/discover",
+        "queryParams": {
+          "q": "$q",
+          "at": "$at",
+          "in": "$in",
+          "limit": "$limit",
+          "lang": "$lang"
+        }
+      }
+    }
+  ]
+}

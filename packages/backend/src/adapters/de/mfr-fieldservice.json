@@ -7,12 +7,15 @@
   "category": "field-service",
   "icon": "mfr",
   "docsUrl": "https://portal.mobilefieldreport.com/",
-  "requiredEnvVars": ["MFR_USERNAME", "MFR_PASSWORD"],
+  "requiredEnvVars": [
+    "MFR_USERNAME",
+    "MFR_PASSWORD"
+  ],
   "connector": {
     "name": "MFR Field Service",
     "type": "REST",
     "baseUrl": "https://portal.mobilefieldreport.com/odata",
-    "authType": "BASIC",
+    "authType": "BASIC_AUTH",
     "authConfig": {
       "username": "{{MFR_USERNAME}}",
       "password": "{{MFR_PASSWORD}}"
@@ -79,11 +82,13 @@
             "description": "Expand related entities. Options: ServiceObjects, Customer, Reports, Items, Steps, Comments, Appointments, Appointments/Contacts, Tags, Qualifications"
           }
         },
-        "required": ["requestId"]
+        "required": [
+          "requestId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/ServiceRequests(${requestId}L)",
+        "path": "/ServiceRequests({requestId}L)",
         "queryParams": {
           "$expand": "${$expand}"
         }
@@ -104,7 +109,9 @@
             "description": "Expand related entities. Options: ServiceObjects, Customer, Reports, Items, Steps, Comments, Appointments, Appointments/Contacts, Tags, Qualifications"
           }
         },
-        "required": ["externalId"]
+        "required": [
+          "externalId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -170,7 +177,9 @@
             "description": "Create from an existing template by providing the template's ID"
           }
         },
-        "required": ["Name"]
+        "required": [
+          "Name"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -220,11 +229,13 @@
             "description": "Updated cost center ID"
           }
         },
-        "required": ["requestId"]
+        "required": [
+          "requestId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/ServiceRequests(${requestId}L)"
+        "path": "/ServiceRequests({requestId}L)"
       }
     },
     {
@@ -238,11 +249,13 @@
             "description": "The service request numeric ID to delete"
           }
         },
-        "required": ["requestId"]
+        "required": [
+          "requestId"
+        ]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/ServiceRequests(${requestId}L)"
+        "path": "/ServiceRequests({requestId}L)"
       }
     },
     {
@@ -260,14 +273,15 @@
             "description": "The service object numeric ID to link"
           }
         },
-        "required": ["requestId", "serviceObjectId"]
+        "required": [
+          "requestId",
+          "serviceObjectId"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/ServiceRequests(${requestId}L)/$links/ServiceObjects",
-        "body": {
-          "url": "https://portal.mobilefieldreport.com/odata/ServiceObjects(${serviceObjectId}L)"
-        }
+        "path": "/ServiceRequests({requestId}L)/$links/ServiceObjects",
+        "bodyTemplate": "{\"url\":\"https://portal.mobilefieldreport.com/odata/ServiceObjects(${serviceObjectId}L)\"}"
       }
     },
     {
@@ -285,14 +299,15 @@
             "description": "The document numeric ID to link"
           }
         },
-        "required": ["requestId", "documentId"]
+        "required": [
+          "requestId",
+          "documentId"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/ServiceRequests(${requestId}L)/$links/Documents",
-        "body": {
-          "url": "https://portal.mobilefieldreport.com/odata/Documents(${documentId}L)"
-        }
+        "path": "/ServiceRequests({requestId}L)/$links/Documents",
+        "bodyTemplate": "{\"url\":\"https://portal.mobilefieldreport.com/odata/Documents(${documentId}L)\"}"
       }
     },
     {
@@ -310,14 +325,15 @@
             "description": "The tag numeric ID to add"
           }
         },
-        "required": ["requestId", "tagId"]
+        "required": [
+          "requestId",
+          "tagId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/ServiceRequests(${requestId}L)/$links/Tags",
-        "body": {
-          "url": "https://portal.mobilefieldreport.com/odata/Tags(${tagId}L)"
-        }
+        "path": "/ServiceRequests({requestId}L)/$links/Tags",
+        "bodyTemplate": "{\"url\":\"https://portal.mobilefieldreport.com/odata/Tags(${tagId}L)\"}"
       }
     },
     {
@@ -335,14 +351,15 @@
             "description": "The tag numeric ID to remove"
           }
         },
-        "required": ["requestId", "tagId"]
+        "required": [
+          "requestId",
+          "tagId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/ServiceRequests(${requestId}L)/$links/RemoveTags",
-        "body": {
-          "url": "https://portal.mobilefieldreport.com/odata/Tags(${tagId}L)"
-        }
+        "path": "/ServiceRequests({requestId}L)/$links/RemoveTags",
+        "bodyTemplate": "{\"url\":\"https://portal.mobilefieldreport.com/odata/Tags(${tagId}L)\"}"
       }
     },
     {
@@ -360,14 +377,15 @@
             "description": "The qualification numeric ID to add"
           }
         },
-        "required": ["requestId", "qualificationId"]
+        "required": [
+          "requestId",
+          "qualificationId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/ServiceRequests(${requestId}L)/$links/Qualifications",
-        "body": {
-          "url": "https://portal.mobilefieldreport.com/odata/Qualifications(${qualificationId}L)"
-        }
+        "path": "/ServiceRequests({requestId}L)/$links/Qualifications",
+        "bodyTemplate": "{\"url\":\"https://portal.mobilefieldreport.com/odata/Qualifications(${qualificationId}L)\"}"
       }
     },
     {
@@ -385,14 +403,15 @@
             "description": "The qualification numeric ID to remove"
           }
         },
-        "required": ["requestId", "qualificationId"]
+        "required": [
+          "requestId",
+          "qualificationId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/ServiceRequests(${requestId}L)/$links/RemoveQualifications",
-        "body": {
-          "url": "https://portal.mobilefieldreport.com/odata/Qualifications(${qualificationId}L)"
-        }
+        "path": "/ServiceRequests({requestId}L)/$links/RemoveQualifications",
+        "bodyTemplate": "{\"url\":\"https://portal.mobilefieldreport.com/odata/Qualifications(${qualificationId}L)\"}"
       }
     },
     {
@@ -479,7 +498,12 @@
             "description": "Additional notes for the appointment"
           }
         },
-        "required": ["Type", "StartDateTime", "EndDateTime", "ContactId"]
+        "required": [
+          "Type",
+          "StartDateTime",
+          "EndDateTime",
+          "ContactId"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -521,11 +545,13 @@
             "description": "Updated notes"
           }
         },
-        "required": ["appointmentId"]
+        "required": [
+          "appointmentId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Appointments(${appointmentId}L)"
+        "path": "/Appointments({appointmentId}L)"
       }
     },
     {
@@ -539,11 +565,13 @@
             "description": "The appointment numeric ID to delete"
           }
         },
-        "required": ["appointmentId"]
+        "required": [
+          "appointmentId"
+        ]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/Appointments(${appointmentId}L)"
+        "path": "/Appointments({appointmentId}L)"
       }
     },
     {
@@ -606,11 +634,13 @@
             "description": "Expand related entities. Options: Contacts, Tags, ServiceObjects, MainContact"
           }
         },
-        "required": ["companyId"]
+        "required": [
+          "companyId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/Companies(${companyId}L)",
+        "path": "/Companies({companyId}L)",
         "queryParams": {
           "$expand": "${$expand}"
         }
@@ -663,7 +693,9 @@
             "description": "Address object with fields: AddressString (street), Postal (zip code), City, State, Country (ISO code e.g. 'DE', 'GB')"
           }
         },
-        "required": ["Name"]
+        "required": [
+          "Name"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -680,20 +712,46 @@
             "type": "string",
             "description": "The company numeric ID"
           },
-          "Name": { "type": "string", "description": "Updated company name" },
-          "ExternalId": { "type": "string", "description": "Updated external ID" },
-          "IsPhysicalPerson": { "type": "boolean", "description": "Is individual person" },
-          "Note": { "type": "string", "description": "Updated notes" },
-          "SupportTelephone": { "type": "string", "description": "Updated phone" },
-          "SupportFax": { "type": "string", "description": "Updated fax" },
-          "SupportMail": { "type": "string", "description": "Updated email" },
-          "Location": { "type": "object", "description": "Updated address: {AddressString, Postal, City, State, Country}" }
+          "Name": {
+            "type": "string",
+            "description": "Updated company name"
+          },
+          "ExternalId": {
+            "type": "string",
+            "description": "Updated external ID"
+          },
+          "IsPhysicalPerson": {
+            "type": "boolean",
+            "description": "Is individual person"
+          },
+          "Note": {
+            "type": "string",
+            "description": "Updated notes"
+          },
+          "SupportTelephone": {
+            "type": "string",
+            "description": "Updated phone"
+          },
+          "SupportFax": {
+            "type": "string",
+            "description": "Updated fax"
+          },
+          "SupportMail": {
+            "type": "string",
+            "description": "Updated email"
+          },
+          "Location": {
+            "type": "object",
+            "description": "Updated address: {AddressString, Postal, City, State, Country}"
+          }
         },
-        "required": ["companyId"]
+        "required": [
+          "companyId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Companies(${companyId}L)"
+        "path": "/Companies({companyId}L)"
       }
     },
     {
@@ -702,13 +760,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "companyId": { "type": "string", "description": "The company numeric ID to delete" }
+          "companyId": {
+            "type": "string",
+            "description": "The company numeric ID to delete"
+          }
         },
-        "required": ["companyId"]
+        "required": [
+          "companyId"
+        ]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/Companies(${companyId}L)"
+        "path": "/Companies({companyId}L)"
       }
     },
     {
@@ -717,15 +780,30 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": { "type": "number", "description": "Max results to return" },
-          "$skip": { "type": "number", "description": "Results to skip for pagination" },
+          "$top": {
+            "type": "number",
+            "description": "Max results to return"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Results to skip for pagination"
+          },
           "$filter": {
             "type": "string",
             "description": "OData filter. Filterable fields: FirstName, LastName, Email, CompanyId, IsUser (true/false), Gender ('Male', 'Female'), ExternalId, DateModified. Examples: \"CompanyId eq '6026428432'\", \"LastName eq 'Smith'\", \"IsUser eq true\", \"DateModified gt datetime'2025-01-01T00:00:00'\""
           },
-          "$orderby": { "type": "string", "description": "Sort: 'LastName asc', 'DateModified desc'" },
-          "$expand": { "type": "string", "description": "Expand: Company, User" },
-          "$select": { "type": "string", "description": "Select specific fields" }
+          "$orderby": {
+            "type": "string",
+            "description": "Sort: 'LastName asc', 'DateModified desc'"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Company, User"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields"
+          }
         }
       },
       "endpointMapping": {
@@ -747,15 +825,25 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "contactId": { "type": "string", "description": "The contact numeric ID" },
-          "$expand": { "type": "string", "description": "Expand: Company, User" }
+          "contactId": {
+            "type": "string",
+            "description": "The contact numeric ID"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Company, User"
+          }
         },
-        "required": ["contactId"]
+        "required": [
+          "contactId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/Contacts(${contactId}L)",
-        "queryParams": { "$expand": "${$expand}" }
+        "path": "/Contacts({contactId}L)",
+        "queryParams": {
+          "$expand": "${$expand}"
+        }
       }
     },
     {
@@ -764,20 +852,59 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "FirstName": { "type": "string", "description": "First name" },
-          "LastName": { "type": "string", "description": "Last name" },
-          "Email": { "type": "string", "description": "Email address" },
-          "JobTitle": { "type": "string", "description": "Job title/role" },
-          "MobilePhone": { "type": "string", "description": "Mobile phone number" },
-          "Telephone": { "type": "string", "description": "Landline phone number" },
-          "Fax": { "type": "string", "description": "Fax number" },
-          "Note": { "type": "string", "description": "Internal notes" },
-          "Gender": { "type": "string", "description": "Gender: 'Male' or 'Female'" },
-          "CompanyId": { "type": "string", "description": "Company ID to link (use '0' for no company)" },
-          "IsUser": { "type": "boolean", "description": "Whether this contact is also a system user (default: false)" },
-          "ExternalId": { "type": "string", "description": "Your system's reference ID" }
+          "FirstName": {
+            "type": "string",
+            "description": "First name"
+          },
+          "LastName": {
+            "type": "string",
+            "description": "Last name"
+          },
+          "Email": {
+            "type": "string",
+            "description": "Email address"
+          },
+          "JobTitle": {
+            "type": "string",
+            "description": "Job title/role"
+          },
+          "MobilePhone": {
+            "type": "string",
+            "description": "Mobile phone number"
+          },
+          "Telephone": {
+            "type": "string",
+            "description": "Landline phone number"
+          },
+          "Fax": {
+            "type": "string",
+            "description": "Fax number"
+          },
+          "Note": {
+            "type": "string",
+            "description": "Internal notes"
+          },
+          "Gender": {
+            "type": "string",
+            "description": "Gender: 'Male' or 'Female'"
+          },
+          "CompanyId": {
+            "type": "string",
+            "description": "Company ID to link (use '0' for no company)"
+          },
+          "IsUser": {
+            "type": "boolean",
+            "description": "Whether this contact is also a system user (default: false)"
+          },
+          "ExternalId": {
+            "type": "string",
+            "description": "Your system's reference ID"
+          }
         },
-        "required": ["FirstName", "LastName"]
+        "required": [
+          "FirstName",
+          "LastName"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -790,22 +917,54 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "contactId": { "type": "string", "description": "The contact numeric ID" },
-          "FirstName": { "type": "string", "description": "Updated first name" },
-          "LastName": { "type": "string", "description": "Updated last name" },
-          "Email": { "type": "string", "description": "Updated email" },
-          "JobTitle": { "type": "string", "description": "Updated job title" },
-          "MobilePhone": { "type": "string", "description": "Updated mobile phone" },
-          "Telephone": { "type": "string", "description": "Updated phone" },
-          "Note": { "type": "string", "description": "Updated notes" },
-          "Gender": { "type": "string", "description": "'Male' or 'Female'" },
-          "ExternalId": { "type": "string", "description": "Updated external ID" }
+          "contactId": {
+            "type": "string",
+            "description": "The contact numeric ID"
+          },
+          "FirstName": {
+            "type": "string",
+            "description": "Updated first name"
+          },
+          "LastName": {
+            "type": "string",
+            "description": "Updated last name"
+          },
+          "Email": {
+            "type": "string",
+            "description": "Updated email"
+          },
+          "JobTitle": {
+            "type": "string",
+            "description": "Updated job title"
+          },
+          "MobilePhone": {
+            "type": "string",
+            "description": "Updated mobile phone"
+          },
+          "Telephone": {
+            "type": "string",
+            "description": "Updated phone"
+          },
+          "Note": {
+            "type": "string",
+            "description": "Updated notes"
+          },
+          "Gender": {
+            "type": "string",
+            "description": "'Male' or 'Female'"
+          },
+          "ExternalId": {
+            "type": "string",
+            "description": "Updated external ID"
+          }
         },
-        "required": ["contactId"]
+        "required": [
+          "contactId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Contacts(${contactId}L)"
+        "path": "/Contacts({contactId}L)"
       }
     },
     {
@@ -814,23 +973,42 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": { "type": "number", "description": "Max results to return" },
-          "$skip": { "type": "number", "description": "Results to skip for pagination" },
+          "$top": {
+            "type": "number",
+            "description": "Max results to return"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Results to skip for pagination"
+          },
           "$filter": {
             "type": "string",
             "description": "OData filter. Filterable fields: Name, ExternalId, CompanyId (use Company/Id), IsWarehouse, IsProduct, DateModified. Examples: \"Company/Id eq 10981310465L\", \"Name eq 'Generator A1'\", \"IsWarehouse eq true\", \"DateModified gt datetime'2025-01-01T00:00:00'\""
           },
-          "$orderby": { "type": "string", "description": "Sort: 'Name asc', 'DateModified desc'" },
-          "$expand": { "type": "string", "description": "Expand: Contacts, Company, Product, Tags" },
-          "$select": { "type": "string", "description": "Select specific fields" }
+          "$orderby": {
+            "type": "string",
+            "description": "Sort: 'Name asc', 'DateModified desc'"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Contacts, Company, Product, Tags"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/ServiceObjects",
         "queryParams": {
-          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
-          "$orderby": "${$orderby}", "$expand": "${$expand}", "$select": "${$select}"
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}",
+          "$orderby": "${$orderby}",
+          "$expand": "${$expand}",
+          "$select": "${$select}"
         }
       }
     },
@@ -840,15 +1018,25 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "serviceObjectId": { "type": "string", "description": "The service object numeric ID" },
-          "$expand": { "type": "string", "description": "Expand: Contacts, Company, Product, Tags" }
+          "serviceObjectId": {
+            "type": "string",
+            "description": "The service object numeric ID"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Contacts, Company, Product, Tags"
+          }
         },
-        "required": ["serviceObjectId"]
+        "required": [
+          "serviceObjectId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/ServiceObjects(${serviceObjectId}L)",
-        "queryParams": { "$expand": "${$expand}" }
+        "path": "/ServiceObjects({serviceObjectId}L)",
+        "queryParams": {
+          "$expand": "${$expand}"
+        }
       }
     },
     {
@@ -857,15 +1045,38 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "Name": { "type": "string", "description": "Object name" },
-          "ExternalId": { "type": "string", "description": "Your system's reference ID" },
-          "CompanyId": { "type": "string", "description": "Company ID that owns this object" },
-          "Note": { "type": "string", "description": "Internal notes" },
-          "ParentServiceObjectId": { "type": "string", "description": "Parent object ID for hierarchy (use '0' for root)" },
-          "ProductId": { "type": "string", "description": "Product catalog ID to link (use '0' for none)" },
-          "Location": { "type": "object", "description": "Address: {AddressString, Postal, City, State, Country}" }
+          "Name": {
+            "type": "string",
+            "description": "Object name"
+          },
+          "ExternalId": {
+            "type": "string",
+            "description": "Your system's reference ID"
+          },
+          "CompanyId": {
+            "type": "string",
+            "description": "Company ID that owns this object"
+          },
+          "Note": {
+            "type": "string",
+            "description": "Internal notes"
+          },
+          "ParentServiceObjectId": {
+            "type": "string",
+            "description": "Parent object ID for hierarchy (use '0' for root)"
+          },
+          "ProductId": {
+            "type": "string",
+            "description": "Product catalog ID to link (use '0' for none)"
+          },
+          "Location": {
+            "type": "object",
+            "description": "Address: {AddressString, Postal, City, State, Country}"
+          }
         },
-        "required": ["Name"]
+        "required": [
+          "Name"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -878,19 +1089,42 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "serviceObjectId": { "type": "string", "description": "The service object numeric ID" },
-          "Name": { "type": "string", "description": "Updated name" },
-          "ExternalId": { "type": "string", "description": "Updated external ID" },
-          "CompanyId": { "type": "string", "description": "Updated company ID" },
-          "Note": { "type": "string", "description": "Updated notes" },
-          "ParentServiceObjectId": { "type": "string", "description": "Updated parent ID" },
-          "Location": { "type": "object", "description": "Updated address" }
+          "serviceObjectId": {
+            "type": "string",
+            "description": "The service object numeric ID"
+          },
+          "Name": {
+            "type": "string",
+            "description": "Updated name"
+          },
+          "ExternalId": {
+            "type": "string",
+            "description": "Updated external ID"
+          },
+          "CompanyId": {
+            "type": "string",
+            "description": "Updated company ID"
+          },
+          "Note": {
+            "type": "string",
+            "description": "Updated notes"
+          },
+          "ParentServiceObjectId": {
+            "type": "string",
+            "description": "Updated parent ID"
+          },
+          "Location": {
+            "type": "object",
+            "description": "Updated address"
+          }
         },
-        "required": ["serviceObjectId"]
+        "required": [
+          "serviceObjectId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/ServiceObjects(${serviceObjectId}L)"
+        "path": "/ServiceObjects({serviceObjectId}L)"
       }
     },
     {
@@ -899,13 +1133,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "serviceObjectId": { "type": "string", "description": "The service object numeric ID to delete" }
+          "serviceObjectId": {
+            "type": "string",
+            "description": "The service object numeric ID to delete"
+          }
         },
-        "required": ["serviceObjectId"]
+        "required": [
+          "serviceObjectId"
+        ]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/ServiceObjects(${serviceObjectId}L)"
+        "path": "/ServiceObjects({serviceObjectId}L)"
       }
     },
     {
@@ -914,21 +1153,32 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": { "type": "number", "description": "Max results to return" },
+          "$top": {
+            "type": "number",
+            "description": "Max results to return"
+          },
           "$filter": {
             "type": "string",
             "description": "OData filter. Filterable fields: UserName, IsActive (true/false), IsMobile (true/false), IsSystem (true/false), ContactId. Examples: \"IsActive eq true\", \"IsMobile eq true\", \"UserName eq '1demo@simplias.com'\""
           },
-          "$expand": { "type": "string", "description": "Expand: Contact" },
-          "$select": { "type": "string", "description": "Select specific fields" }
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Contact"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/Users",
         "queryParams": {
-          "$top": "${$top}", "$filter": "${$filter}",
-          "$expand": "${$expand}", "$select": "${$select}"
+          "$top": "${$top}",
+          "$filter": "${$filter}",
+          "$expand": "${$expand}",
+          "$select": "${$select}"
         }
       }
     },
@@ -938,15 +1188,28 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "userId": { "type": "string", "description": "The user numeric ID" },
-          "IsActive": { "type": "boolean", "description": "Set to true to activate, false to deactivate" },
-          "ContactId": { "type": "string", "description": "The user's contact ID" }
+          "userId": {
+            "type": "string",
+            "description": "The user numeric ID"
+          },
+          "IsActive": {
+            "type": "boolean",
+            "description": "Set to true to activate, false to deactivate"
+          },
+          "ContactId": {
+            "type": "string",
+            "description": "The user's contact ID"
+          }
         },
-        "required": ["userId", "IsActive", "ContactId"]
+        "required": [
+          "userId",
+          "IsActive",
+          "ContactId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Users(${userId}L)"
+        "path": "/Users({userId}L)"
       }
     },
     {
@@ -955,22 +1218,37 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": { "type": "number", "description": "Max results to return" },
-          "$skip": { "type": "number", "description": "Results to skip for pagination" },
+          "$top": {
+            "type": "number",
+            "description": "Max results to return"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Results to skip for pagination"
+          },
           "$filter": {
             "type": "string",
             "description": "OData filter. Filterable fields: Name, SubKey, DateModified. Examples: \"Name eq 'Heat Pump X200'\", \"DateModified gt datetime'2025-01-01T00:00:00'\""
           },
-          "$expand": { "type": "string", "description": "Expand: CustomValueStepTemplate/Steps" },
-          "$select": { "type": "string", "description": "Select specific fields" }
+          "$expand": {
+            "type": "string",
+            "description": "Expand: CustomValueStepTemplate/Steps"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/Products",
         "queryParams": {
-          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
-          "$expand": "${$expand}", "$select": "${$select}"
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}",
+          "$expand": "${$expand}",
+          "$select": "${$select}"
         }
       }
     },
@@ -980,15 +1258,25 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "productId": { "type": "string", "description": "The product numeric ID" },
-          "$expand": { "type": "string", "description": "Expand: CustomValueStepTemplate/Steps" }
+          "productId": {
+            "type": "string",
+            "description": "The product numeric ID"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: CustomValueStepTemplate/Steps"
+          }
         },
-        "required": ["productId"]
+        "required": [
+          "productId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/Products(${productId}L)",
-        "queryParams": { "$expand": "${$expand}" }
+        "path": "/Products({productId}L)",
+        "queryParams": {
+          "$expand": "${$expand}"
+        }
       }
     },
     {
@@ -997,11 +1285,22 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "Name": { "type": "string", "description": "Product name" },
-          "SubKey": { "type": "string", "description": "Sub-key/model number" },
-          "Description": { "type": "string", "description": "Product description" }
+          "Name": {
+            "type": "string",
+            "description": "Product name"
+          },
+          "SubKey": {
+            "type": "string",
+            "description": "Sub-key/model number"
+          },
+          "Description": {
+            "type": "string",
+            "description": "Product description"
+          }
         },
-        "required": ["Name"]
+        "required": [
+          "Name"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1014,22 +1313,37 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": { "type": "number", "description": "Max results to return" },
-          "$skip": { "type": "number", "description": "Results to skip" },
+          "$top": {
+            "type": "number",
+            "description": "Max results to return"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Results to skip"
+          },
           "$filter": {
             "type": "string",
             "description": "OData filter. Filterable fields: FileName, ContentType, IsGlobal, ExternalId, ServiceRequestId, DateModified. Examples: \"ContentType eq 'application/pdf'\", \"IsGlobal eq true\", \"ServiceRequestId eq '11164418048'\""
           },
-          "$expand": { "type": "string", "description": "Expand: ServiceRequest" },
-          "$select": { "type": "string", "description": "Select specific fields" }
+          "$expand": {
+            "type": "string",
+            "description": "Expand: ServiceRequest"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/Documents",
         "queryParams": {
-          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
-          "$expand": "${$expand}", "$select": "${$select}"
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}",
+          "$expand": "${$expand}",
+          "$select": "${$select}"
         }
       }
     },
@@ -1039,15 +1353,25 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "documentId": { "type": "string", "description": "The document numeric ID" },
-          "$expand": { "type": "string", "description": "Expand: ServiceRequest" }
+          "documentId": {
+            "type": "string",
+            "description": "The document numeric ID"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: ServiceRequest"
+          }
         },
-        "required": ["documentId"]
+        "required": [
+          "documentId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/Documents(${documentId}L)",
-        "queryParams": { "$expand": "${$expand}" }
+        "path": "/Documents({documentId}L)",
+        "queryParams": {
+          "$expand": "${$expand}"
+        }
       }
     },
     {
@@ -1056,17 +1380,34 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "documentId": { "type": "string", "description": "The document numeric ID" },
-          "FileName": { "type": "string", "description": "Updated file name" },
-          "ExternalId": { "type": "string", "description": "Updated external ID" },
-          "Note": { "type": "string", "description": "Updated notes" },
-          "IsGlobal": { "type": "boolean", "description": "Set to true to make globally available" }
+          "documentId": {
+            "type": "string",
+            "description": "The document numeric ID"
+          },
+          "FileName": {
+            "type": "string",
+            "description": "Updated file name"
+          },
+          "ExternalId": {
+            "type": "string",
+            "description": "Updated external ID"
+          },
+          "Note": {
+            "type": "string",
+            "description": "Updated notes"
+          },
+          "IsGlobal": {
+            "type": "boolean",
+            "description": "Set to true to make globally available"
+          }
         },
-        "required": ["documentId"]
+        "required": [
+          "documentId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Documents(${documentId}L)"
+        "path": "/Documents({documentId}L)"
       }
     },
     {
@@ -1075,13 +1416,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "documentId": { "type": "string", "description": "The document numeric ID to delete" }
+          "documentId": {
+            "type": "string",
+            "description": "The document numeric ID to delete"
+          }
         },
-        "required": ["documentId"]
+        "required": [
+          "documentId"
+        ]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/Documents(${documentId}L)"
+        "path": "/Documents({documentId}L)"
       }
     },
     {
@@ -1090,23 +1436,42 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": { "type": "number", "description": "Max results to return" },
-          "$skip": { "type": "number", "description": "Results to skip" },
+          "$top": {
+            "type": "number",
+            "description": "Max results to return"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Results to skip"
+          },
           "$filter": {
             "type": "string",
             "description": "OData filter. Filterable fields: TimeEventType ('eWorking', 'eDriving', 'ePause', 'eVacation', 'eIllness', 'eOther', 'eCustomTimeEvent'), StartDateTime, EndDateTime, ContactId (use Contact/Id), ServiceRequestId, IsApproved, DateModified. Examples: \"StartDateTime gt datetime'2025-01-01T00:00:00'\", \"Contact/Id eq 410583043L\", \"TimeEventType eq 'eWorking'\", \"IsApproved eq true\""
           },
-          "$orderby": { "type": "string", "description": "Sort: 'StartDateTime desc', 'EndDateTime asc'" },
-          "$expand": { "type": "string", "description": "Expand: Contact, ServiceRequest" },
-          "$select": { "type": "string", "description": "Select specific fields" }
+          "$orderby": {
+            "type": "string",
+            "description": "Sort: 'StartDateTime desc', 'EndDateTime asc'"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Contact, ServiceRequest"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/TimeEvents",
         "queryParams": {
-          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
-          "$orderby": "${$orderby}", "$expand": "${$expand}", "$select": "${$select}"
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}",
+          "$orderby": "${$orderby}",
+          "$expand": "${$expand}",
+          "$select": "${$select}"
         }
       }
     },
@@ -1116,13 +1481,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "serviceRequestId": { "type": "string", "description": "The service request numeric ID" }
+          "serviceRequestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          }
         },
-        "required": ["serviceRequestId"]
+        "required": [
+          "serviceRequestId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/ServiceRequests(${serviceRequestId}L)",
+        "path": "/ServiceRequests({serviceRequestId}L)",
         "queryParams": {
           "$expand": "TimeEvents",
           "$select": "TimeEvents"
@@ -1139,14 +1509,37 @@
             "type": "string",
             "description": "Type of time event. Values: 'eWorking' (on-site work), 'eDriving' (travel), 'ePause' (break), 'eVacation', 'eIllness', 'eOther', 'eCustomTimeEvent'"
           },
-          "StartDateTime": { "type": "string", "description": "Start time in ISO 8601 (e.g. '2026-06-15T08:00:00Z')" },
-          "EndDateTime": { "type": "string", "description": "End time in ISO 8601" },
-          "ContactId": { "type": "string", "description": "Technician/contact ID" },
-          "ServiceRequestId": { "type": "string", "description": "Linked service request ID (use '0' for standalone events like vacation)" },
-          "Description": { "type": "string", "description": "Description of work done" },
-          "IsApproved": { "type": "boolean", "description": "Whether this time event is pre-approved (default: false)" }
+          "StartDateTime": {
+            "type": "string",
+            "description": "Start time in ISO 8601 (e.g. '2026-06-15T08:00:00Z')"
+          },
+          "EndDateTime": {
+            "type": "string",
+            "description": "End time in ISO 8601"
+          },
+          "ContactId": {
+            "type": "string",
+            "description": "Technician/contact ID"
+          },
+          "ServiceRequestId": {
+            "type": "string",
+            "description": "Linked service request ID (use '0' for standalone events like vacation)"
+          },
+          "Description": {
+            "type": "string",
+            "description": "Description of work done"
+          },
+          "IsApproved": {
+            "type": "boolean",
+            "description": "Whether this time event is pre-approved (default: false)"
+          }
         },
-        "required": ["TimeEventType", "StartDateTime", "EndDateTime", "ContactId"]
+        "required": [
+          "TimeEventType",
+          "StartDateTime",
+          "EndDateTime",
+          "ContactId"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1159,13 +1552,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "serviceRequestId": { "type": "string", "description": "The service request numeric ID" }
+          "serviceRequestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          }
         },
-        "required": ["serviceRequestId"]
+        "required": [
+          "serviceRequestId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/ServiceRequests(${serviceRequestId}L)",
+        "path": "/ServiceRequests({serviceRequestId}L)",
         "queryParams": {
           "$expand": "Steps",
           "$select": "Steps"
@@ -1178,15 +1576,25 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "stepId": { "type": "string", "description": "The step numeric ID" },
-          "$expand": { "type": "string", "description": "Expand: Attachments" }
+          "stepId": {
+            "type": "string",
+            "description": "The step numeric ID"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Attachments"
+          }
         },
-        "required": ["stepId"]
+        "required": [
+          "stepId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/Steps(${stepId}L)",
-        "queryParams": { "$expand": "${$expand}" }
+        "path": "/Steps({stepId}L)",
+        "queryParams": {
+          "$expand": "${$expand}"
+        }
       }
     },
     {
@@ -1195,19 +1603,43 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "Name": { "type": "string", "description": "Step name/title" },
+          "Name": {
+            "type": "string",
+            "description": "Step name/title"
+          },
           "Type": {
             "type": "string",
             "description": "Step type. Values: 'EnterValue' (data entry fields), 'Choice' (selection), 'Picture' (photo capture), 'SignDocument' (signature), 'Material' (material tracking), 'Group' (group container for sub-steps)"
           },
-          "Description": { "type": "string", "description": "Step description (HTML supported)" },
-          "Comment": { "type": "string", "description": "Technician comment" },
-          "ServiceRequestId": { "type": "string", "description": "Service request ID (for request checklist steps)" },
-          "StepListTemplateId": { "type": "string", "description": "Template ID (for template steps)" },
-          "ParentId": { "type": "string", "description": "Parent step ID for nested steps within a Group (use '0' for root level)" },
-          "Data": { "type": "string", "description": "JSON string defining step fields. For EnterValue: {\"fields\": [{\"isRequired\": true, \"name\": \"Field name\", \"type\": \"text|choice|float\", \"enumeration\": \"Opt1;Opt2\", \"unit\": \"kg\"}]}" }
+          "Description": {
+            "type": "string",
+            "description": "Step description (HTML supported)"
+          },
+          "Comment": {
+            "type": "string",
+            "description": "Technician comment"
+          },
+          "ServiceRequestId": {
+            "type": "string",
+            "description": "Service request ID (for request checklist steps)"
+          },
+          "StepListTemplateId": {
+            "type": "string",
+            "description": "Template ID (for template steps)"
+          },
+          "ParentId": {
+            "type": "string",
+            "description": "Parent step ID for nested steps within a Group (use '0' for root level)"
+          },
+          "Data": {
+            "type": "string",
+            "description": "JSON string defining step fields. For EnterValue: {\"fields\": [{\"isRequired\": true, \"name\": \"Field name\", \"type\": \"text|choice|float\", \"enumeration\": \"Opt1;Opt2\", \"unit\": \"kg\"}]}"
+          }
         },
-        "required": ["Name", "Type"]
+        "required": [
+          "Name",
+          "Type"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1220,20 +1652,46 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "stepId": { "type": "string", "description": "The step numeric ID" },
-          "Name": { "type": "string", "description": "Updated step name" },
-          "IsDone": { "type": "boolean", "description": "Mark step as completed (true) or incomplete (false)" },
-          "HasError": { "type": "boolean", "description": "Flag step as having an error" },
-          "Comment": { "type": "string", "description": "Technician comment" },
-          "Description": { "type": "string", "description": "Updated description" },
-          "Data": { "type": "string", "description": "Updated JSON field data" },
-          "ServiceRequestId": { "type": "string", "description": "Service request ID" }
+          "stepId": {
+            "type": "string",
+            "description": "The step numeric ID"
+          },
+          "Name": {
+            "type": "string",
+            "description": "Updated step name"
+          },
+          "IsDone": {
+            "type": "boolean",
+            "description": "Mark step as completed (true) or incomplete (false)"
+          },
+          "HasError": {
+            "type": "boolean",
+            "description": "Flag step as having an error"
+          },
+          "Comment": {
+            "type": "string",
+            "description": "Technician comment"
+          },
+          "Description": {
+            "type": "string",
+            "description": "Updated description"
+          },
+          "Data": {
+            "type": "string",
+            "description": "Updated JSON field data"
+          },
+          "ServiceRequestId": {
+            "type": "string",
+            "description": "Service request ID"
+          }
         },
-        "required": ["stepId"]
+        "required": [
+          "stepId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Steps(${stepId}L)"
+        "path": "/Steps({stepId}L)"
       }
     },
     {
@@ -1242,13 +1700,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "stepId": { "type": "string", "description": "The step numeric ID to delete" }
+          "stepId": {
+            "type": "string",
+            "description": "The step numeric ID to delete"
+          }
         },
-        "required": ["stepId"]
+        "required": [
+          "stepId"
+        ]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/Steps(${stepId}L)"
+        "path": "/Steps({stepId}L)"
       }
     },
     {
@@ -1257,22 +1720,37 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": { "type": "number", "description": "Max results to return" },
-          "$skip": { "type": "number", "description": "Results to skip" },
+          "$top": {
+            "type": "number",
+            "description": "Max results to return"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Results to skip"
+          },
           "$filter": {
             "type": "string",
             "description": "OData filter. Filterable fields: NameOrNumber, ExternalId, Type ('Material', 'QuickFilter'), IsDiscontinued, DateModified. Examples: \"Type eq 'Material'\", \"substringof('Pump', NameOrNumber)\""
           },
-          "$expand": { "type": "string", "description": "Expand: Unit" },
-          "$select": { "type": "string", "description": "Select specific fields" }
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Unit"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/ItemTypes",
         "queryParams": {
-          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
-          "$expand": "${$expand}", "$select": "${$select}"
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}",
+          "$expand": "${$expand}",
+          "$select": "${$select}"
         }
       }
     },
@@ -1282,15 +1760,25 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "itemTypeId": { "type": "string", "description": "The item type numeric ID" },
-          "$expand": { "type": "string", "description": "Expand: Unit" }
+          "itemTypeId": {
+            "type": "string",
+            "description": "The item type numeric ID"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Unit"
+          }
         },
-        "required": ["itemTypeId"]
+        "required": [
+          "itemTypeId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/ItemTypes(${itemTypeId}L)",
-        "queryParams": { "$expand": "${$expand}" }
+        "path": "/ItemTypes({itemTypeId}L)",
+        "queryParams": {
+          "$expand": "${$expand}"
+        }
       }
     },
     {
@@ -1299,18 +1787,51 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "NameOrNumber": { "type": "string", "description": "Item name or article number" },
-          "Type": { "type": "string", "description": "Type: 'Material' or 'QuickFilter'" },
-          "ExternalId": { "type": "string", "description": "Your system's article ID" },
-          "Description": { "type": "string", "description": "Item description" },
-          "Manufacture": { "type": "string", "description": "Manufacturer/brand" },
-          "Price": { "type": "string", "description": "Selling price (e.g. '5.99')" },
-          "Costs": { "type": "string", "description": "Cost price (e.g. '3.00')" },
-          "VAT": { "type": "string", "description": "VAT percentage (e.g. '19' for 19%)" },
-          "UnitId": { "type": "string", "description": "Unit ID from ItemUnits (use '0' for default)" },
-          "GlobalTradeItemNr": { "type": "string", "description": "GTIN/EAN barcode number" }
+          "NameOrNumber": {
+            "type": "string",
+            "description": "Item name or article number"
+          },
+          "Type": {
+            "type": "string",
+            "description": "Type: 'Material' or 'QuickFilter'"
+          },
+          "ExternalId": {
+            "type": "string",
+            "description": "Your system's article ID"
+          },
+          "Description": {
+            "type": "string",
+            "description": "Item description"
+          },
+          "Manufacture": {
+            "type": "string",
+            "description": "Manufacturer/brand"
+          },
+          "Price": {
+            "type": "string",
+            "description": "Selling price (e.g. '5.99')"
+          },
+          "Costs": {
+            "type": "string",
+            "description": "Cost price (e.g. '3.00')"
+          },
+          "VAT": {
+            "type": "string",
+            "description": "VAT percentage (e.g. '19' for 19%)"
+          },
+          "UnitId": {
+            "type": "string",
+            "description": "Unit ID from ItemUnits (use '0' for default)"
+          },
+          "GlobalTradeItemNr": {
+            "type": "string",
+            "description": "GTIN/EAN barcode number"
+          }
         },
-        "required": ["NameOrNumber", "Type"]
+        "required": [
+          "NameOrNumber",
+          "Type"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1323,18 +1844,48 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "itemTypeId": { "type": "string", "description": "The item type numeric ID" },
-          "NameOrNumber": { "type": "string" }, "Type": { "type": "string" },
-          "Description": { "type": "string" }, "Manufacture": { "type": "string" },
-          "Price": { "type": "string" }, "Costs": { "type": "string" },
-          "VAT": { "type": "string" }, "ExternalId": { "type": "string" },
-          "UnitId": { "type": "string" }, "GlobalTradeItemNr": { "type": "string" }
+          "itemTypeId": {
+            "type": "string",
+            "description": "The item type numeric ID"
+          },
+          "NameOrNumber": {
+            "type": "string"
+          },
+          "Type": {
+            "type": "string"
+          },
+          "Description": {
+            "type": "string"
+          },
+          "Manufacture": {
+            "type": "string"
+          },
+          "Price": {
+            "type": "string"
+          },
+          "Costs": {
+            "type": "string"
+          },
+          "VAT": {
+            "type": "string"
+          },
+          "ExternalId": {
+            "type": "string"
+          },
+          "UnitId": {
+            "type": "string"
+          },
+          "GlobalTradeItemNr": {
+            "type": "string"
+          }
         },
-        "required": ["itemTypeId"]
+        "required": [
+          "itemTypeId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/ItemTypes(${itemTypeId}L)"
+        "path": "/ItemTypes({itemTypeId}L)"
       }
     },
     {
@@ -1343,13 +1894,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "itemTypeId": { "type": "string", "description": "The item type numeric ID" }
+          "itemTypeId": {
+            "type": "string",
+            "description": "The item type numeric ID"
+          }
         },
-        "required": ["itemTypeId"]
+        "required": [
+          "itemTypeId"
+        ]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/ItemTypes(${itemTypeId}L)"
+        "path": "/ItemTypes({itemTypeId}L)"
       }
     },
     {
@@ -1358,13 +1914,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "serviceRequestId": { "type": "string", "description": "The service request numeric ID" }
+          "serviceRequestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          }
         },
-        "required": ["serviceRequestId"]
+        "required": [
+          "serviceRequestId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/ServiceRequests(${serviceRequestId}L)",
+        "path": "/ServiceRequests({serviceRequestId}L)",
         "queryParams": {
           "$expand": "Items",
           "$select": "Items"
@@ -1377,24 +1938,76 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "ServiceRequestId": { "type": "string", "description": "Service request ID" },
-          "ItemTypeId": { "type": "string", "description": "Item type ID from catalog (use '0' for ad-hoc)" },
-          "NameOrNumber": { "type": "string", "description": "Item name or article number" },
-          "Type": { "type": "string", "description": "Type: 'Material', 'Equipment', 'Service'" },
-          "QuantityHours": { "type": "string", "description": "Quantity or hours used (e.g. '2.50')" },
-          "PlannedQuantityHours": { "type": "string", "description": "Planned quantity/hours" },
-          "Price": { "type": "string", "description": "Unit price" },
-          "Costs": { "type": "string", "description": "Unit cost" },
-          "Discount": { "type": "string", "description": "Discount percentage (e.g. '10.00')" },
-          "VAT": { "type": "string", "description": "VAT rate (e.g. '0.19' for 19%)" },
-          "Manufacture": { "type": "string", "description": "Manufacturer reference" },
-          "Note": { "type": "string", "description": "Notes" },
-          "ExternalId": { "type": "string", "description": "External reference" },
-          "UnitId": { "type": "string", "description": "Unit ID" },
-          "UnitString": { "type": "string", "description": "Unit display string (e.g. 'pcs', 'kg', 'm', 'h')" },
-          "ServiceObjectId": { "type": "string", "description": "Linked service object ID (use '0' for none)" }
+          "ServiceRequestId": {
+            "type": "string",
+            "description": "Service request ID"
+          },
+          "ItemTypeId": {
+            "type": "string",
+            "description": "Item type ID from catalog (use '0' for ad-hoc)"
+          },
+          "NameOrNumber": {
+            "type": "string",
+            "description": "Item name or article number"
+          },
+          "Type": {
+            "type": "string",
+            "description": "Type: 'Material', 'Equipment', 'Service'"
+          },
+          "QuantityHours": {
+            "type": "string",
+            "description": "Quantity or hours used (e.g. '2.50')"
+          },
+          "PlannedQuantityHours": {
+            "type": "string",
+            "description": "Planned quantity/hours"
+          },
+          "Price": {
+            "type": "string",
+            "description": "Unit price"
+          },
+          "Costs": {
+            "type": "string",
+            "description": "Unit cost"
+          },
+          "Discount": {
+            "type": "string",
+            "description": "Discount percentage (e.g. '10.00')"
+          },
+          "VAT": {
+            "type": "string",
+            "description": "VAT rate (e.g. '0.19' for 19%)"
+          },
+          "Manufacture": {
+            "type": "string",
+            "description": "Manufacturer reference"
+          },
+          "Note": {
+            "type": "string",
+            "description": "Notes"
+          },
+          "ExternalId": {
+            "type": "string",
+            "description": "External reference"
+          },
+          "UnitId": {
+            "type": "string",
+            "description": "Unit ID"
+          },
+          "UnitString": {
+            "type": "string",
+            "description": "Unit display string (e.g. 'pcs', 'kg', 'm', 'h')"
+          },
+          "ServiceObjectId": {
+            "type": "string",
+            "description": "Linked service object ID (use '0' for none)"
+          }
         },
-        "required": ["ServiceRequestId", "NameOrNumber", "Type"]
+        "required": [
+          "ServiceRequestId",
+          "NameOrNumber",
+          "Type"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1407,16 +2020,36 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "itemId": { "type": "string", "description": "The item numeric ID" },
-          "QuantityHours": { "type": "string" }, "Price": { "type": "string" },
-          "Discount": { "type": "string" }, "Note": { "type": "string" },
-          "NameOrNumber": { "type": "string" }, "ExternalId": { "type": "string" }
+          "itemId": {
+            "type": "string",
+            "description": "The item numeric ID"
+          },
+          "QuantityHours": {
+            "type": "string"
+          },
+          "Price": {
+            "type": "string"
+          },
+          "Discount": {
+            "type": "string"
+          },
+          "Note": {
+            "type": "string"
+          },
+          "NameOrNumber": {
+            "type": "string"
+          },
+          "ExternalId": {
+            "type": "string"
+          }
         },
-        "required": ["itemId"]
+        "required": [
+          "itemId"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Items(${itemId}L)"
+        "path": "/Items({itemId}L)"
       }
     },
     {
@@ -1425,13 +2058,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "itemId": { "type": "string", "description": "The item numeric ID" }
+          "itemId": {
+            "type": "string",
+            "description": "The item numeric ID"
+          }
         },
-        "required": ["itemId"]
+        "required": [
+          "itemId"
+        ]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/Items(${itemId}L)"
+        "path": "/Items({itemId}L)"
       }
     },
     {
@@ -1452,9 +2090,14 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "Name": { "type": "string", "description": "Unit name (e.g. 'pieces', 'kg', 'meters', 'hours', 'daily')" }
+          "Name": {
+            "type": "string",
+            "description": "Unit name (e.g. 'pieces', 'kg', 'meters', 'hours', 'daily')"
+          }
         },
-        "required": ["Name"]
+        "required": [
+          "Name"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1467,22 +2110,37 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "$top": { "type": "number", "description": "Max results to return" },
-          "$skip": { "type": "number", "description": "Results to skip" },
+          "$top": {
+            "type": "number",
+            "description": "Max results to return"
+          },
+          "$skip": {
+            "type": "number",
+            "description": "Results to skip"
+          },
           "$filter": {
             "type": "string",
             "description": "OData filter. Filterable fields: InvoiceState ('eIsDraft', 'eIsPaid', 'eIsSent', 'eIsOverdue'), InvoiceDate, DueDate, DatePayed, InvoiceBalance. Examples: \"InvoiceState eq 'eIsPaid'\", \"InvoiceDate gt datetime'2025-01-01T00:00:00'\", \"InvoiceBalance gt 1000\""
           },
-          "$orderby": { "type": "string", "description": "Sort: 'InvoiceDate desc', 'InvoiceBalance desc'" },
-          "$select": { "type": "string", "description": "Select specific fields" }
+          "$orderby": {
+            "type": "string",
+            "description": "Sort: 'InvoiceDate desc', 'InvoiceBalance desc'"
+          },
+          "$select": {
+            "type": "string",
+            "description": "Select specific fields"
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/Invoices",
         "queryParams": {
-          "$top": "${$top}", "$skip": "${$skip}", "$filter": "${$filter}",
-          "$orderby": "${$orderby}", "$select": "${$select}"
+          "$top": "${$top}",
+          "$skip": "${$skip}",
+          "$filter": "${$filter}",
+          "$orderby": "${$orderby}",
+          "$select": "${$select}"
         }
       }
     },
@@ -1501,7 +2159,9 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/Tags",
-        "queryParams": { "$filter": "${$filter}" }
+        "queryParams": {
+          "$filter": "${$filter}"
+        }
       }
     },
     {
@@ -1510,11 +2170,23 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "Name": { "type": "string", "description": "Tag name" },
-          "ColorDefinition": { "type": "string", "description": "Color hex code (e.g. '#1491ad', '#ff0000')" },
-          "Type": { "type": "string", "description": "Tag type: 'ServiceRequest'" }
+          "Name": {
+            "type": "string",
+            "description": "Tag name"
+          },
+          "ColorDefinition": {
+            "type": "string",
+            "description": "Color hex code (e.g. '#1491ad', '#ff0000')"
+          },
+          "Type": {
+            "type": "string",
+            "description": "Tag type: 'ServiceRequest'"
+          }
         },
-        "required": ["Name", "Type"]
+        "required": [
+          "Name",
+          "Type"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1527,13 +2199,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "$filter": { "type": "string", "description": "OData filter. Example: \"Name eq 'Electrician'\"" }
+          "$filter": {
+            "type": "string",
+            "description": "OData filter. Example: \"Name eq 'Electrician'\""
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/Qualifications",
-        "queryParams": { "$filter": "${$filter}" }
+        "queryParams": {
+          "$filter": "${$filter}"
+        }
       }
     },
     {
@@ -1542,9 +2219,14 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "Name": { "type": "string", "description": "Qualification name (e.g. 'Electrician', 'HVAC Certified')" }
+          "Name": {
+            "type": "string",
+            "description": "Qualification name (e.g. 'Electrician', 'HVAC Certified')"
+          }
         },
-        "required": ["Name"]
+        "required": [
+          "Name"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1557,14 +2239,23 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "qualificationId": { "type": "string", "description": "The qualification numeric ID" },
-          "Name": { "type": "string", "description": "Updated name" }
+          "qualificationId": {
+            "type": "string",
+            "description": "The qualification numeric ID"
+          },
+          "Name": {
+            "type": "string",
+            "description": "Updated name"
+          }
         },
-        "required": ["qualificationId", "Name"]
+        "required": [
+          "qualificationId",
+          "Name"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
-        "path": "/Qualifications(${qualificationId}L)"
+        "path": "/Qualifications({qualificationId}L)"
       }
     },
     {
@@ -1573,13 +2264,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "qualificationId": { "type": "string", "description": "The qualification numeric ID" }
+          "qualificationId": {
+            "type": "string",
+            "description": "The qualification numeric ID"
+          }
         },
-        "required": ["qualificationId"]
+        "required": [
+          "qualificationId"
+        ]
       },
       "endpointMapping": {
         "method": "DELETE",
-        "path": "/Qualifications(${qualificationId}L)"
+        "path": "/Qualifications({qualificationId}L)"
       }
     },
     {
@@ -1600,9 +2296,14 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "Name": { "type": "string", "description": "Cost center name" }
+          "Name": {
+            "type": "string",
+            "description": "Cost center name"
+          }
         },
-        "required": ["Name"]
+        "required": [
+          "Name"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1615,7 +2316,10 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "$expand": { "type": "string", "description": "Expand: Steps (to include template steps)" },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Steps (to include template steps)"
+          },
           "$filter": {
             "type": "string",
             "description": "OData filter. Examples: \"IsReleased eq true\", \"Name eq 'Safety Check'\""
@@ -1625,7 +2329,10 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/StepListTemplates",
-        "queryParams": { "$expand": "${$expand}", "$filter": "${$filter}" }
+        "queryParams": {
+          "$expand": "${$expand}",
+          "$filter": "${$filter}"
+        }
       }
     },
     {
@@ -1634,15 +2341,25 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "templateId": { "type": "string", "description": "The template numeric ID" },
-          "$expand": { "type": "string", "description": "Expand: Steps" }
+          "templateId": {
+            "type": "string",
+            "description": "The template numeric ID"
+          },
+          "$expand": {
+            "type": "string",
+            "description": "Expand: Steps"
+          }
         },
-        "required": ["templateId"]
+        "required": [
+          "templateId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/StepListTemplates(${templateId}L)",
-        "queryParams": { "$expand": "${$expand}" }
+        "path": "/StepListTemplates({templateId}L)",
+        "queryParams": {
+          "$expand": "${$expand}"
+        }
       }
     },
     {
@@ -1651,11 +2368,22 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "Name": { "type": "string", "description": "Template name" },
-          "MappingId": { "type": "string", "description": "External mapping/reference ID" },
-          "IsReleased": { "type": "boolean", "description": "Whether the template is released for use (default: false)" }
+          "Name": {
+            "type": "string",
+            "description": "Template name"
+          },
+          "MappingId": {
+            "type": "string",
+            "description": "External mapping/reference ID"
+          },
+          "IsReleased": {
+            "type": "boolean",
+            "description": "Whether the template is released for use (default: false)"
+          }
         },
-        "required": ["Name"]
+        "required": [
+          "Name"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -1668,14 +2396,23 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "serviceRequestId": { "type": "string", "description": "The service request numeric ID" },
-          "reportDefinitionId": { "type": "string", "description": "The report definition ID to use for generation" }
+          "serviceRequestId": {
+            "type": "string",
+            "description": "The service request numeric ID"
+          },
+          "reportDefinitionId": {
+            "type": "string",
+            "description": "The report definition ID to use for generation"
+          }
         },
-        "required": ["serviceRequestId", "reportDefinitionId"]
+        "required": [
+          "serviceRequestId",
+          "reportDefinitionId"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/ServiceRequests(${serviceRequestId}L)/GenerateReportHash"
+        "path": "/ServiceRequests({serviceRequestId}L)/GenerateReportHash"
       }
     }
   ]

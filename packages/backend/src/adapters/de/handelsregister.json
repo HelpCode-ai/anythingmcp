@@ -1,0 +1,103 @@
+{
+  "slug": "handelsregister",
+  "name": "Handelsregister (handelsregister.ai)",
+  "description": "Access the German commercial register (Handelsregister) data via handelsregister.ai — search companies by name, retrieve official entries, current/historical addresses, shareholders, managing directors, and corporate structure.",
+  "instructions": "This connector uses the handelsregister.ai REST API which wraps the official Handelsregister portal and enriches it with structured data.\n\n**Authentication**: API key via Authorization header. Generate a key at https://handelsregister.ai/account.\n\n**Typical workflow**:\n1. `hr_search_companies` — find a company by name or keyword\n2. `hr_get_company` — fetch the full record by `company_id` returned from search\n3. `hr_get_documents` — list SHD/AD/HRA documents attached to a company\n\n**Registernummer format**: Courts + numbers like 'HRB 12345 München'. Search also accepts plain company names.\n\n**Costs**: handelsregister.ai bills per lookup, not per search. Searches are typically free; fetching full company records or documents consumes credits.",
+  "region": "de",
+  "category": "government",
+  "icon": "handelsregister",
+  "docsUrl": "https://handelsregister.ai/docs",
+  "requiredEnvVars": ["HANDELSREGISTER_API_KEY"],
+  "connector": {
+    "name": "Handelsregister",
+    "type": "REST",
+    "baseUrl": "https://handelsregister.ai/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Bearer {{HANDELSREGISTER_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "hr_search_companies",
+      "description": "Search German companies in the Handelsregister by name or keyword. Returns a list of matches with company_id, legal name, registration court, Registernummer, and location. Use the returned company_id with hr_get_company for full details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search query — company name, brand, or keyword (e.g. 'SAP SE', 'Koch Freiburg')."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max number of results (default: 10, max: 50)."
+          }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "hr_get_company",
+      "description": "Retrieve the full Handelsregister record for a company by its company_id. Returns legal name, address, registration data (court + Registernummer), legal form, capital, purpose (Gegenstand), managing directors and Prokuristen, and recent changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "The handelsregister.ai company_id returned by hr_search_companies."
+          }
+        },
+        "required": ["company_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}"
+      }
+    },
+    {
+      "name": "hr_get_documents",
+      "description": "List the official documents (SHD = Shareholder list, AD = current printout, CD = chronological printout, HD = historical printout) attached to a company in the Handelsregister. Each document has a document_id that can be used for download links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "The handelsregister.ai company_id."
+          }
+        },
+        "required": ["company_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/documents"
+      }
+    },
+    {
+      "name": "hr_get_shareholders",
+      "description": "Retrieve the shareholder list (Gesellschafterliste) from the most recent SHD filing for a GmbH or UG. Returns each shareholder's name, address, share amount (Geschäftsanteil) and percentage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "The handelsregister.ai company_id."
+          }
+        },
+        "required": ["company_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/shareholders"
+      }
+    }
+  ]
+}

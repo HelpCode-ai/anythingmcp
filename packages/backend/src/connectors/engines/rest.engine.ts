@@ -71,12 +71,12 @@ export class RestEngine {
     // Inject authentication
     await this.injectAuth(axiosConfig, config);
 
-    // Query parameters
+    // Query parameters (merged on top of any params already set by auth injection)
     if (endpointMapping.queryParams) {
-      axiosConfig.params = this.mapParams(
-        endpointMapping.queryParams,
-        params,
-      );
+      axiosConfig.params = {
+        ...(axiosConfig.params as Record<string, unknown> | undefined),
+        ...this.mapParams(endpointMapping.queryParams, params),
+      };
     }
 
     // Request body
@@ -206,6 +206,13 @@ export class RestEngine {
         };
         break;
       }
+      case 'QUERY_AUTH':
+        // Inject authConfig values as query parameters (for APIs that auth via query string)
+        axiosConfig.params = {
+          ...(axiosConfig.params as Record<string, unknown> | undefined),
+          ...config.authConfig,
+        };
+        break;
     }
   }
 
@@ -215,17 +222,62 @@ export class RestEngine {
   ): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(mapping)) {
-      if (typeof value === 'string' && value.startsWith('$')) {
-        // Reference to a param: "$paramName" → params.paramName
-        const paramName = value.substring(1);
-        const paramValue = params[paramName];
-        if (paramValue !== undefined && paramValue !== '') {
-          result[key] = paramValue;
-        }
-      } else {
-        result[key] = value;
+      const resolved = this.resolveValue(value, params);
+      if (resolved !== undefined) {
+        result[key] = resolved;
       }
     }
     return result;
+  }
+
+  /**
+   * Recursively resolve a value against params.
+   * - String "$paramName" (whole string) → params.paramName — returns undefined if missing/empty so the key is dropped
+   * - String "...${paramName}..." (embedded) → interpolated; if any placeholder is missing the whole value is dropped
+   * - Arrays/objects → recurse
+   * - Anything else → returned as-is
+   */
+  private resolveValue(
+    value: unknown,
+    params: Record<string, unknown>,
+  ): unknown {
+    if (typeof value === 'string') {
+      if (value.startsWith('$') && !value.includes('${')) {
+        const paramName = value.substring(1);
+        const paramValue = params[paramName];
+        return paramValue !== undefined && paramValue !== ''
+          ? paramValue
+          : undefined;
+      }
+      if (value.includes('${')) {
+        let missing = false;
+        const interpolated = value.replace(/\$\{([\w$]+)\}/g, (_, name) => {
+          const pv = params[name];
+          if (pv === undefined || pv === '') {
+            missing = true;
+            return '';
+          }
+          return String(pv);
+        });
+        return missing ? undefined : interpolated;
+      }
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value
+        .map((v) => this.resolveValue(v, params))
+        .filter((v) => v !== undefined);
+    }
+    if (value && typeof value === 'object') {
+      const nested: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        const resolved = this.resolveValue(v, params);
+        if (resolved !== undefined) {
+          nested[k] = resolved;
+        }
+      }
+      return nested;
+    }
+    return value;
   }
 }
