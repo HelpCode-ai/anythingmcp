@@ -7,7 +7,10 @@
   "category": "construction",
   "icon": "planradar",
   "docsUrl": "https://help.planradar.com/hc/en-gb/articles/15480453097373-Open-API-Overview",
-  "requiredEnvVars": ["PLANRADAR_API_KEY", "PLANRADAR_CUSTOMER_ID"],
+  "requiredEnvVars": [
+    "PLANRADAR_API_KEY",
+    "PLANRADAR_CUSTOMER_ID"
+  ],
   "connector": {
     "name": "PlanRadar Construction",
     "type": "REST",
@@ -39,8 +42,8 @@
         "method": "GET",
         "path": "/projects",
         "queryParams": {
-          "page": "${page}",
-          "per_page": "${per_page}"
+          "page": "$page",
+          "per_page": "$per_page"
         }
       }
     },
@@ -55,7 +58,9 @@
             "description": "The project ID"
           }
         },
-        "required": ["project_id"]
+        "required": [
+          "project_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -81,14 +86,16 @@
             "description": "Number of results per page"
           }
         },
-        "required": ["project_id"]
+        "required": [
+          "project_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/projects/{project_id}/tickets",
         "queryParams": {
-          "page": "${page}",
-          "per_page": "${per_page}"
+          "page": "$page",
+          "per_page": "$per_page"
         }
       }
     },
@@ -107,7 +114,10 @@
             "description": "The ticket ID"
           }
         },
-        "required": ["project_id", "ticket_id"]
+        "required": [
+          "project_id",
+          "ticket_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -135,7 +145,14 @@
           "status": {
             "type": "string",
             "description": "Ticket status. Values: Open, In Progress, Resolved, Feedback, Closed, Rejected",
-            "enum": ["Open", "In Progress", "Resolved", "Feedback", "Closed", "Rejected"]
+            "enum": [
+              "Open",
+              "In Progress",
+              "Resolved",
+              "Feedback",
+              "Closed",
+              "Rejected"
+            ]
           },
           "priority": {
             "type": "string",
@@ -158,21 +175,24 @@
             "description": "Progress percentage (0-100)"
           }
         },
-        "required": ["project_id", "title"]
+        "required": [
+          "project_id",
+          "title"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/projects/{project_id}/tickets",
         "bodyEncoding": "form-urlencoded",
         "bodyMapping": {
-          "title": "${title}",
-          "description": "${description}",
-          "status": "${status}",
-          "priority": "${priority}",
-          "assignee_id": "${assignee_id}",
-          "due_date": "${due_date}",
-          "layer_id": "${layer_id}",
-          "progress": "${progress}"
+          "title": "$title",
+          "description": "$description",
+          "status": "$status",
+          "priority": "$priority",
+          "assignee_id": "$assignee_id",
+          "due_date": "$due_date",
+          "layer_id": "$layer_id",
+          "progress": "$progress"
         }
       }
     },
@@ -201,7 +221,14 @@
           "status": {
             "type": "string",
             "description": "Updated status. Values: Open, In Progress, Resolved, Feedback, Closed, Rejected",
-            "enum": ["Open", "In Progress", "Resolved", "Feedback", "Closed", "Rejected"]
+            "enum": [
+              "Open",
+              "In Progress",
+              "Resolved",
+              "Feedback",
+              "Closed",
+              "Rejected"
+            ]
           },
           "priority": {
             "type": "string",
@@ -220,20 +247,23 @@
             "description": "Progress percentage (0-100)"
           }
         },
-        "required": ["project_id", "ticket_id"]
+        "required": [
+          "project_id",
+          "ticket_id"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
         "path": "/projects/{project_id}/tickets/{ticket_id}",
         "bodyEncoding": "form-urlencoded",
         "bodyMapping": {
-          "title": "${title}",
-          "description": "${description}",
-          "status": "${status}",
-          "priority": "${priority}",
-          "assignee_id": "${assignee_id}",
-          "due_date": "${due_date}",
-          "progress": "${progress}"
+          "title": "$title",
+          "description": "$description",
+          "status": "$status",
+          "priority": "$priority",
+          "assignee_id": "$assignee_id",
+          "due_date": "$due_date",
+          "progress": "$progress"
         }
       }
     },
@@ -257,8 +287,8 @@
         "method": "GET",
         "path": "/users",
         "queryParams": {
-          "page": "${page}",
-          "per_page": "${per_page}"
+          "page": "$page",
+          "per_page": "$per_page"
         }
       }
     },
@@ -273,7 +303,9 @@
             "description": "The user ID"
           }
         },
-        "required": ["user_id"]
+        "required": [
+          "user_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -299,14 +331,16 @@
             "description": "Number of results per page"
           }
         },
-        "required": ["project_id"]
+        "required": [
+          "project_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/projects/{project_id}/documents",
         "queryParams": {
-          "page": "${page}",
-          "per_page": "${per_page}"
+          "page": "$page",
+          "per_page": "$per_page"
         }
       }
     },
@@ -325,7 +359,10 @@
             "description": "The document ID"
           }
         },
-        "required": ["project_id", "document_id"]
+        "required": [
+          "project_id",
+          "document_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",

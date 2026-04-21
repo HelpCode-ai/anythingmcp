@@ -6,7 +6,10 @@
   "category": "real-estate",
   "icon": "immobilienscout24",
   "docsUrl": "https://api.immobilienscout24.de/our-apis.html",
-  "requiredEnvVars": ["IS24_CLIENT_ID", "IS24_CLIENT_SECRET"],
+  "requiredEnvVars": [
+    "IS24_CLIENT_ID",
+    "IS24_CLIENT_SECRET"
+  ],
   "connector": {
     "name": "ImmobilienScout24",
     "type": "REST",
@@ -55,19 +58,22 @@
             "description": "Page number for pagination (default: 1)"
           }
         },
-        "required": ["geocode", "realestatetype"]
+        "required": [
+          "geocode",
+          "realestatetype"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/search/v1.0/search/region",
         "queryParams": {
-          "geocodes": "${geocode}",
-          "realestatetype": "${realestatetype}",
-          "price.min": "${price_min}",
-          "price.max": "${price_max}",
-          "livingspace.min": "${livingspace_min}",
-          "numberofrooms.min": "${numberofrooms_min}",
-          "pagenumber": "${pagenumber}",
+          "geocodes": "$geocode",
+          "realestatetype": "$realestatetype",
+          "price.min": "$price_min",
+          "price.max": "$price_max",
+          "livingspace.min": "$livingspace_min",
+          "numberofrooms.min": "$numberofrooms_min",
+          "pagenumber": "$pagenumber",
           "pagesize": "20"
         },
         "headers": {
@@ -86,13 +92,15 @@
             "description": "Location name to search (e.g. 'Berlin', 'München Schwabing', 'Hamburg Altona')"
           }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/gis/v1.0/geo/autocomplete",
         "queryParams": {
-          "i": "${query}"
+          "i": "$query"
         },
         "headers": {
           "Accept": "application/json"
@@ -110,11 +118,13 @@
             "description": "The ImmobilienScout24 expose ID (listing ID)"
           }
         },
-        "required": ["exposeId"]
+        "required": [
+          "exposeId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/search/v1.0/expose/${exposeId}",
+        "path": "/search/v1.0/expose/{exposeId}",
         "headers": {
           "Accept": "application/json"
         }

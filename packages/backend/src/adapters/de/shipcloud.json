@@ -1,0 +1,198 @@
+{
+  "slug": "shipcloud",
+  "name": "Shipcloud Multi-Carrier Shipping",
+  "description": "Create shipments, generate labels, and track parcels across all major German and European carriers (DHL, DPD, GLS, Hermes, UPS, FedEx, TNT) through Shipcloud — the leading multi-carrier shipping aggregator for DE.",
+  "instructions": "This connector uses the Shipcloud v1 REST API.\n\n**Credentials**: a single API key (Basic auth username, empty password). Generate one at https://app.shipcloud.io/account under API-Keys. Paste it into `SHIPCLOUD_API_KEY` when importing.\n\n**Carriers covered**: dhl, dhl_express, dpd, gls, hermes, ups, fedex, tnt, go, deutsche_post, iloxx, parcelone, skynet, liefery. Use `shipcloud_list_carriers` to retrieve IDs and available service products.\n\n**Label creation**: `shipcloud_create_shipment` returns a downloadable label URL plus a carrier_tracking_no and a shipcloud tracking_url. Labels are PDF by default.\n\n**Tracking**: parcels shipped through Shipcloud are auto-tracked — use `shipcloud_get_shipment` with the shipcloud id to read status. For external parcels (not shipped via Shipcloud), create a tracking object with `shipcloud_create_tracker`.\n\n**Webhooks**: Shipcloud also supports webhooks for real-time status updates (configure in the dashboard, not via this adapter).\n\n**Test mode**: set `create_shipping_label: false` when calling create_shipment to get a quote without actually creating a real label (and without being billed).",
+  "region": "de",
+  "category": "logistics",
+  "icon": "shipcloud",
+  "docsUrl": "https://developers.shipcloud.io/",
+  "requiredEnvVars": ["SHIPCLOUD_API_KEY"],
+  "connector": {
+    "name": "Shipcloud",
+    "type": "REST",
+    "baseUrl": "https://api.shipcloud.io/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{SHIPCLOUD_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "shipcloud_list_carriers",
+      "description": "List all carriers supported by the Shipcloud account with their names, IDs, service products (e.g. dhl:standard, dpd:classic), and feature flags (label_printer, tracking, etc.).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carriers"
+      }
+    },
+    {
+      "name": "shipcloud_create_shipment",
+      "description": "Create a shipment and generate a shipping label. Returns the shipcloud shipment id, carrier tracking number, label PDF URL, tracking URL, and price. Set create_shipping_label=false for a quote without billing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier": {
+            "type": "string",
+            "description": "Carrier id (e.g. 'dhl', 'dpd', 'gls', 'hermes', 'ups')."
+          },
+          "service": {
+            "type": "string",
+            "description": "Service product (e.g. 'standard', 'returns', 'one_day')."
+          },
+          "to": {
+            "type": "object",
+            "description": "Recipient address: { company?, first_name, last_name, street, street_no, zip_code, city, country (ISO 2-letter) }."
+          },
+          "from": {
+            "type": "object",
+            "description": "Sender address — same shape as 'to'. Optional if a default is configured in the Shipcloud account."
+          },
+          "package": {
+            "type": "object",
+            "description": "Package dimensions: { weight (kg), length?, width?, height? (all in cm), type? ('parcel'|'letter'|'bulk') }."
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Optional customer reference to identify the shipment."
+          },
+          "create_shipping_label": {
+            "type": "boolean",
+            "description": "If true (default), generate a real label and bill. If false, returns a quote only."
+          },
+          "additional_services": {
+            "type": "array",
+            "description": "Optional extras: saturday_delivery, cash_on_delivery, advance_notice, delivery_date etc."
+          }
+        },
+        "required": ["carrier", "to", "package"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments",
+        "bodyMapping": {
+          "carrier": "$carrier",
+          "service": "$service",
+          "to": "$to",
+          "from": "$from",
+          "package": "$package",
+          "reference_number": "$reference_number",
+          "create_shipping_label": "$create_shipping_label",
+          "additional_services": "$additional_services"
+        }
+      }
+    },
+    {
+      "name": "shipcloud_get_shipment",
+      "description": "Retrieve a shipment created via Shipcloud by its id. Returns all fields including tracking events, label URL, and carrier tracking number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The shipcloud shipment id."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{id}"
+      }
+    },
+    {
+      "name": "shipcloud_list_shipments",
+      "description": "List recent shipments created via this account, filterable by carrier, date range, or customer reference.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier": {
+            "type": "string",
+            "description": "Filter by carrier id."
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Filter by customer reference."
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service product."
+          },
+          "carrier_tracking_no": {
+            "type": "string",
+            "description": "Filter by the carrier's tracking number."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based."
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Results per page (default 20, max 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments",
+        "queryParams": {
+          "carrier": "$carrier",
+          "reference_number": "$reference_number",
+          "service": "$service",
+          "carrier_tracking_no": "$carrier_tracking_no",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "shipcloud_create_tracker",
+      "description": "Create a tracking object for an external parcel (not shipped via this Shipcloud account). Provide the carrier and carrier_tracking_no; Shipcloud will poll the carrier for status updates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier": {
+            "type": "string",
+            "description": "Carrier id (e.g. 'dhl', 'dpd')."
+          },
+          "carrier_tracking_no": {
+            "type": "string",
+            "description": "The tracking number issued by the carrier."
+          }
+        },
+        "required": ["carrier", "carrier_tracking_no"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tracking_objects",
+        "bodyMapping": {
+          "carrier": "$carrier",
+          "carrier_tracking_no": "$carrier_tracking_no"
+        }
+      }
+    },
+    {
+      "name": "shipcloud_get_tracker",
+      "description": "Retrieve the current state and event history of a tracking object.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Shipcloud tracking object id."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracking_objects/{id}"
+      }
+    }
+  ]
+}

@@ -6,7 +6,10 @@
   "category": "finance",
   "icon": "billomat",
   "docsUrl": "https://www.billomat.com/en/api/",
-  "requiredEnvVars": ["BILLOMAT_SUBDOMAIN", "BILLOMAT_API_KEY"],
+  "requiredEnvVars": [
+    "BILLOMAT_SUBDOMAIN",
+    "BILLOMAT_API_KEY"
+  ],
   "connector": {
     "name": "Billomat",
     "type": "REST",
@@ -42,9 +45,9 @@
         "method": "GET",
         "path": "/clients",
         "queryParams": {
-          "page": "${page}",
-          "per_page": "${per_page}",
-          "name": "${name}"
+          "page": "$page",
+          "per_page": "$per_page",
+          "name": "$name"
         },
         "headers": {
           "Accept": "application/json"
@@ -62,11 +65,13 @@
             "description": "The Billomat client ID"
           }
         },
-        "required": ["clientId"]
+        "required": [
+          "clientId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/clients/${clientId}",
+        "path": "/clients/{clientId}",
         "headers": {
           "Accept": "application/json"
         }
@@ -100,10 +105,10 @@
         "method": "GET",
         "path": "/invoices",
         "queryParams": {
-          "page": "${page}",
-          "per_page": "${per_page}",
-          "client_id": "${client_id}",
-          "status": "${status}"
+          "page": "$page",
+          "per_page": "$per_page",
+          "client_id": "$client_id",
+          "status": "$status"
         },
         "headers": {
           "Accept": "application/json"
@@ -121,11 +126,13 @@
             "description": "The Billomat invoice ID"
           }
         },
-        "required": ["invoiceId"]
+        "required": [
+          "invoiceId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/invoices/${invoiceId}",
+        "path": "/invoices/{invoiceId}",
         "headers": {
           "Accept": "application/json"
         }
@@ -151,8 +158,8 @@
         "method": "GET",
         "path": "/articles",
         "queryParams": {
-          "page": "${page}",
-          "per_page": "${per_page}"
+          "page": "$page",
+          "per_page": "$per_page"
         },
         "headers": {
           "Accept": "application/json"
@@ -183,9 +190,9 @@
         "method": "GET",
         "path": "/offers",
         "queryParams": {
-          "page": "${page}",
-          "per_page": "${per_page}",
-          "client_id": "${client_id}"
+          "page": "$page",
+          "per_page": "$per_page",
+          "client_id": "$client_id"
         },
         "headers": {
           "Accept": "application/json"

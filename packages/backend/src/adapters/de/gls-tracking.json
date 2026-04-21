@@ -1,0 +1,77 @@
+{
+  "slug": "gls-tracking",
+  "name": "GLS Track & Trace",
+  "description": "Track GLS (General Logistics Systems) parcels across Europe using the free public Track & Trace REST API. Look up parcels by GLS tracking number (TrackID) or customer reference.",
+  "instructions": "This connector uses the GLS public Track & Trace REST endpoint — free, no authentication.\n\n**Tracking number (TrackID)**: 10-12 digit numeric string printed on the parcel label.\n\n**Customer reference**: the reference you (or the shipper) set when creating the parcel. Multiple parcels may share a reference, so results are always an array.\n\n**Language**: `de` (German), `en` (English), `fr`, `it`, `es`, `nl`, `pl`, `cz`. The descriptions in event rows are translated accordingly.\n\n**Country scope**: use `country` (ISO 2-letter like DE, AT, CH, FR) to scope lookup to GLS country organisation. 'EU' covers cross-border.\n\n**Shipping / label generation**: this adapter only covers tracking. Shipment creation requires the GLS ShipIT API with contract-based credentials and is not included here.",
+  "region": "eu",
+  "category": "logistics",
+  "icon": "gls",
+  "docsUrl": "https://www.gls-pakete.de/unternehmen/entwickler",
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "GLS Track & Trace",
+    "type": "REST",
+    "baseUrl": "https://gls-group.com/app/service/open/rest",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "gls_track_by_parcel_number",
+      "description": "Track a GLS parcel by its TrackID (parcel number). Returns the parcel status, sender, receiver, service product, weight, and a chronological list of tracking events with location, timestamp and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "trackId": {
+            "type": "string",
+            "description": "The GLS TrackID / parcel number (typically 10-12 digits)."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country scope (ISO 2-letter). Defaults to 'EU' for cross-border. Common: 'DE', 'AT', 'CH', 'FR', 'NL', 'BE'."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language for descriptions: 'de', 'en', 'fr', 'it', 'es', 'nl', 'pl', 'cz'. Defaults to 'en'."
+          }
+        },
+        "required": ["trackId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{country}/{language}/rstt001",
+        "queryParams": {
+          "match": "$trackId"
+        }
+      }
+    },
+    {
+      "name": "gls_track_by_reference",
+      "description": "Find GLS parcels by customer reference (the shipper's order/reference number). Returns an array of matching parcels — multiple parcels can share the same reference.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "The customer/order reference set at shipment creation time."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country scope (ISO 2-letter). Defaults to 'EU'."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language for descriptions. Defaults to 'en'."
+          }
+        },
+        "required": ["reference"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{country}/{language}/rstt001",
+        "queryParams": {
+          "reference": "$reference"
+        }
+      }
+    }
+  ]
+}

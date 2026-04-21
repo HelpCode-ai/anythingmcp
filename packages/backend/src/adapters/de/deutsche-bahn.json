@@ -1,0 +1,189 @@
+{
+  "slug": "deutsche-bahn",
+  "name": "Deutsche Bahn Fahrplan",
+  "description": "Query the Deutsche Bahn (DB) timetable via the community-maintained v6.db.transport.rest proxy over the official HAFAS API. Search stations, look up departures/arrivals in real time, and plan journeys between any two DB stops.",
+  "instructions": "This connector uses https://v6.db.transport.rest — a free, no-auth wrapper around Deutsche Bahn's HAFAS endpoints maintained by the public-transport community.\n\n**No authentication required**, but the service is hosted best-effort — for production use you may want to self-host (see https://github.com/derhuerst/db-rest).\n\n**Typical workflow**:\n1. Resolve a station name to a stop `id` with `db_search_locations`\n2. Call `db_get_departures` or `db_get_arrivals` with that id\n3. For trip planning, use `db_get_journeys` with `from` and `to` stop ids\n\n**Time format**: All times are ISO 8601 with timezone (e.g. `2026-04-21T08:30+02:00`). If omitted, `when` defaults to now.\n\n**Delay tracking**: departure/arrival entries include `delay` in seconds, `cancelled`, and `platform` vs `plannedPlatform` for live monitoring.\n\n**Multi-modal**: results can include S-Bahn, U-Bahn, bus, tram where operated by DB or partner agencies.",
+  "region": "de",
+  "category": "transport",
+  "icon": "db",
+  "docsUrl": "https://v6.db.transport.rest/",
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "Deutsche Bahn Fahrplan",
+    "type": "REST",
+    "baseUrl": "https://v6.db.transport.rest",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "db_search_locations",
+      "description": "Search for DB stops/stations, addresses, or points of interest by name. Returns a list of matches with id, name, type, and geo coordinates. Use the returned id with other tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search term (e.g. 'Freiburg Hbf', 'Berlin Ostbahnhof', 'München Hauptbahnhof')."
+          },
+          "results": {
+            "type": "number",
+            "description": "Max results to return (default: 10)."
+          },
+          "stops": {
+            "type": "boolean",
+            "description": "Include train stops (default: true)."
+          },
+          "addresses": {
+            "type": "boolean",
+            "description": "Include street addresses (default: true)."
+          }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations",
+        "queryParams": {
+          "query": "$query",
+          "results": "$results",
+          "stops": "$stops",
+          "addresses": "$addresses"
+        }
+      }
+    },
+    {
+      "name": "db_get_stop",
+      "description": "Retrieve details for a specific stop/station by its DB id, including name, location, station category, and products served (ICE, IC, RE, S, etc.).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The stop id from db_search_locations (e.g. '8000105' for Frankfurt(Main)Hbf)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stops/{id}"
+      }
+    },
+    {
+      "name": "db_get_departures",
+      "description": "List upcoming departures from a stop. Returns each departure with line, destination (direction), planned and actual time, platform, delay in seconds, and cancellation status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The stop id."
+          },
+          "when": {
+            "type": "string",
+            "description": "ISO 8601 timestamp for the reference time (default: now). Example: '2026-04-21T08:30+02:00'."
+          },
+          "duration": {
+            "type": "number",
+            "description": "Look-ahead window in minutes (default: 10, max: 120)."
+          },
+          "results": {
+            "type": "number",
+            "description": "Max number of departures (default: 10)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stops/{id}/departures",
+        "queryParams": {
+          "when": "$when",
+          "duration": "$duration",
+          "results": "$results"
+        }
+      }
+    },
+    {
+      "name": "db_get_arrivals",
+      "description": "List upcoming arrivals at a stop with origin, planned and actual time, platform, delay, and cancellation status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The stop id."
+          },
+          "when": {
+            "type": "string",
+            "description": "ISO 8601 timestamp (default: now)."
+          },
+          "duration": {
+            "type": "number",
+            "description": "Look-ahead window in minutes (default: 10)."
+          },
+          "results": {
+            "type": "number",
+            "description": "Max number of arrivals (default: 10)."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stops/{id}/arrivals",
+        "queryParams": {
+          "when": "$when",
+          "duration": "$duration",
+          "results": "$results"
+        }
+      }
+    },
+    {
+      "name": "db_get_journeys",
+      "description": "Plan a journey between two stops. Returns one or more itinerary options with legs (train/bus/S-Bahn), departure and arrival times per leg, transfers, duration, and any delays. Use stop ids from db_search_locations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Origin stop id."
+          },
+          "to": {
+            "type": "string",
+            "description": "Destination stop id."
+          },
+          "departure": {
+            "type": "string",
+            "description": "Desired departure time (ISO 8601). Defaults to now. Use either 'departure' or 'arrival', not both."
+          },
+          "arrival": {
+            "type": "string",
+            "description": "Desired latest arrival time (ISO 8601). Use for 'arrive by' queries."
+          },
+          "results": {
+            "type": "number",
+            "description": "Number of itinerary options to return (default: 3)."
+          },
+          "transfers": {
+            "type": "number",
+            "description": "Max number of transfers (-1 = unlimited)."
+          }
+        },
+        "required": ["from", "to"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/journeys",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "departure": "$departure",
+          "arrival": "$arrival",
+          "results": "$results",
+          "transfers": "$transfers"
+        }
+      }
+    }
+  ]
+}

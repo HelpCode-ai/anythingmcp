@@ -1,0 +1,242 @@
+{
+  "slug": "oxomi",
+  "name": "Oxomi Catalog & Media Portal",
+  "description": "Search digital catalogs (Kataloge), product datasheets, technical drawings, safety data sheets, and media assets via Oxomi — the dominant catalog/media portal for the German Baustoff (building materials) trade. Use for product lookup, document download, and cross-selling research across thousands of supplier catalogs.",
+  "instructions": "This connector talks to the Oxomi Portal JSON API.\n\n**Credentials**: every request needs three values, automatically injected from the credentials you enter when creating the connector:\n- `OXOMI_PORTAL_ID` — your portal numeric id (find it in Oxomi → Portal-Einstellungen → ID)\n- `OXOMI_USER` — your portal user name (often an email)\n- `OXOMI_ACCESS_TOKEN` — long-lived API token generated under Portal-Einstellungen → API\n\n**Workflow patterns**:\n- Catalog browse: `oxomi_search_catalogs` → `oxomi_get_catalog_pages` → `oxomi_get_catalog_attachments`\n- Product lookup: `oxomi_search_products` (by SKU or text) → returns supplier, catalog reference, datasheet URLs\n- Document hunting: `oxomi_search_documents` for safety data sheets (Sicherheitsdatenblätter), installation guides (Verarbeitungsanleitungen), CAD drawings\n\n**Suppliers**: results are scoped to the portal — you only see suppliers your Oxomi subscription includes (portals typically include hundreds of Baustoff manufacturers like Knauf, Saint-Gobain, Bosch, Würth, etc.).\n\n**Pagination**: list endpoints accept `page` (1-based) and `pageSize` (default 25, max 100).\n\n**Languages**: most descriptions are German; pass `lang=en` for English where the supplier provides translations.",
+  "region": "de",
+  "category": "wholesale",
+  "icon": "oxomi",
+  "docsUrl": "https://oxomi.com/portal/",
+  "requiredEnvVars": [
+    "OXOMI_PORTAL_ID",
+    "OXOMI_USER",
+    "OXOMI_ACCESS_TOKEN"
+  ],
+  "connector": {
+    "name": "Oxomi",
+    "type": "REST",
+    "baseUrl": "https://oxomi.com/service/json",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "portalId": "{{OXOMI_PORTAL_ID}}",
+      "user": "{{OXOMI_USER}}",
+      "accessToken": "{{OXOMI_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "oxomi_search_catalogs",
+      "description": "Search digital catalogs available in the portal. Returns each catalog with id, title, supplier name, language, page count, and cover image URL. Use the returned catalog id with oxomi_get_catalog_pages or oxomi_get_catalog_attachments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Free-text search across catalog titles and supplier names (e.g. 'Trockenbau', 'Knauf', 'Dämmstoffe')."
+          },
+          "supplier": {
+            "type": "string",
+            "description": "Optional supplier name filter."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based (default: 1)."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 25, max: 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/catalog/search",
+        "queryParams": {
+          "q": "$q",
+          "supplier": "$supplier",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "oxomi_get_catalog_pages",
+      "description": "Retrieve the page list (with thumbnails and section/category names) for a specific catalog. Use to browse a catalog's structure or to surface a specific page reference for the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalogId": {
+            "type": "string",
+            "description": "The numeric catalog id from oxomi_search_catalogs."
+          }
+        },
+        "required": ["catalogId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/catalog/pages",
+        "queryParams": {
+          "catalogId": "$catalogId"
+        }
+      }
+    },
+    {
+      "name": "oxomi_get_catalog_attachments",
+      "description": "List all attachments (datasheets, certificates, CAD files, videos) linked to a catalog or a specific catalog page. Each attachment has a downloadable URL plus type, filename, and language metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalogId": {
+            "type": "string",
+            "description": "The catalog id."
+          },
+          "pageNumber": {
+            "type": "number",
+            "description": "Optional — restrict to a specific catalog page."
+          }
+        },
+        "required": ["catalogId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/catalog/attachments",
+        "queryParams": {
+          "catalogId": "$catalogId",
+          "pageNumber": "$pageNumber"
+        }
+      }
+    },
+    {
+      "name": "oxomi_search_products",
+      "description": "Search products across all suppliers in the portal by SKU, EAN, or description. Returns supplier name, supplier SKU, manufacturer SKU, EAN, short description, catalog reference, and image URL. Includes is_diverse flag for custom-priced articles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search term (description, brand, SKU). Searches across all suppliers."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Exact SKU lookup (manufacturer or supplier SKU)."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN/GTIN-13 lookup."
+          },
+          "supplier": {
+            "type": "string",
+            "description": "Optional supplier name filter."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 25, max: 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/search",
+        "queryParams": {
+          "q": "$q",
+          "sku": "$sku",
+          "ean": "$ean",
+          "supplier": "$supplier",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "oxomi_get_product_attachments",
+      "description": "Retrieve all documents attached to a single product: safety data sheet (SDB), installation guide (Verarbeitungsanleitung), declaration of performance (DoP), CAD drawings, photos, videos.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "description": "The Oxomi product id from oxomi_search_products."
+          }
+        },
+        "required": ["productId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/attachments",
+        "queryParams": {
+          "productId": "$productId"
+        }
+      }
+    },
+    {
+      "name": "oxomi_search_documents",
+      "description": "Search standalone documents (not bound to a single product) across the portal: catalog supplements, price lists, marketing materials, legal documents, training videos.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Free-text search across document titles and tags."
+          },
+          "documentType": {
+            "type": "string",
+            "description": "Optional filter: 'catalog', 'pricelist', 'datasheet', 'safetydatasheet', 'installation', 'video', 'image', 'cad'."
+          },
+          "supplier": {
+            "type": "string",
+            "description": "Optional supplier filter."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language filter (e.g. 'de', 'en')."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Page size (default: 25)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document/search",
+        "queryParams": {
+          "q": "$q",
+          "documentType": "$documentType",
+          "supplier": "$supplier",
+          "lang": "$lang",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "oxomi_get_cross_selling",
+      "description": "Find related/cross-sell products for a given product (e.g. accessories, replacements, compatible items). Returns linked products with relation type (alternative, accessory, mounting, complement).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "description": "The base product id."
+          }
+        },
+        "required": ["productId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/cross-selling",
+        "queryParams": {
+          "productId": "$productId"
+        }
+      }
+    }
+  ]
+}

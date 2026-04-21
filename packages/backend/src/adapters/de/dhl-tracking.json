@@ -6,7 +6,9 @@
   "category": "logistics",
   "icon": "dhl",
   "docsUrl": "https://developer.dhl.com/api-reference/shipment-tracking",
-  "requiredEnvVars": ["DHL_API_KEY"],
+  "requiredEnvVars": [
+    "DHL_API_KEY"
+  ],
   "connector": {
     "name": "DHL Tracking",
     "type": "REST",
@@ -33,14 +35,16 @@
             "description": "ISO 639-1 language code for event descriptions (e.g. 'en', 'de'). Defaults to 'en'."
           }
         },
-        "required": ["trackingNumber"]
+        "required": [
+          "trackingNumber"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/track/shipments",
         "queryParams": {
-          "trackingNumber": "${trackingNumber}",
-          "language": "${language}"
+          "trackingNumber": "$trackingNumber",
+          "language": "$language"
         }
       }
     },
@@ -59,14 +63,16 @@
             "description": "ISO 639-1 language code for event descriptions. Defaults to 'en'."
           }
         },
-        "required": ["trackingNumbers"]
+        "required": [
+          "trackingNumbers"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/track/shipments",
         "queryParams": {
-          "trackingNumber": "${trackingNumbers}",
-          "language": "${language}"
+          "trackingNumber": "$trackingNumbers",
+          "language": "$language"
         }
       }
     }

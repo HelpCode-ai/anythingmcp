@@ -6,7 +6,9 @@
   "category": "remote",
   "icon": "teamviewer",
   "docsUrl": "https://www.teamviewer.com/en/for-developers/",
-  "requiredEnvVars": ["TEAMVIEWER_API_TOKEN"],
+  "requiredEnvVars": [
+    "TEAMVIEWER_API_TOKEN"
+  ],
   "connector": {
     "name": "TeamViewer",
     "type": "REST",
@@ -33,7 +35,7 @@
         "method": "GET",
         "path": "/devices",
         "queryParams": {
-          "online_state": "${online_state}"
+          "online_state": "$online_state"
         }
       }
     },
@@ -48,11 +50,13 @@
             "description": "The TeamViewer device ID"
           }
         },
-        "required": ["deviceId"]
+        "required": [
+          "deviceId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/devices/${deviceId}"
+        "path": "/devices/{deviceId}"
       }
     },
     {

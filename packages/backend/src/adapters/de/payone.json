@@ -6,7 +6,12 @@
   "category": "finance",
   "icon": "payone",
   "docsUrl": "https://docs.payone.com/",
-  "requiredEnvVars": ["PAYONE_MERCHANT_ID", "PAYONE_API_KEY", "PAYONE_PORTAL_ID", "PAYONE_ACCOUNT_ID"],
+  "requiredEnvVars": [
+    "PAYONE_MERCHANT_ID",
+    "PAYONE_API_KEY",
+    "PAYONE_PORTAL_ID",
+    "PAYONE_ACCOUNT_ID"
+  ],
   "connector": {
     "name": "PAYONE Payments",
     "type": "REST",
@@ -38,8 +43,8 @@
         "method": "GET",
         "path": "/transactions",
         "queryParams": {
-          "limit": "${limit}",
-          "offset": "${offset}",
+          "limit": "$limit",
+          "offset": "$offset",
           "merchant_id": "{{PAYONE_MERCHANT_ID}}"
         }
       }
@@ -55,11 +60,13 @@
             "description": "The PAYONE transaction ID"
           }
         },
-        "required": ["transactionId"]
+        "required": [
+          "transactionId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/transactions/${transactionId}"
+        "path": "/transactions/{transactionId}"
       }
     },
     {
@@ -77,13 +84,15 @@
             "description": "Amount to capture in smallest currency unit (cents). Leave empty for full capture."
           }
         },
-        "required": ["transactionId"]
+        "required": [
+          "transactionId"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/transactions/${transactionId}/capture",
+        "path": "/transactions/{transactionId}/capture",
         "bodyMapping": {
-          "amount": "${amount}"
+          "amount": "$amount"
         }
       }
     },
@@ -106,14 +115,16 @@
             "description": "Reason for the refund"
           }
         },
-        "required": ["transactionId"]
+        "required": [
+          "transactionId"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/transactions/${transactionId}/refund",
+        "path": "/transactions/{transactionId}/refund",
         "bodyMapping": {
-          "amount": "${amount}",
-          "reason": "${reason}"
+          "amount": "$amount",
+          "reason": "$reason"
         }
       }
     }

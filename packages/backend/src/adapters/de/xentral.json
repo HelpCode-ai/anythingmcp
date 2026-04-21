@@ -1,0 +1,204 @@
+{
+  "slug": "xentral",
+  "name": "Xentral ERP",
+  "description": "Access Xentral Cloud ERP — the SaaS ERP built specifically for German SMBs in e-commerce, wholesale, and manufacturing. Manage articles, customers, sales orders, invoices, and warehouse stock through the Xentral REST API.",
+  "instructions": "This connector uses the Xentral v1 REST API.\n\n**Instance URL**: Xentral is self-hosted per tenant. Paste your instance URL (without trailing slash) into `XENTRAL_URL` when importing — e.g. `https://koch.xentral.biz`. Do NOT append `/api`; the adapter handles that.\n\n**Credentials**: the classic API uses Basic authentication. Generate an API user in your Xentral instance under Einstellungen → Benutzer → API. The username is the API user's login, the password is its password. Set them as `XENTRAL_USER` and `XENTRAL_PASSWORD` at import time.\n\n**Entities covered**: articles (products), customers, sales orders (`/Auftrag`), invoices (`/Rechnung`), vendors, stock levels (`/Lager`), addresses.\n\n**Pagination**: list endpoints accept `page` and `items_per_page`. Default is 50 items per page.\n\n**Filtering**: use `filter` query parameter with Xentral filter DSL — e.g. `?filter=customer_number:eq:10001`.\n\n**Webhooks**: Xentral also supports webhooks for real-time events (configured in-instance, outside this adapter).",
+  "region": "de",
+  "category": "erp",
+  "icon": "xentral",
+  "docsUrl": "https://developer.xentral.com/docs",
+  "requiredEnvVars": [
+    "XENTRAL_URL",
+    "XENTRAL_USER",
+    "XENTRAL_PASSWORD"
+  ],
+  "connector": {
+    "name": "Xentral",
+    "type": "REST",
+    "baseUrl": "{{XENTRAL_URL}}/api/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{XENTRAL_USER}}",
+      "password": "{{XENTRAL_PASSWORD}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "xentral_list_articles",
+      "description": "List articles (products) from Xentral. Returns SKU (Nummer), name, sales price, stock level, tax class, and status. Supports filtering by SKU, EAN, or name prefix.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Xentral filter DSL, e.g. 'nummer:eq:A-1234' or 'bezeichnung:contains:Schraube'."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based."
+          },
+          "items_per_page": {
+            "type": "number",
+            "description": "Results per page (default 50, max 500)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    },
+    {
+      "name": "xentral_get_article",
+      "description": "Retrieve a single article by its Xentral internal id. Returns all fields including description, cost price, barcodes, bulk pricing tiers, and assigned categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Xentral article id."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles/{id}"
+      }
+    },
+    {
+      "name": "xentral_list_customers",
+      "description": "List customers (Kunden). Returns customer number, name, billing address, email, payment terms, and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Xentral filter DSL, e.g. 'kundennummer:eq:10001' or 'email:contains:koch'."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number."
+          },
+          "items_per_page": {
+            "type": "number",
+            "description": "Results per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    },
+    {
+      "name": "xentral_get_customer",
+      "description": "Retrieve a single customer by id, including contact persons, delivery addresses, bank details, and credit limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Xentral customer id."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{id}"
+      }
+    },
+    {
+      "name": "xentral_list_sales_orders",
+      "description": "List sales orders (Auftraege). Returns order number, customer, date, total, status, and line count. Filterable by date range, customer, or status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Xentral filter DSL. Examples: 'status:eq:abgeschlossen', 'datum:gte:2026-01-01'."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number."
+          },
+          "items_per_page": {
+            "type": "number",
+            "description": "Results per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales_orders",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    },
+    {
+      "name": "xentral_list_invoices",
+      "description": "List outgoing invoices (Rechnungen). Returns invoice number, customer, date, amount, open amount, paid amount, and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Xentral filter DSL, e.g. 'status:eq:offen' (open), 'datum:gte:2026-01-01'."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number."
+          },
+          "items_per_page": {
+            "type": "number",
+            "description": "Results per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    },
+    {
+      "name": "xentral_get_stock",
+      "description": "Retrieve current stock levels across all warehouses for a given article. Returns quantity on hand, reserved, available, and inbound per warehouse.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "string",
+            "description": "The Xentral article id."
+          }
+        },
+        "required": ["article_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock",
+        "queryParams": {
+          "article_id": "$article_id"
+        }
+      }
+    }
+  ]
+}

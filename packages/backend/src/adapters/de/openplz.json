@@ -1,0 +1,147 @@
+{
+  "slug": "openplz",
+  "name": "OpenPLZ Germany",
+  "description": "Look up German postal codes, localities, and streets via the OpenPLZ API. Free, no authentication, based on the official Bundesanstalt für Kartographie und Geodäsie (BKG) datasets.",
+  "instructions": "This connector wraps the free OpenPLZ API for German administrative structure lookups. Useful for address validation, form autocomplete, and regional analytics.\n\n**Hierarchy**: Germany → Federal state (Bundesland) → District (Kreis) → Municipality (Gemeinde) → Locality (Ort) + postal code (PLZ).\n\n**No authentication required**. OpenPLZ is rate-limited (soft limit ~10 req/s) — for bulk work consider self-hosting.\n\n**Common flows**:\n- Postal code → localities: `openplz_lookup_postalcode`\n- City + street autocomplete: `openplz_search_streets`\n- Full town info by AGS (Amtlicher Gemeindeschlüssel): `openplz_get_locality`",
+  "region": "de",
+  "category": "government",
+  "icon": "openplz",
+  "docsUrl": "https://www.openplzapi.org/de/",
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "OpenPLZ Germany",
+    "type": "REST",
+    "baseUrl": "https://openplzapi.org/de",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "openplz_lookup_postalcode",
+      "description": "Look up all localities associated with a German postal code (PLZ). Returns each locality's name, federal state, district, and AGS.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postalCode": {
+            "type": "string",
+            "description": "5-digit German postal code (e.g. '79098' for Freiburg im Breisgau)."
+          }
+        },
+        "required": ["postalCode"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Localities",
+        "queryParams": {
+          "postalCode": "$postalCode"
+        }
+      }
+    },
+    {
+      "name": "openplz_search_localities",
+      "description": "Search localities by name, optionally filtered by federal state. Returns name, PLZ, federal state, district.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Locality name or prefix (e.g. 'Freiburg', 'Muench')."
+          },
+          "federalState": {
+            "type": "string",
+            "description": "Federal state name (e.g. 'Baden-Württemberg', 'Bayern'). Optional filter."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Page size (default: 50, max: 100)."
+          }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Localities",
+        "queryParams": {
+          "name": "$name",
+          "federalState": "$federalState",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "openplz_search_streets",
+      "description": "Search streets within a locality. Useful for address autocomplete. Returns street names, borough (Ortsteil), PLZ.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Street name or prefix (e.g. 'Kaiser-Joseph')."
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "Optional filter — 5-digit PLZ to restrict to one postal area."
+          },
+          "locality": {
+            "type": "string",
+            "description": "Optional filter — locality name."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number (default: 1)."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Page size (default: 50, max: 100)."
+          }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Streets",
+        "queryParams": {
+          "name": "$name",
+          "postalCode": "$postalCode",
+          "locality": "$locality",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "openplz_list_federal_states",
+      "description": "List all 16 German federal states (Bundesländer) with their Regional Key (RS), name, and seat of government.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/FederalStates"
+      }
+    },
+    {
+      "name": "openplz_list_districts",
+      "description": "List all districts (Kreise/kreisfreie Städte) of a federal state. Returns RS, name, type, and administrative seat.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "federalStateKey": {
+            "type": "string",
+            "description": "Federal state Regional Key (e.g. '08' for Baden-Württemberg, '09' for Bayern)."
+          }
+        },
+        "required": ["federalStateKey"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/FederalStates/{federalStateKey}/Districts"
+      }
+    }
+  ]
+}
