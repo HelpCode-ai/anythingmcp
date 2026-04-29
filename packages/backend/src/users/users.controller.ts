@@ -7,10 +7,11 @@ import {
   Param,
   Req,
   UseGuards,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsString, IsOptional, IsEmail, IsEnum, MinLength, Matches } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsEnum, MinLength, Matches, Equals } from 'class-validator';
 import { UserRole } from '../generated/prisma/client';
 import { UsersService } from './users.service';
 import { AuthService } from '../auth/auth.service';
@@ -46,6 +47,16 @@ class UpdateUserRoleDto {
   role: UserRole;
 }
 
+class DeleteSelfDto {
+  @IsString()
+  @MinLength(1)
+  password: string;
+
+  @IsString()
+  @Equals('DELETE')
+  confirm: string;
+}
+
 @ApiTags('Users')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
@@ -75,6 +86,19 @@ export class UsersController {
     const user = await this.usersService.update(req.user.sub, data);
     const { passwordHash, ...profile } = user;
     return profile;
+  }
+
+  @Delete('me')
+  @ApiOperation({ summary: 'Delete current user account (self-delete)' })
+  async deleteSelf(@Req() req: any, @Body() dto: DeleteSelfDto) {
+    const user = await this.usersService.findById(req.user.sub);
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const isValid = await this.authService.comparePassword(dto.password, user.passwordHash);
+    if (!isValid) throw new UnauthorizedException('Invalid password');
+
+    await this.usersService.deleteSelf(req.user.sub);
+    return { message: 'Account deleted' };
   }
 
   @Put('me/password')

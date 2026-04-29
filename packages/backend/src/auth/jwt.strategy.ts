@@ -25,6 +25,24 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user) {
       throw new UnauthorizedException('User no longer exists');
     }
+
+    // Self-heal a NULL active org by snapping to the oldest remaining membership.
+    // This happens when an organization the user was active in was deleted while
+    // they were a member of others — schema's onDelete:SetNull leaves them dangling.
+    if (user.organizationId === null) {
+      const fallback = await this.prisma.organizationMember.findFirst({
+        where: { userId: user.id },
+        orderBy: { joinedAt: 'asc' },
+      });
+      if (fallback) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { organizationId: fallback.organizationId, role: fallback.role },
+        });
+        return { sub: user.id, email: user.email, role: fallback.role, organizationId: fallback.organizationId };
+      }
+    }
+
     return { sub: user.id, email: user.email, role: user.role, organizationId: user.organizationId };
   }
 }

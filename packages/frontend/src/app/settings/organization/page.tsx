@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { organizations } from '@/lib/api';
+import * as Dialog from '@radix-ui/react-dialog';
 
 export default function OrganizationSettingsPage() {
-  const { token, user, orgName, orgs, setOrgName, switchOrg } = useAuth();
+  const { token, user, orgName, orgs, setOrgName, switchOrg, replaceSession } = useAuth();
   const [name, setName] = useState('');
   const [orgId, setOrgId] = useState('');
   const [createdAt, setCreatedAt] = useState('');
@@ -17,6 +18,12 @@ export default function OrganizationSettingsPage() {
   const [newOrgName, setNewOrgName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createMessage, setCreateMessage] = useState('');
+
+  // Delete organization
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const isAdmin = user?.role === 'ADMIN';
 
@@ -43,6 +50,28 @@ export default function OrganizationSettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDeleteOrg = async () => {
+    if (!token) return;
+    if (deleteConfirmName.trim() !== name.trim()) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await organizations.deleteCurrent({ confirmName: deleteConfirmName.trim() }, token);
+      replaceSession(result.accessToken, result.user, result.organization?.name ?? null);
+      window.location.href = '/';
+    } catch (err: any) {
+      setDeleteError(err?.message || 'Failed to delete organization');
+      setDeleting(false);
+    }
+  };
+
+  const resetDeleteOrgDialog = () => {
+    setDeleteOpen(false);
+    setDeleteConfirmName('');
+    setDeleteError(null);
+    setDeleting(false);
   };
 
   const handleCreateOrg = async () => {
@@ -191,6 +220,67 @@ export default function OrganizationSettingsPage() {
           </p>
         )}
       </div>
+
+      {/* Danger Zone — ADMIN only */}
+      {isAdmin && (
+        <div className="border border-[var(--destructive-border)] rounded-lg p-5 bg-[var(--destructive-bg)]/30 space-y-3">
+          <h3 className="text-sm font-semibold text-[var(--destructive-text)]">Danger Zone</h3>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            Permanently delete this organization, including all members, connectors, MCP servers,
+            API keys, custom roles, pending invitations, and settings. Other members will be
+            migrated to their next-oldest workspace if they have one. This action cannot be undone.
+          </p>
+          <button
+            onClick={() => setDeleteOpen(true)}
+            className="border border-[var(--destructive)] text-[var(--destructive)] px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--destructive-bg)]"
+          >
+            Delete this organization
+          </button>
+        </div>
+      )}
+
+      <Dialog.Root open={deleteOpen} onOpenChange={(open) => { if (!open) resetDeleteOrgDialog(); }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg">
+            <Dialog.Title className="text-lg font-medium mb-2">Delete organization</Dialog.Title>
+            <Dialog.Description className="text-sm text-[var(--muted-foreground)] mb-4">
+              This deletes <strong>{name}</strong> and everything it contains. To confirm, type the
+              organization name below.
+            </Dialog.Description>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Type <code>{name}</code> to confirm</label>
+                <input
+                  type="text"
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  autoComplete="off"
+                  placeholder={name}
+                />
+              </div>
+              {deleteError && (
+                <p className="text-sm text-[var(--destructive)]">{deleteError}</p>
+              )}
+            </div>
+
+            <div className="flex gap-2 justify-end mt-6">
+              <Dialog.Close className="border border-[var(--border)] px-4 py-2 rounded-md text-sm hover:bg-[var(--accent)]">
+                Cancel
+              </Dialog.Close>
+              <button
+                onClick={handleDeleteOrg}
+                disabled={deleting || deleteConfirmName.trim() !== name.trim()}
+                className="bg-[var(--destructive)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting…' : 'Delete organization'}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       {/* My organizations list — available to ALL users */}
       {orgs && orgs.length > 1 && (

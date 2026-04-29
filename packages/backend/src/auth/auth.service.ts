@@ -6,7 +6,7 @@ export interface JwtPayload {
   sub: string;
   email: string;
   role: string;
-  organizationId: string;
+  organizationId: string | null;
   mcpRoleId?: string | null;
 }
 

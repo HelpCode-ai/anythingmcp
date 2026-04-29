@@ -3,11 +3,13 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Req,
   UseGuards,
   ForbiddenException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -32,6 +34,11 @@ class CreateOrgDto {
   name: string;
 }
 
+class DeleteOrgDto {
+  @IsString()
+  confirmName: string;
+}
+
 @ApiTags('Organizations')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
@@ -52,6 +59,9 @@ export class OrganizationsController {
   @Get('current')
   @ApiOperation({ summary: 'Get current active organization' })
   async getCurrent(@Req() req: any) {
+    if (!req.user.organizationId) {
+      throw new NotFoundException('No active organization');
+    }
     const org = await this.organizationsService.findById(req.user.organizationId);
     if (!org) throw new NotFoundException('Organization not found');
     return org;
@@ -64,6 +74,46 @@ export class OrganizationsController {
       throw new ForbiddenException('Only admins can update the organization');
     }
     return this.organizationsService.update(req.user.organizationId, dto);
+  }
+
+  @Delete('current')
+  @ApiOperation({ summary: 'Delete current organization (ADMIN only)' })
+  async deleteCurrent(@Req() req: any, @Body() dto: DeleteOrgDto) {
+    if (req.user.role !== 'ADMIN') {
+      throw new ForbiddenException('Only admins can delete the organization');
+    }
+    if (!req.user.organizationId) {
+      throw new BadRequestException('No active organization');
+    }
+
+    const { activeUser, activeOrganization, autoCreated } =
+      await this.organizationsService.deleteOrganization(
+        req.user.sub,
+        req.user.organizationId,
+        dto.confirmName,
+      );
+
+    const accessToken = this.authService.generateToken({
+      sub: activeUser.id,
+      email: activeUser.email,
+      role: activeUser.role,
+      organizationId: activeUser.organizationId,
+      mcpRoleId: activeUser.mcpRoleId,
+    });
+
+    return {
+      message: 'Organization deleted',
+      accessToken,
+      user: {
+        id: activeUser.id,
+        email: activeUser.email,
+        name: activeUser.name,
+        role: activeUser.role,
+        organizationId: activeUser.organizationId,
+      },
+      organization: activeOrganization,
+      autoCreated,
+    };
   }
 
   @Post('switch')

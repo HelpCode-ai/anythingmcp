@@ -7,9 +7,9 @@ import { users, server, organizations, AUTH_EXPIRED_EVENT } from './api';
 interface User {
   id: string;
   email: string;
-  name: string;
+  name: string | null;
   role: string;
-  organizationId: string;
+  organizationId: string | null;
 }
 
 interface OrgInfo {
@@ -26,6 +26,7 @@ interface AuthContextType {
   orgs: OrgInfo[] | null;
   setOrgName: (name: string) => void;
   switchOrg: (organizationId: string) => Promise<void>;
+  replaceSession: (token: string, user: User, orgName?: string | null) => void;
   login: (token: string, user: User) => void;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
@@ -40,6 +41,7 @@ const AuthContext = createContext<AuthContextType>({
   orgs: null,
   setOrgName: () => {},
   switchOrg: async () => {},
+  replaceSession: () => {},
   login: () => {},
   logout: () => {},
   updateUser: () => {},
@@ -157,6 +159,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const replaceSession = (newToken: string, newUser: User, newOrgName?: string | null) => {
+    setToken(newToken);
+    setUser(newUser);
+    localStorage.setItem('amcp_token', newToken);
+    localStorage.setItem('amcp_user', JSON.stringify(newUser));
+    document.cookie = `amcp_token=${newToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
+    if (newOrgName !== undefined) setOrgName(newOrgName);
+  };
+
   const updateUser = (updates: Partial<User>) => {
     setUser((prev) => {
       if (!prev) return prev;
@@ -167,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, orgName, orgs, setOrgName, switchOrg, login, logout, updateUser, isLoading, deploymentMode }}>
+    <AuthContext.Provider value={{ token, user, orgName, orgs, setOrgName, switchOrg, replaceSession, login, logout, updateUser, isLoading, deploymentMode }}>
       {children}
     </AuthContext.Provider>
   );
