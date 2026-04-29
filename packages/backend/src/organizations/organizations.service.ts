@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { UserRole } from '../generated/prisma/client';
 
@@ -96,6 +96,119 @@ export class OrganizationsService {
     }
 
     return membership;
+  }
+
+  async deleteOrganization(
+    userId: string,
+    organizationId: string,
+    confirmName: string,
+  ): Promise<{
+    activeUser: { id: string; email: string; name: string | null; role: UserRole; organizationId: string; mcpRoleId: string | null };
+    activeOrganization: { id: string; name: string };
+    autoCreated: boolean;
+  }> {
+    const org = await this.prisma.organization.findUnique({ where: { id: organizationId } });
+    if (!org) throw new NotFoundException('Organization not found');
+
+    if (org.name.trim() !== confirmName.trim()) {
+      throw new BadRequestException('Confirmation name does not match');
+    }
+
+    const membership = await this.getMembership(userId, organizationId);
+    if (!membership || membership.role !== 'ADMIN') {
+      throw new ForbiddenException('Only org admins can delete the organization');
+    }
+
+    // Snapshot users (other than the deleter) whose CACHED active org is this one
+    const orphans = await this.prisma.user.findMany({
+      where: { organizationId, id: { not: userId } },
+      select: { id: true },
+    });
+
+    type Next = { organizationId: string; role: UserRole } | null;
+    const nextByOrphan = new Map<string, Next>();
+    for (const o of orphans) {
+      const m = await this.prisma.organizationMember.findFirst({
+        where: { userId: o.id, organizationId: { not: organizationId } },
+        orderBy: { joinedAt: 'asc' },
+      });
+      nextByOrphan.set(o.id, m ? { organizationId: m.organizationId, role: m.role } : null);
+    }
+
+    const selfNext = await this.prisma.organizationMember.findFirst({
+      where: { userId, organizationId: { not: organizationId } },
+      orderBy: { joinedAt: 'asc' },
+    });
+
+    let autoCreated = false;
+    let finalUserId = userId;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Migrate orphans pre-cascade
+      for (const [uid, next] of nextByOrphan.entries()) {
+        if (next) {
+          await tx.user.update({
+            where: { id: uid },
+            data: { organizationId: next.organizationId, role: next.role },
+          });
+        } else {
+          await tx.user.update({
+            where: { id: uid },
+            data: { organizationId: null },
+          });
+        }
+      }
+
+      // Migrate the deleter
+      if (selfNext) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { organizationId: selfNext.organizationId, role: selfNext.role },
+        });
+      } else {
+        const user = await tx.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+        const wsName = user?.name
+          ? `${user.name}'s Workspace`
+          : `${(user?.email ?? 'My').split('@')[0]}'s Workspace`;
+        const newOrg = await tx.organization.create({ data: { name: wsName } });
+        await tx.organizationMember.create({
+          data: { userId, organizationId: newOrg.id, role: 'ADMIN' as UserRole },
+        });
+        await tx.user.update({
+          where: { id: userId },
+          data: { organizationId: newOrg.id, role: 'ADMIN' as UserRole },
+        });
+        autoCreated = true;
+      }
+
+      // Delete the organization — cascades clean up everything else
+      await tx.organization.delete({ where: { id: organizationId } });
+
+      const updatedUser = await tx.user.findUnique({ where: { id: finalUserId } });
+      if (!updatedUser || !updatedUser.organizationId) {
+        throw new Error('User active org missing after migration');
+      }
+      const activeOrg = await tx.organization.findUnique({
+        where: { id: updatedUser.organizationId },
+        select: { id: true, name: true },
+      });
+      if (!activeOrg) {
+        throw new Error('Active organization missing after migration');
+      }
+      return {
+        activeUser: {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          name: updatedUser.name,
+          role: updatedUser.role,
+          organizationId: updatedUser.organizationId,
+          mcpRoleId: updatedUser.mcpRoleId,
+        },
+        activeOrganization: activeOrg,
+      };
+    });
+
+    return { ...result, autoCreated };
   }
 
   async getMembers(organizationId: string) {

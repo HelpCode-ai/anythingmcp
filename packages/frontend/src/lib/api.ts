@@ -6,10 +6,21 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   token?: string;
+  skipAutoLogout?: boolean;
 }
 
 // Emitted when any authenticated request gets a 401 — auth-context listens for this.
 export const AUTH_EXPIRED_EVENT = 'amcp:auth-expired';
+
+export class ApiError extends Error {
+  status: number;
+  body: any;
+  constructor(message: string, status: number, body: any) {
+    super(message);
+    this.status = status;
+    this.body = body;
+  }
+}
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, token } = options;
@@ -29,12 +40,15 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   });
 
   if (!response.ok) {
-    // Auto-logout on 401 for authenticated requests
-    if (response.status === 401 && token) {
+    const errorBody = await response.json().catch(() => ({ message: response.statusText }));
+    // Auto-logout on 401 for authenticated requests, except when explicitly opting out
+    // (self-delete intentionally returns 401 for wrong password — let the caller handle it)
+    const skipAutoLogout = options.skipAutoLogout;
+    if (response.status === 401 && token && !skipAutoLogout) {
       window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
     }
-    const error = await response.json().catch(() => ({ message: response.statusText }));
-    throw new Error(error.message || `API error: ${response.status}`);
+    const message = errorBody.message || errorBody.error || `API error: ${response.status}`;
+    throw new ApiError(message, response.status, errorBody);
   }
 
   return response.json();
@@ -103,6 +117,13 @@ export const users = {
     request(`/api/users/${id}/role`, { method: 'PUT', body: { role }, token }),
   delete: (id: string, token: string) =>
     request(`/api/users/${id}`, { method: 'DELETE', token }),
+  deleteSelf: (data: { password: string; confirm: 'DELETE' }, token: string) =>
+    request<{ message: string }>('/api/users/me', {
+      method: 'DELETE',
+      body: data,
+      token,
+      skipAutoLogout: true,
+    }),
   invitations: (token: string) =>
     request<any[]>('/api/users/invitations', { token }),
   deleteInvitation: (id: string, token: string) =>
@@ -123,6 +144,14 @@ export const organizations = {
     }),
   create: (name: string, token: string) =>
     request<{ id: string; name: string }>('/api/organizations', { method: 'POST', body: { name }, token }),
+  deleteCurrent: (data: { confirmName: string }, token: string) =>
+    request<{
+      message: string;
+      accessToken: string;
+      user: { id: string; email: string; name: string | null; role: string; organizationId: string };
+      organization: { id: string; name: string };
+      autoCreated: boolean;
+    }>('/api/organizations/current', { method: 'DELETE', body: data, token }),
 };
 
 // Connectors

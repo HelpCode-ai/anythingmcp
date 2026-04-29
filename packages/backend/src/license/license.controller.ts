@@ -48,7 +48,7 @@ export class LicenseController {
     if (authHeader?.startsWith('Bearer ')) {
       try {
         const payload = this.authService.verifyToken(authHeader.substring(7));
-        organizationId = payload.organizationId;
+        organizationId = payload.organizationId ?? undefined;
       } catch {}
     }
 

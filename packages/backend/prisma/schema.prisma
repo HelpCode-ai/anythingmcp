@@ -79,8 +79,8 @@ model User {
   name           String?
   role           UserRole @default(EDITOR)
   emailVerified  Boolean  @default(false) @map("email_verified")
-  organizationId String   @map("organization_id")
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String?  @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
