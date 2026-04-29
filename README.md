@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/helpcode-ai-anythingmcp-badge.png)](https://mseep.ai/app/helpcode-ai-anythingmcp)
+
 <p align="center">
   <h1 align="center">AnythingMCP — Self-Hosted MCP Server & API Gateway</h1>
   <p align="center">
