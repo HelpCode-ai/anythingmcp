@@ -11,7 +11,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: Install ALL dependencies ───────────────────────────────────────
-FROM node:22-alpine AS deps
+FROM node:25-alpine AS deps
 RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
@@ -25,7 +25,7 @@ COPY packages/frontend/package.json ./packages/frontend/
 RUN npm ci --network-timeout 600000
 
 # ── Stage 1b: Backend production deps only ────────────────────────────────
-FROM node:22-alpine AS backend-prod-deps
+FROM node:25-alpine AS backend-prod-deps
 RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
@@ -41,7 +41,7 @@ RUN npm install --omit=dev --network-timeout=600000 && \
     rm -rf node_modules/typescript node_modules/react-dom node_modules/react
 
 # ── Stage 2: Build Backend ──────────────────────────────────────────────────
-FROM node:22-alpine AS backend-builder
+FROM node:25-alpine AS backend-builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -57,7 +57,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # ── Stage 3: Build Frontend ─────────────────────────────────────────────────
-FROM node:22-alpine AS frontend-builder
+FROM node:25-alpine AS frontend-builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -71,7 +71,7 @@ WORKDIR /app/packages/frontend
 RUN npm run build
 
 # ── Stage 4: Production ─────────────────────────────────────────────────────
-FROM node:22-alpine AS runner
+FROM node:25-alpine AS runner
 RUN apk add --no-cache wget
 WORKDIR /app
 
