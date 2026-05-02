@@ -90,14 +90,13 @@ if (useOAuth) {
     // Cache
     RedisModule,
 
-    // Rate limiting — named buckets so callers can pick a stricter policy
-    // for sensitive endpoints (login, password reset) without affecting
-    // general API throughput.
-    ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60_000, limit: 100 },
-      { name: 'auth', ttl: 60_000, limit: 10 },
-      { name: 'auth-strict', ttl: 60_000, limit: 5 },
-    ]),
+    // Rate limiting — single default bucket (100 req/min). Sensitive routes
+    // (login, register, password reset) override this with @Throttle() so
+    // they can have a much stricter cap without throttling general traffic.
+    // Note: do NOT add additional named buckets here. With nestjs/throttler
+    // v6, ALL configured buckets apply to every request, which means a
+    // strict bucket would also throttle the MCP endpoints.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
 
     // MCP Server (dynamic tools registered by McpServerModule)
     McpModule.forRoot({

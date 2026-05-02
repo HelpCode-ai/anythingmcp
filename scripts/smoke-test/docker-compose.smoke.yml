@@ -1,0 +1,96 @@
+# =============================================================================
+# Smoke-test stack
+# =============================================================================
+# Brings up everything the smoke-test script needs:
+#   - postgres: app database
+#   - mysql:    target for the DATABASE-connector test (with sample data)
+#   - app:      backend + frontend (the Sprint-1-hardened build)
+#
+# Usage:
+#   ./scripts/smoke-test/run.sh
+#
+# Secrets are generated on the fly inside run.sh so they pass our boot-time
+# validation (JWT_SECRET / ENCRYPTION_KEY ≥ 32 chars, no known placeholders).
+# =============================================================================
+
+name: amcp-smoke
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: amcp-smoke-postgres
+    environment:
+      POSTGRES_USER: amcp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: anythingmcp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amcp -d anythingmcp"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks: [smoke]
+
+  mysql:
+    image: mysql:8.4
+    container_name: amcp-smoke-mysql
+    environment:
+      MYSQL_DATABASE: smoketest
+      MYSQL_USER: smoke
+      MYSQL_PASSWORD: smokepass
+      MYSQL_ROOT_PASSWORD: smokerootpass
+    volumes:
+      - ./mysql-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test:
+        ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-usmoke", "-psmokepass"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /var/lib/mysql
+    networks: [smoke]
+
+  app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: anythingmcp-smoke:local
+    container_name: amcp-smoke-app
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: "postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp"
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      CORS_ORIGIN: http://localhost:3000
+      SERVER_URL: http://localhost:4000
+      FRONTEND_URL: http://localhost:3000
+      MCP_AUTH_MODE: legacy
+      ALLOW_OPEN_REGISTRATION: "true"
+      DEPLOYMENT_MODE: self-hosted
+      # Allow the smoke test to reach the local mysql container (private IP)
+      # without disabling the SSRF guard globally.
+      SSRF_ALLOW_PRIVATE: "true"
+      SSRF_ALLOW_LOCALHOST: "true"
+    ports:
+      - "${SMOKE_BACKEND_PORT:-4100}:4000"
+      - "${SMOKE_FRONTEND_PORT:-3100}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test:
+        ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks: [smoke]
+
+networks:
+  smoke:
+    name: amcp-smoke

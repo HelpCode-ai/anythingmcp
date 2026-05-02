@@ -38,7 +38,7 @@ export class LoginController {
   }
 
   @Post('login')
-  @Throttle({ 'auth-strict': { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async handleLogin(
     @Req() req: Request,
     @Body() body: { email: string; password: string; session: string },
