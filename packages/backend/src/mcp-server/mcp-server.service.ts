@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { McpRegistryService } from '@rekog/mcp-nest';
 import { PrismaService } from '../common/prisma.service';
 import { decrypt } from '../common/crypto/encryption.util';
+import { getRequiredSecret } from '../common/secrets.util';
 import { ToolRegistry } from './tool-registry';
 import { DynamicMcpTools } from './dynamic-mcp-tools';
 import { RolesService } from '../roles/roles.service';
@@ -25,9 +26,10 @@ export class McpServerService implements OnModuleInit {
     private readonly rolesService: RolesService,
     private readonly mcpServersService: McpServersService,
   ) {
-    this.encryptionKey =
-      this.configService.get<string>('ENCRYPTION_KEY') ||
-      'default-dev-key-change-in-prod!!';
+    this.encryptionKey = getRequiredSecret(
+      'ENCRYPTION_KEY',
+      this.configService.get<string>('ENCRYPTION_KEY'),
+    );
   }
 
   async onModuleInit() {

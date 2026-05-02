@@ -114,8 +114,8 @@ describe('DatabaseEngine', () => {
     });
   });
 
-  describe('SQL parameter interpolation (escapeValue)', () => {
-    it('should escape string values with single quotes', async () => {
+  describe('SQL parameter binding (prepared statements)', () => {
+    it('binds string values as positional parameters', async () => {
       mockQuery.mockResolvedValue({ rows: [] });
       await engine.execute(
         { baseUrl: 'postgres://host/db', authType: 'NONE' },
@@ -123,11 +123,12 @@ describe('DatabaseEngine', () => {
         { name: 'John' },
       );
       expect(mockQuery).toHaveBeenCalledWith(
-        "SELECT * FROM users WHERE name = 'John'",
+        'SELECT * FROM users WHERE name = $1',
+        ['John'],
       );
     });
 
-    it('should escape single quotes by doubling them', async () => {
+    it('passes single quotes through as a parameter (no escaping)', async () => {
       mockQuery.mockResolvedValue({ rows: [] });
       await engine.execute(
         { baseUrl: 'postgres://host/db', authType: 'NONE' },
@@ -135,11 +136,25 @@ describe('DatabaseEngine', () => {
         { name: "O'Brien" },
       );
       expect(mockQuery).toHaveBeenCalledWith(
-        "SELECT * FROM users WHERE name = 'O''Brien'",
+        'SELECT * FROM users WHERE name = $1',
+        ["O'Brien"],
       );
     });
 
-    it('should return NULL for null/undefined', async () => {
+    it('rejects classic SQL-injection payloads as a literal value, not as SQL', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        { method: 'query', path: 'SELECT * FROM users WHERE name = $name' },
+        { name: "x'; DROP TABLE users; --" },
+      );
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT * FROM users WHERE name = $1',
+        ["x'; DROP TABLE users; --"],
+      );
+    });
+
+    it('binds null values', async () => {
       mockQuery.mockResolvedValue({ rows: [] });
       await engine.execute(
         { baseUrl: 'postgres://host/db', authType: 'NONE' },
@@ -147,11 +162,12 @@ describe('DatabaseEngine', () => {
         { name: null },
       );
       expect(mockQuery).toHaveBeenCalledWith(
-        'SELECT * FROM users WHERE name = NULL',
+        'SELECT * FROM users WHERE name = $1',
+        [null],
       );
     });
 
-    it('should return numeric values unquoted', async () => {
+    it('binds numeric values', async () => {
       mockQuery.mockResolvedValue({ rows: [] });
       await engine.execute(
         { baseUrl: 'postgres://host/db', authType: 'NONE' },
@@ -159,11 +175,12 @@ describe('DatabaseEngine', () => {
         { age: 25 },
       );
       expect(mockQuery).toHaveBeenCalledWith(
-        'SELECT * FROM users WHERE age = 25',
+        'SELECT * FROM users WHERE age = $1',
+        [25],
       );
     });
 
-    it('should return TRUE/FALSE for booleans', async () => {
+    it('binds boolean values', async () => {
       mockQuery.mockResolvedValue({ rows: [] });
       await engine.execute(
         { baseUrl: 'postgres://host/db', authType: 'NONE' },
@@ -171,7 +188,24 @@ describe('DatabaseEngine', () => {
         { active: true },
       );
       expect(mockQuery).toHaveBeenCalledWith(
-        'SELECT * FROM users WHERE active = TRUE',
+        'SELECT * FROM users WHERE active = $1',
+        [true],
+      );
+    });
+
+    it('binds repeated occurrences of the same param twice', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        {
+          method: 'query',
+          path: 'SELECT * FROM users WHERE first = $name OR last = $name',
+        },
+        { name: 'Alice' },
+      );
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT * FROM users WHERE first = $1 OR last = $2',
+        ['Alice', 'Alice'],
       );
     });
   });

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { ParsedTool } from './openapi.parser';
 
 /**
@@ -55,6 +56,7 @@ export class PostmanParser {
       const apiUrl = `https://documenter.getpostman.com/api/collections/download?version=latest&document_id=${slug}&owner=${ownerId}`;
       this.logger.debug(`Detected Postman Documenter URL. Trying API: ${apiUrl}`);
       try {
+        await assertSafeOutboundUrl(apiUrl);
         const apiResp = await axios.get(apiUrl, { timeout: 15000 });
         if (apiResp.data && typeof apiResp.data === 'object') {
           return this.parse(apiResp.data);
@@ -68,6 +70,7 @@ export class PostmanParser {
       );
     }
 
+    await assertSafeOutboundUrl(url);
     const response = await axios.get(url, { timeout: 15000 });
 
     // Validate response is JSON, not HTML

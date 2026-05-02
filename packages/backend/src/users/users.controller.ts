@@ -142,8 +142,9 @@ export class UsersController {
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Revoke an invitation (ADMIN only)' })
-  async deleteInvitation(@Param('id') id: string) {
-    await this.usersService.deleteInvitation(id);
+  async deleteInvitation(@Req() req: any, @Param('id') id: string) {
+    const ok = await this.usersService.deleteInvitationInOrg(id, req.user.organizationId);
+    if (!ok) return { error: 'Invitation not found' };
     return { message: 'Invitation revoked' };
   }
 
@@ -160,10 +161,12 @@ export class UsersController {
       return { error: 'Cannot change your own role' };
     }
 
-    const user = await this.usersService.findById(id);
-    if (!user) return { error: 'User not found' };
-
-    await this.usersService.update(id, { role: dto.role });
+    const updated = await this.usersService.updateInOrg(
+      id,
+      req.user.organizationId,
+      { role: dto.role },
+    );
+    if (!updated) return { error: 'User not found' };
     return { message: `User role updated to ${dto.role}` };
   }
 
@@ -176,7 +179,8 @@ export class UsersController {
       return { error: 'Cannot delete your own account' };
     }
 
-    await this.usersService.delete(id);
+    const ok = await this.usersService.deleteInOrg(id, req.user.organizationId);
+    if (!ok) return { error: 'User not found' };
     return { message: 'User deleted' };
   }
 }

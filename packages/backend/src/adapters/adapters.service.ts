@@ -4,6 +4,7 @@ import { McpServerService } from '../mcp-server/mcp-server.service';
 import { encrypt } from '../common/crypto/encryption.util';
 import { ConfigService } from '@nestjs/config';
 import { listAdapters, getAdapter, AdapterMeta, AdapterDefinition } from './catalog';
+import { getRequiredSecret } from '../common/secrets.util';
 
 @Injectable()
 export class AdaptersService {
@@ -15,9 +16,10 @@ export class AdaptersService {
     private readonly mcpServer: McpServerService,
     private readonly configService: ConfigService,
   ) {
-    this.encryptionKey =
-      this.configService.get<string>('ENCRYPTION_KEY') ||
-      'default-dev-key-change-in-prod!!';
+    this.encryptionKey = getRequiredSecret(
+      'ENCRYPTION_KEY',
+      this.configService.get<string>('ENCRYPTION_KEY'),
+    );
   }
 
   listAll(): AdapterMeta[] {

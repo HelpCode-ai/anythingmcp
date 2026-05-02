@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import * as soap from 'soap';
 import { XMLParser } from 'fast-xml-parser';
+import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
 /**
  * SoapEngine — executes SOAP calls using raw HTTP via axios.
@@ -107,6 +108,7 @@ export class SoapEngine {
     }
 
     try {
+      await assertSafeOutboundUrl(endpoint);
       const response = await axios.post(endpoint, envelope, {
         headers,
         timeout: 30000,
@@ -243,6 +245,7 @@ ${paramXml}
     paramOrder: string[];
   }> {
     try {
+      await assertSafeOutboundUrl(wsdlUrl);
       const client = await soap.createClientAsync(wsdlUrl);
       const wsdl = client.wsdl;
 

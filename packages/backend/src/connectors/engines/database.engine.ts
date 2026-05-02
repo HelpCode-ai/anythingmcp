@@ -41,29 +41,64 @@ export class DatabaseEngine {
       return this.executeMongodb(config, endpointMapping, params);
     }
 
-    // If the path is a single param reference like ${query}, use the raw value as SQL
-    // (don't escape it as a string literal — it IS the SQL)
+    // If the path is a single param reference like ${query}, use the raw value as SQL.
+    // The query value is fully untrusted; rely on validateQuery() (in readOnly mode)
+    // and on the database role's grants. Prepared statements cannot help here because
+    // the entire statement comes from the caller.
     const rawParamMatch = endpointMapping.path.match(/^\$\{(\w+)\}$/);
-    const sql = rawParamMatch
-      ? String(params[rawParamMatch[1]] || '')
-      : this.interpolateParams(endpointMapping.path, params);
+    const isRawSql = !!rawParamMatch;
+
+    if (isRawSql) {
+      const sql = String(params[rawParamMatch![1]] || '');
+      if (readOnly) {
+        this.validateQuery(sql);
+      }
+      return this.dispatch(config, sql, [], readOnly);
+    }
+
+    // Templated SQL: compile ${name} / $name placeholders to driver-specific
+    // parameterised queries. Values are bound, never inlined.
+    const driver = this.detectDriver(config.baseUrl);
+    const { sql, values } = compileParameterized(
+      endpointMapping.path,
+      params,
+      driver,
+    );
     if (readOnly) {
       this.validateQuery(sql);
     }
+    return this.dispatch(config, sql, values, readOnly);
+  }
 
+  private detectDriver(baseUrl: string): SqlDriver {
+    if (this.isMssql(baseUrl)) return 'mssql';
+    if (this.isMysql(baseUrl)) return 'mysql';
+    if (this.isOracle(baseUrl)) return 'oracle';
+    if (this.isSqlite(baseUrl)) return 'sqlite';
+    return 'postgres';
+  }
+
+  private dispatch(
+    config: { baseUrl: string; authType: string; authConfig?: Record<string, unknown> },
+    sql: string,
+    values: unknown[],
+    readOnly: boolean,
+  ): Promise<unknown> {
     if (this.isMssql(config.baseUrl)) {
-      return this.executeMssql(config, sql);
+      return this.executeMssql(config, sql, values);
     }
     if (this.isMysql(config.baseUrl)) {
-      return this.executeMysql(config, sql);
+      return this.executeMysql(config, sql, values);
     }
     if (this.isOracle(config.baseUrl)) {
-      return this.executeOracle(config, sql);
+      return this.executeOracle(config, sql, values);
     }
     if (this.isSqlite(config.baseUrl)) {
-      return this.executeSqlite(config.baseUrl, sql, readOnly);
+      return Promise.resolve(
+        this.executeSqlite(config.baseUrl, sql, values, readOnly),
+      );
     }
-    return this.executePostgres(config.baseUrl, sql);
+    return this.executePostgres(config.baseUrl, sql, values);
   }
 
   /** Test connectivity — runs SELECT 1 (SQL) or ping (MongoDB) */
@@ -130,13 +165,15 @@ export class DatabaseEngine {
   private async executePostgres(
     connectionString: string,
     sql: string,
+    values: unknown[] = [],
   ): Promise<unknown> {
     const safeHost = connectionString.split('@')[1] ?? 'unknown';
     this.logger.debug(`PostgreSQL query → ${safeHost}`);
 
     const pool = new Pool({ connectionString });
     try {
-      const result = await pool.query(sql);
+      const result =
+        values.length > 0 ? await pool.query(sql, values) : await pool.query(sql);
       if (result.rows && result.rows.length > 0) {
         const rows = Array.isArray(result.rows) ? result.rows : [result.rows];
         return this.truncateRows(rows);
@@ -159,13 +196,18 @@ export class DatabaseEngine {
       authConfig?: Record<string, unknown>;
     },
     sql: string,
+    values: unknown[] = [],
   ): Promise<unknown> {
     const mssqlConfig = this.buildMssqlConfig(config);
     this.logger.debug(`MSSQL query → ${mssqlConfig.server}/${mssqlConfig.database}`);
 
     const pool = await mssql.connect(mssqlConfig);
     try {
-      const result = await pool.request().query(sql);
+      const request = pool.request();
+      values.forEach((value, idx) => {
+        request.input(`p${idx}`, value as any);
+      });
+      const result = await request.query(sql);
       if (result.recordset && result.recordset.length > 0) {
         return this.truncateRows(result.recordset);
       }
@@ -405,13 +447,17 @@ export class DatabaseEngine {
       authConfig?: Record<string, unknown>;
     },
     sql: string,
+    values: unknown[] = [],
   ): Promise<unknown> {
     const uri = this.mysqlUri(config.baseUrl);
     this.logger.debug(`MySQL query → ${new URL(uri).hostname}`);
 
     const conn = await mysql.createConnection(uri);
     try {
-      const [result] = await conn.query(sql);
+      const [result] =
+        values.length > 0
+          ? await conn.execute(sql, values as any[])
+          : await conn.query(sql);
       if (Array.isArray(result)) {
         return this.truncateRows(result as Record<string, unknown>[]);
       }
@@ -442,13 +488,14 @@ export class DatabaseEngine {
       authConfig?: Record<string, unknown>;
     },
     sql: string,
+    values: unknown[] = [],
   ): Promise<unknown> {
     const oraConfig = this.buildOracleConfig(config);
     this.logger.debug(`Oracle query → ${oraConfig.connectString}`);
 
     const conn = await oracledb.getConnection(oraConfig);
     try {
-      const result = await conn.execute(sql, [], {
+      const result = await conn.execute(sql, values as any[], {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
         autoCommit: true,
       });
@@ -489,7 +536,12 @@ export class DatabaseEngine {
   /*  SQLite                                                             */
   /* ------------------------------------------------------------------ */
 
-  private executeSqlite(baseUrl: string, sql: string, readOnly = true): unknown {
+  private executeSqlite(
+    baseUrl: string,
+    sql: string,
+    values: unknown[] = [],
+    readOnly = true,
+  ): unknown {
     const filePath = this.sqlitePath(baseUrl);
     this.logger.debug(`SQLite query → ${filePath}`);
 
@@ -497,11 +549,11 @@ export class DatabaseEngine {
     try {
       const stmt = db.prepare(sql);
       if (stmt.reader) {
-        const rows = stmt.all() as Record<string, unknown>[];
+        const rows = stmt.all(...(values as any[])) as Record<string, unknown>[];
         return this.truncateRows(rows);
       }
       // Write statement (INSERT, UPDATE, DELETE, etc.)
-      const info = stmt.run();
+      const info = stmt.run(...(values as any[]));
       return { changes: info.changes, lastInsertRowid: info.lastInsertRowid };
     } finally {
       db.close();
@@ -584,24 +636,58 @@ export class DatabaseEngine {
     }
   }
 
-  private interpolateParams(
-    template: string,
-    params: Record<string, unknown>,
-  ): string {
-    let sql = template;
-    for (const [key, value] of Object.entries(params)) {
-      const escapedValue = this.escapeValue(value);
-      sql = sql.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), escapedValue);
-      sql = sql.replace(new RegExp(`\\$${key}\\b`, 'g'), escapedValue);
-    }
-    return sql;
-  }
+}
 
-  private escapeValue(value: unknown): string {
-    if (value === null || value === undefined) return 'NULL';
-    if (typeof value === 'number') return String(value);
-    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
-    const str = String(value).replace(/'/g, "''");
-    return `'${str}'`;
+export type SqlDriver = 'postgres' | 'mysql' | 'mssql' | 'oracle' | 'sqlite';
+
+/**
+ * Compile a SQL template with `${name}` or `$name` placeholders into a
+ * parameterised query for the given driver. Each placeholder becomes a
+ * positional or named bind variable; values are returned in the order the
+ * driver expects them.
+ *
+ * - postgres   →  `$1, $2, ...`
+ * - mysql      →  `?, ?, ...` (bound via `connection.execute()`)
+ * - mssql      →  `@p0, @p1, ...` (bound via `request.input('p0', value)`)
+ * - oracle     →  `:b0, :b1, ...` (positional array)
+ * - sqlite     →  `?, ?, ...`
+ *
+ * The same param name appearing twice in the template is bound twice (once
+ * per occurrence) to keep the indices simple. A reference to a parameter
+ * that is not present in `params` is left unresolved (yielding a SQL error
+ * at execution time, not a SQL injection).
+ */
+export function compileParameterized(
+  template: string,
+  params: Record<string, unknown>,
+  driver: SqlDriver,
+): { sql: string; values: unknown[] } {
+  const values: unknown[] = [];
+  const sql = template.replace(
+    /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)\b/g,
+    (match, brace: string | undefined, bare: string | undefined) => {
+      const name = brace || bare;
+      if (!name || !Object.prototype.hasOwnProperty.call(params, name)) {
+        return match;
+      }
+      values.push(params[name]);
+      return placeholderFor(driver, values.length);
+    },
+  );
+  return { sql, values };
+}
+
+function placeholderFor(driver: SqlDriver, oneBasedIndex: number): string {
+  switch (driver) {
+    case 'postgres':
+      return `$${oneBasedIndex}`;
+    case 'mssql':
+      return `@p${oneBasedIndex - 1}`;
+    case 'oracle':
+      return `:b${oneBasedIndex - 1}`;
+    case 'mysql':
+    case 'sqlite':
+    default:
+      return '?';
   }
 }

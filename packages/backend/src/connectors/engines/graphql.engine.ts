@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
 import { OAuth2TokenService } from './oauth2-token.service';
+import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
 /**
  * GraphqlEngine — executes GraphQL queries/mutations.
@@ -30,6 +31,7 @@ export class GraphqlEngine {
     params: Record<string, unknown>,
   ): Promise<unknown> {
     this.logger.debug(`GraphQL ${endpointMapping.method} → ${config.baseUrl}`);
+    await assertSafeOutboundUrl(config.baseUrl);
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',

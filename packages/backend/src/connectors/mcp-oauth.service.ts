@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import axios from 'axios';
+import { assertSafeOutboundUrl } from '../common/ssrf.util';
 
 interface OAuthMetadata {
   issuer: string;
@@ -48,6 +49,7 @@ export class McpOAuthService {
 
     this.logger.debug(`Discovering OAuth metadata from ${metadataUrl}`);
 
+    await assertSafeOutboundUrl(metadataUrl);
     const response = await axios.get(metadataUrl, { timeout: 10000 });
     const metadata: OAuthMetadata = response.data;
 
@@ -89,6 +91,7 @@ export class McpOAuthService {
       `Registering OAuth client at ${registrationEndpoint}`,
     );
 
+    await assertSafeOutboundUrl(registrationEndpoint);
     const response = await axios.post(
       registrationEndpoint,
       {
@@ -166,6 +169,7 @@ export class McpOAuthService {
 
     this.logger.debug(`Exchanging auth code at ${params.tokenUrl}`);
 
+    await assertSafeOutboundUrl(params.tokenUrl);
     const response = await axios.post(
       params.tokenUrl,
       new URLSearchParams(body).toString(),

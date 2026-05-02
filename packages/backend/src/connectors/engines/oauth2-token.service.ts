@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { PrismaService } from '../../common/prisma.service';
 import { encrypt, decrypt } from '../../common/crypto/encryption.util';
+import { getRequiredSecret } from '../../common/secrets.util';
+import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
 /** Refresh tokens that expire within this window (5 minutes). */
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -32,9 +34,10 @@ export class OAuth2TokenService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
   ) {
-    this.encryptionKey =
-      this.configService.get<string>('ENCRYPTION_KEY') ||
-      'default-dev-key-change-in-prod!!';
+    this.encryptionKey = getRequiredSecret(
+      'ENCRYPTION_KEY',
+      this.configService.get<string>('ENCRYPTION_KEY'),
+    );
   }
 
   /**
@@ -114,6 +117,7 @@ export class OAuth2TokenService {
       if (clientId) body.client_id = clientId;
       if (clientSecret) body.client_secret = clientSecret;
 
+      await assertSafeOutboundUrl(tokenUrl);
       const response = await axios.post(
         tokenUrl,
         new URLSearchParams(body).toString(),

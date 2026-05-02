@@ -54,8 +54,36 @@ export class UsersService {
     });
   }
 
+  /**
+   * Update a user only if they belong to the given organization.
+   * Returns null if no row matched. Use this from any admin endpoint
+   * that takes a user id from the request URL.
+   */
+  async updateInOrg(
+    userId: string,
+    organizationId: string,
+    data: Partial<User>,
+  ): Promise<User | null> {
+    const result = await this.prisma.user.updateMany({
+      where: { id: userId, organizationId },
+      data,
+    });
+    if (result.count === 0) return null;
+    return this.prisma.user.findUnique({ where: { id: userId } });
+  }
+
   async delete(userId: string): Promise<void> {
     await this.prisma.user.delete({ where: { id: userId } });
+  }
+
+  async deleteInOrg(userId: string, organizationId: string): Promise<boolean> {
+    const target = await this.prisma.user.findFirst({
+      where: { id: userId, organizationId },
+      select: { id: true },
+    });
+    if (!target) return false;
+    await this.prisma.user.delete({ where: { id: userId } });
+    return true;
   }
 
   async deleteSelf(userId: string): Promise<void> {
@@ -117,5 +145,12 @@ export class UsersService {
 
   async deleteInvitation(id: string): Promise<void> {
     await this.prisma.invitationToken.delete({ where: { id } });
+  }
+
+  async deleteInvitationInOrg(id: string, organizationId: string): Promise<boolean> {
+    const result = await this.prisma.invitationToken.deleteMany({
+      where: { id, organizationId },
+    });
+    return result.count > 0;
   }
 }

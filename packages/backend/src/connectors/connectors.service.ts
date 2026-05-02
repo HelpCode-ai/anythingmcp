@@ -8,6 +8,7 @@ import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
+import { getRequiredSecret } from '../common/secrets.util';
 
 @Injectable()
 export class ConnectorsService {
@@ -23,9 +24,10 @@ export class ConnectorsService {
     private readonly databaseEngine: DatabaseEngine,
     private readonly mcpClientEngine: McpClientEngine,
   ) {
-    this.encryptionKey =
-      this.configService.get<string>('ENCRYPTION_KEY') ||
-      'default-dev-key-change-in-prod!!';
+    this.encryptionKey = getRequiredSecret(
+      'ENCRYPTION_KEY',
+      this.configService.get<string>('ENCRYPTION_KEY'),
+    );
   }
 
   async findAll(): Promise<Connector[]> {

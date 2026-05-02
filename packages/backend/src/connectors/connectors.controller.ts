@@ -33,6 +33,7 @@ import { McpOAuthService } from './mcp-oauth.service';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
+import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 
 class CreateConnectorDto {
@@ -146,9 +147,10 @@ export class ConnectorsController {
     private readonly configService: ConfigService,
     private readonly licenseGuard: LicenseGuardService,
   ) {
-    this.encryptionKey =
-      this.configService.get<string>('ENCRYPTION_KEY') ||
-      'default-dev-key-change-in-prod!!';
+    this.encryptionKey = getRequiredSecret(
+      'ENCRYPTION_KEY',
+      this.configService.get<string>('ENCRYPTION_KEY'),
+    );
   }
 
   private readonly encryptionKey: string;
