@@ -31,26 +31,55 @@ export class RolesService {
     });
   }
 
+  /**
+   * Like findById, but only returns the role if it belongs to the given
+   * organization (or is a system role visible to all). Use this from any
+   * controller that resolves a role from a user-supplied id.
+   */
+  async findByIdForOrg(id: string, organizationId: string) {
+    return this.prisma.role.findFirst({
+      where: {
+        id,
+        OR: [{ organizationId }, { isSystem: true }],
+      },
+      include: {
+        toolAccess: {
+          include: { tool: { select: { id: true, name: true, connector: { select: { name: true } } } } },
+        },
+        _count: { select: { users: true } },
+      },
+    });
+  }
+
   async create(data: { name: string; description?: string; organizationId?: string }) {
     return this.prisma.role.create({
       data: { name: data.name, description: data.description, organizationId: data.organizationId },
     });
   }
 
-  async update(id: string, data: { name?: string; description?: string }) {
-    return this.prisma.role.update({
-      where: { id },
+  async update(id: string, organizationId: string, data: { name?: string; description?: string }) {
+    const result = await this.prisma.role.updateMany({
+      where: { id, organizationId },
       data,
     });
+    if (result.count === 0) return null;
+    return this.prisma.role.findUnique({ where: { id } });
   }
 
-  async delete(id: string) {
+  async delete(id: string, organizationId: string) {
+    // Only delete the role if it belongs to the given organization
+    const role = await this.prisma.role.findFirst({
+      where: { id, organizationId },
+      select: { id: true },
+    });
+    if (!role) return false;
     // Unassign users first
     await this.prisma.user.updateMany({
       where: { mcpRoleId: id },
       data: { mcpRoleId: null },
     });
     await this.prisma.role.delete({ where: { id } });
+    return true;
   }
 
   // ── Tool access management ────────────────────────────────────────────────
@@ -62,7 +91,21 @@ export class RolesService {
     });
   }
 
-  async setToolAccess(roleId: string, toolIds: string[]) {
+  async setToolAccess(roleId: string, toolIds: string[], organizationId: string) {
+    // Validate that every tool ID belongs to the given organization. This
+    // prevents an admin from assigning tools owned by another org to a role
+    // they control.
+    if (toolIds.length > 0) {
+      const validCount = await this.prisma.mcpTool.count({
+        where: {
+          id: { in: toolIds },
+          connector: { organizationId },
+        },
+      });
+      if (validCount !== toolIds.length) {
+        throw new Error('One or more toolIds are not in this organization');
+      }
+    }
     // Replace all tool access for this role
     await this.prisma.$transaction([
       this.prisma.toolRoleAccess.deleteMany({ where: { roleId } }),
@@ -128,7 +171,31 @@ export class RolesService {
 
   // ── User role assignment ──────────────────────────────────────────────────
 
-  async assignRoleToUser(userId: string, roleId: string | null) {
+  async assignRoleToUser(
+    userId: string,
+    roleId: string | null,
+    organizationId: string,
+  ) {
+    // The user must belong to the requesting org, and the role must be
+    // visible to that org (system roles or org-owned). Otherwise an admin
+    // could assign someone else's user a role from their own org.
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, organizationId },
+      select: { id: true },
+    });
+    if (!user) return null;
+
+    if (roleId !== null) {
+      const role = await this.prisma.role.findFirst({
+        where: {
+          id: roleId,
+          OR: [{ organizationId }, { isSystem: true }],
+        },
+        select: { id: true },
+      });
+      if (!role) return null;
+    }
+
     return this.prisma.user.update({
       where: { id: userId },
       data: { mcpRoleId: roleId },

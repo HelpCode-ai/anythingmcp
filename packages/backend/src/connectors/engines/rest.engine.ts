@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosRequestConfig, AxiosError, Method } from 'axios';
 import FormData from 'form-data';
 import { OAuth2TokenService } from './oauth2-token.service';
+import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -41,6 +42,7 @@ export class RestEngine {
     }
 
     const url = `${config.baseUrl}${path}`;
+    await assertSafeOutboundUrl(url);
 
     // Resolve dynamic headers from endpoint mapping ($param references)
     const resolvedEndpointHeaders: Record<string, string> = {};
@@ -82,20 +84,18 @@ export class RestEngine {
     // Request body
     if (['POST', 'PUT', 'PATCH'].includes(endpointMapping.method.toUpperCase())) {
       if (endpointMapping.bodyTemplate) {
-        // Template mode: interpolate ${paramName} placeholders, then parse as JSON
-        let rendered = endpointMapping.bodyTemplate;
-        for (const [key, value] of Object.entries(params)) {
-          const placeholder = '${' + key + '}';
-          if (rendered.includes(placeholder)) {
-            const replacement = typeof value === 'string' ? value : JSON.stringify(value);
-            rendered = rendered.split(placeholder).join(replacement);
-          }
-        }
+        const rendered = renderBodyTemplate(
+          endpointMapping.bodyTemplate,
+          params,
+        );
+        let parsed: unknown;
         try {
-          axiosConfig.data = JSON.parse(rendered);
+          parsed = JSON.parse(rendered);
         } catch (e: any) {
           throw new Error(`bodyTemplate produced invalid JSON after interpolation: ${e.message}`);
         }
+        assertNoPrototypePollution(parsed);
+        axiosConfig.data = parsed;
       } else if (endpointMapping.bodyMapping) {
         // Handle __raw body mapping (non-JSON body, e.g. XML/SOAP)
         if ('__raw' in endpointMapping.bodyMapping) {
@@ -279,5 +279,77 @@ export class RestEngine {
       return nested;
     }
     return value;
+  }
+}
+
+/**
+ * Param names that, if interpolated into a JSON body, can poison the
+ * Object.prototype chain after JSON.parse and let an attacker forge
+ * application-level booleans (isAdmin, role, etc.).
+ */
+const FORBIDDEN_PARAM_KEYS: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
+/**
+ * Render a JSON body template by substituting ${name} placeholders with
+ * properly-encoded values:
+ *   - Inside a JSON string ("...${name}..."): the value is coerced to a
+ *     string and JSON-string-escaped so it cannot terminate the surrounding
+ *     quotes or inject syntax.
+ *   - In a free position ({"x": ${name}}): the value is JSON-encoded as a
+ *     full JSON value (number/object/array/null/string).
+ *
+ * Forbidden param names that can pollute Object.prototype are rejected.
+ */
+function renderBodyTemplate(
+  template: string,
+  params: Record<string, unknown>,
+): string {
+  for (const key of Object.keys(params)) {
+    if (FORBIDDEN_PARAM_KEYS.has(key)) {
+      throw new Error(
+        `bodyTemplate param '${key}' is not allowed (prototype pollution)`,
+      );
+    }
+  }
+
+  return template.replace(
+    /(")?\$\{([A-Za-z_][A-Za-z0-9_]*)\}(")?/g,
+    (_match, leftQuote: string | undefined, name: string, rightQuote: string | undefined) => {
+      const value = params[name];
+      const insideString = leftQuote && rightQuote;
+      if (insideString) {
+        const asString =
+          value === undefined || value === null ? '' : String(value);
+        const escaped = JSON.stringify(asString).slice(1, -1);
+        return `${leftQuote}${escaped}${rightQuote}`;
+      }
+      if (value === undefined) return 'null';
+      return JSON.stringify(value);
+    },
+  );
+}
+
+/**
+ * Walk a parsed JSON value and reject any explicit __proto__ / constructor /
+ * prototype keys. Catches injections that survived interpolation (e.g. a
+ * pre-baked malicious template).
+ */
+function assertNoPrototypePollution(value: unknown): void {
+  if (value === null || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    for (const item of value) assertNoPrototypePollution(item);
+    return;
+  }
+  for (const key of Object.keys(value)) {
+    if (FORBIDDEN_PARAM_KEYS.has(key)) {
+      throw new Error(
+        `bodyTemplate produced forbidden key '${key}' (prototype pollution)`,
+      );
+    }
+    assertNoPrototypePollution((value as Record<string, unknown>)[key]);
   }
 }

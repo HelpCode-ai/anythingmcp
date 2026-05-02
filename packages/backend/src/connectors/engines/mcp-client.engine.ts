@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { OAuth2TokenService } from './oauth2-token.service';
+import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
 @Injectable()
 export class McpClientEngine {
@@ -31,6 +32,7 @@ export class McpClientEngine {
       endpointMapping.path || '/mcp',
       config.baseUrl,
     );
+    await assertSafeOutboundUrl(mcpUrl.toString());
 
     const headers: Record<string, string> = { ...config.headers };
     await this.injectAuth(headers, config.authType, config.authConfig, config.connectorId);

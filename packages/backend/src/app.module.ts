@@ -32,6 +32,7 @@ import { OAuthUrlRewriteInterceptor } from './auth/oauth-url-rewrite.interceptor
 import { AdaptersModule } from './adapters/adapters.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { CloudModule } from './cloud/cloud.module';
+import { getRequiredSecret } from './common/secrets.util';
 
 // Determine deployment and auth mode from env
 const useCloud = process.env.DEPLOYMENT_MODE === 'cloud';
@@ -46,8 +47,7 @@ const conditionalImports: any[] = [];
 
 if (useOAuth) {
   const serverUrl = process.env.SERVER_URL || 'http://localhost:4000';
-  const jwtSecret =
-    process.env.JWT_SECRET || 'dev-secret-change-me-at-least-32chars!!';
+  const jwtSecret = getRequiredSecret('JWT_SECRET', process.env.JWT_SECRET);
 
   conditionalImports.push(
     McpAuthModule.forRoot({
@@ -90,8 +90,14 @@ if (useOAuth) {
     // Cache
     RedisModule,
 
-    // Rate limiting
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+    // Rate limiting — named buckets so callers can pick a stricter policy
+    // for sensitive endpoints (login, password reset) without affecting
+    // general API throughput.
+    ThrottlerModule.forRoot([
+      { name: 'default', ttl: 60_000, limit: 100 },
+      { name: 'auth', ttl: 60_000, limit: 10 },
+      { name: 'auth-strict', ttl: 60_000, limit: 5 },
+    ]),
 
     // MCP Server (dynamic tools registered by McpServerModule)
     McpModule.forRoot({

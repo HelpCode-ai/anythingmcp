@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ParsedTool } from './openapi.parser';
 import { buildSchema, introspectionFromSchema } from 'graphql';
 import axios from 'axios';
+import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
 const INTROSPECTION_QUERY = `
   query IntrospectionQuery {
@@ -48,6 +49,7 @@ export class GraphqlParser {
     // 1. Try standard introspection query
     try {
       this.logger.debug(`Introspecting GraphQL schema from: ${endpoint}`);
+      await assertSafeOutboundUrl(endpoint);
       const response = await axios.post(
         endpoint,
         { query: INTROSPECTION_QUERY },
@@ -73,6 +75,7 @@ export class GraphqlParser {
     this.logger.debug(`Falling back to SDL schema from: ${sdlUrl}`);
 
     try {
+      await assertSafeOutboundUrl(sdlUrl);
       const sdlResponse = await axios.get(sdlUrl, {
         headers,
         timeout: 30000,

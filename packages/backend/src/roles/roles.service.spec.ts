@@ -9,13 +9,16 @@ describe('RolesService', () => {
       role: {
         findMany: jest.fn(),
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
         delete: jest.fn(),
         upsert: jest.fn(),
       },
       user: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         updateMany: jest.fn(),
         update: jest.fn(),
       },
@@ -24,6 +27,9 @@ describe('RolesService', () => {
         create: jest.fn(),
         deleteMany: jest.fn(),
         upsert: jest.fn(),
+      },
+      mcpTool: {
+        count: jest.fn(),
       },
       $transaction: jest.fn(),
     };
@@ -68,28 +74,48 @@ describe('RolesService', () => {
   });
 
   describe('update', () => {
-    it('should update role fields', async () => {
+    it('should update role fields scoped to organization', async () => {
+      mockPrisma.role.updateMany = jest.fn().mockResolvedValue({ count: 1 });
       const updated = { id: 'r1', name: 'New Name' };
-      mockPrisma.role.update.mockResolvedValue(updated);
-      const result = await service.update('r1', { name: 'New Name' });
+      mockPrisma.role.findUnique.mockResolvedValue(updated);
+      const result = await service.update('r1', 'org-1', { name: 'New Name' });
       expect(result).toBe(updated);
-      expect(mockPrisma.role.update).toHaveBeenCalledWith({
-        where: { id: 'r1' },
+      expect(mockPrisma.role.updateMany).toHaveBeenCalledWith({
+        where: { id: 'r1', organizationId: 'org-1' },
         data: { name: 'New Name' },
       });
+    });
+
+    it('returns null when role does not belong to organization', async () => {
+      mockPrisma.role.updateMany = jest.fn().mockResolvedValue({ count: 0 });
+      const result = await service.update('r1', 'org-2', { name: 'X' });
+      expect(result).toBeNull();
     });
   });
 
   describe('delete', () => {
-    it('should unassign users then delete role', async () => {
+    it('should unassign users then delete role when org matches', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'r1' });
       mockPrisma.user.updateMany.mockResolvedValue({ count: 2 });
       mockPrisma.role.delete.mockResolvedValue({});
-      await service.delete('r1');
+      const ok = await service.delete('r1', 'org-1');
+      expect(ok).toBe(true);
+      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith({
+        where: { id: 'r1', organizationId: 'org-1' },
+        select: { id: true },
+      });
       expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
         where: { mcpRoleId: 'r1' },
         data: { mcpRoleId: null },
       });
       expect(mockPrisma.role.delete).toHaveBeenCalledWith({ where: { id: 'r1' } });
+    });
+
+    it('returns false when role is not in the organization', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+      const ok = await service.delete('r1', 'org-2');
+      expect(ok).toBe(false);
+      expect(mockPrisma.role.delete).not.toHaveBeenCalled();
     });
   });
 
@@ -103,20 +129,34 @@ describe('RolesService', () => {
   });
 
   describe('setToolAccess', () => {
-    it('should call $transaction with delete + create operations', async () => {
+    it('should call $transaction with delete + create operations after validating org-ownership of tools', async () => {
+      mockPrisma.mcpTool = { count: jest.fn().mockResolvedValue(2) } as any;
       mockPrisma.toolRoleAccess.deleteMany.mockReturnValue('delete-op');
       mockPrisma.toolRoleAccess.create
         .mockReturnValueOnce('create-op-1')
         .mockReturnValueOnce('create-op-2');
       mockPrisma.$transaction.mockResolvedValue([]);
 
-      await service.setToolAccess('r1', ['t1', 't2']);
+      await service.setToolAccess('r1', ['t1', 't2'], 'org-1');
 
+      expect(mockPrisma.mcpTool.count).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['t1', 't2'] },
+          connector: { organizationId: 'org-1' },
+        },
+      });
       expect(mockPrisma.$transaction).toHaveBeenCalledWith([
         'delete-op',
         'create-op-1',
         'create-op-2',
       ]);
+    });
+
+    it('rejects when toolIds contain ids from another organization', async () => {
+      mockPrisma.mcpTool = { count: jest.fn().mockResolvedValue(1) } as any;
+      await expect(
+        service.setToolAccess('r1', ['t1', 't2'], 'org-1'),
+      ).rejects.toThrow('not in this organization');
     });
   });
 
@@ -190,10 +230,12 @@ describe('RolesService', () => {
   });
 
   describe('assignRoleToUser', () => {
-    it('should update user mcpRoleId', async () => {
+    it('should update user mcpRoleId when both user and role belong to the org', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'r1' });
       const updated = { id: 'user-1', mcpRoleId: 'r1' };
       mockPrisma.user.update.mockResolvedValue(updated);
-      const result = await service.assignRoleToUser('user-1', 'r1');
+      const result = await service.assignRoleToUser('user-1', 'r1', 'org-1');
       expect(result).toBe(updated);
       expect(mockPrisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
@@ -201,13 +243,29 @@ describe('RolesService', () => {
       });
     });
 
-    it('should allow setting roleId to null', async () => {
+    it('should allow setting roleId to null without role lookup', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
       mockPrisma.user.update.mockResolvedValue({ id: 'user-1', mcpRoleId: null });
-      await service.assignRoleToUser('user-1', null);
+      await service.assignRoleToUser('user-1', null, 'org-1');
       expect(mockPrisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
         data: { mcpRoleId: null },
       });
+    });
+
+    it('returns null when user belongs to a different org', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      const result = await service.assignRoleToUser('user-1', 'r1', 'org-2');
+      expect(result).toBeNull();
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('returns null when role belongs to a different org', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+      const result = await service.assignRoleToUser('user-1', 'r1', 'org-1');
+      expect(result).toBeNull();
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
   });
 

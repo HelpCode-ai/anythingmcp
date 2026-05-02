@@ -9,6 +9,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
@@ -37,6 +38,7 @@ export class LoginController {
   }
 
   @Post('login')
+  @Throttle({ 'auth-strict': { limit: 5, ttl: 60_000 } })
   async handleLogin(
     @Req() req: Request,
     @Body() body: { email: string; password: string; session: string },

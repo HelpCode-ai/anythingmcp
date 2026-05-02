@@ -16,6 +16,7 @@ import { UsersModule } from '../users/users.module';
 import { SettingsModule } from '../settings/settings.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { getRequiredSecret } from '../common/secrets.util';
 
 @Global()
 @Module({
@@ -28,7 +29,10 @@ import { OrganizationsModule } from '../organizations/organizations.module';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
+        secret: getRequiredSecret(
+          'JWT_SECRET',
+          configService.get<string>('JWT_SECRET'),
+        ),
         signOptions: { expiresIn: '24h' },
       }),
       inject: [ConfigService],

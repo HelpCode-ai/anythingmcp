@@ -193,13 +193,19 @@ export class ToolsController {
     @Body() dto: UpdateToolDto,
   ) {
     await this.assertCanWriteConnector(connectorId, req);
-    const tool = await this.prisma.mcpTool.update({
-      where: { id: toolId },
+    // Bind the toolId to the connectorId in the WHERE clause so that
+    // a request like /connectors/<my>/tools/<other-org's-tool> cannot
+    // update a tool that doesn't belong to the requested connector.
+    const result = await this.prisma.mcpTool.updateMany({
+      where: { id: toolId, connectorId },
       data: dto as any,
     });
+    if (result.count === 0) {
+      throw new ForbiddenException('Tool not found');
+    }
 
     await this.mcpServer.reloadConnectorTools(connectorId);
-    return tool;
+    return this.prisma.mcpTool.findUnique({ where: { id: toolId } });
   }
 
   @Post(':toolId/test')
@@ -272,7 +278,12 @@ export class ToolsController {
     @Param('connectorId') connectorId: string,
   ) {
     await this.assertCanWriteConnector(connectorId, req);
-    await this.prisma.mcpTool.delete({ where: { id: toolId } });
+    const result = await this.prisma.mcpTool.deleteMany({
+      where: { id: toolId, connectorId },
+    });
+    if (result.count === 0) {
+      throw new ForbiddenException('Tool not found');
+    }
     await this.mcpServer.reloadConnectorTools(connectorId);
     return { message: 'Tool deleted' };
   }

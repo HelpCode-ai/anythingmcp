@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const SwaggerParser = require('swagger-parser');
 import axios from 'axios';
+import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
 export interface ParsedTool {
   name: string;
@@ -36,6 +37,7 @@ export class OpenApiParser {
   async parseFromUrl(url: string): Promise<ParsedTool[]> {
     this.logger.debug(`Fetching OpenAPI spec from: ${url}`);
 
+    await assertSafeOutboundUrl(url);
     const response = await axios.get(url, { timeout: 15000 });
 
     // If the response is already a valid spec object, parse directly
@@ -85,6 +87,7 @@ export class OpenApiParser {
       const specUrl = new URL(urlMatch[1], pageUrl).href;
       this.logger.debug(`Found spec URL in HTML: ${specUrl}`);
       try {
+        await assertSafeOutboundUrl(specUrl);
         const specResp = await axios.get(specUrl, { timeout: 15000 });
         return specResp.data;
       } catch {
@@ -95,6 +98,7 @@ export class OpenApiParser {
     // 2. Try swagger-ui-init.js (swagger-ui-express embeds the spec inline)
     const initJsUrl = new URL('swagger-ui-init.js', pageUrl.endsWith('/') ? pageUrl : pageUrl + '/').href;
     try {
+      await assertSafeOutboundUrl(initJsUrl);
       const initResp = await axios.get(initJsUrl, { timeout: 15000 });
       const initJs = typeof initResp.data === 'string' ? initResp.data : '';
       // The spec is embedded as: let defined = { ... "swaggerDoc": { <the spec> }, ... }
@@ -131,7 +135,9 @@ export class OpenApiParser {
     ];
     for (const path of commonPaths) {
       try {
-        const resp = await axios.get(`${origin}${path}`, { timeout: 5000 });
+        const candidate = `${origin}${path}`;
+        await assertSafeOutboundUrl(candidate);
+        const resp = await axios.get(candidate, { timeout: 5000 });
         if (
           typeof resp.data === 'object' &&
           resp.data !== null &&

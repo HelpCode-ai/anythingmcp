@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, Equals, Matches } from 'class-validator';
 import { UserRole } from '../generated/prisma/client';
 import { ConfigService } from '@nestjs/config';
@@ -177,6 +178,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ 'auth-strict': { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Login with email and password' })
   async login(@Req() req: any, @Body() dto: LoginDto) {
     const user = await this.usersService.findByEmail(dto.email);
@@ -229,6 +231,7 @@ export class AuthController {
   }
 
   @Post('register')
+  @Throttle({ 'auth-strict': { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Register a new user account' })
   async register(@Req() req: any, @Body() dto: RegisterDto) {
     const existing = await this.usersService.findByEmail(dto.email);
@@ -365,6 +368,7 @@ export class AuthController {
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
+  @Throttle({ 'auth': { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Resend email verification code' })
   async resendVerification(@Req() req: any) {
     const userId = req.user.sub;
@@ -576,6 +580,7 @@ export class AuthController {
 
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ 'auth-strict': { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Request password reset email' })
   async forgotPassword(@Req() req: any, @Body() dto: ForgotPasswordDto) {
     // Always return success to prevent email enumeration
@@ -617,6 +622,7 @@ export class AuthController {
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ 'auth-strict': { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Reset password using token' })
   async resetPassword(@Body() dto: ResetPasswordDto) {
     const resetRecord = await this.prisma.passwordResetToken.findUnique({
