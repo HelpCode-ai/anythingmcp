@@ -81,21 +81,31 @@ describe('UsersService', () => {
   });
 
   describe('findAll', () => {
-    it('should call findMany with correct select fields', async () => {
+    it('should call findMany with correct select fields and no where when no org passed', async () => {
       mockPrisma.user.findMany.mockResolvedValue([]);
       await service.findAll();
       expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+        where: undefined,
         select: {
           id: true,
           email: true,
           name: true,
           role: true,
+          organizationId: true,
           mcpRoleId: true,
           mcpRole: { select: { id: true, name: true } },
           createdAt: true,
           updatedAt: true,
         },
       });
+    });
+
+    it('should scope by organizationId when provided', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      await service.findAll('org-1');
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { organizationId: 'org-1' } }),
+      );
     });
   });
 
