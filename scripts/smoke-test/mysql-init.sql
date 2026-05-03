@@ -17,5 +17,10 @@ INSERT INTO users (name, email, active) VALUES
   ('Carol',                 'carol@example.com',         0),
   ('x''; DROP TABLE users;--', 'sqli@example.com', 1);
 
-GRANT SELECT ON smoketest.* TO 'smoke'@'%';
+-- Grant full DML + DDL to the smoke user so the write-mode test can exercise
+-- INSERT / UPDATE / DELETE / CREATE TABLE / DROP TABLE end-to-end. The
+-- read-only behaviour is enforced by the connector's readOnly flag at the
+-- application layer (validateQuery), not by the database role.
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES
+  ON smoketest.* TO 'smoke'@'%';
 FLUSH PRIVILEGES;
