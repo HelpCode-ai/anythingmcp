@@ -84,7 +84,10 @@ export class DynamicMcpTools {
     }
 
     // Check response cache
-    const cacheTtl = (tool.responseMapping as any)?.cacheTtl;
+    const responseMapping = tool.responseMapping as
+      | import('../connectors/engines/engine-types').ResponseMapping
+      | undefined;
+    const cacheTtl = responseMapping?.cacheTtl;
     if (cacheTtl && cacheTtl > 0) {
       const cacheKey = this.buildCacheKey(toolName, params);
       const cached = await this.redisService.get(cacheKey);
