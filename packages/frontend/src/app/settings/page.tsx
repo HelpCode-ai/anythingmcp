@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { users, server, ApiError } from '@/lib/api';
 import * as Dialog from '@radix-ui/react-dialog';
+import { useToast } from '@/components/toast';
 
 const AUTH_MODE_LABELS: Record<string, string> = {
   none: 'None (not recommended)',
@@ -13,6 +14,8 @@ const AUTH_MODE_LABELS: Record<string, string> = {
 };
 
 export default function SettingsPage() {
+  const toast = useToast();
+
   const { token, user, updateUser, logout } = useAuth();
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileMsg, setProfileMsg] = useState('');
@@ -47,10 +50,12 @@ export default function SettingsPage() {
     try {
       await users.updateProfile({ name: profileName }, token);
       updateUser({ name: profileName });
-      setProfileMsg('Profile updated');
-      setTimeout(() => setProfileMsg(''), 3000);
+      setProfileMsg('');
+      toast.show({ tone: 'success', title: 'Profile updated' });
     } catch (err: any) {
-      setProfileMsg(`Error: ${err.message}`);
+      const message = err?.message || 'Could not update profile';
+      setProfileMsg(`Error: ${message}`);
+      toast.show({ tone: 'error', title: 'Profile update failed', description: message });
     }
   };
 
@@ -93,21 +98,25 @@ export default function SettingsPage() {
     if (!token) return;
     if (newPassword !== confirmNewPassword) {
       setPasswordMsg('Error: Passwords do not match');
+      toast.show({ tone: 'error', title: 'Passwords do not match' });
       return;
     }
     try {
       const result = await users.changePassword({ currentPassword, newPassword }, token);
       if (result.error) {
         setPasswordMsg(`Error: ${result.error}`);
+        toast.show({ tone: 'error', title: 'Password change failed', description: result.error });
       } else {
-        setPasswordMsg('Password changed successfully');
+        setPasswordMsg('');
         setCurrentPassword('');
         setNewPassword('');
         setConfirmNewPassword('');
-        setTimeout(() => setPasswordMsg(''), 3000);
+        toast.show({ tone: 'success', title: 'Password changed' });
       }
     } catch (err: any) {
-      setPasswordMsg(`Error: ${err.message}`);
+      const message = err?.message || 'Could not change password';
+      setPasswordMsg(`Error: ${message}`);
+      toast.show({ tone: 'error', title: 'Password change failed', description: message });
     }
   };
 
@@ -118,16 +127,16 @@ export default function SettingsPage() {
         <h3 className="text-lg font-medium mb-4">Profile</h3>
         <div className="space-y-4 max-w-md">
           <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
-            <input type="text" value={user?.email || ''} disabled className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--muted)] opacity-70" />
+            <label htmlFor="settings-profile-email" className="block text-sm font-medium mb-1">Email</label>
+            <input id="settings-profile-email" name="email" autoComplete="email" type="text" value={user?.email || ''} disabled className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--muted)] opacity-70" />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
-            <input type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+            <label htmlFor="settings-profile-name" className="block text-sm font-medium mb-1">Name</label>
+            <input id="settings-profile-name" name="name" autoComplete="name" type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Role</label>
-            <input type="text" value={user?.role || ''} disabled className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--muted)] opacity-70" />
+            <label htmlFor="settings-profile-role" className="block text-sm font-medium mb-1">Role</label>
+            <input id="settings-profile-role" type="text" value={user?.role || ''} disabled className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--muted)] opacity-70" />
           </div>
           {profileMsg && (
             <p className={`text-sm ${profileMsg.startsWith('Error') ? 'text-[var(--destructive)]' : 'text-[var(--success)]'}`}>
@@ -145,8 +154,11 @@ export default function SettingsPage() {
         <h3 className="text-lg font-medium mb-4">Change Password</h3>
         <div className="space-y-4 max-w-md">
           <div>
-            <label className="block text-sm font-medium mb-1">Current Password</label>
+            <label htmlFor="settings-current-password" className="block text-sm font-medium mb-1">Current Password</label>
             <input
+              id="settings-current-password"
+              name="current-password"
+              autoComplete="current-password"
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
@@ -154,8 +166,11 @@ export default function SettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">New Password</label>
+            <label htmlFor="settings-new-password" className="block text-sm font-medium mb-1">New Password</label>
             <input
+              id="settings-new-password"
+              name="new-password"
+              autoComplete="new-password"
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
@@ -165,8 +180,11 @@ export default function SettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Confirm New Password</label>
+            <label htmlFor="settings-confirm-new-password" className="block text-sm font-medium mb-1">Confirm New Password</label>
             <input
+              id="settings-confirm-new-password"
+              name="confirm-new-password"
+              autoComplete="new-password"
               type="password"
               value={confirmNewPassword}
               onChange={(e) => setConfirmNewPassword(e.target.value)}
