@@ -101,7 +101,30 @@ async function bootstrap() {
     swaggerOptions: { persistAuthorization: true },
   });
 
-  await app.listen(port);
+  // Drain in-flight requests and close DB / Redis connections cleanly when
+  // the platform sends SIGTERM (k8s rolling deploy, docker stop, Railway
+  // restart). Without this, long-running tool invocations would be killed
+  // mid-flight and the audit log entry never written.
+  app.enableShutdownHooks();
+
+  const server = await app.listen(port);
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
+
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, async () => {
+      logger.log(`Received ${signal}, shutting down gracefully...`);
+      try {
+        await app.close();
+        logger.log('Shutdown complete.');
+        process.exit(0);
+      } catch (err) {
+        logger.error(`Error during shutdown: ${err}`);
+        process.exit(1);
+      }
+    });
+  }
+
   logger.log(`AnythingMCP backend running on: http://localhost:${port}`);
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
   logger.log(`MCP endpoint (global): http://localhost:${port}/mcp`);

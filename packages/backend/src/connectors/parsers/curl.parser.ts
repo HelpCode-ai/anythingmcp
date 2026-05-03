@@ -42,7 +42,7 @@ export class CurlParser {
 
   private parseSingleCurl(command: string): ParsedTool | null {
     // Remove leading "curl" keyword
-    let cmd = command.replace(/^\s*curl\s+/i, '').trim();
+    const cmd = command.replace(/^\s*curl\s+/i, '').trim();
 
     let method = 'GET';
     const headers: Record<string, string> = {};
@@ -284,7 +284,7 @@ export class CurlParser {
       const basePath = `${parsed.protocol}//${parsed.host}`;
 
       // Restore variables in path
-      let path = parsed.pathname.replace(/PLACEHOLDER_([a-zA-Z0-9_]+)/g, '{{$1}}');
+      const path = parsed.pathname.replace(/PLACEHOLDER_([a-zA-Z0-9_]+)/g, '{{$1}}');
 
       // Parse query params
       parsed.searchParams.forEach((value, key) => {
@@ -299,7 +299,7 @@ export class CurlParser {
       const pathStart = url.indexOf('/', url.indexOf('//') + 2);
       const queryStart = url.indexOf('?');
 
-      let path = pathStart >= 0
+      const path = pathStart >= 0
         ? (queryStart >= 0 ? url.substring(pathStart, queryStart) : url.substring(pathStart))
         : '/';
 

@@ -1,15 +1,15 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
-
-defaults:
-  run:
-    working-directory: anythingmcp
 
 jobs:
   backend:
-    name: Backend (lint, test, build)
+    name: Backend (lint, typecheck, test, build)
     runs-on: ubuntu-latest
 
     services:
@@ -29,8 +29,10 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://amcp:testpassword@localhost:5432/anythingmcp_test
-      JWT_SECRET: ci-test-jwt-secret-at-least-32-chars
-      ENCRYPTION_KEY: ci-test-encryption-key-32-chars!
+      # CI-only secrets — long enough to pass our boot validation, never used
+      # outside the test database.
+      JWT_SECRET: ci-test-jwt-secret-at-least-32-chars-aaaaaa
+      ENCRYPTION_KEY: ci-test-encryption-key-32-chars-aaaaaaaa
 
     steps:
       - uses: actions/checkout@v4
@@ -39,29 +41,36 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: anythingmcp/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
       - name: Generate Prisma client
         run: npx prisma generate
-        working-directory: anythingmcp/packages/backend
+        working-directory: packages/backend
 
       - name: Run Prisma migrations
         run: npx prisma migrate deploy
-        working-directory: anythingmcp/packages/backend
+        working-directory: packages/backend
+
+      - name: Lint
+        run: npm run lint
+        working-directory: packages/backend
+
+      - name: Type-check
+        run: npx tsc --noEmit -p tsconfig.json
+        working-directory: packages/backend
 
       - name: Run tests
         run: npm test
-        working-directory: anythingmcp/packages/backend
+        working-directory: packages/backend
 
       - name: Build backend
         run: npm run build
-        working-directory: anythingmcp/packages/backend
+        working-directory: packages/backend
 
   frontend:
-    name: Frontend (build)
+    name: Frontend (lint, typecheck, build)
     runs-on: ubuntu-latest
 
     steps:
@@ -71,14 +80,21 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: anythingmcp/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+        working-directory: packages/frontend
+
+      - name: Type-check
+        run: npx tsc --noEmit -p tsconfig.json
+        working-directory: packages/frontend
+
       - name: Build frontend
         run: npm run build
-        working-directory: anythingmcp/packages/frontend
+        working-directory: packages/frontend
         env:
           NEXT_PUBLIC_API_URL: http://localhost:4000
 
@@ -93,4 +109,3 @@ jobs:
 
       - name: Build unified image
         run: docker build -t anythingmcp:ci .
-        working-directory: anythingmcp

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+ 
 const SwaggerParser = require('swagger-parser');
 import axios from 'axios';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
