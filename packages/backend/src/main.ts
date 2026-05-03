@@ -7,9 +7,10 @@ config({ path: join(__dirname, '..', '..', '..', '.env') });
 config({ path: '.env' });
 
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
@@ -18,13 +19,15 @@ import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
 import { validateRequiredSecretsAtStartup } from './common/secrets.util';
 
 async function bootstrap() {
-  const logger = new Logger('Bootstrap');
-
   // Fail fast if required secrets are missing or use known placeholder values.
   // Done before NestFactory.create to surface config errors before module init.
   validateRequiredSecretsAtStartup(process.env);
 
-  const app = await NestFactory.create(AppModule);
+  // bufferLogs lets pre-app.useLogger() messages flush through Pino once it's
+  // wired, instead of going through the default NestJS console logger.
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(PinoLogger));
+  const logger = app.get(PinoLogger);
 
   // Trust proxy headers (ngrok, reverse proxies) for correct protocol/host detection
   const expressApp = app.getHttpAdapter().getInstance();

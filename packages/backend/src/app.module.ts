@@ -33,6 +33,7 @@ import { AdaptersModule } from './adapters/adapters.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { CloudModule } from './cloud/cloud.module';
 import { getRequiredSecret } from './common/secrets.util';
+import { AppLoggerModule } from './common/logger.module';
 
 // Determine deployment and auth mode from env
 const useCloud = process.env.DEPLOYMENT_MODE === 'cloud';
@@ -83,6 +84,10 @@ if (useOAuth) {
         '.env',
       ],
     }),
+
+    // Structured logging — replaces the default NestJS console logger with
+    // Pino, attaches a request-scoped correlation id, and redacts auth headers.
+    AppLoggerModule,
 
     // Database
     PrismaModule,
