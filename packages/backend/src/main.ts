@@ -11,6 +11,12 @@ config({ path: '.env' });
 // is not set.
 import './instrument';
 
+// OpenTelemetry tracing must register its instrumentations BEFORE any
+// module that uses http/express/prisma is required. No-op when
+// OTEL_EXPORTER_OTLP_ENDPOINT is unset.
+import { startTracing } from './tracing';
+startTracing();
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
