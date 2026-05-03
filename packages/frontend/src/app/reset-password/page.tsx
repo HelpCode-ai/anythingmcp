@@ -87,9 +87,12 @@ function ResetPasswordForm() {
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <div>
-          <label className="block text-sm font-medium mb-1">New Password</label>
+          <label htmlFor="reset-new-password" className="block text-sm font-medium mb-1">New Password</label>
           <input
+            id="reset-new-password"
+            name="new-password"
             type="password"
+            autoComplete="new-password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             placeholder="Min. 8 characters"
@@ -99,9 +102,12 @@ function ResetPasswordForm() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Confirm Password</label>
+          <label htmlFor="reset-confirm-password" className="block text-sm font-medium mb-1">Confirm Password</label>
           <input
+            id="reset-confirm-password"
+            name="confirm-password"
             type="password"
+            autoComplete="new-password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="Repeat password"
