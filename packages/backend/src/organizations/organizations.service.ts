@@ -141,7 +141,7 @@ export class OrganizationsService {
     });
 
     let autoCreated = false;
-    let finalUserId = userId;
+    const finalUserId = userId;
 
     const result = await this.prisma.$transaction(async (tx) => {
       // Migrate orphans pre-cascade
