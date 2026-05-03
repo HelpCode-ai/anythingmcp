@@ -45,11 +45,16 @@ export class ConnectorsService {
     });
   }
 
-  async findByOrg(organizationId: string): Promise<Connector[]> {
+  async findByOrg(
+    organizationId: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<Connector[]> {
     return this.prisma.connector.findMany({
       where: { organizationId },
       include: { tools: true },
       orderBy: { createdAt: 'desc' },
+      ...(opts?.limit !== undefined ? { take: opts.limit } : {}),
+      ...(opts?.offset !== undefined ? { skip: opts.offset } : {}),
     });
   }
 

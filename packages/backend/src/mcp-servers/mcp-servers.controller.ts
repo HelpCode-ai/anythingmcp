@@ -6,12 +6,14 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   Req,
   UseGuards,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { PaginationQueryDto } from '../common/pagination.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsOptional, IsBoolean, IsArray } from 'class-validator';
 import { McpServersService } from './mcp-servers.service';
@@ -92,8 +94,13 @@ export class McpServersController {
 
   @Get()
   @ApiOperation({ summary: 'List MCP servers for current organization' })
-  async list(@Req() req: any) {
-    return this.mcpServersService.findAllByOrg(req.user.organizationId);
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: '1..200' })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  async list(@Req() req: any, @Query() pagination: PaginationQueryDto) {
+    return this.mcpServersService.findAllByOrg(req.user.organizationId, {
+      limit: pagination.limit,
+      offset: pagination.offset,
+    });
   }
 
   @Post()
