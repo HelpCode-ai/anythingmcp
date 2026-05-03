@@ -8,7 +8,9 @@
     "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.4",
@@ -33,6 +35,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
+    "@playwright/test": "^1.59.1",
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
