@@ -369,6 +369,191 @@ async function main() {
 
   await client.close();
 
+  // ==========================================================================
+  // Part 2 — readOnly=false: prove that a Koch-Superpowers-style connector
+  // (schema introspection + free-form SELECT + INSERT/UPDATE/DELETE + DDL)
+  // still works end-to-end after the prepared-statement refactor.
+  // ==========================================================================
+  console.log('\n[smoke] === Phase 2: full DB write scenario ===');
+
+  // Build a dedicated MCP server so the auto-generated execute_query /
+  // get_database_schema tools don't collide by name with the read-only
+  // connector's tools.
+  console.log('[smoke] Creating second MCP server (write-mode)...');
+  const writeServer = await adminApi
+    .post('/api/mcp-servers', {
+      name: 'smoke-write',
+      description: 'Write-mode MySQL smoke test',
+    })
+    .then((r) => r.data as { id: string });
+
+  console.log('[smoke] Creating DATABASE/MySQL connector (readOnly=false)...');
+  const writeDbId = await createConnector(adminApi, {
+    name: 'mysql-smoke-write',
+    type: 'DATABASE',
+    baseUrl: 'mysql://smoke:smokepass@mysql:3306/smoketest',
+    authType: 'NONE',
+    config: { readOnly: false },
+  });
+
+  await assignConnectors(adminApi, writeServer.id, [writeDbId]);
+  const writeApiKey = await mintApiKey(adminApi, writeServer.id);
+
+  const writeUrl = new URL(`/mcp/${writeServer.id}`, API_BASE);
+  console.log(`[smoke] Connecting write MCP client to ${writeUrl.toString()}`);
+  const writeTransport = new StreamableHTTPClientTransport(writeUrl, {
+    requestInit: { headers: { 'X-API-Key': writeApiKey } },
+  });
+  const writeClient = new Client({
+    name: 'smoke-test-client-write',
+    version: '1.0.0',
+  });
+  await writeClient.connect(writeTransport);
+
+  // 2.1 — Schema introspection (the long INFORMATION_SCHEMA SELECT auto-baked
+  // into the path). No params, no placeholders — must still execute.
+  try {
+    const out = await callMcpTool(writeClient, 'get_database_schema', {});
+    const text = extractText(out);
+    record(
+      'DB schema introspection (information_schema)',
+      text.includes('"users"') && text.includes('"email"'),
+      text.slice(0, 120).replace(/\s+/g, ' '),
+    );
+  } catch (e: any) {
+    record('DB schema introspection (information_schema)', false, e.message);
+  }
+
+  // 2.2 — Free-form SELECT via execute_query (path is the literal `${query}`,
+  // SQL is the user-supplied value).
+  try {
+    const out = await callMcpTool(writeClient, 'execute_query', {
+      query: 'SELECT id, name, email FROM users ORDER BY id',
+    });
+    const text = extractText(out);
+    record(
+      'Free-form SELECT via execute_query',
+      text.includes('alice@example.com') && text.includes('bob@example.com'),
+      text.slice(0, 120).replace(/\s+/g, ' '),
+    );
+  } catch (e: any) {
+    record('Free-form SELECT via execute_query', false, e.message);
+  }
+
+  // 2.3 — INSERT (new row, then SELECT to confirm it landed).
+  try {
+    await callMcpTool(writeClient, 'execute_query', {
+      query:
+        "INSERT INTO users (name, email, active) VALUES ('Dave', 'dave@example.com', 1)",
+    });
+    const out = await callMcpTool(writeClient, 'execute_query', {
+      query:
+        "SELECT name, active FROM users WHERE email = 'dave@example.com'",
+    });
+    const text = extractText(out);
+    record(
+      'INSERT via execute_query',
+      text.includes('"Dave"') && text.includes('"active": 1'),
+      text.slice(0, 120).replace(/\s+/g, ' '),
+    );
+  } catch (e: any) {
+    record('INSERT via execute_query', false, e.message);
+  }
+
+  // 2.4 — UPDATE.
+  try {
+    await callMcpTool(writeClient, 'execute_query', {
+      query:
+        "UPDATE users SET active = 0 WHERE email = 'dave@example.com'",
+    });
+    const out = await callMcpTool(writeClient, 'execute_query', {
+      query:
+        "SELECT active FROM users WHERE email = 'dave@example.com'",
+    });
+    const text = extractText(out);
+    record(
+      'UPDATE via execute_query',
+      text.includes('"active": 0'),
+      text.slice(0, 120).replace(/\s+/g, ' '),
+    );
+  } catch (e: any) {
+    record('UPDATE via execute_query', false, e.message);
+  }
+
+  // 2.5 — DELETE.
+  try {
+    await callMcpTool(writeClient, 'execute_query', {
+      query: "DELETE FROM users WHERE email = 'dave@example.com'",
+    });
+    const out = await callMcpTool(writeClient, 'execute_query', {
+      query:
+        "SELECT COUNT(*) AS n FROM users WHERE email = 'dave@example.com'",
+    });
+    const text = extractText(out);
+    record(
+      'DELETE via execute_query',
+      text.includes('"n": 0') || text.includes('"n":"0"'),
+      text.slice(0, 120).replace(/\s+/g, ' '),
+    );
+  } catch (e: any) {
+    record('DELETE via execute_query', false, e.message);
+  }
+
+  // 2.6 — DDL: CREATE TABLE + INSERT + DROP TABLE.
+  try {
+    await callMcpTool(writeClient, 'execute_query', {
+      query:
+        'CREATE TABLE smoke_audit (id INT AUTO_INCREMENT PRIMARY KEY, msg VARCHAR(120))',
+    });
+    await callMcpTool(writeClient, 'execute_query', {
+      query: "INSERT INTO smoke_audit (msg) VALUES ('hello')",
+    });
+    const out = await callMcpTool(writeClient, 'execute_query', {
+      query: 'SELECT msg FROM smoke_audit',
+    });
+    const text = extractText(out);
+    const ok = text.includes('"hello"');
+    await callMcpTool(writeClient, 'execute_query', {
+      query: 'DROP TABLE smoke_audit',
+    });
+    record(
+      'DDL: CREATE / INSERT / DROP via execute_query',
+      ok,
+      text.slice(0, 120).replace(/\s+/g, ' '),
+    );
+  } catch (e: any) {
+    record('DDL: CREATE / INSERT / DROP via execute_query', false, e.message);
+  }
+
+  await writeClient.close();
+
+  // 2.7 — readOnly=true must still REJECT writes. Use the REST tool-test
+  // endpoint on the original (read-only) connector so we don't have to
+  // reconfigure the MCP server.
+  try {
+    const tools = await adminApi.get(`/api/connectors/${dbId}/tools`);
+    const execTool = (tools.data as Array<{ id: string; name: string }>).find(
+      (t) => t.name === 'execute_query',
+    );
+    if (!execTool) throw new Error('execute_query tool not found on read-only connector');
+
+    const res = await adminApi.post(
+      `/api/connectors/${dbId}/tools/${execTool.id}/test`,
+      { params: { query: "INSERT INTO users (name, email) VALUES ('mallory','m@example.com')" } },
+    );
+    const ok =
+      res.data?.ok === false &&
+      typeof res.data?.error === 'string' &&
+      /only select/i.test(res.data.error);
+    record(
+      'readOnly=true blocks INSERT (validateQuery)',
+      ok,
+      JSON.stringify(res.data).slice(0, 120),
+    );
+  } catch (e: any) {
+    record('readOnly=true blocks INSERT (validateQuery)', false, e.message);
+  }
+
   console.log('\n[smoke] Summary');
   console.log('---------------');
   let failed = 0;
