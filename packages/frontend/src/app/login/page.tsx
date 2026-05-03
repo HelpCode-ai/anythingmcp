@@ -584,9 +584,12 @@ function LoginForm() {
         <form className="space-y-4" onSubmit={handleSubmit}>
           {isRegister && (
             <div>
-              <label className="block text-sm font-medium mb-1">Name</label>
+              <label htmlFor="auth-name" className="block text-sm font-medium mb-1">Name</label>
               <input
+                id="auth-name"
+                name="name"
                 type="text"
+                autoComplete="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your name"
@@ -597,9 +600,12 @@ function LoginForm() {
           )}
 
           <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
+            <label htmlFor="auth-email" className="block text-sm font-medium mb-1">Email</label>
             <input
+              id="auth-email"
+              name="email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@example.com"
@@ -609,9 +615,12 @@ function LoginForm() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Password</label>
+            <label htmlFor="auth-password" className="block text-sm font-medium mb-1">Password</label>
             <input
+              id="auth-password"
+              name="password"
               type="password"
+              autoComplete={isRegister ? 'new-password' : 'current-password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Min. 8 characters"
@@ -639,9 +648,12 @@ function LoginForm() {
           {isRegister && (
             <>
               <div>
-                <label className="block text-sm font-medium mb-1">Confirm Password</label>
+                <label htmlFor="auth-confirm-password" className="block text-sm font-medium mb-1">Confirm Password</label>
                 <input
+                  id="auth-confirm-password"
+                  name="confirm-password"
                   type="password"
+                  autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repeat your password"
