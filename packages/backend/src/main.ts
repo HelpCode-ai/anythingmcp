@@ -6,6 +6,11 @@ config({ path: join(__dirname, '..', '..', '..', '..', '.env') });
 config({ path: join(__dirname, '..', '..', '..', '.env') });
 config({ path: '.env' });
 
+// Sentry must be imported before any other application code so the
+// auto-instrumentation can wrap http/express/prisma. No-op when SENTRY_DSN
+// is not set.
+import './instrument';
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';

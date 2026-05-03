@@ -34,6 +34,8 @@
     "@prisma/adapter-pg": "^7.4.0",
     "@prisma/client": "^7.4.0",
     "@rekog/mcp-nest": "^1.9.3",
+    "@sentry/nestjs": "^10.51.0",
+    "@sentry/profiling-node": "^10.51.0",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.6.2",
