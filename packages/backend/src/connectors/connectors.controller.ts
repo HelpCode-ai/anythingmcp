@@ -22,7 +22,11 @@ import {
   IsOptional,
   IsObject,
   IsBoolean,
+  IsArray,
+  ValidateNested,
+  ArrayMinSize,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ConnectorType, AuthType } from '../generated/prisma/client';
 import { ConnectorsService } from './connectors.service';
 import { OpenApiParser } from './parsers/openapi.parser';
@@ -126,6 +130,84 @@ class ImportToolsDto {
   @IsOptional()
   @IsString()
   url?: string;
+}
+
+// ── DTOs for importAll / updateEnvVars ─────────────────────────────────────
+
+class ImportToolDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  description: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isEnabled?: boolean;
+
+  @IsObject()
+  parameters: Record<string, unknown>;
+
+  @IsObject()
+  endpointMapping: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  responseMapping?: Record<string, unknown>;
+}
+
+class ImportConnectorDto {
+  @IsString()
+  name: string;
+
+  @IsEnum(ConnectorType)
+  type: ConnectorType;
+
+  @IsString()
+  baseUrl: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsEnum(AuthType)
+  authType?: AuthType;
+
+  @IsOptional()
+  @IsString()
+  specUrl?: string;
+
+  @IsOptional()
+  @IsObject()
+  headers?: Record<string, string>;
+
+  @IsOptional()
+  @IsObject()
+  config?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  envVars?: Record<string, string>;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ImportToolDto)
+  tools?: ImportToolDto[];
+}
+
+class ImportAllDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ImportConnectorDto)
+  connectors: ImportConnectorDto[];
+}
+
+class UpdateEnvVarsDto {
+  @IsObject()
+  envVars: Record<string, string>;
 }
 
 @ApiTags('Connectors')
@@ -494,8 +576,8 @@ export class ConnectorsController {
       'Import a previously exported configuration. Skips connectors ' +
       'with duplicate names. Does not import auth credentials.',
   })
-  async importAll(@Req() req: any, @Body() body: { connectors: any[] }) {
-    if (!Array.isArray(body.connectors) || body.connectors.length === 0) {
+  async importAll(@Req() req: any, @Body() body: ImportAllDto) {
+    if (body.connectors.length === 0) {
       return { error: 'Provide a "connectors" array with at least one connector' };
     }
 
@@ -721,7 +803,7 @@ export class ConnectorsController {
   async updateEnvVars(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { envVars: Record<string, string> },
+    @Body() body: UpdateEnvVarsDto,
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);

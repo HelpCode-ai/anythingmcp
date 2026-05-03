@@ -69,6 +69,19 @@ class UpdateToolDto {
   isEnabled?: boolean;
 }
 
+class BulkCreateToolsDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateToolDto)
+  tools: CreateToolDto[];
+}
+
+class TestToolDto {
+  @IsOptional()
+  @IsObject()
+  params?: Record<string, unknown>;
+}
+
 @ApiTags('Tools')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
@@ -142,7 +155,7 @@ export class ToolsController {
   async bulkCreate(
     @Req() req: any,
     @Param('connectorId') connectorId: string,
-    @Body() body: { tools: CreateToolDto[] },
+    @Body() body: BulkCreateToolsDto,
   ) {
     await this.assertCanWriteConnector(connectorId, req);
     const toolDefs = body.tools;
@@ -219,7 +232,7 @@ export class ToolsController {
     @Param('connectorId') connectorId: string,
     @Param('toolId') toolId: string,
     @Req() req: any,
-    @Body() body: { params?: Record<string, unknown> },
+    @Body() body: TestToolDto,
   ) {
     await this.assertCanWriteConnector(connectorId, req);
 
