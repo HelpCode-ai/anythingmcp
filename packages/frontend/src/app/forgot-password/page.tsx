@@ -4,12 +4,14 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { auth } from '@/lib/api';
 import { LogoIcon } from '@/components/nav-bar';
+import { useToast } from '@/components/toast';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const toast = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,8 +21,15 @@ export default function ForgotPasswordPage() {
     try {
       await auth.forgotPassword(email);
       setSent(true);
+      toast.show({
+        tone: 'success',
+        title: 'Reset link requested',
+        description: 'If that email is registered, a reset link is on the way.',
+      });
     } catch (err: any) {
-      setError(err.message || 'Something went wrong');
+      const message = err.message || 'Something went wrong';
+      setError(message);
+      toast.show({ tone: 'error', title: 'Request failed', description: message });
     } finally {
       setLoading(false);
     }
