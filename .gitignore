@@ -40,5 +40,11 @@ packages/backend/src/generated/
 docker-compose.override.yml
 Caddyfile
 
+# Playwright
+packages/frontend/test-results/
+packages/frontend/playwright-report/
+packages/frontend/blob-report/
+packages/frontend/playwright/.cache/
+
 # Misc
 *.tsbuildinfo
