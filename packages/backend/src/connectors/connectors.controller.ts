@@ -6,13 +6,15 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   Req,
   UseGuards,
   Logger,
   ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
+import { PaginationQueryDto } from '../common/pagination.dto';
 import { ConfigService } from '@nestjs/config';
 import {
   IsString,
@@ -173,8 +175,13 @@ export class ConnectorsController {
 
   @Get()
   @ApiOperation({ summary: 'List connectors for current organization' })
-  async list(@Req() req: any) {
-    return this.connectorsService.findByOrg(req.user.organizationId);
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: '1..200' })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  async list(@Req() req: any, @Query() pagination: PaginationQueryDto) {
+    return this.connectorsService.findByOrg(req.user.organizationId, {
+      limit: pagination.limit,
+      offset: pagination.offset,
+    });
   }
 
   @Post()

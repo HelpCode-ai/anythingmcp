@@ -17,13 +17,18 @@ export class McpServersService {
     });
   }
 
-  async findAllByOrg(organizationId: string) {
+  async findAllByOrg(
+    organizationId: string,
+    opts?: { limit?: number; offset?: number },
+  ) {
     return this.prisma.mcpServerConfig.findMany({
       where: { organizationId },
       include: {
         _count: { select: { connectors: true, apiKeys: true } },
       },
       orderBy: { createdAt: 'asc' },
+      ...(opts?.limit !== undefined ? { take: opts.limit } : {}),
+      ...(opts?.offset !== undefined ? { skip: opts.offset } : {}),
     });
   }
 
