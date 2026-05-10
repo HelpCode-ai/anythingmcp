@@ -1,0 +1,66 @@
+name: Announce release in Discussions
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  discussions: write
+  contents: read
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
+    steps:
+      - name: Post comment on the Roadmap discussion
+        uses: actions/github-script@v7
+        env:
+          # The pinned Roadmap discussion. Update DISCUSSION_NUMBER if it changes.
+          DISCUSSION_NUMBER: "147"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const release = context.payload.release;
+            const discussionNumber = parseInt(process.env.DISCUSSION_NUMBER, 10);
+            const { owner, repo } = context.repo;
+
+            // Resolve discussion ID
+            const q = `
+              query($owner:String!,$name:String!,$number:Int!){
+                repository(owner:$owner,name:$name){
+                  discussion(number:$number){ id title }
+                }
+              }`;
+            const r = await github.graphql(q, {
+              owner,
+              name: repo,
+              number: discussionNumber,
+            });
+            const discussionId = r.repository.discussion.id;
+
+            const truncatedBody = (release.body || "")
+              .split("\n")
+              .slice(0, 25)
+              .join("\n");
+
+            const body = [
+              `### 🚀 ${release.name || release.tag_name} is out`,
+              ``,
+              `Published ${new Date(release.published_at).toISOString().slice(0, 10)} — see the [full release notes](${release.html_url}).`,
+              ``,
+              truncatedBody,
+              ``,
+              `---`,
+              `Update with \`docker compose pull && docker compose up -d\` (self-hosted) or wait for the Cloud rollout (~24h after this comment).`,
+              `⭐ Star &middot; 👀 Watch → Releases &middot; 💡 [Vote on the next adapter](https://github.com/${owner}/${repo}/discussions/148)`,
+            ].join("\n");
+
+            const m = `
+              mutation($id:ID!,$body:String!){
+                addDiscussionComment(input:{discussionId:$id, body:$body}){
+                  comment{ id url }
+                }
+              }`;
+            const res = await github.graphql(m, { id: discussionId, body });
+            core.info(`Posted: ${res.addDiscussionComment.comment.url}`);

@@ -1,0 +1,48 @@
+name: Stale issues and PRs
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # daily at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Issues
+          days-before-issue-stale: 60
+          days-before-issue-close: 14
+          stale-issue-label: "stale"
+          exempt-issue-labels: "pinned,security,roadmap,help wanted,good first issue"
+          stale-issue-message: >
+            This issue has been quiet for 60 days. We're marking it `stale`
+            so it stays visible. If it's still relevant, drop a comment and
+            we'll keep it open — otherwise it will close in 14 days.
+          close-issue-message: >
+            Closing as stale. If this is still relevant, please reopen
+            with an updated description — we'd rather have a focused
+            issue than a long-running one. Thanks!
+
+          # Pull requests
+          days-before-pr-stale: 30
+          days-before-pr-close: 14
+          stale-pr-label: "stale"
+          exempt-pr-labels: "pinned,security,blocked,wip"
+          stale-pr-message: >
+            This PR has been quiet for 30 days. If you're still working
+            on it, leave a comment so we don't auto-close it in 14 days.
+          close-pr-message: >
+            Closing as stale to keep the queue clean. Re-open any time
+            once the work resumes.
+
+          operations-per-run: 100
+          ascending: true
+          remove-stale-when-updated: true

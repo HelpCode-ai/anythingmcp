@@ -1,0 +1,75 @@
+name: Welcome new contributors
+
+on:
+  pull_request_target:
+    types: [opened]
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Greet first-time contributors
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const isPR = !!context.payload.pull_request;
+            const number = isPR
+              ? context.payload.pull_request.number
+              : context.payload.issue.number;
+            const author = isPR
+              ? context.payload.pull_request.user.login
+              : context.payload.issue.user.login;
+
+            // Skip bots
+            if (/\[bot\]$/.test(author) || ["dependabot", "renovate"].includes(author)) {
+              return;
+            }
+
+            // Count this author's prior contributions
+            const { data: priorIssues } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} author:${author}`,
+              per_page: 2,
+            });
+            if (priorIssues.total_count > 1) {
+              core.info(`${author} has ${priorIssues.total_count} prior items — not first-timer.`);
+              return;
+            }
+
+            const body = isPR
+              ? [
+                  `👋 Welcome, @${author}, and thanks for opening your first PR on AnythingMCP!`,
+                  ``,
+                  `A few quick pointers:`,
+                  `- Make sure CI is green before requesting review (\`Backend\`, \`Frontend\`, \`Playwright\`, \`CodeQL\`, \`Trivy\`).`,
+                  `- If this is a new adapter, the parametrised \`catalog.spec.ts\` test will validate it automatically.`,
+                  `- Sign off your commits if you can — it's not blocking, just nice to have.`,
+                  ``,
+                  `Someone from the core team will look at this within ~48h. If you don't hear back, please ping us in [Discussions / Q&A](https://github.com/${owner}/${repo}/discussions/categories/q-a).`,
+                  ``,
+                  `⭐ While you wait — if you find AnythingMCP useful, a star helps others discover it.`,
+                ].join("\n")
+              : [
+                  `👋 Hi @${author}, thanks for opening your first issue on AnythingMCP!`,
+                  ``,
+                  `A maintainer will triage this within ~48h. To help us help you faster:`,
+                  `- For "how do I…" questions, [Discussions / Q&A](https://github.com/${owner}/${repo}/discussions/categories/q-a) usually gets faster answers.`,
+                  `- For feature requests, vote on [Which integrations should we build next?](https://github.com/${owner}/${repo}/discussions/148) so we can prioritise based on demand.`,
+                  `- Bug? Please confirm the version and deployment mode (Docker / Railway / DO / Cloud) if you haven't already.`,
+                  ``,
+                  `⭐ If AnythingMCP has been useful to you, a star helps others find it.`,
+                ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: number,
+              body,
+            });
