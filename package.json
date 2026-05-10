@@ -32,6 +32,7 @@
     "class-validator": "^0.15.1"
   },
   "overrides": {
-    "rxjs": "7.8.1"
+    "rxjs": "7.8.1",
+    "eslint-plugin-react-hooks": "7.0.1"
   }
 }
