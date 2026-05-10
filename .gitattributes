@@ -1,0 +1,28 @@
+# Normalize line endings to LF on checkin, native on checkout.
+* text=auto eol=lf
+
+# Shell scripts and Dockerfiles must always be LF.
+*.sh           text eol=lf
+Dockerfile*    text eol=lf
+*.yml          text eol=lf
+*.yaml         text eol=lf
+
+# Tell GitHub Linguist to classify documentation, generated files, and assets
+# correctly so the language stats reflect actual product code.
+docs/**             linguist-documentation
+content/**          linguist-documentation
+*.md                linguist-documentation
+*.mdx               linguist-documentation
+ROADMAP.md          linguist-documentation
+CHANGELOG.md        linguist-documentation
+SUPPORT.md          linguist-documentation
+CONTRIBUTING.md     linguist-documentation
+SECURITY.md         linguist-documentation
+CODE_OF_CONDUCT.md  linguist-documentation
+
+# Lockfiles and large generated artefacts shouldn't pollute language stats.
+package-lock.json   linguist-generated
+*.svg               linguist-generated
+*.png binary
+*.jpg binary
+*.gif binary

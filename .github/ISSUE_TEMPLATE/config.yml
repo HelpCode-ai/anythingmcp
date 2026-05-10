@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions, ideas, show & tell
+    url: https://github.com/HelpCode-ai/anythingmcp/discussions
+    about: For anything that isn't a clear bug or feature request — please use Discussions so the answer helps everyone else too.
+  - name: 📚 Documentation & Guides
+    url: https://anythingmcp.com
+    about: 150+ adapter and AI-client setup guides in English, German, and Italian.
+  - name: 🔐 Security vulnerabilities
+    url: https://github.com/HelpCode-ai/anythingmcp/blob/main/SECURITY.md
+    about: Please do NOT open a public issue. Follow the security disclosure policy.
+  - name: 💼 Commercial licensing & support
+    url: mailto:info@helpcode.ai
+    about: For commercial use, custom adapters, SLA, or on-prem support contracts.

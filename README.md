@@ -14,12 +14,44 @@
 </p>
 
 <p align="center">
-  <strong>⭐ Star this repo if you find it useful — it helps others discover AnythingMCP!</strong>
+  <strong>⭐ Star this repo</strong> if you find it useful &middot; <strong>👀 Watch</strong> to get notified about new adapters and releases &middot; <strong>🔱 Fork</strong> to add your own connector
 </p>
 
 <p align="center">
   <img src="docs/assets/banner.png" alt="AnythingMCP — source-available self-hosted MCP server and API gateway for Claude, ChatGPT, Gemini, Copilot and Cursor" width="100%" />
 </p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo.gif" alt="AnythingMCP demo — turning a REST API into an MCP server with no code" />
+  <br/>
+  <a href="https://anythingmcp.com/en/video-promo"><strong>Watch the 90-second demo video</strong></a>
+</p>
+
+<details>
+<summary><strong>📖 Table of Contents</strong></summary>
+
+- [Cloud & Deploy](#cloud--deploy)
+- [What is AnythingMCP?](#what-is-anythingmcp)
+- [Get Started in 60 Seconds](#get-started-in-60-seconds)
+- [Use Cases](#use-cases)
+- [Why AnythingMCP?](#why-anythingmcp)
+- [How AnythingMCP Compares](#how-anythingmcp-compares)
+- [Key Features](#key-features)
+- [Pre-configured MCP Connectors](#pre-configured-mcp-connectors)
+- [Quick Start](#quick-start)
+- [Connect Your AI Client to the MCP Server](#connect-your-ai-client-to-the-mcp-server)
+- [Connector Guides](#connector-guides)
+- [Architecture](#architecture)
+- [FAQ](#faq)
+- [Documentation](#documentation)
+- [Tech Stack](#tech-stack)
+- [Development](#development)
+- [Community & Support](#community--support)
+- [Star History](#star-history)
+- [Contributing](#contributing)
+- [License](#license)
+
+</details>
 
 ---
 
@@ -44,12 +76,6 @@ No SDK. No code changes. Just point, configure, and connect.
 **Built-in adapters** ship with the catalog so you get an instant MCP server for popular SaaS and public APIs — DHL, DPD, GLS, Shipcloud, Sendcloud, Deutsche Bahn, DATEV, Weclapp, Xentral, Shopware 6, Personio, Handelsregister, VIES VAT, OpenPLZ, HERE Geocoding, Oxomi and more (full list [below](#pre-configured-mcp-connectors)).
 
 > **Looking for an MCP gateway?** AnythingMCP acts as a universal MCP proxy and API-to-MCP bridge — the missing middleware between your APIs and AI agents.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo.gif" alt="AnythingMCP demo — turning a REST API into an MCP server with no code" />
-  <br/>
-  <a href="https://anythingmcp.com/en/video-promo"><strong>Watch the demo video</strong></a>
-</p>
 
 ---
 
@@ -200,6 +226,8 @@ AnythingMCP ships with **29 ready-to-use MCP server adapters** — provide your 
 </details>
 
 **Want to add your own?** Create a JSON adapter file in `packages/backend/src/adapters/` (organized by region, e.g. `de/`), register it in `catalog.ts`, and it becomes available to all users. The new `catalog.spec.ts` parametrized test validates every adapter at build time. See the existing adapters and the [Tool Definition Format](docs/tool-definition.md) for the expected schema.
+
+> 👀 **Don't see your favourite SaaS?** [**Open a discussion**](https://github.com/HelpCode-ai/anythingmcp/discussions/categories/ideas) and we'll prioritise the next adapter based on community demand. ⭐ Star and 👀 Watch the repo to be notified when it ships.
 
 ---
 
@@ -372,10 +400,25 @@ Or see the [Deployment Guide](docs/deployment.md#local-development) for manual s
 
 ## Community & Support
 
-- **Questions & Discussions** — [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions)
+- **Questions & Discussions** — [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions) — vote on the next adapter, share what you've built, ask for help
 - **Bug Reports** — [Open an issue](https://github.com/HelpCode-ai/anythingmcp/issues)
 - **Feature Requests** — [Request a feature](https://github.com/HelpCode-ai/anythingmcp/issues/new?labels=enhancement&template=feature_request.md)
+- **Need help?** — see [SUPPORT.md](SUPPORT.md) for the full list of channels
 - **Built by** [helpcode.ai](https://helpcode.ai) — AI-powered software development from Germany
+
+---
+
+## Star History
+
+<a href="https://www.star-history.com/#HelpCode-ai/anythingmcp&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date" />
+    <img alt="AnythingMCP star history chart" src="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date" />
+  </picture>
+</a>
+
+> ⭐ **Like what you see?** [**Star this repo**](https://github.com/HelpCode-ai/anythingmcp/stargazers) — every star helps another developer discover AnythingMCP.
 
 ---
 
