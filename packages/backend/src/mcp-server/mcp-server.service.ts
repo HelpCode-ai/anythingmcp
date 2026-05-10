@@ -87,8 +87,15 @@ export class McpServerService implements OnModuleInit {
           envVars,
         );
 
-        // Register as a native MCP tool so it appears directly in tools/list
-        this.registerMcpTool(tool.name, tool.description, effectiveSchema);
+        // Register as a native MCP tool so it appears directly in tools/list,
+        // but only the first time we see this name. The upstream library's
+        // McpRegistryService is single-tenant (one tool per name); our
+        // ToolRegistry resolves cross-org collisions at handler-dispatch
+        // time via getToolForOrg/getTool, so the second+ registration with
+        // the same name would just overwrite and emit a warning.
+        if (this.toolRegistry.countByName(tool.name) === 1) {
+          this.registerMcpTool(tool.name, tool.description, effectiveSchema);
+        }
       }
     }
   }
@@ -98,10 +105,15 @@ export class McpServerService implements OnModuleInit {
     const oldTools = this.toolRegistry
       .getAllTools()
       .filter((t) => t.connectorId === connectorId);
-    for (const tool of oldTools) {
-      this.mcpRegistry.removeTool(tool.name);
-    }
     this.toolRegistry.unregisterConnectorTools(connectorId);
+    for (const tool of oldTools) {
+      // Only drop from the upstream MCP registry if no other connector
+      // (in any org) still exposes this tool name — otherwise we'd
+      // tear down a name that another tenant still needs.
+      if (this.toolRegistry.countByName(tool.name) === 0) {
+        this.mcpRegistry.removeTool(tool.name);
+      }
+    }
 
     // Load and register new tools
     const connector = await this.prisma.connector.findUnique({
@@ -141,7 +153,12 @@ export class McpServerService implements OnModuleInit {
           tool.parameters as Record<string, unknown>,
           envVars,
         );
-        this.registerMcpTool(tool.name, tool.description, effectiveSchema);
+        // Same dedup rule as loadAllTools — register on the upstream
+        // single-tenant MCP registry only when this is the first tool
+        // with this name across all orgs/connectors.
+        if (this.toolRegistry.countByName(tool.name) === 1) {
+          this.registerMcpTool(tool.name, tool.description, effectiveSchema);
+        }
       }
     }
 

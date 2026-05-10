@@ -128,4 +128,35 @@ describe('ToolRegistry', () => {
       expect(registry.getToolCount()).toBe(2);
     });
   });
+
+  describe('countByName', () => {
+    it('returns 0 for an unknown name', () => {
+      expect(registry.countByName('unknown')).toBe(0);
+    });
+
+    it('counts every tool registered under the same name across orgs/connectors', () => {
+      registry.registerTool(
+        makeTool({ id: 't-a', name: 'shared', connectorId: 'c-a', organizationId: 'org-A' }),
+      );
+      registry.registerTool(
+        makeTool({ id: 't-b', name: 'shared', connectorId: 'c-b', organizationId: 'org-B' }),
+      );
+      registry.registerTool(
+        makeTool({ id: 't-c', name: 'shared', connectorId: 'c-c', organizationId: 'org-A' }),
+      );
+      expect(registry.countByName('shared')).toBe(3);
+    });
+
+    it('decreases when a connector is unregistered', () => {
+      registry.registerTool(
+        makeTool({ id: 't-a', name: 'shared', connectorId: 'c-a' }),
+      );
+      registry.registerTool(
+        makeTool({ id: 't-b', name: 'shared', connectorId: 'c-b' }),
+      );
+      expect(registry.countByName('shared')).toBe(2);
+      registry.unregisterConnectorTools('c-a');
+      expect(registry.countByName('shared')).toBe(1);
+    });
+  });
 });

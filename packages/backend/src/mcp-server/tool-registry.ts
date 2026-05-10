@@ -112,6 +112,15 @@ export class ToolRegistry {
   }
 
   /**
+   * Count how many tools share a given name across all orgs/connectors.
+   * Used by McpServerService to decide whether a tool name is already
+   * exposed in the upstream MCP library's (single-tenant) registry.
+   */
+  countByName(name: string): number {
+    return this.toolsByName.get(name)?.length ?? 0;
+  }
+
+  /**
    * Get the count of registered tools.
    */
   getToolCount(): number {
