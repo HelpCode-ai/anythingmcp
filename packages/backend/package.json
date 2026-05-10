@@ -38,7 +38,7 @@
     "@opentelemetry/semantic-conventions": "^1.40.0",
     "@prisma/adapter-pg": "^7.4.0",
     "@prisma/client": "^7.4.0",
-    "@rekog/mcp-nest": "^1.9.3",
+    "@rekog/mcp-nest": "^1.9.9",
     "@sentry/nestjs": "^10.51.0",
     "@sentry/profiling-node": "^10.51.0",
     "axios": "^1.13.2",
