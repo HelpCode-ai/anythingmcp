@@ -98,16 +98,23 @@ function AdapterStoreContent() {
       .finally(() => setLoading(false));
   }, [token]);
 
-  // Auto-import when ?install=<slug> is present (e.g. from website marketplace)
-  useEffect(() => {
-    if (autoInstallTriggered.current || loading || !token || list.length === 0) return;
-    const installSlug = searchParams.get('install');
-    if (!installSlug) return;
-    const adapter = list.find((a) => a.slug === installSlug);
-    if (!adapter) return;
-    autoInstallTriggered.current = true;
-    handleImportClick(adapter);
-  }, [loading, list, token, searchParams]);
+  const doImport = async (slug: string, credentials?: Record<string, string>) => {
+    if (!token) return;
+    setImporting(slug);
+    setMsg('');
+    setConfigAdapter(null);
+    try {
+      const adapter = list.find((a) => a.slug === slug);
+      const result = await adapters.import(slug, token, credentials);
+      setMsg(result.message);
+      setImporting(null);
+      // Show MCP assignment modal
+      setImportedConnector({ id: result.connectorId, name: adapter?.name || slug });
+    } catch (err: any) {
+      setMsg(`Import failed: ${err.message}`);
+      setImporting(null);
+    }
+  };
 
   const handleImportClick = async (adapter: AdapterItem) => {
     if (!token) return;
@@ -136,23 +143,16 @@ function AdapterStoreContent() {
     }
   };
 
-  const doImport = async (slug: string, credentials?: Record<string, string>) => {
-    if (!token) return;
-    setImporting(slug);
-    setMsg('');
-    setConfigAdapter(null);
-    try {
-      const adapter = list.find((a) => a.slug === slug);
-      const result = await adapters.import(slug, token, credentials);
-      setMsg(result.message);
-      setImporting(null);
-      // Show MCP assignment modal
-      setImportedConnector({ id: result.connectorId, name: adapter?.name || slug });
-    } catch (err: any) {
-      setMsg(`Import failed: ${err.message}`);
-      setImporting(null);
-    }
-  };
+  // Auto-import when ?install=<slug> is present (e.g. from website marketplace)
+  useEffect(() => {
+    if (autoInstallTriggered.current || loading || !token || list.length === 0) return;
+    const installSlug = searchParams.get('install');
+    if (!installSlug) return;
+    const adapter = list.find((a) => a.slug === installSlug);
+    if (!adapter) return;
+    autoInstallTriggered.current = true;
+    handleImportClick(adapter);
+  }, [loading, list, token, searchParams]);
 
   const handleConfigSubmit = () => {
     if (!configAdapter) return;

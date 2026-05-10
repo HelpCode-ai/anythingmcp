@@ -25,10 +25,6 @@ export default function LicenseSettingsPage() {
 
   const isCloud = deploymentMode === 'cloud';
 
-  useEffect(() => {
-    loadStatus();
-  }, [token]);
-
   const loadStatus = async () => {
     try {
       const data = await license.getStatus(token || undefined);
@@ -37,6 +33,10 @@ export default function LicenseSettingsPage() {
       // ignore
     }
   };
+
+  useEffect(() => {
+    loadStatus();
+  }, [token]);
 
   const handleActivate = async () => {
     if (!token || !licenseKey) return;
