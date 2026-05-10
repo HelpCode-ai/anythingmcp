@@ -6,16 +6,10 @@
   </p>
   <p align="center">
     <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=social" alt="GitHub Stars"></a>&nbsp;
-    <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSL--1.1-blue" alt="License"></a>&nbsp;
     <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases" alt="Release"></a>&nbsp;
+    <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSL--1.1-blue" alt="License"></a>&nbsp;
     <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/badge/docker-ready-blue?logo=docker" alt="Docker Ready"></a>&nbsp;
-    <img src="https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript&logoColor=white" alt="TypeScript">&nbsp;
-    <img src="https://img.shields.io/badge/NestJS-11-red?logo=nestjs&logoColor=white" alt="NestJS">&nbsp;
-    <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white" alt="Next.js">&nbsp;
-    <a href="https://github.com/HelpCode-ai/anythingmcp/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome"></a>&nbsp;
-    <a href="https://github.com/HelpCode-ai/anythingmcp/graphs/contributors"><img src="https://img.shields.io/badge/contributors-welcome-orange" alt="Contributors Welcome"></a>&nbsp;
-    <a href="https://github.com/HelpCode-ai/anythingmcp/commits/main"><img src="https://img.shields.io/github/last-commit/HelpCode-ai/anythingmcp" alt="Last Commit"></a>&nbsp;
-    <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/release-date/HelpCode-ai/anythingmcp" alt="Release Date"></a>
+    <a href="https://github.com/HelpCode-ai/anythingmcp/commits/main"><img src="https://img.shields.io/github/last-commit/HelpCode-ai/anythingmcp" alt="Last Commit"></a>
   </p>
 </p>
 
@@ -24,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — open-source self-hosted MCP server and API gateway for Claude, ChatGPT, Gemini, Copilot and Cursor" width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP — source-available self-hosted MCP server and API gateway for Claude, ChatGPT, Gemini, Copilot and Cursor" width="100%" />
 </p>
 
 ---
@@ -158,6 +152,9 @@ AnythingMCP ships with **29 ready-to-use MCP server adapters** — provide your 
 | **Billomat** | Online invoicing & bookkeeping for DE SMBs | [Billomat MCP Server](https://anythingmcp.com/guides/billomat-to-mcp) |
 | **FastBill** | Invoicing tool for German freelancers and SMBs | [FastBill MCP Server](https://anythingmcp.com/guides/fastbill-to-mcp) |
 
+<details>
+<summary><strong>E-commerce, HR, Government, Banking & Construction MCP servers — click to expand</strong> (Shopware 6, Oxomi, ImmobilienScout24, Personio, Kenjo, MFR, VIES VAT, Handelsregister, OpenPLZ, Bundesbank, DESTATIS, NINA, N26, PAYONE, TeamViewer, PlanRadar, HERE Geocoding)</summary>
+
 ### E-commerce & Catalog
 
 | Connector | Description | Guide |
@@ -199,6 +196,8 @@ AnythingMCP ships with **29 ready-to-use MCP server adapters** — provide your 
 |-----------|-------------|-------|
 | **PlanRadar** | Construction & real-estate project management — tickets, layers | [PlanRadar MCP Server](https://anythingmcp.com/guides/planradar-to-mcp) |
 | **HERE Geocoding** | Worldwide geocoding, autocomplete, place discovery (free tier) | [HERE MCP Server](https://anythingmcp.com/guides/here-geocoding-to-mcp) |
+
+</details>
 
 **Want to add your own?** Create a JSON adapter file in `packages/backend/src/adapters/` (organized by region, e.g. `de/`), register it in `catalog.ts`, and it becomes available to all users. The new `catalog.spec.ts` parametrized test validates every adapter at build time. See the existing adapters and the [Tool Definition Format](docs/tool-definition.md) for the expected schema.
 
@@ -302,9 +301,13 @@ You don't write code. AnythingMCP imports your OpenAPI/Postman/WSDL spec (or you
 
 Yes. Any client that speaks MCP works. See the [Connect Your AI Client](#connect-your-ai-client-to-the-mcp-server) table for direct setup guides.
 
+### Why source-available and not "open source"?
+
+We use the [Business Source License 1.1](LICENSE) (BSL-1.1), the same model as Sentry, MariaDB, CockroachDB and HashiCorp Terraform. The source is fully public, you can read, fork, modify and self-host — but you can't resell it as a managed SaaS without a commercial license. On **2030-03-04** the license **automatically converts to Apache 2.0**, so the code is guaranteed to become OSI-approved open-source. We chose this over MIT/Apache up-front to keep building AnythingMCP sustainably while avoiding the AWS-strip-mining trap. See the [License FAQ](docs/license-faq.md) for plain-language details.
+
 ### Is AnythingMCP free?
 
-It's source-available under [BSL-1.1](LICENSE) — free for internal use, personal use, development, testing, and academic use. The license converts to Apache 2.0 on 2030-03-04. The only thing not allowed is reselling it as a hosted SaaS to third parties without a commercial license.
+Yes, for everyone except SaaS resellers. Free for internal company use, personal use, development, testing, evaluation and academic use. The only restriction is offering it as a hosted commercial service to third parties without a commercial license — and even that restriction lifts on 2030-03-04 when BSL converts to Apache 2.0.
 
 ### Can I self-host AnythingMCP?
 

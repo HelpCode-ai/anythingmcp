@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+title: "AnythingMCP — Self-Hosted MCP Server & API Gateway"
+message: "If you use AnythingMCP in your research or product, please cite it as below."
+type: software
+authors:
+  - name: "helpcode.ai GmbH"
+    website: "https://helpcode.ai"
+    email: "info@helpcode.ai"
+url: "https://github.com/HelpCode-ai/anythingmcp"
+repository-code: "https://github.com/HelpCode-ai/anythingmcp"
+abstract: >
+  AnythingMCP is a source-available self-hosted Model Context Protocol (MCP)
+  server and API gateway. It converts REST, SOAP, GraphQL endpoints, databases,
+  and other MCP servers into MCP tools consumable by AI clients such as
+  Claude, ChatGPT, Google Gemini, GitHub Copilot, and Cursor. It ships with
+  29 pre-built adapters (DHL, DPD, GLS, DATEV, Weclapp, Personio,
+  Handelsregister, Shopware 6, etc.), OAuth2/RBAC governance, audit logging,
+  and a visual tool editor.
+keywords:
+  - model-context-protocol
+  - mcp
+  - mcp-server
+  - mcp-gateway
+  - api-gateway
+  - llm-tools
+  - ai-agents
+  - claude
+  - chatgpt
+  - rest-to-mcp
+  - soap-to-mcp
+  - graphql-to-mcp
+  - database-to-mcp
+license: BUSL-1.1
