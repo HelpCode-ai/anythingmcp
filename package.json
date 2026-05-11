@@ -3,7 +3,7 @@
   "version": "0.1.23",
   "description": "Convert any API into an MCP server — self-hosted, source available",
   "private": true,
-  "license": "BSL-1.1",
+  "license": "BUSL-1.1",
   "workspaces": [
     "packages/backend",
     "packages/frontend"

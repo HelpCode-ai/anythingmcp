@@ -3,7 +3,7 @@
   "version": "0.1.23",
   "description": "AnythingMCP — Next.js Admin UI",
   "private": true,
-  "license": "BSL-1.1",
+  "license": "BUSL-1.1",
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
