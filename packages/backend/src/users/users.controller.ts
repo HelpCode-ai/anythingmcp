@@ -9,7 +9,7 @@ import {
   UseGuards,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsOptional, IsEmail, IsEnum, MinLength, Matches, Equals } from 'class-validator';
 import { UserRole } from '../generated/prisma/client';
@@ -18,10 +18,12 @@ import { AuthService } from '../auth/auth.service';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 
 class UpdateProfileDto {
+  @ApiPropertyOptional({ description: 'Display name.' })
   @IsOptional()
   @IsString()
   name?: string;
 
+  @ApiPropertyOptional({ description: 'Email. Triggers re-verification on change.' })
   @IsOptional()
   @IsEmail()
   email?: string;
@@ -32,10 +34,12 @@ const PASSWORD_MESSAGE =
   'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
 
 class ChangePasswordDto {
+  @ApiProperty({ description: 'Current password (verified before applying the change).', format: 'password' })
   @IsString()
   @MinLength(8)
   currentPassword: string;
 
+  @ApiProperty({ description: 'New password (8+ chars, mixed case, digit, special).', format: 'password' })
   @IsString()
   @MinLength(8)
   @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
@@ -43,15 +47,21 @@ class ChangePasswordDto {
 }
 
 class UpdateUserRoleDto {
+  @ApiProperty({ enum: UserRole, description: 'New organization role for the target user.' })
   @IsEnum(UserRole)
   role: UserRole;
 }
 
 class DeleteSelfDto {
+  @ApiProperty({ description: 'Account password (re-confirmation).', format: 'password' })
   @IsString()
   @MinLength(1)
   password: string;
 
+  @ApiProperty({
+    description: 'Must equal the literal string "DELETE" — protection against accidental calls.',
+    example: 'DELETE',
+  })
   @IsString()
   @Equals('DELETE')
   confirm: string;

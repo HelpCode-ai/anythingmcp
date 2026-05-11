@@ -11,38 +11,51 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsOptional, IsArray } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { RolesService } from './roles.service';
 
 class CreateRoleDto {
+  @ApiProperty({ description: 'Role display name.', example: 'sales-read-only' })
   @IsString()
   name: string;
 
+  @ApiPropertyOptional({ description: 'Free-text description shown in the admin UI.' })
   @IsOptional()
   @IsString()
   description?: string;
 }
 
 class UpdateRoleDto {
+  @ApiPropertyOptional({ description: 'Role display name.' })
   @IsOptional()
   @IsString()
   name?: string;
 
+  @ApiPropertyOptional({ description: 'Free-text description.' })
   @IsOptional()
   @IsString()
   description?: string;
 }
 
 class SetToolAccessDto {
+  @ApiProperty({
+    description:
+      'Tool IDs this role can invoke. Replaces the existing assignment. Members without an MCP role keep unrestricted access.',
+    type: [String],
+  })
   @IsArray()
   @IsString({ each: true })
   toolIds: string[];
 }
 
 class AssignRoleDto {
+  @ApiPropertyOptional({
+    description: 'MCP role id to attach. Pass null or omit to clear the assignment.',
+    nullable: true,
+  })
   @IsOptional()
   @IsString()
   roleId?: string | null;

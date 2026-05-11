@@ -12,7 +12,7 @@ import {
   Logger,
   ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { PaginationQueryDto } from '../common/pagination.dto';
 import { ConfigService } from '@nestjs/config';
@@ -43,90 +43,181 @@ import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 
 class CreateConnectorDto {
+  @ApiProperty({
+    description: 'Human-readable connector name shown in the UI and surfaced via MCP.',
+    example: 'Acme CRM',
+  })
   @IsString()
   name: string;
 
+  @ApiProperty({
+    enum: ConnectorType,
+    description: 'Transport family for this connector.',
+    example: 'REST',
+  })
   @IsEnum(ConnectorType)
   type: ConnectorType;
 
+  @ApiProperty({
+    description: 'Root URL the engine will call. Path interpolation is applied per-tool.',
+    example: 'https://api.acme.example/v1',
+  })
   @IsString()
   baseUrl: string;
 
+  @ApiPropertyOptional({
+    enum: AuthType,
+    description: 'Auth scheme. Omit to send no auth.',
+    example: 'BEARER_TOKEN',
+  })
   @IsOptional()
   @IsEnum(AuthType)
   authType?: AuthType;
 
+  @ApiPropertyOptional({
+    description:
+      'Credential payload keyed by authType (e.g. { token: "..." } for BEARER_TOKEN, { username, password } for BASIC_AUTH).',
+    example: { token: 'sk_live_…' },
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
   @IsObject()
   authConfig?: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description: 'Public URL of an OpenAPI/WSDL/GraphQL spec to associate with this connector.',
+    example: 'https://api.acme.example/v1/openapi.json',
+  })
   @IsOptional()
   @IsString()
   specUrl?: string;
 
+  @ApiPropertyOptional({
+    description: 'Extra HTTP headers sent on every request.',
+    example: { 'X-Tenant': 'acme' },
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
   @IsOptional()
   @IsObject()
   headers?: Record<string, string>;
 
+  @ApiPropertyOptional({
+    description: 'Engine-specific options (e.g. { readOnly: true } for DATABASE connectors).',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
   @IsObject()
   config?: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description:
+      'Per-connector runtime values. Referenced from tool params with `$envVarName` so the AI never has to provide them.',
+    example: { ACME_TENANT_ID: '42' },
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
   @IsOptional()
   @IsObject()
   envVars?: Record<string, string>;
 
+  @ApiPropertyOptional({
+    description:
+      'Markdown notes appended to the MCP server instructions for any server that exposes this connector. Use it to tell clients about token lifetime, scopes, or quirks.',
+  })
   @IsOptional()
   @IsString()
   instructions?: string;
 }
 
 class UpdateConnectorDto {
+  @ApiPropertyOptional({ description: 'Human-readable connector name.' })
   @IsOptional()
   @IsString()
   name?: string;
 
+  @ApiPropertyOptional({ description: 'Root URL the engine will call.' })
   @IsOptional()
   @IsString()
   baseUrl?: string;
 
+  @ApiPropertyOptional({ enum: AuthType, description: 'Auth scheme.' })
   @IsOptional()
   @IsEnum(AuthType)
   authType?: AuthType;
 
+  @ApiPropertyOptional({
+    description: 'Credential payload (see CreateConnectorDto.authConfig).',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
   @IsObject()
   authConfig?: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description: 'Set to false to disable the connector without deleting it.',
+    example: false,
+  })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Extra HTTP headers sent on every request.',
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
   @IsOptional()
   @IsObject()
   headers?: Record<string, string>;
 
+  @ApiPropertyOptional({
+    description: 'Engine-specific options.',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
   @IsObject()
   config?: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description: 'Per-connector runtime values referenced by tool params with `$name`.',
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
   @IsOptional()
   @IsObject()
   envVars?: Record<string, string>;
 
+  @ApiPropertyOptional({ description: 'Markdown notes surfaced to MCP clients.' })
   @IsOptional()
   @IsString()
   instructions?: string;
 }
 
 class ImportToolsDto {
+  @ApiProperty({
+    enum: ['openapi', 'wsdl', 'graphql', 'postman', 'curl', 'json', 'mcp'],
+    description: 'Which parser to run on the supplied content/url.',
+    example: 'openapi',
+  })
   @IsString()
   source: 'openapi' | 'wsdl' | 'graphql' | 'postman' | 'curl' | 'json' | 'mcp';
 
+  @ApiPropertyOptional({
+    description: 'Inline spec content (JSON or YAML). Mutually exclusive with `url`.',
+  })
   @IsOptional()
   @IsString()
   content?: string;
 
+  @ApiPropertyOptional({
+    description: 'Public URL to fetch the spec from. Mutually exclusive with `content`.',
+    example: 'https://api.acme.example/v1/openapi.json',
+  })
   @IsOptional()
   @IsString()
   url?: string;
@@ -135,61 +226,92 @@ class ImportToolsDto {
 // ── DTOs for importAll / updateEnvVars ─────────────────────────────────────
 
 class ImportToolDto {
+  @ApiProperty({ description: 'Tool name exposed via MCP (must be unique per connector).' })
   @IsString()
   name: string;
 
+  @ApiProperty({ description: 'One-line description shown in MCP tools/list.' })
   @IsString()
   description: string;
 
+  @ApiPropertyOptional({ description: 'If false, the tool is registered but hidden.' })
   @IsOptional()
   @IsBoolean()
   isEnabled?: boolean;
 
+  @ApiProperty({
+    description: 'JSON Schema describing the tool input parameters.',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsObject()
   parameters: Record<string, unknown>;
 
+  @ApiProperty({
+    description: 'Engine-specific routing: method, path, queryParams, bodyMapping, etc.',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsObject()
   endpointMapping: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description: 'Optional response shaping (field selection, key rename).',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
   @IsObject()
   responseMapping?: Record<string, unknown>;
 }
 
 class ImportConnectorDto {
+  @ApiProperty({ description: 'Connector name.' })
   @IsString()
   name: string;
 
+  @ApiProperty({ enum: ConnectorType })
   @IsEnum(ConnectorType)
   type: ConnectorType;
 
+  @ApiProperty({ description: 'Root URL.' })
   @IsString()
   baseUrl: string;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
+  @ApiPropertyOptional({ enum: AuthType })
   @IsOptional()
   @IsEnum(AuthType)
   authType?: AuthType;
 
+  @ApiPropertyOptional({ description: 'Spec URL associated with this connector.' })
   @IsOptional()
   @IsString()
   specUrl?: string;
 
+  @ApiPropertyOptional({ type: 'object', additionalProperties: { type: 'string' } })
   @IsOptional()
   @IsObject()
   headers?: Record<string, string>;
 
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true })
   @IsOptional()
   @IsObject()
   config?: Record<string, unknown>;
 
+  @ApiPropertyOptional({ type: 'object', additionalProperties: { type: 'string' } })
   @IsOptional()
   @IsObject()
   envVars?: Record<string, string>;
 
+  @ApiPropertyOptional({
+    description: 'Tools to seed under this connector. Skipped if the connector already has tools with the same names.',
+    type: [ImportToolDto],
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -198,6 +320,10 @@ class ImportConnectorDto {
 }
 
 class ImportAllDto {
+  @ApiProperty({
+    description: 'Bulk-import payload: an array of connectors with their tools.',
+    type: [ImportConnectorDto],
+  })
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
@@ -206,6 +332,12 @@ class ImportAllDto {
 }
 
 class UpdateEnvVarsDto {
+  @ApiProperty({
+    description: 'New env-var map. Replaces the existing map entirely.',
+    type: 'object',
+    additionalProperties: { type: 'string' },
+    example: { ACME_TENANT_ID: '42', ACME_API_KEY: 'sk_…' },
+  })
   @IsObject()
   envVars: Record<string, string>;
 }

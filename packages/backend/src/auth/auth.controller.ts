@@ -15,7 +15,7 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, Equals, Matches } from 'class-validator';
@@ -33,9 +33,11 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import { Roles, RolesGuard } from './roles.guard';
 
 class LoginDto {
+  @ApiProperty({ description: 'Email address.', example: 'user@example.com' })
   @IsEmail()
   email: string;
 
+  @ApiProperty({ description: 'Password (min 8 characters).', format: 'password' })
   @IsString()
   @MinLength(8)
   password: string;
@@ -46,36 +48,50 @@ const PASSWORD_MESSAGE =
   'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
 
 class RegisterDto {
+  @ApiProperty({ description: 'Email address.', example: 'user@example.com' })
   @IsEmail()
   email: string;
 
+  @ApiProperty({
+    description: 'Password: 8+ chars, mixed case, digit, special.',
+    format: 'password',
+  })
   @IsString()
   @MinLength(8)
   @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
   password: string;
 
+  @ApiProperty({ description: 'Display name.', example: 'Jane Doe' })
   @IsString()
   name: string;
 
+  @ApiProperty({
+    description: 'Must be true: caller has accepted the Terms of Use.',
+    example: true,
+  })
   @IsBoolean()
   @Equals(true, { message: 'You must accept the Terms of Use' })
   acceptTerms: boolean;
 }
 
 class VerifyEmailDto {
+  @ApiProperty({ description: 'Email verification code sent to the user.' })
   @IsString()
   code: string;
 }
 
 class ForgotPasswordDto {
+  @ApiProperty({ description: 'Email to send the reset link to.' })
   @IsEmail()
   email: string;
 }
 
 class ResetPasswordDto {
+  @ApiProperty({ description: 'Reset token from the reset email.' })
   @IsString()
   token: string;
 
+  @ApiProperty({ description: 'New password (same rules as register).', format: 'password' })
   @IsString()
   @MinLength(8)
   @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
@@ -83,26 +99,34 @@ class ResetPasswordDto {
 }
 
 class InviteUserDto {
+  @ApiProperty({ description: 'Email of the user being invited.' })
   @IsEmail()
   email: string;
 
+  @ApiProperty({ enum: UserRole, description: 'Organization role to grant.' })
   @IsEnum(UserRole)
   role: UserRole;
 
+  @ApiPropertyOptional({
+    description: 'Optional MCP role id to attach (controls which tools the invitee can call).',
+  })
   @IsOptional()
   @IsString()
   mcpRoleId?: string;
 }
 
 class AcceptInviteDto {
+  @ApiProperty({ description: 'Invite token from the invitation email.' })
   @IsString()
   token: string;
 
+  @ApiProperty({ description: 'Account password.', format: 'password' })
   @IsString()
   @MinLength(8)
   @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
   password: string;
 
+  @ApiProperty({ description: 'Display name for the new account.' })
   @IsString()
   name: string;
 }

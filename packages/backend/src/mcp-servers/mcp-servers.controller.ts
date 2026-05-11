@@ -12,7 +12,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../common/pagination.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsOptional, IsBoolean, IsArray } from 'class-validator';
@@ -21,45 +21,67 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { PrismaService } from '../common/prisma.service';
 
 class CreateMcpServerDto {
+  @ApiProperty({ description: 'Human-readable name.', example: 'Sales Workspace' })
   @IsString()
   name: string;
 
+  @ApiPropertyOptional({
+    description:
+      'URL-safe slug for the per-server MCP endpoint (e.g. /mcp/<slug>). Auto-generated if omitted.',
+    example: 'sales-workspace',
+  })
   @IsOptional()
   @IsString()
   slug?: string;
 
+  @ApiPropertyOptional({ description: 'Free-text description (UI only).' })
   @IsOptional()
   @IsString()
   description?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Markdown instructions surfaced to MCP clients on initialize(). Concatenated with each assigned connector\'s instructions.',
+  })
   @IsOptional()
   @IsString()
   instructions?: string;
 }
 
 class UpdateMcpServerDto {
+  @ApiPropertyOptional({ description: 'Human-readable name.' })
   @IsOptional()
   @IsString()
   name?: string;
 
+  @ApiPropertyOptional({ description: 'URL-safe slug.' })
   @IsOptional()
   @IsString()
   slug?: string;
 
+  @ApiPropertyOptional({ description: 'Free-text description.' })
   @IsOptional()
   @IsString()
   description?: string;
 
+  @ApiPropertyOptional({ description: 'Markdown instructions for MCP clients.' })
   @IsOptional()
   @IsString()
   instructions?: string;
 
+  @ApiPropertyOptional({ description: 'Set to false to disable the endpoint without deleting it.' })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }
 
 class AssignConnectorsDto {
+  @ApiProperty({
+    description:
+      'Connector IDs to expose under this MCP server. Replaces the existing assignment.',
+    type: [String],
+    example: ['cmob60dvv00c01zrpeujwmnep'],
+  })
   @IsArray()
   @IsString({ each: true })
   connectorIds: string[];

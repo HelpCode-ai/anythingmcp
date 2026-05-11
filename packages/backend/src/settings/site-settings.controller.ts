@@ -7,7 +7,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsNumber, IsOptional, IsBoolean, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -17,36 +17,53 @@ import { OrgSettingsService } from './org-settings.service';
 import { EmailService } from './email.service';
 
 class SmtpConfigDto {
+  @ApiProperty({ description: 'SMTP server hostname.', example: 'smtp.sendgrid.net' })
   @IsString()
   host: string;
 
+  @ApiProperty({ description: 'SMTP port.', example: 587 })
   @IsNumber()
   port: number;
 
+  @ApiProperty({ description: 'SMTP username.' })
   @IsString()
   user: string;
 
+  @ApiProperty({ description: 'SMTP password / API key.' })
   @IsString()
   pass: string;
 
+  @ApiPropertyOptional({
+    description: '"From" address used by outbound mail. Defaults to the SMTP user.',
+    example: 'noreply@example.com',
+  })
   @IsOptional()
   @IsString()
   from?: string;
 
+  @ApiPropertyOptional({
+    description: 'Use implicit TLS (port 465). Default false (STARTTLS).',
+  })
   @IsOptional()
   @IsBoolean()
   secure?: boolean;
 }
 
 class FooterLinkDto {
+  @ApiProperty({ description: 'Link label shown in the footer.', example: 'Privacy' })
   @IsString()
   label: string;
 
+  @ApiProperty({ description: 'Target URL.', example: 'https://example.com/privacy' })
   @IsString()
   url: string;
 }
 
 class FooterLinksDto {
+  @ApiProperty({
+    description: 'Footer links. Replaces the existing array.',
+    type: [FooterLinkDto],
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => FooterLinkDto)

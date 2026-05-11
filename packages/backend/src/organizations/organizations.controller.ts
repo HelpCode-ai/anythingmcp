@@ -11,7 +11,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsOptional } from 'class-validator';
 import { OrganizationsService } from './organizations.service';
@@ -19,22 +19,29 @@ import { AuthService } from '../auth/auth.service';
 import { ConfigService } from '@nestjs/config';
 
 class UpdateOrganizationDto {
+  @ApiPropertyOptional({ description: 'New organization name.' })
   @IsOptional()
   @IsString()
   name?: string;
 }
 
 class SwitchOrgDto {
+  @ApiProperty({ description: 'Organization id to switch the caller\'s session to.' })
   @IsString()
   organizationId: string;
 }
 
 class CreateOrgDto {
+  @ApiProperty({ description: 'Display name for the new organization.', example: 'Acme Inc.' })
   @IsString()
   name: string;
 }
 
 class DeleteOrgDto {
+  @ApiProperty({
+    description:
+      'Type the organization name exactly to confirm deletion — protection against accidental calls.',
+  })
   @IsString()
   confirmName: string;
 }

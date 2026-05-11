@@ -8,15 +8,23 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsOptional } from 'class-validator';
 import { McpApiKeysService } from './mcp-api-keys.service';
 
 class CreateKeyDto {
+  @ApiProperty({
+    description: 'Label for the key (visible only to its owner).',
+    example: 'claude-desktop',
+  })
   @IsString()
   name: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Scope the key to a specific MCP server. Omit for an account-wide key (access to all assigned servers).',
+  })
   @IsOptional()
   @IsString()
   mcpServerId?: string;

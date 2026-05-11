@@ -10,7 +10,7 @@ import {
   UseGuards,
   ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import {
   IsString,
@@ -26,50 +26,104 @@ import { McpServerService } from '../mcp-server/mcp-server.service';
 import { ConnectorsService } from './connectors.service';
 
 class CreateToolDto {
+  @ApiProperty({
+    description: 'Tool name exposed via MCP (unique per connector).',
+    example: 'list_invoices',
+  })
   @IsString()
   name: string;
 
+  @ApiProperty({
+    description: 'One-line description shown in MCP tools/list.',
+    example: 'List all invoices for the given customer.',
+  })
   @IsString()
   description: string;
 
+  @ApiProperty({
+    description: 'JSON Schema describing the tool input parameters.',
+    type: 'object',
+    additionalProperties: true,
+    example: {
+      type: 'object',
+      properties: { customerId: { type: 'string' } },
+      required: ['customerId'],
+    },
+  })
   @IsObject()
   parameters: Record<string, unknown>;
 
+  @ApiProperty({
+    description:
+      'Engine-specific routing. For REST: { method, path, queryParams?, bodyMapping?, headers? }.',
+    type: 'object',
+    additionalProperties: true,
+    example: { method: 'GET', path: '/customers/{customerId}/invoices' },
+  })
   @IsObject()
   endpointMapping: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description: 'Optional response shaping (field selection, rename).',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
   @IsObject()
   responseMapping?: Record<string, unknown>;
 }
 
 class UpdateToolDto {
+  @ApiPropertyOptional({ description: 'Tool name.' })
   @IsOptional()
   @IsString()
   name?: string;
 
+  @ApiPropertyOptional({ description: 'One-line description.' })
   @IsOptional()
   @IsString()
   description?: string;
 
+  @ApiPropertyOptional({
+    description: 'JSON Schema for input parameters.',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
   @IsObject()
   parameters?: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description: 'Engine-specific routing.',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
   @IsObject()
   endpointMapping?: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description: 'Response shaping.',
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
   @IsObject()
   responseMapping?: Record<string, unknown>;
 
+  @ApiPropertyOptional({
+    description: 'Set to false to hide the tool from MCP without deleting it.',
+  })
   @IsOptional()
   @IsBoolean()
   isEnabled?: boolean;
 }
 
 class BulkCreateToolsDto {
+  @ApiProperty({
+    description: 'Tools to create in a single call. Duplicates (same name) on the connector are skipped.',
+    type: [CreateToolDto],
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateToolDto)
@@ -77,6 +131,24 @@ class BulkCreateToolsDto {
 }
 
 class TestToolDto {
+  @ApiPropertyOptional({
+    description:
+      'MCP-standard input map for the tool. Equivalent to the `arguments` field MCP clients send.',
+    type: 'object',
+    additionalProperties: true,
+    example: { customerId: 'cus_123' },
+  })
+  @IsOptional()
+  @IsObject()
+  arguments?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description:
+      'Legacy alias for `arguments`. Accepted for backward compatibility; new clients should use `arguments`.',
+    deprecated: true,
+    type: 'object',
+    additionalProperties: true,
+  })
   @IsOptional()
   @IsObject()
   params?: Record<string, unknown>;
@@ -226,7 +298,8 @@ export class ToolsController {
     summary: 'Test an MCP tool with sample parameters',
     description:
       'Execute a tool against its connector with provided parameters. ' +
-      'Returns the API response or error details. Useful for testing tools before exposing via MCP.',
+      'Accepts MCP-standard `{ arguments: {...} }` or legacy `{ params: {...} }` ' +
+      '(deprecated). Returns the API response or error details.',
   })
   async testTool(
     @Param('connectorId') connectorId: string,
@@ -245,12 +318,16 @@ export class ToolsController {
       return { ok: false, error: 'Tool not found' };
     }
 
+    // MCP standard uses `arguments`; we historically accepted `params`. Take
+    // `arguments` first, fall back to `params` so old clients keep working.
+    const inputs = body.arguments ?? body.params ?? {};
+
     const startTime = Date.now();
     try {
       const result = await this.connectorsService.executeConnectorCall(
         tool.connector,
         tool.endpointMapping as any,
-        body.params || {},
+        inputs,
       );
       const durationMs = Date.now() - startTime;
       return {
