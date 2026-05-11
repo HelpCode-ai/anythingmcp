@@ -155,7 +155,30 @@ export class ConnectorsService {
 
   async testConnection(
     id: string,
-  ): Promise<{ ok: boolean; message: string }> {
+  ): Promise<{
+    ok: boolean;
+    message: string;
+    /**
+     * Coarse classification of the result so the UI can show useful state
+     * (icon, hint, suggested fix) instead of treating every non-2xx as a
+     * blanket failure.
+     *
+     *   ok           — 2xx response
+     *   auth_failed  — 401 / 403: handshake reached the API, credentials rejected
+     *   not_found    — 404: URL reachable but the healthcheck path doesn't exist
+     *   unreachable  — DNS/network/SSRF/timeout
+     *   unsupported  — connector type with no test implementation yet
+     *   error        — anything else (5xx, parse error, etc.)
+     */
+    kind?:
+      | 'ok'
+      | 'auth_failed'
+      | 'not_found'
+      | 'unreachable'
+      | 'unsupported'
+      | 'error';
+    httpStatus?: number;
+  }> {
     const connector = await this.findById(id);
 
     try {
@@ -164,7 +187,12 @@ export class ConnectorsService {
         : undefined;
 
       switch (connector.type) {
-        case 'REST':
+        case 'REST': {
+          // Use the configured healthcheckPath if set (auto-detected on
+          // OpenAPI import, or set by the user). Falls back to "/" — many
+          // APIs without a root handler return 404 there, which we surface
+          // as kind: 'not_found' with a hint to set the path.
+          const path = connector.healthcheckPath || '/';
           await this.restEngine.execute(
             {
               baseUrl: connector.baseUrl,
@@ -172,10 +200,11 @@ export class ConnectorsService {
               authConfig,
               headers: connector.headers as Record<string, string>,
             },
-            { method: 'GET', path: '/' },
+            { method: 'GET', path },
             {},
           );
           break;
+        }
         case 'GRAPHQL':
           await this.graphqlEngine.execute(
             {
@@ -204,19 +233,71 @@ export class ConnectorsService {
           });
           return {
             ok: true,
+            kind: 'ok',
             message: `Connection successful — found ${tools.length} tools on remote MCP server`,
           };
         }
         default:
           return {
             ok: true,
+            kind: 'unsupported',
             message: `Connection type ${connector.type} — test not yet implemented`,
           };
       }
-      return { ok: true, message: 'Connection successful' };
+      return { ok: true, kind: 'ok', message: 'Connection successful' };
     } catch (error: any) {
-      return { ok: false, message: error.message || 'Connection failed' };
+      return this.classifyTestError(error, connector.healthcheckPath || '/');
     }
+  }
+
+  private classifyTestError(
+    error: any,
+    healthcheckPath: string,
+  ): { ok: false; message: string; kind: NonNullable<Awaited<ReturnType<typeof this.testConnection>>['kind']>; httpStatus?: number } {
+    // HTTP responses (axios)
+    const status: number | undefined = error?.response?.status;
+    if (status === 401 || status === 403) {
+      return {
+        ok: false,
+        kind: 'auth_failed',
+        httpStatus: status,
+        message:
+          'Auth handshake reached the API, but the credentials were rejected. Update authConfig and retry.',
+      };
+    }
+    if (status === 404) {
+      return {
+        ok: false,
+        kind: 'not_found',
+        httpStatus: status,
+        message:
+          `Healthcheck path "${healthcheckPath}" returned 404. ` +
+          'If the API has no root handler, set Connector.healthcheckPath to an existing endpoint (e.g. /health).',
+      };
+    }
+    if (typeof status === 'number') {
+      return {
+        ok: false,
+        kind: 'error',
+        httpStatus: status,
+        message: `Healthcheck returned HTTP ${status}.`,
+      };
+    }
+
+    // Network-layer errors (DNS, ECONNREFUSED, SSRF guard, timeout)
+    const msg = String(error?.message || '');
+    if (
+      /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|SSRF guard/i.test(
+        msg,
+      )
+    ) {
+      return {
+        ok: false,
+        kind: 'unreachable',
+        message: msg || 'Network error',
+      };
+    }
+    return { ok: false, kind: 'error', message: msg || 'Connection failed' };
   }
 
   async executeConnectorCall(

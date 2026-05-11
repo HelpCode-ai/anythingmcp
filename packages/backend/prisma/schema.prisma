@@ -268,6 +268,11 @@ model Connector {
   baseUrl  String        @map("base_url")
   isActive Boolean       @default(true) @map("is_active")
 
+  // Path appended to baseUrl when "Test connection" runs. Defaults to "/"
+  // when null but can be set explicitly (auto-deduced from imported OpenAPI
+  // specs when one of /health, /healthz, /_health, /ping, /status is present).
+  healthcheckPath String? @map("healthcheck_path")
+
   // Authentication
   authType   AuthType @default(NONE) @map("auth_type")
   authConfig String?  @map("auth_config") // encrypted JSON

@@ -24,11 +24,36 @@ export interface ParsedTool {
   };
 }
 
+export interface ParsedSpec {
+  tools: ParsedTool[];
+  /**
+   * Best-effort healthcheck path inferred from the spec. Used to populate
+   * Connector.healthcheckPath on import so the "Test connection" UI hits a
+   * meaningful endpoint instead of "/" (which 404s for most APIs that don't
+   * have a root handler).
+   */
+  healthcheckPath?: string;
+}
+
 @Injectable()
 export class OpenApiParser {
   private readonly logger = new Logger(OpenApiParser.name);
 
+  /**
+   * Backward-compatible: returns just the tools. New callers should prefer
+   * parseSpec() which also surfaces the inferred healthcheckPath.
+   */
   async parse(spec: string | Record<string, unknown>): Promise<ParsedTool[]> {
+    const result = await this.parseSpec(spec);
+    return result.tools;
+  }
+
+  /**
+   * Like parse() but also reports the auto-detected healthcheckPath.
+   */
+  async parseSpec(
+    spec: string | Record<string, unknown>,
+  ): Promise<ParsedSpec> {
     this.logger.debug('Parsing OpenAPI specification...');
 
     const rawSpec = typeof spec === 'string' ? this.decodeSpecString(spec) : spec;
@@ -67,7 +92,41 @@ export class OpenApiParser {
       throw err;
     }
 
-    return this.extractTools(api);
+    const tools = this.extractTools(api);
+    const healthcheckPath = this.detectHealthcheckPath(api);
+    return { tools, healthcheckPath };
+  }
+
+  /**
+   * Pick a sensible default healthcheck path for the connector. Priorities:
+   *   1. A path matching one of /health, /healthz, /_health, /ping, /status
+   *      that has a GET operation with no required parameters.
+   *   2. The first GET operation in the spec with no required parameters.
+   *   3. Undefined — caller falls back to "/".
+   */
+  private detectHealthcheckPath(api: unknown): string | undefined {
+    const paths = (api as { paths?: Record<string, any> })?.paths;
+    if (!paths) return undefined;
+
+    const preferred = ['/health', '/healthz', '/_health', '/ping', '/status'];
+    const isParamFreeGet = (op: any): boolean => {
+      if (!op || typeof op !== 'object') return false;
+      const requiredParams = (op.parameters || []).filter((p: any) => p?.required);
+      return requiredParams.length === 0;
+    };
+
+    for (const candidate of preferred) {
+      const op = paths[candidate]?.get;
+      if (isParamFreeGet(op)) return candidate;
+    }
+
+    for (const [path, methods] of Object.entries(paths)) {
+      if (path.includes('{')) continue; // skip parametric paths
+      const get = (methods as any)?.get;
+      if (isParamFreeGet(get)) return path;
+    }
+
+    return undefined;
   }
 
   /**
@@ -96,6 +155,10 @@ export class OpenApiParser {
   }
 
   async parseFromUrl(url: string): Promise<ParsedTool[]> {
+    return (await this.parseSpecFromUrl(url)).tools;
+  }
+
+  async parseSpecFromUrl(url: string): Promise<ParsedSpec> {
     this.logger.debug(`Fetching OpenAPI spec from: ${url}`);
 
     await assertSafeOutboundUrl(url);
@@ -103,7 +166,7 @@ export class OpenApiParser {
 
     // If the response is already a valid spec object, parse directly
     if (typeof response.data === 'object' && response.data !== null) {
-      return this.parse(response.data);
+      return this.parseSpec(response.data);
     }
 
     const text = typeof response.data === 'string' ? response.data : '';
@@ -111,7 +174,7 @@ export class OpenApiParser {
     // If it looks like JSON or YAML, try parsing directly
     const trimmed = text.trimStart();
     if (trimmed.startsWith('{') || trimmed.startsWith('openapi') || trimmed.startsWith('swagger')) {
-      return this.parse(text);
+      return this.parseSpec(text);
     }
 
     // Response is likely HTML (Swagger UI page) — try to resolve the actual spec
@@ -119,12 +182,12 @@ export class OpenApiParser {
       this.logger.debug('Detected Swagger UI HTML page, attempting to resolve spec URL...');
       const spec = await this.resolveSpecFromSwaggerUi(url, text);
       if (spec) {
-        return this.parse(spec);
+        return this.parseSpec(spec);
       }
     }
 
     // Fallback: try parsing as-is (will throw a descriptive error)
-    return this.parse(response.data);
+    return this.parseSpec(response.data);
   }
 
   /**

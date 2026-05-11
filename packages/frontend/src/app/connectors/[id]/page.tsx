@@ -36,6 +36,7 @@ export default function ConnectorDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editBaseUrl, setEditBaseUrl] = useState('');
+  const [editHealthcheckPath, setEditHealthcheckPath] = useState('');
   const [editActive, setEditActive] = useState(true);
   const [editAuthType, setEditAuthType] = useState('NONE');
   const [editAuthKey, setEditAuthKey] = useState('');
@@ -43,7 +44,12 @@ export default function ConnectorDetailPage() {
   const [editDbReadOnly, setEditDbReadOnly] = useState(true);
   const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    message: string;
+    kind?: 'ok' | 'auth_failed' | 'not_found' | 'unreachable' | 'unsupported' | 'error';
+    httpStatus?: number;
+  } | null>(null);
 
   // Tool editor state
   const [showNewTool, setShowNewTool] = useState(false);
@@ -78,6 +84,7 @@ export default function ConnectorDetailPage() {
       setConnector(c);
       setEditName(c.name);
       setEditBaseUrl(c.baseUrl);
+      setEditHealthcheckPath(c.healthcheckPath || '');
       setEditActive(c.isActive);
       setEditAuthType(c.authType || 'NONE');
       setEditInstructions(c.instructions || '');
@@ -143,6 +150,7 @@ export default function ConnectorDetailPage() {
       const data: Record<string, unknown> = {
         name: editName,
         baseUrl: editBaseUrl,
+        healthcheckPath: editHealthcheckPath.trim() || null,
         isActive: editActive,
         authType: editAuthType,
         instructions: editInstructions.trim() || null,
@@ -433,8 +441,22 @@ export default function ConnectorDetailPage() {
         )}
         {testResult && (
           <div
-            className={`p-3 rounded-md text-sm border ${testResult.ok ? 'bg-[var(--success-bg)] text-[var(--success-text)] border-[var(--success-border)]' : 'bg-[var(--destructive-bg)] text-[var(--destructive-text)] border-[var(--destructive-border)]'}`}
+            className={`p-3 rounded-md text-sm border ${
+              testResult.ok
+                ? 'bg-[var(--success-bg)] text-[var(--success-text)] border-[var(--success-border)]'
+                : testResult.kind === 'auth_failed'
+                  ? 'bg-[var(--warning-bg)] text-[var(--warning-text)] border-[var(--warning-border)]'
+                  : 'bg-[var(--destructive-bg)] text-[var(--destructive-text)] border-[var(--destructive-border)]'
+            }`}
           >
+            {testResult.kind && testResult.kind !== 'ok' && (
+              <span className="font-semibold mr-1">
+                {testResult.kind === 'auth_failed' && 'Auth rejected: '}
+                {testResult.kind === 'not_found' && 'Not found: '}
+                {testResult.kind === 'unreachable' && 'Unreachable: '}
+                {testResult.kind === 'error' && 'Error: '}
+              </span>
+            )}
             {testResult.message}
           </div>
         )}
@@ -462,6 +484,28 @@ export default function ConnectorDetailPage() {
                   className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
                 />
               </div>
+              {connector.type === 'REST' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Healthcheck path
+                    <span className="ml-2 text-xs text-[var(--muted-foreground)] font-normal">
+                      optional — defaults to /
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editHealthcheckPath}
+                    onChange={(e) => setEditHealthcheckPath(e.target.value)}
+                    placeholder="/health"
+                    className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+                  />
+                  <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                    Path used by "Test connection". Set to an endpoint that
+                    returns 2xx without auth (e.g. <code>/health</code>) if the
+                    API has no root handler.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"

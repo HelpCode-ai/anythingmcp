@@ -167,7 +167,18 @@ export const connectors = {
   delete: (id: string, token: string) =>
     request(`/api/connectors/${id}`, { method: 'DELETE', token }),
   test: (id: string, token: string) =>
-    request<{ ok: boolean; message: string }>(`/api/connectors/${id}/test`, { method: 'POST', token }),
+    request<{
+      ok: boolean;
+      message: string;
+      kind?:
+        | 'ok'
+        | 'auth_failed'
+        | 'not_found'
+        | 'unreachable'
+        | 'unsupported'
+        | 'error';
+      httpStatus?: number;
+    }>(`/api/connectors/${id}/test`, { method: 'POST', token }),
   importSpec: (id: string, token: string) =>
     request<{ message: string; tools: any[] }>(`/api/connectors/${id}/import-spec`, { method: 'POST', token }),
   importTools: (id: string, data: { source: string; content?: string; url?: string }, token: string) =>

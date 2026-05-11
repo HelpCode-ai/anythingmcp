@@ -94,6 +94,15 @@ class CreateConnectorDto {
   specUrl?: string;
 
   @ApiPropertyOptional({
+    description:
+      'Path appended to baseUrl when "Test connection" runs. Defaults to "/" when not set. Auto-detected from imported OpenAPI specs if /health, /healthz, /_health, /ping or /status exist.',
+    example: '/health',
+  })
+  @IsOptional()
+  @IsString()
+  healthcheckPath?: string;
+
+  @ApiPropertyOptional({
     description: 'Extra HTTP headers sent on every request.',
     example: { 'X-Tenant': 'acme' },
     type: 'object',
@@ -142,6 +151,13 @@ class UpdateConnectorDto {
   @IsOptional()
   @IsString()
   baseUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Path appended to baseUrl when "Test connection" runs. See CreateConnectorDto.',
+  })
+  @IsOptional()
+  @IsString()
+  healthcheckPath?: string;
 
   @ApiPropertyOptional({ enum: AuthType, description: 'Auth scheme.' })
   @IsOptional()
@@ -779,16 +795,20 @@ export class ConnectorsController {
     this.assertCanWrite(connector, req);
 
     let parsedTools: any[] = [];
+    let detectedHealthcheckPath: string | undefined;
 
     switch (connector.type) {
       case 'REST': {
+        let parsed;
         if (connector.specUrl) {
-          parsedTools = await this.openApiParser.parseFromUrl(connector.specUrl);
+          parsed = await this.openApiParser.parseSpecFromUrl(connector.specUrl);
         } else if (connector.specData) {
-          parsedTools = await this.openApiParser.parse(connector.specData as any);
+          parsed = await this.openApiParser.parseSpec(connector.specData as any);
         } else {
           return { error: 'No spec URL or spec data provided for this connector' };
         }
+        parsedTools = parsed.tools;
+        detectedHealthcheckPath = parsed.healthcheckPath;
         break;
       }
       case 'SOAP': {
@@ -805,6 +825,15 @@ export class ConnectorsController {
       }
       default:
         return { error: `Spec import not supported for ${connector.type} connectors` };
+    }
+
+    // Auto-populate healthcheckPath the first time it's detected (only if the
+    // user hasn't set one explicitly — preserves customisations on re-import).
+    if (detectedHealthcheckPath && !connector.healthcheckPath) {
+      await this.prisma.connector.update({
+        where: { id: connector.id },
+        data: { healthcheckPath: detectedHealthcheckPath },
+      });
     }
 
     return this.createToolsFromParsed(connector.id, parsedTools);
@@ -824,16 +853,21 @@ export class ConnectorsController {
 
     let parsedTools: any[] = [];
 
+    let detectedHealthcheckPath: string | undefined;
+
     try {
       switch (dto.source) {
         case 'openapi': {
+          let parsed;
           if (dto.url) {
-            parsedTools = await this.openApiParser.parseFromUrl(dto.url);
+            parsed = await this.openApiParser.parseSpecFromUrl(dto.url);
           } else if (dto.content) {
-            parsedTools = await this.openApiParser.parse(dto.content);
+            parsed = await this.openApiParser.parseSpec(dto.content);
           } else {
             return { error: 'Provide either content or url for OpenAPI import' };
           }
+          parsedTools = parsed.tools;
+          detectedHealthcheckPath = parsed.healthcheckPath;
           break;
         }
         case 'wsdl': {
@@ -925,6 +959,15 @@ export class ConnectorsController {
     } catch (err: any) {
       this.logger.warn(`Import failed for connector ${id}: ${err.message}`);
       return { error: `Import failed: ${err.message}` };
+    }
+
+    // Auto-populate healthcheckPath when first detected from an OpenAPI import,
+    // preserving any explicit value the user may have set.
+    if (detectedHealthcheckPath && !connector.healthcheckPath) {
+      await this.prisma.connector.update({
+        where: { id: connector.id },
+        data: { healthcheckPath: detectedHealthcheckPath },
+      });
     }
 
     return this.createToolsFromParsed(connector.id, parsedTools);

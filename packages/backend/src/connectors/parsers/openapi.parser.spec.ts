@@ -547,6 +547,68 @@ describe('OpenApiParser', () => {
       expect(params.properties.cursor.example).toBe('abc');
     });
 
+    it('detects /health as the healthcheck path when present', async () => {
+      const spec: any = {
+        openapi: '3.1.0',
+        info: { title: 'X', version: '1' },
+        paths: {
+          '/health': { get: { operationId: 'health', responses: { '200': { description: 'OK' } } } },
+          '/users': { get: { operationId: 'list', responses: { '200': { description: 'OK' } } } },
+        },
+      };
+      const result = await parser.parseSpec(spec);
+      expect(result.healthcheckPath).toBe('/health');
+    });
+
+    it('falls back through /healthz, /_health, /ping, /status', async () => {
+      const spec: any = {
+        openapi: '3.0.0',
+        info: { title: 'X', version: '1' },
+        paths: {
+          '/_health': { get: { operationId: 'x', responses: { '200': { description: 'OK' } } } },
+        },
+      };
+      const result = await parser.parseSpec(spec);
+      expect(result.healthcheckPath).toBe('/_health');
+    });
+
+    it('uses the first GET with no required params as fallback', async () => {
+      const spec: any = {
+        openapi: '3.0.0',
+        info: { title: 'X', version: '1' },
+        paths: {
+          '/users/{id}': {
+            get: {
+              operationId: 'getUser',
+              parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+              responses: { '200': { description: 'OK' } },
+            },
+          },
+          '/users': { get: { operationId: 'list', responses: { '200': { description: 'OK' } } } },
+        },
+      };
+      const result = await parser.parseSpec(spec);
+      expect(result.healthcheckPath).toBe('/users');
+    });
+
+    it('returns undefined when no eligible GET exists', async () => {
+      const spec: any = {
+        openapi: '3.0.0',
+        info: { title: 'X', version: '1' },
+        paths: {
+          '/users/{id}': {
+            get: {
+              operationId: 'getUser',
+              parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+              responses: { '200': { description: 'OK' } },
+            },
+          },
+        },
+      };
+      const result = await parser.parseSpec(spec);
+      expect(result.healthcheckPath).toBeUndefined();
+    });
+
     it('unwraps anyOf+null in request body schemas', async () => {
       const spec: any = {
         openapi: '3.1.0',
