@@ -5,6 +5,7 @@ import axios from 'axios';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const yaml = require('js-yaml') as { load: (s: string) => unknown };
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { normalizeOpenApi31 } from './openapi-3.1-normalizer';
 
 export interface ParsedTool {
   name: string;
@@ -39,6 +40,14 @@ export class OpenApiParser {
     // behaviour) blocks every modern spec from MS, AWS, etc.
     const declaredVersion = (rawSpec as { openapi?: string }).openapi || '';
     const isOpenApi31 = declaredVersion.startsWith('3.1');
+
+    // For 3.1 docs, translate the JSON-Schema-2020-12 constructs we know break
+    // the downstream extractor (nullable unions, const, examples plural, numeric
+    // exclusiveMin/Max) into their 3.0 equivalents. This runs *before*
+    // dereference so it applies inside referenced subschemas too.
+    if (isOpenApi31) {
+      normalizeOpenApi31(rawSpec);
+    }
 
     let api: unknown;
     try {
@@ -355,6 +364,8 @@ export class OpenApiParser {
       if (param.schema.default !== undefined)
         schema.default = param.schema.default;
       if (param.schema.format) schema.format = param.schema.format;
+      if (param.schema.nullable) schema.nullable = param.schema.nullable;
+      if (param.schema.example !== undefined) schema.example = param.schema.example;
     } else {
       schema.type = param.type || 'string';
     }
@@ -390,6 +401,8 @@ export class OpenApiParser {
       if (prop.enum) entry.enum = prop.enum;
       if (prop.format) entry.format = prop.format;
       if (prop.default !== undefined) entry.default = prop.default;
+      if (prop.nullable) entry.nullable = prop.nullable;
+      if (prop.example !== undefined) entry.example = prop.example;
       result[name] = entry;
     }
 

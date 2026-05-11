@@ -490,4 +490,99 @@ describe('OpenApiParser', () => {
     expect(params.properties.status.enum).toEqual(['active', 'inactive', 'pending']);
     expect(params.properties.created_after.format).toBe('date-time');
   });
+
+  // ── OpenAPI 3.1 support (via internal normalizer) ─────────────────────────
+
+  describe('OpenAPI 3.1 (FastAPI-style)', () => {
+    it('accepts a 3.1 spec without rejection', async () => {
+      const spec: any = {
+        openapi: '3.1.0',
+        info: { title: 'FastAPI', version: '0.1.0' },
+        paths: {
+          '/ping': {
+            get: {
+              operationId: 'ping',
+              summary: 'Health probe',
+              responses: { '200': { description: 'OK' } },
+            },
+          },
+        },
+      };
+      const tools = await parser.parse(spec);
+      expect(tools).toHaveLength(1);
+      expect(tools[0].name).toBe('ping');
+    });
+
+    it('normalises type:[X,null], const, and examples to 3.0 form', async () => {
+      const spec: any = {
+        openapi: '3.1.0',
+        info: { title: 'FastAPI', version: '0.1.0' },
+        paths: {
+          '/items': {
+            get: {
+              operationId: 'listItems',
+              summary: 'List items',
+              parameters: [
+                {
+                  name: 'status',
+                  in: 'query',
+                  schema: { const: 'active' },
+                },
+                {
+                  name: 'cursor',
+                  in: 'query',
+                  schema: { type: ['string', 'null'], examples: ['abc'] },
+                },
+              ],
+              responses: { '200': { description: 'OK' } },
+            },
+          },
+        },
+      };
+      const tools = await parser.parse(spec);
+      const params = tools[0].parameters as any;
+      expect(params.properties.status.enum).toEqual(['active']);
+      expect(params.properties.cursor.type).toBe('string');
+      expect(params.properties.cursor.nullable).toBe(true);
+      expect(params.properties.cursor.example).toBe('abc');
+    });
+
+    it('unwraps anyOf+null in request body schemas', async () => {
+      const spec: any = {
+        openapi: '3.1.0',
+        info: { title: 'FastAPI', version: '0.1.0' },
+        paths: {
+          '/items': {
+            post: {
+              operationId: 'createItem',
+              summary: 'Create item',
+              requestBody: {
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        email: {
+                          anyOf: [
+                            { type: 'string', format: 'email' },
+                            { type: 'null' },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              responses: { '200': { description: 'OK' } },
+            },
+          },
+        },
+      };
+      const tools = await parser.parse(spec);
+      const params = tools[0].parameters as any;
+      expect(params.properties.email.type).toBe('string');
+      expect(params.properties.email.format).toBe('email');
+      expect(params.properties.email.nullable).toBe(true);
+    });
+  });
 });
