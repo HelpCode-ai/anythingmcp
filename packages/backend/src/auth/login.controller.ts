@@ -100,6 +100,7 @@ export class LoginController {
       secure: isSecure,
       maxAge: 60 * 1000, // 1 minute — just enough for the redirect
       sameSite: isSecure ? 'none' : 'lax',
+      signed: true, // HMAC-signed: rejects forged cookies in the OAuth strategy
     });
 
     // Derive callback URL from the request origin (works behind proxy/tunnel)

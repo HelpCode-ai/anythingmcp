@@ -147,22 +147,11 @@ export class AuthController {
     private readonly organizationsService: OrganizationsService,
   ) {}
 
-  private getFrontendUrl(req?: any): string {
-    // Derive from the incoming request so links match the domain the user is on,
-    // even when FRONTEND_URL env var is stale or misconfigured.
-    if (req?.headers) {
-      const origin = req.headers['origin'];
-      if (origin) return origin.replace(/\/+$/, '');
-
-      const referer = req.headers['referer'];
-      if (referer) {
-        try {
-          const url = new URL(referer);
-          return url.origin;
-        } catch {}
-      }
-    }
-
+  private getFrontendUrl(_req?: any): string {
+    // SECURITY: we deliberately ignore req.headers.origin / req.headers.referer
+    // here. They are attacker-controlled and previously got interpolated into
+    // password-reset email HTML, enabling XSS via Origin-header injection.
+    // The frontend URL must come from server-side config only.
     return (
       this.configService.get<string>('FRONTEND_URL') ||
       this.configService.get<string>('SERVER_URL') ||

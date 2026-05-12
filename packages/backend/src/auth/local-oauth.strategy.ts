@@ -52,9 +52,11 @@ export class LocalOAuthStrategy extends Strategy {
       } as any;
     }
 
-    // Check if the user has already authenticated via the login form
-    // (login controller sets a signed cookie with user profile)
-    const loginUserCookie = (req as any).cookies?.login_user;
+    // Check if the user has already authenticated via the login form.
+    // We REQUIRE the cookie to be HMAC-signed (req.signedCookies). Unsigned
+    // values in req.cookies are rejected to prevent an attacker forging a
+    // base64-encoded profile to bypass authentication.
+    const loginUserCookie = (req as any).signedCookies?.login_user;
 
     if (loginUserCookie) {
       try {

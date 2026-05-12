@@ -18,7 +18,7 @@ import { startTracing } from './tracing';
 startTracing();
 
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Logger as PinoLogger } from 'nestjs-pino';
@@ -48,12 +48,32 @@ async function bootstrap() {
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
-  // Cookie parser is required for OAuth2 session management
-  app.use(cookieParser());
-
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 4000;
   const isProduction = configService.get<string>('NODE_ENV') === 'production';
+
+  // Cookie parser with HMAC secret so we can use signed cookies for the
+  // OAuth callback flow. Falls back to JWT_SECRET to avoid forcing every
+  // self-hoster to add a new env var; logs a startup warning when the
+  // fallback is used in production.
+  const cookieSecret =
+    configService.get<string>('COOKIE_SECRET') ||
+    configService.get<string>('JWT_SECRET');
+  if (!cookieSecret) {
+    throw new Error(
+      'COOKIE_SECRET (or fallback JWT_SECRET) must be set for signed cookies',
+    );
+  }
+  if (
+    isProduction &&
+    !configService.get<string>('COOKIE_SECRET')
+  ) {
+    Logger.warn(
+      'COOKIE_SECRET not set in production — falling back to JWT_SECRET. Set COOKIE_SECRET to a separate value for defense-in-depth.',
+      'Bootstrap',
+    );
+  }
+  app.use(cookieParser(cookieSecret));
 
   // Security headers (CSP relaxed because Swagger UI ships inline scripts/styles)
   app.use(
