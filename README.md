@@ -53,6 +53,8 @@
 
 </details>
 
+> 🏭 **Origin story** — AnythingMCP started inside a German industrial group that needed AI agents to talk to 15+ legacy systems (ERP, CRM, custom SOAP, on-prem Postgres). Writing one MCP server per system would have taken weeks each; we extracted the common gateway after the third rewrite and have been running it in production for ~6 months.
+
 ---
 
 ## Cloud & Deploy
@@ -76,10 +78,6 @@ No SDK. No code changes. Just point, configure, and connect.
 **Built-in adapters** ship with the catalog so you get an instant MCP server for popular SaaS and public APIs — DHL, DPD, GLS, Shipcloud, Sendcloud, Deutsche Bahn, DATEV, Weclapp, Xentral, Shopware 6, Personio, Handelsregister, VIES VAT, OpenPLZ, HERE Geocoding, Oxomi and more (full list [below](#pre-configured-mcp-connectors)).
 
 > **Looking for an MCP gateway?** AnythingMCP acts as a universal MCP proxy and API-to-MCP bridge — the missing middleware between your APIs and AI agents.
-
----
-
-> 🏭 **Built for production** — AnythingMCP was born from real-world needs at a German industrial group connecting 15+ legacy systems (ERP, CRM, IoT) to AI agents.
 
 ---
 
@@ -116,7 +114,7 @@ See the full [Quick Start](#quick-start) below for detailed configuration option
 | You need to query databases from AI agents | **Database to MCP** with auto-generated query tools |
 | You want one MCP gateway for all your APIs | **MCP middleware** that aggregates multiple connectors |
 | You need an MCP server for DHL/DPD/GLS/DATEV/Weclapp/etc. | **29 pre-built adapters** — install in one click |
-| You need auth, audit logs, and role-based access | Built-in **enterprise governance** layer |
+| You need auth, audit logs, and role-based access | Built-in **auth, audit log, and RBAC** |
 
 ---
 
@@ -139,7 +137,7 @@ See the full [Quick Start](#quick-start) below for detailed configuration option
 
 - **5 Connector Types** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Database](docs/connectors/database.md) (PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite), [MCP-to-MCP Bridge](docs/connectors/mcp-bridge.md)
 - **6 Import Formats** — OpenAPI/Swagger, Postman Collections, cURL commands, WSDL, GraphQL introspection, custom JSON
-- **29 Pre-built Adapters** — Install logistics, ERP, HR, public-data and e-commerce MCP servers in one click — see [list](#pre-configured-mcp-connectors)
+- **29 Pre-built Adapters** — Install logistics, ERP, HR, public-data and e-commerce MCP servers from a single JSON file — see [list](#pre-configured-mcp-connectors)
 - **Dynamic MCP Server** — Tools registered at runtime, no restart needed
 - **Visual Tool Editor** — Map parameters to path, query, body, headers visually
 - **Database Auto-Tools** — Schema introspection + dynamic query execution out of the box
@@ -154,7 +152,9 @@ See the full [Quick Start](#quick-start) below for detailed configuration option
 
 ## Pre-configured MCP Connectors
 
-AnythingMCP ships with **29 ready-to-use MCP server adapters** — provide your API credentials at import time and the tools become available to your AI client immediately. Each adapter has its own SEO-optimized guide on [anythingmcp.com](https://anythingmcp.com/guides) (English, German, Italian).
+AnythingMCP ships with **29 ready-to-use MCP server adapters** — provide your API credentials at import time and the tools become available to your AI client immediately. Each adapter has its own setup guide on [anythingmcp.com](https://anythingmcp.com/guides) (English, German, Italian).
+
+> 📍 **Heads-up on the catalog:** the starting set leans heavily DACH (Germany / Austria / Switzerland) because that's where we built this in production first. US/UK/APAC SaaS adapters are very welcome as community PRs — there's a [good first issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) walking you through adding one in ~30 minutes (it's a single JSON file).
 
 ### Logistics & Shipping
 
@@ -404,7 +404,7 @@ Or see the [Deployment Guide](docs/deployment.md#local-development) for manual s
 - **Bug Reports** — [Open an issue](https://github.com/HelpCode-ai/anythingmcp/issues)
 - **Feature Requests** — [Request a feature](https://github.com/HelpCode-ai/anythingmcp/issues/new?labels=enhancement&template=feature_request.md)
 - **Need help?** — see [SUPPORT.md](SUPPORT.md) for the full list of channels
-- **Built by** [helpcode.ai](https://helpcode.ai) — AI-powered software development from Germany
+- **Built by** [helpcode.ai](https://helpcode.ai) — an independent team in Freiburg, Germany
 
 ---
 
