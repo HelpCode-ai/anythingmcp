@@ -178,6 +178,7 @@ export class ConnectorsService {
       | 'unsupported'
       | 'error';
     httpStatus?: number;
+    suggestedFix?: { action: string; hostname?: string; url?: string };
   }> {
     const connector = await this.findById(id);
 
@@ -253,7 +254,13 @@ export class ConnectorsService {
   private classifyTestError(
     error: any,
     healthcheckPath: string,
-  ): { ok: false; message: string; kind: NonNullable<Awaited<ReturnType<typeof this.testConnection>>['kind']>; httpStatus?: number } {
+  ): {
+    ok: false;
+    message: string;
+    kind: NonNullable<Awaited<ReturnType<typeof this.testConnection>>['kind']>;
+    httpStatus?: number;
+    suggestedFix?: { action: string; hostname?: string; url?: string };
+  } {
     // HTTP responses (axios)
     const status: number | undefined = error?.response?.status;
     if (status === 401 || status === 403) {
@@ -286,6 +293,25 @@ export class ConnectorsService {
 
     // Network-layer errors (DNS, ECONNREFUSED, SSRF guard, timeout)
     const msg = String(error?.message || '');
+
+    // Specifically: SSRF guard blocked an internal hostname. Attach a fix
+    // hint so the UI can deep-link to the admin allowlist page.
+    const ssrfMatch = msg.match(
+      /SSRF guard:\s*hostname '([^']+)' resolves to non-public address/,
+    );
+    if (ssrfMatch) {
+      return {
+        ok: false,
+        kind: 'unreachable',
+        message: msg,
+        suggestedFix: {
+          action: 'add-to-ssrf-allowlist',
+          hostname: ssrfMatch[1],
+          url: '/admin/settings#ssrf',
+        },
+      };
+    }
+
     if (
       /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|SSRF guard/i.test(
         msg,

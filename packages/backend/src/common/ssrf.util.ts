@@ -57,6 +57,24 @@ function readPolicy(env: NodeJS.ProcessEnv = process.env): SsrfPolicy {
   };
 }
 
+/**
+ * Hook point that lets the DB-backed admin allowlist contribute extra hosts
+ * to the policy. Set by SsrfPolicyService at module init; falls back to a
+ * no-op when the service isn't wired (unit tests, scripts).
+ */
+let dbAllowedHostsProvider: (() => Promise<string[]>) | null = null;
+
+/**
+ * Wire a DB-backed list provider into the guard. Called once by
+ * SsrfPolicyService.onModuleInit. The provider may return a cached list so it
+ * is cheap to call on every outbound URL.
+ */
+export function setDbAllowedHostsProvider(
+  provider: () => Promise<string[]>,
+): void {
+  dbAllowedHostsProvider = provider;
+}
+
 function hostMatchesAllowlist(hostname: string, allowed: string[]): boolean {
   const lower = hostname.toLowerCase();
   for (const entry of allowed) {
@@ -144,7 +162,20 @@ export async function assertSafeOutboundUrl(
 
   const hostname = parsed.hostname;
 
+  // Env-driven allowlist (synchronous).
   if (hostMatchesAllowlist(hostname, policy.allowedHosts)) return;
+
+  // DB-driven allowlist (admin-configured, async). The provider caches
+  // internally so this is effectively a Map lookup after the first call.
+  if (dbAllowedHostsProvider) {
+    try {
+      const dbHosts = await dbAllowedHostsProvider();
+      if (hostMatchesAllowlist(hostname, dbHosts)) return;
+    } catch {
+      // Provider failure: fall through to IP-based checks rather than
+      // hard-failing every outbound call.
+    }
+  }
 
   // If the host is already a literal IP, check it directly.
   if (isIP(hostname)) {

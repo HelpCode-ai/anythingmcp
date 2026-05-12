@@ -178,6 +178,7 @@ export const connectors = {
         | 'unsupported'
         | 'error';
       httpStatus?: number;
+      suggestedFix?: { action: string; hostname?: string; url?: string };
     }>(`/api/connectors/${id}/test`, { method: 'POST', token }),
   importSpec: (id: string, token: string) =>
     request<{ message: string; tools: any[] }>(`/api/connectors/${id}/import-spec`, { method: 'POST', token }),
@@ -296,6 +297,10 @@ export const adminSettings = {
     request<Array<{ label: string; url: string }>>('/api/admin/settings/footer-links', { token }),
   updateFooterLinks: (links: Array<{ label: string; url: string }>, token: string) =>
     request<{ message: string }>('/api/admin/settings/footer-links', { method: 'PUT', body: { links }, token }),
+  getSsrfAllowedHosts: (token: string) =>
+    request<{ hosts: string[]; envHosts: string[] }>('/api/admin/settings/ssrf-allowed-hosts', { token }),
+  setSsrfAllowedHosts: (hosts: string[], token: string) =>
+    request<{ hosts: string[] }>('/api/admin/settings/ssrf-allowed-hosts', { method: 'PUT', body: { hosts }, token }),
 };
 
 // Roles (Admin)

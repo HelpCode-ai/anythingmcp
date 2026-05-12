@@ -23,6 +23,12 @@ export default function AdminSettingsPage() {
   const [footerLinks, setFooterLinks] = useState<Array<{ label: string; url: string }>>([]);
   const [footerMsg, setFooterMsg] = useState('');
 
+  // SSRF allowlist
+  const [ssrfHosts, setSsrfHosts] = useState<string[]>([]);
+  const [ssrfEnvHosts, setSsrfEnvHosts] = useState<string[]>([]);
+  const [ssrfDraft, setSsrfDraft] = useState('');
+  const [ssrfMsg, setSsrfMsg] = useState('');
+
   useEffect(() => {
     if (!token) return;
 
@@ -36,7 +42,30 @@ export default function AdminSettingsPage() {
     }).catch(() => {});
 
     adminSettings.getFooterLinks(token).then(setFooterLinks).catch(() => {});
+
+    adminSettings.getSsrfAllowedHosts(token).then((data) => {
+      setSsrfHosts(data.hosts);
+      setSsrfEnvHosts(data.envHosts);
+      setSsrfDraft(data.hosts.join('\n'));
+    }).catch(() => {});
   }, [token]);
+
+  const handleSaveSsrfHosts = async () => {
+    if (!token) return;
+    const hosts = ssrfDraft
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    try {
+      const result = await adminSettings.setSsrfAllowedHosts(hosts, token);
+      setSsrfHosts(result.hosts);
+      setSsrfDraft(result.hosts.join('\n'));
+      setSsrfMsg('SSRF allowlist saved');
+      setTimeout(() => setSsrfMsg(''), 3000);
+    } catch (err: any) {
+      setSsrfMsg(`Error: ${err.message}`);
+    }
+  };
 
   const handleSaveSmtp = async () => {
     if (!token) return;
@@ -254,6 +283,64 @@ export default function AdminSettingsPage() {
                 </p>
               )}
             </div>
+          </div>
+
+          {/* SSRF Allowlist */}
+          <div id="ssrf" className="border border-[var(--border)] rounded-lg p-6">
+            <h3 className="text-lg font-medium mb-2">SSRF allowlist</h3>
+            <p className="text-sm text-[var(--muted-foreground)] mb-2">
+              Hostnames (or <code>*.suffix</code> wildcards / plain IPs) that
+              the SSRF guard will let through when they resolve to a private
+              network address. Needed when connectors call services on the
+              internal network — e.g. a Docker-compose service like{' '}
+              <code>koch-filesystem-bridge</code>.
+            </p>
+            <p className="text-xs text-[var(--destructive)] mb-4 font-medium">
+              ⚠ Use with caution. Anything added here can be reached by every
+              connector in every organization on this deployment. Do not add
+              hosts you don&apos;t fully trust.
+            </p>
+
+            {ssrfEnvHosts.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-semibold mb-1">
+                  From <code>SSRF_ALLOWED_HOSTS</code> env var (read-only):
+                </p>
+                <div className="text-xs font-mono bg-[var(--muted)] rounded p-2">
+                  {ssrfEnvHosts.join(', ')}
+                </div>
+              </div>
+            )}
+
+            <label className="block text-sm font-medium mb-1">
+              Admin-editable list (one host per line)
+            </label>
+            <textarea
+              value={ssrfDraft}
+              onChange={(e) => setSsrfDraft(e.target.value)}
+              placeholder="koch-filesystem-bridge&#10;*.internal.example.com&#10;172.23.0.0"
+              rows={5}
+              className="w-full max-w-lg border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+            />
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={handleSaveSsrfHosts}
+                className="bg-[var(--brand)] text-white px-4 py-1.5 rounded text-sm font-medium hover:brightness-90"
+              >
+                Save allowlist
+              </button>
+            </div>
+            {ssrfMsg && (
+              <p
+                className={`text-sm mt-2 ${
+                  ssrfMsg.startsWith('Error')
+                    ? 'text-[var(--destructive)]'
+                    : 'text-[var(--success)]'
+                }`}
+              >
+                {ssrfMsg}
+              </p>
+            )}
           </div>
         </div>
       </main>

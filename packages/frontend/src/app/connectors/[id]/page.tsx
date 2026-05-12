@@ -49,6 +49,7 @@ export default function ConnectorDetailPage() {
     message: string;
     kind?: 'ok' | 'auth_failed' | 'not_found' | 'unreachable' | 'unsupported' | 'error';
     httpStatus?: number;
+    suggestedFix?: { action: string; hostname?: string; url?: string };
   } | null>(null);
 
   // Tool editor state
@@ -458,6 +459,18 @@ export default function ConnectorDetailPage() {
               </span>
             )}
             {testResult.message}
+            {testResult.suggestedFix?.action === 'add-to-ssrf-allowlist' &&
+              testResult.suggestedFix.hostname && (
+                <div className="mt-2 pt-2 border-t border-current/20">
+                  <a
+                    href={testResult.suggestedFix.url || '/admin/settings#ssrf'}
+                    className="underline text-sm font-medium hover:no-underline"
+                  >
+                    → Add <code>{testResult.suggestedFix.hostname}</code> to
+                    the SSRF allowlist
+                  </a>
+                </div>
+              )}
           </div>
         )}
 

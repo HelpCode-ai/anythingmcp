@@ -15,6 +15,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard';
 import { SiteSettingsService } from './site-settings.service';
 import { OrgSettingsService } from './org-settings.service';
 import { EmailService } from './email.service';
+import { SsrfPolicyService } from '../common/ssrf-policy.service';
 
 class SmtpConfigDto {
   @ApiProperty({ description: 'SMTP server hostname.', example: 'smtp.sendgrid.net' })
@@ -70,6 +71,18 @@ class FooterLinksDto {
   links: FooterLinkDto[];
 }
 
+class SsrfAllowedHostsDto {
+  @ApiProperty({
+    description:
+      'Hostnames (and *.suffix wildcards / plain IPs) that the SSRF guard will let through even when they resolve to a private/loopback address. Replaces the stored list. Hosts merged at request time with whatever is in the SSRF_ALLOWED_HOSTS env var.',
+    type: [String],
+    example: ['koch-filesystem-bridge', '*.internal.example.com', '172.23.0.0'],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  hosts: string[];
+}
+
 // ── Public endpoints (no auth) ──────────────────────────────────────────────
 
 @ApiTags('Site Settings')
@@ -96,6 +109,7 @@ export class SiteSettingsAdminController {
     private readonly siteSettings: SiteSettingsService,
     private readonly orgSettings: OrgSettingsService,
     private readonly emailService: EmailService,
+    private readonly ssrfPolicy: SsrfPolicyService,
   ) {}
 
   @Get('smtp')
@@ -144,5 +158,31 @@ export class SiteSettingsAdminController {
   async updateFooterLinks(@Req() req: any, @Body() dto: FooterLinksDto) {
     await this.orgSettings.setJson(req.user.organizationId, 'footer_links', dto.links);
     return { message: 'Footer links saved' };
+  }
+
+  @Get('ssrf-allowed-hosts')
+  @ApiOperation({
+    summary: 'Get the admin-editable SSRF allowlist (ADMIN)',
+    description:
+      'Returns the DB-backed list of hosts that bypass the SSRF guard. The effective allowlist also includes anything in the SSRF_ALLOWED_HOSTS env var (returned separately so the UI can show them as read-only).',
+  })
+  async getSsrfAllowedHosts() {
+    const dbHosts = await this.ssrfPolicy.getDbAllowedHosts();
+    const envHosts = (process.env.SSRF_ALLOWED_HOSTS || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    return { hosts: dbHosts, envHosts };
+  }
+
+  @Put('ssrf-allowed-hosts')
+  @ApiOperation({
+    summary: 'Replace the admin-editable SSRF allowlist (ADMIN)',
+    description:
+      'Use with caution: hostnames added here can be reached by every connector in every organization on this deployment.',
+  })
+  async setSsrfAllowedHosts(@Body() dto: SsrfAllowedHostsDto) {
+    const hosts = await this.ssrfPolicy.setDbAllowedHosts(dto.hosts);
+    return { hosts };
   }
 }
