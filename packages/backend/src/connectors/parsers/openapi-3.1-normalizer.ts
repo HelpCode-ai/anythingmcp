@@ -35,6 +35,14 @@ export function normalizeOpenApi31(spec: unknown): unknown {
     if (typeof obj.openapi === 'string' && obj.openapi.startsWith('3.1')) {
       obj.openapi = '3.0.3';
     }
+    // 3.1 added info.summary; 3.0 forbids it. We don't currently call the
+    // schema validator on 3.1 specs (we use dereference()), so this is a
+    // defensive strip: it keeps the relabeled document safe if any future
+    // codepath does call validate().
+    const info = obj.info;
+    if (info && typeof info === 'object' && 'summary' in (info as Record<string, unknown>)) {
+      delete (info as Record<string, unknown>).summary;
+    }
   }
   return spec;
 }

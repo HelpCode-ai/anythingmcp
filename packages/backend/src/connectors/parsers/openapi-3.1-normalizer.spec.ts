@@ -183,6 +183,27 @@ describe('normalizeOpenApi31', () => {
     expect(result).toBe(spec);
   });
 
+  it('strips info.summary (3.1-only field forbidden by 3.0 schema)', () => {
+    const spec: any = {
+      openapi: '3.1.0',
+      info: { title: 'X', summary: 'A short summary', version: '1' },
+      paths: {},
+    };
+    normalizeOpenApi31(spec);
+    expect(spec.info.summary).toBeUndefined();
+    expect(spec.info.title).toBe('X');
+  });
+
+  it('leaves info untouched when there is no summary field', () => {
+    const spec: any = {
+      openapi: '3.1.0',
+      info: { title: 'X', version: '1' },
+      paths: {},
+    };
+    normalizeOpenApi31(spec);
+    expect(spec.info).toEqual({ title: 'X', version: '1' });
+  });
+
   it('relabels openapi: 3.1.x to 3.0.3 so swagger-parser accepts it', () => {
     const spec: any = { openapi: '3.1.0', info: { title: 'X', version: '1' }, paths: {} };
     normalizeOpenApi31(spec);

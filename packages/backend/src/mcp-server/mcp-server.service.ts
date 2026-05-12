@@ -309,7 +309,14 @@ export class McpServerService implements OnModuleInit {
 
   /**
    * Convert a JSON Schema object to a Zod schema for the MCP library.
-   * Handles the common types used in tool parameters.
+   *
+   * Numeric / boolean / date fields use `z.coerce.*` rather than `z.number()`
+   * etc. Several MCP clients (and AI tool-call layers in general) serialize
+   * every argument as a string before transport, so a tool with a numeric
+   * parameter would otherwise reject perfectly valid calls like
+   * `{ "top_k": "5" }` with "expected number, received string". Coercion
+   * still rejects non-numeric strings (e.g. `"abc"`), so we keep the
+   * validation signal where it matters.
    */
   private jsonSchemaToZod(schema: Record<string, unknown>): any {
     const properties = schema?.properties as Record<string, any> | undefined;
@@ -323,16 +330,24 @@ export class McpServerService implements OnModuleInit {
 
       switch (prop.type) {
         case 'string':
-          zodType = prop.enum
-            ? z.enum(prop.enum as [string, ...string[]])
-            : z.string();
+          if (prop.enum) {
+            zodType = z.enum(prop.enum as [string, ...string[]]);
+          } else if (prop.format === 'date-time' || prop.format === 'date') {
+            // Accept ISO date strings and Date-coercible inputs.
+            zodType = z.coerce.date();
+          } else {
+            zodType = z.string();
+          }
+          break;
+        case 'integer':
+          // .int() rejects floats; coerce handles string→number first.
+          zodType = z.coerce.number().int();
           break;
         case 'number':
-        case 'integer':
-          zodType = z.number();
+          zodType = z.coerce.number();
           break;
         case 'boolean':
-          zodType = z.boolean();
+          zodType = z.coerce.boolean();
           break;
         case 'array':
           zodType = z.array(z.any());
