@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">AnythingMCP — Self-Hosted MCP Server & API Gateway</h1>
   <p align="center">
-    <strong>Convert any API into an MCP server in minutes.</strong><br/>
+    <strong>Turn any backend into an MCP server in minutes — APIs, databases, and other MCP servers.</strong><br/>
     REST to MCP &bull; SOAP to MCP &bull; GraphQL to MCP &bull; Database to MCP &bull; MCP Gateway &bull; MCP Middleware
   </p>
   <p align="center">
