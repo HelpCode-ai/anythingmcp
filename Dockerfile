@@ -113,4 +113,9 @@ LABEL org.opencontainers.image.title="AnythingMCP" \
 USER appuser
 EXPOSE 3000 4000
 
+# Health check — backend exposes /health on port 4000.
+# 30s interval, 5s timeout, 30s start period, 3 retries before unhealthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:4000/health || exit 1
+
 CMD ["./start.sh"]

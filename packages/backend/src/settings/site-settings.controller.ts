@@ -150,7 +150,9 @@ export class SiteSettingsAdminController {
   @Get('footer-links')
   @ApiOperation({ summary: 'Get footer links for current organization (ADMIN)' })
   async getFooterLinks(@Req() req: any) {
-    return this.orgSettings.getFooterLinks(req.user.organizationId) || [];
+    return (
+      (await this.orgSettings.getFooterLinks(req.user.organizationId)) || []
+    );
   }
 
   @Put('footer-links')
