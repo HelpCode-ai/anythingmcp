@@ -314,6 +314,16 @@ model McpTool {
   description String    @db.Text
   isEnabled   Boolean   @default(true) @map("is_enabled")
 
+  // OpenAPI operationId, when the tool was generated from an OpenAPI spec.
+  // Used as the primary key for re-imports so that responseMapping and role
+  // assignments survive when the user changes a tool's name in their spec.
+  operationId String? @map("operation_id")
+
+  // Set when a re-import no longer finds this tool in the spec. The tool
+  // stays in the DB (preserving role assignments and invocation history)
+  // but is shown with a "deprecated" badge in the UI.
+  deprecatedAt DateTime? @map("deprecated_at")
+
   // Parameter schema (JSON Schema / Zod-compatible)
   parameters Json
 

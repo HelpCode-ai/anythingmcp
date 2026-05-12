@@ -955,6 +955,14 @@ export default function ConnectorDetailPage() {
                             >
                               {tool.isEnabled ? 'enabled' : 'disabled'}
                             </span>
+                            {tool.deprecatedAt && (
+                              <span
+                                className="text-xs px-1.5 py-0.5 rounded flex-shrink-0 bg-[var(--warning-bg)] text-[var(--warning-text)]"
+                                title={`Removed from the source spec on ${new Date(tool.deprecatedAt).toLocaleString()}. Role assignments and history are preserved.`}
+                              >
+                                deprecated
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-[var(--muted-foreground)] mt-0.5 line-clamp-2 sm:truncate">
                             {tool.description}

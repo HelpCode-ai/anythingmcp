@@ -9,6 +9,13 @@ import { normalizeOpenApi31 } from './openapi-3.1-normalizer';
 
 export interface ParsedTool {
   name: string;
+  /**
+   * OpenAPI operationId of the source operation, when available. Preserved
+   * across re-imports as the stable identifier for matching: if the user
+   * renames the operationId in the spec, the parsed tool name will change
+   * too, but this field still points at the same logical endpoint.
+   */
+  operationId?: string;
   description: string;
   parameters: Record<string, unknown>;
   endpointMapping: {
@@ -384,7 +391,11 @@ export class OpenApiParser {
       endpointMapping.bodyMapping = bodyMapping;
     }
 
-    return { name, description, parameters, endpointMapping };
+    const result: ParsedTool = { name, description, parameters, endpointMapping };
+    if (typeof operation.operationId === 'string' && operation.operationId.length > 0) {
+      result.operationId = operation.operationId;
+    }
+    return result;
   }
 
   private generateToolName(

@@ -547,6 +547,24 @@ describe('OpenApiParser', () => {
       expect(params.properties.cursor.example).toBe('abc');
     });
 
+    it('preserves operationId on the ParsedTool', async () => {
+      const spec: any = {
+        openapi: '3.1.0',
+        info: { title: 'X', version: '1' },
+        paths: {
+          '/items': {
+            get: {
+              operationId: 'list_items_v2',
+              summary: 'List items',
+              responses: { '200': { description: 'OK' } },
+            },
+          },
+        },
+      };
+      const tools = await parser.parse(spec);
+      expect(tools[0].operationId).toBe('list_items_v2');
+    });
+
     it('detects /health as the healthcheck path when present', async () => {
       const spec: any = {
         openapi: '3.1.0',

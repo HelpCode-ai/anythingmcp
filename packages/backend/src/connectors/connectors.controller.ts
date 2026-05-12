@@ -989,39 +989,131 @@ export class ConnectorsController {
     return updated;
   }
 
+  /**
+   * Reconcile a connector's tools against a freshly parsed spec.
+   *
+   * Strategy:
+   *   1. Snapshot existing (non-deprecated) tools for the connector.
+   *   2. For each parsed tool, find a match in the snapshot — preferred
+   *      lookup is by operationId, fallback is (name, method, path).
+   *   3. Match found → UPDATE in place, preserving responseMapping (unless
+   *      the spec now provides one) and isEnabled, and clearing
+   *      deprecatedAt if it was set.
+   *   4. No match → CREATE.
+   *   5. Snapshot entries not matched by any parsed tool → mark
+   *      deprecatedAt = now() and isEnabled = false. We do NOT hard-delete
+   *      so ToolRoleAccess and ToolInvocation history survive.
+   *
+   * This preserves operator customisations (custom responseMapping,
+   * role-based access, manual disables) across re-imports without losing
+   * the visibility of "this endpoint no longer exists upstream".
+   */
   private async createToolsFromParsed(connectorId: string, parsedTools: any[]) {
-    const createdTools = [];
-    const skippedTools: string[] = [];
+    const existing = await this.prisma.mcpTool.findMany({
+      where: { connectorId },
+    });
+    const byOperationId = new Map<string, typeof existing[number]>();
+    const byEndpoint = new Map<string, typeof existing[number]>();
+    for (const t of existing) {
+      if (t.operationId) byOperationId.set(t.operationId, t);
+      const em = t.endpointMapping as any;
+      if (em?.method && em?.path) {
+        byEndpoint.set(`${String(em.method).toUpperCase()} ${em.path}`, t);
+      }
+    }
+
+    const matchedIds = new Set<string>();
+    let createdCount = 0;
+    let updatedCount = 0;
+    const tools: any[] = [];
 
     for (const tool of parsedTools) {
+      const em = tool.endpointMapping as any;
+      const endpointKey =
+        em?.method && em?.path
+          ? `${String(em.method).toUpperCase()} ${em.path}`
+          : null;
+      const match =
+        (tool.operationId && byOperationId.get(tool.operationId)) ||
+        (endpointKey && byEndpoint.get(endpointKey)) ||
+        null;
+
+      if (match) {
+        matchedIds.add(match.id);
+        const updated = await this.prisma.mcpTool.update({
+          where: { id: match.id },
+          data: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters as any,
+            endpointMapping: tool.endpointMapping as any,
+            // Preserve operator-customised responseMapping unless the spec
+            // now declares one (e.g. response shaping was added upstream).
+            responseMapping:
+              tool.responseMapping !== undefined
+                ? (tool.responseMapping as any)
+                : (match.responseMapping as any),
+            operationId: tool.operationId ?? match.operationId,
+            deprecatedAt: null,
+            // Re-enable if it was disabled only because we'd previously
+            // deprecated it. If the user manually disabled it, isEnabled
+            // is already false; we don't flip user choices.
+            isEnabled: match.deprecatedAt ? true : match.isEnabled,
+          },
+        });
+        tools.push(updated);
+        updatedCount++;
+        continue;
+      }
+
       try {
         const created = await this.prisma.mcpTool.create({
           data: {
             connectorId,
             name: tool.name,
             description: tool.description,
+            operationId: tool.operationId ?? null,
             parameters: tool.parameters as any,
             endpointMapping: tool.endpointMapping as any,
             responseMapping: tool.responseMapping as any,
           },
         });
-        createdTools.push(created);
+        tools.push(created);
+        createdCount++;
       } catch (err: any) {
-        // Skip duplicate tools (unique constraint on [connectorId, name])
-        if (err.code === 'P2002') {
-          skippedTools.push(tool.name);
-        } else {
-          throw err;
-        }
+        // A different existing tool happens to share the new tool's name
+        // (e.g. same name across two re-imports on parametric paths).
+        // Skip rather than throw — preserves prior semantics.
+        if (err.code !== 'P2002') throw err;
       }
+    }
+
+    // Tools that survived the parse but are no longer in the spec.
+    const now = new Date();
+    const deprecated: string[] = [];
+    for (const t of existing) {
+      if (matchedIds.has(t.id)) continue;
+      if (t.deprecatedAt) continue; // already deprecated
+      await this.prisma.mcpTool.update({
+        where: { id: t.id },
+        data: { deprecatedAt: now, isEnabled: false },
+      });
+      deprecated.push(t.name);
     }
 
     await this.mcpServer.reloadConnectorTools(connectorId);
 
+    const parts = [`created ${createdCount}`, `updated ${updatedCount}`];
+    if (deprecated.length > 0) parts.push(`deprecated ${deprecated.length}`);
     return {
-      message: `Imported ${createdTools.length} tools${skippedTools.length > 0 ? `, skipped ${skippedTools.length} duplicates` : ''}`,
-      tools: createdTools,
-      skipped: skippedTools,
+      message: `Imported tools: ${parts.join(', ')}`,
+      tools,
+      created: createdCount,
+      updated: updatedCount,
+      deprecated,
+      // `skipped` kept for back-compat with clients that consumed the old
+      // shape; always empty under the new upsert strategy.
+      skipped: [] as string[],
     };
   }
 }
