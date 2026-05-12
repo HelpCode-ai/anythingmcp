@@ -349,6 +349,12 @@ Yes — see the [Pre-configured MCP Connectors](#pre-configured-mcp-connectors) 
 
 Built-in. AnythingMCP automatically parses WSDL documents and generates one MCP tool per SOAP operation. Useful for legacy enterprise APIs (SAP, Oracle, .NET WCF, banking middleware) that no AI client speaks natively.
 
+### Is MCP dead now that agents use CLI tools?
+
+No — but the question conflates two different problems. CLI is the right call when the model already knows the tool from training (`git`, `docker`, `kubectl`, `aws`, `gh`), the agent is acting for the builder, and a CLI actually exists. MCP wins when you need per-user auth, scoped permissions, audit logs, multi-tenant isolation, typed contracts, or SaaS integrations without a CLI (Salesforce, Workday, Notion, Linear, internal tools).
+
+The mature pattern in 2026 is **hybrid**: CLI for local/dev/popular tools, MCP for SaaS / multi-tenant / compliance-bound integrations. AnythingMCP covers the MCP side — you keep using `git` and `docker` directly, the gateway handles everything else with proper auth and audit. Full breakdown with a decision matrix is on [anythingmcp.com/vs/cli](https://anythingmcp.com/vs/cli).
+
 ### Can the AI access my production database directly?
 
 Yes, with safety. AnythingMCP supports PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB and SQLite. Each tool is whitelisted, every invocation is audit-logged, and you can scope a connector to read-only credentials. See the [Database Connector Guide](docs/connectors/database.md).
