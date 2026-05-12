@@ -46,7 +46,11 @@ jobs:
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
+          # arm64 dropped: Prisma 7.8.0's WASM schema engine misparses
+          # `onDelete: Cascade` on linux/arm64 (reads it as empty),
+          # blocking `prisma generate`. Production runs on amd64 droplets;
+          # re-add arm64 once Prisma ships a fix (track upstream).
+          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
