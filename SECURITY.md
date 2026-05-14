@@ -52,6 +52,26 @@ AnythingMCP handles sensitive data (API keys, database credentials, OAuth tokens
 - **Use OAuth2 mode** — Preferred over legacy bearer tokens for MCP auth
 - **Rotate credentials regularly** — API keys, JWT secrets, encryption keys
 
+## Rotating secrets
+
+### `JWT_SECRET` and `COOKIE_SECRET`
+
+Update the value in `.env` and restart: `docker compose up -d`. Existing sessions invalidate immediately — no re-encryption needed.
+
+### `ENCRYPTION_KEY` (AES-256-GCM, stored credentials)
+
+`ENCRYPTION_KEY` encrypts connector credentials (API keys, OAuth tokens, database passwords) at rest. Rotating it requires re-encrypting every stored secret, because the existing ciphertext was sealed with the old key.
+
+Until a built-in rotation command ships (tracked in [ROADMAP.md](ROADMAP.md)), the safe procedure is:
+
+1. **Take a database backup** — `docker compose exec postgres pg_dump -U amcp anythingmcp > backup-pre-rotation.sql`.
+2. **Export connector configs** — from the Admin UI, export each connector to JSON (this captures the *decrypted* credentials in transit; keep the export file in a secure location and delete it after step 5).
+3. **Generate a new key** — `openssl rand -base64 32 | head -c 32` (must be exactly 32 ASCII chars).
+4. **Replace `ENCRYPTION_KEY` in `.env`, wipe the encrypted columns, and restart** — the simplest path is to drop and re-create the database from backup *without* the connector secrets, then restart the app with the new key.
+5. **Re-import each connector** from the JSON exports. New ciphertext is sealed with the new key.
+
+If your installation has many connectors, prefer waiting for the upcoming rotation CLI (or write your own script against `packages/backend/src/common/crypto/encryption.util.ts`). Do **not** simply swap the key in `.env` without re-encrypting — existing credentials will become unreadable and every connector will fail with a decryption error.
+
 ## Supported Versions
 
 | Version | Supported |

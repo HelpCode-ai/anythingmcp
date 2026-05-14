@@ -6,6 +6,31 @@
 
 ---
 
+## 3-minute quickstart
+
+Goal: go from a running AnythingMCP instance to a working MCP tool call against a public API, without writing code.
+
+1. **Register** at `http://localhost:3000` (the first account becomes Admin).
+2. **Create a connector**: *Connectors → New Connector → REST*. Name it `VIES VAT`, Base URL `https://ec.europa.eu/taxation_customs/vies/rest-api`, Auth type `None`. Save.
+3. **Import the spec**: on the connector page, *Import → OpenAPI URL*, paste `https://ec.europa.eu/taxation_customs/vies/rest-api/openapi.json`. AnythingMCP generates one tool per operation. Toggle the tools you want exposed.
+4. **Issue an MCP API key**: *Profile → MCP API Keys → New Key*. Copy the value.
+5. **Point your MCP client at it**. For Claude Desktop, add to `claude_desktop_config.json`:
+   ```json
+   {
+     "mcpServers": {
+       "anythingmcp": {
+         "url": "http://localhost:4000/mcp",
+         "headers": { "Authorization": "Bearer <your-mcp-key>" }
+       }
+     }
+   }
+   ```
+   Restart Claude Desktop, then ask: *"Use AnythingMCP to validate VAT number DE123456789."* The tool call appears in the audit log at `/audit`.
+
+If you'd rather use a pre-built adapter (DHL, DPD, Personio, VIES, …) instead of importing from a spec, see [Pre-configured MCP Connectors](../../README.md#pre-configured-mcp-connectors) — those skip steps 2–3.
+
+---
+
 ## Overview
 
 The REST connector lets you expose HTTP-based APIs as MCP tools. It supports all HTTP methods, authentication types, and can auto-import tool definitions from multiple formats.

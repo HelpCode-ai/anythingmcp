@@ -83,11 +83,16 @@ No SDK. No code changes. Just point, configure, and connect.
 
 ## Get Started in 60 Seconds
 
+**Requires:** Docker 24+, `bash`, `openssl`. On macOS, make sure Docker Desktop is running first.
+
 ```bash
 git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp && ./setup.sh
-# Open http://localhost:3000 — done!
+# When setup finishes, open http://localhost:3000 and register
+# the first user — they automatically become the admin.
 ```
+
+> ⚠️ **Register immediately after setup.** The first account to register becomes Admin. If your instance is reachable from the internet during setup, configure firewall rules or run setup with the UI bound to `127.0.0.1` until you've created the admin account.
 
 See the full [Quick Start](#quick-start) below for detailed configuration options.
 
