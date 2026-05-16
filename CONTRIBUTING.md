@@ -28,6 +28,17 @@ AnythingMCP is licensed under the [Business Source License 1.1](LICENSE) (BSL-1.
 2. You grant helpcode.ai GmbH a perpetual, irrevocable license to use, modify, and distribute your contribution under the project's license terms.
 3. You understand that your contribution may be re-licensed under Apache 2.0 on the Change Date (2030-03-04).
 
+## AI-assisted contributions
+
+We use AI assistants (Claude Code, GitHub Copilot, etc.) in our own development and we welcome contributions made with the same tools. The standards are the same as any human contribution:
+
+- You take responsibility for the code you submit — review every line before opening a PR.
+- The catalog test suite (`npm test`) must pass.
+- Adapter JSON must validate against [`docs/tool-definition.md`](docs/tool-definition.md).
+- Don't paste AI output blindly into the PR description; write the *why* in your own words.
+
+We will not refuse a PR because it was AI-assisted, and we will not single it out either. See [AUTHORS.md](AUTHORS.md) for how we use AI ourselves.
+
 ## Getting Started
 
 1. **Fork** the repository on GitHub

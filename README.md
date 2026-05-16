@@ -1,7 +1,8 @@
 <p align="center">
-  <h1 align="center">AnythingMCP — Self-Hosted MCP Server & API Gateway</h1>
+  <h1 align="center">AnythingMCP — The Self-Hosted MCP Gateway for Legacy &amp; Modern APIs</h1>
   <p align="center">
-    <strong>Turn any backend into an MCP server in minutes — APIs, databases, and other MCP servers.</strong><br/>
+    <strong>Turn REST, SOAP/WSDL, GraphQL and SQL endpoints into MCP tools — on your infrastructure, with full audit.</strong><br/>
+    Built for teams who can't (or won't) hand their credentials to a SaaS.<br/>
     REST to MCP &bull; SOAP to MCP &bull; GraphQL to MCP &bull; Database to MCP &bull; MCP Gateway &bull; MCP Middleware
   </p>
   <p align="center">
@@ -53,7 +54,7 @@
 
 </details>
 
-> 🏭 **Origin story** — AnythingMCP started inside a German industrial group that needed AI agents to talk to 15+ legacy systems (ERP, CRM, custom SOAP, on-prem Postgres). Writing one MCP server per system would have taken weeks each; we extracted the common gateway after the third rewrite and have been running it in production for ~6 months.
+> 🏭 **Origin story** — AnythingMCP started inside a German industrial group that needed AI agents to talk to 15+ legacy systems (ERP, CRM, custom SOAP, on-prem Postgres). Writing one MCP server per system would have taken weeks each; we extracted the common gateway after the third rewrite and have been running it in production for ~6 months. We open-sourced the gateway because the catalog grows faster as a community than as a single vendor. Built by a small team using AI coding assistants — see [AUTHORS.md](AUTHORS.md).
 
 ---
 
@@ -118,22 +119,25 @@ See the full [Quick Start](#quick-start) below for detailed configuration option
 | You have legacy SOAP/WSDL services | **SOAP to MCP** bridge with automatic WSDL parsing |
 | You need to query databases from AI agents | **Database to MCP** with auto-generated query tools |
 | You want one MCP gateway for all your APIs | **MCP middleware** that aggregates multiple connectors |
-| You need an MCP server for DHL/DPD/GLS/DATEV/Weclapp/etc. | **29 pre-built adapters** — install in one click |
+| You need an MCP server for DHL/DPD/GLS/DATEV/Weclapp/etc. | **30+ pre-built adapters** — install in one click |
 | You need auth, audit logs, and role-based access | Built-in **auth, audit log, and RBAC** |
+| You can't ship your API credentials to a SaaS gateway | **Runs entirely on your infrastructure** — credentials encrypted AES-256-GCM at rest, audit log stays on your DB |
+| You have SOAP / WSDL services or on-prem databases AI clients can't speak | **First-class SOAP & SQL support** — not just REST/SaaS integrations |
 
 ---
 
 ## How AnythingMCP Compares
 
-| Feature | AnythingMCP | Custom MCP Server | Other Gateways |
-|---------|:-----------:|:-----------------:|:--------------:|
+| Feature | AnythingMCP | Custom MCP Server | Hosted MCP Gateways |
+|---------|:-----------:|:-----------------:|:-------------------:|
 | No-code setup | ✅ Visual editor | ❌ Write code | ⚠️ Config files |
-| SOAP / WSDL support | ✅ Built-in | ❌ Manual | ❌ Rare |
+| SOAP / WSDL support | ✅ Built-in | ❌ Manual | ❌ Typically not supported |
 | Database connectors | ✅ 7 engines | ❌ Build yourself | ⚠️ Limited |
 | Visual tool editor | ✅ | ❌ | ❌ |
 | Auth & audit trail | ✅ OAuth2, RBAC, logs | ❌ DIY | ⚠️ Partial |
-| Self-hosted or Cloud | ✅ Docker / Railway / DigitalOcean / [Cloud](https://cloud.anythingmcp.com) | ✅ | ⚠️ Often SaaS-only |
-| Pre-built SaaS adapters | ✅ 29+ ready-to-use | ❌ Build each | ⚠️ Few |
+| Where credentials live | ✅ On your infra (AES-256-GCM) | ✅ Your code | ⚠️ On the gateway provider |
+| Self-hosted option | ✅ Docker / Railway / DigitalOcean / [Cloud](https://cloud.anythingmcp.com) | ✅ | ⚠️ Often SaaS-only |
+| Pre-built SaaS adapters | ✅ 30+ ready-to-use | ❌ Build each | ⚠️ Few |
 | Multi-client support | ✅ Claude, ChatGPT, Gemini, Copilot, Cursor | ✅ | ⚠️ Varies |
 
 ---
@@ -142,7 +146,7 @@ See the full [Quick Start](#quick-start) below for detailed configuration option
 
 - **5 Connector Types** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Database](docs/connectors/database.md) (PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite), [MCP-to-MCP Bridge](docs/connectors/mcp-bridge.md)
 - **6 Import Formats** — OpenAPI/Swagger, Postman Collections, cURL commands, WSDL, GraphQL introspection, custom JSON
-- **29 Pre-built Adapters** — Install logistics, ERP, HR, public-data and e-commerce MCP servers from a single JSON file — see [list](#pre-configured-mcp-connectors)
+- **30+ Pre-built Adapters** — Install logistics, ERP, HR, public-data and e-commerce MCP servers from a single JSON file — see [list](#pre-configured-mcp-connectors)
 - **Dynamic MCP Server** — Tools registered at runtime, no restart needed
 - **Visual Tool Editor** — Map parameters to path, query, body, headers visually
 - **Database Auto-Tools** — Schema introspection + dynamic query execution out of the box
@@ -157,7 +161,7 @@ See the full [Quick Start](#quick-start) below for detailed configuration option
 
 ## Pre-configured MCP Connectors
 
-AnythingMCP ships with **29 ready-to-use MCP server adapters** — provide your API credentials at import time and the tools become available to your AI client immediately. Each adapter has its own setup guide on [anythingmcp.com](https://anythingmcp.com/guides) (English, German, Italian).
+AnythingMCP ships with **30+ ready-to-use MCP server adapters** — provide your API credentials at import time and the tools become available to your AI client immediately. Each adapter has its own setup guide on [anythingmcp.com](https://anythingmcp.com/guides) (English, German, Italian).
 
 > 📍 **Heads-up on the catalog:** the starting set leans heavily DACH (Germany / Austria / Switzerland) because that's where we built this in production first. US/UK/APAC SaaS adapters are very welcome as community PRs — there's a [good first issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) walking you through adding one in ~30 minutes (it's a single JSON file).
 
