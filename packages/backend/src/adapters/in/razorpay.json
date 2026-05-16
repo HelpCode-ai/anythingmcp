@@ -1,0 +1,163 @@
+{
+  "slug": "razorpay",
+  "name": "Razorpay",
+  "description": "India's leading payment gateway. Create orders, fetch payments, manage refunds, and issue payment links. Supports UPI, cards, netbanking, wallets. Test mode keys (`rzp_test_*`) require no KYC — sign up and create in minutes.",
+  "instructions": "This connector uses the Razorpay v1 REST API.\n\n**Getting test API keys**: sign up at https://dashboard.razorpay.com → Settings → API Keys → Generate Test Key. You get a `key_id` (prefix `rzp_test_`) and a `key_secret`. Both are required.\n\n**Authentication**: HTTP Basic Auth with `key_id` as username and `key_secret` as password.\n\n**Amount convention**: Razorpay amounts are integers in the **smallest currency unit** — for INR this is **paise**, so ₹100 = `10000`. Same for other currencies (USD → cents, EUR → cents). Pass the value already multiplied; do NOT pass decimals.\n\n**Test mode**: completely free, no KYC required. Test cards: card number `4111 1111 1111 1111`, any future expiry, any CVV. UPI test handle: `success@razorpay`.\n\n**Production**: requires Razorpay KYC (business documents, bank account verification). Live keys start with `rzp_live_` — never commit them.",
+  "region": "in",
+  "category": "payments",
+  "icon": "razorpay",
+  "docsUrl": "https://razorpay.com/docs/api/",
+  "requiredEnvVars": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
+  "connector": {
+    "name": "Razorpay",
+    "type": "REST",
+    "baseUrl": "https://api.razorpay.com/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{RAZORPAY_KEY_ID}}",
+      "password": "{{RAZORPAY_KEY_SECRET}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "razorpay_create_order",
+      "description": "Create a Razorpay order. Orders are the recommended flow: create on the server, attach to a checkout, receive payment, then verify the resulting payment. Returns the order id (prefix `order_`) needed for the checkout.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "Amount in the smallest currency unit (e.g. 10000 = ₹100.00 for INR)."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO-4217 currency code: 'INR', 'USD', 'EUR', 'GBP', etc."
+          },
+          "receipt": {
+            "type": "string",
+            "description": "Your internal receipt / order id (max 40 chars). Shown on the Razorpay dashboard for reconciliation."
+          },
+          "notes": {
+            "type": "object",
+            "description": "Optional key-value object of arbitrary metadata (max 15 keys, key+value ≤ 256 chars)."
+          },
+          "payment_capture": {
+            "type": "number",
+            "description": "1 = auto-capture on payment success (default), 0 = authorize only, capture later via API."
+          }
+        },
+        "required": ["amount", "currency"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders",
+        "bodyMapping": {
+          "amount": "$amount",
+          "currency": "$currency",
+          "receipt": "$receipt",
+          "notes": "$notes",
+          "payment_capture": "$payment_capture"
+        }
+      }
+    },
+    {
+      "name": "razorpay_fetch_payment",
+      "description": "Fetch a single payment by its id (prefix `pay_`). Returns status (created/authorized/captured/refunded/failed), amount, method (card/upi/netbanking/wallet/emi), card/bank/upi details, fees, tax, and any error code/description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Razorpay payment id (prefix 'pay_')."
+          }
+        },
+        "required": ["payment_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/{payment_id}"
+      }
+    },
+    {
+      "name": "razorpay_list_refunds",
+      "description": "List refunds across the account, optionally filtered by payment id. Returns refund id, payment id, amount, status (pending/processed/failed), created_at, and speed (normal/optimum/instant).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Optional — return only refunds for this payment id."
+          },
+          "count": {
+            "type": "number",
+            "description": "Max results (default 10, max 100)."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Offset for pagination."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/refunds",
+        "queryParams": {
+          "payment_id": "$payment_id",
+          "count": "$count",
+          "skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "razorpay_create_payment_link",
+      "description": "Create a Razorpay-hosted payment link (short_url) you can send by email/SMS/WhatsApp. The customer pays on Razorpay's page; you get a webhook + can verify via fetch_payment. Returns the link id and short_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "Amount in smallest currency unit (e.g. 10000 = ₹100 for INR)."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO-4217 currency code (e.g. 'INR')."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description shown to the customer on the payment page (max 2048 chars)."
+          },
+          "customer": {
+            "type": "object",
+            "description": "Customer object: { name, email, contact }. Pre-fills the checkout form."
+          },
+          "notify": {
+            "type": "object",
+            "description": "Channels to send the link on: { sms: true/false, email: true/false }."
+          },
+          "reminder_enable": {
+            "type": "boolean",
+            "description": "Whether Razorpay should send automatic reminders before expiry."
+          },
+          "expire_by": {
+            "type": "number",
+            "description": "Unix epoch seconds — link expires at this time."
+          }
+        },
+        "required": ["amount", "currency", "description"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payment_links",
+        "bodyMapping": {
+          "amount": "$amount",
+          "currency": "$currency",
+          "description": "$description",
+          "customer": "$customer",
+          "notify": "$notify",
+          "reminder_enable": "$reminder_enable",
+          "expire_by": "$expire_by"
+        }
+      }
+    }
+  ]
+}

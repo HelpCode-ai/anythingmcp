@@ -1,0 +1,132 @@
+{
+  "slug": "companies-house",
+  "name": "UK Companies House",
+  "description": "Search and inspect the official UK companies register: company profiles, directors and secretaries, filing history. Free public API with a 600 requests / 5 minutes rate limit. The UK equivalent of the German Handelsregister.",
+  "instructions": "This connector uses the UK Companies House Public Data API v1.\n\n**Getting an API key**: register a free account at https://developer.company-information.service.gov.uk → 'Manage applications' → 'Create an application' (pick Live or Test) → 'Create new key' → REST. Copy the generated key into `COMPANIES_HOUSE_API_KEY`.\n\n**Authentication quirk**: Companies House uses HTTP Basic Auth where the API key is the **username** and the **password is empty** (the canonical curl shape is `-u API_KEY:`). This adapter mirrors that — leave the password configuration empty.\n\n**Company numbers**: always 8 characters, zero-padded (e.g. `00006400` not `6400`). The search endpoint returns matches with the canonical number you can feed into the other tools.\n\n**Rate limit**: 600 requests per 5-minute window per API key. Returns HTTP 429 with `Retry-After` when exceeded.\n\n**Free**: no paid tier required for the Public Data API. Streaming/companies-bulk products require separate registration.",
+  "region": "gb",
+  "category": "government",
+  "icon": "companies-house",
+  "docsUrl": "https://developer.company-information.service.gov.uk/",
+  "requiredEnvVars": ["COMPANIES_HOUSE_API_KEY"],
+  "connector": {
+    "name": "UK Companies House",
+    "type": "REST",
+    "baseUrl": "https://api.company-information.service.gov.uk",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{COMPANIES_HOUSE_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "companies_house_search_company",
+      "description": "Search the UK companies register by company name or number. Returns up to `items_per_page` matches with company number, title, status (active/dissolved/liquidation), address snippet, and incorporation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search query — company name, partial name, or company number."
+          },
+          "items_per_page": {
+            "type": "number",
+            "description": "Max results to return (default 20, max 100)."
+          },
+          "start_index": {
+            "type": "number",
+            "description": "Offset for pagination (0-based)."
+          }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/companies",
+        "queryParams": {
+          "q": "$q",
+          "items_per_page": "$items_per_page",
+          "start_index": "$start_index"
+        }
+      }
+    },
+    {
+      "name": "companies_house_get_company_profile",
+      "description": "Fetch the full profile for a UK company by its 8-character zero-padded company number. Returns registered office address, company status, type (ltd/plc/llp/…), incorporation date, SIC codes, accounts and confirmation-statement filing dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_number": {
+            "type": "string",
+            "description": "8-character zero-padded company number (e.g. '00006400'). Obtain from companies_house_search_company."
+          }
+        },
+        "required": ["company_number"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_number}"
+      }
+    },
+    {
+      "name": "companies_house_list_officers",
+      "description": "List directors, secretaries and other officers (current and resigned) for a UK company. Returns officer name, role, appointment date, resignation date if any, date of birth (month/year only), nationality, country of residence.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_number": {
+            "type": "string",
+            "description": "8-character zero-padded company number."
+          },
+          "items_per_page": {
+            "type": "number",
+            "description": "Max results (default 35, max 100)."
+          },
+          "register_view": {
+            "type": "boolean",
+            "description": "If true, show only the officers currently in the register view."
+          }
+        },
+        "required": ["company_number"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_number}/officers",
+        "queryParams": {
+          "items_per_page": "$items_per_page",
+          "register_view": "$register_view"
+        }
+      }
+    },
+    {
+      "name": "companies_house_list_filings",
+      "description": "List the filing history (accounts, confirmation statements, officer appointments, share allotments, …) for a UK company. Returns filing type, description, date, and a link to the underlying document on the Companies House website.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_number": {
+            "type": "string",
+            "description": "8-character zero-padded company number."
+          },
+          "category": {
+            "type": "string",
+            "description": "Filter by category: 'accounts', 'address', 'annual-return', 'capital', 'change-of-name', 'incorporation', 'officers', 'persons-with-significant-control', 'resolution'."
+          },
+          "items_per_page": {
+            "type": "number",
+            "description": "Max results (default 25, max 100)."
+          }
+        },
+        "required": ["company_number"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_number}/filing-history",
+        "queryParams": {
+          "category": "$category",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "slug": "mercado-libre",
+  "name": "Mercado Libre",
+  "description": "LATAM's largest e-commerce marketplace — search items, fetch product details, look up users, and list seller orders across Brasil (MLB), Argentina (MLA), Mexico (MLM), Chile (MLC), Colombia (MCO), Peru (MPE), Uruguay (MLU). OAuth2 access token required for every endpoint.",
+  "instructions": "This connector uses the Mercado Libre REST API.\n\n**All endpoints now require OAuth2.** Historically `/sites/{site_id}/search`, `/items/{item_id}` and `/users/{user_id}` were public, but as of 2025 Mercado Libre returns HTTP 403 on unauthenticated calls. You need a valid access token for every tool in this adapter.\n\n**Creating an app**: register at https://developers.mercadolibre.com/devcenter → 'Create app' → set a redirect URI (e.g. `https://your-anythingmcp-host/oauth/callback`). Copy `client_id` and `client_secret` into the env vars.\n\n**Authorization URL**: pick the country-specific URL based on the seller's marketplace:\n- Brasil: `https://auth.mercadolivre.com.br/authorization`\n- Argentina: `https://auth.mercadolibre.com.ar/authorization`\n- Mexico: `https://auth.mercadolibre.com.mx/authorization`\n- (and similar for .cl, .co, .pe, .com.uy)\n\nThis adapter defaults to Brasil — change it after import if your seller is on a different marketplace.\n\n**Site ids** (used by `search_items` and `get_item`):\n- MLB = Brasil, MLA = Argentina, MLM = Mexico, MLC = Chile, MCO = Colombia, MPE = Peru, MLU = Uruguay\n\n**Item ids**: format `{SITE}{NUMBER}` (e.g. `MLB1234567890`). Always include the site prefix.\n\n**Rate limits**: 60,000 calls/hour per app for read endpoints; lower for write endpoints. Returns 429 with `X-RateLimit-*` headers when exceeded.\n\n**Seller-specific endpoints** (`list_orders`) require the OAuth2 token to belong to the seller whose orders you're querying — you cannot view another seller's orders even with valid auth.",
+  "region": "br",
+  "category": "ecommerce",
+  "icon": "mercado-libre",
+  "docsUrl": "https://developers.mercadolibre.com/en_us/api-docs-en",
+  "requiredEnvVars": ["MERCADO_LIBRE_CLIENT_ID", "MERCADO_LIBRE_CLIENT_SECRET"],
+  "connector": {
+    "name": "Mercado Libre",
+    "type": "REST",
+    "baseUrl": "https://api.mercadolibre.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MERCADO_LIBRE_CLIENT_ID}}",
+      "clientSecret": "{{MERCADO_LIBRE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://auth.mercadolivre.com.br/authorization",
+      "tokenUrl": "https://api.mercadolibre.com/oauth/token",
+      "scopes": "offline_access read write"
+    }
+  },
+  "tools": [
+    {
+      "name": "mercado_libre_search_items",
+      "description": "Search items in a Mercado Libre site (country marketplace). Returns matches with item id (e.g. 'MLB1234567890'), title, price, currency, condition (new/used), thumbnail, seller id, available_quantity, and permalink to the listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site code: MLB=Brasil, MLA=Argentina, MLM=Mexico, MLC=Chile, MCO=Colombia, MPE=Peru, MLU=Uruguay."
+          },
+          "q": {
+            "type": "string",
+            "description": "Search query — free-text product keywords."
+          },
+          "category": {
+            "type": "string",
+            "description": "Optional Mercado Libre category id to scope the search (e.g. 'MLB1144' for video games on the Brasil site)."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default 50, max 50)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Offset for pagination (max 1000)."
+          }
+        },
+        "required": ["site_id", "q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/search",
+        "queryParams": {
+          "q": "$q",
+          "category": "$category",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_item",
+      "description": "Fetch full details for a Mercado Libre item by id. Returns title, description, price, currency, listing type, all attributes (brand, model, condition, …), pictures, available_quantity, sold_quantity, warranty, seller_id, and shipping options.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Mercado Libre item id including site prefix (e.g. 'MLB1234567890')."
+          }
+        },
+        "required": ["item_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{item_id}"
+      }
+    },
+    {
+      "name": "mercado_libre_get_user",
+      "description": "Get a user's public profile (typically used to inspect a seller). Returns id, nickname, country_id, registration_date, seller_reputation (level_id, transactions completed/canceled, ratings positive/neutral/negative), and listing site.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Mercado Libre user/seller id (numeric, e.g. '123456789')."
+          }
+        },
+        "required": ["user_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "mercado_libre_list_orders",
+      "description": "List orders for an authenticated seller. Requires an OAuth2 token belonging to the seller. Returns order id, status (paid/cancelled/confirmed), date_created, total amount, buyer summary, order items, and shipping details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller": {
+            "type": "string",
+            "description": "Seller id (must match the authenticated user's id)."
+          },
+          "order_status": {
+            "type": "string",
+            "description": "Optional filter: 'paid', 'cancelled', 'confirmed', 'payment_required', 'payment_in_process'."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order: 'date_asc' or 'date_desc' (default)."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default 50, max 50)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Offset for pagination."
+          }
+        },
+        "required": ["seller"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/search",
+        "queryParams": {
+          "seller": "$seller",
+          "order.status": "$order_status",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,128 @@
+{
+  "slug": "line-messaging",
+  "name": "LINE Messaging API",
+  "description": "Send push, reply and broadcast messages from a LINE Official Account — LINE is the dominant chat platform in Japan, Taiwan and Thailand. Free tier of 500 push messages per month, unlimited reply messages, channel access tokens require no KYC.",
+  "instructions": "This connector uses the LINE Messaging API v2.\n\n**Creating a channel**: log in to https://developers.line.biz/console → create a Provider → 'Create a new channel' → 'Messaging API'. Set up the LINE Official Account (auto-created with the channel), then under the channel's 'Messaging API' tab, scroll to 'Channel access token' → 'Issue' a long-lived token. Paste it as `LINE_CHANNEL_ACCESS_TOKEN`.\n\n**Authentication**: Bearer Token (the channel access token). Note: this token belongs to the channel, not to a user — anyone with the token can post as that Official Account, so keep it secret.\n\n**Message shape**: LINE messages are objects with a `type` field. Simplest example: `{\"type\": \"text\", \"text\": \"Hello\"}`. Other types: `sticker`, `image`, `video`, `audio`, `location`, `template`, `flex`. The `messages` parameter on every tool is an **array of up to 5** message objects.\n\n**`to` userId**: cannot be looked up cold — you only get a userId from webhook events when a user interacts with the Official Account. Store the userId on first webhook contact, then use it for push.\n\n**`replyToken`**: returned in webhook events. Valid for **~30 seconds** after the original user message. Use `line_reply_message` (free, unlimited) instead of `line_push_message` (counts against the 500/month free quota) whenever possible.\n\n**Broadcast**: sends to ALL friends of the Official Account. Counts heavily against the push quota — use sparingly.\n\n**Pricing**: free tier = 500 push messages/month. Paid tiers from JP¥5,000/month for higher quotas.",
+  "region": "jp",
+  "category": "messaging",
+  "icon": "line",
+  "docsUrl": "https://developers.line.biz/en/reference/messaging-api/",
+  "requiredEnvVars": ["LINE_CHANNEL_ACCESS_TOKEN"],
+  "connector": {
+    "name": "LINE Messaging API",
+    "type": "REST",
+    "baseUrl": "https://api.line.me",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{LINE_CHANNEL_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "line_push_message",
+      "description": "Send a push message to a specific userId, groupId, or roomId. Counts against the monthly push quota (500/month free). Use line_reply_message instead whenever you have a fresh replyToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Destination — userId (from a webhook event), groupId, or roomId. Cannot be looked up; obtain from webhook."
+          },
+          "messages": {
+            "type": "array",
+            "description": "Array of 1–5 LINE message objects. Simplest text: [{\"type\": \"text\", \"text\": \"Hello\"}]. See https://developers.line.biz/en/reference/messaging-api/#message-objects for full schema."
+          },
+          "notificationDisabled": {
+            "type": "boolean",
+            "description": "If true, the user is not notified (silent push). Default false."
+          }
+        },
+        "required": ["to", "messages"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/bot/message/push",
+        "bodyMapping": {
+          "to": "$to",
+          "messages": "$messages",
+          "notificationDisabled": "$notificationDisabled"
+        }
+      }
+    },
+    {
+      "name": "line_reply_message",
+      "description": "Reply to a webhook-received message using its replyToken. FREE and unlimited (does not count against the push quota). The replyToken is valid for ~30 seconds after the user's message — call this synchronously from your webhook handler.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "replyToken": {
+            "type": "string",
+            "description": "The replyToken from a webhook event. Single-use, expires after ~30 seconds."
+          },
+          "messages": {
+            "type": "array",
+            "description": "Array of 1–5 LINE message objects."
+          },
+          "notificationDisabled": {
+            "type": "boolean",
+            "description": "If true, the user is not notified (silent reply). Default false."
+          }
+        },
+        "required": ["replyToken", "messages"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/bot/message/reply",
+        "bodyMapping": {
+          "replyToken": "$replyToken",
+          "messages": "$messages",
+          "notificationDisabled": "$notificationDisabled"
+        }
+      }
+    },
+    {
+      "name": "line_get_profile",
+      "description": "Get a user's display name, profile picture URL, status message and BCP-47 language tag. Only works for users who have added the Official Account as a friend.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "LINE userId (from a webhook event)."
+          }
+        },
+        "required": ["userId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/bot/profile/{userId}"
+      }
+    },
+    {
+      "name": "line_broadcast_message",
+      "description": "Broadcast a message to ALL friends of the Official Account. Heavy on the monthly push quota (1 message × N friends = N counted pushes). Use sparingly. Returns 202 Accepted; delivery happens asynchronously.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "description": "Array of 1–5 LINE message objects to broadcast."
+          },
+          "notificationDisabled": {
+            "type": "boolean",
+            "description": "If true, recipients are not notified. Default false."
+          }
+        },
+        "required": ["messages"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/bot/message/broadcast",
+        "bodyMapping": {
+          "messages": "$messages",
+          "notificationDisabled": "$notificationDisabled"
+        }
+      }
+    }
+  ]
+}

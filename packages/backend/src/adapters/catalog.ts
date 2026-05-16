@@ -28,6 +28,12 @@ import * as shopware6 from './de/shopware-6.json';
 import * as hereGeocoding from './de/here-geocoding.json';
 import * as personio from './de/personio.json';
 import * as hrworks from './de/hrworks.json';
+import * as companiesHouse from './gb/companies-house.json';
+import * as wise from './gb/wise.json';
+import * as razorpay from './in/razorpay.json';
+import * as mercadoLibre from './br/mercado-libre.json';
+import * as paystack from './ng/paystack.json';
+import * as lineMessaging from './jp/line-messaging.json';
 
 export interface AdapterMeta {
   slug: string;
@@ -95,6 +101,12 @@ const ALL_ADAPTERS: AdapterDefinition[] = [
   hereGeocoding as unknown as AdapterDefinition,
   personio as unknown as AdapterDefinition,
   hrworks as unknown as AdapterDefinition,
+  companiesHouse as unknown as AdapterDefinition,
+  wise as unknown as AdapterDefinition,
+  razorpay as unknown as AdapterDefinition,
+  mercadoLibre as unknown as AdapterDefinition,
+  paystack as unknown as AdapterDefinition,
+  lineMessaging as unknown as AdapterDefinition,
 ];
 
 export function listAdapters(): AdapterMeta[] {

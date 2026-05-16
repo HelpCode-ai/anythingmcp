@@ -1,0 +1,162 @@
+{
+  "slug": "paystack",
+  "name": "Paystack",
+  "description": "Leading African payment processor (Nigeria-led, also supports Ghana, South Africa, Kenya, Côte d'Ivoire). Initialize transactions, verify payments, list customers, issue refunds. Test secret keys (`sk_test_*`) require no KYC and work in minutes.",
+  "instructions": "This connector uses the Paystack REST API v1.\n\n**Getting test API keys**: sign up at https://dashboard.paystack.com → Settings → API Keys & Webhooks. You get a `sk_test_*` (secret key — server-side, used here) and a `pk_test_*` (public key — for client-side checkout). This adapter only needs the **secret key**.\n\n**Authentication**: Bearer Token. Header: `Authorization: Bearer sk_test_xxxxx`.\n\n**Amount convention**: amounts are integers in the **smallest currency subunit** — for NGN this is **kobo**, so ₦100 = `10000`. Same for ZAR (cents), GHS (pesewas), KES (cents).\n\n**Supported currencies**: NGN (default), USD, GHS, ZAR, KES, XOF (CFA franc).\n\n**Test cards** (test mode only): card number `4084 0840 8408 4081`, CVV `408`, expiry any future date, PIN `0000`, OTP `123456`.\n\n**Webhooks**: real-money flows should verify payments via `paystack_verify_transaction` from a webhook handler, not by polling. The verify endpoint is idempotent and free.\n\n**Production**: requires Paystack KYC (business documents, settlement bank account). Live keys start with `sk_live_` — never commit them.",
+  "region": "ng",
+  "category": "payments",
+  "icon": "paystack",
+  "docsUrl": "https://paystack.com/docs/api/",
+  "requiredEnvVars": ["PAYSTACK_SECRET_KEY"],
+  "connector": {
+    "name": "Paystack",
+    "type": "REST",
+    "baseUrl": "https://api.paystack.co",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{PAYSTACK_SECRET_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "paystack_initialize_transaction",
+      "description": "Initialize a Paystack transaction. Returns an `authorization_url` you redirect the customer to (Paystack-hosted checkout) and a `reference` you later pass to paystack_verify_transaction. Use this rather than charging cards directly — Paystack handles PCI on their side.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Customer email (required by Paystack for every transaction)."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in the smallest currency subunit (e.g. 10000 = ₦100.00 for NGN, 10000 = $100.00 for USD)."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Optional. ISO-4217 currency code: 'NGN' (default), 'USD', 'GHS', 'ZAR', 'KES', 'XOF'."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Optional. Your own reference for this transaction. If omitted, Paystack generates one. Must be unique across the merchant account."
+          },
+          "callback_url": {
+            "type": "string",
+            "description": "Optional. URL Paystack redirects the customer to after payment. Overrides the dashboard-configured default."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional. Arbitrary key-value object stored on the transaction and echoed in webhooks."
+          }
+        },
+        "required": ["email", "amount"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transaction/initialize",
+        "bodyMapping": {
+          "email": "$email",
+          "amount": "$amount",
+          "currency": "$currency",
+          "reference": "$reference",
+          "callback_url": "$callback_url",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "paystack_verify_transaction",
+      "description": "Verify a Paystack transaction by reference. Returns status ('success', 'failed', 'abandoned'), amount, currency, paid_at, channel (card/bank/ussd/qr/mobile_money/bank_transfer), customer object, and authorization details if a card was used. Free, idempotent — safe to call multiple times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "The transaction reference returned by paystack_initialize_transaction (or supplied by you)."
+          }
+        },
+        "required": ["reference"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transaction/verify/{reference}"
+      }
+    },
+    {
+      "name": "paystack_list_customers",
+      "description": "List customers on the merchant account. Returns customer id, customer_code, first_name, last_name, email, phone, total_transactions, total_transaction_value, dedicated_account if any, and risk_action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "perPage": {
+            "type": "number",
+            "description": "Records per page (default 50, max 100)."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number (1-based)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Optional ISO-8601 start date filter (e.g. '2026-01-01')."
+          },
+          "to": {
+            "type": "string",
+            "description": "Optional ISO-8601 end date filter."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customer",
+        "queryParams": {
+          "perPage": "$perPage",
+          "page": "$page",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "paystack_create_refund",
+      "description": "Create a refund for a transaction. Refunds are partial by default (use the full amount to do a full refund). Returns refund id, status (pending/processed/processing/failed), transaction object, refunded_at, expected_at, and reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction": {
+            "type": "string",
+            "description": "Transaction id or reference to refund."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Optional. Amount in smallest subunit to refund. Omit to refund the full transaction amount."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Optional. Must match the original transaction currency. Defaults to NGN."
+          },
+          "customer_note": {
+            "type": "string",
+            "description": "Optional. Note shown to the customer on the refund record (max 100 chars)."
+          },
+          "merchant_note": {
+            "type": "string",
+            "description": "Optional. Internal note on the refund (max 100 chars)."
+          }
+        },
+        "required": ["transaction"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refund",
+        "bodyMapping": {
+          "transaction": "$transaction",
+          "amount": "$amount",
+          "currency": "$currency",
+          "customer_note": "$customer_note",
+          "merchant_note": "$merchant_note"
+        }
+      }
+    }
+  ]
+}

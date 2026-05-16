@@ -119,7 +119,7 @@ See the full [Quick Start](#quick-start) below for detailed configuration option
 | You have legacy SOAP/WSDL services | **SOAP to MCP** bridge with automatic WSDL parsing |
 | You need to query databases from AI agents | **Database to MCP** with auto-generated query tools |
 | You want one MCP gateway for all your APIs | **MCP middleware** that aggregates multiple connectors |
-| You need an MCP server for DHL/DPD/GLS/DATEV/Weclapp/etc. | **30+ pre-built adapters** — install in one click |
+| You need an MCP server for DHL/DPD/GLS/DATEV/Weclapp/etc. | **36 pre-built adapters** — install in one click |
 | You need auth, audit logs, and role-based access | Built-in **auth, audit log, and RBAC** |
 | You can't ship your API credentials to a SaaS gateway | **Runs entirely on your infrastructure** — credentials encrypted AES-256-GCM at rest, audit log stays on your DB |
 | You have SOAP / WSDL services or on-prem databases AI clients can't speak | **First-class SOAP & SQL support** — not just REST/SaaS integrations |
@@ -146,7 +146,7 @@ See the full [Quick Start](#quick-start) below for detailed configuration option
 
 - **5 Connector Types** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Database](docs/connectors/database.md) (PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite), [MCP-to-MCP Bridge](docs/connectors/mcp-bridge.md)
 - **6 Import Formats** — OpenAPI/Swagger, Postman Collections, cURL commands, WSDL, GraphQL introspection, custom JSON
-- **30+ Pre-built Adapters** — Install logistics, ERP, HR, public-data and e-commerce MCP servers from a single JSON file — see [list](#pre-configured-mcp-connectors)
+- **36 Pre-built Adapters** — Install logistics, ERP, HR, public-data, payments, e-commerce and messaging MCP servers from a single JSON file — see [list](#pre-configured-mcp-connectors)
 - **Dynamic MCP Server** — Tools registered at runtime, no restart needed
 - **Visual Tool Editor** — Map parameters to path, query, body, headers visually
 - **Database Auto-Tools** — Schema introspection + dynamic query execution out of the box
@@ -161,9 +161,9 @@ See the full [Quick Start](#quick-start) below for detailed configuration option
 
 ## Pre-configured MCP Connectors
 
-AnythingMCP ships with **30+ ready-to-use MCP server adapters** — provide your API credentials at import time and the tools become available to your AI client immediately. Each adapter has its own setup guide on [anythingmcp.com](https://anythingmcp.com/guides) (English, German, Italian).
+AnythingMCP ships with **36 ready-to-use MCP server adapters** — DACH-rooted but now reaching the UK, India, Brasil, Nigeria and Japan. Provide your API credentials at import time and the tools become available to your AI client immediately. Each adapter has its own setup guide on [anythingmcp.com](https://anythingmcp.com/guides) (English, German, Italian).
 
-> 📍 **Heads-up on the catalog:** the starting set leans heavily DACH (Germany / Austria / Switzerland) because that's where we built this in production first. US/UK/APAC SaaS adapters are very welcome as community PRs — there's a [good first issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) walking you through adding one in ~30 minutes (it's a single JSON file).
+> 📍 **Heads-up on the catalog:** the starting set leans DACH (Germany / Austria / Switzerland) because that's where we built this in production first, with first-wave international coverage now landing across the UK 🇬🇧, India 🇮🇳, Brasil 🇧🇷, Nigeria 🇳🇬 and Japan 🇯🇵. US/APAC SaaS adapters are very welcome as community PRs — there's a [good first issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) walking you through adding one in ~30 minutes (it's a single JSON file).
 
 ### Logistics & Shipping
 
@@ -197,6 +197,7 @@ AnythingMCP ships with **30+ ready-to-use MCP server adapters** — provide your
 | **Shopware 6** | Storefront API — products, categories, search | [Shopware 6 MCP Server](https://anythingmcp.com/guides/shopware-6-to-mcp) |
 | **Oxomi** | Baustoff catalog & media portal (datasheets, CAD, safety sheets) | [Oxomi MCP Server](https://anythingmcp.com/guides/oxomi-to-mcp) |
 | **ImmobilienScout24** | German real-estate listings — search, manage, market data | [ImmobilienScout24 MCP Server](https://anythingmcp.com/guides/immobilienscout24-to-mcp) |
+| **Mercado Libre** 🌎 | LATAM marketplace (BR, AR, MX, CL, CO, PE, UY) — search items, fetch products, list seller orders | [Mercado Libre MCP Server](https://anythingmcp.com/guides/mercado-libre-to-mcp) |
 
 ### HR & Field Service
 
@@ -212,6 +213,7 @@ AnythingMCP ships with **30+ ready-to-use MCP server adapters** — provide your
 |-----------|-------------|-------|
 | **VIES VAT Validation** | Validate EU VAT numbers — official European Commission API | [VIES MCP Server](https://anythingmcp.com/guides/vies-vat-to-mcp) |
 | **Handelsregister** | German commercial register — companies, shareholders, documents | [Handelsregister MCP Server](https://anythingmcp.com/guides/handelsregister-to-mcp) |
+| **UK Companies House** 🇬🇧 | UK companies register — search, profiles, officers, filings (free tier) | [UK Companies House MCP Server](https://anythingmcp.com/guides/uk-companies-house-to-mcp) |
 | **OpenPLZ Germany** | Postal codes, localities, streets, federal districts (BKG data) | [OpenPLZ MCP Server](https://anythingmcp.com/guides/openplz-to-mcp) |
 | **Bundesbank Statistics** | German central bank — exchange rates, monetary, financial markets | [Bundesbank MCP Server](https://anythingmcp.com/guides/bundesbank-to-mcp) |
 | **DESTATIS Genesis** | Federal Statistical Office — demographics, economy, trade | [DESTATIS MCP Server](https://anythingmcp.com/guides/destatis-genesis-to-mcp) |
@@ -222,7 +224,10 @@ AnythingMCP ships with **30+ ready-to-use MCP server adapters** — provide your
 | Connector | Description | Guide |
 |-----------|-------------|-------|
 | **N26 Open Banking** | PSD2 access — balances, transactions, payment initiation | [N26 MCP Server](https://anythingmcp.com/guides/n26-openbanking-to-mcp) |
+| **Wise** 🇬🇧 | International money transfers — profiles, balances, quotes, transfers (sandbox available) | [Wise MCP Server](https://anythingmcp.com/guides/wise-to-mcp) |
 | **PAYONE** | Payment processing — transactions, refunds, status | [PAYONE MCP Server](https://anythingmcp.com/guides/payone-to-mcp) |
+| **Razorpay** 🇮🇳 | India's leading payment gateway — UPI, cards, netbanking, payment links, refunds (test mode no-KYC) | [Razorpay MCP Server](https://anythingmcp.com/guides/razorpay-to-mcp) |
+| **Paystack** 🇳🇬 | Leading African payment processor (NG, GH, ZA, KE) — transactions, customers, refunds (test mode no-KYC) | [Paystack MCP Server](https://anythingmcp.com/guides/paystack-to-mcp) |
 | **TeamViewer** | Remote-access devices, sessions, users | [TeamViewer MCP Server](https://anythingmcp.com/guides/teamviewer-to-mcp) |
 
 ### Construction & Mapping
@@ -231,6 +236,12 @@ AnythingMCP ships with **30+ ready-to-use MCP server adapters** — provide your
 |-----------|-------------|-------|
 | **PlanRadar** | Construction & real-estate project management — tickets, layers | [PlanRadar MCP Server](https://anythingmcp.com/guides/planradar-to-mcp) |
 | **HERE Geocoding** | Worldwide geocoding, autocomplete, place discovery (free tier) | [HERE MCP Server](https://anythingmcp.com/guides/here-geocoding-to-mcp) |
+
+### Messaging & Communication
+
+| Connector | Description | Guide |
+|-----------|-------------|-------|
+| **LINE Messaging API** 🇯🇵 | Dominant chat platform in JP/TW/TH — push, reply and broadcast from a LINE Official Account (500 free pushes/month, unlimited replies) | [LINE MCP Server](https://anythingmcp.com/guides/line-messaging-to-mcp) |
 
 </details>
 

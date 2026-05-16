@@ -1,0 +1,157 @@
+{
+  "slug": "wise",
+  "name": "Wise (formerly TransferWise)",
+  "description": "Manage international money transfers via the Wise Platform API: list personal and business profiles, view balances, create quotes, list past transfers. Sandbox environment available for free at sandbox.transferwise.tech.",
+  "instructions": "This connector uses the Wise Platform API.\n\n**Production base URL**: `https://api.wise.com` (default).\n\n**Sandbox base URL**: `https://api.sandbox.transferwise.tech`. If you want to use the sandbox, override the connector's base URL after import — sandbox API tokens do not work against the production host and vice versa.\n\n**Getting an API token**:\n- Production: log in to wise.com → Settings → API tokens → Create new token. Choose `Read` for read-only tools, `Full access` for create-quote.\n- Sandbox: sign up at https://sandbox.transferwise.tech → Settings → API tokens. Sandbox tokens are free and unlimited for testing.\n\n**Profile types**: Wise accounts have one personal profile (`type=personal`) and optionally one or more business profiles (`type=business`). All other endpoints require a `profileId` returned by `wise_list_profiles`.\n\n**Idempotency**: `wise_create_quote` requires an `X-idempotency-key` header — pass a unique UUID per logical request so retries don't create duplicate quotes.\n\n**Currencies**: ISO-4217 three-letter codes (USD, EUR, GBP, …).",
+  "region": "gb",
+  "category": "banking",
+  "icon": "wise",
+  "docsUrl": "https://docs.wise.com/api-docs",
+  "requiredEnvVars": ["WISE_API_TOKEN"],
+  "connector": {
+    "name": "Wise",
+    "type": "REST",
+    "baseUrl": "https://api.wise.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WISE_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "wise_list_profiles",
+      "description": "List all personal and business profiles linked to the API token. Returns profile id, type (personal/business), full name or business name, and details object. The profile id is needed for every other Wise tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/profiles"
+      }
+    },
+    {
+      "name": "wise_get_balances",
+      "description": "Get all balances for a profile (one balance per currency held). Returns balance id, currency, available amount, reserved amount, and the linked bank-details record if any.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "description": "Wise profile id from wise_list_profiles."
+          },
+          "types": {
+            "type": "string",
+            "description": "Comma-separated balance types to include: 'STANDARD' (default), 'SAVINGS'."
+          }
+        },
+        "required": ["profileId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v4/profiles/{profileId}/balances",
+        "queryParams": {
+          "types": "$types"
+        }
+      }
+    },
+    {
+      "name": "wise_create_quote",
+      "description": "Create a Wise quote for an international transfer. Quotes are valid for 30 minutes and contain the live FX rate, fees, and arrival estimate. Specify exactly one of sourceAmount or targetAmount — Wise calculates the other side.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "description": "Wise profile id from wise_list_profiles."
+          },
+          "sourceCurrency": {
+            "type": "string",
+            "description": "ISO-4217 source currency code (e.g. 'GBP')."
+          },
+          "targetCurrency": {
+            "type": "string",
+            "description": "ISO-4217 target currency code (e.g. 'EUR')."
+          },
+          "sourceAmount": {
+            "type": "number",
+            "description": "Amount to send in source currency. Set EITHER sourceAmount OR targetAmount, not both."
+          },
+          "targetAmount": {
+            "type": "number",
+            "description": "Amount to receive in target currency. Set EITHER sourceAmount OR targetAmount, not both."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "Unique UUID per logical request — Wise uses this to dedupe retries. Required."
+          }
+        },
+        "required": ["profileId", "sourceCurrency", "targetCurrency", "idempotencyKey"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/profiles/{profileId}/quotes",
+        "headers": {
+          "X-idempotency-key": "$idempotencyKey"
+        },
+        "bodyMapping": {
+          "sourceCurrency": "$sourceCurrency",
+          "targetCurrency": "$targetCurrency",
+          "sourceAmount": "$sourceAmount",
+          "targetAmount": "$targetAmount"
+        }
+      }
+    },
+    {
+      "name": "wise_list_transfers",
+      "description": "List past transfers for a profile, with optional filters by status (incoming_payment_waiting, processing, funds_converted, outgoing_payment_sent, cancelled, …), creation date range, and source/target currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "description": "Wise profile id from wise_list_profiles."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by transfer status."
+          },
+          "sourceCurrency": {
+            "type": "string",
+            "description": "ISO-4217 source currency code."
+          },
+          "targetCurrency": {
+            "type": "string",
+            "description": "ISO-4217 target currency code."
+          },
+          "createdDateStart": {
+            "type": "string",
+            "description": "ISO-8601 start date (e.g. '2026-01-01T00:00:00.000Z')."
+          },
+          "createdDateEnd": {
+            "type": "string",
+            "description": "ISO-8601 end date."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default 100)."
+          }
+        },
+        "required": ["profile"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/transfers",
+        "queryParams": {
+          "profile": "$profile",
+          "status": "$status",
+          "sourceCurrency": "$sourceCurrency",
+          "targetCurrency": "$targetCurrency",
+          "createdDateStart": "$createdDateStart",
+          "createdDateEnd": "$createdDateEnd",
+          "limit": "$limit"
+        }
+      }
+    }
+  ]
+}
