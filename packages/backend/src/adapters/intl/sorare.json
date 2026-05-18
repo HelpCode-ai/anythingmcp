@@ -205,6 +205,156 @@
       }
     },
     {
+      "name": "sorare_wallet_balance",
+      "description": "Get the authenticated user's wallet balances in ETH (wei) and the three fiat reference currencies (EUR, USD, GBP). Useful before recommending a purchase.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query MyBalances { currentUser { slug availableBalances { wei { wei } eurCents { eurCents } usdCents { usdCents } gbpCents { gbpCents } } } }"
+      }
+    },
+    {
+      "name": "sorare_user_by_slug",
+      "description": "Fetch another Sorare user's public profile by slug — nickname, status, and So5 lineup count. Use sorare_graphql_query with currentUser/cards for richer data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "The user's slug (from the URL, e.g. 'harrypottah')."
+          }
+        },
+        "required": ["slug"],
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query UserBySlug($slug: String!) { user(slug: $slug) { slug nickname status active suspended profile { verified badge { slug description } } } }",
+        "queryParams": {
+          "slug": "$slug"
+        }
+      }
+    },
+    {
+      "name": "sorare_player_recent_scores",
+      "description": "Return the most recent So5 scores for a football player slug, with position and game date. Use this to assess current form before composing a lineup or evaluating a card purchase.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "playerSlug": {
+            "type": "string",
+            "description": "Player slug (from sorare_search_player)."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 10,
+            "description": "Number of most-recent scores to return (1–20)."
+          }
+        },
+        "required": ["playerSlug"],
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query PlayerRecentScores($playerSlug: String!, $last: Int!) { players(slugs: [$playerSlug]) { slug displayName ... on Player { so5Scores(last: $last) { id position game { id date } } } } }",
+        "queryParams": {
+          "playerSlug": "$playerSlug",
+          "last": "$last"
+        }
+      }
+    },
+    {
+      "name": "sorare_token_prices",
+      "description": "Recent sale history for cards of a specific player + rarity. Returns an array of completed sales with date and amounts in wei / EUR / USD / GBP. Use to gauge fair market value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "playerSlug": {
+            "type": "string",
+            "description": "Player slug."
+          },
+          "rarity": {
+            "type": "string",
+            "enum": ["common", "limited", "rare", "super_rare", "unique", "custom_series"],
+            "description": "Card rarity (lowercase per Sorare's enum)."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Max results (1–50)."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Optional: filter by season start year (e.g. 2024 for the 2024-25 season)."
+          }
+        },
+        "required": ["playerSlug", "rarity"],
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query TokenPrices($playerSlug: String!, $rarity: Rarity!, $first: Int!, $season: Int) { tokens { tokenPrices(playerSlug: $playerSlug, rarity: $rarity, first: $first, season: $season) { id date amounts { wei eurCents usdCents gbpCents } card { slug name } } } }",
+        "queryParams": {
+          "playerSlug": "$playerSlug",
+          "rarity": "$rarity",
+          "first": "$first",
+          "season": "$season"
+        }
+      }
+    },
+    {
+      "name": "sorare_get_auction",
+      "description": "Get a specific Sorare auction by id, including cards on auction, current price, best bid, and end date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "auctionId": {
+            "type": "string",
+            "description": "The auction id."
+          }
+        },
+        "required": ["auctionId"],
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Auction($auctionId: String!) { tokens { auction(id: $auctionId) { id startDate endDate open cancelled currentPrice minNextBid currency anyCards { slug name ... on Card { rarity footballPlayer { slug displayName } } } bestBid { amounts { wei eurCents } userBidder { slug nickname } } bidsCount } } }",
+        "queryParams": {
+          "auctionId": "$auctionId"
+        }
+      }
+    },
+    {
+      "name": "sorare_my_trophies_summary",
+      "description": "Summary of the authenticated user's So5 results: total final rankings, podium finishes, and lifetime card / monetary rewards. Optionally filter by sport.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "enum": ["FOOTBALL", "BASEBALL", "NBA"],
+            "description": "Optional sport filter (default: all sports)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query MyTrophies($sport: Sport) { currentUser { slug nickname so5TrophiesSummary(sport: $sport) { finalRankings podiumRankings cardRewards totalMonetaryRewards(referenceCurrency: EUR) { eurCents } } } }",
+        "queryParams": {
+          "sport": "$sport"
+        }
+      }
+    },
+    {
       "name": "sorare_live_sale_offers",
       "description": "List currently-live single-sale offers on the secondary market (Sorare's 'transfer market'). Optionally filter by player slug or sport. For rarity / max-price filters use sorare_graphql_query.",
       "parameters": {
