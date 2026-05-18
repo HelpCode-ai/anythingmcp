@@ -29,7 +29,7 @@ services:
 
   # NestJS Backend + Next.js Frontend (single container)
   app:
-    image: helpcodeai/anythingmcp:latest
+    image: helpcodeai/anythingmcp:2a40cff
     container_name: amcp-cloud-app
     expose:
       - "3000"
