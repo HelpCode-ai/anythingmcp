@@ -29,7 +29,6 @@ Sorare ist das größte NFT-Fantasy-Football-Spiel mit voller GraphQL-Abdeckung 
 
 1. Bei https://sorare.com einloggen.
 2. Optional: 2FA auf einem Read-only-MCP-Konto deaktivieren — `signIn` lehnt Aufrufe ohne aktuelles OTP ab, und OTPs lassen sich nicht für einen Server vorrotieren.
-3. Eine freie **AUD**-Zeichenkette wählen (z. B. `my-mcp-server`). Sorare bettet sie als JWT-`aud`-Claim ein und fordert sie bei jedem privaten Call.
 
 ### Schritt 2 — Sorare-Adapter installieren
 
@@ -44,7 +43,6 @@ cd anythingmcp && docker compose up -d
 |---|---|
 | `SORARE_EMAIL` | Kontomail |
 | `SORARE_PASSWORD` | Klartext-Passwort |
-| `SORARE_AUD` | AUD-String aus Schritt 1 |
 
 **Install** klicken — der Adapter steht mit 7 Tools im Katalog.
 

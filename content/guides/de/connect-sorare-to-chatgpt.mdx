@@ -29,7 +29,6 @@ ChatGPT unterstützt das **Model Context Protocol** in Custom Connectors und in 
 
 1. Bei https://sorare.com einloggen.
 2. (Optional) dediziertes Read-only-Konto ohne 2FA anlegen.
-3. AUD-String wählen (z. B. `my-mcp-server`); er landet im JWT-`aud`-Claim.
 
 ### Schritt 2 — Sorare-Adapter installieren
 
@@ -44,7 +43,6 @@ cd anythingmcp && docker compose up -d
 |---|---|
 | `SORARE_EMAIL` | Kontomail |
 | `SORARE_PASSWORD` | Klartext-Passwort |
-| `SORARE_AUD` | dein AUD-String |
 
 ### Schritt 3 — MCP-Connector in ChatGPT hinzufügen
 

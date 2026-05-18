@@ -95,6 +95,29 @@ The `$` prefix means "take the value from the tool input parameter with this nam
 }
 ```
 
+For generic tools that take the GraphQL operation **as input**, set `path` to a `$paramName` reference and use `variablesFromParam` to forward the variables map verbatim:
+
+```json
+{
+  "method": "query",
+  "path": "$query",
+  "variablesFromParam": "variables"
+}
+```
+
+The GraphQL engine also supports `"method": "static"`, which returns `path` verbatim with no HTTP call — useful for tools that just need to expose a fixed value (e.g. the URL of the SDL schema).
+
+#### GraphQL builtin tools (auto-injected)
+
+Every adapter with `connector.type === "GRAPHQL"` is automatically extended with four generic tools:
+
+- `<slug>_graphql_schema_url` — returns the URL of the SDL schema (default `${baseUrl}/schema`, override via `connector.schemaUrl`)
+- `<slug>_graphql_query` — execute an arbitrary `query`
+- `<slug>_graphql_mutation` — execute an arbitrary `mutation`
+- `<slug>_graphql_subscription` — execute an arbitrary `subscription` (transport availability depends on the upstream API)
+
+Adapter authors don't need to declare them.
+
 ### SOAP Example
 
 ```json

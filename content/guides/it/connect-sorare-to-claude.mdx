@@ -29,7 +29,6 @@ Sorare è il più grande gioco di fantasy football NFT, con copertura GraphQL co
 
 1. Login su https://sorare.com.
 2. Opzionale: disattiva 2FA su un account read-only dedicato a MCP — `signIn` rifiuta richieste senza OTP aggiornata, e l'OTP non si può pre-ruotare per un server.
-3. Scegli una stringa libera **AUD** (es. `my-mcp-server`). Sorare la inserisce come claim `aud` del JWT e la richiede in ogni chiamata privata.
 
 ### Step 2 — Installa l'adapter Sorare
 
@@ -44,7 +43,6 @@ Apri `http://localhost:3000/connectors/store`, clicca **Sorare** e compila:
 |---|---|
 | `SORARE_EMAIL` | email account |
 | `SORARE_PASSWORD` | password in chiaro |
-| `SORARE_AUD` | stringa AUD scelta allo step 1 |
 
 Clicca **Install** — l'adapter è nel catalogo con 7 tool.
 

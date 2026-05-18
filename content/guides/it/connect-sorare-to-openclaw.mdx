@@ -30,7 +30,6 @@ Come per qualsiasi altro client:
 
 1. Login su https://sorare.com.
 2. Usa (o crea) un account read-only senza 2FA.
-3. Scegli una stringa **AUD** per il claim `aud` del JWT (es. `openclaw-mcp`).
 
 ### Step 2 — Installa l'adapter Sorare
 
@@ -39,7 +38,7 @@ git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp && docker compose up -d
 ```
 
-Apri `http://localhost:3000/connectors/store`, clicca **Sorare**, inserisci `SORARE_EMAIL`, `SORARE_PASSWORD`, `SORARE_AUD`. Genera una MCP API key in **Profile → MCP API Keys**.
+Apri `http://localhost:3000/connectors/store`, clicca **Sorare**, inserisci `SORARE_EMAIL` e `SORARE_PASSWORD`. Genera una MCP API key in **Profile → MCP API Keys**.
 
 ### Step 3 — Registra il server MCP in OpenClaw
 

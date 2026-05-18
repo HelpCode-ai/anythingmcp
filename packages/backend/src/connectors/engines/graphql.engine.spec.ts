@@ -296,4 +296,56 @@ describe('GraphqlEngine', () => {
     );
     expect(mockedAxios.post).toHaveBeenCalledTimes(2);
   });
+
+  it('returns endpointMapping.path verbatim when method=static (no HTTP call)', async () => {
+    const result = await engine.execute(
+      { baseUrl: 'https://api.example.com/graphql', authType: 'NONE' },
+      { method: 'static', path: 'https://api.example.com/graphql/schema' },
+      {},
+    );
+    expect(result).toBe('https://api.example.com/graphql/schema');
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('resolves $paramName form in path to take the GraphQL document from a tool param', async () => {
+    mockedAxios.post.mockResolvedValue({ data: { data: { users: [] } } });
+
+    await engine.execute(
+      { baseUrl: 'https://api.example.com/graphql', authType: 'NONE' },
+      { method: 'query', path: '$query', variablesFromParam: 'variables' },
+      { query: 'query Users { users { id } }', variables: { foo: 'bar' } },
+    );
+
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'https://api.example.com/graphql',
+      { query: 'query Users { users { id } }', variables: { foo: 'bar' } },
+      expect.any(Object),
+    );
+  });
+
+  it('throws a clear error if the $paramName for the query is missing', async () => {
+    await expect(
+      engine.execute(
+        { baseUrl: 'https://api.example.com/graphql', authType: 'NONE' },
+        { method: 'query', path: '$query', variablesFromParam: 'variables' },
+        {},
+      ),
+    ).rejects.toThrow(/non-empty string param "query"/);
+  });
+
+  it('treats variablesFromParam without an object value as an empty variables map', async () => {
+    mockedAxios.post.mockResolvedValue({ data: { data: {} } });
+
+    await engine.execute(
+      { baseUrl: 'https://api.example.com/graphql', authType: 'NONE' },
+      { method: 'query', path: '$query', variablesFromParam: 'variables' },
+      { query: '{ me { id } }' },
+    );
+
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ variables: {} }),
+      expect.any(Object),
+    );
+  });
 });

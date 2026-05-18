@@ -32,7 +32,7 @@ git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp && docker compose up -d
 ```
 
-Open `http://localhost:3000/connectors/store`, pick **Sorare**, and paste in `SORARE_EMAIL`, `SORARE_PASSWORD`, `SORARE_AUD` (any string — Sorare uses it as the JWT `aud` claim).
+Open `http://localhost:3000/connectors/store`, pick **Sorare**, and paste in `SORARE_EMAIL` and `SORARE_PASSWORD`. The JWT `aud` claim is set to a fixed value (`anythingmcp`) by the adapter, so you don't have to choose one.
 
 Mint an MCP API key from **Profile → MCP API Keys** and point your agent at `http://localhost:4000/mcp`.
 

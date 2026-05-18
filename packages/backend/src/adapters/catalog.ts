@@ -71,11 +71,91 @@ export interface AdapterDefinition extends AdapterMeta {
   }>;
 }
 
+/**
+ * Auto-inject four generic GraphQL helper tools onto any GRAPHQL adapter:
+ *   - `<slug>_graphql_schema_url`   — returns the URL of the SDL schema (or the value of
+ *                                     `connector.schemaUrl` if the adapter overrides it)
+ *   - `<slug>_graphql_query`        — execute an arbitrary `query` document
+ *   - `<slug>_graphql_mutation`     — execute an arbitrary `mutation` document
+ *   - `<slug>_graphql_subscription` — execute an arbitrary `subscription` document
+ *                                     (transport availability depends on the upstream API)
+ *
+ * These give an MCP agent a fallback path when no purpose-built tool covers a
+ * needed operation — the agent fetches the schema, composes the operation,
+ * and runs it. Adapter authors don't need to declare them.
+ */
+function withGraphqlBuiltins(adapter: AdapterDefinition): AdapterDefinition {
+  if (adapter.connector.type !== 'GRAPHQL') return adapter;
+  const slug = adapter.slug;
+  const schemaUrl =
+    (adapter.connector as { schemaUrl?: string }).schemaUrl ||
+    `${adapter.connector.baseUrl.replace(/\/+$/, '')}/schema`;
+
+  const variablesSchema = {
+    type: 'object',
+    description: 'GraphQL variables map (optional). Keys must match $variables declared in the operation.',
+    additionalProperties: true,
+  };
+
+  const buildOpTool = (
+    op: 'query' | 'mutation' | 'subscription',
+  ): AdapterDefinition['tools'][number] => ({
+    name: `${slug}_graphql_${op}`,
+    description:
+      `Execute an arbitrary GraphQL ${op} against ${adapter.name}. ` +
+      `Use only when no purpose-built tool covers the operation. ` +
+      `Authentication is injected automatically.` +
+      (op === 'subscription'
+        ? ' Note: subscriptions over the default HTTP transport may not be supported by the upstream API.'
+        : ''),
+    parameters: {
+      type: 'object',
+      properties: {
+        [op]: {
+          type: 'string',
+          description: `GraphQL ${op} document. Example: \`${op} Name($a: ID!) { … }\`.`,
+        },
+        variables: variablesSchema,
+      },
+      required: [op],
+      additionalProperties: false,
+    },
+    endpointMapping: {
+      method: op,
+      path: `$${op}`,
+      variablesFromParam: 'variables',
+    },
+  });
+
+  const builtins: AdapterDefinition['tools'] = [
+    {
+      name: `${slug}_graphql_schema_url`,
+      description:
+        `Returns the URL of the GraphQL SDL schema for ${adapter.name}. ` +
+        `Fetch it with a web tool (e.g. \`web_fetch\`) to discover available types and fields before composing a custom query.`,
+      parameters: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+      },
+      endpointMapping: {
+        method: 'static',
+        path: schemaUrl,
+      },
+    },
+    buildOpTool('query'),
+    buildOpTool('mutation'),
+    buildOpTool('subscription'),
+  ];
+
+  return { ...adapter, tools: [...builtins, ...adapter.tools] };
+}
+
 // Register all adapters here. To add a new adapter:
 // 1. Create the JSON file in the appropriate region folder
 // 2. Import it above
 // 3. Add it to this array
-const ALL_ADAPTERS: AdapterDefinition[] = [
+const RAW_ADAPTERS: AdapterDefinition[] = [
   dhlTracking as unknown as AdapterDefinition,
   bundesbank as unknown as AdapterDefinition,
   destatisGenesis as unknown as AdapterDefinition,
@@ -114,6 +194,8 @@ const ALL_ADAPTERS: AdapterDefinition[] = [
   lineMessaging as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
 ];
+
+const ALL_ADAPTERS: AdapterDefinition[] = RAW_ADAPTERS.map(withGraphqlBuiltins);
 
 export function listAdapters(): AdapterMeta[] {
   return ALL_ADAPTERS.map((adapter) => ({

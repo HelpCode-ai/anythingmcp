@@ -14,7 +14,12 @@ const VALID_PASSWORD_HASHING_SCHEMES = new Set(['bcrypt', 'none']);
 const VALID_SALT_SOURCE_TYPES = new Set(['fetch', 'static']);
 
 const VALID_REST_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
-const VALID_GRAPHQL_METHODS = new Set(['QUERY', 'MUTATION', 'SUBSCRIPTION']);
+const VALID_GRAPHQL_METHODS = new Set([
+  'QUERY',
+  'MUTATION',
+  'SUBSCRIPTION',
+  'STATIC',
+]);
 
 /**
  * Recursively collect every string value in an object/array, together with the
@@ -47,6 +52,35 @@ describe('adapter catalog', () => {
   it('has unique slugs', () => {
     const slugs = adapters.map((a) => a.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
+  });
+
+  describe('GraphQL adapters get auto-injected builtin tools', () => {
+    const graphqlAdapters = adapters
+      .map((m) => getAdapter(m.slug)!)
+      .filter((a) => a.connector.type === 'GRAPHQL');
+
+    it.each(graphqlAdapters.map((a) => [a.slug, a]))(
+      '%s exposes _graphql_schema_url, _graphql_query, _graphql_mutation, _graphql_subscription',
+      (_slug, adapter) => {
+        const names = new Set(adapter.tools.map((t) => t.name));
+        expect(names.has(`${adapter.slug}_graphql_schema_url`)).toBe(true);
+        expect(names.has(`${adapter.slug}_graphql_query`)).toBe(true);
+        expect(names.has(`${adapter.slug}_graphql_mutation`)).toBe(true);
+        expect(names.has(`${adapter.slug}_graphql_subscription`)).toBe(true);
+      },
+    );
+
+    it.each(graphqlAdapters.map((a) => [a.slug, a]))(
+      '%s _graphql_schema_url returns a URL string via method=static',
+      (_slug, adapter) => {
+        const tool = adapter.tools.find(
+          (t) => t.name === `${adapter.slug}_graphql_schema_url`,
+        )!;
+        const em = tool.endpointMapping as { method: string; path: string };
+        expect(em.method).toBe('static');
+        expect(em.path).toMatch(/^https?:\/\//);
+      },
+    );
   });
 
   describe.each(adapters)('$slug', (meta) => {

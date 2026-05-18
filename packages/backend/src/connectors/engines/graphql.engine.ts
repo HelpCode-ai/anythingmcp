@@ -29,14 +29,21 @@ export class GraphqlEngine {
       connectorId?: string;
     },
     endpointMapping: {
-      method: string; // "query" or "mutation"
-      path: string; // GraphQL query string
+      method: string; // "query" | "mutation" | "subscription" | "static"
+      path: string; // GraphQL query string, or "$paramName" to take it from a tool param, or a literal value when method is "static"
       queryParams?: Record<string, unknown>; // variable mapping
       bodyMapping?: Record<string, unknown>;
       headers?: Record<string, string>; // dynamic header mapping
+      variablesFromParam?: string; // when set, the named tool param is used as the entire GraphQL variables map
     },
     params: Record<string, unknown>,
   ): Promise<unknown> {
+    // Static short-circuit: tool returns a literal value without any HTTP call.
+    // Used by the auto-injected `<slug>_graphql_schema_url` tool.
+    if (endpointMapping.method === 'static') {
+      return endpointMapping.path;
+    }
+
     this.logger.debug(`GraphQL ${endpointMapping.method} → ${config.baseUrl}`);
     await assertSafeOutboundUrl(config.baseUrl);
 
@@ -96,9 +103,34 @@ export class GraphqlEngine {
       }
     }
 
-    // Map variables from params using queryParams mapping
-    const variables: Record<string, unknown> = {};
-    if (endpointMapping.queryParams) {
+    // Resolve the GraphQL document. The adapter spec can either hardcode it
+    // in `path`, or use the form `$paramName` to take it from a tool param
+    // (used by the generic `_graphql_query` / `_graphql_mutation` /
+    // `_graphql_subscription` builtins).
+    let queryDocument = endpointMapping.path;
+    if (
+      typeof queryDocument === 'string' &&
+      /^\$[A-Za-z_][A-Za-z0-9_]*$/.test(queryDocument)
+    ) {
+      const name = queryDocument.substring(1);
+      const v = params[name];
+      if (typeof v !== 'string' || !v.trim()) {
+        throw new Error(
+          `GraphQL tool requires a non-empty string param "${name}" to build the operation`,
+        );
+      }
+      queryDocument = v;
+    }
+
+    // Variables can come from (a) a single param holding the whole map, or
+    // (b) the legacy per-key `queryParams` mapping.
+    let variables: Record<string, unknown> = {};
+    if (endpointMapping.variablesFromParam) {
+      const v = params[endpointMapping.variablesFromParam];
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        variables = v as Record<string, unknown>;
+      }
+    } else if (endpointMapping.queryParams) {
       for (const [key, value] of Object.entries(endpointMapping.queryParams)) {
         if (typeof value === 'string' && value.startsWith('$')) {
           variables[key] = params[value.substring(1)];
@@ -109,7 +141,7 @@ export class GraphqlEngine {
     }
 
     const requestConfig = {
-      query: endpointMapping.path,
+      query: queryDocument,
       variables,
     };
 
