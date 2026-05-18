@@ -2,6 +2,8 @@
   <img src="../assets/icons/sorare.svg" alt="Sorare" width="220" />
 </p>
 
+> 💡 **No install? Use [cloud.anythingmcp.com](https://cloud.anythingmcp.com) directly.** Sign in, click **Connectors → Sorare**, paste your Sorare email + password, mint an MCP API key — done. No Docker, no `git clone`, no local server to run. You can skip the local-install steps below and jump straight to the client-wiring section.
+
 # Sorare to MCP — Connect Sorare GraphQL API to any AI agent
 
 **Keywords:** sorare mcp · sorare to mcp · sorare graphql mcp · sorare api mcp · sorare model context protocol · sorare ai · sorare ai agent · connect sorare api · sorare bcrypt auth · sorare jwt 30 days · fantasy football mcp · nft fantasy mcp

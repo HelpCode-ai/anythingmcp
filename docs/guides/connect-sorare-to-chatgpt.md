@@ -2,6 +2,8 @@
   <img src="../assets/icons/sorare.svg" alt="Sorare" width="220" />
 </p>
 
+> 💡 **No install? Use [cloud.anythingmcp.com](https://cloud.anythingmcp.com) directly.** Sign in, click **Connectors → Sorare**, paste your Sorare email + password, mint an MCP API key — done. No Docker, no `git clone`, no local server to run. You can skip the local-install steps below and jump straight to the client-wiring section.
+
 # Connect Sorare to ChatGPT — fantasy football tools inside GPT
 
 **Keywords:** connect sorare to chatgpt · sorare chatgpt · sorare gpt · sorare openai · sorare chatgpt connector · sorare chatgpt mcp · fantasy football chatgpt · sorare ai chatgpt
