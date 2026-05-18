@@ -1,0 +1,101 @@
+---
+title: "Come collegare Sorare a Claude — Fantasy Football NFT via MCP"
+description: "Collega l'API GraphQL di Sorare a Claude con AnythingMCP. Interroga carte, giocatori, line-up e mercato in linguaggio naturale. Bcrypt-login e caching token a 30 giorni gestiti in automatico."
+category: "connectors"
+keyword: "Sorare Claude, Sorare AI, Sorare MCP Claude, Sorare GraphQL Claude, fantasy football Claude"
+publishedAt: "2026-05-18"
+adapterSlug: "sorare"
+lang: "it"
+---
+
+## Collegare Sorare a Claude
+
+Sorare è il più grande gioco di fantasy football NFT, con copertura GraphQL completa su carte, giocatori, line-up e mercato dei trasferimenti. Con AnythingMCP guidi tutto da Claude Desktop o Claude Code in italiano — senza incollare SDK e senza dover rinfrescare token a mano.
+
+### Cosa puoi fare
+
+- "Mostrami il mio account Sorare e il numero di carte rare."
+- "Lista le prossime 5 carte rare di Messi all'asta sotto 0,05 ETH."
+- "Trova tutte le mie carte dei giocatori del Real Madrid."
+- "Chi ha fatto lo score più alto nella line-up So5 `abc-123`?"
+
+### Prerequisiti
+
+- Account Sorare attivo (consigliato un account dedicato in sola lettura con **2FA disattivata** per uso headless).
+- AnythingMCP in locale o su cloud.anythingmcp.com (setup di 3 minuti).
+- Claude Desktop installato.
+
+### Step 1 — Ottieni gli accessi Sorare
+
+1. Login su https://sorare.com.
+2. Opzionale: disattiva 2FA su un account read-only dedicato a MCP — `signIn` rifiuta richieste senza OTP aggiornata, e l'OTP non si può pre-ruotare per un server.
+3. Scegli una stringa libera **AUD** (es. `my-mcp-server`). Sorare la inserisce come claim `aud` del JWT e la richiede in ogni chiamata privata.
+
+### Step 2 — Installa l'adapter Sorare
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Apri `http://localhost:3000/connectors/store`, clicca **Sorare** e compila:
+
+| Campo | Valore |
+|---|---|
+| `SORARE_EMAIL` | email account |
+| `SORARE_PASSWORD` | password in chiaro |
+| `SORARE_AUD` | stringa AUD scelta allo step 1 |
+
+Clicca **Install** — l'adapter è nel catalogo con 7 tool.
+
+### Step 3 — Configura Claude Desktop
+
+Crea una MCP API key in **Profile → MCP API Keys**, poi aggiungi a `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "sorare": {
+      "url": "http://localhost:4000/mcp",
+      "headers": {
+        "Authorization": "Bearer LA_TUA_MCP_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Riavvia Claude Desktop. I tool Sorare compaiono nel menu 🔧.
+
+### Tool disponibili
+
+| Tool | Descrizione |
+|---|---|
+| `sorare_current_user` | Profilo autenticato |
+| `sorare_get_card_by_slug` | Dettagli carta per slug |
+| `sorare_search_player` | Ricerca giocatori per nome |
+| `sorare_list_player_cards` | Carte recenti di un giocatore |
+| `sorare_list_my_cards` | Le tue carte |
+| `sorare_get_lineup` | Line-up So5 con score + reward |
+| `sorare_transfer_market` | Aste attive, filtrabili |
+
+### Rotazione token spiegata
+
+Il JWT di Sorare dura ~30 giorni. AnythingMCP lo cacha cifrato a riposo, **lo ri-emette 24 h prima della scadenza** e fa re-login a qualsiasi 401 (senza rileggere la password dal disco — l'hash bcrypt viene ricalcolato dal salt appena rifetchato). Non vedi mai un errore di token scaduto.
+
+### FAQ
+
+**AnythingMCP salva la mia password Sorare in chiaro?**
+Solo dentro il blob `authConfig` cifrato (AES-256-GCM). Sul filo passa solo l'hash bcrypt, solo durante `signIn`.
+
+**Posso usare un account Sorare con 2FA?**
+La mutation `signIn` richiede un `otpAttempt` aggiornato per gli account con 2FA, e non è automatizzabile. Usa un account dedicato read-only senza 2FA.
+
+**Funziona con Claude Code oltre che Claude Desktop?**
+Sì — punta la config MCP di Claude Code allo stesso URL `http://localhost:4000/mcp`.
+
+### Prossimi passi
+
+- [Sorare su MCP — guida generica](./sorare-to-mcp)
+- [Collegare Sorare a ChatGPT](./connect-sorare-to-chatgpt)
+- [Collegare Sorare a OpenClaw](./connect-sorare-to-openclaw)

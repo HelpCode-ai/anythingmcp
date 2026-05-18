@@ -1,0 +1,101 @@
+---
+title: "Sorare mit Claude verbinden — NFT-Fantasy-Football über MCP"
+description: "Sorares GraphQL-API mit AnythingMCP an Claude anbinden. Karten, Spieler, Aufstellungen und Transfermarkt per natürlicher Sprache abfragen. Bcrypt-Login und 30-Tage-Token-Caching sind automatisiert."
+category: "connectors"
+keyword: "Sorare Claude, Sorare KI, Sorare MCP Claude, Sorare GraphQL Claude, Fantasy Football Claude"
+publishedAt: "2026-05-18"
+adapterSlug: "sorare"
+lang: "de"
+---
+
+## Sorare mit Claude verbinden
+
+Sorare ist das größte NFT-Fantasy-Football-Spiel mit voller GraphQL-Abdeckung von Karten, Spielern, Aufstellungen und Transfermarkt. Mit AnythingMCP steuerst du alles direkt aus Claude Desktop oder Claude Code in Klartext — ohne SDK-Kleber, ohne manuelle Token-Rotation.
+
+### Was du tun kannst
+
+- "Zeig mein Sorare-Konto und meine Anzahl seltener Karten."
+- "Liste die nächsten 5 Messi-Rare-Karten unter 0,05 ETH im Auktionshaus."
+- "Finde alle meine Karten von Real-Madrid-Spielern."
+- "Wer hatte den höchsten Score in So5-Aufstellung `abc-123`?"
+
+### Voraussetzungen
+
+- Aktives Sorare-Konto (empfohlen: dediziertes, **2FA-deaktiviertes** Read-only-Konto für Headless-Nutzung).
+- AnythingMCP lokal oder auf cloud.anythingmcp.com (3-Minuten-Setup).
+- Claude Desktop installiert.
+
+### Schritt 1 — Sorare-Zugang besorgen
+
+1. Bei https://sorare.com einloggen.
+2. Optional: 2FA auf einem Read-only-MCP-Konto deaktivieren — `signIn` lehnt Aufrufe ohne aktuelles OTP ab, und OTPs lassen sich nicht für einen Server vorrotieren.
+3. Eine freie **AUD**-Zeichenkette wählen (z. B. `my-mcp-server`). Sorare bettet sie als JWT-`aud`-Claim ein und fordert sie bei jedem privaten Call.
+
+### Schritt 2 — Sorare-Adapter installieren
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+`http://localhost:3000/connectors/store` öffnen, **Sorare** anklicken, ausfüllen:
+
+| Feld | Wert |
+|---|---|
+| `SORARE_EMAIL` | Kontomail |
+| `SORARE_PASSWORD` | Klartext-Passwort |
+| `SORARE_AUD` | AUD-String aus Schritt 1 |
+
+**Install** klicken — der Adapter steht mit 7 Tools im Katalog.
+
+### Schritt 3 — Claude Desktop konfigurieren
+
+MCP-API-Key unter **Profile → MCP API Keys** erzeugen, dann in `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "sorare": {
+      "url": "http://localhost:4000/mcp",
+      "headers": {
+        "Authorization": "Bearer DEIN_MCP_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Claude Desktop neu starten. Sorare-Tools erscheinen im 🔧-Menü.
+
+### Verfügbare Tools
+
+| Tool | Beschreibung |
+|---|---|
+| `sorare_current_user` | Eigenes Profil |
+| `sorare_get_card_by_slug` | Kartendetails per Slug |
+| `sorare_search_player` | Spielersuche nach Name |
+| `sorare_list_player_cards` | Aktuelle Karten zu einem Spieler |
+| `sorare_list_my_cards` | Eigene Karten |
+| `sorare_get_lineup` | So5-Score + Reward |
+| `sorare_transfer_market` | Aktive Auktionen, filterbar |
+
+### Token-Rotation erklärt
+
+Sorare-JWTs sind ~30 Tage gültig. AnythingMCP cacht sie verschlüsselt, **stellt sie 24 h vor Ablauf neu aus** und meldet sich bei jedem 401 neu an (ohne dass dein Passwort erneut von der Platte gelesen wird — der bcrypt-Hash wird aus dem frisch geholten Salt neu berechnet). Du siehst nie einen "Token expired"-Fehler.
+
+### FAQ
+
+**Speichert AnythingMCP mein Klartext-Sorare-Passwort?**
+Nur im verschlüsselten `authConfig`-Blob (AES-256-GCM). Übers Netz geht ausschließlich der bcrypt-Hash, ausschließlich bei `signIn`.
+
+**Kann ich ein Sorare-Konto mit 2FA verwenden?**
+Die `signIn`-Mutation braucht einen frischen `otpAttempt`, der sich nicht automatisieren lässt. Nutze ein dediziertes Read-only-Konto ohne 2FA.
+
+**Funktioniert das auch mit Claude Code statt Claude Desktop?**
+Ja — verweise die MCP-Server-Config von Claude Code auf dieselbe URL `http://localhost:4000/mcp`.
+
+### Nächste Schritte
+
+- [Sorare an MCP anbinden — generischer Leitfaden](./sorare-to-mcp)
+- [Sorare mit ChatGPT verbinden](./connect-sorare-to-chatgpt)
+- [Sorare mit OpenClaw verbinden](./connect-sorare-to-openclaw)

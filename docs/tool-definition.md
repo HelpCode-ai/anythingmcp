@@ -188,4 +188,50 @@ This filters the response to only include the specified fields, reducing token u
 
 ---
 
-[Back to README](../README.md) | [API Reference](api-reference.md) | [REST Connector](connectors/rest.md)
+## Authentication: `LOGIN_TOKEN`
+
+In addition to the standard `NONE` / `API_KEY` / `BEARER_TOKEN` / `BASIC_AUTH` / `OAUTH2` / `QUERY_AUTH` / `WS_SECURITY` / `CERTIFICATE` / `CONNECTION_STRING` schemes, the connector spec supports `LOGIN_TOKEN` for APIs that issue a long-lived bearer **in exchange for a credentials POST** — optionally requiring the password to be **bcrypt-hashed with a salt fetched from the remote service** (Sorare-style).
+
+The engine handles salt fetch → bcrypt → login → token cache → proactive refresh → re-login-on-401 automatically. Adapter authors declare the full flow as JSON:
+
+```json
+{
+  "authType": "LOGIN_TOKEN",
+  "authConfig": {
+    "loginUrl": "https://api.example.com/graphql",
+    "loginMethod": "POST",
+    "loginBody": {
+      "query": "mutation Login($email: String!, $password: String!) { signIn(input: {email: $email, password: $password}) { jwtToken { token expiredAt } } }",
+      "variables": { "email": "${username}", "password": "${passwordHashed}" }
+    },
+    "username": "{{SERVICE_EMAIL}}",
+    "password": "{{SERVICE_PASSWORD}}",
+    "aud": "{{SERVICE_AUD}}",
+    "passwordHashing": {
+      "scheme": "bcrypt",
+      "saltSource": {
+        "type": "fetch",
+        "method": "GET",
+        "url": "https://api.example.com/api/v1/users/${username}",
+        "responsePath": "salt"
+      },
+      "outputParam": "passwordHashed"
+    },
+    "tokenJsonPath": "data.signIn.jwtToken.token",
+    "expiryJsonPath": "data.signIn.jwtToken.expiredAt",
+    "expiryFormat": "iso8601",
+    "tokenTTLSeconds": 2592000,
+    "refreshOn401": true,
+    "proactiveRefreshSeconds": 86400,
+    "headerName": "Authorization",
+    "headerTemplate": "Bearer ${token}",
+    "extraHeaders": { "JWT-AUD": "${aud}" }
+  }
+}
+```
+
+See [`docs/connectors/login-token-auth.md`](connectors/login-token-auth.md) for the full field-by-field reference, salt-source types (`fetch` vs `static`), expiry formats (`iso8601` / `unix` / `ttl_seconds`), and re-login policies.
+
+---
+
+[Back to README](../README.md) | [API Reference](api-reference.md) | [REST Connector](connectors/rest.md) | [LOGIN_TOKEN reference](connectors/login-token-auth.md)

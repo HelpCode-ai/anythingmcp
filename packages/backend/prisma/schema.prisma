@@ -254,6 +254,7 @@ enum AuthType {
   WS_SECURITY
   CERTIFICATE
   CONNECTION_STRING
+  LOGIN_TOKEN
 }
 
 model Connector {
@@ -298,9 +299,29 @@ model Connector {
   resources  McpResource[]
   prompts    McpPrompt[]
   mcpServers McpServerConnector[]
+  authCache  ConnectorAuthCache?
 
   @@index([organizationId])
   @@map("connectors")
+}
+
+// ── Connector Auth Cache ────────────────────────────────────────────────────
+// Stores short-/long-lived tokens issued by remote auth flows (e.g. LOGIN_TOKEN
+// adapters such as Sorare) so we don't re-login on every tool call.
+// Token is encrypted at rest with the same AES-256-GCM key as authConfig.
+
+model ConnectorAuthCache {
+  id          String    @id @default(cuid())
+  connectorId String    @unique @map("connector_id")
+  connector   Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  token     String    @db.Text // encrypted bearer token
+  metadata  Json?     // free-form: aud claim, refresh tokens, scopes, etc.
+  expiresAt DateTime  @map("expires_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("connector_auth_cache")
 }
 
 // ── MCP Tool Definition ─────────────────────────────────────────────────────

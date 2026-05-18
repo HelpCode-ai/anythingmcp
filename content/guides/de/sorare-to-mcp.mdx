@@ -1,0 +1,59 @@
+---
+title: "Sorare an MCP anbinden — NFT-Fantasy-Football für jeden KI-Agenten"
+description: "Sorares GraphQL-API als MCP-Server mit AnythingMCP bereitstellen. Bcrypt-gesalzene Anmeldung, 30-Tage-JWT-Caching und 7 sofort einsatzbereite Tools für Karten, Spieler, Aufstellungen und Transfermarkt."
+category: "connectors"
+keyword: "Sorare MCP, Sorare API MCP, Sorare KI-Agent, Sorare GraphQL, Fantasy Football MCP Server"
+publishedAt: "2026-05-18"
+adapterSlug: "sorare"
+lang: "de"
+---
+
+## Sorare im Model Context Protocol
+
+[Sorare](https://sorare.com/) ist das größte lizenzierte NFT-Fantasy-Sportspiel und bietet eine vollständige GraphQL-Schnittstelle für Spieler, Karten, Auktionen und So5-Aufstellungen. AnythingMCP verpackt diese GraphQL-API als **MCP-Server**, sodass jeder Agent — Claude, ChatGPT, OpenClaw, Cursor oder eigene Implementierungen — Sorare-Daten in natürlicher Sprache lesen und nutzen kann.
+
+Der Sorare-Adapter ist out-of-the-box enthalten. Kein SDK zu pflegen, keine Token-Logik zu schreiben: die Engine führt den Salt-Fetch + bcrypt + Login-Handshake beim ersten Tool-Aufruf aus, cacht das JWT für 30 Tage und stellt es bei einem 401 transparent neu aus.
+
+### Warum Sorare ohne AnythingMCP unangenehm ist
+
+| Schritt | Was Sorare verlangt |
+|---|---|
+| 1 | `GET /api/v1/users/{email}` zum Holen eines bcrypt-Salts pro Account |
+| 2 | `bcrypt.hashSync(plainPassword, salt)` clientseitig |
+| 3 | GraphQL-`signIn`-Mutation mit dem bcrypt-Hash |
+| 4 | JWT speichern (~30 Tage Gültigkeit) und bei jedem Call `Authorization: Bearer <jwt>` + `JWT-AUD: <aud>` mitsenden |
+
+Das gesamte **`LOGIN_TOKEN`**-Auth-Profil wird einmal als JSON in der Adapter-Spezifikation deklariert. Kein Client-Code, der gepflegt werden muss.
+
+### Installation
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffne `http://localhost:3000/connectors/store`, wähle **Sorare** und trage `SORARE_EMAIL`, `SORARE_PASSWORD`, `SORARE_AUD` ein (beliebige Zeichenkette — Sorare nutzt sie als `aud`-Claim des JWT).
+
+Erstelle einen MCP-API-Key unter **Profile → MCP API Keys** und verweise deinen Agenten auf `http://localhost:4000/mcp`.
+
+### Verfügbare Tools
+
+| Tool | Rückgabe |
+|---|---|
+| `sorare_current_user` | Slug, E-Mail, Nickname des angemeldeten Nutzers |
+| `sorare_get_card_by_slug` | Karten-Metadaten, Besitzer, aktuelle Auktion |
+| `sorare_search_player` | Spieler nach Name + Club + Land |
+| `sorare_list_player_cards` | Neu geprägte Karten zu einem Spieler |
+| `sorare_list_my_cards` | Karten im Besitz des angemeldeten Nutzers |
+| `sorare_get_lineup` | So5-Aufstellung: Score, Rang, Belohnung, Auftritte |
+| `sorare_transfer_market` | Aktive Auktionen, filterbar nach Rarität / Maximalpreis |
+
+### Token-Lifecycle
+
+Das JWT liegt in `connector_auth_cache` (AES-256-GCM verschlüsselt) und wird proaktiv erneuert, wenn weniger als 24 h bis `expiredAt` verbleiben — oder spätestens beim ersten 401. Du kannst es mit `DELETE FROM connector_auth_cache WHERE connector_id = '<id>'` widerrufen — der nächste Tool-Call meldet sich neu an.
+
+### Nächste Schritte
+
+- [Sorare mit Claude verbinden](./connect-sorare-to-claude)
+- [Sorare mit ChatGPT verbinden](./connect-sorare-to-chatgpt)
+- [Sorare mit OpenClaw verbinden](./connect-sorare-to-openclaw)

@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
 import { OAuth2TokenService } from './oauth2-token.service';
+import {
+  LoginTokenService,
+  LoginTokenAuthConfig,
+} from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
 /**
@@ -11,7 +15,10 @@ import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 export class GraphqlEngine {
   private readonly logger = new Logger(GraphqlEngine.name);
 
-  constructor(private readonly oauth2TokenService: OAuth2TokenService) {}
+  constructor(
+    private readonly oauth2TokenService: OAuth2TokenService,
+    private readonly loginTokenService: LoginTokenService,
+  ) {}
 
   async execute(
     config: {
@@ -75,6 +82,15 @@ export class GraphqlEngine {
           const password = String(config.authConfig.password || '');
           headers['Authorization'] =
             `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+          break;
+        }
+        case 'LOGIN_TOKEN': {
+          const auth = config.authConfig as unknown as LoginTokenAuthConfig;
+          const bundle = await this.loginTokenService.getToken(
+            auth,
+            config.connectorId,
+          );
+          applyLoginTokenHeaders(headers, auth, bundle.token, bundle.aud);
           break;
         }
       }
@@ -143,7 +159,53 @@ export class GraphqlEngine {
           return retryResponse.data.data;
         }
       }
+      // LOGIN_TOKEN auto-relogin on 401
+      if (
+        error instanceof AxiosError &&
+        error.response?.status === 401 &&
+        config.authType === 'LOGIN_TOKEN' &&
+        (config.authConfig as Record<string, unknown> | undefined)?.refreshOn401 !==
+          false
+      ) {
+        this.logger.debug('LOGIN_TOKEN: 401 received, re-issuing token...');
+        const auth = config.authConfig as unknown as LoginTokenAuthConfig;
+        const bundle = await this.loginTokenService.forceRelogin(
+          auth,
+          config.connectorId,
+        );
+        applyLoginTokenHeaders(headers, auth, bundle.token, bundle.aud);
+        const retry = await axios.post(config.baseUrl, requestConfig, {
+          headers,
+          timeout: 30000,
+        });
+        if (retry.data.errors) {
+          throw new Error(
+            `GraphQL errors: ${JSON.stringify(retry.data.errors)}`,
+          );
+        }
+        return retry.data.data;
+      }
       throw error;
     }
+  }
+}
+
+/**
+ * Apply LOGIN_TOKEN headers (main bearer + extraHeaders) into a plain headers map,
+ * interpolating `${token}` and `${aud}` placeholders.
+ */
+export function applyLoginTokenHeaders(
+  headers: Record<string, string>,
+  auth: LoginTokenAuthConfig,
+  token: string,
+  aud?: string,
+): void {
+  const headerName = auth.headerName || 'Authorization';
+  const headerTemplate = auth.headerTemplate || 'Bearer ${token}';
+  const interpolate = (s: string): string =>
+    s.replace(/\$\{token\}/g, token).replace(/\$\{aud\}/g, aud || '');
+  headers[headerName] = interpolate(headerTemplate);
+  for (const [k, v] of Object.entries(auth.extraHeaders || {})) {
+    headers[k] = interpolate(String(v));
   }
 }

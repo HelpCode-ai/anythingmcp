@@ -9,6 +9,7 @@ import { GraphqlEngine } from './engines/graphql.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
+import { LoginTokenService } from './engines/login-token.service';
 import { OpenApiParser } from './parsers/openapi.parser';
 import { WsdlParser } from './parsers/wsdl.parser';
 import { GraphqlParser } from './parsers/graphql.parser';
@@ -31,7 +32,20 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
 @Module({
   imports: [McpServerModule, LicenseModule],
   controllers: [ConnectorsController, McpOAuthCallbackController, ToolsController],
-  providers: [ConnectorsService, McpOAuthService, OAuth2TokenService, ...ENGINES, ...PARSERS],
-  exports: [ConnectorsService, McpOAuthService, OAuth2TokenService, ...ENGINES],
+  providers: [
+    ConnectorsService,
+    McpOAuthService,
+    OAuth2TokenService,
+    LoginTokenService,
+    ...ENGINES,
+    ...PARSERS,
+  ],
+  exports: [
+    ConnectorsService,
+    McpOAuthService,
+    OAuth2TokenService,
+    LoginTokenService,
+    ...ENGINES,
+  ],
 })
 export class ConnectorsModule {}

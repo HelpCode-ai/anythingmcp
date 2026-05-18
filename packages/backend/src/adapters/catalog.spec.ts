@@ -7,9 +7,14 @@ const VALID_AUTH_TYPES = new Set([
   'BASIC_AUTH',
   'OAUTH2',
   'QUERY_AUTH',
+  'LOGIN_TOKEN',
 ]);
 
-const VALID_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const VALID_PASSWORD_HASHING_SCHEMES = new Set(['bcrypt', 'none']);
+const VALID_SALT_SOURCE_TYPES = new Set(['fetch', 'static']);
+
+const VALID_REST_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const VALID_GRAPHQL_METHODS = new Set(['QUERY', 'MUTATION', 'SUBSCRIPTION']);
 
 /**
  * Recursively collect every string value in an object/array, together with the
@@ -55,12 +60,37 @@ describe('adapter catalog', () => {
       expect(adapter.tools.length).toBeGreaterThan(0);
     });
 
+    if (meta.region === 'intl' || adapter.connector.authType === 'LOGIN_TOKEN') {
+      it('LOGIN_TOKEN authConfig is well-formed', () => {
+        if (adapter.connector.authType !== 'LOGIN_TOKEN') return;
+        const cfg = adapter.connector.authConfig as Record<string, unknown>;
+        expect(cfg).toBeDefined();
+        expect(typeof cfg.loginUrl).toBe('string');
+        expect(typeof cfg.tokenJsonPath).toBe('string');
+        if (cfg.passwordHashing) {
+          const ph = cfg.passwordHashing as Record<string, unknown>;
+          expect(VALID_PASSWORD_HASHING_SCHEMES.has(String(ph.scheme))).toBe(true);
+          if (ph.scheme === 'bcrypt') {
+            expect(ph.saltSource).toBeDefined();
+            const src = ph.saltSource as Record<string, unknown>;
+            expect(VALID_SALT_SOURCE_TYPES.has(String(src.type))).toBe(true);
+            if (src.type === 'fetch') expect(typeof src.url).toBe('string');
+            if (src.type === 'static') expect(typeof src.value).toBe('string');
+          }
+        }
+      });
+    }
+
     it.each(adapter.tools.map((t) => [t.name, t]))(
       '%s has a well-formed endpointMapping',
       (_name, tool) => {
         const em = tool.endpointMapping as Record<string, unknown>;
 
-        expect(VALID_METHODS.has(String(em.method).toUpperCase())).toBe(true);
+        const allowed =
+          adapter.connector.type === 'GRAPHQL'
+            ? VALID_GRAPHQL_METHODS
+            : VALID_REST_METHODS;
+        expect(allowed.has(String(em.method).toUpperCase())).toBe(true);
         expect(typeof em.path).toBe('string');
 
         // Legacy `body` field must be renamed to `bodyMapping`/`bodyTemplate`

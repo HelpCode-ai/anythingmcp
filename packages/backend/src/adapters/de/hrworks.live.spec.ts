@@ -1,6 +1,7 @@
 import * as adapter from './hrworks.json';
 import { RestEngine } from '../../connectors/engines/rest.engine';
 import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
+import { LoginTokenService } from '../../connectors/engines/login-token.service';
 
 /**
  * Smoke test against the real HR WORKS sandbox endpoint to verify that:
@@ -18,7 +19,8 @@ const maybe = process.env.RUN_HRWORKS_LIVE ? describe : describe.skip;
 maybe('hrworks adapter — live smoke test', () => {
   // Minimal stub — we don't exercise OAuth2 paths in this test
   const oauth = {} as unknown as OAuth2TokenService;
-  const engine = new RestEngine(oauth);
+  const login = {} as unknown as LoginTokenService;
+  const engine = new RestEngine(oauth, login);
 
   it('reaches HR WORKS auth endpoint and gets InvalidCredentials with bogus creds', async () => {
     const cfg = adapter as unknown as {

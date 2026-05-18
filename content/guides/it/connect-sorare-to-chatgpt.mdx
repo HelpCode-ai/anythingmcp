@@ -1,0 +1,90 @@
+---
+title: "Come collegare Sorare a ChatGPT — Fantasy Football per GPT"
+description: "Porta i dati di fantasy football NFT di Sorare in ChatGPT tramite il connector MCP integrato in AnythingMCP. Bcrypt-login e caching JWT a 30 giorni gestiti per te."
+category: "connectors"
+keyword: "Sorare ChatGPT, Sorare GPT, Sorare MCP ChatGPT, Sorare AI ChatGPT, fantasy football ChatGPT"
+publishedAt: "2026-05-18"
+adapterSlug: "sorare"
+lang: "it"
+---
+
+## Collegare Sorare a ChatGPT
+
+ChatGPT supporta il **Model Context Protocol** nei custom connector e nell'area Developer Tools. Con AnythingMCP che espone l'API GraphQL di Sorare come tool MCP, interroghi carte, giocatori, line-up e mercato direttamente da una conversazione ChatGPT — senza riti OAuth né babysitting dei token.
+
+### Cosa puoi fare
+
+- "Tirami su la mia line-up Sorare e dimmi dove sono debole questa game week."
+- "Lista ogni carta rara di Vinícius Júnior della stagione 2024."
+- "Qual è il floor price ora per le carte limited di Bukayo Saka?"
+- "Trova aste per giocatori del Liverpool che chiudono nei prossimi 90 minuti."
+
+### Prerequisiti
+
+- Account Sorare attivo (consigliato uno dedicato in sola lettura; **disattiva 2FA** per uso headless).
+- AnythingMCP in locale o su cloud.anythingmcp.com.
+- ChatGPT Plus / Team / Enterprise (i custom connector sono limitati ai tier a pagamento).
+
+### Step 1 — Accessi Sorare
+
+1. Login su https://sorare.com.
+2. (Opzionale) crea un account Sorare dedicato in sola lettura e disattiva la 2FA.
+3. Scegli una stringa **AUD** (es. `my-mcp-server`); va nel claim `aud` del JWT.
+
+### Step 2 — Installa l'adapter Sorare
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Apri `http://localhost:3000/connectors/store`, clicca **Sorare** e inserisci:
+
+| Campo | Valore |
+|---|---|
+| `SORARE_EMAIL` | email account |
+| `SORARE_PASSWORD` | password in chiaro |
+| `SORARE_AUD` | la tua stringa AUD |
+
+### Step 3 — Aggiungi il connector MCP a ChatGPT
+
+1. In AnythingMCP genera una MCP API key: **Profile → MCP API Keys → New Key**.
+2. In ChatGPT: **Impostazioni → Connectors → Aggiungi custom connector**.
+3. Compila:
+   - **Nome**: `Sorare`
+   - **URL**: `https://il-tuo-host-anythingmcp/mcp` (URL HTTPS pubblico — ChatGPT non vede `localhost`; esponi via Cloudflare Tunnel / ngrok / cloud.anythingmcp.com).
+   - **Authentication**: Bearer token → incolla la MCP API key.
+4. Salva. ChatGPT scopre automaticamente i 7 tool Sorare.
+
+### Tool disponibili
+
+| Tool | Descrizione |
+|---|---|
+| `sorare_current_user` | Profilo Sorare |
+| `sorare_get_card_by_slug` | Metadata carta + proprietario + asta |
+| `sorare_search_player` | Ricerca giocatori |
+| `sorare_list_player_cards` | Carte recenti di un giocatore |
+| `sorare_list_my_cards` | Le tue carte |
+| `sorare_get_lineup` | Dettagli line-up So5 |
+| `sorare_transfer_market` | Aste attive, filtrabili |
+
+### Rotazione token
+
+I JWT vivono ~30 giorni. AnythingMCP li ri-emette 24 h prima della scadenza e a ogni 401 — le chiamate da ChatGPT non vedono mai un token stale.
+
+### FAQ
+
+**ChatGPT dice "connector unreachable" — cosa faccio?**
+ChatGPT non vede `localhost`. Deploya su `cloud.anythingmcp.com` o proxa l'istanza locale con Cloudflare Tunnel.
+
+**Mi serve ChatGPT Enterprise?**
+I custom connector sono disponibili su Plus, Team ed Enterprise.
+
+**Posso rendere il connector Sorare read-only?**
+Sì — rimuovi i tool mutation dall'adapter (o assegna in AnythingMCP un Role che whiteliste solo i tool `sorare_get_*` / `sorare_list_*` / `sorare_current_user`).
+
+### Prossimi passi
+
+- [Collegare Sorare a Claude](./connect-sorare-to-claude)
+- [Collegare Sorare a OpenClaw](./connect-sorare-to-openclaw)
+- [Sorare su MCP — guida generica](./sorare-to-mcp)

@@ -1,0 +1,225 @@
+{
+  "slug": "sorare",
+  "name": "Sorare Fantasy Football",
+  "description": "GraphQL API for Sorare's NFT-based fantasy football, baseball, and basketball games. Query cards, players, lineups, transfer market, and your portfolio with natural-language commands. Handles Sorare's bcrypt-salted login and 30-day JWT caching automatically.",
+  "region": "intl",
+  "category": "gaming",
+  "icon": "sorare",
+  "docsUrl": "https://github.com/sorare/api",
+  "featured": true,
+  "priority": 100,
+  "requiredEnvVars": ["SORARE_EMAIL", "SORARE_PASSWORD", "SORARE_AUD"],
+  "instructions": "## Authentication (handled automatically)\n\nSorare uses a custom two-step login the AnythingMCP `LOGIN_TOKEN` engine performs for you:\n\n1. `GET https://api.sorare.com/api/v1/users/{email}` returns the account's bcrypt salt.\n2. Your plain password is hashed locally with `bcrypt.hashSync(password, salt)`.\n3. The hash is sent through Sorare's `signIn` GraphQL mutation; Sorare returns a JWT valid for ~30 days.\n4. Every subsequent call adds `Authorization: Bearer <jwt>` and `JWT-AUD: <aud>` headers.\n\nThe token is cached in-memory and in the encrypted `connector_auth_cache` table, then proactively re-issued ~24 h before expiry and on any 401. You never need to refresh manually.\n\n## Credentials\n\n- `SORARE_EMAIL` — your Sorare account email.\n- `SORARE_PASSWORD` — your plain account password (never stored or transmitted in plain text after the first login; only the bcrypt hash leaves your server).\n- `SORARE_AUD` — a free-form audience identifier you choose (e.g. `my-mcp-server`). Sorare embeds it in the JWT `aud` claim; private endpoints require the same value in the `JWT-AUD` header — both are wired up for you.\n\n## 2FA\n\nIf your account has 2FA enabled, the `signIn` mutation will fail until you provide a fresh `otpAttempt`. For headless/server use we recommend creating a dedicated read-only Sorare account without 2FA. Set `SORARE_PASSWORD` to that account's password.\n\n## Rate limits\n\nSorare enforces per-IP and per-token rate limits (\"too many requests\" on `429`). Heavy bulk-export workflows should batch and back-off.\n\n## Useful starter prompts\n\n- \"Show me my current Sorare account.\"\n- \"Find the next 5 Lionel Messi rare cards on auction under 0.05 ETH.\"\n- \"List my limited cards by player.\"\n- \"What auctions for Real Madrid players close in the next hour?\"",
+  "connector": {
+    "name": "Sorare",
+    "type": "GRAPHQL",
+    "baseUrl": "https://api.sorare.com/graphql",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://api.sorare.com/graphql",
+      "loginMethod": "POST",
+      "loginBody": {
+        "query": "mutation SignInMutation($input: signInInput!) { signIn(input: $input) { currentUser { slug } jwtToken(aud: \"${aud}\") { token expiredAt } errors { message } } }",
+        "variables": {
+          "input": {
+            "email": "${username}",
+            "password": "${passwordHashed}"
+          }
+        }
+      },
+      "username": "{{SORARE_EMAIL}}",
+      "password": "{{SORARE_PASSWORD}}",
+      "aud": "{{SORARE_AUD}}",
+      "passwordHashing": {
+        "scheme": "bcrypt",
+        "saltSource": {
+          "type": "fetch",
+          "method": "GET",
+          "url": "https://api.sorare.com/api/v1/users/${username}",
+          "responsePath": "salt"
+        },
+        "outputParam": "passwordHashed"
+      },
+      "tokenJsonPath": "data.signIn.jwtToken.token",
+      "expiryJsonPath": "data.signIn.jwtToken.expiredAt",
+      "expiryFormat": "iso8601",
+      "tokenTTLSeconds": 2592000,
+      "refreshOn401": true,
+      "proactiveRefreshSeconds": 86400,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}",
+      "extraHeaders": {
+        "JWT-AUD": "${aud}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "sorare_current_user",
+      "description": "Get the authenticated Sorare user's profile (slug, email, nickname). Use this first to confirm the connection is healthy.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query CurrentUser { currentUser { slug email nickname } }"
+      }
+    },
+    {
+      "name": "sorare_get_card_by_slug",
+      "description": "Fetch a single Sorare card by its slug (e.g. 'lionel-messi-2023-rare-1'). Returns player, scarcity, season, owner, and current auction state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "The card's unique slug from a card URL."
+          }
+        },
+        "required": ["slug"],
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query CardBySlug($slug: String!) { football { card(slug: $slug) { slug name pictureUrl rarity power player { slug displayName } season { startYear endYear } user { slug } activeSingleSaleOffer { senderSide { wei } } } } }",
+        "queryParams": {
+          "slug": "$slug"
+        }
+      }
+    },
+    {
+      "name": "sorare_search_player",
+      "description": "Search for a football player by name and return basic player metadata (slug, full name, club, country). Use the slug with sorare_list_player_cards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Player's display name or partial name."
+          }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query PlayerSearch($name: String!) { football { players(search: { name: $name }, first: 5) { nodes { slug displayName birthDate country { slug } activeClub { name } } } } }",
+        "queryParams": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "sorare_list_player_cards",
+      "description": "List the most recent cards for a given player slug, with their rarity, season, and current owner.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "playerSlug": {
+            "type": "string",
+            "description": "Player slug (from sorare_search_player)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Max cards to return (1–50)."
+          }
+        },
+        "required": ["playerSlug"],
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query PlayerCards($playerSlug: String!, $limit: Int!) { football { player(slug: $playerSlug) { cards(first: $limit) { nodes { slug rarity season { startYear } user { slug } } } } } }",
+        "queryParams": {
+          "playerSlug": "$playerSlug",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "sorare_list_my_cards",
+      "description": "List the football cards owned by the authenticated user with rarity, player, and season.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Max cards to return (1–50)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query MyCards($limit: Int!) { currentUser { football { myCards(first: $limit) { nodes { slug rarity player { displayName } season { startYear } } } } } }",
+        "queryParams": {
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "sorare_get_lineup",
+      "description": "Fetch a Sorare So5 lineup by id, returning composition, captain, score, and reward.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lineupId": {
+            "type": "string",
+            "description": "The So5 lineup id."
+          }
+        },
+        "required": ["lineupId"],
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Lineup($lineupId: String!) { so5 { so5Lineup(id: $lineupId) { id score rank reward so5Appearances { score card { slug player { displayName } } } } } }",
+        "queryParams": {
+          "lineupId": "$lineupId"
+        }
+      }
+    },
+    {
+      "name": "sorare_transfer_market",
+      "description": "Browse Sorare's transfer market with optional rarity, sport, and max-price filters. Returns the slug, player, current bid, and end time of each active offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rarity": {
+            "type": "string",
+            "enum": ["common", "limited", "rare", "super_rare", "unique"],
+            "description": "Filter by rarity tier."
+          },
+          "maxPriceWei": {
+            "type": "string",
+            "description": "Maximum acceptable price in wei (use a string to avoid precision loss)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10
+          }
+        },
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query TransferMarket($rarity: Rarity, $maxPriceWei: String, $limit: Int!) { football { transferMarket(rarity: $rarity, maxPrice: { wei: $maxPriceWei }, first: $limit) { nodes { card { slug player { displayName } rarity } senderSide { wei } endDate } } } }",
+        "queryParams": {
+          "rarity": "$rarity",
+          "maxPriceWei": "$maxPriceWei",
+          "limit": "$limit"
+        }
+      }
+    }
+  ]
+}

@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosRequestConfig, AxiosError, Method } from 'axios';
 import FormData from 'form-data';
 import { OAuth2TokenService } from './oauth2-token.service';
+import {
+  LoginTokenService,
+  LoginTokenAuthConfig,
+} from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
 /**
@@ -14,7 +18,10 @@ import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 export class RestEngine {
   private readonly logger = new Logger(RestEngine.name);
 
-  constructor(private readonly oauth2TokenService: OAuth2TokenService) {}
+  constructor(
+    private readonly oauth2TokenService: OAuth2TokenService,
+    private readonly loginTokenService: LoginTokenService,
+  ) {}
 
   async execute(
     config: {
@@ -160,6 +167,23 @@ export class RestEngine {
           return retryResponse.data;
         }
       }
+      // LOGIN_TOKEN auto-relogin: retry once on 401 when refreshOn401 is enabled
+      if (
+        error instanceof AxiosError &&
+        error.response?.status === 401 &&
+        config.authType === 'LOGIN_TOKEN' &&
+        (config.authConfig as Record<string, unknown> | undefined)?.refreshOn401 !== false
+      ) {
+        this.logger.debug('LOGIN_TOKEN: 401 received, re-issuing token...');
+        const authConfig = config.authConfig as unknown as LoginTokenAuthConfig;
+        const bundle = await this.loginTokenService.forceRelogin(
+          authConfig,
+          config.connectorId,
+        );
+        injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
+        const retryResponse = await axios(axiosConfig);
+        return retryResponse.data;
+      }
       throw error;
     }
   }
@@ -213,6 +237,19 @@ export class RestEngine {
           ...config.authConfig,
         };
         break;
+      case 'LOGIN_TOKEN': {
+        const bundle = await this.loginTokenService.getToken(
+          config.authConfig as unknown as LoginTokenAuthConfig,
+          config.connectorId,
+        );
+        injectLoginTokenHeaders(
+          axiosConfig,
+          config.authConfig as unknown as LoginTokenAuthConfig,
+          bundle.token,
+          bundle.aud,
+        );
+        break;
+      }
     }
   }
 
@@ -331,6 +368,30 @@ function renderBodyTemplate(
       return JSON.stringify(value);
     },
   );
+}
+
+/**
+ * Inject the bearer header (and any extraHeaders) for a LOGIN_TOKEN connector.
+ * Both the main header and extraHeaders support `${token}` / `${aud}` placeholders.
+ */
+export function injectLoginTokenHeaders(
+  axiosConfig: AxiosRequestConfig,
+  authConfig: LoginTokenAuthConfig,
+  token: string,
+  aud?: string,
+): void {
+  const headerName = authConfig.headerName || 'Authorization';
+  const headerTemplate = authConfig.headerTemplate || 'Bearer ${token}';
+  const interpolate = (s: string): string =>
+    s.replace(/\$\{token\}/g, token).replace(/\$\{aud\}/g, aud || '');
+
+  axiosConfig.headers = {
+    ...axiosConfig.headers,
+    [headerName]: interpolate(headerTemplate),
+  };
+  for (const [k, v] of Object.entries(authConfig.extraHeaders || {})) {
+    axiosConfig.headers[k] = interpolate(String(v));
+  }
 }
 
 /**

@@ -1,0 +1,92 @@
+---
+title: "Sorare mit OpenClaw verbinden — Self-Hosted KI + NFT-Fantasy-Football"
+description: "OpenClaws lokaler KI-Assistent fragt Sorares GraphQL-API via AnythingMCP ab. Streamable-HTTP-MCP-Transport mit Bearer-Auth, Bcrypt-Login und 30-Tage-Token-Caching."
+category: "connectors"
+keyword: "Sorare OpenClaw, OpenClaw MCP, Sorare lokale KI, OpenClaw Connector, Fantasy Football OpenClaw"
+publishedAt: "2026-05-18"
+adapterSlug: "sorare"
+lang: "de"
+---
+
+## Sorare mit OpenClaw verbinden
+
+[OpenClaw](https://openclaw.ai/) ist ein Open-Source-KI-Assistent, der lokal läuft und MCP-Server über sein CLI einbindet. Kombiniert mit AnythingMCP erhältst du ein End-to-End-privates Setup, um Sorare von deinem eigenen Rechner aus abzufragen — Passwort und JWT verlassen dein Netzwerk nie.
+
+### Was du tun kannst
+
+- "Liste alle meine Karten zu Premier-League-Spielern."
+- "Zeig Auktionen für Unique-Mbappé-Karten, die heute Abend enden."
+- "Wie war der Score meiner letzten So5-Aufstellung?"
+
+### Voraussetzungen
+
+- OpenClaw installiert (`docs.openclaw.ai/getting-started`).
+- AnythingMCP lokal auf `http://localhost:4000`.
+- Sorare-Konto (Read-only, **2FA deaktiviert** für Headless-Einsatz).
+
+### Schritt 1 — Sorare-Zugang
+
+Wie bei jedem anderen Client:
+
+1. Bei https://sorare.com einloggen.
+2. Read-only-Konto ohne 2FA verwenden (oder anlegen).
+3. AUD-String für den JWT-`aud`-Claim wählen (z. B. `openclaw-mcp`).
+
+### Schritt 2 — Sorare-Adapter installieren
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+`http://localhost:3000/connectors/store` öffnen, **Sorare** klicken, `SORARE_EMAIL`, `SORARE_PASSWORD`, `SORARE_AUD` eintragen. MCP-API-Key unter **Profile → MCP API Keys** erzeugen.
+
+### Schritt 3 — MCP-Server in OpenClaw registrieren
+
+OpenClaw speichert MCP-Server unter `mcp.servers` in seiner Config. Eintragen via CLI:
+
+```bash
+openclaw mcp set sorare '{
+  "url": "http://localhost:4000/mcp",
+  "transport": "streamable-http",
+  "connectionTimeoutMs": 10000,
+  "headers": {
+    "Authorization": "Bearer DEIN_MCP_API_KEY"
+  }
+}'
+```
+
+Mit `openclaw mcp list` verifizieren. OpenClaw entdeckt die 7 Sorare-Tools automatisch und stellt sie der Agent-Runtime zur Verfügung.
+
+### Verfügbare Tools
+
+| Tool | Beschreibung |
+|---|---|
+| `sorare_current_user` | Eigenes Profil |
+| `sorare_get_card_by_slug` | Kartendetails |
+| `sorare_search_player` | Spielersuche |
+| `sorare_list_player_cards` | Spieler-Karten |
+| `sorare_list_my_cards` | Eigene Karten |
+| `sorare_get_lineup` | So5-Aufstellung |
+| `sorare_transfer_market` | Aktive Auktionen |
+
+### Token-Rotation
+
+AnythingMCP verschlüsselt das Sorare-JWT in `connector_auth_cache`, frischt es 24 h vor Ablauf auf und meldet sich bei jedem 401 neu an. Das Token gilt ~30 Tage. Kein Cron-Job, keine manuelle Erneuerung.
+
+### FAQ
+
+**Muss OpenClaw auf derselben Maschine wie AnythingMCP laufen?**
+Nein — `http://localhost:4000/mcp` ist nur der Default. Beliebige erreichbare URL nutzen (mit TLS + Bearer-Auth empfohlen).
+
+**Wo speichert OpenClaw die MCP-Server-Config?**
+Unter `mcp.servers` in der globalen OpenClaw-Config — verwaltet via `openclaw mcp set / list / remove`.
+
+**Kann ich mehrere Adapter über einen MCP-Server-Eintrag laufen lassen?**
+Ja — jeder Adapter, den du in AnythingMCP installierst, wird automatisch zum Tool auf demselben `/mcp`-Endpoint.
+
+### Nächste Schritte
+
+- [Sorare mit Claude verbinden](./connect-sorare-to-claude)
+- [Sorare mit ChatGPT verbinden](./connect-sorare-to-chatgpt)
+- [Sorare an MCP anbinden — generischer Leitfaden](./sorare-to-mcp)

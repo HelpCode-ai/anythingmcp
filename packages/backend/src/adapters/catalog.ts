@@ -34,6 +34,7 @@ import * as razorpay from './in/razorpay.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as paystack from './ng/paystack.json';
 import * as lineMessaging from './jp/line-messaging.json';
+import * as sorare from './intl/sorare.json';
 
 export interface AdapterMeta {
   slug: string;
@@ -46,6 +47,10 @@ export interface AdapterMeta {
   docsUrl: string;
   requiredEnvVars: string[];
   toolCount: number;
+  /** When true, surfaced in the marketing site's "Featured" rail. */
+  featured?: boolean;
+  /** Higher = ranked earlier in catalog listings. Default 0. */
+  priority?: number;
 }
 
 export interface AdapterDefinition extends AdapterMeta {
@@ -107,6 +112,7 @@ const ALL_ADAPTERS: AdapterDefinition[] = [
   mercadoLibre as unknown as AdapterDefinition,
   paystack as unknown as AdapterDefinition,
   lineMessaging as unknown as AdapterDefinition,
+  sorare as unknown as AdapterDefinition,
 ];
 
 export function listAdapters(): AdapterMeta[] {
@@ -121,6 +127,8 @@ export function listAdapters(): AdapterMeta[] {
     docsUrl: adapter.docsUrl,
     requiredEnvVars: adapter.requiredEnvVars,
     toolCount: adapter.tools.length,
+    featured: adapter.featured,
+    priority: adapter.priority,
   }));
 }
 

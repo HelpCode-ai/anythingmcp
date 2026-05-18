@@ -1,0 +1,101 @@
+---
+title: "How to Connect Sorare to Claude — NFT Fantasy Football via MCP"
+description: "Connect Sorare's GraphQL API to Claude with AnythingMCP. Query cards, players, lineups, and the transfer market in natural language. Bcrypt login + 30-day token caching handled automatically."
+category: "connectors"
+keyword: "Sorare Claude, Sorare AI, Sorare MCP Claude, Sorare GraphQL Claude, fantasy football Claude"
+publishedAt: "2026-05-18"
+adapterSlug: "sorare"
+lang: "en"
+---
+
+## Connect Sorare to Claude
+
+Sorare is the largest NFT fantasy football game, with full GraphQL coverage over cards, players, lineups, and the transfer market. With AnythingMCP, you can drive all of it from Claude Desktop or Claude Code in plain English — no SDK to glue, no token rotation to babysit.
+
+### What you can do
+
+- "Show my current Sorare account and rare-card count."
+- "List the next 5 Messi rare cards on auction under 0.05 ETH."
+- "Find all my cards for Real Madrid players."
+- "Who scored highest in So5 lineup `abc-123`?"
+
+### Prerequisites
+
+- An active Sorare account (we recommend a dedicated, **2FA-disabled** read-only account for headless use).
+- AnythingMCP running locally or on cloud.anythingmcp.com (3-minute setup).
+- Claude Desktop installed.
+
+### Step 1 — Get your Sorare access
+
+1. Sign in to https://sorare.com.
+2. Optionally disable 2FA on a read-only account dedicated to MCP — `signIn` rejects requests without a fresh OTP, and OTPs can't be pre-rotated for a server.
+3. Pick a free-form **AUD** string (e.g. `my-mcp-server`). Sorare embeds it as the JWT `aud` claim and requires it on every private call.
+
+### Step 2 — Install the Sorare adapter
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Open `http://localhost:3000/connectors/store`, click **Sorare**, and fill in:
+
+| Field | Value |
+|---|---|
+| `SORARE_EMAIL` | your account email |
+| `SORARE_PASSWORD` | your plain password |
+| `SORARE_AUD` | the AUD string from step 1 |
+
+Click **Install** — the adapter is now in your catalog with 7 tools.
+
+### Step 3 — Wire up Claude Desktop
+
+Mint an MCP API key in **Profile → MCP API Keys**, then add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "sorare": {
+      "url": "http://localhost:4000/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop. Sorare tools appear in the 🔧 menu.
+
+### Available tools
+
+| Tool | Description |
+|---|---|
+| `sorare_current_user` | Get your authenticated profile |
+| `sorare_get_card_by_slug` | Card details by slug |
+| `sorare_search_player` | Search players by name |
+| `sorare_list_player_cards` | Recent cards for a player |
+| `sorare_list_my_cards` | Your owned cards |
+| `sorare_get_lineup` | So5 lineup score + reward |
+| `sorare_transfer_market` | Active auctions, filterable |
+
+### Token rotation, explained
+
+Sorare JWTs last ~30 days. AnythingMCP caches yours encrypted at rest, **re-issues it 24 h before expiry**, and re-logs in on any 401 (without your password ever being read again from disk — the bcrypt hash is recomputed from the freshly fetched salt). You never see an expired-token error.
+
+### FAQ
+
+**Does AnythingMCP store my plain Sorare password?**
+Only inside the encrypted `authConfig` blob (AES-256-GCM). Only the bcrypt hash crosses the wire, only on `signIn`.
+
+**Can I use a Sorare account with 2FA?**
+The `signIn` mutation needs a fresh `otpAttempt` for 2FA accounts, which can't be automated. Use a dedicated read-only account without 2FA.
+
+**Does this work with Claude Code as well as Claude Desktop?**
+Yes — point the `claude_code` MCP server config at the same `http://localhost:4000/mcp` URL.
+
+### Next steps
+
+- [Sorare to MCP — the generic guide](./sorare-to-mcp)
+- [Connect Sorare to ChatGPT](./connect-sorare-to-chatgpt)
+- [Connect Sorare to OpenClaw](./connect-sorare-to-openclaw)

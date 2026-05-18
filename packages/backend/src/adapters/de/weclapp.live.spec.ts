@@ -1,6 +1,7 @@
 import * as adapter from './weclapp.json';
 import { RestEngine } from '../../connectors/engines/rest.engine';
 import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
+import { LoginTokenService } from '../../connectors/engines/login-token.service';
 
 /**
  * Two layers of verification for the weclapp adapter:
@@ -56,7 +57,8 @@ const maybe = process.env.RUN_WECLAPP_LIVE ? describe : describe.skip;
 
 maybe('weclapp adapter — live edge reachability', () => {
   const oauth = {} as unknown as OAuth2TokenService;
-  const engine = new RestEngine(oauth);
+  const login = {} as unknown as LoginTokenService;
+  const engine = new RestEngine(oauth, login);
 
   // Bogus tenant: weclapp uses wildcard DNS (*.weclapp.com → Akamai → ALB),
   // so the request reaches weclapp's edge but the ALB returns 404 because
