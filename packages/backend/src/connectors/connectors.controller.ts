@@ -29,6 +29,7 @@ import {
 import { Type } from 'class-transformer';
 import { ConnectorType, AuthType } from '../generated/prisma/client';
 import { ConnectorsService } from './connectors.service';
+import { buildGraphqlBuiltinTools, slugifyForPrefix } from './graphql-builtins';
 import { OpenApiParser } from './parsers/openapi.parser';
 import { WsdlParser } from './parsers/wsdl.parser';
 import { GraphqlParser } from './parsers/graphql.parser';
@@ -441,6 +442,39 @@ export class ConnectorsController {
       }
       await this.mcpServer.reloadConnectorTools(connector.id);
       this.logger.log(`Auto-created ${defaultTools.length} default tools for DATABASE connector ${connector.id}`);
+    }
+
+    // Auto-create the five generic GraphQL helper tools for every GRAPHQL
+    // connector — schema_url, schema (proxy + filter), query, mutation,
+    // subscription. Catalog adapters already get these via
+    // adapters/catalog.ts; this branch covers user-created connectors so the
+    // same out-of-the-box experience exists everywhere.
+    if (dto.type === 'GRAPHQL') {
+      const builtinTools = buildGraphqlBuiltinTools({
+        prefix: slugifyForPrefix(dto.name),
+        displayName: dto.name,
+        baseUrl: dto.baseUrl,
+        schemaUrl: (dto.config as { schemaUrl?: string } | undefined)?.schemaUrl,
+      });
+      for (const tool of builtinTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: connector.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // skip duplicates
+        }
+      }
+      await this.mcpServer.reloadConnectorTools(connector.id);
+      this.logger.log(
+        `Auto-created ${builtinTools.length} generic GraphQL helper tools for connector ${connector.id}`,
+      );
     }
 
     return connector;

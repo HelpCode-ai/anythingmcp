@@ -35,6 +35,7 @@ import * as mercadoLibre from './br/mercado-libre.json';
 import * as paystack from './ng/paystack.json';
 import * as lineMessaging from './jp/line-messaging.json';
 import * as sorare from './intl/sorare.json';
+import { buildGraphqlBuiltinTools } from '../connectors/graphql-builtins';
 
 export interface AdapterMeta {
   slug: string;
@@ -89,99 +90,12 @@ export interface AdapterDefinition extends AdapterMeta {
  */
 function withGraphqlBuiltins(adapter: AdapterDefinition): AdapterDefinition {
   if (adapter.connector.type !== 'GRAPHQL') return adapter;
-  const slug = adapter.slug;
-  const schemaUrl =
-    (adapter.connector as { schemaUrl?: string }).schemaUrl ||
-    `${adapter.connector.baseUrl.replace(/\/+$/, '')}/schema`;
-
-  const variablesSchema = {
-    type: 'object',
-    description: 'GraphQL variables map (optional). Keys must match $variables declared in the operation.',
-    additionalProperties: true,
-  };
-
-  const buildOpTool = (
-    op: 'query' | 'mutation' | 'subscription',
-  ): AdapterDefinition['tools'][number] => ({
-    name: `${slug}_graphql_${op}`,
-    description:
-      `Execute an arbitrary GraphQL ${op} against ${adapter.name}. ` +
-      `Use only when no purpose-built tool covers the operation. ` +
-      `Authentication is injected automatically.` +
-      (op === 'subscription'
-        ? ' Note: subscriptions over the default HTTP transport may not be supported by the upstream API.'
-        : ''),
-    parameters: {
-      type: 'object',
-      properties: {
-        [op]: {
-          type: 'string',
-          description: `GraphQL ${op} document. Example: \`${op} Name($a: ID!) { … }\`.`,
-        },
-        variables: variablesSchema,
-      },
-      required: [op],
-      additionalProperties: false,
-    },
-    endpointMapping: {
-      method: op,
-      path: `$${op}`,
-      variablesFromParam: 'variables',
-    },
-  });
-
-  const builtins: AdapterDefinition['tools'] = [
-    {
-      name: `${slug}_graphql_schema_url`,
-      description:
-        `Returns the URL of the GraphQL SDL schema for ${adapter.name}. ` +
-        `If your environment can reach external hosts, fetch this URL directly. Otherwise use \`${slug}_graphql_schema\`, which proxies the schema through the MCP server (no allowlist concerns).`,
-      parameters: {
-        type: 'object',
-        properties: {},
-        additionalProperties: false,
-      },
-      endpointMapping: {
-        method: 'static',
-        path: schemaUrl,
-      },
-    },
-    {
-      name: `${slug}_graphql_schema`,
-      description:
-        `Fetch a slice of the ${adapter.name} GraphQL SDL schema, proxied through the MCP server. ` +
-        `Default (no args) returns a compact summary: the Query/Mutation/Subscription root blocks + an index of every type name (~20–30 KB). ` +
-        `Pass \`type: "TypeName"\` to retrieve just one type's definition with its docblock (~1–5 KB). ` +
-        `Pass \`search: "keyword"\` to return every type whose name or a field name contains the keyword (case-insensitive, capped to keep responses small). ` +
-        `Pass \`full: true\` only when you really need the entire SDL — it can be very large (~200K tokens for some APIs).`,
-      parameters: {
-        type: 'object',
-        properties: {
-          type: {
-            type: 'string',
-            description: 'Single GraphQL type name to retrieve, e.g. "CurrentUser".',
-          },
-          search: {
-            type: 'string',
-            description:
-              'Case-insensitive substring matched against type names and field names. Returns all matching type blocks.',
-          },
-          full: {
-            type: 'boolean',
-            description: 'Return the entire SDL. Use sparingly — can blow past an agent\'s context window.',
-          },
-        },
-        additionalProperties: false,
-      },
-      endpointMapping: {
-        method: 'schema',
-        path: schemaUrl,
-      },
-    },
-    buildOpTool('query'),
-    buildOpTool('mutation'),
-    buildOpTool('subscription'),
-  ];
+  const builtins = buildGraphqlBuiltinTools({
+    prefix: adapter.slug,
+    displayName: adapter.name,
+    baseUrl: adapter.connector.baseUrl,
+    schemaUrl: (adapter.connector as { schemaUrl?: string }).schemaUrl,
+  }) as unknown as AdapterDefinition['tools'];
 
   return { ...adapter, tools: [...builtins, ...adapter.tools] };
 }
