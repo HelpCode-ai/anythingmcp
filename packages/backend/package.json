@@ -81,7 +81,7 @@
     "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/mssql": "^9.1.9",
-    "@types/node": "^22.19.18",
+    "@types/node": "^22.19.19",
     "@types/nodemailer": "^7.0.11",
     "@types/oracledb": "^6.10.3",
     "@types/passport-jwt": "^4.0.1",
