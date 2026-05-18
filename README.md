@@ -155,9 +155,17 @@ cd anythingmcp && ./setup.sh
 
 ## Pre-configured MCP connectors
 
-AnythingMCP ships with **36+ ready-to-use adapters** — DACH-rooted but reaching the UK, India, Brasil, Nigeria and Japan. Provide your API credentials at import time and the tools become available immediately. Each adapter has its own setup guide on [anythingmcp.com](https://anythingmcp.com/guides) (English, German, Italian).
+AnythingMCP ships with **37+ ready-to-use adapters** — DACH-rooted but reaching the UK, India, Brasil, Nigeria, Japan and the global gaming web3 space. Provide your API credentials at import time and the tools become available immediately. Each adapter has its own setup guide on [anythingmcp.com](https://anythingmcp.com/guides) (English, German, Italian).
 
 > 📍 **Catalog heads-up.** The starting set leans DACH (Germany / Austria / Switzerland) because that's where this was built in production first, with first-wave international coverage now landing across 🇬🇧 UK, 🇮🇳 India, 🇧🇷 Brasil, 🇳🇬 Nigeria and 🇯🇵 Japan. US/APAC SaaS adapters are very welcome as community PRs — there's a [good-first-issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) walking you through adding one in ~30 minutes (single JSON file).
+
+### 🎮 Gaming & Web3 — featured
+
+| Connector | Description | Guides |
+|---|---|---|
+| **Sorare Fantasy Football** ⚽🌍 | NFT fantasy football, baseball & basketball — 18 tools over cards, players, So5 lineups, wallet, scoring history and the live transfer market. Bcrypt-salted login + 30-day JWT caching handled for you. | [Sorare → MCP](docs/guides/sorare-to-mcp.md) · [Claude](docs/guides/connect-sorare-to-claude.md) · [ChatGPT](docs/guides/connect-sorare-to-chatgpt.md) · [OpenClaw](docs/guides/connect-sorare-to-openclaw.md) · [Cloud](docs/guides/connect-sorare-to-cloud.md) |
+
+Sorare is also the reference implementation of AnythingMCP's new **`LOGIN_TOKEN`** AuthType — a declarative spec for any API that requires a custom bcrypt-style sign-in handshake before issuing a long-lived bearer. Reuse the pattern for any other crypto / fintech / gaming API with non-OAuth auth: see [`docs/connectors/login-token-auth.md`](docs/connectors/login-token-auth.md).
 
 ### 📦 Logistics &amp; shipping
 
@@ -300,6 +308,11 @@ AnythingMCP works with any MCP-compatible client. Pick yours:
 | **GraphQL** | GraphQL endpoints with introspection | [Guide →](docs/connectors/graphql.md) |
 | **Database** | PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite | [Guide →](docs/connectors/database.md) |
 | **MCP Bridge** | Aggregate multiple MCP servers into one | [Guide →](docs/connectors/mcp-bridge.md) |
+| **LOGIN_TOKEN auth** | APIs that POST credentials → return long-lived bearer (bcrypt-salted handshakes, Sorare-style) | [Guide →](docs/connectors/login-token-auth.md) |
+
+### Featured adapter walkthroughs
+
+- 🎮 **Sorare Fantasy Football** — [Sorare → MCP](docs/guides/sorare-to-mcp.md) · [Connect Sorare to Claude](docs/guides/connect-sorare-to-claude.md) · [Connect Sorare to ChatGPT](docs/guides/connect-sorare-to-chatgpt.md) · [Connect Sorare to OpenClaw](docs/guides/connect-sorare-to-openclaw.md) · [Connect Sorare to AnythingMCP Cloud](docs/guides/connect-sorare-to-cloud.md)
 
 ---
 
