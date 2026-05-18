@@ -10,6 +10,7 @@ import { McpClientEngine } from './engines/mcp-client.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
 import { LoginTokenService } from './engines/login-token.service';
+import { GraphqlSchemaService } from './engines/graphql-schema.service';
 import { OpenApiParser } from './parsers/openapi.parser';
 import { WsdlParser } from './parsers/wsdl.parser';
 import { GraphqlParser } from './parsers/graphql.parser';
@@ -37,6 +38,7 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
     McpOAuthService,
     OAuth2TokenService,
     LoginTokenService,
+    GraphqlSchemaService,
     ...ENGINES,
     ...PARSERS,
   ],
@@ -45,6 +47,7 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
     McpOAuthService,
     OAuth2TokenService,
     LoginTokenService,
+    GraphqlSchemaService,
     ...ENGINES,
   ],
 })

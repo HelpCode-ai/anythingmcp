@@ -1,6 +1,7 @@
 import { GraphqlEngine } from './graphql.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { LoginTokenService } from './login-token.service';
+import { GraphqlSchemaService } from './graphql-schema.service';
 import axios, { AxiosError } from 'axios';
 
 jest.mock('axios');
@@ -10,6 +11,7 @@ describe('GraphqlEngine', () => {
   let engine: GraphqlEngine;
   let mockOAuth2TokenService: jest.Mocked<OAuth2TokenService>;
   let mockLoginTokenService: jest.Mocked<LoginTokenService>;
+  let mockSchemaService: jest.Mocked<GraphqlSchemaService>;
 
   beforeEach(() => {
     mockOAuth2TokenService = {
@@ -28,7 +30,14 @@ describe('GraphqlEngine', () => {
         expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
       }),
     } as any;
-    engine = new GraphqlEngine(mockOAuth2TokenService, mockLoginTokenService);
+    mockSchemaService = {
+      getSlice: jest.fn().mockResolvedValue('# Schema summary\n…'),
+    } as any;
+    engine = new GraphqlEngine(
+      mockOAuth2TokenService,
+      mockLoginTokenService,
+      mockSchemaService,
+    );
     jest.clearAllMocks();
   });
 
@@ -295,6 +304,23 @@ describe('GraphqlEngine', () => {
       'conn-1',
     );
     expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('delegates to GraphqlSchemaService when method=schema and forwards type/search/full', async () => {
+    mockSchemaService.getSlice.mockResolvedValue('# CurrentUser\ntype CurrentUser { … }');
+
+    const result = await engine.execute(
+      { baseUrl: 'https://api.example.com/graphql', authType: 'NONE' },
+      { method: 'schema', path: 'https://api.example.com/graphql/schema' },
+      { type: 'CurrentUser' },
+    );
+
+    expect(result).toBe('# CurrentUser\ntype CurrentUser { … }');
+    expect(mockSchemaService.getSlice).toHaveBeenCalledWith(
+      'https://api.example.com/graphql/schema',
+      { type: 'CurrentUser', search: undefined, full: false },
+    );
+    expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 
   it('returns endpointMapping.path verbatim when method=static (no HTTP call)', async () => {

@@ -5,6 +5,7 @@ import {
   LoginTokenService,
   LoginTokenAuthConfig,
 } from './login-token.service';
+import { GraphqlSchemaService } from './graphql-schema.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
 /**
@@ -18,6 +19,7 @@ export class GraphqlEngine {
   constructor(
     private readonly oauth2TokenService: OAuth2TokenService,
     private readonly loginTokenService: LoginTokenService,
+    private readonly schemaService: GraphqlSchemaService,
   ) {}
 
   async execute(
@@ -42,6 +44,23 @@ export class GraphqlEngine {
     // Used by the auto-injected `<slug>_graphql_schema_url` tool.
     if (endpointMapping.method === 'static') {
       return endpointMapping.path;
+    }
+
+    // Schema-fetch short-circuit: proxy + filter the remote SDL via the shared
+    // GraphqlSchemaService. Bypasses the agent sandbox's allowlist and lets
+    // agents pull only the slice of SDL they actually need.
+    if (endpointMapping.method === 'schema') {
+      return this.schemaService.getSlice(endpointMapping.path, {
+        type:
+          typeof params.type === 'string' && params.type.trim()
+            ? params.type
+            : undefined,
+        search:
+          typeof params.search === 'string' && params.search.trim()
+            ? params.search
+            : undefined,
+        full: params.full === true,
+      });
     }
 
     this.logger.debug(`GraphQL ${endpointMapping.method} → ${config.baseUrl}`);

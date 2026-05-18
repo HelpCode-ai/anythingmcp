@@ -19,6 +19,7 @@ const VALID_GRAPHQL_METHODS = new Set([
   'MUTATION',
   'SUBSCRIPTION',
   'STATIC',
+  'SCHEMA',
 ]);
 
 /**
@@ -60,13 +61,26 @@ describe('adapter catalog', () => {
       .filter((a) => a.connector.type === 'GRAPHQL');
 
     it.each(graphqlAdapters.map((a) => [a.slug, a]))(
-      '%s exposes _graphql_schema_url, _graphql_query, _graphql_mutation, _graphql_subscription',
+      '%s exposes the five GraphQL builtins',
       (_slug, adapter) => {
         const names = new Set(adapter.tools.map((t) => t.name));
         expect(names.has(`${adapter.slug}_graphql_schema_url`)).toBe(true);
+        expect(names.has(`${adapter.slug}_graphql_schema`)).toBe(true);
         expect(names.has(`${adapter.slug}_graphql_query`)).toBe(true);
         expect(names.has(`${adapter.slug}_graphql_mutation`)).toBe(true);
         expect(names.has(`${adapter.slug}_graphql_subscription`)).toBe(true);
+      },
+    );
+
+    it.each(graphqlAdapters.map((a) => [a.slug, a]))(
+      '%s _graphql_schema uses method=schema and points at the SDL URL',
+      (_slug, adapter) => {
+        const tool = adapter.tools.find(
+          (t) => t.name === `${adapter.slug}_graphql_schema`,
+        )!;
+        const em = tool.endpointMapping as { method: string; path: string };
+        expect(em.method).toBe('schema');
+        expect(em.path).toMatch(/^https?:\/\//);
       },
     );
 

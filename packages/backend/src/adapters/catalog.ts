@@ -72,17 +72,20 @@ export interface AdapterDefinition extends AdapterMeta {
 }
 
 /**
- * Auto-inject four generic GraphQL helper tools onto any GRAPHQL adapter:
+ * Auto-inject five generic GraphQL helper tools onto any GRAPHQL adapter:
  *   - `<slug>_graphql_schema_url`   — returns the URL of the SDL schema (or the value of
  *                                     `connector.schemaUrl` if the adapter overrides it)
+ *   - `<slug>_graphql_schema`       — proxy + filter the SDL: returns a compact summary,
+ *                                     a single type definition (`type: "X"`), a search
+ *                                     slice (`search: "card"`), or the full SDL (`full: true`)
  *   - `<slug>_graphql_query`        — execute an arbitrary `query` document
  *   - `<slug>_graphql_mutation`     — execute an arbitrary `mutation` document
  *   - `<slug>_graphql_subscription` — execute an arbitrary `subscription` document
  *                                     (transport availability depends on the upstream API)
  *
  * These give an MCP agent a fallback path when no purpose-built tool covers a
- * needed operation — the agent fetches the schema, composes the operation,
- * and runs it. Adapter authors don't need to declare them.
+ * needed operation — the agent fetches a focused slice of the schema, composes
+ * the operation, and runs it. Adapter authors don't need to declare them.
  */
 function withGraphqlBuiltins(adapter: AdapterDefinition): AdapterDefinition {
   if (adapter.connector.type !== 'GRAPHQL') return adapter;
@@ -132,7 +135,7 @@ function withGraphqlBuiltins(adapter: AdapterDefinition): AdapterDefinition {
       name: `${slug}_graphql_schema_url`,
       description:
         `Returns the URL of the GraphQL SDL schema for ${adapter.name}. ` +
-        `Fetch it with a web tool (e.g. \`web_fetch\`) to discover available types and fields before composing a custom query.`,
+        `If your environment can reach external hosts, fetch this URL directly. Otherwise use \`${slug}_graphql_schema\`, which proxies the schema through the MCP server (no allowlist concerns).`,
       parameters: {
         type: 'object',
         properties: {},
@@ -140,6 +143,38 @@ function withGraphqlBuiltins(adapter: AdapterDefinition): AdapterDefinition {
       },
       endpointMapping: {
         method: 'static',
+        path: schemaUrl,
+      },
+    },
+    {
+      name: `${slug}_graphql_schema`,
+      description:
+        `Fetch a slice of the ${adapter.name} GraphQL SDL schema, proxied through the MCP server. ` +
+        `Default (no args) returns a compact summary: the Query/Mutation/Subscription root blocks + an index of every type name (~20–30 KB). ` +
+        `Pass \`type: "TypeName"\` to retrieve just one type's definition with its docblock (~1–5 KB). ` +
+        `Pass \`search: "keyword"\` to return every type whose name or a field name contains the keyword (case-insensitive, capped to keep responses small). ` +
+        `Pass \`full: true\` only when you really need the entire SDL — it can be very large (~200K tokens for some APIs).`,
+      parameters: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            description: 'Single GraphQL type name to retrieve, e.g. "CurrentUser".',
+          },
+          search: {
+            type: 'string',
+            description:
+              'Case-insensitive substring matched against type names and field names. Returns all matching type blocks.',
+          },
+          full: {
+            type: 'boolean',
+            description: 'Return the entire SDL. Use sparingly — can blow past an agent\'s context window.',
+          },
+        },
+        additionalProperties: false,
+      },
+      endpointMapping: {
+        method: 'schema',
         path: schemaUrl,
       },
     },

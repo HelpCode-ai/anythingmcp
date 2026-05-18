@@ -69,7 +69,7 @@
     },
     {
       "name": "sorare_get_card_by_slug",
-      "description": "Fetch a single Sorare card by its slug (e.g. 'lionel-messi-2023-rare-1'). Returns player, scarcity, season, owner, and current auction state.",
+      "description": "Fetch a single Sorare football card by slug (e.g. 'lionel-messi-2023-rare-1'). Returns player, rarity, season, current owner, and the live single-sale offer if any. For richer data use sorare_graphql_query with the relevant slice from sorare_graphql_schema.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -83,7 +83,7 @@
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query CardBySlug($slug: String!) { football { card(slug: $slug) { slug name pictureUrl rarity power player { slug displayName } season { startYear endYear } user { slug } activeSingleSaleOffer { senderSide { wei } } } } }",
+        "path": "query CardBySlug($slug: String!) { football { card(slug: $slug) { slug name rarity displayRarity backPictureUrl power season { startYear } user { slug } footballPlayer { slug displayName position country { slug } } liveSingleSaleOffer { id endDate status senderSide { wei amounts { eurCents } } } latestEnglishAuction { id endDate } } } }",
         "queryParams": {
           "slug": "$slug"
         }
@@ -91,13 +91,20 @@
     },
     {
       "name": "sorare_search_player",
-      "description": "Search for a football player by name and return basic player metadata (slug, full name, club, country). Use the slug with sorare_list_player_cards.",
+      "description": "Search football players by name (full-text). Returns up to `pageSize` matches with slug, display name, country, and current club. Use the returned slug with sorare_list_player_cards or sorare_get_card_by_slug.",
       "parameters": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
-            "description": "Player's display name or partial name."
+            "description": "Player name or partial name (full-text)."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 5,
+            "description": "Max hits to return (1–20)."
           }
         },
         "required": ["name"],
@@ -105,15 +112,16 @@
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query PlayerSearch($name: String!) { football { players(search: { name: $name }, first: 5) { nodes { slug displayName birthDate country { slug } activeClub { name } } } } }",
+        "path": "query PlayerSearch($name: String!, $pageSize: Int!) { searchPlayers(query: $name, pageSize: $pageSize) { nbHits commonPlayerHits { anyPlayer { slug sport ... on Player { displayName country { slug } activeClub { name } } } } } }",
         "queryParams": {
-          "name": "$name"
+          "name": "$name",
+          "pageSize": "$pageSize"
         }
       }
     },
     {
       "name": "sorare_list_player_cards",
-      "description": "List the most recent cards for a given player slug, with their rarity, season, and current owner.",
+      "description": "List cards minted for a given football player slug, with their rarity, season, and current owner.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -134,7 +142,7 @@
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query PlayerCards($playerSlug: String!, $limit: Int!) { football { player(slug: $playerSlug) { cards(first: $limit) { nodes { slug rarity season { startYear } user { slug } } } } } }",
+        "path": "query PlayerCards($playerSlug: String!, $limit: Int!) { football { allCards(playerSlugs: [$playerSlug], first: $limit) { nodes { slug name rarity season { startYear } user { slug } } } } }",
         "queryParams": {
           "playerSlug": "$playerSlug",
           "limit": "$limit"
@@ -143,7 +151,7 @@
     },
     {
       "name": "sorare_list_my_cards",
-      "description": "List the football cards owned by the authenticated user with rarity, player, and season.",
+      "description": "List football cards owned by the authenticated user with rarity, player, and season. Pass `rarities` to filter (e.g. ['rare']).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -153,21 +161,30 @@
             "maximum": 50,
             "default": 20,
             "description": "Max cards to return (1–50)."
+          },
+          "rarities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["common", "limited", "rare", "super_rare", "unique", "custom_series"]
+            },
+            "description": "Optional list of rarity tiers to keep."
           }
         },
         "additionalProperties": false
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query MyCards($limit: Int!) { currentUser { football { myCards(first: $limit) { nodes { slug rarity player { displayName } season { startYear } } } } } }",
+        "path": "query MyCards($limit: Int!, $rarities: [Rarity!]) { currentUser { cards(first: $limit, rarities: $rarities, sport: FOOTBALL) { nodes { slug name sport ... on Card { rarity season { startYear } footballPlayer { slug displayName } } } } } }",
         "queryParams": {
-          "limit": "$limit"
+          "limit": "$limit",
+          "rarities": "$rarities"
         }
       }
     },
     {
       "name": "sorare_get_lineup",
-      "description": "Fetch a Sorare So5 lineup by id, returning composition, captain, score, and reward.",
+      "description": "Fetch a Sorare So5 lineup by id. Returns lineup metadata (name, draft/confirmable flags) and owning user. For appearance scores and bonuses use sorare_graphql_query with a fragment on So5Appearance.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -181,26 +198,26 @@
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query Lineup($lineupId: String!) { so5 { so5Lineup(id: $lineupId) { id score rank reward so5Appearances { score card { slug player { displayName } } } } } }",
+        "path": "query Lineup($lineupId: ID!) { so5 { so5Lineup(id: $lineupId) { id name draft confirmable updatable bonuses { title key bonusBasisPoints } user { slug nickname } } } }",
         "queryParams": {
           "lineupId": "$lineupId"
         }
       }
     },
     {
-      "name": "sorare_transfer_market",
-      "description": "Browse Sorare's transfer market with optional rarity, sport, and max-price filters. Returns the slug, player, current bid, and end time of each active offer.",
+      "name": "sorare_live_sale_offers",
+      "description": "List currently-live single-sale offers on the secondary market (Sorare's 'transfer market'). Optionally filter by player slug or sport. For rarity / max-price filters use sorare_graphql_query.",
       "parameters": {
         "type": "object",
         "properties": {
-          "rarity": {
+          "playerSlug": {
             "type": "string",
-            "enum": ["common", "limited", "rare", "super_rare", "unique"],
-            "description": "Filter by rarity tier."
+            "description": "Optional: only offers for this player slug."
           },
-          "maxPriceWei": {
+          "sport": {
             "type": "string",
-            "description": "Maximum acceptable price in wei (use a string to avoid precision loss)."
+            "enum": ["FOOTBALL", "BASEBALL", "NBA"],
+            "description": "Optional: filter by sport."
           },
           "limit": {
             "type": "integer",
@@ -213,10 +230,10 @@
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query TransferMarket($rarity: Rarity, $maxPriceWei: String, $limit: Int!) { football { transferMarket(rarity: $rarity, maxPrice: { wei: $maxPriceWei }, first: $limit) { nodes { card { slug player { displayName } rarity } senderSide { wei } endDate } } } }",
+        "path": "query LiveSaleOffers($playerSlug: String, $sport: Sport, $limit: Int!) { tokens { liveSingleSaleOffers(playerSlug: $playerSlug, sport: $sport, first: $limit) { nodes { id endDate status senderSide { wei amounts { eurCents usdCents } anyCards { slug name ... on Card { rarity footballPlayer { slug displayName } } } } } } } }",
         "queryParams": {
-          "rarity": "$rarity",
-          "maxPriceWei": "$maxPriceWei",
+          "playerSlug": "$playerSlug",
+          "sport": "$sport",
           "limit": "$limit"
         }
       }
