@@ -43,7 +43,7 @@
     "@sentry/profiling-node": "^10.51.0",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
-    "better-sqlite3": "^12.6.2",
+    "better-sqlite3": "^12.10.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.0",
     "cookie-parser": "^1.4.7",
