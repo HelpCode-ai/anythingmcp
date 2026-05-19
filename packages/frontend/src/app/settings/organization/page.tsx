@@ -223,10 +223,10 @@ export default function OrganizationSettingsPage() {
       </Dialog.Root>
 
       {/* My organizations list + create new — available to ALL users */}
-      <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5 space-y-3">
+      <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5">
         <h3 className="text-sm font-semibold">My Organizations</h3>
         {orgs && orgs.length > 0 && (
-          <div>
+          <div className="mt-3">
             {orgs.map((org, index) => {
               const isActive = org.id === user?.organizationId;
               return (
@@ -234,34 +234,34 @@ export default function OrganizationSettingsPage() {
                   {index > 0 && (
                     <div className="border-t border-[var(--border)]" />
                   )}
-                <div className={`flex items-center justify-between px-2 rounded-lg ${isActive ? 'bg-[var(--accent)] py-[7px] my-[7px]' : 'py-2.5'}`}>
-                  <div className="min-w-0">
-                    <p className={`text-sm truncate ${isActive ? 'font-medium' : ''}`}>
-                      {org.name}
-                    </p>
-                    <p className="text-xs text-[var(--muted-foreground)]">
-                      {org.role} &middot; Joined {new Date(org.joinedAt).toLocaleDateString()}
-                    </p>
+                  <div className={`flex items-center justify-between px-2 rounded-lg ${isActive ? 'bg-[var(--accent)] py-[7px] my-[7px]' : 'py-2.5'}`}>
+                    <div className="min-w-0">
+                      <p className={`text-sm truncate ${isActive ? 'font-medium' : ''}`}>
+                        {org.name}
+                      </p>
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        {org.role} &middot; Joined {new Date(org.joinedAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    {isActive ? (
+                      <span className="text-xs bg-[var(--brand-light)] text-[var(--brand)] px-2 py-0.5 rounded-full font-medium flex-shrink-0">
+                        Active
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => switchOrg(org.id)}
+                        className="text-xs px-3 py-1 border border-[var(--border)] rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0"
+                      >
+                        Switch
+                      </button>
+                    )}
                   </div>
-                  {isActive ? (
-                    <span className="text-xs bg-[var(--brand-light)] text-[var(--brand)] px-2 py-0.5 rounded-full font-medium flex-shrink-0">
-                      Active
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => switchOrg(org.id)}
-                      className="text-xs px-3 py-1 border border-[var(--border)] rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0"
-                    >
-                      Switch
-                    </button>
-                  )}
-                </div>
                 </div>
               );
             })}
           </div>
         )}
-        <div className="space-y-2 !mt-8">
+        <div className="space-y-2 mt-8">
           <p className="text-xs font-medium text-[var(--muted-foreground)]">Create New Organization</p>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
