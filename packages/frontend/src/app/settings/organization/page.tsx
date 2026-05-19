@@ -14,7 +14,6 @@ export default function OrganizationSettingsPage() {
   const [message, setMessage] = useState('');
 
   // Create new org
-  const [showCreateForm, setShowCreateForm] = useState(false);
   const [newOrgName, setNewOrgName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createMessage, setCreateMessage] = useState('');
@@ -82,7 +81,6 @@ export default function OrganizationSettingsPage() {
       const newOrg = await organizations.create(newOrgName.trim(), token);
       setCreateMessage('Organization created! Switching...');
       setNewOrgName('');
-      setShowCreateForm(false);
       await switchOrg(newOrg.id);
     } catch (err: any) {
       setCreateMessage(err.message || 'Failed to create organization');
@@ -163,64 +161,6 @@ export default function OrganizationSettingsPage() {
         )}
       </div>
 
-      {/* Create new organization — available to ALL users */}
-      <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold">Create New Organization</h3>
-            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-              Create a separate workspace with its own connectors, MCP servers, and team. You will be the admin.
-            </p>
-          </div>
-          {!showCreateForm && (
-            <button
-              onClick={() => { setShowCreateForm(true); setCreateMessage(''); }}
-              className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--accent)] transition-colors"
-            >
-              + New Organization
-            </button>
-          )}
-        </div>
-
-        {showCreateForm && (
-          <div className="space-y-3 pt-2 border-t border-[var(--border)]">
-            <div>
-              <label className="block text-sm font-medium mb-1">Name</label>
-              <input
-                type="text"
-                value={newOrgName}
-                onChange={(e) => setNewOrgName(e.target.value)}
-                className="w-full px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand)] focus:border-transparent outline-none"
-                placeholder="My New Workspace"
-                autoFocus
-                onKeyDown={(e) => { if (e.key === 'Enter') handleCreateOrg(); }}
-              />
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleCreateOrg}
-                disabled={creating || !newOrgName.trim()}
-                className="px-4 py-2 bg-[var(--brand)] text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                {creating ? 'Creating...' : 'Create & Switch'}
-              </button>
-              <button
-                onClick={() => { setShowCreateForm(false); setNewOrgName(''); setCreateMessage(''); }}
-                className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--accent)] transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {createMessage && (
-          <p className={`text-sm ${createMessage.includes('created') ? 'text-green-600' : 'text-[var(--destructive)]'}`}>
-            {createMessage}
-          </p>
-        )}
-      </div>
-
       {/* Danger Zone — ADMIN only */}
       {isAdmin && (
         <div className="border border-[var(--destructive-border)] rounded-lg p-5 bg-[var(--destructive-bg)]/30 space-y-3">
@@ -282,41 +222,71 @@ export default function OrganizationSettingsPage() {
         </Dialog.Portal>
       </Dialog.Root>
 
-      {/* My organizations list — available to ALL users */}
-      {orgs && orgs.length > 1 && (
-        <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5 space-y-3">
-          <h3 className="text-sm font-semibold">My Organizations</h3>
-          <div className="divide-y divide-[var(--border)]">
-            {orgs.map((org) => {
+      {/* My organizations list + create new — available to ALL users */}
+      <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5">
+        <h3 className="text-sm font-semibold">My Organizations</h3>
+        {orgs && orgs.length > 0 && (
+          <div className="mt-3">
+            {orgs.map((org, index) => {
               const isActive = org.id === user?.organizationId;
               return (
-                <div key={org.id} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
-                  <div className="min-w-0">
-                    <p className={`text-sm truncate ${isActive ? 'font-medium text-[var(--brand)]' : ''}`}>
-                      {org.name}
-                    </p>
-                    <p className="text-xs text-[var(--muted-foreground)]">
-                      {org.role} &middot; Joined {new Date(org.joinedAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                  {isActive ? (
-                    <span className="text-xs bg-[var(--brand-light)] text-[var(--brand)] px-2 py-0.5 rounded-full font-medium flex-shrink-0">
-                      Active
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => switchOrg(org.id)}
-                      className="text-xs px-3 py-1 border border-[var(--border)] rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0"
-                    >
-                      Switch
-                    </button>
+                <div key={org.id}>
+                  {index > 0 && (
+                    <div className="border-t border-[var(--border)]" />
                   )}
+                  <div className={`flex items-center justify-between px-2 rounded-lg ${isActive ? 'bg-[var(--accent)] py-[7px] my-[7px]' : 'py-2.5'}`}>
+                    <div className="min-w-0">
+                      <p className={`text-sm truncate ${isActive ? 'font-medium' : ''}`}>
+                        {org.name}
+                      </p>
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        {org.role} &middot; Joined {new Date(org.joinedAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    {isActive ? (
+                      <span className="text-xs bg-[var(--brand-light)] text-[var(--brand)] px-2 py-0.5 rounded-full font-medium flex-shrink-0">
+                        Active
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => switchOrg(org.id)}
+                        className="text-xs px-3 py-1 border border-[var(--border)] rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0"
+                      >
+                        Switch
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
+        )}
+        <div className="space-y-2 mt-8">
+          <p className="text-xs font-medium text-[var(--muted-foreground)]">Create New Organization</p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={newOrgName}
+              onChange={(e) => setNewOrgName(e.target.value)}
+              className="flex-1 px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand)] focus:border-transparent outline-none"
+              placeholder="New organization name"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateOrg(); }}
+            />
+            <button
+              onClick={handleCreateOrg}
+              disabled={creating || !newOrgName.trim()}
+              className="px-4 py-2 bg-[var(--brand)] text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity sm:flex-shrink-0"
+            >
+              {creating ? 'Creating...' : 'Create Organization'}
+            </button>
+          </div>
+          {createMessage && (
+            <p className={`text-sm ${createMessage.includes('created') ? 'text-green-600' : 'text-[var(--destructive)]'}`}>
+              {createMessage}
+            </p>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
