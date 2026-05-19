@@ -54,7 +54,7 @@ export class DynamicMcpTools {
   ): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
     // Check license before executing tool (cloud mode only)
     try {
-      await this.licenseGuard.checkLicenseActive();
+      await this.licenseGuard.checkLicenseActive(context?.organizationId);
     } catch (err: any) {
       return {
         content: [
