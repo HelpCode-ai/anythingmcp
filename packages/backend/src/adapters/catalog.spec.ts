@@ -13,7 +13,11 @@ const VALID_AUTH_TYPES = new Set([
 const VALID_PASSWORD_HASHING_SCHEMES = new Set(['bcrypt', 'none']);
 const VALID_SALT_SOURCE_TYPES = new Set(['fetch', 'static']);
 
-const VALID_REST_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+// `STATIC` is intercepted by ConnectorsService / DynamicMcpTools BEFORE engine
+// dispatch (returns endpointMapping.staticResponse verbatim), so it's universal
+// across connector types — REST adapters can declare static "skill" or "enum
+// helper" tools without ever calling an HTTP engine.
+const VALID_REST_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'STATIC']);
 const VALID_GRAPHQL_METHODS = new Set([
   'QUERY',
   'MUTATION',
