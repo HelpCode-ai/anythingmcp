@@ -271,7 +271,7 @@ function LoginForm() {
             </button>
           </p>
 
-          {isFirstUserFlag && (
+          {isFirstUserFlag && !isCloudMode && (
             <div className="text-center mt-3">
               <button
                 onClick={() => {
