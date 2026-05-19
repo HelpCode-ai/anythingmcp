@@ -30,6 +30,7 @@ import { LocalOAuthProvider } from './auth/local-oauth.provider';
 import { PrismaOAuthStore } from './auth/prisma-oauth.store';
 import { PrismaService } from './common/prisma.service';
 import { OAuthUrlRewriteInterceptor } from './auth/oauth-url-rewrite.interceptor';
+import { EmailVerifiedGuard } from './auth/email-verified.guard';
 import { AdaptersModule } from './adapters/adapters.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { CloudModule } from './cloud/cloud.module';
@@ -139,6 +140,7 @@ if (useOAuth) {
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: EmailVerifiedGuard },
     ...(useOAuth
       ? [{ provide: APP_INTERCEPTOR, useClass: OAuthUrlRewriteInterceptor }]
       : []),
