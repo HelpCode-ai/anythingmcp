@@ -42,32 +42,32 @@ Dein KI-Client greift dabei nicht nur auf eine feste Auswahl vorgebackener Tools
 <div className="p-6 space-y-6 text-sm">
 
 <div className="flex gap-3 justify-end">
-  <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-blue-600 text-white px-4 py-3 shadow-md">
-    Ich hab <strong>100 €</strong> für Sorare diese Woche. Such mir 3 Limited-Karten, die <strong>nächsten Spieltag punkten</strong> und <strong>30 %+ unter ihrem 30-Tage-Schnitt</strong> liegen. Nur Top-5-Ligen.
+  <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-blue-600 px-4 py-3 shadow-md" style={{color: '#ffffff'}}>
+    <span style={{color: '#ffffff'}}>Ich hab <strong style={{color: '#ffffff'}}>100 €</strong> für Sorare diese Woche. Such mir 3 Limited-Karten, die <strong style={{color: '#ffffff'}}>nächsten Spieltag punkten</strong> und <strong style={{color: '#ffffff'}}>30 %+ unter ihrem 30-Tage-Schnitt</strong> liegen. Nur Top-5-Ligen.</span>
   </div>
-  <div className="size-9 rounded-full bg-blue-600 text-white grid place-items-center font-semibold text-xs flex-shrink-0 shadow">DU</div>
+  <div className="size-9 rounded-full bg-blue-600 !text-white grid place-items-center font-semibold text-xs flex-shrink-0 shadow">DU</div>
 </div>
 
 <div className="flex gap-3">
-  <div className="size-9 rounded-full bg-gradient-to-br from-orange-500 to-red-600 text-white grid place-items-center font-semibold text-[10px] flex-shrink-0 shadow">CLAUDE</div>
+  <div className="size-9 rounded-full bg-gradient-to-br from-orange-500 to-red-600 !text-white grid place-items-center font-semibold text-[10px] flex-shrink-0 shadow">CLAUDE</div>
   <div className="max-w-[90%] space-y-3 flex-1">
 
-  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 !text-zinc-900 dark:!text-zinc-100">
     Ich hole erst dein Wallet + deine Sammlung, damit ich keine Doppel empfehle, dann scanne ich die letzten So5-Top-Scorer und gleiche mit den aktuellen Marktpreisen ab.
   </div>
 
-  <div className="rounded-xl bg-zinc-950 text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
+  <div className="rounded-xl bg-zinc-950 !text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_wallet_balance</span>()</div>
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">73,45 € EUR · 0.0042 ETH</span></div>
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_list_my_cards</span>(rarities: ["limited"])</div>
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">6 Karten (überwiegend 2021-22, schwach)</span></div>
   </div>
 
-  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 !text-zinc-900 dark:!text-zinc-100">
     Deine aktuellen Limiteds sind alte Vintages aus Nebenliegen — füllen die Lücke nicht. Ich gehe frisch ran. Ich frag das Schema nach dem besten "Form vs Preis"-Winkel und schick dann eine eigene GraphQL gegen den Transfermarkt.
   </div>
 
-  <div className="rounded-xl bg-zinc-950 text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
+  <div className="rounded-xl bg-zinc-950 !text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_graphql_schema</span>(search: "topPerformers")</div>
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">Gefunden: football.topPerformers(window, league)</span></div>
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_graphql_query</span>(<span className="text-amber-300">custom: Top-5-Ligen, letzte 5 GWs, avg &gt;35</span>)</div>
@@ -77,7 +77,7 @@ Dein KI-Client greift dabei nicht nur auf eine feste Auswahl vorgebackener Tools
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">3 Kandidaten &gt;30 % unter 30-Tage-Schnitt ✓</span></div>
   </div>
 
-  <div className="rounded-2xl rounded-tl-md bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-200 dark:border-amber-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+  <div className="rounded-2xl rounded-tl-md bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-200 dark:border-amber-800 px-4 py-3 !text-zinc-900 dark:!text-zinc-100">
     <div className="font-semibold mb-2">Deine Kaufliste — 68 € total, 32 € Reserve</div>
     <ol className="space-y-1.5 list-decimal ml-5 text-[13px]">
       <li><strong>Calafiori (Arsenal)</strong> · Limited · <strong>3,20 €</strong> <span className="text-emerald-700 dark:text-emerald-400">— 40 % unter 30-Tage-Schnitt, Stamm</span></li>

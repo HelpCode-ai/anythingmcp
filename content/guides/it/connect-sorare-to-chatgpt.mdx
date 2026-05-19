@@ -36,41 +36,52 @@ ChatGPT supporta il **Model Context Protocol** nei custom connector e nell'area 
 1. Login su https://sorare.com.
 2. (Opzionale) crea un account Sorare dedicato in sola lettura e disattiva la 2FA.
 
-### Step 2 — Installa l'adapter Sorare
+### Step 2 — Installa l'adapter Sorare su cloud.anythingmcp.com (no code)
+
+1. Accedi su **[cloud.anythingmcp.com](https://cloud.anythingmcp.com)**.
+2. Apri **Connectors → Sorare → Install**.
+3. Inserisci:
+   - `SORARE_EMAIL` — email del tuo account Sorare
+   - `SORARE_PASSWORD` — password in chiaro (hashata bcrypt localmente prima del login; non viene mai salvata in chiaro)
+4. Genera una MCP API key in **Profile → MCP API Keys → New Key**. Copiala.
+
+Non c'è un campo AUD — l'adapter fissa l'audience del JWT a `anythingmcp`.
+
+### Step 3 — Aggiungi il connector in ChatGPT (no code, 4 clic)
+
+1. In ChatGPT apri **Impostazioni → Connectors → Aggiungi custom connector**.
+2. Compila:
+   - **Nome:** `Sorare`
+   - **URL:** `https://cloud.anythingmcp.com/mcp`
+   - **Authentication:** Bearer token → incolla la MCP API key dallo Step 2
+3. Clicca **Salva**.
+4. ChatGPT scopre automaticamente tutti e 18 i tool Sorare e li mostra nell'elenco connector.
+
+Fatto — vai con i prompt. ChatGPT può raggiungere solo URL **HTTPS pubblici**, ed è esattamente quello che è `cloud.anythingmcp.com`.
+
+<details>
+<summary><strong>Avanzato: self-host AnythingMCP esposto a ChatGPT</strong></summary>
+
+Se vuoi far girare AnythingMCP sul tuo hardware, ti serve comunque un URL HTTPS pubblico perché ChatGPT lo raggiunga.
 
 ```bash
 git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp && docker compose up -d
 ```
 
-Apri `http://localhost:3000/connectors/store`, clicca **Sorare** e inserisci:
+Apri `http://localhost:3000/connectors/store`, installa Sorare, genera la key, poi esponi la porta 4000 via Cloudflare Tunnel, ngrok o un reverse proxy con TLS. Usa quell'URL HTTPS nel form del connector ChatGPT invece di `cloud.anythingmcp.com`.
 
-| Campo | Valore |
+</details>
+
+### Tool disponibili (18 totali)
+
+| Gruppo | Tool |
 |---|---|
-| `SORARE_EMAIL` | email account |
-| `SORARE_PASSWORD` | password in chiaro |
-
-### Step 3 — Aggiungi il connector MCP a ChatGPT
-
-1. In AnythingMCP genera una MCP API key: **Profile → MCP API Keys → New Key**.
-2. In ChatGPT: **Impostazioni → Connectors → Aggiungi custom connector**.
-3. Compila:
-   - **Nome**: `Sorare`
-   - **URL**: `https://il-tuo-host-anythingmcp/mcp` (URL HTTPS pubblico — ChatGPT non vede `localhost`; esponi via Cloudflare Tunnel / ngrok / cloud.anythingmcp.com).
-   - **Authentication**: Bearer token → incolla la MCP API key.
-4. Salva. ChatGPT scopre automaticamente i 18 tool Sorare.
-
-### Tool disponibili
-
-| Tool | Descrizione |
-|---|---|
-| `sorare_current_user` | Profilo Sorare |
-| `sorare_get_card_by_slug` | Metadata carta + proprietario + asta |
-| `sorare_search_player` | Ricerca giocatori |
-| `sorare_list_player_cards` | Carte recenti di un giocatore |
-| `sorare_list_my_cards` | Le tue carte |
-| `sorare_get_lineup` | Dettagli line-up So5 |
-| `sorare_transfer_market` | Aste attive, filtrabili |
+| **Identità / wallet** | `sorare_current_user`, `sorare_wallet_balance`, `sorare_my_trophies_summary`, `sorare_user_by_slug` |
+| **Carte / inventario** | `sorare_list_my_cards`, `sorare_get_card_by_slug`, `sorare_list_player_cards` |
+| **Giocatori / forma** | `sorare_search_player`, `sorare_player_recent_scores`, `sorare_player_floor_price` |
+| **Mercato & aste** | `sorare_live_sale_offers`, `sorare_token_prices`, `sorare_get_auction`, `sorare_get_lineup` |
+| **GraphQL escape hatch** | `sorare_graphql_schema_url`, `sorare_graphql_schema`, `sorare_graphql_query`, `sorare_graphql_mutation`, `sorare_graphql_subscription` |
 
 
 ## Oltre i 18 tool — la tua AI chiama *qualsiasi* endpoint GraphQL di Sorare

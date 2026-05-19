@@ -31,31 +31,42 @@ GitHub Copilot Chat unterstützt jetzt das **Model Context Protocol (MCP)** übe
 - AnythingMCP lokal oder auf cloud.anythingmcp.com (3-Minuten-Setup).
 - GitHub Copilot Chat mit MCP-Support (VS Code Insiders ≥ 1.95 oder JetBrains-Plugin mit MCP).
 
-### Schritt 1 — Sorare-Adapter installieren
+### Schritt 1 — Sorare-Adapter auf cloud.anythingmcp.com installieren (kein Code)
 
-```bash
-git clone https://github.com/HelpCode-ai/anythingmcp.git
-cd anythingmcp && docker compose up -d
-```
+1. Auf **[cloud.anythingmcp.com](https://cloud.anythingmcp.com)** einloggen.
+2. **Connectors → Sorare → Install** öffnen.
+3. Einfügen:
+   - `SORARE_EMAIL` — deine Sorare-Kontomail
+   - `SORARE_PASSWORD` — Klartext-Passwort (wird vor dem Login lokal bcrypt-gehasht; nie unverschlüsselt gespeichert)
+4. MCP-API-Key erzeugen unter **Profile → MCP API Keys → New Key**. Kopieren.
 
-Öffne `http://localhost:3000/connectors/store`, klicke **Sorare** und trage ein:
+Es gibt kein AUD-Feld — der Adapter setzt den JWT-Audience-Claim fest auf `anythingmcp`.
 
-| Feld | Wert |
-|---|---|
-| `SORARE_EMAIL` | Kontomail |
-| `SORARE_PASSWORD` | Klartext-Passwort (vor Login lokal bcrypt-gehasht) |
+### Schritt 2 — Sorare in Copilot einfügen (kein Code, Command Palette)
 
-Erstelle einen MCP-API-Key unter **Profile → MCP API Keys**.
+In VS Code (Insiders ≥ 1.95, oder Stable mit MCP-Support):
 
-### Schritt 2 — Sorare in Copilots MCP-Server einfügen
+1. **Cmd/Ctrl + Shift + P** öffnet die Command Palette.
+2. **`MCP: Add Server`** tippen und die HTTP-Option wählen.
+3. Eintragen:
+   - **Server URL:** `https://cloud.anythingmcp.com/mcp`
+   - **Authorization Header:** `Bearer DEIN_MCP_API_KEY` (aus Schritt 1)
+4. Server `sorare` nennen und bestätigen.
 
-In VS Code: Einstellungen → suche **Copilot: MCP servers** → ergänze:
+VS Code startet Copilot Chat automatisch neu. Alle 18 Sorare-Tools tauchen im Copilot-Tool-Picker auf — los geht's.
+
+> **JetBrains?** Gleicher Flow — Copilot-Panel öffnen → MCP servers → Add server → URL + Bearer Token einfügen.
+
+<details>
+<summary><strong>Fortgeschritten: <code>settings.json</code> manuell editieren</strong></summary>
+
+Wenn du die Config-Datei direkt bearbeiten willst, öffne `settings.json` (Cmd/Ctrl + Shift + P → "Preferences: Open User Settings (JSON)") und ergänze:
 
 ```json
 {
   "mcp.servers": {
     "sorare": {
-      "url": "http://localhost:4000/mcp",
+      "url": "https://cloud.anythingmcp.com/mcp",
       "transport": "http",
       "headers": {
         "Authorization": "Bearer DEIN_MCP_API_KEY"
@@ -65,9 +76,9 @@ In VS Code: Einstellungen → suche **Copilot: MCP servers** → ergänze:
 }
 ```
 
-Für Cloud: ersetze die URL durch `https://cloud.anythingmcp.com/mcp`.
-
 Copilot Chat neu starten. Die 18 Sorare-Tools tauchen automatisch auf — Copilot wählt das passende Tool je nach Prompt.
+
+</details>
 
 ### Verfügbare Tools (18)
 

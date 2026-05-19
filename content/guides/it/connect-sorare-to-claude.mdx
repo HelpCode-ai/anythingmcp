@@ -52,15 +52,32 @@ Apri `http://localhost:3000/connectors/store`, clicca **Sorare** e compila:
 
 Clicca **Install** — l'adapter è nel catalogo con 18 tool (5 GraphQL builtins + 13 dedicati).
 
-### Step 3 — Configura Claude Desktop
+### Step 3 — Aggiungi il connector in Claude (no code, 4 clic)
 
-Crea una MCP API key in **Profile → MCP API Keys**, poi aggiungi a `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Questo è il percorso consigliato — funziona nella **web app claude.ai** senza toccare nessun file di configurazione.
+
+1. Apri **[claude.ai/customize/connectors](https://claude.ai/customize/connectors)**.
+2. Clicca **"Add custom connector"**.
+3. Compila:
+   - **Name:** `Sorare`
+   - **URL:** `https://cloud.anythingmcp.com/mcp`
+   - **Authentication:** Bearer token → incolla la tua MCP API key (da AnythingMCP → **Profile → MCP API Keys → New Key**)
+4. Clicca **Connect** per autorizzare.
+
+Fatto. Tutti e 18 i tool Sorare appaiono subito in chat — inizia a scrivere prompt. Cache del token, refresh e login bcrypt sono gestiti server-side; non li vedi mai.
+
+<details>
+<summary><strong>Avanzato: Claude Desktop / Claude Code (JSON / CLI)</strong></summary>
+
+Per le **app desktop** la UI web non si applica — modifichi un file di configurazione locale.
+
+**Claude Desktop** — edita `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o `%AppData%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
     "sorare": {
-      "url": "http://localhost:4000/mcp",
+      "url": "https://cloud.anythingmcp.com/mcp",
       "headers": {
         "Authorization": "Bearer LA_TUA_MCP_API_KEY"
       }
@@ -71,17 +88,28 @@ Crea una MCP API key in **Profile → MCP API Keys**, poi aggiungi a `~/Library/
 
 Riavvia Claude Desktop. I tool Sorare compaiono nel menu 🔧.
 
-### Tool disponibili
+**Claude Code** — un comando CLI:
 
-| Tool | Descrizione |
+```bash
+claude mcp add sorare \
+  --transport http \
+  --url https://cloud.anythingmcp.com/mcp \
+  --header "Authorization: Bearer LA_TUA_MCP_API_KEY"
+```
+
+Verifica con `claude mcp list`.
+
+</details>
+
+### Tool disponibili (18 totali)
+
+| Gruppo | Tool |
 |---|---|
-| `sorare_current_user` | Profilo autenticato |
-| `sorare_get_card_by_slug` | Dettagli carta per slug |
-| `sorare_search_player` | Ricerca giocatori per nome |
-| `sorare_list_player_cards` | Carte recenti di un giocatore |
-| `sorare_list_my_cards` | Le tue carte |
-| `sorare_get_lineup` | Line-up So5 con score + reward |
-| `sorare_transfer_market` | Aste attive, filtrabili |
+| **Identità / wallet** | `sorare_current_user`, `sorare_wallet_balance`, `sorare_my_trophies_summary`, `sorare_user_by_slug` |
+| **Carte / inventario** | `sorare_list_my_cards`, `sorare_get_card_by_slug`, `sorare_list_player_cards` |
+| **Giocatori / forma** | `sorare_search_player`, `sorare_player_recent_scores`, `sorare_player_floor_price` |
+| **Mercato & aste** | `sorare_live_sale_offers`, `sorare_token_prices`, `sorare_get_auction`, `sorare_get_lineup` |
+| **GraphQL escape hatch** | `sorare_graphql_schema_url`, `sorare_graphql_schema`, `sorare_graphql_query`, `sorare_graphql_mutation`, `sorare_graphql_subscription` |
 
 
 ## Oltre i 18 tool — la tua AI chiama *qualsiasi* endpoint GraphQL di Sorare

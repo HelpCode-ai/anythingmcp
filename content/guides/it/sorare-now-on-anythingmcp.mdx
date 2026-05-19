@@ -42,32 +42,32 @@ Il tuo client AI non chiama un set fisso di tool pre-confezionati — ha a dispo
 <div className="p-6 space-y-6 text-sm">
 
 <div className="flex gap-3 justify-end">
-  <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-blue-600 text-white px-4 py-3 shadow-md">
-    Ho <strong>100 €</strong> da spendere su Sorare questa settimana. Trovami 3 Limited <strong>che probabilmente faranno punti la prossima GW</strong> e che sono <strong>30 %+ sotto la loro media a 30 giorni</strong>. Solo Top 5 europee.
+  <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-blue-600 px-4 py-3 shadow-md" style={{color: '#ffffff'}}>
+    <span style={{color: '#ffffff'}}>Ho <strong style={{color: '#ffffff'}}>100 €</strong> da spendere su Sorare questa settimana. Trovami 3 Limited <strong style={{color: '#ffffff'}}>che probabilmente faranno punti la prossima GW</strong> e che sono <strong style={{color: '#ffffff'}}>30 %+ sotto la loro media a 30 giorni</strong>. Solo Top 5 europee.</span>
   </div>
-  <div className="size-9 rounded-full bg-blue-600 text-white grid place-items-center font-semibold text-xs flex-shrink-0 shadow">TU</div>
+  <div className="size-9 rounded-full bg-blue-600 !text-white grid place-items-center font-semibold text-xs flex-shrink-0 shadow">TU</div>
 </div>
 
 <div className="flex gap-3">
-  <div className="size-9 rounded-full bg-gradient-to-br from-orange-500 to-red-600 text-white grid place-items-center font-semibold text-[10px] flex-shrink-0 shadow">CLAUDE</div>
+  <div className="size-9 rounded-full bg-gradient-to-br from-orange-500 to-red-600 !text-white grid place-items-center font-semibold text-[10px] flex-shrink-0 shadow">CLAUDE</div>
   <div className="max-w-[90%] space-y-3 flex-1">
 
-  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 !text-zinc-900 dark:!text-zinc-100">
     Prima controllo wallet + collezione per non consigliarti doppioni, poi scansiono i top So5 recenti e incrocio con i prezzi di mercato attuali.
   </div>
 
-  <div className="rounded-xl bg-zinc-950 text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
+  <div className="rounded-xl bg-zinc-950 !text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_wallet_balance</span>()</div>
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">73,45 € EUR · 0.0042 ETH</span></div>
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_list_my_cards</span>(rarities: ["limited"])</div>
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">6 carte (per lo più 2021-22, deboli)</span></div>
   </div>
 
-  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 !text-zinc-900 dark:!text-zinc-100">
     Le tue Limited attuali sono vintage di leghe minori — non riempiono il gap. Vado fresco. Chiedo allo schema il modo migliore per fare "form vs prezzo", poi lancio una GraphQL custom sul mercato.
   </div>
 
-  <div className="rounded-xl bg-zinc-950 text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
+  <div className="rounded-xl bg-zinc-950 !text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_graphql_schema</span>(search: "topPerformers")</div>
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">Trovato: football.topPerformers(window, league)</span></div>
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_graphql_query</span>(<span className="text-amber-300">custom: Top 5 leghe, ultimi 5 GW, avg &gt;35</span>)</div>
@@ -77,7 +77,7 @@ Il tuo client AI non chiama un set fisso di tool pre-confezionati — ha a dispo
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">3 candidati &gt;30 % sotto la media 30g ✓</span></div>
   </div>
 
-  <div className="rounded-2xl rounded-tl-md bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-200 dark:border-amber-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+  <div className="rounded-2xl rounded-tl-md bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-200 dark:border-amber-800 px-4 py-3 !text-zinc-900 dark:!text-zinc-100">
     <div className="font-semibold mb-2">Ecco la tua shopping list — 68 € totali, 32 € di riserva</div>
     <ol className="space-y-1.5 list-decimal ml-5 text-[13px]">
       <li><strong>Calafiori (Arsenal)</strong> · Limited · <strong>3,20 €</strong> <span className="text-emerald-700 dark:text-emerald-400">— 40 % sotto media 30g, titolare</span></li>

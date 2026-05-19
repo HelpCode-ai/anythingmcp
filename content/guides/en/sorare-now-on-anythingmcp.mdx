@@ -42,32 +42,32 @@ Your AI client doesn't just call a fixed set of pre-baked tools — it has **the
 <div className="p-6 space-y-6 text-sm">
 
 <div className="flex gap-3 justify-end">
-  <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-blue-600 text-white px-4 py-3 shadow-md">
-    I've got <strong>€100</strong> for Sorare this week. Find me 3 Limited cards <strong>likely to score next gameweek</strong> that are <strong>30%+ under their 30-day average</strong>. Top 5 European leagues.
+  <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-blue-600 px-4 py-3 shadow-md" style={{color: '#ffffff'}}>
+    <span style={{color: '#ffffff'}}>I've got <strong style={{color: '#ffffff'}}>€100</strong> for Sorare this week. Find me 3 Limited cards <strong style={{color: '#ffffff'}}>likely to score next gameweek</strong> that are <strong style={{color: '#ffffff'}}>30%+ under their 30-day average</strong>. Top 5 European leagues.</span>
   </div>
-  <div className="size-9 rounded-full bg-blue-600 text-white grid place-items-center font-semibold text-xs flex-shrink-0 shadow">YOU</div>
+  <div className="size-9 rounded-full bg-blue-600 !text-white grid place-items-center font-semibold text-xs flex-shrink-0 shadow">YOU</div>
 </div>
 
 <div className="flex gap-3">
-  <div className="size-9 rounded-full bg-gradient-to-br from-orange-500 to-red-600 text-white grid place-items-center font-semibold text-[10px] flex-shrink-0 shadow">CLAUDE</div>
+  <div className="size-9 rounded-full bg-gradient-to-br from-orange-500 to-red-600 !text-white grid place-items-center font-semibold text-[10px] flex-shrink-0 shadow">CLAUDE</div>
   <div className="max-w-[90%] space-y-3 flex-1">
 
-  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 !text-zinc-900 dark:!text-zinc-100">
     Pulling your wallet + collection first so I don't recommend duplicates, then I'll scan recent So5 scorers and cross-check current market prices.
   </div>
 
-  <div className="rounded-xl bg-zinc-950 text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
+  <div className="rounded-xl bg-zinc-950 !text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_wallet_balance</span>()</div>
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">€73.45 EUR · 0.0042 ETH</span></div>
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_list_my_cards</span>(rarities: ["limited"])</div>
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">6 cards (mostly 2021-22, weak)</span></div>
   </div>
 
-  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 !text-zinc-900 dark:!text-zinc-100">
     Your current Limiteds are all old vintages from minor leagues — won't fill the gap. I'll go fresh. Let me query the schema for the best "form vs price" angle, then run a custom GraphQL against the transfer market.
   </div>
 
-  <div className="rounded-xl bg-zinc-950 text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
+  <div className="rounded-xl bg-zinc-950 !text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_graphql_schema</span>(search: "topPerformers")</div>
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">Found: football.topPerformers(window, league)</span></div>
     <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_graphql_query</span>(<span className="text-amber-300">custom query: top5 leagues, last 5 GWs, avg score &gt;35</span>)</div>
@@ -77,7 +77,7 @@ Your AI client doesn't just call a fixed set of pre-baked tools — it has **the
     <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">3 candidates &gt;30% below 30-day avg ✓</span></div>
   </div>
 
-  <div className="rounded-2xl rounded-tl-md bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-200 dark:border-amber-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+  <div className="rounded-2xl rounded-tl-md bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-200 dark:border-amber-800 px-4 py-3 !text-zinc-900 dark:!text-zinc-100">
     <div className="font-semibold mb-2">Here's your buy list — €68 total, €32 reserve</div>
     <ol className="space-y-1.5 list-decimal ml-5 text-[13px]">
       <li><strong>Calafiori (Arsenal)</strong> · Limited · <strong>€3.20</strong> <span className="text-emerald-700 dark:text-emerald-400">— 40% under 30d avg, titulair</span></li>
