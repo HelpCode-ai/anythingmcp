@@ -149,10 +149,34 @@ export default function McpServerDetailPage() {
     } catch {}
   };
 
-  const handleCopy = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(label);
-    setTimeout(() => setCopied(''), 2000);
+  const handleCopy = async (text: string, label: string) => {
+    let ok = false;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch {}
+    if (!ok) {
+      // Fallback for non-secure contexts (e.g. plain-HTTP LAN deployments)
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        ok = document.execCommand('copy');
+      } catch {}
+      document.body.removeChild(ta);
+    }
+    if (ok) {
+      setCopied(label);
+      setTimeout(() => setCopied(''), 2000);
+    }
   };
 
   if (loading) {
