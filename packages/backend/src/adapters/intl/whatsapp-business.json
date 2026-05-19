@@ -1,0 +1,556 @@
+{
+  "slug": "whatsapp-business",
+  "name": "WhatsApp Business Cloud API",
+  "description": "Send WhatsApp messages (text, templates, images, audio/voice notes, video, documents, location, interactive buttons) from a WhatsApp Business account using Meta's Cloud API. Free tier of 1000 service conversations per month per business account.",
+  "instructions": "This connector uses Meta's WhatsApp Business Cloud API (Graph API v22.0).\n\n**Setup**:\n1. Go to https://developers.facebook.com/ → create or pick an App → add the **WhatsApp** product.\n2. Under WhatsApp → API Setup, you find: a temporary 24h access token (for testing), the test **Phone Number ID**, and the **WhatsApp Business Account ID** (WABA ID).\n3. For production, generate a **permanent System User access token** at Meta Business Suite → Business Settings → System Users → add user → assign the WhatsApp Business Account → generate token with `whatsapp_business_messaging` and `whatsapp_business_management` permissions.\n4. Paste the token as `WHATSAPP_ACCESS_TOKEN` and the WABA ID as `WHATSAPP_BUSINESS_ACCOUNT_ID`.\n\n**Phone Number ID**: every business account has one or more sending phone numbers, each identified by a `phoneNumberId`. Call `whatsapp_list_phone_numbers` once after setup to discover the IDs available on your WABA. Every send tool requires `phoneNumberId` — the connector does NOT auto-resolve a default, you must pass it explicitly on each call.\n\n**Recipient format**: the `to` field is the recipient's phone number in **international format without the `+` sign, country code first** (e.g. `15551234567` for the US, `4915151234567` for Germany).\n\n**Templates vs free-form text**:\n- Outside the **24-hour customer service window**, you can ONLY send pre-approved **template messages** (`whatsapp_send_template_message`). Templates must be created and approved in Meta Business Suite before they can be used.\n- Inside the 24-hour window (i.e. the user has messaged your number in the last 24h), you can send free-form text, media, interactive messages, location, etc.\n\n**Sending media (image / audio / voice / video / document)**: WhatsApp accepts media in two ways:\n  1. **By public URL** (recommended on AnythingMCP): use the per-type tools (`whatsapp_send_image`, `whatsapp_send_audio`, `whatsapp_send_video`, `whatsapp_send_document`) and pass `link` = a publicly accessible HTTPS URL. The URL must be reachable from Meta's servers and respect WhatsApp size limits (image 5 MB, audio/voice 16 MB, video 16 MB, document 100 MB).\n  2. **By uploaded media ID**: upload a binary first to `/PHONE_NUMBER_ID/media` (multipart/form-data with a real file) to obtain a `media_id`, then reference it in a send call. AnythingMCP's REST engine does not currently orchestrate the binary upload step in a single tool — for this flow either pre-upload via your own infrastructure and pass the resulting `mediaId` to the per-type send tools, or stick to the URL-based path above.\n\n**Voice notes specifically**: use `whatsapp_send_audio` with an OGG-Opus or AMR file. WhatsApp renders OGG-Opus as a true voice message (waveform + play button) in the client.\n\n**Cost / quota**: WhatsApp pricing is per **conversation** (24-hour session), not per message. Marketing, utility and authentication conversations are priced differently per country — see https://developers.facebook.com/docs/whatsapp/pricing/.\n\n**Inbound messages (webhook)**: this connector does NOT receive inbound messages. Meta delivers them via a webhook you must host yourself; AnythingMCP's current architecture is request/response only. If you need a chatbot that replies to user messages, host a webhook receiver separately and use this connector for the outbound side. Use `whatsapp_mark_message_as_read` to send read receipts for messages your webhook has processed.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "whatsapp",
+  "docsUrl": "https://developers.facebook.com/docs/whatsapp/cloud-api",
+  "requiredEnvVars": ["WHATSAPP_ACCESS_TOKEN", "WHATSAPP_BUSINESS_ACCOUNT_ID"],
+  "connector": {
+    "name": "WhatsApp Business Cloud API",
+    "type": "REST",
+    "baseUrl": "https://graph.facebook.com/v22.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WHATSAPP_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "whatsapp_list_phone_numbers",
+      "description": "List all phone numbers registered on the WhatsApp Business Account. Returns each number's `id` (the phoneNumberId you pass to send tools), `display_phone_number`, `verified_name` and `quality_rating`. Call this once after setup to discover which phoneNumberId to use.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "businessAccountId": {
+            "type": "string",
+            "description": "WhatsApp Business Account ID (WABA ID). Use the value of WHATSAPP_BUSINESS_ACCOUNT_ID configured on this connector — pass it explicitly here on each call (path parameter)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max phone numbers to return per page (default 20, max 100)."
+          }
+        },
+        "required": ["businessAccountId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{businessAccountId}/phone_numbers",
+        "queryParams": {
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "whatsapp_list_message_templates",
+      "description": "List the message templates approved on the WhatsApp Business Account. Returns each template's `id`, `name`, `language`, `status` (APPROVED / PENDING / REJECTED) and `components` (header/body/footer/buttons structure). Use this to discover which templates you can send via whatsapp_send_template_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "businessAccountId": {
+            "type": "string",
+            "description": "WhatsApp Business Account ID (WABA ID)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max templates per page (default 20, max 100)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return. Default: 'name,language,status,category,components,id'."
+          }
+        },
+        "required": ["businessAccountId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{businessAccountId}/message_templates",
+        "queryParams": {
+          "limit": "$limit",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "whatsapp_get_message_template",
+      "description": "Fetch a single message template by its ID. Returns the full template definition including components, sample variables and approval status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "templateId": {
+            "type": "string",
+            "description": "The template ID returned by whatsapp_list_message_templates."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return. Default: 'name,language,status,category,components,id'."
+          }
+        },
+        "required": ["templateId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{templateId}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "whatsapp_send_text_message",
+      "description": "Send a plain text message to a recipient. Only allowed inside the 24-hour customer service window (i.e. the user must have messaged your business number in the last 24h). For first contact or outside the window, use whatsapp_send_template_message instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The sending phone number ID (from whatsapp_list_phone_numbers)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient phone number in international format without '+', e.g. '15551234567'."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text. Max 4096 characters. Supports WhatsApp markdown: *bold*, _italic_, ~strikethrough~, ```monospace```."
+          },
+          "previewUrl": {
+            "type": "boolean",
+            "description": "If true and `body` contains an http(s) URL, show a link preview card. Default false."
+          }
+        },
+        "required": ["phoneNumberId", "to", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{phoneNumberId}/messages",
+        "bodyMapping": {
+          "messaging_product": "whatsapp",
+          "recipient_type": "individual",
+          "to": "$to",
+          "type": "text",
+          "text": {
+            "body": "$body",
+            "preview_url": "$previewUrl"
+          }
+        }
+      }
+    },
+    {
+      "name": "whatsapp_send_template_message",
+      "description": "Send a pre-approved message template. This is the only way to message a user OUTSIDE the 24-hour customer service window or to initiate first contact. The template must already be APPROVED in Meta Business Suite (check via whatsapp_list_message_templates).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The sending phone number ID."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient phone number in international format without '+'."
+          },
+          "templateName": {
+            "type": "string",
+            "description": "The exact template name (e.g. 'order_confirmation'). Names are case-sensitive."
+          },
+          "languageCode": {
+            "type": "string",
+            "description": "BCP-47 language tag of the approved template, e.g. 'en_US', 'de', 'it', 'pt_BR'."
+          },
+          "components": {
+            "type": "array",
+            "description": "Optional array of component objects that fill in template variables. Example for a body with two {{1}} {{2}} placeholders: [{\"type\":\"body\",\"parameters\":[{\"type\":\"text\",\"text\":\"John\"},{\"type\":\"text\",\"text\":\"ORD-123\"}]}]. Omit if the template has no variables. See https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-message-templates for full component schema (header, body, button, etc.)."
+          }
+        },
+        "required": ["phoneNumberId", "to", "templateName", "languageCode"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{phoneNumberId}/messages",
+        "bodyMapping": {
+          "messaging_product": "whatsapp",
+          "to": "$to",
+          "type": "template",
+          "template": {
+            "name": "$templateName",
+            "language": { "code": "$languageCode" },
+            "components": "$components"
+          }
+        }
+      }
+    },
+    {
+      "name": "whatsapp_send_image",
+      "description": "Send an image (JPG or PNG, max 5 MB). Provide EITHER `link` (a public HTTPS URL — recommended on AnythingMCP) OR `mediaId` (returned by a prior media upload). Only allowed inside the 24-hour customer service window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The sending phone number ID."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient phone number in international format without '+'."
+          },
+          "link": {
+            "type": "string",
+            "description": "Public HTTPS URL of the image. Use either this OR `mediaId`."
+          },
+          "mediaId": {
+            "type": "string",
+            "description": "ID of a previously uploaded image. Use either this OR `link`."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Optional caption shown under the image. Max 1024 chars."
+          }
+        },
+        "required": ["phoneNumberId", "to"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{phoneNumberId}/messages",
+        "bodyMapping": {
+          "messaging_product": "whatsapp",
+          "recipient_type": "individual",
+          "to": "$to",
+          "type": "image",
+          "image": {
+            "link": "$link",
+            "id": "$mediaId",
+            "caption": "$caption"
+          }
+        }
+      }
+    },
+    {
+      "name": "whatsapp_send_audio",
+      "description": "Send an audio file or voice note (OGG-Opus, AMR or MP3, max 16 MB). OGG-Opus renders as a true voice message (waveform + play button). Provide EITHER `link` (a public HTTPS URL — recommended on AnythingMCP) OR `mediaId`. Only allowed inside the 24-hour customer service window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The sending phone number ID."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient phone number in international format without '+'."
+          },
+          "link": {
+            "type": "string",
+            "description": "Public HTTPS URL of the audio file. Use either this OR `mediaId`. For a voice-note appearance use OGG-Opus."
+          },
+          "mediaId": {
+            "type": "string",
+            "description": "ID of a previously uploaded audio file. Use either this OR `link`."
+          }
+        },
+        "required": ["phoneNumberId", "to"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{phoneNumberId}/messages",
+        "bodyMapping": {
+          "messaging_product": "whatsapp",
+          "recipient_type": "individual",
+          "to": "$to",
+          "type": "audio",
+          "audio": {
+            "link": "$link",
+            "id": "$mediaId"
+          }
+        }
+      }
+    },
+    {
+      "name": "whatsapp_send_video",
+      "description": "Send a video (MP4 or 3GPP, max 16 MB). Provide EITHER `link` (a public HTTPS URL — recommended on AnythingMCP) OR `mediaId`. Only allowed inside the 24-hour customer service window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The sending phone number ID."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient phone number in international format without '+'."
+          },
+          "link": {
+            "type": "string",
+            "description": "Public HTTPS URL of the video. Use either this OR `mediaId`."
+          },
+          "mediaId": {
+            "type": "string",
+            "description": "ID of a previously uploaded video. Use either this OR `link`."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Optional caption shown under the video. Max 1024 chars."
+          }
+        },
+        "required": ["phoneNumberId", "to"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{phoneNumberId}/messages",
+        "bodyMapping": {
+          "messaging_product": "whatsapp",
+          "recipient_type": "individual",
+          "to": "$to",
+          "type": "video",
+          "video": {
+            "link": "$link",
+            "id": "$mediaId",
+            "caption": "$caption"
+          }
+        }
+      }
+    },
+    {
+      "name": "whatsapp_send_document",
+      "description": "Send a document (PDF, DOC(X), XLS(X), PPT(X), TXT — max 100 MB). Provide EITHER `link` (a public HTTPS URL — recommended on AnythingMCP) OR `mediaId`. Only allowed inside the 24-hour customer service window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The sending phone number ID."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient phone number in international format without '+'."
+          },
+          "link": {
+            "type": "string",
+            "description": "Public HTTPS URL of the document. Use either this OR `mediaId`."
+          },
+          "mediaId": {
+            "type": "string",
+            "description": "ID of a previously uploaded document. Use either this OR `link`."
+          },
+          "filename": {
+            "type": "string",
+            "description": "Optional filename shown in the WhatsApp UI (e.g. 'invoice.pdf'). Recommended for documents."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Optional caption shown under the document. Max 1024 chars."
+          }
+        },
+        "required": ["phoneNumberId", "to"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{phoneNumberId}/messages",
+        "bodyMapping": {
+          "messaging_product": "whatsapp",
+          "recipient_type": "individual",
+          "to": "$to",
+          "type": "document",
+          "document": {
+            "link": "$link",
+            "id": "$mediaId",
+            "filename": "$filename",
+            "caption": "$caption"
+          }
+        }
+      }
+    },
+    {
+      "name": "whatsapp_send_location",
+      "description": "Send a location pin to a recipient. Only allowed inside the 24-hour customer service window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The sending phone number ID."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient phone number in international format without '+'."
+          },
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees, e.g. 37.4847"
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees, e.g. -122.1477"
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional place name shown above the pin."
+          },
+          "address": {
+            "type": "string",
+            "description": "Optional street address shown below the pin."
+          }
+        },
+        "required": ["phoneNumberId", "to", "latitude", "longitude"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{phoneNumberId}/messages",
+        "bodyMapping": {
+          "messaging_product": "whatsapp",
+          "recipient_type": "individual",
+          "to": "$to",
+          "type": "location",
+          "location": {
+            "latitude": "$latitude",
+            "longitude": "$longitude",
+            "name": "$name",
+            "address": "$address"
+          }
+        }
+      }
+    },
+    {
+      "name": "whatsapp_send_interactive_buttons",
+      "description": "Send an interactive message with 1–3 reply buttons. The user taps a button and your webhook receives the selected button id. Only allowed inside the 24-hour customer service window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The sending phone number ID."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient phone number in international format without '+'."
+          },
+          "bodyText": {
+            "type": "string",
+            "description": "Main message text shown above the buttons. Max 1024 chars."
+          },
+          "buttons": {
+            "type": "array",
+            "description": "Array of 1–3 button objects in the exact shape WhatsApp expects: [{\"type\":\"reply\",\"reply\":{\"id\":\"yes\",\"title\":\"Yes\"}},{\"type\":\"reply\",\"reply\":{\"id\":\"no\",\"title\":\"No\"}}]. Each title max 20 chars, each id max 256 chars."
+          }
+        },
+        "required": ["phoneNumberId", "to", "bodyText", "buttons"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{phoneNumberId}/messages",
+        "bodyMapping": {
+          "messaging_product": "whatsapp",
+          "recipient_type": "individual",
+          "to": "$to",
+          "type": "interactive",
+          "interactive": {
+            "type": "button",
+            "body": { "text": "$bodyText" },
+            "action": { "buttons": "$buttons" }
+          }
+        }
+      }
+    },
+    {
+      "name": "whatsapp_mark_message_as_read",
+      "description": "Mark an incoming message as read (shows the double blue tick to the sender). Pass the `messageId` (wamid) from the webhook event that delivered the message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The sending phone number ID that received the message."
+          },
+          "messageId": {
+            "type": "string",
+            "description": "The wamid (WhatsApp message ID) of the incoming message to mark as read."
+          }
+        },
+        "required": ["phoneNumberId", "messageId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{phoneNumberId}/messages",
+        "bodyMapping": {
+          "messaging_product": "whatsapp",
+          "status": "read",
+          "message_id": "$messageId"
+        }
+      }
+    },
+    {
+      "name": "whatsapp_get_business_profile",
+      "description": "Get the public business profile attached to a phone number (about text, address, description, email, websites, vertical, profile picture URL).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The phone number ID whose profile to fetch."
+          }
+        },
+        "required": ["phoneNumberId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{phoneNumberId}/whatsapp_business_profile",
+        "queryParams": {
+          "fields": "about,address,description,email,profile_picture_url,websites,vertical"
+        }
+      }
+    },
+    {
+      "name": "whatsapp_update_business_profile",
+      "description": "Update fields of the public business profile attached to a phone number. Only the fields you pass are updated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumberId": {
+            "type": "string",
+            "description": "The phone number ID whose profile to update."
+          },
+          "about": {
+            "type": "string",
+            "description": "Short status text shown under the business name. Max 139 chars."
+          },
+          "address": {
+            "type": "string",
+            "description": "Street address. Max 256 chars."
+          },
+          "description": {
+            "type": "string",
+            "description": "Longer description of the business. Max 512 chars."
+          },
+          "email": {
+            "type": "string",
+            "description": "Contact email. Max 128 chars."
+          },
+          "websites": {
+            "type": "array",
+            "description": "Up to 2 URLs."
+          },
+          "vertical": {
+            "type": "string",
+            "description": "Industry vertical. One of: UNDEFINED, OTHER, AUTO, BEAUTY, APPAREL, EDU, ENTERTAIN, EVENT_PLAN, FINANCE, GROCERY, GOVT, HOTEL, HEALTH, NONPROFIT, PROF_SERVICES, RETAIL, TRAVEL, RESTAURANT, NOT_A_BIZ."
+          }
+        },
+        "required": ["phoneNumberId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{phoneNumberId}/whatsapp_business_profile",
+        "bodyMapping": {
+          "messaging_product": "whatsapp",
+          "about": "$about",
+          "address": "$address",
+          "description": "$description",
+          "email": "$email",
+          "websites": "$websites",
+          "vertical": "$vertical"
+        }
+      }
+    }
+  ]
+}

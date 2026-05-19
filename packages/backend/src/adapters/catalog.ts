@@ -35,6 +35,7 @@ import * as mercadoLibre from './br/mercado-libre.json';
 import * as paystack from './ng/paystack.json';
 import * as lineMessaging from './jp/line-messaging.json';
 import * as sorare from './intl/sorare.json';
+import * as whatsappBusiness from './intl/whatsapp-business.json';
 import { buildGraphqlBuiltinTools } from '../connectors/graphql-builtins';
 
 export interface AdapterMeta {
@@ -142,6 +143,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   paystack as unknown as AdapterDefinition,
   lineMessaging as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
+  whatsappBusiness as unknown as AdapterDefinition,
 ];
 
 const ALL_ADAPTERS: AdapterDefinition[] = RAW_ADAPTERS.map(withGraphqlBuiltins);

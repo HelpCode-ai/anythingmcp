@@ -14,6 +14,7 @@ const REGION_LABELS: Record<string, string> = {
   eu: 'Europe',
   us: 'United States',
   global: 'Global',
+  intl: 'International',
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -27,6 +28,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   'field-service': 'Field Service',
   accounting: 'Accounting',
   hr: 'HR',
+  messaging: 'Messaging',
 };
 
 const AUTH_LABELS: Record<string, string> = {

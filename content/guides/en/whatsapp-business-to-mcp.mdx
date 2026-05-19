@@ -1,0 +1,83 @@
+---
+title: "WhatsApp Business to MCP — Send WhatsApp Messages from Any AI Agent"
+description: "Expose Meta's WhatsApp Business Cloud API as an MCP server with AnythingMCP. 14 ready-to-use tools for text, templates, media (image/audio/voice/video/document), location, interactive buttons, and business profile management. Bearer-token auth, no SDK, no client code."
+category: "connectors"
+keyword: "WhatsApp MCP, WhatsApp Business API MCP, WhatsApp AI agent, WhatsApp Cloud API, send WhatsApp from AI"
+publishedAt: "2026-05-19"
+adapterSlug: "whatsapp-business"
+lang: "en"
+---
+
+> 💡 **No install? Use [cloud.anythingmcp.com](https://cloud.anythingmcp.com) directly.** Sign in, click **Connectors → WhatsApp Business**, paste your permanent System User access token + WhatsApp Business Account ID, mint an MCP API key — done. No Docker, no `git clone`, no local server to run. You can skip the local-install steps below and jump straight to the client-wiring section.
+
+## WhatsApp Business on the Model Context Protocol
+
+[WhatsApp Business Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api) is Meta's officially-hosted gateway for sending WhatsApp messages programmatically — text, pre-approved templates, media, location pins, interactive button flows, and business-profile management. AnythingMCP wraps it as an **MCP server** so any agent — Claude, ChatGPT, Copilot, your own — can drive it with natural language.
+
+The WhatsApp adapter ships built-in. There is no SDK to maintain and no client code to write: the engine handles the Bearer-token authentication and produces requests that exactly match Meta's `messaging_product=whatsapp` schema for every message type.
+
+### Why WhatsApp is awkward without AnythingMCP
+
+| Step | What WhatsApp Cloud API requires |
+|---|---|
+| 1 | Generate a permanent System User access token in Meta Business Suite (≠ the temporary 24h dev token) with `whatsapp_business_messaging` + `whatsapp_business_management` permissions |
+| 2 | Discover the `phoneNumberId` of each sending number under your WhatsApp Business Account (WABA) |
+| 3 | Build the correct JSON body per message type — `text`/`template`/`image`/`audio`/`video`/`document`/`location`/`interactive` — each with its own schema and field-placement quirks |
+| 4 | Stay on a currently-supported Graph API version (v15 is gone, v20 expires Sept 2026; the adapter ships on **v22.0**) |
+| 5 | Respect the 24-hour customer service window — outside it you can only send pre-approved templates |
+
+That's the entire **`BEARER_TOKEN`** auth profile + 14 message-shape tools, declared once as JSON in the adapter spec. No client code to maintain.
+
+### Install
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Open `http://localhost:3000/connectors/store`, pick **WhatsApp Business**, and paste in:
+
+| Field | Value |
+|---|---|
+| `WHATSAPP_ACCESS_TOKEN` | the permanent System User access token |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | your WABA ID (e.g. `123456789012345`) |
+
+Mint an MCP API key from **Profile → MCP API Keys** and point your agent at `http://localhost:4000/mcp`.
+
+### Available tools (14)
+
+| Tool | What it does |
+|---|---|
+| `whatsapp_list_phone_numbers` | Discover the `phoneNumberId` of each number on your WABA |
+| `whatsapp_list_message_templates` | List approved templates with their components |
+| `whatsapp_get_message_template` | Fetch one template by ID |
+| `whatsapp_send_text_message` | Send free-form text (24h window only) |
+| `whatsapp_send_template_message` | Send a pre-approved template (always allowed) |
+| `whatsapp_send_image` | Send a JPG/PNG via public URL or media ID |
+| `whatsapp_send_audio` | Send an audio file — OGG-Opus renders as a true voice note |
+| `whatsapp_send_video` | Send an MP4/3GPP video |
+| `whatsapp_send_document` | Send a PDF/DOC/XLS with optional filename |
+| `whatsapp_send_location` | Send a location pin |
+| `whatsapp_send_interactive_buttons` | Send 1–3 reply buttons |
+| `whatsapp_mark_message_as_read` | Send a read receipt (double blue tick) |
+| `whatsapp_get_business_profile` | Read the public business profile |
+| `whatsapp_update_business_profile` | Update about/address/email/websites |
+
+### The 24-hour window, explained
+
+WhatsApp enforces a **customer service window**: free-form messages (text, media, interactive, location) are only allowed in the 24 hours after the user last messaged your number. Outside that window the only allowed sends are **pre-approved templates** — you create them in Meta Business Suite, wait for approval, then call `whatsapp_send_template_message` with the template name and language code.
+
+The adapter doesn't track the window for you. It just calls the API; Meta returns a `131047` "Re-engagement message" error if you try to send free-form text outside the window. The instructions field in the adapter explains the rule so your agent knows when to fall back to a template.
+
+### Media — URL vs upload
+
+WhatsApp accepts media in two ways: upload a binary first to `/PHONE_NUMBER_ID/media` to get a `media_id`, or pass a public HTTPS `link`. AnythingMCP recommends the **link path** because the REST engine doesn't orchestrate the multipart upload + send dance in a single tool call. Host the file on a CDN or signed-URL bucket and pass the URL to `whatsapp_send_image` / `audio` / `video` / `document`. The `mediaId` field is available as an escape hatch if you pre-upload elsewhere.
+
+### Inbound messages — not in scope
+
+This connector is **outbound-only**. WhatsApp delivers inbound messages via a webhook you host yourself, and AnythingMCP's current architecture is request/response. If you need a chatbot that replies to user messages, run a small webhook receiver next to your AnythingMCP instance and use this connector for the outbound side (plus `whatsapp_mark_message_as_read` for read receipts).
+
+### Next steps
+
+- [Connect WhatsApp Business to Claude](./connect-whatsapp-business-to-claude)
+- [Connect WhatsApp Business to ChatGPT](./connect-whatsapp-business-to-chatgpt)

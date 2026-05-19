@@ -1,0 +1,141 @@
+---
+title: "WhatsApp Business mit Claude verbinden — WhatsApp aus Claude über MCP senden"
+description: "Metas WhatsApp Business Cloud API mit AnythingMCP an Claude anbinden. Text, Vorlagen, Medien, Sprachnachrichten und interaktive Buttons aus Claude Desktop, Claude Code oder claude.ai per natürlicher Sprache senden."
+category: "connectors"
+keyword: "WhatsApp Claude, WhatsApp KI, WhatsApp MCP Claude, WhatsApp Business Claude, WhatsApp aus Claude senden"
+publishedAt: "2026-05-19"
+adapterSlug: "whatsapp-business"
+lang: "de"
+---
+
+> 💡 **Keine Installation? Nutze [cloud.anythingmcp.com](https://cloud.anythingmcp.com) direkt.** Einloggen, **Connectors → WhatsApp Business** klicken, dauerhaftes System-User-Access-Token + WhatsApp Business Account ID einfügen, MCP-API-Key erzeugen — fertig. Kein Docker, kein `git clone`, kein lokaler Server. Du kannst die lokalen Installationsschritte unten überspringen und direkt zur Client-Konfiguration weitergehen.
+
+## WhatsApp Business mit Claude verbinden
+
+Die WhatsApp Business Cloud API ist Metas gehostetes Gateway zum programmatischen Versenden von WhatsApp-Nachrichten — Text, Vorlagen, Medien, Sprachnachrichten, interaktive Buttons, Standorte. Mit AnythingMCP steuerst du alles aus Claude Desktop, Claude Code oder claude.ai in Klartext. Kein SDK zu kleben, kein JSON-von-Hand für jeden Nachrichtentyp.
+
+### Was du tun kannst
+
+- "Sende 'Deine Bestellung wurde verschickt — verfolge sie auf https://acme.com/t/12345' an +49 151 5123 4567."
+- "Sende die Vorlage `bestellbestaetigung` (de) an +49 30 12345678, fülle 'Anna' und 'ORD-9912' ein."
+- "Sende das Rechnungs-PDF von https://acme.com/inv/9912.pdf an meinen Kunden mit Untertitel 'Rechnung 9912'."
+- "Liste die genehmigten Vorlagen auf meinem WABA und sende dann die Willkommensvorlage auf Deutsch an diesen neuen Lead."
+
+### Voraussetzungen
+
+- Ein **WhatsApp Business Account (WABA)** mit mindestens einer verifizierten Absende-Nummer.
+- Ein **dauerhaftes System-User-Access-Token** mit `whatsapp_business_messaging` + `whatsapp_business_management`-Berechtigungen (das temporäre 24h-Dev-Token taugt zum Testen, läuft aber aus).
+- AnythingMCP lokal oder auf cloud.anythingmcp.com (3-Minuten-Setup).
+- Claude Desktop, Claude Code oder ein claude.ai-Konto.
+
+### Schritt 1 — WhatsApp-Business-Zugangsdaten holen
+
+1. Öffne https://developers.facebook.com/ → deine App → **WhatsApp → API Setup**. Notiere die **WhatsApp Business Account ID** (WABA ID).
+2. Gehe zu **Meta Business Suite → Unternehmenseinstellungen → System Users**, erstelle einen System User, weise dein WABA zu und **Generiere ein neues Token** mit `whatsapp_business_messaging` + `whatsapp_business_management`. Kopiere es — du siehst es nicht noch einmal.
+3. Stelle sicher, dass deine Absende-Nummer in API Setup **verifiziert** ist (die Test-Nummer funktioniert sofort; für Produktion eigene Nummer hinzufügen und verifizieren).
+
+### Schritt 2 — WhatsApp-Business-Adapter installieren
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffne `http://localhost:3000/connectors/store`, klicke **WhatsApp Business** und trage ein:
+
+| Feld | Wert |
+|---|---|
+| `WHATSAPP_ACCESS_TOKEN` | das dauerhafte System-User-Token |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | deine WABA ID (z. B. `123456789012345`) |
+
+Klicke **Install** — der Adapter ist nun mit 14 Tools in deinem Katalog.
+
+### Schritt 3 — phoneNumberId einmalig ermitteln
+
+Bitte Claude, `whatsapp_list_phone_numbers` aufzurufen (mit deiner WABA ID als `businessAccountId`). Du erhältst die `id` jeder Absende-Nummer zurück — diesen Wert fixieren, jedes Send-Tool braucht ihn als `phoneNumberId`.
+
+### Schritt 4 — Connector in Claude hinzufügen (kein Code, 4 Klicks)
+
+Empfohlener Weg — funktioniert auf **claude.ai web** ohne Anfassen einer Konfigurationsdatei.
+
+1. Öffne **[claude.ai/customize/connectors](https://claude.ai/customize/connectors)**.
+2. Klicke **"Add custom connector"**.
+3. Trage ein:
+   - **Name:** `WhatsApp Business`
+   - **URL:** `https://cloud.anythingmcp.com/mcp`
+   - **Authentication:** Bearer Token → MCP-API-Key einfügen (aus AnythingMCP → **Profile → MCP API Keys → New Key**)
+4. Klicke **Connect** zum Autorisieren.
+
+Fertig. Alle 14 WhatsApp-Tools erscheinen in deinem Chat — leg los mit Prompts.
+
+<details>
+<summary><strong>Fortgeschritten: Claude Desktop / Claude Code (JSON / CLI)</strong></summary>
+
+**Claude Desktop** — bearbeite `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) oder `%AppData%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "whatsapp-business": {
+      "url": "https://cloud.anythingmcp.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Claude Desktop neu starten. WhatsApp-Tools erscheinen im 🔧-Menü.
+
+**Claude Code** — ein CLI-Befehl:
+
+```bash
+claude mcp add whatsapp-business \
+  --transport http \
+  --url https://cloud.anythingmcp.com/mcp \
+  --header "Authorization: Bearer YOUR_MCP_API_KEY"
+```
+
+Prüfen mit `claude mcp list`.
+
+</details>
+
+### Verfügbare Tools (14 insgesamt)
+
+| Gruppe | Tools |
+|---|---|
+| **Discovery** | `whatsapp_list_phone_numbers`, `whatsapp_list_message_templates`, `whatsapp_get_message_template` |
+| **Text & Vorlage** | `whatsapp_send_text_message`, `whatsapp_send_template_message` |
+| **Medien (URL oder Media-ID)** | `whatsapp_send_image`, `whatsapp_send_audio`, `whatsapp_send_video`, `whatsapp_send_document` |
+| **Interaktiv & Standort** | `whatsapp_send_location`, `whatsapp_send_interactive_buttons` |
+| **Lesebestätigungen & Profil** | `whatsapp_mark_message_as_read`, `whatsapp_get_business_profile`, `whatsapp_update_business_profile` |
+
+### Das 24-Stunden-Fenster — was dein Agent wissen muss
+
+WhatsApp erlaubt **Freitext**-Nachrichten (Text, Medien, interaktiv, Standort) nur in den **24 Stunden** nach der letzten eingehenden Nachricht des Nutzers an deine Nummer. Außerhalb dieses Fensters sind nur **vorab genehmigte Vorlagen** erlaubt — rufe `whatsapp_send_template_message` mit Name und Sprache der Vorlage auf.
+
+Das `instructions`-Feld des Adapters teilt Claude diese Regel mit, sodass Claude bei "sende ein Follow-up an diesen Kunden" Tage nach der letzten Antwort `whatsapp_send_template_message` statt Freitext nutzt.
+
+### Sprachnachrichten
+
+Nutze `whatsapp_send_audio` mit `link` auf eine OGG-Opus-Datei auf einer öffentlichen HTTPS-URL. WhatsApp rendert OGG-Opus als echte Sprachnachricht (Wellenform + Play-Button). MP3 und AMR funktionieren, erscheinen aber als reine Audio-Anhänge.
+
+### FAQ
+
+**Funktioniert das ohne verifizierte Geschäftsnummer?**
+Metas Test-Nummer funktioniert zum Testen (nur Versand an als Tester hinzugefügte Nummern). Für Produktionsversand an beliebige Empfänger muss deine Absende-Nummer verifiziert und auf deinem WABA registriert sein.
+
+**Was passiert, wenn ich Freitext außerhalb des 24h-Fensters sende?**
+Meta antwortet mit Fehlercode `131047` ("Re-engagement message"). Nutze `whatsapp_send_template_message`.
+
+**Kann der Adapter eingehende Nachrichten empfangen?**
+Nicht direkt — Meta nutzt Webhooks für Inbound, und die AnythingMCP REST-Engine ist nur outbound. Betreibe einen kleinen Webhook-Receiver neben AnythingMCP und nutze diesen Connector für outbound + `whatsapp_mark_message_as_read` für Lesebestätigungen.
+
+**Funktioniert es mit Claude Code genauso wie mit Claude Desktop?**
+Ja — selbe MCP-URL.
+
+### Nächste Schritte
+
+- [WhatsApp Business zu MCP — die generische Anleitung](./whatsapp-business-to-mcp)
+- [WhatsApp Business mit ChatGPT verbinden](./connect-whatsapp-business-to-chatgpt)
