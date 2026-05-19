@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { auth, license, server } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { buildPricingUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/nav-bar';
 
 type SetupStep = 'auth' | 'verify-email' | 'license-choice' | 'license-email-sent' | 'license-key' | 'trial-activated';
@@ -494,7 +495,7 @@ function LoginForm() {
           <p className="text-sm text-[var(--muted-foreground)] mb-4">
             Purchase a license at{' '}
             <a
-              href="https://anythingmcp.com/pricing"
+              href={buildPricingUrl()}
               target="_blank"
               rel="noopener noreferrer"
               className="text-[var(--brand)] hover:underline font-medium"

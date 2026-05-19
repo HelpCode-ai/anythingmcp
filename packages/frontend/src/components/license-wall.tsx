@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { buildPricingUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/nav-bar';
 
 export function LicenseWall() {
@@ -47,7 +48,7 @@ export function LicenseWall() {
 
         <div className="space-y-3">
           <a
-            href="https://anythingmcp.com/pricing"
+            href={buildPricingUrl()}
             target="_blank"
             rel="noopener noreferrer"
             className="block w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 text-center"

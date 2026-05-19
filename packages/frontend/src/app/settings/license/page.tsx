@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { license } from '@/lib/api';
+import { buildPricingUrl } from '@/lib/marketing';
 
 interface LicenseStatus {
   plan: string | null;
@@ -258,16 +259,15 @@ export default function LicenseSettingsPage() {
         </section>
       )}
 
-      {/* Change License Key */}
-      {(!isCloud || status?.status === 'expired' || (status?.plan === 'trial' && status?.trialDaysLeft !== undefined && status?.trialDaysLeft <= 0)) && (
-        <section className="border border-[var(--border)] rounded-lg p-5 bg-[var(--card)]">
+      {/* Change License Key — always available so admins can activate a purchased key any time */}
+      <section className="border border-[var(--border)] rounded-lg p-5 bg-[var(--card)]">
           <h2 className="text-sm font-semibold mb-4">
-            {status?.plan ? 'Change License Key' : 'Activate License Key'}
+            {status?.plan && status.plan !== 'trial' ? 'Change License Key' : 'Activate License Key'}
           </h2>
           <p className="text-sm text-[var(--muted-foreground)] mb-4">
             Purchase a license at{' '}
             <a
-              href="https://anythingmcp.com/pricing"
+              href={buildPricingUrl()}
               target="_blank"
               rel="noopener noreferrer"
               className="text-[var(--brand)] hover:underline font-medium"
@@ -293,7 +293,6 @@ export default function LicenseSettingsPage() {
             </button>
           </div>
         </section>
-      )}
 
       {/* Upgrade Plan (Cloud mode) */}
       {isCloud && status?.plan === 'trial' && (
@@ -303,7 +302,7 @@ export default function LicenseSettingsPage() {
             Upgrade to a paid plan to continue using AnythingMCP Cloud after your trial ends.
           </p>
           <a
-            href="https://anythingmcp.com/pricing"
+            href={buildPricingUrl()}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"

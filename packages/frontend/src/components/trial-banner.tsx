@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { buildPricingUrl } from '@/lib/marketing';
 
 export function TrialBanner() {
   const { token } = useAuth();
@@ -41,7 +42,7 @@ export function TrialBanner() {
       </span>
       {' '}
       <a
-        href="https://anythingmcp.com/pricing"
+        href={buildPricingUrl()}
         target="_blank"
         rel="noopener noreferrer"
         className="underline font-medium hover:no-underline"
