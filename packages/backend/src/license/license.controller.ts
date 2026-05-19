@@ -104,8 +104,8 @@ export class LicenseController {
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Force re-verify license against remote API (ADMIN)' })
-  async verifyLicense() {
-    const result = await this.licenseService.verifyLicense();
+  async verifyLicense(@Req() req: any) {
+    const result = await this.licenseService.verifyLicense(undefined, req.user.organizationId);
     return result;
   }
 
@@ -127,6 +127,7 @@ export class LicenseController {
       const result = await this.licenseService.requestTrialLicense(
         user.email,
         user.name || user.email,
+        req.user.organizationId,
       );
       return {
         message: 'Trial activated successfully',

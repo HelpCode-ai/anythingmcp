@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import axios from 'axios';
 import * as crypto from 'crypto';
 import { PrismaService } from '../common/prisma.service';
+import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 
 const LICENSE_API_URL =
@@ -35,6 +36,7 @@ export class LicenseService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly siteSettings: SiteSettingsService,
+    private readonly deployment: DeploymentService,
   ) {}
 
   async onModuleInit() {
@@ -94,6 +96,7 @@ export class LicenseService implements OnModuleInit {
   async requestTrialLicense(
     email: string,
     name: string,
+    organizationId?: string,
   ): Promise<{ licenseKey: string; plan: string; expiresAt: string; trialDaysLeft: number }> {
     const instanceId = await this.getInstanceId();
 
@@ -114,6 +117,7 @@ export class LicenseService implements OnModuleInit {
           expiresAt: new Date(data.expiresAt),
           lastVerifiedAt: new Date(),
           instanceId,
+          organizationId: organizationId || undefined,
         },
         create: {
           licenseKey: data.licenseKey,
@@ -123,10 +127,16 @@ export class LicenseService implements OnModuleInit {
           expiresAt: new Date(data.expiresAt),
           lastVerifiedAt: new Date(),
           instanceId,
+          organizationId: organizationId || undefined,
         },
       });
 
-      await this.siteSettings.set('license_key', data.licenseKey);
+      // Self-hosted = single tenant, the instance-wide pointer is meaningful.
+      // Cloud = multi tenant, a global pointer would let one org's verify
+      // resolve to another org's key, so we skip the write.
+      if (!this.deployment.isCloud()) {
+        await this.siteSettings.set('license_key', data.licenseKey);
+      }
 
       return {
         licenseKey: data.licenseKey,
@@ -172,9 +182,27 @@ export class LicenseService implements OnModuleInit {
 
   // ── License Verification ───────────────────────────────────────────────────
 
-  async verifyLicense(key?: string): Promise<RemoteVerifyResponse> {
-    const licenseKey =
-      key || (await this.siteSettings.get('license_key'));
+  async verifyLicense(
+    key?: string,
+    organizationId?: string,
+  ): Promise<RemoteVerifyResponse> {
+    let licenseKey = key;
+
+    if (!licenseKey) {
+      if (this.deployment.isCloud()) {
+        // Multi-tenant: only verify the key that actually belongs to the
+        // requesting organization. No fallback to a global pointer.
+        if (organizationId) {
+          const existing = await this.prisma.license.findFirst({
+            where: { organizationId },
+            orderBy: { createdAt: 'desc' },
+          });
+          licenseKey = existing?.licenseKey;
+        }
+      } else {
+        licenseKey = await this.siteSettings.get('license_key') || undefined;
+      }
+    }
 
     if (!licenseKey) {
       return { valid: false, error: 'No license key configured' };
@@ -217,6 +245,11 @@ export class LicenseService implements OnModuleInit {
   }
 
   async verifyOnStartup(): Promise<void> {
+    // In cloud mode "the" instance-wide license key is meaningless — each
+    // org has its own. Per-org background verification (if needed) belongs
+    // elsewhere; here we only handle the self-hosted single-tenant case.
+    if (this.deployment.isCloud()) return;
+
     try {
       const licenseKey = await this.siteSettings.get('license_key');
       if (!licenseKey) return;
@@ -282,7 +315,12 @@ export class LicenseService implements OnModuleInit {
       },
     });
 
-    await this.siteSettings.set('license_key', licenseKey);
+    // Self-hosted: this is "the" instance license, so we point site_settings
+    // at it. In cloud the same write would leak the key across tenants on the
+    // next unscoped lookup.
+    if (!this.deployment.isCloud()) {
+      await this.siteSettings.set('license_key', licenseKey);
+    }
 
     // Activate in background
     this.activateLicense(licenseKey).catch((err) =>
@@ -304,7 +342,14 @@ export class LicenseService implements OnModuleInit {
       if (license) return this.toLicenseInfo(license);
     }
 
-    // 2. Fallback: global license via site_settings key
+    // Cloud: stop here. Falling back to a global key or to any unassigned
+    // license would let one org see another org's entitlement (or auto-bind
+    // someone else's license to the calling org).
+    if (this.deployment.isCloud()) {
+      return null;
+    }
+
+    // 2. Self-hosted fallback: global license via site_settings key
     const licenseKey = await this.siteSettings.get('license_key');
     if (licenseKey) {
       const license = await this.prisma.license.findUnique({
@@ -322,7 +367,7 @@ export class LicenseService implements OnModuleInit {
       }
     }
 
-    // 3. Fallback: any active license without an org (migrated but unassigned)
+    // 3. Self-hosted fallback: any active license without an org (migrated but unassigned)
     const unassigned = await this.prisma.license.findFirst({
       where: { status: 'active', organizationId: null },
       orderBy: { createdAt: 'desc' },
