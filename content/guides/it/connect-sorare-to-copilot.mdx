@@ -79,6 +79,20 @@ Riavvia Copilot Chat. I 18 tool Sorare compaiono in automatico — Copilot scegl
 | **Mercato** | `sorare_live_sale_offers`, `sorare_token_prices`, `sorare_get_auction`, `sorare_get_lineup` |
 | **GraphQL generico** | `sorare_graphql_schema_url`, `sorare_graphql_schema`, `sorare_graphql_query`, `sorare_graphql_mutation`, `sorare_graphql_subscription` |
 
+
+## Oltre i 18 tool — la tua AI chiama *qualsiasi* endpoint GraphQL di Sorare
+
+Questi tool dedicati coprono i casi d'uso più comuni, ma ogni connector GraphQL include anche **`sorare_graphql_schema`**, **`sorare_graphql_query`**, **`sorare_graphql_mutation`** e **`sorare_graphql_subscription`** — escape hatch auto-iniettati che permettono alla tua AI di comporre **qualsiasi** operazione supportata dallo schema Sorare.
+
+È la differenza tra una lista tool fissa e un agent vero. Chiedile:
+
+> *"Trovami 3 Limited che probabilmente faranno punti la prossima GW e che stanno 30 %+ sotto la loro media a 30 giorni. Solo Top 5 europee."*
+
+…e la tua AI esplora lo schema GraphQL di Sorare, scansiona `topPerformers`, fa il join con `liveSingleSaleOffers` per i floor, incrocia con `tokenPrices` per la media 30g e ti consegna una shopping list + piano di riserva. Tutto da un solo prompt, senza scrivere GraphQL a mano.
+
+👉 Una chat completa la trovi nell'[announcement del lancio Sorare](./sorare-now-on-anythingmcp) — un roundtrip Claude reale che costruisce da solo una strategia d'acquisto da 100 €.
+
+
 ### Rotazione token
 
 I JWT Sorare vivono ~30 giorni. AnythingMCP li ri-emette 24 h prima della scadenza e a ogni 401 — Copilot non vede mai un token scaduto.

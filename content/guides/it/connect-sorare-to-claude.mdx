@@ -50,7 +50,7 @@ Apri `http://localhost:3000/connectors/store`, clicca **Sorare** e compila:
 | `SORARE_EMAIL` | email account |
 | `SORARE_PASSWORD` | password in chiaro |
 
-Clicca **Install** — l'adapter è nel catalogo con 7 tool.
+Clicca **Install** — l'adapter è nel catalogo con 18 tool (5 GraphQL builtins + 13 dedicati).
 
 ### Step 3 — Configura Claude Desktop
 
@@ -82,6 +82,20 @@ Riavvia Claude Desktop. I tool Sorare compaiono nel menu 🔧.
 | `sorare_list_my_cards` | Le tue carte |
 | `sorare_get_lineup` | Line-up So5 con score + reward |
 | `sorare_transfer_market` | Aste attive, filtrabili |
+
+
+## Oltre i 18 tool — la tua AI chiama *qualsiasi* endpoint GraphQL di Sorare
+
+Questi tool dedicati coprono i casi d'uso più comuni, ma ogni connector GraphQL include anche **`sorare_graphql_schema`**, **`sorare_graphql_query`**, **`sorare_graphql_mutation`** e **`sorare_graphql_subscription`** — escape hatch auto-iniettati che permettono alla tua AI di comporre **qualsiasi** operazione supportata dallo schema Sorare.
+
+È la differenza tra una lista tool fissa e un agent vero. Chiedile:
+
+> *"Trovami 3 Limited che probabilmente faranno punti la prossima GW e che stanno 30 %+ sotto la loro media a 30 giorni. Solo Top 5 europee."*
+
+…e la tua AI esplora lo schema GraphQL di Sorare, scansiona `topPerformers`, fa il join con `liveSingleSaleOffers` per i floor, incrocia con `tokenPrices` per la media 30g e ti consegna una shopping list + piano di riserva. Tutto da un solo prompt, senza scrivere GraphQL a mano.
+
+👉 Una chat completa la trovi nell'[announcement del lancio Sorare](./sorare-now-on-anythingmcp) — un roundtrip Claude reale che costruisce da solo una strategia d'acquisto da 100 €.
+
 
 ### Rotazione token spiegata
 

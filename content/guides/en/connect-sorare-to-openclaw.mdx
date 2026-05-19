@@ -75,6 +75,20 @@ Verify with `openclaw mcp list`. OpenClaw will auto-discover the 7 Sorare tools 
 | `sorare_get_lineup` | So5 lineup |
 | `sorare_transfer_market` | Active auctions |
 
+
+## Beyond the 18 tools — your AI calls *any* Sorare GraphQL operation
+
+These dedicated tools cover the most common entry points, but every GraphQL connector also ships with **`sorare_graphql_schema`**, **`sorare_graphql_query`**, **`sorare_graphql_mutation`** and **`sorare_graphql_subscription`** — auto-injected escape hatches that let your AI compose **any** operation Sorare's schema supports.
+
+That's the difference between a fixed tool list and a real agent. Ask:
+
+> *"Find 3 Limited cards that are likely to score next gameweek and are 30 %+ under their 30-day average. Top 5 leagues only."*
+
+…and your AI walks the Sorare GraphQL schema, scans `topPerformers`, joins with `liveSingleSaleOffers` for floor prices, cross-references `tokenPrices` for 30-day averages, and hands you a buy list with a reserve plan. All from one prompt, no manual GraphQL on your part.
+
+👉 See a full chat session in the [Sorare launch announcement](./sorare-now-on-anythingmcp) — a real Claude roundtrip composing a €100 buy strategy on its own.
+
+
 ### Token rotation
 
 AnythingMCP encrypts the Sorare JWT in `connector_auth_cache`, refreshes it 24 h before expiry, and re-logs in on any 401. The token lives ~30 days. No cron job, no manual refresh.

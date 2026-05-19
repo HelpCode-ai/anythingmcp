@@ -79,6 +79,20 @@ Restart Copilot Chat. The 18 Sorare tools appear automatically — Copilot will 
 | **Market** | `sorare_live_sale_offers`, `sorare_token_prices`, `sorare_get_auction`, `sorare_get_lineup` |
 | **Generic GraphQL** | `sorare_graphql_schema_url`, `sorare_graphql_schema`, `sorare_graphql_query`, `sorare_graphql_mutation`, `sorare_graphql_subscription` |
 
+
+## Beyond the 18 tools — your AI calls *any* Sorare GraphQL operation
+
+These dedicated tools cover the most common entry points, but every GraphQL connector also ships with **`sorare_graphql_schema`**, **`sorare_graphql_query`**, **`sorare_graphql_mutation`** and **`sorare_graphql_subscription`** — auto-injected escape hatches that let your AI compose **any** operation Sorare's schema supports.
+
+That's the difference between a fixed tool list and a real agent. Ask:
+
+> *"Find 3 Limited cards that are likely to score next gameweek and are 30 %+ under their 30-day average. Top 5 leagues only."*
+
+…and your AI walks the Sorare GraphQL schema, scans `topPerformers`, joins with `liveSingleSaleOffers` for floor prices, cross-references `tokenPrices` for 30-day averages, and hands you a buy list with a reserve plan. All from one prompt, no manual GraphQL on your part.
+
+👉 See a full chat session in the [Sorare launch announcement](./sorare-now-on-anythingmcp) — a real Claude roundtrip composing a €100 buy strategy on its own.
+
+
 ### Token rotation
 
 Sorare JWTs last ~30 days. AnythingMCP refreshes 24 h before expiry and re-issues them on any 401 — Copilot never sees an expired-token error.

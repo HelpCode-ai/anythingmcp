@@ -50,7 +50,7 @@ cd anythingmcp && docker compose up -d
 | `SORARE_EMAIL` | Kontomail |
 | `SORARE_PASSWORD` | Klartext-Passwort |
 
-**Install** klicken — der Adapter steht mit 7 Tools im Katalog.
+**Install** klicken — der Adapter steht mit 18 Tools (5 GraphQL-Builtins + 13 dedizierte) im Katalog.
 
 ### Schritt 3 — Claude Desktop konfigurieren
 
@@ -82,6 +82,20 @@ Claude Desktop neu starten. Sorare-Tools erscheinen im 🔧-Menü.
 | `sorare_list_my_cards` | Eigene Karten |
 | `sorare_get_lineup` | So5-Score + Reward |
 | `sorare_transfer_market` | Aktive Auktionen, filterbar |
+
+
+## Mehr als die 18 Tools — deine KI ruft *jeden* Sorare-GraphQL-Endpoint auf
+
+Diese dedizierten Tools decken die häufigsten Einstiegspunkte ab, aber jeder GraphQL-Connector liefert zusätzlich **`sorare_graphql_schema`**, **`sorare_graphql_query`**, **`sorare_graphql_mutation`** und **`sorare_graphql_subscription`** — auto-injizierte Notausgänge, mit denen deine KI **jede** Operation komponieren kann, die Sorares Schema unterstützt.
+
+Das ist der Unterschied zwischen einer festen Tool-Liste und einem echten Agent. Frag:
+
+> *"Finde 3 Limited-Karten, die nächsten Spieltag punkten und 30 %+ unter ihrem 30-Tage-Schnitt liegen. Nur Top-5-Ligen."*
+
+…und deine KI durchsucht Sorares GraphQL-Schema, scannt `topPerformers`, joined mit `liveSingleSaleOffers` für die Floor-Preise, gleicht mit `tokenPrices` über 30 Tage ab und gibt dir eine Kaufliste mit Reserveplan. Alles aus einem Prompt, ohne dass du manuell GraphQL schreiben musst.
+
+👉 Eine komplette Chat-Session findest du im [Sorare-Launch-Announcement](./sorare-now-on-anythingmcp) — ein echter Claude-Roundtrip, der eigenständig eine 100 €-Kaufstrategie baut.
+
 
 ### Token-Rotation erklärt
 

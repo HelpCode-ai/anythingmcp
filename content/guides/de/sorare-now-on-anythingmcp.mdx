@@ -1,8 +1,8 @@
 ---
-title: "Sorare ist jetzt auf AnythingMCP — Sorare mit Claude, ChatGPT, Copilot & OpenClaw verbinden"
-description: "Ankündigung: Sorares GraphQL-API als One-Click-MCP-Connector. Bcrypt-Login + 30-Tage-JWT-Caching für dich erledigt. 18 sofort einsatzbereite Tools — Karten, Spieler, Aufstellungen, Auktionen, Wallet, Scoring — funktionieren out-of-the-box in Claude, ChatGPT, GitHub Copilot, OpenClaw, Cursor und jedem MCP-fähigen KI-Client."
+title: "Sorare ist jetzt auf AnythingMCP — Lass Claude, ChatGPT oder Copilot deine Karten traden"
+description: "Sorares GraphQL-API als One-Click-MCP-Connector. Nicht nur 18 fertige Tools — deine KI scannt den Live-Transfermarkt, prüft die Spielerform, vergleicht Floor-Preise mit 30-Tage-Durchschnitten und entwickelt komplette Kaufstrategien eigenständig. Bcrypt + 30-Tage-JWT erledigt. Für Claude, ChatGPT, GitHub Copilot, OpenClaw."
 category: "announcements"
-keyword: "Sorare MCP, Sorare AI, Sorare Claude, Sorare ChatGPT, Sorare Copilot, Sorare OpenClaw, NFT Fantasy Football MCP, Sorare GraphQL KI-Agent"
+keyword: "Sorare MCP, Sorare KI Trading, Sorare KI Strategie, Sorare Claude, Sorare ChatGPT, Sorare Copilot, Sorare OpenClaw, NFT Fantasy Football KI, Sorare GraphQL KI-Agent, KI kauft Sorare-Karten"
 publishedAt: "2026-05-18"
 adapterSlug: "sorare"
 lang: "de"
@@ -13,21 +13,176 @@ featured: true
   <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/content/guides/assets/sorare.svg" alt="Sorare" width="280" />
 </p>
 
-> 💡 **Keine Installation? Nutze [cloud.anythingmcp.com](https://cloud.anythingmcp.com) direkt.** Einloggen, **Connectors → Sorare** klicken, Sorare-E-Mail + -Passwort einfügen, MCP-API-Key erzeugen — fertig. Kein Docker, kein `git clone`, kein lokaler Server. Du kannst die lokalen Installationsschritte unten überspringen und direkt zur Client-Konfiguration weitergehen.
+> 💡 **Keine Installation nötig.** Auf **[cloud.anythingmcp.com](https://cloud.anythingmcp.com)** einloggen, **Connectors → Sorare** klicken, E-Mail + Passwort einfügen, MCP-API-Key erzeugen — und schon tradest du in unter 2 Minuten aus Claude / ChatGPT / Copilot. Kein Docker, kein `git clone`, kein Server.
 
-## Sorare ist jetzt auf AnythingMCP
+## Deine KI spielt Sorare jetzt mit dir
 
-Ab sofort kannst du [Sorare](https://sorare.com/) — die größte NFT-Fantasy-Plattform für Fußball, Baseball und Basketball — mit einer einzigen Installation an **jeden MCP-fähigen KI-Client** anbinden. Kein SDK zu pflegen, keine Token-Rotation zu beaufsichtigen, kein mühsames GraphQL-Komponieren.
+Der neue **Sorare ↔ MCP**-Connector macht aus jedem MCP-fähigen KI-Client — Claude, ChatGPT, GitHub Copilot, OpenClaw, Cursor — deinen **persönlichen Sorare-Strategen**.
 
-Der neue AnythingMCP-**Sorare-Connector** verpackt Sorares komplette [GraphQL-API](https://github.com/sorare/api) und liefert **18 sofort einsatzbereite Tools** out-of-the-box:
+Frag einfach im Klartext:
 
-- **Identität & Wallet** — `sorare_current_user`, `sorare_wallet_balance`, `sorare_my_trophies_summary`, `sorare_user_by_slug`
-- **Karten & Inventar** — `sorare_list_my_cards`, `sorare_get_card_by_slug`, `sorare_list_player_cards`
-- **Spieler & Form** — `sorare_search_player`, `sorare_player_recent_scores`, `sorare_player_floor_price`
-- **Markt & Auktionen** — `sorare_live_sale_offers`, `sorare_token_prices`, `sorare_get_auction`, `sorare_get_lineup`
-- **Generic-GraphQL-Notausgang (auto-injiziert für jeden GraphQL-Connector)** — `sorare_graphql_schema_url`, `sorare_graphql_schema`, `sorare_graphql_query`, `sorare_graphql_mutation`, `sorare_graphql_subscription`
+- "Wie ist mein Wallet, und welche 3 Karten unter 30 € liefern aktuell?"
+- "Finde Limited-Karten 30 %+ unter ihrem 30-Tage-Schnitt für den nächsten Spieltag."
+- "Beobachte den Live-Transfermarkt und pingt mich, wenn eine Premier-League-Karte unter Floor fällt."
+- "Stell mir eine So5-Captain-Aufstellung mit Karten aus meiner Sammlung zusammen."
 
-### Wähle deinen KI-Client
+Dein KI-Client greift dabei nicht nur auf eine feste Auswahl vorgebackener Tools zu — er hat die **komplette Sorare-GraphQL-API** zur Hand und komponiert die richtigen Abfragen selbst.
+
+<div className="not-prose my-12 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-gradient-to-br from-white via-zinc-50 to-zinc-100 dark:from-zinc-900 dark:via-zinc-950 dark:to-black shadow-2xl shadow-zinc-900/10 overflow-hidden">
+
+<div className="flex items-center gap-3 px-5 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/60 backdrop-blur">
+  <div className="flex gap-1.5">
+    <div className="w-3 h-3 rounded-full bg-red-400"></div>
+    <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
+    <div className="w-3 h-3 rounded-full bg-green-400"></div>
+  </div>
+  <div className="text-xs text-zinc-500 dark:text-zinc-400 font-mono ml-2">cloud.anythingmcp.com  ·  Claude + Sorare</div>
+</div>
+
+<div className="p-6 space-y-6 text-sm">
+
+<div className="flex gap-3 justify-end">
+  <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-blue-600 text-white px-4 py-3 shadow-md">
+    Ich hab <strong>100 €</strong> für Sorare diese Woche. Such mir 3 Limited-Karten, die <strong>nächsten Spieltag punkten</strong> und <strong>30 %+ unter ihrem 30-Tage-Schnitt</strong> liegen. Nur Top-5-Ligen.
+  </div>
+  <div className="size-9 rounded-full bg-blue-600 text-white grid place-items-center font-semibold text-xs flex-shrink-0 shadow">DU</div>
+</div>
+
+<div className="flex gap-3">
+  <div className="size-9 rounded-full bg-gradient-to-br from-orange-500 to-red-600 text-white grid place-items-center font-semibold text-[10px] flex-shrink-0 shadow">CLAUDE</div>
+  <div className="max-w-[90%] space-y-3 flex-1">
+
+  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+    Ich hole erst dein Wallet + deine Sammlung, damit ich keine Doppel empfehle, dann scanne ich die letzten So5-Top-Scorer und gleiche mit den aktuellen Marktpreisen ab.
+  </div>
+
+  <div className="rounded-xl bg-zinc-950 text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
+    <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_wallet_balance</span>()</div>
+    <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">73,45 € EUR · 0.0042 ETH</span></div>
+    <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_list_my_cards</span>(rarities: ["limited"])</div>
+    <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">6 Karten (überwiegend 2021-22, schwach)</span></div>
+  </div>
+
+  <div className="rounded-2xl rounded-tl-md bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+    Deine aktuellen Limiteds sind alte Vintages aus Nebenliegen — füllen die Lücke nicht. Ich gehe frisch ran. Ich frag das Schema nach dem besten "Form vs Preis"-Winkel und schick dann eine eigene GraphQL gegen den Transfermarkt.
+  </div>
+
+  <div className="rounded-xl bg-zinc-950 text-zinc-100 p-3 font-mono text-[11px] space-y-1.5 border border-zinc-800">
+    <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_graphql_schema</span>(search: "topPerformers")</div>
+    <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">Gefunden: football.topPerformers(window, league)</span></div>
+    <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_graphql_query</span>(<span className="text-amber-300">custom: Top-5-Ligen, letzte 5 GWs, avg &gt;35</span>)</div>
+    <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">14 Spieler zurück</span></div>
+    <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_player_floor_price</span>(...) <span className="text-zinc-500">×14</span></div>
+    <div><span className="text-zinc-500">▸</span> <span className="text-sky-400">sorare_token_prices</span>(..., first: 30) <span className="text-zinc-500">×14</span></div>
+    <div><span className="text-zinc-500">←</span> <span className="text-emerald-400">3 Kandidaten &gt;30 % unter 30-Tage-Schnitt ✓</span></div>
+  </div>
+
+  <div className="rounded-2xl rounded-tl-md bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-200 dark:border-amber-800 px-4 py-3 text-zinc-900 dark:text-zinc-100">
+    <div className="font-semibold mb-2">Deine Kaufliste — 68 € total, 32 € Reserve</div>
+    <ol className="space-y-1.5 list-decimal ml-5 text-[13px]">
+      <li><strong>Calafiori (Arsenal)</strong> · Limited · <strong>3,20 €</strong> <span className="text-emerald-700 dark:text-emerald-400">— 40 % unter 30-Tage-Schnitt, Stamm</span></li>
+      <li><strong>Castro (Bologna)</strong> · Limited · <strong>3,54 €</strong> <span className="text-emerald-700 dark:text-emerald-400">— spielt jede Minute, 32 avg</span></li>
+      <li><strong>Doué (PSG)</strong> · Limited · <strong>29,18 €</strong> <span className="text-emerald-700 dark:text-emerald-400">— Captain-Kandidat, 38 avg</span></li>
+    </ol>
+    <div className="mt-2 text-[12px] text-zinc-700 dark:text-zinc-300">Reserve schützt gegen Drops in den nächsten 48 h. Soll ich Sub-Floor-Offers automatisch setzen?</div>
+  </div>
+
+  </div>
+</div>
+
+</div>
+</div>
+
+> **Das ist ein echter Claude-Roundtrip** — keine erfundenen Tool-Namen. Jede Box entspricht einem MCP-Call gegen die Live-Sorare-API über deine AnythingMCP-Cloud-Instanz.
+
+## Was du dadurch bekommst
+
+<div className="not-prose grid gap-4 sm:grid-cols-2 my-8">
+
+<div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 bg-white dark:bg-zinc-900/40">
+  <div className="text-2xl mb-2">🎯</div>
+  <div className="font-semibold mb-1">Strategie auf Abruf</div>
+  <div className="text-sm text-zinc-600 dark:text-zinc-400">"Bau mir eine So5-Limited-Champion-Aufstellung nur aus Karten, die ich schon habe." Deine KI liest Regeln, deine Sammlung und schlägt die Aufstellung in Sekunden vor.</div>
+</div>
+
+<div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 bg-white dark:bg-zinc-900/40">
+  <div className="text-2xl mb-2">💸</div>
+  <div className="font-semibold mb-1">Floor-Preis-Arbitrage</div>
+  <div className="text-sm text-zinc-600 dark:text-zinc-400">"Beobachte den Markt für die nächste Stunde und meld dich, wenn eine Calafiori- oder Saka-Limited 20 % unter Floor fällt." Echtes GraphQL, echte Preise, echte Chancen.</div>
+</div>
+
+<div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 bg-white dark:bg-zinc-900/40">
+  <div className="text-2xl mb-2">📈</div>
+  <div className="font-semibold mb-1">Formgerechte Käufe</div>
+  <div className="text-sm text-zinc-600 dark:text-zinc-400">"Zeig mir Rare-Karten von Spielern mit &gt;35 So5-Schnitt der letzten 5 Spiele, die unter 25 € liegen." Die KI verknüpft Form-Daten und Live-Angebote in einem Prompt.</div>
+</div>
+
+<div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 bg-white dark:bg-zinc-900/40">
+  <div className="text-2xl mb-2">🧠</div>
+  <div className="font-semibold mb-1">Portfolio-Insights</div>
+  <div className="text-sm text-zinc-600 dark:text-zinc-400">"Wo bin ich überexponiert? Welche Ligen / Klubs habe ich übersupplied?" Deine KI analysiert deine Sammlung wie ein Fund Analyst — kein Spreadsheet nötig.</div>
+</div>
+
+</div>
+
+## Mehr als die 18 fertigen Tools — die **gesamte** Sorare-GraphQL-API
+
+Die meisten MCP-Connectors liefern dir eine feste Handvoll Tools. Dieser hier liefert sie **plus den vollen GraphQL-Notausgang**. Wenn deine KI eine Operation braucht, die wir nicht vorgebacken haben (und Sorares GraphQL-Oberfläche ist riesig — 800 KB SDL), nutzt sie einfach die Schema-Discovery- + Custom-Query-Tools, die mit jedem GraphQL-Connector mitkommen:
+
+| Tool | Wofür die KI es nutzt |
+|---|---|
+| **`sorare_graphql_schema`** | "Zeig mir den `TransferMarket`-Typ" — Server-side-Proxy schneidet Sorares 200K-Token-SDL in 1-5 KB-Chunks, die das Modell verarbeiten kann |
+| **`sorare_graphql_query`** | Beliebige Reads auf Sorare — Top-Performer, eigene Liga-Filter, Cross-Season-Spielervergleiche |
+| **`sorare_graphql_mutation`** | Beliebige Writes — Offers setzen, Bids akzeptieren, Aufstellungen managen |
+| **`sorare_graphql_subscription`** | Realtime-Updates bei API-Endpoints, die es unterstützen |
+
+Das ist der Unterschied zwischen einer KI als *Spielzeug* und einer KI als *Trader*: sie reagiert auf alles, was du fragst — auch auf Fragen, die wir nie vorhergesehen haben.
+
+## Die 18 dedizierten Tools (gruppiert)
+
+<div className="not-prose grid gap-3 sm:grid-cols-2 my-6 text-sm">
+
+<div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4">
+  <div className="font-semibold mb-2">💰 Identität & Wallet</div>
+  <ul className="space-y-1 text-zinc-600 dark:text-zinc-400">
+    <li><code>sorare_current_user</code></li>
+    <li><code>sorare_wallet_balance</code></li>
+    <li><code>sorare_my_trophies_summary</code></li>
+    <li><code>sorare_user_by_slug</code></li>
+  </ul>
+</div>
+
+<div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4">
+  <div className="font-semibold mb-2">🃏 Karten & Inventar</div>
+  <ul className="space-y-1 text-zinc-600 dark:text-zinc-400">
+    <li><code>sorare_list_my_cards</code></li>
+    <li><code>sorare_get_card_by_slug</code></li>
+    <li><code>sorare_list_player_cards</code></li>
+  </ul>
+</div>
+
+<div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4">
+  <div className="font-semibold mb-2">⚽ Spieler & Form</div>
+  <ul className="space-y-1 text-zinc-600 dark:text-zinc-400">
+    <li><code>sorare_search_player</code></li>
+    <li><code>sorare_player_recent_scores</code></li>
+    <li><code>sorare_player_floor_price</code></li>
+  </ul>
+</div>
+
+<div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4">
+  <div className="font-semibold mb-2">🔥 Markt & Auktionen</div>
+  <ul className="space-y-1 text-zinc-600 dark:text-zinc-400">
+    <li><code>sorare_live_sale_offers</code></li>
+    <li><code>sorare_token_prices</code></li>
+    <li><code>sorare_get_auction</code></li>
+    <li><code>sorare_get_lineup</code></li>
+  </ul>
+</div>
+
+</div>
+
+## Wähle deinen KI-Client
 
 | Client | Schritt-für-Schritt-Anleitung |
 |---|---|
@@ -35,30 +190,43 @@ Der neue AnythingMCP-**Sorare-Connector** verpackt Sorares komplette [GraphQL-AP
 | 💬 **ChatGPT (Plus / Team / Enterprise)** | [Sorare mit ChatGPT verbinden →](./connect-sorare-to-chatgpt) |
 | 👨‍💻 **GitHub Copilot (VS Code & JetBrains)** | [Sorare mit Copilot verbinden →](./connect-sorare-to-copilot) |
 | 🦾 **OpenClaw (self-hosted lokale KI)** | [Sorare mit OpenClaw verbinden →](./connect-sorare-to-openclaw) |
-| ☁️ **AnythingMCP Cloud (managed)** | [Sorare mit AnythingMCP Cloud verbinden →](./connect-sorare-to-cloud) |
 | ❓ **Alles andere MCP-fähige** | [Sorare an MCP anbinden — generischer Leitfaden →](./sorare-to-mcp) |
 
-### Warum das wichtig ist
+## Warum das wirklich anders ist
 
-Sorares API hat zwei Eigenheiten, die sie aus einem generischen GraphQL-Client schwer steuerbar machen:
+Sorares API hat zwei Schmerzpunkte, die 90 % aller möglichen Integrationen blockieren:
 
-1. **Custom Auth.** Keine API-Keys, kein OAuth2. Anmeldung ist ein bcrypt-Handshake: pro Account einen Salt holen, das Passwort lokal hashen, den Hash per `signIn`-Mutation senden, dann auf jedem Call einen `JWT-AUD`-Header zurückspielen. Der neue **`LOGIN_TOKEN`**-AuthType in AnythingMCP beschreibt den gesamten Ablauf deklarativ in JSON — dein Passwort verlässt den Server nie, nur der bcrypt-Hash, und der JWT-Cache + Auto-Refresh sind erledigt.
-2. **Introspection ist in Produktion deaktiviert.** Agents können das Schema nicht via `__schema` / `__type` entdecken. AnythingMCPs auto-injiziertes `sorare_graphql_schema`-Tool proxt die SDL durch den MCP-Server und liefert Task-große Slices (`type:"X"`, `search:"foo"`, `full:true`), sodass selbst die größten Schemas in den Agenten-Kontext passen.
+1. **Custom Auth.** Keine API-Keys, kein OAuth2. Du hashst dein Passwort lokal bcrypt gegen einen Account-spezifischen Salt, POSTest den Hash per `signIn`-Mutation und echost auf jedem Call einen `JWT-AUD`-Header. AnythingMCPs neuer `LOGIN_TOKEN`-AuthType beschreibt den ganzen Flow deklarativ — dein Passwort verlässt den Server nie, das 30-Tage-JWT wird gecacht + automatisch erneuert.
+2. **Introspection in Produktion deaktiviert.** Agents können `__schema` / `__type` nicht nutzen. AnythingMCP proxt die SDL durch den MCP-Server und liefert Task-große Slices, sodass selbst riesige Schemas in den Agenten-Kontext passen.
 
-Ergebnis: jedes dedizierte Tool funktioniert sofort, und wenn du etwas Eigenes brauchst, kann dein Agent jede beliebige GraphQL-Query komponieren — ohne wissen zu müssen, wie Sorares Auth funktioniert.
+Du bekommst die Integration, deine KI bekommt den Schlüssel zur API, du sparst dir das SDK-Geklimper.
 
-### Jetzt ausprobieren
+## Jetzt ausprobieren
 
-- **Hosted (Null Installation):** auf [`cloud.anythingmcp.com`](https://cloud.anythingmcp.com) einloggen, **Connectors → Sorare → Install** klicken, Sorare-E-Mail + -Passwort einfügen, MCP-API-Key erzeugen, Claude / ChatGPT / Copilot auf `https://cloud.anythingmcp.com/mcp` zeigen.
-- **Self-hosted (volle Datenhoheit):** `git clone https://github.com/HelpCode-ai/anythingmcp.git && cd anythingmcp && docker compose up -d` — gleiche UI auf `http://localhost:3000`.
+<div className="not-prose my-8 grid gap-4 sm:grid-cols-2">
 
-### Hinweise
+<a href="https://cloud.anythingmcp.com/connectors" className="group rounded-2xl border-2 border-blue-500 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 p-6 hover:shadow-xl transition no-underline">
+  <div className="text-xs font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300 mb-1">Empfohlen · 0 Setup</div>
+  <div className="text-xl font-bold mb-1">AnythingMCP Cloud nutzen →</div>
+  <div className="text-sm text-zinc-700 dark:text-zinc-300">Einloggen, Sorare installieren, Credentials einfügen, KI verbinden. Kostenlose 7-Tage-Testphase.</div>
+</a>
 
-- Für Headless / Agent-Nutzung empfehlen wir ein **dediziertes Read-only-Sorare-Konto mit deaktivierter 2FA** — Sorares `signIn` lehnt Aufrufe ohne aktuelles OTP ab, wenn 2FA aktiv ist.
-- Sorare gibt Fiat-Beträge in **Cents**, nicht in Währungseinheiten. `eurCents` / `usdCents` / `gbpCents` durch 100 teilen — Claude / ChatGPT / Copilot lesen das aus den Adapter-Instructions und handhaben es korrekt automatisch.
-- Der Sorare-Adapter ist jetzt im AnythingMCP-Katalog [featured](https://cloud.anythingmcp.com/connectors) (`priority: 100`).
+<a href="https://github.com/HelpCode-ai/anythingmcp" className="group rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 hover:border-zinc-500 transition no-underline">
+  <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-1">Oder self-hosten</div>
+  <div className="text-xl font-bold mb-1">Lokal laufen lassen →</div>
+  <div className="text-sm text-zinc-600 dark:text-zinc-400"><code className="text-xs">git clone</code> + <code className="text-xs">docker compose up -d</code>. Deine Daten, deine Hardware.</div>
+</a>
 
-### Siehe auch
+</div>
+
+## Hinweise für ernsthafte Spieler
+
+- Für Headless / Agent-Nutzung **ein dediziertes Read-only-Sorare-Konto mit deaktivierter 2FA** anlegen — Sorares `signIn` lehnt Aufrufe ohne aktuelles OTP ab, und OTPs lassen sich server-seitig nicht sauber rotieren.
+- Sorare drückt Fiat-Beträge in **Cents** aus (`eurCents: 354` = 3,54 €), nicht in Währungseinheiten. Deine KI liest das automatisch aus den Adapter-Instructions.
+- Viele High-End-Karten sind nur in Krypto gelistet (`eurCents: null`). Deine KI fällt auf `wei` zurück und rechnet beim Abfragen in EUR um.
+- Der Sorare-Adapter ist im [AnythingMCP-Katalog](https://cloud.anythingmcp.com/connectors) **featured** (`priority: 100`) — zweiter Platz von oben, direkt nach DHL Tracking.
+
+## Siehe auch
 
 - [Sorare an MCP anbinden — Hauptreferenz](./sorare-to-mcp)
 - [Sorare mit Claude verbinden](./connect-sorare-to-claude)

@@ -61,7 +61,7 @@ openclaw mcp set sorare '{
 }'
 ```
 
-Verifica con `openclaw mcp list`. OpenClaw scopre i 7 tool Sorare e li espone alla sua runtime di agenti.
+Verifica con `openclaw mcp list`. OpenClaw scopre i 18 tool Sorare e li espone alla sua runtime di agenti.
 
 ### Tool disponibili
 
@@ -74,6 +74,20 @@ Verifica con `openclaw mcp list`. OpenClaw scopre i 7 tool Sorare e li espone al
 | `sorare_list_my_cards` | Le tue carte |
 | `sorare_get_lineup` | Line-up So5 |
 | `sorare_transfer_market` | Aste attive |
+
+
+## Oltre i 18 tool — la tua AI chiama *qualsiasi* endpoint GraphQL di Sorare
+
+Questi tool dedicati coprono i casi d'uso più comuni, ma ogni connector GraphQL include anche **`sorare_graphql_schema`**, **`sorare_graphql_query`**, **`sorare_graphql_mutation`** e **`sorare_graphql_subscription`** — escape hatch auto-iniettati che permettono alla tua AI di comporre **qualsiasi** operazione supportata dallo schema Sorare.
+
+È la differenza tra una lista tool fissa e un agent vero. Chiedile:
+
+> *"Trovami 3 Limited che probabilmente faranno punti la prossima GW e che stanno 30 %+ sotto la loro media a 30 giorni. Solo Top 5 europee."*
+
+…e la tua AI esplora lo schema GraphQL di Sorare, scansiona `topPerformers`, fa il join con `liveSingleSaleOffers` per i floor, incrocia con `tokenPrices` per la media 30g e ti consegna una shopping list + piano di riserva. Tutto da un solo prompt, senza scrivere GraphQL a mano.
+
+👉 Una chat completa la trovi nell'[announcement del lancio Sorare](./sorare-now-on-anythingmcp) — un roundtrip Claude reale che costruisce da solo una strategia d'acquisto da 100 €.
+
 
 ### Rotazione token
 

@@ -50,7 +50,7 @@ Open `http://localhost:3000/connectors/store`, click **Sorare**, and fill in:
 | `SORARE_EMAIL` | your account email |
 | `SORARE_PASSWORD` | your plain password |
 
-Click **Install** — the adapter is now in your catalog with 7 tools.
+Click **Install** — the adapter is now in your catalog with 18 tools (5 GraphQL builtins + 13 dedicated).
 
 ### Step 3 — Wire up Claude Desktop
 
@@ -82,6 +82,20 @@ Restart Claude Desktop. Sorare tools appear in the 🔧 menu.
 | `sorare_list_my_cards` | Your owned cards |
 | `sorare_get_lineup` | So5 lineup score + reward |
 | `sorare_transfer_market` | Active auctions, filterable |
+
+
+## Beyond the 18 tools — your AI calls *any* Sorare GraphQL operation
+
+These dedicated tools cover the most common entry points, but every GraphQL connector also ships with **`sorare_graphql_schema`**, **`sorare_graphql_query`**, **`sorare_graphql_mutation`** and **`sorare_graphql_subscription`** — auto-injected escape hatches that let your AI compose **any** operation Sorare's schema supports.
+
+That's the difference between a fixed tool list and a real agent. Ask:
+
+> *"Find 3 Limited cards that are likely to score next gameweek and are 30 %+ under their 30-day average. Top 5 leagues only."*
+
+…and your AI walks the Sorare GraphQL schema, scans `topPerformers`, joins with `liveSingleSaleOffers` for floor prices, cross-references `tokenPrices` for 30-day averages, and hands you a buy list with a reserve plan. All from one prompt, no manual GraphQL on your part.
+
+👉 See a full chat session in the [Sorare launch announcement](./sorare-now-on-anythingmcp) — a real Claude roundtrip composing a €100 buy strategy on its own.
+
 
 ### Token rotation, explained
 
