@@ -1,0 +1,275 @@
+{
+  "slug": "convertkit",
+  "name": "Kit (ConvertKit)",
+  "description": "Drive Kit (formerly ConvertKit) — creator-focused email marketing — from any AI agent: subscribers, tags, forms, sequences, broadcasts, custom fields. 14 tools, v4 API with API-key Bearer auth.",
+  "instructions": "This connector uses the Kit v4 API (Kit was renamed from ConvertKit in 2024 — the API still works at api.convertkit.com under v4).\n\n**Setup**:\n1. Sign in to https://app.kit.com → **Advanced Settings → API → Show v4 API key**.\n2. Copy the v4 API key. Set `CONVERTKIT_API_KEY`.\n3. (Optional, only for older v3 endpoints not used here): the v3 API uses an `api_secret` — not needed for this connector.\n\n**Authentication**: `Authorization: Bearer ${CONVERTKIT_API_KEY}`. The adapter handles this via BEARER_TOKEN.\n\n**Subscriber model**: every email is a 'subscriber'. State machine: `active`, `inactive` (manually paused), `bounced`, `complained`, `cancelled`. New subscribers default to `active`. Adding to a sequence does NOT create an active subscriber automatically — they must be active first.\n\n**Tags vs Forms vs Sequences**:\n  - **Forms**: capture points (signup widgets, landing pages). When a subscriber fills a form, they're added to the form's list AND tagged with any default tags the form applies.\n  - **Tags**: free-form labels. The primary segmentation primitive. A subscriber can have unlimited tags.\n  - **Sequences**: timed email courses (used to be 'autoresponder courses'). You subscribe a contact to a sequence and they receive its emails on a schedule.\n  - **Broadcasts**: one-time emails to a subset (by tags/forms/sequences). The newsletter primitive.\n\n**Custom fields** are at the account level — define them in the UI, then set values per subscriber via `fields` object in create/update.\n\n**Pagination**: cursor-based. List responses include `pagination: {has_previous_page, has_next_page, start_cursor, end_cursor, per_page}`. Pass `after=$end_cursor` (or `before=$start_cursor`) on the next call. Default per_page=500, max 5000 for some endpoints.\n\n**Rate limits**: 600 requests per minute per API key. On 429, back off — `X-RateLimit-Reset` header tells you when.\n\n**Webhooks** out of scope (Kit supports them, configured in UI to point at your hosted endpoint).\n\n**Out of scope here**: writing automation rules, landing-page builder, commerce / digital products, deliverability headers config.",
+  "region": "intl",
+  "category": "email",
+  "icon": "convertkit",
+  "docsUrl": "https://developers.kit.com/v4",
+  "requiredEnvVars": ["CONVERTKIT_API_KEY"],
+  "connector": {
+    "name": "Kit v4 (ConvertKit)",
+    "type": "REST",
+    "baseUrl": "https://api.convertkit.com/v4",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{CONVERTKIT_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "convertkit_get_account",
+      "description": "Return account info (name, plan, primary_email_address, created_at). Health check + plan visibility.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/account" }
+    },
+    {
+      "name": "convertkit_list_subscribers",
+      "description": "List subscribers with filters. Each has id, first_name, email_address, state, created_at, fields, tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_address": { "type": "string", "description": "Exact-match email filter." },
+          "tagged_after": { "type": "string", "description": "ISO 8601 — subscribers tagged after this." },
+          "tagged_before": { "type": "string", "description": "ISO 8601." },
+          "created_after": { "type": "string", "description": "ISO 8601 created lower bound." },
+          "created_before": { "type": "string", "description": "ISO 8601." },
+          "updated_after": { "type": "string", "description": "ISO 8601 updated lower bound." },
+          "updated_before": { "type": "string", "description": "ISO 8601." },
+          "sort_field": { "type": "string", "description": "created_at, updated_at, cancelled_at." },
+          "sort_order": { "type": "string", "description": "asc or desc." },
+          "include_total_count": { "type": "boolean", "description": "If true, response includes total_count (expensive)." },
+          "per_page": { "type": "integer", "description": "Max per page (default 500, max 5000)." },
+          "after": { "type": "string", "description": "Cursor — return subscribers after this." },
+          "before": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscribers",
+        "queryParams": {
+          "email_address": "$email_address",
+          "tagged_after": "$tagged_after",
+          "tagged_before": "$tagged_before",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before",
+          "sort_field": "$sort_field",
+          "sort_order": "$sort_order",
+          "include_total_count": "$include_total_count",
+          "per_page": "$per_page",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "convertkit_get_subscriber",
+      "description": "Fetch a subscriber by ID with full fields object and tags[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriberId": { "type": "integer", "description": "Subscriber numeric ID." }
+        },
+        "required": ["subscriberId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/subscribers/{subscriberId}" }
+    },
+    {
+      "name": "convertkit_create_subscriber",
+      "description": "Create a subscriber. Required: email_address. The subscriber starts in `active` state by default. To onboard with consent for a specific form/sequence, use the form-specific subscribe endpoints (out of scope here) — this endpoint is for direct programmatic add.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_address": { "type": "string", "description": "Subscriber email (lowercase recommended)." },
+          "first_name": { "type": "string", "description": "First name (optional)." },
+          "state": { "type": "string", "description": "active or inactive. Default active." },
+          "fields": { "type": "object", "description": "Custom fields object: {LAST_NAME:'Doe', COMPANY:'ACME'} — keys must match fields defined in the UI." }
+        },
+        "required": ["email_address"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscribers",
+        "bodyMapping": {
+          "email_address": "$email_address",
+          "first_name": "$first_name",
+          "state": "$state",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "convertkit_update_subscriber",
+      "description": "Update a subscriber's email, first_name, or custom fields. To change state (active/inactive), use convertkit_unsubscribe or the subscriber-specific state endpoints.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriberId": { "type": "integer", "description": "Subscriber ID." },
+          "email_address": { "type": "string", "description": "New email." },
+          "first_name": { "type": "string", "description": "New first name." },
+          "fields": { "type": "object", "description": "Custom fields to update." }
+        },
+        "required": ["subscriberId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscribers/{subscriberId}",
+        "bodyMapping": {
+          "email_address": "$email_address",
+          "first_name": "$first_name",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "convertkit_unsubscribe",
+      "description": "Mark a subscriber as inactive (Kit's unsubscribe). They stop receiving emails and count against your subscriber quota until manually deleted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriberId": { "type": "integer", "description": "Subscriber ID." }
+        },
+        "required": ["subscriberId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscribers/{subscriberId}/unsubscribe"
+      }
+    },
+    {
+      "name": "convertkit_list_tags",
+      "description": "List all tags. Each has id, name, created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": { "type": "integer", "description": "Per page." },
+          "after": { "type": "string", "description": "Cursor." },
+          "before": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": { "per_page": "$per_page", "after": "$after", "before": "$before" }
+      }
+    },
+    {
+      "name": "convertkit_create_tag",
+      "description": "Create a tag. Tag names are unique within the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Tag name." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tags",
+        "bodyMapping": { "name": "$name" }
+      }
+    },
+    {
+      "name": "convertkit_tag_subscriber",
+      "description": "Apply a tag to a subscriber. The subscriber must be `active`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tagId": { "type": "integer", "description": "Tag ID." },
+          "subscriber_id": { "type": "integer", "description": "Subscriber ID to tag." }
+        },
+        "required": ["tagId", "subscriber_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tags/{tagId}/subscribers",
+        "bodyMapping": { "subscriber_id": "$subscriber_id" }
+      }
+    },
+    {
+      "name": "convertkit_remove_tag_from_subscriber",
+      "description": "Remove a tag from a subscriber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tagId": { "type": "integer", "description": "Tag ID." },
+          "subscriberId": { "type": "integer", "description": "Subscriber ID." }
+        },
+        "required": ["tagId", "subscriberId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/tags/{tagId}/subscribers/{subscriberId}"
+      }
+    },
+    {
+      "name": "convertkit_list_forms",
+      "description": "List signup forms / landing pages. Each form has id, name, type (embed/hosted/modal), format, total_subscriptions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "description": "embed, hosted, modal." },
+          "per_page": { "type": "integer", "description": "Per page." },
+          "after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms",
+        "queryParams": { "type": "$type", "per_page": "$per_page", "after": "$after" }
+      }
+    },
+    {
+      "name": "convertkit_list_sequences",
+      "description": "List sequences (drip email courses). Each has id, name, hold (paused?), repeat, created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": { "type": "integer", "description": "Per page." },
+          "after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sequences",
+        "queryParams": { "per_page": "$per_page", "after": "$after" }
+      }
+    },
+    {
+      "name": "convertkit_add_subscriber_to_sequence",
+      "description": "Enroll a subscriber in a sequence. They'll start receiving its emails on schedule. The subscriber must be `active`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sequenceId": { "type": "integer", "description": "Sequence ID." },
+          "email_address": { "type": "string", "description": "Subscriber email." }
+        },
+        "required": ["sequenceId", "email_address"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sequences/{sequenceId}/subscribers",
+        "bodyMapping": { "email_address": "$email_address" }
+      }
+    },
+    {
+      "name": "convertkit_list_broadcasts",
+      "description": "List broadcasts (one-off email sends). Each has id, subject, description, content, public, published_at, send_at, thumbnail_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": { "type": "integer", "description": "Per page." },
+          "after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/broadcasts",
+        "queryParams": { "per_page": "$per_page", "after": "$after" }
+      }
+    }
+  ]
+}

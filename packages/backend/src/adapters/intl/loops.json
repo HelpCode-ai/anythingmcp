@@ -1,0 +1,186 @@
+{
+  "slug": "loops",
+  "name": "Loops",
+  "description": "Send transactional emails, fire product events and manage contacts in Loops (the modern product-email tool for SaaS) from any AI agent. 9 tools, Bearer-token auth.",
+  "instructions": "This connector uses the Loops v1 REST API (https://loops.so/docs/api-reference).\n\n**Setup**:\n1. Sign in to https://app.loops.so → **Settings → API → Create API key**.\n2. Pick the scope: Public API (recommended for most use) or higher.\n3. Copy the key (prefixed). Set `LOOPS_API_KEY`.\n\n**Authentication**: `Authorization: Bearer ${LOOPS_API_KEY}`.\n\n**Mental model**: Loops is event-driven. You send `events` (like 'user.signed_up', 'subscription.upgraded'), and those events trigger `loops` (the email automations you build in the UI). For transactional sends (password reset, magic link), use `loops_send_transactional_email` with a pre-built transactional template ID.\n\n**Contacts**: identified by `email` (primary key). Use `userGroup` to bucket contacts (free / pro / churned). Custom properties via the `properties` object.\n\n**Transactional templates**: built in the Loops UI under **Transactional**. Each has a `transactionalId` (visible after publishing). Variables in the template (`{{firstName}}`) are filled from the `dataVariables` map on send.\n\n**Idempotency**: events can include an `eventName` + `idempotencyKey` — duplicate calls with the same idempotency key within 24h are deduped.\n\n**Rate limits**: 10 req/sec per API key for sends, higher for reads. On 429, back off.\n\n**Out of scope here**: campaign management (Loops campaigns are visual UI-only), audience filters, attribution reports.",
+  "region": "intl",
+  "category": "email",
+  "icon": "loops",
+  "docsUrl": "https://loops.so/docs/api-reference",
+  "requiredEnvVars": ["LOOPS_API_KEY"],
+  "connector": {
+    "name": "Loops v1",
+    "type": "REST",
+    "baseUrl": "https://app.loops.so/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{LOOPS_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "loops_test_api_key",
+      "description": "Verify the API key works and return account info (team name, type). Health check.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/api-key" }
+    },
+    {
+      "name": "loops_find_contact",
+      "description": "Find a contact by email or userId. Returns the contact object with email, firstName, lastName, userGroup, userId, custom properties, subscribed flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email to look up. Either email or userId required." },
+          "userId": { "type": "string", "description": "External user ID." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/find",
+        "queryParams": { "email": "$email", "userId": "$userId" }
+      }
+    },
+    {
+      "name": "loops_create_contact",
+      "description": "Create a new contact. Required: email. Errors if email already exists (use loops_update_contact or loops_upsert_contact).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Contact email." },
+          "firstName": { "type": "string", "description": "First name." },
+          "lastName": { "type": "string", "description": "Last name." },
+          "userGroup": { "type": "string", "description": "Bucket (e.g. 'free', 'pro', 'trial')." },
+          "userId": { "type": "string", "description": "External user ID for joining." },
+          "subscribed": { "type": "boolean", "description": "Subscribed to marketing emails. Default true." },
+          "mailingLists": { "type": "object", "description": "Map of mailing list IDs → boolean (subscribed?)." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/create",
+        "bodyMapping": {
+          "email": "$email",
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "userGroup": "$userGroup",
+          "userId": "$userId",
+          "subscribed": "$subscribed",
+          "mailingLists": "$mailingLists"
+        }
+      }
+    },
+    {
+      "name": "loops_update_contact",
+      "description": "Update an existing contact's fields. Errors if contact doesn't exist (use loops_upsert_contact for upsert).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email of contact to update (required)." },
+          "firstName": { "type": "string", "description": "New first name." },
+          "lastName": { "type": "string", "description": "New last name." },
+          "userGroup": { "type": "string", "description": "New bucket." },
+          "userId": { "type": "string", "description": "Update external user ID." },
+          "subscribed": { "type": "boolean", "description": "Subscribed flag." },
+          "mailingLists": { "type": "object", "description": "Mailing list memberships." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/update",
+        "bodyMapping": {
+          "email": "$email",
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "userGroup": "$userGroup",
+          "userId": "$userId",
+          "subscribed": "$subscribed",
+          "mailingLists": "$mailingLists"
+        }
+      }
+    },
+    {
+      "name": "loops_delete_contact",
+      "description": "Permanently delete a contact. GDPR-friendly. Irreversible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Contact email." },
+          "userId": { "type": "string", "description": "Or by external user ID." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/delete",
+        "bodyMapping": { "email": "$email", "userId": "$userId" }
+      }
+    },
+    {
+      "name": "loops_send_event",
+      "description": "Send a product/behavioral event to trigger a Loops automation. Required: email (or userId) + eventName. Any eventProperties become merge variables in the triggered emails.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Contact email. Either email or userId required." },
+          "userId": { "type": "string", "description": "External user ID." },
+          "eventName": { "type": "string", "description": "Event name matching a Loops trigger (e.g. 'subscription.upgraded')." },
+          "contactProperties": { "type": "object", "description": "Properties to also update on the contact (upsert)." },
+          "eventProperties": { "type": "object", "description": "Event-specific properties — usable as {{eventProperties.X}} in triggered emails." },
+          "mailingLists": { "type": "object", "description": "Update list memberships in same call." }
+        },
+        "required": ["eventName"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events/send",
+        "bodyMapping": {
+          "email": "$email",
+          "userId": "$userId",
+          "eventName": "$eventName",
+          "contactProperties": "$contactProperties",
+          "eventProperties": "$eventProperties",
+          "mailingLists": "$mailingLists"
+        }
+      }
+    },
+    {
+      "name": "loops_send_transactional_email",
+      "description": "Send a transactional email using a pre-built Loops transactional template. The `transactionalId` comes from the Loops UI. Variables in the template are filled from `dataVariables`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transactionalId": { "type": "string", "description": "ID of the published transactional template (from Loops UI)." },
+          "email": { "type": "string", "description": "Recipient email." },
+          "dataVariables": { "type": "object", "description": "Object filling template variables: {firstName:'Jane', resetLink:'...'}." },
+          "addToAudience": { "type": "boolean", "description": "If true, also create the recipient as a contact if missing. Default false." },
+          "attachments": { "type": "array", "description": "Array of {filename, contentType, data (base64)} attachments. Optional." }
+        },
+        "required": ["transactionalId", "email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactional",
+        "bodyMapping": {
+          "transactionalId": "$transactionalId",
+          "email": "$email",
+          "dataVariables": "$dataVariables",
+          "addToAudience": "$addToAudience",
+          "attachments": "$attachments"
+        }
+      }
+    },
+    {
+      "name": "loops_list_mailing_lists",
+      "description": "List mailing lists configured on the account. Returns each list's id, name, description, isPublic, createdAt.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/lists" }
+    },
+    {
+      "name": "loops_list_custom_fields",
+      "description": "List custom contact properties defined on the account, with their data types. Required to know which keys are valid in `contactProperties` / contact updates.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/contacts/customFields" }
+    }
+  ]
+}
