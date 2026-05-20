@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { audit, connectors as connectorsApi, mcpServers } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
+import { AppSelect } from '@/components/ui/select';
 
 const PAGE_SIZE = 50;
 
@@ -142,36 +143,35 @@ export default function LogsPage() {
               className="w-full border border-[var(--input)] rounded-md pl-10 pr-3 py-2 text-sm bg-[var(--background)]"
             />
           </div>
-          <select
+          <AppSelect
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onValueChange={setStatusFilter}
             className="border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-          >
-            <option value="">All statuses</option>
-            <option value="SUCCESS">Success</option>
-            <option value="ERROR">Error</option>
-            <option value="TIMEOUT">Timeout</option>
-          </select>
-          <select
+            options={[
+              { value: '', label: 'All statuses' },
+              { value: 'SUCCESS', label: 'Success' },
+              { value: 'ERROR', label: 'Error' },
+              { value: 'TIMEOUT', label: 'Timeout' },
+            ]}
+          />
+          <AppSelect
             value={connectorFilter}
-            onChange={(e) => setConnectorFilter(e.target.value)}
+            onValueChange={setConnectorFilter}
             className="border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-          >
-            <option value="">All connectors</option>
-            {connectors.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <select
+            options={[
+              { value: '', label: 'All connectors' },
+              ...connectors.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+          />
+          <AppSelect
             value={mcpServerFilter}
-            onChange={(e) => setMcpServerFilter(e.target.value)}
+            onValueChange={setMcpServerFilter}
             className="border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-          >
-            <option value="">All MCP servers</option>
-            {servers.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+            options={[
+              { value: '', label: 'All MCP servers' },
+              ...servers.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
           <button
             onClick={fetchLogs}
             disabled={loading}

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { roles, connectors, tools as toolsApi, users } from '@/lib/api';
+import { AppSelect } from '@/components/ui/select';
 
 interface RoleItem {
   id: string;
@@ -531,16 +532,15 @@ export default function SettingsRolesPage() {
                         {u.role === 'ADMIN' ? (
                           <span className="text-xs text-[var(--muted-foreground)]">Full access (admin)</span>
                         ) : (
-                          <select
+                          <AppSelect
                             value={u.mcpRoleId || ''}
-                            onChange={(e) => handleAssignRole(u.id, e.target.value || null)}
+                            onValueChange={(v) => handleAssignRole(u.id, v || null)}
                             className="border border-[var(--input)] rounded px-2 py-1 text-xs bg-[var(--background)]"
-                          >
-                            <option value="">No restriction (full access)</option>
-                            {roleList.map((r) => (
-                              <option key={r.id} value={r.id}>{r.name}</option>
-                            ))}
-                          </select>
+                            options={[
+                              { value: '', label: 'No restriction (full access)' },
+                              ...roleList.map((r) => ({ value: r.id, label: r.name })),
+                            ]}
+                          />
                         )}
                       </td>
                     </tr>

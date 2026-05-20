@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { mcpServers } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
+import { AppSelect } from '@/components/ui/select';
 
 export default function McpServerListPage() {
   const { token } = useAuth();
@@ -126,15 +127,16 @@ export default function McpServerListPage() {
                 className="w-full border border-[var(--input)] rounded-md pl-10 pr-3 py-2 text-sm bg-[var(--background)]"
               />
             </div>
-            <select
+            <AppSelect
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onValueChange={setStatusFilter}
               className="border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-            >
-              <option value="">All statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
+              options={[
+                { value: '', label: 'All statuses' },
+                { value: 'active', label: 'Active' },
+                { value: 'inactive', label: 'Inactive' },
+              ]}
+            />
           </div>
         )}
 

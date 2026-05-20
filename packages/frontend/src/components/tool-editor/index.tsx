@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { AppSelect } from '@/components/ui/select';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -575,22 +576,22 @@ export function ToolEditor({
         {/* Tool Type selector — available for all connector types */}
         <div>
           <label className="block text-xs font-medium mb-1">Tool Type</label>
-          <select
+          <AppSelect
             value={method === 'static' ? 'static' : 'native'}
-            onChange={e => {
-              if (e.target.value === 'static') {
+            onValueChange={v => {
+              if (v === 'static') {
                 setMethod('static');
               } else {
-                // Reset to the default native method for this connector type
                 const nativeMethods = methods.filter(m => m !== 'static');
                 setMethod(nativeMethods[0] || methods[0]);
               }
             }}
             className="w-56 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-          >
-            <option value="native">{getNativeLabel(type)}</option>
-            <option value="static">Static Text</option>
-          </select>
+            options={[
+              { value: 'native', label: getNativeLabel(type) },
+              { value: 'static', label: 'Static Text' },
+            ]}
+          />
         </div>
 
         {method === 'static' ? (
@@ -612,15 +613,12 @@ export function ToolEditor({
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium mb-1">Operation Type</label>
-              <select
+              <AppSelect
                 value={method}
-                onChange={e => setMethod(e.target.value)}
+                onValueChange={setMethod}
                 className="w-48 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-              >
-                {methods.filter(m => m !== 'static').map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+                options={methods.filter(m => m !== 'static').map(m => ({ value: m, label: m }))}
+              />
             </div>
             <div>
               <label className="block text-xs font-medium mb-1">GraphQL Query / Mutation</label>
@@ -681,15 +679,12 @@ export function ToolEditor({
           <div className="grid grid-cols-[120px_1fr] gap-3">
             <div>
               <label className="block text-xs font-medium mb-1">Method</label>
-              <select
+              <AppSelect
                 value={method}
-                onChange={e => setMethod(e.target.value)}
+                onValueChange={setMethod}
                 className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-              >
-                {methods.filter(m => m !== 'static').map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+                options={methods.filter(m => m !== 'static').map(m => ({ value: m, label: m }))}
+              />
             </div>
             <div>
               <label className="block text-xs font-medium mb-1">Path</label>
@@ -738,15 +733,16 @@ export function ToolEditor({
           {!useBodyTemplate && (
             <div className="flex items-center gap-2">
               <label className="text-xs text-[var(--muted-foreground)]">Encoding:</label>
-              <select
+              <AppSelect
                 value={bodyEncoding}
-                onChange={e => setBodyEncoding(e.target.value)}
+                onValueChange={setBodyEncoding}
                 className="border border-[var(--input)] rounded px-2 py-1 text-xs bg-[var(--background)]"
-              >
-                <option value="json">application/json</option>
-                <option value="form-urlencoded">application/x-www-form-urlencoded</option>
-                <option value="form-data">multipart/form-data</option>
-              </select>
+                options={[
+                  { value: 'json', label: 'application/json' },
+                  { value: 'form-urlencoded', label: 'application/x-www-form-urlencoded' },
+                  { value: 'form-data', label: 'multipart/form-data' },
+                ]}
+              />
             </div>
           )}
 
@@ -844,18 +840,19 @@ export function ToolEditor({
                     </span>
                   )}
                 </div>
-                <select
+                <AppSelect
                   value={param.type}
-                  onChange={e => updateParam(i, { type: e.target.value as ToolParam['type'] })}
+                  onValueChange={v => updateParam(i, { type: v as ToolParam['type'] })}
                   className="border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)]"
-                >
-                  <option value="string">string</option>
-                  <option value="number">number</option>
-                  <option value="integer">integer</option>
-                  <option value="boolean">boolean</option>
-                  <option value="array">array</option>
-                  <option value="object">object</option>
-                </select>
+                  options={[
+                    { value: 'string', label: 'string' },
+                    { value: 'number', label: 'number' },
+                    { value: 'integer', label: 'integer' },
+                    { value: 'boolean', label: 'boolean' },
+                    { value: 'array', label: 'array' },
+                    { value: 'object', label: 'object' },
+                  ]}
+                />
                 <input
                   type="text"
                   value={param.description}
@@ -863,15 +860,12 @@ export function ToolEditor({
                   placeholder="Describe this parameter..."
                   className="border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)]"
                 />
-                <select
+                <AppSelect
                   value={param.target}
-                  onChange={e => updateParam(i, { target: e.target.value as ToolParam['target'] })}
+                  onValueChange={v => updateParam(i, { target: v as ToolParam['target'] })}
                   className="border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)]"
-                >
-                  {targets.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
+                  options={targets.map(t => ({ value: t.value, label: t.label }))}
+                />
                 <div className="flex justify-center">
                   <input
                     type="checkbox"

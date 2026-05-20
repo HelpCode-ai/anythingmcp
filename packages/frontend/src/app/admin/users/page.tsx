@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { users, auth, roles } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
+import { AppSelect } from '@/components/ui/select';
 import { Footer } from '@/components/footer';
 
 const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
@@ -152,28 +153,24 @@ export default function AdminUsersPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">App Role</label>
-                <select
+                <AppSelect
                   value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value)}
+                  onValueChange={setInviteRole}
                   className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-                >
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
+                  options={ROLES.map((r) => ({ value: r, label: r }))}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">MCP Tool Role</label>
-                <select
+                <AppSelect
                   value={inviteMcpRoleId}
-                  onChange={(e) => setInviteMcpRoleId(e.target.value)}
+                  onValueChange={setInviteMcpRoleId}
                   className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-                >
-                  <option value="">No restriction (full access)</option>
-                  {roleList.map((r) => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: 'No restriction (full access)' },
+                    ...roleList.map((r) => ({ value: r.id, label: r.name })),
+                  ]}
+                />
               </div>
             </div>
 
@@ -227,15 +224,12 @@ export default function AdminUsersPage() {
                       {u.id === currentUser?.id ? (
                         <span className="text-xs font-medium bg-[var(--muted)] px-2 py-1 rounded">{u.role}</span>
                       ) : (
-                        <select
+                        <AppSelect
                           value={u.role}
-                          onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                          onValueChange={(v) => handleRoleChange(u.id, v)}
                           className="border border-[var(--input)] rounded px-2 py-1 text-xs bg-[var(--background)]"
-                        >
-                          {ROLES.map((r) => (
-                            <option key={r} value={r}>{r}</option>
-                          ))}
-                        </select>
+                          options={ROLES.map((r) => ({ value: r, label: r }))}
+                        />
                       )}
                     </td>
                     <td className="px-4 py-3">

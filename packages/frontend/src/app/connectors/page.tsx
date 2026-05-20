@@ -7,6 +7,7 @@ import { connectors } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
 import * as Dialog from '@radix-ui/react-dialog';
+import { AppSelect } from '@/components/ui/select';
 
 type HealthStatus = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -378,19 +379,19 @@ export default function ConnectorsPage() {
                   className="w-full border border-[var(--input)] rounded-md pl-9 pr-3 py-2 text-sm bg-[var(--background)]"
                 />
               </div>
-              <select
+              <AppSelect
                 value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                aria-label="Filter by connector type"
+                onValueChange={setTypeFilter}
                 className="border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-              >
-                <option value="">All types</option>
-                <option value="REST">REST</option>
-                <option value="SOAP">SOAP</option>
-                <option value="GRAPHQL">GraphQL</option>
-                <option value="MCP">MCP</option>
-                <option value="DATABASE">Database</option>
-              </select>
+                options={[
+                  { value: '', label: 'All types' },
+                  { value: 'REST', label: 'REST' },
+                  { value: 'SOAP', label: 'SOAP' },
+                  { value: 'GRAPHQL', label: 'GraphQL' },
+                  { value: 'MCP', label: 'MCP' },
+                  { value: 'DATABASE', label: 'Database' },
+                ]}
+              />
               <span className="text-sm text-[var(--muted-foreground)]">
                 {filtered.length} connector{filtered.length !== 1 ? 's' : ''}
               </span>

@@ -99,21 +99,6 @@ button:not(:disabled), select, summary, [role="button"] {
   cursor: pointer;
 }
 
-/* Custom chevron arrow for native select elements.
-   appearance-none removes the browser's built-in arrow so we can control spacing.
-   padding-right !important overrides Tailwind px-* utilities to make room for the arrow. */
-main select {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='2' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19 9-7 7-7-7'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.5rem center;
-  background-size: 1.25em 1.25em;
-  padding-right: 2rem !important;
-}
-
-.dark main select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='2' stroke='%239ca3af'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19 9-7 7-7-7'/%3E%3C/svg%3E");
-}
 button:disabled {
   cursor: not-allowed;
 }

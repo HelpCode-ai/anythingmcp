@@ -8,6 +8,7 @@ import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
 import { ToolEditor } from '@/components/tool-editor';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
+import { AppSelect } from '@/components/ui/select';
 
 const IMPORT_SOURCES = [
   { id: 'openapi', label: 'OpenAPI / Swagger', placeholder: 'Paste OpenAPI JSON/YAML or enter URL...' },
@@ -564,17 +565,18 @@ export default function ConnectorDetailPage() {
               )}
               <div>
                 <label className="block text-sm font-medium mb-1">Authentication</label>
-                <select
+                <AppSelect
                   value={editAuthType}
-                  onChange={(e) => { setEditAuthType(e.target.value); setEditAuthKey(''); setEditAuthValue(''); }}
+                  onValueChange={(v) => { setEditAuthType(v); setEditAuthKey(''); setEditAuthValue(''); }}
                   className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-                >
-                  <option value="NONE">None</option>
-                  <option value="API_KEY">API Key</option>
-                  <option value="BEARER_TOKEN">Bearer Token</option>
-                  <option value="BASIC_AUTH">Basic Auth</option>
-                  <option value="OAUTH2">OAuth 2.0</option>
-                </select>
+                  options={[
+                    { value: 'NONE', label: 'None' },
+                    { value: 'API_KEY', label: 'API Key' },
+                    { value: 'BEARER_TOKEN', label: 'Bearer Token' },
+                    { value: 'BASIC_AUTH', label: 'Basic Auth' },
+                    { value: 'OAUTH2', label: 'OAuth 2.0' },
+                  ]}
+                />
               </div>
               {editAuthType === 'API_KEY' && (
                 <div className="grid grid-cols-2 gap-4">

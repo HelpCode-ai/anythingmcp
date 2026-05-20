@@ -7,6 +7,7 @@ import { connectors } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
 import { Footer } from '@/components/footer';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
+import { AppSelect } from '@/components/ui/select';
 
 const CONNECTOR_TYPES = [
   { id: 'REST', name: 'REST API', description: 'Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually.', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30', iconBg: 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' },
@@ -277,17 +278,18 @@ export default function NewConnectorPage() {
 
               <div>
                 <label className="block text-sm font-medium mb-1">Authentication</label>
-                <select
+                <AppSelect
                   value={authType}
-                  onChange={(e) => setAuthType(e.target.value)}
+                  onValueChange={setAuthType}
                   className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-                >
-                  <option value="NONE">None</option>
-                  <option value="API_KEY">API Key</option>
-                  <option value="BEARER_TOKEN">Bearer Token</option>
-                  <option value="BASIC_AUTH">Basic Auth</option>
-                  <option value="OAUTH2">OAuth 2.0</option>
-                </select>
+                  options={[
+                    { value: 'NONE', label: 'None' },
+                    { value: 'API_KEY', label: 'API Key' },
+                    { value: 'BEARER_TOKEN', label: 'Bearer Token' },
+                    { value: 'BASIC_AUTH', label: 'Basic Auth' },
+                    { value: 'OAUTH2', label: 'OAuth 2.0' },
+                  ]}
+                />
               </div>
 
               {selectedType === 'MCP' && authType === 'OAUTH2' && (
