@@ -35,6 +35,7 @@ import * as activecampaign from './intl/activecampaign.json';
 import * as acuityScheduling from './intl/acuity-scheduling.json';
 import * as adyen from './intl/adyen.json';
 import * as apollo from './intl/apollo.json';
+import * as attio from './intl/attio.json';
 import * as basecamp from './intl/basecamp.json';
 import * as beehiiv from './intl/beehiiv.json';
 import * as bigcommerce from './intl/bigcommerce.json';
@@ -50,9 +51,11 @@ import * as copper from './intl/copper.json';
 import * as crisp from './intl/crisp.json';
 import * as discordBot from './intl/discord-bot.json';
 import * as drip from './intl/drip.json';
+import * as dropboxSign from './intl/dropbox-sign.json';
 import * as etsy from './intl/etsy.json';
 import * as fathom from './intl/fathom.json';
 import * as fillout from './intl/fillout.json';
+import * as folk from './intl/folk.json';
 import * as freshdesk from './intl/freshdesk.json';
 import * as front from './intl/front.json';
 import * as ghost from './intl/ghost.json';
@@ -79,6 +82,7 @@ import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as salesloft from './intl/salesloft.json';
 import * as sendgrid from './intl/sendgrid.json';
+import * as slab from './intl/slab.json';
 import * as snov from './intl/snov.json';
 import * as sorare from './intl/sorare.json';
 import * as statsig from './intl/statsig.json';
@@ -86,6 +90,7 @@ import * as substack from './intl/substack.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as tally from './intl/tally.json';
 import * as telegramBot from './intl/telegram-bot.json';
+import * as ticktick from './intl/ticktick.json';
 import * as todoist from './intl/todoist.json';
 import * as trello from './intl/trello.json';
 import * as typeform from './intl/typeform.json';
@@ -207,6 +212,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   acuityScheduling as unknown as AdapterDefinition,
   adyen as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
+  attio as unknown as AdapterDefinition,
   basecamp as unknown as AdapterDefinition,
   beehiiv as unknown as AdapterDefinition,
   bigcommerce as unknown as AdapterDefinition,
@@ -222,9 +228,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   crisp as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
   drip as unknown as AdapterDefinition,
+  dropboxSign as unknown as AdapterDefinition,
   etsy as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
   fillout as unknown as AdapterDefinition,
+  folk as unknown as AdapterDefinition,
   freshdesk as unknown as AdapterDefinition,
   front as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
@@ -251,6 +259,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   reddit as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
+  slab as unknown as AdapterDefinition,
   snov as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
   statsig as unknown as AdapterDefinition,
@@ -258,6 +267,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   surveymonkey as unknown as AdapterDefinition,
   tally as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
+  ticktick as unknown as AdapterDefinition,
   todoist as unknown as AdapterDefinition,
   trello as unknown as AdapterDefinition,
   typeform as unknown as AdapterDefinition,
