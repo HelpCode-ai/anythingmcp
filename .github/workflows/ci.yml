@@ -45,6 +45,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate adapter catalog
+        run: node scripts/validate-adapters.mjs
+
+      - name: Verify catalog.ts is up-to-date with adapter JSONs
+        run: |
+          node scripts/regenerate-catalog.mjs
+          if ! git diff --quiet packages/backend/src/adapters/catalog.ts; then
+            echo "::error::catalog.ts is out of sync with adapter JSON files."
+            echo "Run: node scripts/regenerate-catalog.mjs && commit the result."
+            git diff packages/backend/src/adapters/catalog.ts
+            exit 1
+          fi
+
       - name: Generate Prisma client
         run: npx prisma generate
         working-directory: packages/backend
