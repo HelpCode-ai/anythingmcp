@@ -1,0 +1,283 @@
+{
+  "slug": "salesloft",
+  "name": "Salesloft",
+  "description": "Drive Salesloft (sales engagement platform) from any AI agent: people, accounts, cadences, sequence enrollment, activities, custom fields. 11 tools, OAuth2 Bearer auth.",
+  "instructions": "This connector uses the Salesloft v2 REST API (developers.salesloft.com).\n\n**Setup**:\n1. Salesloft API access requires OAuth2 — Personal API tokens are NOT exposed in the standard UI.\n2. Sign in to Salesloft → **Settings → Your API Access** (if visible) — if not, ask an admin to generate an OAuth token for you OR register an OAuth app.\n3. Obtain an access token (typically valid 30 minutes for OAuth flow; longer for refresh-token rotation).\n4. Set `SALESLOFT_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${SALESLOFT_ACCESS_TOKEN}`. The token expires (~30 min) — if you see 401s, refresh via Salesloft's OAuth refresh-token endpoint (out of scope here — handle via your OAuth client).\n\n**Salesloft objects**:\n  - **People** = individual contacts (sales prospects). Have email + linked account.\n  - **Accounts** = companies.\n  - **Cadences** = multi-step outreach sequences (Salesloft's term for what Outreach calls 'sequences').\n  - **Steps** = each touchpoint in a cadence (email/call/LinkedIn/task).\n  - **Cadence Memberships** = enrollments of a person into a cadence.\n\n**Adding people to a cadence**: POST /cadence_memberships with person_id + cadence_id. Required: a user_id (who 'owns' this enrollment).\n\n**Pagination**: `per_page` (default 25, max 100) + `page` (1-based) on most endpoints.\n\n**Rate limits**: 600 req/min per organization. Per-endpoint subset limits exist (e.g. enrichment is slower). On 429 honor `Retry-After`.\n\n**Out of scope here**: cadence template editing, conversation intelligence, call dispositions, deal/opportunity sync (Salesloft has a CRM-sync layer with HubSpot/Salesforce; manage through CRM directly).",
+  "region": "intl",
+  "category": "crm",
+  "icon": "salesloft",
+  "docsUrl": "https://developers.salesloft.com/",
+  "requiredEnvVars": ["SALESLOFT_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Salesloft v2",
+    "type": "REST",
+    "baseUrl": "https://api.salesloft.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SALESLOFT_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "salesloft_me",
+      "description": "Return the authenticated user info: id, name, email, guid, team_id, role. Health check + whoami.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me.json" }
+    },
+    {
+      "name": "salesloft_list_people",
+      "description": "List people (prospects). Supports filtering by email, account_id, owned_by_id, custom_field_ids, last_contacted_date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": { "type": "array", "description": "Filter to specific person IDs." },
+          "email_addresses": { "type": "array", "description": "Filter by email addresses." },
+          "account_id": { "type": "array", "description": "Filter by account ID(s)." },
+          "owned_by_id": { "type": "array", "description": "Filter by owner user ID(s)." },
+          "person_stage_id": { "type": "array", "description": "Filter by stage ID(s)." },
+          "updated_at": { "type": "object", "description": "{gt?, lt?} ISO 8601 datetime range." },
+          "page": { "type": "integer", "description": "1-based page." },
+          "per_page": { "type": "integer", "description": "Per page (default 25, max 100)." },
+          "include_paging_counts": { "type": "boolean", "description": "Include total count in metadata (expensive)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people.json",
+        "queryParams": {
+          "ids[]": "$ids",
+          "email_addresses[]": "$email_addresses",
+          "account_id[]": "$account_id",
+          "owned_by_id[]": "$owned_by_id",
+          "person_stage_id[]": "$person_stage_id",
+          "updated_at": "$updated_at",
+          "page": "$page",
+          "per_page": "$per_page",
+          "include_paging_counts": "$include_paging_counts"
+        }
+      }
+    },
+    {
+      "name": "salesloft_get_person",
+      "description": "Fetch a person by ID. Full details including emails, phones, account, owner, custom_fields, last_contacted_at, last_replied_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personId": { "type": "integer", "description": "Person ID." }
+        },
+        "required": ["personId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/people/{personId}.json" }
+    },
+    {
+      "name": "salesloft_create_person",
+      "description": "Create a person. Required: email_address (or first_name + last_name + account_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_address": { "type": "string", "description": "Primary email." },
+          "first_name": { "type": "string", "description": "First name." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "title": { "type": "string", "description": "Job title." },
+          "phone": { "type": "string", "description": "Primary phone." },
+          "mobile_phone": { "type": "string", "description": "Mobile phone." },
+          "linkedin_url": { "type": "string", "description": "LinkedIn URL." },
+          "account_id": { "type": "integer", "description": "Linked account ID." },
+          "owner_id": { "type": "integer", "description": "User ID of owner." },
+          "person_stage_id": { "type": "integer", "description": "Stage ID." },
+          "tags": { "type": "array", "description": "Tag name strings." },
+          "custom_fields": { "type": "object", "description": "Custom field map (use salesloft_list_custom_fields to discover keys)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/people.json",
+        "bodyMapping": {
+          "email_address": "$email_address",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "title": "$title",
+          "phone": "$phone",
+          "mobile_phone": "$mobile_phone",
+          "linkedin_url": "$linkedin_url",
+          "account_id": "$account_id",
+          "owner_id": "$owner_id",
+          "person_stage_id": "$person_stage_id",
+          "tags": "$tags",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "salesloft_update_person",
+      "description": "Update a person. Partial.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personId": { "type": "integer", "description": "Person ID." },
+          "email_address": { "type": "string", "description": "New email." },
+          "first_name": { "type": "string", "description": "New first name." },
+          "last_name": { "type": "string", "description": "New last name." },
+          "title": { "type": "string", "description": "New title." },
+          "phone": { "type": "string", "description": "New phone." },
+          "owner_id": { "type": "integer", "description": "Reassign." },
+          "person_stage_id": { "type": "integer", "description": "Change stage." },
+          "tags": { "type": "array", "description": "Replace tags." }
+        },
+        "required": ["personId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/people/{personId}.json",
+        "bodyMapping": {
+          "email_address": "$email_address",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "title": "$title",
+          "phone": "$phone",
+          "owner_id": "$owner_id",
+          "person_stage_id": "$person_stage_id",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "salesloft_list_accounts",
+      "description": "List accounts (companies). Filter by name, domain, account_tier_id, owner_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Substring match on name." },
+          "domain": { "type": "string", "description": "Exact domain." },
+          "owned_by_id": { "type": "array", "description": "Owner user IDs." },
+          "per_page": { "type": "integer", "description": "Per page." },
+          "page": { "type": "integer", "description": "Page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts.json",
+        "queryParams": {
+          "name": "$name",
+          "domain": "$domain",
+          "owned_by_id[]": "$owned_by_id",
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "salesloft_list_cadences",
+      "description": "List cadences (multi-step sequences). Each has id, name, current_state, draft, type, shared, team_cadence.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owned_by_id": { "type": "array", "description": "Owner filter." },
+          "shared": { "type": "boolean", "description": "Only shared cadences." },
+          "per_page": { "type": "integer", "description": "Per page." },
+          "page": { "type": "integer", "description": "Page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cadences.json",
+        "queryParams": {
+          "owned_by_id[]": "$owned_by_id",
+          "shared": "$shared",
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "salesloft_enroll_person_in_cadence",
+      "description": "Add a person to a cadence (create a cadence_membership). Required: person_id + cadence_id + user_id (the user who 'sends' from this enrollment).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": { "type": "integer", "description": "Person to enroll." },
+          "cadence_id": { "type": "integer", "description": "Cadence to enroll into." },
+          "user_id": { "type": "integer", "description": "User who owns this enrollment (their email is the From address for cadence emails)." }
+        },
+        "required": ["person_id", "cadence_id", "user_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cadence_memberships.json",
+        "bodyMapping": {
+          "person_id": "$person_id",
+          "cadence_id": "$cadence_id",
+          "user_id": "$user_id"
+        }
+      }
+    },
+    {
+      "name": "salesloft_list_users",
+      "description": "List Salesloft users in your team. Returns id, name, email, role, time_zone, locale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": { "type": "array", "description": "Filter to specific user IDs." },
+          "guid": { "type": "string", "description": "Filter by guid." },
+          "email": { "type": "string", "description": "Email filter." },
+          "active": { "type": "boolean", "description": "Active flag filter." },
+          "per_page": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users.json",
+        "queryParams": {
+          "ids[]": "$ids",
+          "guid": "$guid",
+          "email": "$email",
+          "active": "$active",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "salesloft_create_activity_call",
+      "description": "Log a call activity on a person. Use for after-call dispositions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": { "type": "integer", "description": "Person ID." },
+          "to": { "type": "string", "description": "Phone number called (E.164)." },
+          "duration": { "type": "integer", "description": "Call duration in seconds." },
+          "sentiment": { "type": "string", "description": "Call sentiment label (configured in Salesloft)." },
+          "disposition": { "type": "string", "description": "Call disposition label." },
+          "notes": { "type": "string", "description": "Free-text notes." }
+        },
+        "required": ["person_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/activities/calls.json",
+        "bodyMapping": {
+          "person_id": "$person_id",
+          "to": "$to",
+          "duration": "$duration",
+          "sentiment": "$sentiment",
+          "disposition": "$disposition",
+          "notes": "$notes"
+        }
+      }
+    },
+    {
+      "name": "salesloft_list_custom_fields",
+      "description": "List custom fields defined for people / accounts. Returns id, name, field_type, accessibility, value_type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_type": { "type": "string", "description": "person, account, opportunity." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/custom_fields.json",
+        "queryParams": { "field_type": "$field_type" }
+      }
+    }
+  ]
+}

@@ -199,14 +199,25 @@ export class RestEngine {
     if (!config.authConfig) return;
 
     switch (config.authType) {
-      case 'API_KEY':
+      case 'API_KEY': {
         axiosConfig.headers = {
           ...axiosConfig.headers,
           [String(config.authConfig.headerName || 'X-API-Key')]: String(
             config.authConfig.apiKey,
           ),
         };
+        // Some vendors require additional fixed headers alongside the key
+        // (e.g. Copper sends X-PW-AccessToken + X-PW-Application + X-PW-UserEmail).
+        const extra = config.authConfig.extraHeaders as
+          | Record<string, string>
+          | undefined;
+        if (extra && typeof extra === 'object') {
+          for (const [k, v] of Object.entries(extra)) {
+            axiosConfig.headers[k] = String(v);
+          }
+        }
         break;
+      }
       case 'BEARER_TOKEN':
         axiosConfig.headers = {
           ...axiosConfig.headers,

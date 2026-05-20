@@ -32,16 +32,21 @@ import * as xentral from './de/xentral.json';
 import * as companiesHouse from './gb/companies-house.json';
 import * as wise from './gb/wise.json';
 import * as activecampaign from './intl/activecampaign.json';
+import * as apollo from './intl/apollo.json';
 import * as brevo from './intl/brevo.json';
 import * as calendly from './intl/calendly.json';
 import * as close from './intl/close.json';
 import * as convertkit from './intl/convertkit.json';
+import * as copper from './intl/copper.json';
 import * as discordBot from './intl/discord-bot.json';
 import * as klaviyo from './intl/klaviyo.json';
+import * as lemlist from './intl/lemlist.json';
 import * as lemonsqueezy from './intl/lemonsqueezy.json';
 import * as loops from './intl/loops.json';
 import * as mailchimp from './intl/mailchimp.json';
+import * as outreach from './intl/outreach.json';
 import * as pipedrive from './intl/pipedrive.json';
+import * as salesloft from './intl/salesloft.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sorare from './intl/sorare.json';
 import * as telegramBot from './intl/telegram-bot.json';
@@ -159,16 +164,21 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   companiesHouse as unknown as AdapterDefinition,
   wise as unknown as AdapterDefinition,
   activecampaign as unknown as AdapterDefinition,
+  apollo as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
   close as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
+  copper as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
+  lemlist as unknown as AdapterDefinition,
   lemonsqueezy as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
   mailchimp as unknown as AdapterDefinition,
+  outreach as unknown as AdapterDefinition,
   pipedrive as unknown as AdapterDefinition,
+  salesloft as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
