@@ -1,0 +1,233 @@
+{
+  "slug": "acuity-scheduling",
+  "name": "Acuity Scheduling",
+  "description": "Drive Acuity Scheduling (Squarespace-owned booking SaaS) from any AI agent: appointments, availability, appointment types, calendars, clients, products. 12 tools, Basic-auth.",
+  "instructions": "This connector uses the Acuity Scheduling API v1 (developers.acuityscheduling.com).\n\n**Setup**:\n1. Sign in to Acuity → **Integrations → API**.\n2. Note your **User ID** and copy the **API Key**.\n3. Set:\n   - `ACUITY_USER_ID` = numeric user ID (e.g. `12345`)\n   - `ACUITY_API_KEY` = the API key\n\n**Authentication**: HTTP Basic with username=USER_ID and password=API_KEY.\n\n**Availability flow**:\n  1. List appointment types (`acuity_list_appointment_types`) — get appointmentTypeID.\n  2. List calendars (`acuity_list_calendars`) — get calendarID(s).\n  3. List available dates (`acuity_list_available_dates`) for date+appointmentType+calendar.\n  4. List available times (`acuity_list_available_times`) for a specific date.\n  5. Book the appointment (`acuity_create_appointment`).\n\n**Cancellation**: appointments can be canceled (POST /appointments/{id}/cancel) — irreversible but client can rebook.\n\n**Timezones**: Acuity normalizes everything to the appointment's calendar timezone. Dates use ISO 8601 with offset.\n\n**Forms and custom fields**: appointments can have forms with custom fields — pass an array of {id, value} in `fields`.\n\n**Rate limits**: ~10 req/sec. On 429 back off.\n\n**Out of scope here**: products/packages purchases beyond list, certificates, email templates, scheduling-page customization.",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "acuity",
+  "docsUrl": "https://developers.acuityscheduling.com/reference/",
+  "requiredEnvVars": ["ACUITY_USER_ID", "ACUITY_API_KEY"],
+  "connector": {
+    "name": "Acuity Scheduling v1",
+    "type": "REST",
+    "baseUrl": "https://acuityscheduling.com/api/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{ACUITY_USER_ID}}",
+      "password": "{{ACUITY_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "acuity_get_me",
+      "description": "Return account info: name, email, country, timezone. Health check.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me" }
+    },
+    {
+      "name": "acuity_list_appointment_types",
+      "description": "List appointment types defined in the account. Each has id, name, duration, price, color, calendarIDs[], active.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/appointment-types" }
+    },
+    {
+      "name": "acuity_list_calendars",
+      "description": "List calendars (staff/resources). Each has id, name, email, location, description, timezone.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/calendars" }
+    },
+    {
+      "name": "acuity_list_available_dates",
+      "description": "List dates with available slots in a month, for a given appointmentTypeID and optional calendarID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointmentTypeID": { "type": "integer", "description": "Appointment type ID." },
+          "month": { "type": "string", "description": "YYYY-MM month to scan." },
+          "calendarID": { "type": "integer", "description": "Optional calendar ID — limit to this staff/resource." },
+          "timezone": { "type": "string", "description": "TZ database name (e.g. 'America/New_York'). Default uses account's." }
+        },
+        "required": ["appointmentTypeID", "month"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/availability/dates",
+        "queryParams": {
+          "appointmentTypeID": "$appointmentTypeID",
+          "month": "$month",
+          "calendarID": "$calendarID",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "acuity_list_available_times",
+      "description": "List specific time slots for a date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointmentTypeID": { "type": "integer", "description": "Appointment type ID." },
+          "date": { "type": "string", "description": "YYYY-MM-DD." },
+          "calendarID": { "type": "integer", "description": "Optional calendar ID." },
+          "timezone": { "type": "string", "description": "Timezone for the returned times." }
+        },
+        "required": ["appointmentTypeID", "date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/availability/times",
+        "queryParams": {
+          "appointmentTypeID": "$appointmentTypeID",
+          "date": "$date",
+          "calendarID": "$calendarID",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "acuity_list_appointments",
+      "description": "List appointments with filtering.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "minDate": { "type": "string", "description": "ISO 8601 — appointments at/after." },
+          "maxDate": { "type": "string", "description": "ISO 8601 — at/before." },
+          "calendarID": { "type": "integer", "description": "Filter by calendar." },
+          "appointmentTypeID": { "type": "integer", "description": "Filter by type." },
+          "canceled": { "type": "boolean", "description": "If true, only canceled. Default excludes canceled." },
+          "max": { "type": "integer", "description": "Max results (default 50)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/appointments",
+        "queryParams": {
+          "minDate": "$minDate",
+          "maxDate": "$maxDate",
+          "calendarID": "$calendarID",
+          "appointmentTypeID": "$appointmentTypeID",
+          "canceled": "$canceled",
+          "max": "$max"
+        }
+      }
+    },
+    {
+      "name": "acuity_get_appointment",
+      "description": "Fetch a single appointment with client + forms + payment details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointmentId": { "type": "integer", "description": "Appointment ID." }
+        },
+        "required": ["appointmentId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/appointments/{appointmentId}" }
+    },
+    {
+      "name": "acuity_create_appointment",
+      "description": "Book an appointment. Required: datetime + appointmentTypeID + firstName + lastName + email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "datetime": { "type": "string", "description": "ISO 8601 datetime of the slot." },
+          "appointmentTypeID": { "type": "integer", "description": "Appointment type ID." },
+          "calendarID": { "type": "integer", "description": "Optional calendar (round-robin if omitted)." },
+          "firstName": { "type": "string", "description": "Client first name." },
+          "lastName": { "type": "string", "description": "Client last name." },
+          "email": { "type": "string", "description": "Client email." },
+          "phone": { "type": "string", "description": "Client phone." },
+          "fields": { "type": "array", "description": "Custom form fields: [{id, value}]." },
+          "smsOptIn": { "type": "boolean", "description": "Opt in to SMS reminders." },
+          "noEmail": { "type": "boolean", "description": "If true, skip the confirmation email." },
+          "labels": { "type": "array", "description": "[{id}] — apply labels." },
+          "addonIDs": { "type": "array", "description": "Add-on IDs." },
+          "certificate": { "type": "string", "description": "Coupon/cert code." }
+        },
+        "required": ["datetime", "appointmentTypeID", "firstName", "lastName", "email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/appointments",
+        "bodyMapping": {
+          "datetime": "$datetime",
+          "appointmentTypeID": "$appointmentTypeID",
+          "calendarID": "$calendarID",
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "email": "$email",
+          "phone": "$phone",
+          "fields": "$fields",
+          "smsOptIn": "$smsOptIn",
+          "noEmail": "$noEmail",
+          "labels": "$labels",
+          "addonIDs": "$addonIDs",
+          "certificate": "$certificate"
+        }
+      }
+    },
+    {
+      "name": "acuity_reschedule_appointment",
+      "description": "Move an appointment to a new datetime/calendar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointmentId": { "type": "integer", "description": "Appointment ID." },
+          "datetime": { "type": "string", "description": "New ISO 8601 datetime." },
+          "calendarID": { "type": "integer", "description": "Optional new calendar." }
+        },
+        "required": ["appointmentId", "datetime"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/appointments/{appointmentId}/reschedule",
+        "bodyMapping": {
+          "datetime": "$datetime",
+          "calendarID": "$calendarID"
+        }
+      }
+    },
+    {
+      "name": "acuity_cancel_appointment",
+      "description": "Cancel an appointment. Irreversible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointmentId": { "type": "integer", "description": "Appointment ID." },
+          "noEmail": { "type": "boolean", "description": "If true, skip the cancellation email." },
+          "cancelNote": { "type": "string", "description": "Reason note." }
+        },
+        "required": ["appointmentId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/appointments/{appointmentId}/cancel",
+        "bodyMapping": {
+          "noEmail": "$noEmail",
+          "cancelNote": "$cancelNote"
+        }
+      }
+    },
+    {
+      "name": "acuity_list_clients",
+      "description": "List clients (people who have booked). Search by name or email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string", "description": "Name or email substring." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients",
+        "queryParams": { "search": "$search" }
+      }
+    },
+    {
+      "name": "acuity_list_forms",
+      "description": "List intake forms (custom forms). Each has id, name, fields[]. Use field IDs in appointment create's `fields` param.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/forms" }
+    }
+  ]
+}

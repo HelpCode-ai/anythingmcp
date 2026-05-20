@@ -1,0 +1,621 @@
+{
+  "slug": "bigcommerce",
+  "name": "BigCommerce",
+  "description": "Drive BigCommerce (SaaS e-commerce platform) from any AI agent: products, variants, orders, customers, categories. 14 tools, API-key (X-Auth-Token) auth, per-store base URL.",
+  "instructions": "This connector uses the BigCommerce REST API v3 (developer.bigcommerce.com/docs/rest-catalog).\n\n**Setup**:\n1. Sign in to BigCommerce \u2192 **Settings \u2192 API \u2192 API Accounts \u2192 Create API Account \u2192 V2/V3 API token**.\n2. Pick scopes \u2014 at minimum: Products (Read+Write), Orders (Read+Write), Customers (Read+Write), Information & Settings (Read).\n3. Copy the **Access Token** and note the **API path** \u2014 looks like `https://api.bigcommerce.com/stores/{STORE_HASH}/v3/`.\n4. Set:\n   - `BIGCOMMERCE_STORE_HASH` = the alphanumeric store hash from the URL (e.g. `abcd1234`)\n   - `BIGCOMMERCE_ACCESS_TOKEN` = the access token\n\n**Authentication**: header `X-Auth-Token: ${BIGCOMMERCE_ACCESS_TOKEN}`. The base URL embeds the store hash.\n\n**v2 vs v3**: this connector uses v3 (the modern REST). Some legacy endpoints only exist in v2 (`/stores/{hash}/v2/...`) \u2014 not exposed here.\n\n**Catalog/Products**: complex hierarchy. Product has variants (SKUs), modifiers (configurable options), images, custom_fields, bulk_pricing_rules, metafields. Use `include` query param to side-load (e.g. `?include=variants,images,custom_fields`).\n\n**Order statuses**: 0=Incomplete, 1=Pending, 2=Shipped, 3=Partially Shipped, 4=Refunded, 5=Cancelled, 6=Declined, 7=Awaiting Payment, 8=Awaiting Pickup, 9=Awaiting Shipment, 10=Completed, 11=Awaiting Fulfillment, 12=Manual Verification Required, 13=Disputed, 14=Partially Refunded.\n\n**Pagination**: `?page=N&limit=M` (max 250). Response envelope: `{data:[], meta:{pagination:{total,count,per_page,current_page,total_pages,links}}}`.\n\n**Rate limits**: depends on plan \u2014 Essentials ~30k req/hour, Pro 60k, Enterprise unlimited. Returns 429 with `X-Rate-Limit-Time-Reset-Ms`.\n\n**Out of scope here**: subscriptions, B2B Edition features, Stencil themes, scripts/checkout SDK, webhooks.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "bigcommerce",
+  "docsUrl": "https://developer.bigcommerce.com/docs/rest-catalog",
+  "requiredEnvVars": [
+    "BIGCOMMERCE_STORE_HASH",
+    "BIGCOMMERCE_ACCESS_TOKEN"
+  ],
+  "connector": {
+    "name": "BigCommerce v3",
+    "type": "REST",
+    "baseUrl": "https://api.bigcommerce.com/stores/{{BIGCOMMERCE_STORE_HASH}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Auth-Token",
+      "apiKey": "{{BIGCOMMERCE_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "bigcommerce_list_products",
+      "description": "List products with filters. Each product has id, name, sku, type, price, cost_price, retail_price, weight, inventory_level, inventory_tracking, brand_id, categories[], date_created, date_modified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_in": {
+            "type": "string",
+            "description": "Comma-separated product IDs."
+          },
+          "name": {
+            "type": "string",
+            "description": "Substring filter on name."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Exact SKU match."
+          },
+          "categories_in": {
+            "type": "string",
+            "description": "Comma-separated category IDs."
+          },
+          "is_visible": {
+            "type": "boolean",
+            "description": "Filter to visible products."
+          },
+          "is_featured": {
+            "type": "boolean",
+            "description": "Filter to featured."
+          },
+          "include": {
+            "type": "string",
+            "description": "Side-load: variants,images,custom_fields,bulk_pricing_rules,modifiers,options,videos,primary_image,reviews."
+          },
+          "include_fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (sparse)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "1-based page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Per page (default 50, max 250)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "id, name, sku, price, date_modified, date_created, inventory_level, is_visible, total_sold."
+          },
+          "direction": {
+            "type": "string",
+            "description": "asc or desc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/catalog/products",
+        "queryParams": {
+          "id:in": "$id_in",
+          "name": "$name",
+          "sku": "$sku",
+          "categories:in": "$categories_in",
+          "is_visible": "$is_visible",
+          "is_featured": "$is_featured",
+          "include": "$include",
+          "include_fields": "$include_fields",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "bigcommerce_get_product",
+      "description": "Fetch a single product. Use include for variants/images/custom_fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "integer",
+            "description": "Product ID."
+          },
+          "include": {
+            "type": "string",
+            "description": "Side-load."
+          }
+        },
+        "required": [
+          "productId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/catalog/products/{productId}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "bigcommerce_create_product",
+      "description": "Create a product. Required: name + price + categories + weight + type (physical or digital).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "type": {
+            "type": "string",
+            "description": "physical or digital."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU."
+          },
+          "description": {
+            "type": "string",
+            "description": "HTML description."
+          },
+          "weight": {
+            "type": "number",
+            "description": "Weight (in store's unit)."
+          },
+          "price": {
+            "type": "number",
+            "description": "Price."
+          },
+          "cost_price": {
+            "type": "number",
+            "description": "Cost basis."
+          },
+          "retail_price": {
+            "type": "number",
+            "description": "Compare-at retail."
+          },
+          "sale_price": {
+            "type": "number",
+            "description": "Sale price."
+          },
+          "categories": {
+            "type": "array",
+            "description": "Array of category IDs."
+          },
+          "brand_id": {
+            "type": "integer",
+            "description": "Brand ID."
+          },
+          "inventory_level": {
+            "type": "integer",
+            "description": "Stock on hand."
+          },
+          "inventory_tracking": {
+            "type": "string",
+            "description": "none, product, variant."
+          },
+          "is_visible": {
+            "type": "boolean",
+            "description": "Visible on storefront."
+          },
+          "is_featured": {
+            "type": "boolean",
+            "description": "Featured."
+          },
+          "tax_class_id": {
+            "type": "integer",
+            "description": "Tax class."
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "weight",
+          "price",
+          "categories"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/catalog/products",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "sku": "$sku",
+          "description": "$description",
+          "weight": "$weight",
+          "price": "$price",
+          "cost_price": "$cost_price",
+          "retail_price": "$retail_price",
+          "sale_price": "$sale_price",
+          "categories": "$categories",
+          "brand_id": "$brand_id",
+          "inventory_level": "$inventory_level",
+          "inventory_tracking": "$inventory_tracking",
+          "is_visible": "$is_visible",
+          "is_featured": "$is_featured",
+          "tax_class_id": "$tax_class_id"
+        }
+      }
+    },
+    {
+      "name": "bigcommerce_update_product",
+      "description": "Update a product. Common: price, inventory_level, is_visible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "integer",
+            "description": "Product ID."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "price": {
+            "type": "number",
+            "description": "New price."
+          },
+          "sale_price": {
+            "type": "number",
+            "description": "Sale price."
+          },
+          "inventory_level": {
+            "type": "integer",
+            "description": "New stock."
+          },
+          "is_visible": {
+            "type": "boolean",
+            "description": "Visibility."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "categories": {
+            "type": "array",
+            "description": "Replace categories."
+          }
+        },
+        "required": [
+          "productId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v3/catalog/products/{productId}",
+        "bodyMapping": {
+          "name": "$name",
+          "price": "$price",
+          "sale_price": "$sale_price",
+          "inventory_level": "$inventory_level",
+          "is_visible": "$is_visible",
+          "description": "$description",
+          "categories": "$categories"
+        }
+      }
+    },
+    {
+      "name": "bigcommerce_delete_product",
+      "description": "Permanently delete a product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "integer",
+            "description": "Product ID."
+          }
+        },
+        "required": [
+          "productId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v3/catalog/products/{productId}"
+      }
+    },
+    {
+      "name": "bigcommerce_list_product_variants",
+      "description": "List variants (SKUs) for a product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "integer",
+            "description": "Product ID."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Per page."
+          }
+        },
+        "required": [
+          "productId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/catalog/products/{productId}/variants",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "bigcommerce_update_variant_inventory",
+      "description": "Update a variant's inventory_level (stock quantity).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "integer",
+            "description": "Parent product ID."
+          },
+          "variantId": {
+            "type": "integer",
+            "description": "Variant ID."
+          },
+          "inventory_level": {
+            "type": "integer",
+            "description": "New stock."
+          }
+        },
+        "required": [
+          "productId",
+          "variantId",
+          "inventory_level"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v3/catalog/products/{productId}/variants/{variantId}",
+        "bodyMapping": {
+          "inventory_level": "$inventory_level"
+        }
+      }
+    },
+    {
+      "name": "bigcommerce_list_categories",
+      "description": "List categories with parent/tree structure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Substring filter."
+          },
+          "parent_id": {
+            "type": "integer",
+            "description": "Filter by parent."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/catalog/categories",
+        "queryParams": {
+          "name": "$name",
+          "parent_id": "$parent_id",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "bigcommerce_list_orders",
+      "description": "List orders (uses v2 endpoint \u2014 V3 doesn't fully cover orders yet).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "min_id": {
+            "type": "integer",
+            "description": "Min order ID."
+          },
+          "max_id": {
+            "type": "integer",
+            "description": "Max order ID."
+          },
+          "min_total": {
+            "type": "number",
+            "description": "Min total."
+          },
+          "max_total": {
+            "type": "number",
+            "description": "Max total."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Filter by customer."
+          },
+          "email": {
+            "type": "string",
+            "description": "Filter by billing email."
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "Filter by status code (see instructions)."
+          },
+          "min_date_created": {
+            "type": "string",
+            "description": "RFC 2822 date string."
+          },
+          "max_date_created": {
+            "type": "string",
+            "description": "RFC 2822 date string."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Per page (max 250)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "id:asc, id:desc, total:asc, etc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders",
+        "queryParams": {
+          "min_id": "$min_id",
+          "max_id": "$max_id",
+          "min_total": "$min_total",
+          "max_total": "$max_total",
+          "customer_id": "$customer_id",
+          "email": "$email",
+          "status_id": "$status_id",
+          "min_date_created": "$min_date_created",
+          "max_date_created": "$max_date_created",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "bigcommerce_get_order",
+      "description": "Fetch one order (v2). Returns customer, billing/shipping addresses, products via separate /products endpoint.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "description": "Order ID."
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders/{orderId}"
+      }
+    },
+    {
+      "name": "bigcommerce_get_order_products",
+      "description": "List line items on an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "description": "Order ID."
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders/{orderId}/products"
+      }
+    },
+    {
+      "name": "bigcommerce_update_order_status",
+      "description": "Update an order's status (use status code from instructions).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "description": "Order ID."
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "New status code."
+          }
+        },
+        "required": [
+          "orderId",
+          "status_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/orders/{orderId}",
+        "bodyMapping": {
+          "status_id": "$status_id"
+        }
+      }
+    },
+    {
+      "name": "bigcommerce_list_customers",
+      "description": "List customers (V3).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email_in": {
+            "type": "string",
+            "description": "Comma-separated emails."
+          },
+          "name": {
+            "type": "string",
+            "description": "Substring on name."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company filter."
+          },
+          "customer_group_id": {
+            "type": "integer",
+            "description": "Filter by group."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Per page."
+          },
+          "include": {
+            "type": "string",
+            "description": "addresses, attributes, formfields, storecredit, _consents."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/customers",
+        "queryParams": {
+          "email:in": "$email_in",
+          "name": "$name",
+          "company": "$company",
+          "customer_group_id": "$customer_group_id",
+          "page": "$page",
+          "limit": "$limit",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "bigcommerce_create_customer",
+      "description": "Create a customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customers": {
+            "type": "array",
+            "description": "[{first_name, last_name, email, company?, phone?, notes?, tax_exempt_category?, customer_group_id?, addresses?:[{...}], authentication?:{new_password?,force_password_reset?}}]. Wrap inside array."
+          }
+        },
+        "required": [
+          "customers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/customers",
+        "bodyTemplate": "${customers}"
+      }
+    }
+  ]
+}

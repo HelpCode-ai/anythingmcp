@@ -32,8 +32,10 @@ import * as xentral from './de/xentral.json';
 import * as companiesHouse from './gb/companies-house.json';
 import * as wise from './gb/wise.json';
 import * as activecampaign from './intl/activecampaign.json';
+import * as acuityScheduling from './intl/acuity-scheduling.json';
 import * as apollo from './intl/apollo.json';
 import * as basecamp from './intl/basecamp.json';
+import * as bigcommerce from './intl/bigcommerce.json';
 import * as brevo from './intl/brevo.json';
 import * as calendly from './intl/calendly.json';
 import * as clickup from './intl/clickup.json';
@@ -42,9 +44,12 @@ import * as coda from './intl/coda.json';
 import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
 import * as discordBot from './intl/discord-bot.json';
+import * as drip from './intl/drip.json';
+import * as fathom from './intl/fathom.json';
 import * as freshdesk from './intl/freshdesk.json';
 import * as front from './intl/front.json';
 import * as ghost from './intl/ghost.json';
+import * as heap from './intl/heap.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hunter from './intl/hunter.json';
 import * as klaviyo from './intl/klaviyo.json';
@@ -184,8 +189,10 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   companiesHouse as unknown as AdapterDefinition,
   wise as unknown as AdapterDefinition,
   activecampaign as unknown as AdapterDefinition,
+  acuityScheduling as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
   basecamp as unknown as AdapterDefinition,
+  bigcommerce as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
   clickup as unknown as AdapterDefinition,
@@ -194,9 +201,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   convertkit as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
+  drip as unknown as AdapterDefinition,
+  fathom as unknown as AdapterDefinition,
   freshdesk as unknown as AdapterDefinition,
   front as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
+  heap as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,

@@ -1,0 +1,133 @@
+{
+  "slug": "heap",
+  "name": "Heap",
+  "description": "Send events, identify users and update properties in Heap (product analytics) from any AI agent. 5 tools, app_id-based auth.",
+  "instructions": "This connector uses the Heap Server-Side API (developers.heap.io/docs/server-side-apis).\n\n**Setup**:\n1. Sign in to https://app.heap.io → top-right → **Account → Projects → select project → Project ID** (called `app_id`).\n2. Set `HEAP_APP_ID` to the numeric app/project ID.\n\n**Authentication**: NONE — Heap's server-side API uses the app_id in the request body to route events to your project. There's no secret on the ingestion endpoint (anyone with your app_id can fake events — same trust model as Google Analytics client-side JS).\n\n**identity vs user_id**: every event references a user via `identity` (a stable string you control — typically your user's UUID or email). Heap merges anonymous sessions to identified users on first identify call with the same identity.\n\n**Property types**: properties (event-level OR user-level) are arbitrary key-value pairs. Max 1024 properties per event, max 1MB total request size.\n\n**Out of scope here**: Read APIs (the Heap Read API requires a separate auth and is gated to higher plans), funnel/segment queries, account/billing.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "heap",
+  "docsUrl": "https://developers.heap.io/reference/server-side-apis-overview",
+  "requiredEnvVars": ["HEAP_APP_ID"],
+  "connector": {
+    "name": "Heap Server-Side",
+    "type": "REST",
+    "baseUrl": "https://heapanalytics.com/api",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "heap_track_event",
+      "description": "Track a single behavioral event for a user. Required: app_id + identity + event. properties are arbitrary key/value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": { "type": "string", "description": "Heap app/project ID (use HEAP_APP_ID env var)." },
+          "identity": { "type": "string", "description": "Stable user identifier (your UUID or email)." },
+          "event": { "type": "string", "description": "Event name (e.g. 'Purchase Completed')." },
+          "properties": { "type": "object", "description": "Event properties (any keys + values)." },
+          "idempotency_key": { "type": "string", "description": "Optional dedupe key — Heap drops duplicates within ~24h." },
+          "timestamp": { "type": "string", "description": "ISO 8601 — defaults to now." }
+        },
+        "required": ["app_id", "identity", "event"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/track",
+        "bodyMapping": {
+          "app_id": "$app_id",
+          "identity": "$identity",
+          "event": "$event",
+          "properties": "$properties",
+          "idempotency_key": "$idempotency_key",
+          "timestamp": "$timestamp"
+        }
+      }
+    },
+    {
+      "name": "heap_bulk_track",
+      "description": "Bulk-track many events in one call (up to 1000 events, 1MB total).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": { "type": "string", "description": "Heap app ID." },
+          "events": { "type": "array", "description": "Array of event objects: [{identity, event, properties?, idempotency_key?, timestamp?}, ...]." }
+        },
+        "required": ["app_id", "events"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/track",
+        "bodyMapping": {
+          "app_id": "$app_id",
+          "events": "$events"
+        }
+      }
+    },
+    {
+      "name": "heap_add_user_properties",
+      "description": "Set or update user-level properties (Heap merges with existing). User properties persist across all events for that identity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": { "type": "string", "description": "Heap app ID." },
+          "identity": { "type": "string", "description": "User identifier." },
+          "properties": { "type": "object", "description": "User properties to set/merge." }
+        },
+        "required": ["app_id", "identity", "properties"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/add_user_properties",
+        "bodyMapping": {
+          "app_id": "$app_id",
+          "identity": "$identity",
+          "properties": "$properties"
+        }
+      }
+    },
+    {
+      "name": "heap_add_account_properties",
+      "description": "Set or update properties on an account (B2B model — accounts group users). Required: account_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": { "type": "string", "description": "Heap app ID." },
+          "account_id": { "type": "string", "description": "Account identifier (your tenant/org ID)." },
+          "properties": { "type": "object", "description": "Account properties." }
+        },
+        "required": ["app_id", "account_id", "properties"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/add_account_properties",
+        "bodyMapping": {
+          "app_id": "$app_id",
+          "account_id": "$account_id",
+          "properties": "$properties"
+        }
+      }
+    },
+    {
+      "name": "heap_add_user_to_account",
+      "description": "Associate a user (identity) with an account (account_id). Required: app_id + identity + account_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": { "type": "string", "description": "Heap app ID." },
+          "identity": { "type": "string", "description": "User identifier." },
+          "account_id": { "type": "string", "description": "Account ID." }
+        },
+        "required": ["app_id", "identity", "account_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/add_user_to_account",
+        "bodyMapping": {
+          "app_id": "$app_id",
+          "identity": "$identity",
+          "account_id": "$account_id"
+        }
+      }
+    }
+  ]
+}
