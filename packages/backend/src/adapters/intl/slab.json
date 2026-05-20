@@ -23,11 +23,8 @@
       "description": "Return the user the token belongs to (id, name, email, organization). Use the auto-injected slab_graphql_query for more complex selections.",
       "parameters": { "type": "object", "properties": {} },
       "endpointMapping": {
-        "method": "POST",
-        "path": "",
-        "bodyMapping": {
-          "query": "{ me { id name email organization { id name } } }"
-        }
+        "method": "query",
+        "path": "{ me { id name email organization { id name } } }"
       }
     },
     {
@@ -41,10 +38,9 @@
         "required": ["id"]
       },
       "endpointMapping": {
-        "method": "POST",
-        "path": "",
+        "method": "query",
+        "path": "query GetPost($id: ID!) { post(id: $id) { id title content(format: MARKDOWN) updatedAt owner { name } topics { id name } } }",
         "bodyMapping": {
-          "query": "query GetPost($id: ID!) { post(id: $id) { id title content(format: MARKDOWN) updatedAt owner { name } topics { id name } } }",
           "variables": { "id": "$id" }
         }
       }
@@ -61,10 +57,9 @@
         "required": ["query"]
       },
       "endpointMapping": {
-        "method": "POST",
-        "path": "",
+        "method": "query",
+        "path": "query SearchPosts($q: String!, $first: Int) { search(query: $q, first: $first) { edges { node { ... on Post { id title updatedAt owner { name } } } } } }",
         "bodyMapping": {
-          "query": "query SearchPosts($q: String!, $first: Int) { search(query: $q, first: $first) { edges { node { ... on Post { id title updatedAt owner { name } } } } } }",
           "variables": { "q": "$query", "first": "$first" }
         }
       }
@@ -79,10 +74,9 @@
         }
       },
       "endpointMapping": {
-        "method": "POST",
-        "path": "",
+        "method": "query",
+        "path": "query ListTopics($first: Int) { topics(first: $first) { edges { node { id name description parent { id name } } } } }",
         "bodyMapping": {
-          "query": "query ListTopics($first: Int) { topics(first: $first) { edges { node { id name description parent { id name } } } } }",
           "variables": { "first": "$first" }
         }
       }
@@ -99,10 +93,9 @@
         "required": ["topicId"]
       },
       "endpointMapping": {
-        "method": "POST",
-        "path": "",
+        "method": "query",
+        "path": "query TopicPosts($id: ID!, $first: Int) { topic(id: $id) { id name posts(first: $first) { edges { node { id title updatedAt } } } } }",
         "bodyMapping": {
-          "query": "query TopicPosts($id: ID!, $first: Int) { topic(id: $id) { id name posts(first: $first) { edges { node { id title updatedAt } } } } }",
           "variables": { "id": "$topicId", "first": "$first" }
         }
       }
@@ -120,10 +113,9 @@
         "required": ["title", "content"]
       },
       "endpointMapping": {
-        "method": "POST",
-        "path": "",
+        "method": "mutation",
+        "path": "mutation CreatePost($title: String!, $content: String!, $topics: [ID!]) { postCreate(title: $title, content: $content, format: MARKDOWN, topicIds: $topics) { id title } }",
         "bodyMapping": {
-          "query": "mutation CreatePost($title: String!, $content: String!, $topics: [ID!]) { postCreate(title: $title, content: $content, format: MARKDOWN, topicIds: $topics) { id title } }",
           "variables": {
             "title": "$title",
             "content": "$content",
