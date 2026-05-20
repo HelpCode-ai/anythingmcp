@@ -394,6 +394,12 @@ export class ConnectorsController {
     }
   }
 
+  private assertCanCreate(req: any) {
+    if (req.user.role === 'VIEWER') {
+      throw new ForbiddenException('Viewers cannot modify connectors');
+    }
+  }
+
   private assertCanWrite(connector: any, req: any) {
     this.assertOrgMatch(connector, req);
     if (req.user.role === 'VIEWER') {
@@ -418,6 +424,7 @@ export class ConnectorsController {
   @Post()
   @ApiOperation({ summary: 'Create a new connector' })
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
+    this.assertCanCreate(req);
     await this.licenseGuard.checkCanCreateConnector(req.user.sub, req.user.organizationId);
     const connector = await this.connectorsService.create(req.user.sub, req.user.organizationId, dto);
 
@@ -759,6 +766,7 @@ export class ConnectorsController {
       'with duplicate names. Does not import auth credentials.',
   })
   async importAll(@Req() req: any, @Body() body: ImportAllDto) {
+    this.assertCanCreate(req);
     if (body.connectors.length === 0) {
       return { error: 'Provide a "connectors" array with at least one connector' };
     }
