@@ -52,6 +52,7 @@ import * as crisp from './intl/crisp.json';
 import * as discordBot from './intl/discord-bot.json';
 import * as drip from './intl/drip.json';
 import * as dropboxSign from './intl/dropbox-sign.json';
+import * as ecwid from './intl/ecwid.json';
 import * as etsy from './intl/etsy.json';
 import * as fathom from './intl/fathom.json';
 import * as fillout from './intl/fillout.json';
@@ -65,7 +66,9 @@ import * as height from './intl/height.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hunter from './intl/hunter.json';
 import * as insightly from './intl/insightly.json';
+import * as instantly from './intl/instantly.json';
 import * as klaviyo from './intl/klaviyo.json';
+import * as kustomer from './intl/kustomer.json';
 import * as lemlist from './intl/lemlist.json';
 import * as lemonsqueezy from './intl/lemonsqueezy.json';
 import * as loops from './intl/loops.json';
@@ -74,6 +77,7 @@ import * as mailchimp from './intl/mailchimp.json';
 import * as mapbox from './intl/mapbox.json';
 import * as medium from './intl/medium.json';
 import * as messagebird from './intl/messagebird.json';
+import * as microsoftBookings from './intl/microsoft-bookings.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mollie from './intl/mollie.json';
 import * as neverbounce from './intl/neverbounce.json';
@@ -99,6 +103,7 @@ import * as ticktick from './intl/ticktick.json';
 import * as todoist from './intl/todoist.json';
 import * as trello from './intl/trello.json';
 import * as typeform from './intl/typeform.json';
+import * as vercelAnalytics from './intl/vercel-analytics.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as woocommerce from './intl/woocommerce.json';
 import * as wordpress from './intl/wordpress.json';
@@ -234,6 +239,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   discordBot as unknown as AdapterDefinition,
   drip as unknown as AdapterDefinition,
   dropboxSign as unknown as AdapterDefinition,
+  ecwid as unknown as AdapterDefinition,
   etsy as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
   fillout as unknown as AdapterDefinition,
@@ -247,7 +253,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   helpScout as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
   insightly as unknown as AdapterDefinition,
+  instantly as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
+  kustomer as unknown as AdapterDefinition,
   lemlist as unknown as AdapterDefinition,
   lemonsqueezy as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
@@ -256,6 +264,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mapbox as unknown as AdapterDefinition,
   medium as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
+  microsoftBookings as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
   neverbounce as unknown as AdapterDefinition,
@@ -281,6 +290,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   todoist as unknown as AdapterDefinition,
   trello as unknown as AdapterDefinition,
   typeform as unknown as AdapterDefinition,
+  vercelAnalytics as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
   woocommerce as unknown as AdapterDefinition,
   wordpress as unknown as AdapterDefinition,

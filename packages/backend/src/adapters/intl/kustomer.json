@@ -1,0 +1,228 @@
+{
+  "slug": "kustomer",
+  "name": "Kustomer",
+  "description": "Drive Kustomer (modern customer service CRM, Meta-owned) from any AI agent: conversations, messages, customers, notes, custom objects. 10 tools, Bearer auth.",
+  "instructions": "This connector uses the Kustomer API v1 (developer.kustomer.com).\n\n**Setup**:\n1. Sign in to Kustomer → top-right avatar → **Settings → Security → API Keys → Add API Key**.\n2. Pick role: org.permission.customer.read+write, org.permission.conversation.read+write, etc.\n3. Set `KUSTOMER_API_KEY`.\n4. Note your **org subdomain** (e.g. `acme` for `acme.kustomerapp.com`). Set `KUSTOMER_SUBDOMAIN`.\n\n**Authentication**: `Authorization: Bearer ${KUSTOMER_API_KEY}`.\n\n**Subdomain-templated URL**: `https://${KUSTOMER_SUBDOMAIN}.api.kustomerapp.com/v1`.\n\n**Customer-centric model**: Kustomer's selling point is the unified customer timeline. A customer has multiple emails/phones/social handles; conversations roll up under the customer.\n\n**JSON:API conventions**: requests/responses follow JSON:API. Use `?include=` to side-load.\n\n**Pagination**: `?page[size]=N&page[number]=M`.\n\n**Out of scope here**: workflows/automations editing, KSAT (CSAT survey) config, knowledge base.",
+  "region": "intl",
+  "category": "support",
+  "icon": "kustomer",
+  "docsUrl": "https://developer.kustomer.com/kustomer-api-docs/reference",
+  "requiredEnvVars": ["KUSTOMER_API_KEY", "KUSTOMER_SUBDOMAIN"],
+  "connector": {
+    "name": "Kustomer v1",
+    "type": "REST",
+    "baseUrl": "https://{{KUSTOMER_SUBDOMAIN}}.api.kustomerapp.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{KUSTOMER_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "kustomer_get_current_tracking_id",
+      "description": "Return the org / org details — sanity check for API key validity.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/orgs/current" }
+    },
+    {
+      "name": "kustomer_search_customers",
+      "description": "Search customers via the v1 search endpoint (Kustomer's Lucene-style query).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queryQueries": { "type": "array", "description": "Array of {and:[{name:'fieldname',operator:'equals',value:'X'},...], or:[]}." },
+          "queryContext": { "type": "string", "description": "customer (default), conversation, message." },
+          "pageSize": { "type": "integer", "description": "Per page." },
+          "pageNumber": { "type": "integer", "description": "1-based page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/search",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "pageNumber": "$pageNumber"
+        },
+        "bodyMapping": {
+          "queryQueries": "$queryQueries",
+          "queryContext": "$queryContext"
+        }
+      }
+    },
+    {
+      "name": "kustomer_get_customer",
+      "description": "Fetch a customer by ID. Pass include=conversations,messages,notes to side-load timeline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string", "description": "Customer ID." },
+          "include": { "type": "string", "description": "Comma-separated relationships." }
+        },
+        "required": ["customerId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customerId}",
+        "queryParams": { "include": "$include" }
+      }
+    },
+    {
+      "name": "kustomer_create_customer",
+      "description": "Create a customer. Required: name OR emails (at least one identifier).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Full name." },
+          "displayName": { "type": "string", "description": "Display name override." },
+          "emails": { "type": "array", "description": "[{email, type:'work'|'home'|'other', verified?:bool}]." },
+          "phones": { "type": "array", "description": "[{phone:'+15551234567', type, verified?}]." },
+          "socials": { "type": "array", "description": "[{type:'twitter'|'facebook'|..., identifier:'@handle'}]." },
+          "tags": { "type": "array", "description": "Tag strings." },
+          "locale": { "type": "string", "description": "User locale." },
+          "timeZone": { "type": "string", "description": "TZ database name." },
+          "custom": { "type": "object", "description": "Custom attributes (must be defined in org settings first)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "name": "$name",
+          "displayName": "$displayName",
+          "emails": "$emails",
+          "phones": "$phones",
+          "socials": "$socials",
+          "tags": "$tags",
+          "locale": "$locale",
+          "timeZone": "$timeZone",
+          "custom": "$custom"
+        }
+      }
+    },
+    {
+      "name": "kustomer_search_conversations",
+      "description": "Search conversations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queryQueries": { "type": "array", "description": "Kustomer query array." },
+          "pageSize": { "type": "integer", "description": "Per page." },
+          "pageNumber": { "type": "integer", "description": "Page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/search",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "pageNumber": "$pageNumber"
+        },
+        "bodyMapping": {
+          "queryQueries": "$queryQueries"
+        }
+      }
+    },
+    {
+      "name": "kustomer_get_conversation",
+      "description": "Fetch a conversation by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "string", "description": "Conversation ID." },
+          "include": { "type": "string", "description": "Side-load (messages, notes, customer)." }
+        },
+        "required": ["conversationId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversationId}",
+        "queryParams": { "include": "$include" }
+      }
+    },
+    {
+      "name": "kustomer_update_conversation",
+      "description": "Update a conversation — change status (open/snoozed/done), assignee, queue, priority, tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "string", "description": "Conversation ID." },
+          "status": { "type": "string", "description": "open, snoozed, done." },
+          "assignedUsers": { "type": "array", "description": "Array of user IDs." },
+          "assignedTeams": { "type": "array", "description": "Array of team IDs." },
+          "queue": { "type": "string", "description": "Queue ID." },
+          "priority": { "type": "integer", "description": "1=Urgent, 2=High, 3=Medium, 4=Low." },
+          "tags": { "type": "array", "description": "Replace tag set." }
+        },
+        "required": ["conversationId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/conversations/{conversationId}",
+        "bodyMapping": {
+          "status": "$status",
+          "assignedUsers": "$assignedUsers",
+          "assignedTeams": "$assignedTeams",
+          "queue": "$queue",
+          "priority": "$priority",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "kustomer_add_note_to_conversation",
+      "description": "Add an internal note (private — not sent to customer).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "string", "description": "Conversation ID." },
+          "body": { "type": "string", "description": "Note body." },
+          "user": { "type": "string", "description": "User ID who authored." }
+        },
+        "required": ["conversationId", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversationId}/notes",
+        "bodyMapping": {
+          "body": "$body",
+          "user": "$user"
+        }
+      }
+    },
+    {
+      "name": "kustomer_create_outbound_message",
+      "description": "Send a public message in a conversation (email/SMS/chat reply). The exact required fields depend on channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "string", "description": "Conversation ID." },
+          "channel": { "type": "string", "description": "email, sms, chat." },
+          "to": { "type": "string", "description": "Recipient address (email/phone)." },
+          "from": { "type": "string", "description": "Sender address (verified)." },
+          "subject": { "type": "string", "description": "Email subject." },
+          "body": { "type": "string", "description": "Plain-text body." },
+          "html": { "type": "string", "description": "HTML body (email)." }
+        },
+        "required": ["conversationId", "channel", "to", "from", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversationId}/messages",
+        "bodyMapping": {
+          "channel": "$channel",
+          "to": "$to",
+          "from": "$from",
+          "subject": "$subject",
+          "body": "$body",
+          "html": "$html"
+        }
+      }
+    },
+    {
+      "name": "kustomer_list_users",
+      "description": "List org users (agents).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/users" }
+    }
+  ]
+}
