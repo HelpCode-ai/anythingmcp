@@ -1,0 +1,494 @@
+{
+  "slug": "mailchimp",
+  "name": "Mailchimp",
+  "description": "Drive Mailchimp's Marketing API from any AI agent: audiences (lists), members, tags, campaigns, templates, segments and account info. 16 ready-to-use tools. Bearer-token auth with a datacenter-prefixed base URL.",
+  "instructions": "This connector uses the Mailchimp Marketing API v3.0.\n\n**Datacenter-prefixed base URL** (Mailchimp-specific quirk): each account lives on a numbered datacenter — `us1`, `us2`, … `us21`, etc. — and the API URL embeds it: `https://us{N}.api.mailchimp.com/3.0`. The datacenter suffix is the last segment of your API key after the dash (so an API key with `-us6` at the end lives on `us6`). The adapter takes the datacenter as an env var `MAILCHIMP_DC` and substitutes it into the base URL — if you set the wrong DC you'll get 404 NotResolved errors.\n\n**Setup**:\n1. Sign in to Mailchimp → bottom-left avatar → **Profile → Extras → API keys → Create a key**.\n2. The key Mailchimp issues you looks roughly like `<32-hex-chars>-usN`. Whatever the suffix says (`-usN`) IS your datacenter.\n3. Set `MAILCHIMP_API_KEY` = the full key (including `-usN`); set `MAILCHIMP_DC` = `usN` (e.g. `us6`).\n\n**Authentication**: Bearer token. The engine sends `Authorization: Bearer ${MAILCHIMP_API_KEY}`. Mailchimp also supports HTTP Basic with `anystring:API_KEY` but Bearer is cleaner and equally valid since 2019.\n\n**Audience IDs vs list IDs**: Mailchimp renamed 'lists' to 'audiences' in the UI but the API still calls them `lists`. The `list_id` in URLs is a 10-character alphanumeric (e.g. `a1b2c3d4e5`) — find it via `mailchimp_list_audiences` once and pin it.\n\n**Member subscriber_hash**: members are addressed by the **MD5 hash of the lowercase email**, NOT the raw email. Most tools that operate on a member accept either the raw email OR the hash and the adapter passes whatever you give it — but Mailchimp returns 404 if you pass the original-case email when the lowercase hash is expected. Always lowercase email before hashing if you compute it yourself.\n\n**PUT vs POST**: Mailchimp uses **PUT to upsert** a member (creates if missing, updates if exists) — `mailchimp_upsert_member` does this. POST `/members` would error on duplicate. Stick with the adapter's upsert tool unless you specifically need to fail on duplicate.\n\n**Status values**: when subscribing a member, `status` must be `subscribed`, `unsubscribed`, `cleaned`, `pending` (double opt-in) or `transactional`. Use `subscribed` for direct opt-in, `pending` if the list requires double opt-in.\n\n**Tags**: tags on members are managed via a dedicated endpoint (`/members/{hash}/tags`) — `mailchimp_update_member_tags` accepts an array like `[{name: 'vip', status: 'active'}, {name: 'cold', status: 'inactive'}]`. Setting `active` adds the tag; `inactive` removes it.\n\n**Campaign workflow**: campaigns have 3 phases — create (`POST /campaigns`), set content (`PUT /campaigns/{id}/content` — not exposed here, use the Mailchimp UI for templating), then send (`POST /campaigns/{id}/actions/send`). For pure trigger-on-existing-campaign, just call `mailchimp_send_campaign` with the campaign ID.\n\n**Rate limits**: ~10 concurrent connections per user; daily caps scale with plan. On 429, back off.\n\n**Out of scope here**: webhooks, marketing automation journeys, e-commerce store sync, transactional email (use the separate Mandrill / Mailchimp Transactional API for that), file manager, conversations.",
+  "region": "intl",
+  "category": "email",
+  "icon": "mailchimp",
+  "docsUrl": "https://mailchimp.com/developer/marketing/api/",
+  "requiredEnvVars": ["MAILCHIMP_API_KEY", "MAILCHIMP_DC"],
+  "connector": {
+    "name": "Mailchimp Marketing API",
+    "type": "REST",
+    "baseUrl": "https://{{MAILCHIMP_DC}}.api.mailchimp.com/3.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MAILCHIMP_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "mailchimp_ping",
+      "description": "Health check — returns 'Everything's Chimpy!' if the API key and datacenter are valid. Call this at agent startup to confirm credentials before any real work.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/ping" }
+    },
+    {
+      "name": "mailchimp_get_account_info",
+      "description": "Return account-level info: company name, contact, plan type, total subscribers across all audiences, industry, language, last login. Useful to introduce the agent to the account context.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/" }
+    },
+    {
+      "name": "mailchimp_list_audiences",
+      "description": "List all audiences (formerly 'lists') on the account. Returns each audience's id, name, member_count, date_created, contact info, and default sender. Use this once to discover the list_id you'll pass to other tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Max audiences per page (default 10, max 1000)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Pagination offset."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated paths of fields to return (e.g. 'lists.id,lists.name,lists.stats.member_count'). Trims response."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "mailchimp_get_audience",
+      "description": "Fetch a single audience by ID. Returns full details including stats (member_count, unsubscribe_count, open_rate, click_rate), permission_reminder, double_optin setting, and default sender info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": {
+            "type": "string",
+            "description": "10-character audience (list) ID."
+          }
+        },
+        "required": ["listId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/lists/{listId}" }
+    },
+    {
+      "name": "mailchimp_create_audience",
+      "description": "Create a new audience. Many fields are required by Mailchimp's compliance rules — contact address, permission reminder, sender from_name/from_email — without them the audience can't legally send emails. Returns the new list id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Audience name (e.g. 'Newsletter subscribers')."
+          },
+          "contact": {
+            "type": "object",
+            "description": "Required postal address: {company, address1, address2, city, state, zip, country (2-letter code), phone}. Mailchimp displays this in the email footer per CAN-SPAM."
+          },
+          "permission_reminder": {
+            "type": "string",
+            "description": "Short text shown in every email explaining why the subscriber is receiving it (e.g. 'You signed up for updates at acme.com')."
+          },
+          "campaign_defaults": {
+            "type": "object",
+            "description": "{from_name, from_email, subject, language}. Required defaults applied to new campaigns on this list."
+          },
+          "email_type_option": {
+            "type": "boolean",
+            "description": "If true, let subscribers choose HTML vs plain-text. Default false."
+          },
+          "double_optin": {
+            "type": "boolean",
+            "description": "If true, new subscribers must confirm via email (GDPR-friendly). Default false."
+          }
+        },
+        "required": ["name", "contact", "permission_reminder", "campaign_defaults"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lists",
+        "bodyMapping": {
+          "name": "$name",
+          "contact": "$contact",
+          "permission_reminder": "$permission_reminder",
+          "campaign_defaults": "$campaign_defaults",
+          "email_type_option": "$email_type_option",
+          "double_optin": "$double_optin"
+        }
+      }
+    },
+    {
+      "name": "mailchimp_list_members",
+      "description": "List members of an audience, optionally filtered by status or subscription date. Supports pagination via count + offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": {
+            "type": "string",
+            "description": "Audience ID."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status: subscribed, unsubscribed, cleaned, pending, transactional, archived."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Max per page (default 10, max 1000)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Pagination offset."
+          },
+          "since_timestamp_opt": {
+            "type": "string",
+            "description": "Filter members who opted in after this ISO 8601 timestamp."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated dotted paths to return."
+          }
+        },
+        "required": ["listId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{listId}/members",
+        "queryParams": {
+          "status": "$status",
+          "count": "$count",
+          "offset": "$offset",
+          "since_timestamp_opt": "$since_timestamp_opt",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "mailchimp_get_member",
+      "description": "Fetch a single member by their subscriber_hash (MD5 of lowercase email). Returns email, status, merge_fields (e.g. FNAME, LNAME), tags, stats, last_changed timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": {
+            "type": "string",
+            "description": "Audience ID."
+          },
+          "subscriberHash": {
+            "type": "string",
+            "description": "MD5 hash of the lowercase email address."
+          }
+        },
+        "required": ["listId", "subscriberHash"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{listId}/members/{subscriberHash}"
+      }
+    },
+    {
+      "name": "mailchimp_upsert_member",
+      "description": "Add a member to an audience if missing, or update them if they already exist. Uses PUT — idempotent. Pass the MD5 lowercase-email hash as subscriberHash; `email_address` and `status_if_new` are required for the create path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": {
+            "type": "string",
+            "description": "Audience ID."
+          },
+          "subscriberHash": {
+            "type": "string",
+            "description": "MD5 hash of the lowercase email."
+          },
+          "email_address": {
+            "type": "string",
+            "description": "Recipient email (lowercase). Required."
+          },
+          "status_if_new": {
+            "type": "string",
+            "description": "Status when creating a new member: subscribed, unsubscribed, cleaned, pending, transactional. Required."
+          },
+          "status": {
+            "type": "string",
+            "description": "Status when updating an existing member (overrides status_if_new on update)."
+          },
+          "merge_fields": {
+            "type": "object",
+            "description": "Merge tags object, e.g. {FNAME: 'Jane', LNAME: 'Doe'}."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Array of tag names to apply, e.g. ['vip', 'newsletter']. Replaces existing tags."
+          },
+          "language": {
+            "type": "string",
+            "description": "BCP-47 language tag, e.g. 'en', 'es', 'de'."
+          },
+          "vip": {
+            "type": "boolean",
+            "description": "Mark member as VIP."
+          },
+          "ip_signup": {
+            "type": "string",
+            "description": "IP from which the member signed up (consent record)."
+          }
+        },
+        "required": ["listId", "subscriberHash", "email_address", "status_if_new"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/lists/{listId}/members/{subscriberHash}",
+        "bodyMapping": {
+          "email_address": "$email_address",
+          "status_if_new": "$status_if_new",
+          "status": "$status",
+          "merge_fields": "$merge_fields",
+          "tags": "$tags",
+          "language": "$language",
+          "vip": "$vip",
+          "ip_signup": "$ip_signup"
+        }
+      }
+    },
+    {
+      "name": "mailchimp_update_member_tags",
+      "description": "Add or remove tags on a member. Pass an array like [{name: 'vip', status: 'active'}, {name: 'cold', status: 'inactive'}]. 'active' adds the tag; 'inactive' removes it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": {
+            "type": "string",
+            "description": "Audience ID."
+          },
+          "subscriberHash": {
+            "type": "string",
+            "description": "MD5 hash of the lowercase email."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Array of {name, status} objects. status is 'active' (add) or 'inactive' (remove)."
+          }
+        },
+        "required": ["listId", "subscriberHash", "tags"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lists/{listId}/members/{subscriberHash}/tags",
+        "bodyMapping": {
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "mailchimp_delete_member_permanently",
+      "description": "PERMANENTLY delete a member from an audience — cannot be re-added later (Mailchimp keeps a deletion hash forever for compliance). Use for GDPR right-to-be-forgotten requests only. For normal unsubscribe, use mailchimp_upsert_member with status='unsubscribed'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": {
+            "type": "string",
+            "description": "Audience ID."
+          },
+          "subscriberHash": {
+            "type": "string",
+            "description": "MD5 hash of the lowercase email."
+          }
+        },
+        "required": ["listId", "subscriberHash"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lists/{listId}/members/{subscriberHash}/actions/delete-permanent"
+      }
+    },
+    {
+      "name": "mailchimp_list_segments",
+      "description": "List segments of an audience. Segments are saved filter expressions on members (e.g. 'opened last campaign + lives in EU'). Returns each segment's id, name, member_count, type (static/saved/fuzzy).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": {
+            "type": "string",
+            "description": "Audience ID."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Max per page."
+          },
+          "type": {
+            "type": "string",
+            "description": "Filter by segment type: saved, static, fuzzy."
+          }
+        },
+        "required": ["listId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{listId}/segments",
+        "queryParams": {
+          "count": "$count",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "mailchimp_list_campaigns",
+      "description": "List campaigns on the account, optionally filtered by status, type, audience or date range. Returns each campaign's id, type, status, send_time, recipients (list_id, segment_id), settings (subject_line, from_name, reply_to), and report_summary (opens, clicks).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Filter by status: save, paused, schedule, sending, sent."
+          },
+          "type": {
+            "type": "string",
+            "description": "Filter by type: regular, plaintext, absplit, rss, variate."
+          },
+          "list_id": {
+            "type": "string",
+            "description": "Filter by audience."
+          },
+          "since_send_time": {
+            "type": "string",
+            "description": "ISO 8601: only campaigns sent after this time."
+          },
+          "before_send_time": {
+            "type": "string",
+            "description": "ISO 8601: only campaigns sent before this time."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Max per page."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Pagination offset."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "queryParams": {
+          "status": "$status",
+          "type": "$type",
+          "list_id": "$list_id",
+          "since_send_time": "$since_send_time",
+          "before_send_time": "$before_send_time",
+          "count": "$count",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mailchimp_get_campaign",
+      "description": "Fetch a single campaign by ID. Returns settings, recipients, tracking config, send_time, and a report_summary with open/click/bounce stats if already sent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": {
+            "type": "string",
+            "description": "Campaign ID (web_id is a different short numeric ID — use the alphanumeric id)."
+          }
+        },
+        "required": ["campaignId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaignId}"
+      }
+    },
+    {
+      "name": "mailchimp_create_campaign",
+      "description": "Create a new campaign (does NOT send it). After creation you set its content (template / HTML) via Mailchimp's UI or the `/campaigns/{id}/content` endpoint, then call mailchimp_send_campaign. The recipients object MUST reference an existing list_id and optionally a segment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Campaign type: regular, plaintext, absplit, rss, variate. Most agent uses → regular."
+          },
+          "recipients": {
+            "type": "object",
+            "description": "{list_id: '...', segment_opts: {saved_segment_id: ...}} — required."
+          },
+          "settings": {
+            "type": "object",
+            "description": "{subject_line, preview_text, title, from_name, reply_to, to_name, folder_id, authenticate, auto_footer, inline_css, auto_tweet}. subject_line + reply_to + from_name are typically required."
+          },
+          "tracking": {
+            "type": "object",
+            "description": "{opens, html_clicks, text_clicks, goal_tracking, ecomm360, google_analytics, clicktale}. Most defaults are fine."
+          }
+        },
+        "required": ["type", "recipients", "settings"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns",
+        "bodyMapping": {
+          "type": "$type",
+          "recipients": "$recipients",
+          "settings": "$settings",
+          "tracking": "$tracking"
+        }
+      }
+    },
+    {
+      "name": "mailchimp_send_campaign",
+      "description": "Send (deliver) a previously-created campaign immediately. The campaign must have content set and pass the Mailchimp checklist (subject line, recipient audience, sender, etc.) — otherwise returns 400 with the failing checks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": {
+            "type": "string",
+            "description": "Campaign ID to send."
+          }
+        },
+        "required": ["campaignId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaignId}/actions/send"
+      }
+    },
+    {
+      "name": "mailchimp_list_templates",
+      "description": "List templates (user-created and Mailchimp-provided) available on the account. Returns each template's id, name, type (user/base/gallery), category, date_created, thumbnail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Filter by type: user, base, gallery."
+          },
+          "category": {
+            "type": "string",
+            "description": "Filter by category."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Max per page."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Pagination offset."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates",
+        "queryParams": {
+          "type": "$type",
+          "category": "$category",
+          "count": "$count",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

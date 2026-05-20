@@ -1,0 +1,451 @@
+{
+  "slug": "sendgrid",
+  "name": "SendGrid",
+  "description": "Send transactional and marketing emails via SendGrid's v3 API from any AI agent. 14 tools covering send, templates, stats, suppressions, contacts and marketing lists. Bearer-token auth, EU + Global datacenter support.",
+  "instructions": "This connector uses the SendGrid v3 REST API.\n\n**Setup**:\n1. Sign in to SendGrid (or via Twilio's console — SendGrid is part of Twilio since 2019) → **Settings → API Keys → Create API Key**.\n2. Pick **Restricted Access** and grant at least: Mail Send (Full Access), Template Engine (Read), Stats (Read), Suppressions (Read), Marketing > Contacts (Read+Write), Marketing > Lists (Read+Write). Full Access also works but follows least-privilege poorly.\n3. Copy the key — it's shown ONCE. Set `SENDGRID_API_KEY` to it.\n4. (Optional) If your account is on the **EU datacenter** (GDPR data residency), set `SENDGRID_BASE_URL` to `https://api.eu.sendgrid.com`. Default is the global `https://api.sendgrid.com`.\n\n**Authentication**: Bearer token (`Authorization: Bearer ${SENDGRID_API_KEY}`).\n\n**Sender authentication first!** SendGrid will silently quarantine emails from un-verified senders. Before sending production mail, verify either:\n  - **Single Sender** (quick, for low volume): Settings → Sender Authentication → Verify a Single Sender. SendGrid emails a verification link.\n  - **Domain Authentication** (recommended for any real volume): Settings → Sender Authentication → Authenticate Your Domain. Adds CNAME records to your DNS.\nThe `from.email` in `sendgrid_send_mail` must match an authenticated sender, otherwise emails will be silently rejected or marked as spam.\n\n**Mail send body model**: SendGrid uses a message-level + per-recipient model. The `personalizations` array lets you send N customized versions in one API call (each with its own `to`, `subject`, `substitutions`). For a simple 'send the same email to one person' call, use a single personalization with one `to`.\n\n**Content order matters**: when sending both plain-text and HTML, list `text/plain` BEFORE `text/html` in the `content` array per RFC 2046.\n\n**Templates (dynamic)**: SendGrid's modern templates are **Dynamic Templates** (Handlebars-based). To send one, omit `subject`/`content`, set `template_id` at the message level, and pass `dynamic_template_data` per personalization. The legacy Transactional Templates use substitutions and are still supported but deprecated.\n\n**Categories** (≤10 per email, alphanumeric + underscore): tag your sends to group them in Stats. The adapter accepts `categories` at the top of `sendgrid_send_mail`.\n\n**Suppression precedence**: bounces, blocks, invalid emails, spam reports, and unsubscribes all live in the suppression group. Even a perfectly authenticated message to a suppressed address won't deliver. Use `sendgrid_list_bounces` and remove with `sendgrid_delete_bounce` (not exposed here — bounce removal must be explicit and is GDPR-sensitive, do it via the SendGrid UI).\n\n**Marketing Contacts**: contacts are NOT the same as suppression list. The Marketing API (`/v3/marketing/contacts`) is for the Marketing Campaigns product (newsletters), separate from transactional Mail Send. Adding a contact to Marketing does NOT affect deliverability of transactional mail to that address.\n\n**Rate limits**: Mail Send caps depend on plan (Essentials: 100k/month; Pro: 1.5M/month, etc.). Burst limits ~600 req/min for transactional, higher with dedicated IPs. On 429, back off.\n\n**Webhooks (Event Webhook)** out of scope for this connector — host your own receiver to ingest delivery/bounce/open/click events.\n\n**Out of scope here**: subuser management, IP warmup, A/B testing, single sends, designs, and the legacy Web v2 API.",
+  "region": "intl",
+  "category": "email",
+  "icon": "sendgrid",
+  "docsUrl": "https://www.twilio.com/docs/sendgrid/api-reference",
+  "requiredEnvVars": ["SENDGRID_API_KEY"],
+  "connector": {
+    "name": "SendGrid v3",
+    "type": "REST",
+    "baseUrl": "https://api.sendgrid.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SENDGRID_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "sendgrid_send_mail",
+      "description": "Send a transactional or batch email via the v3 Mail Send endpoint. Required at minimum: `personalizations[0].to[0].email`, `from.email`, `subject`, `content[0]`. Use the `template_id` + `dynamic_template_data` path for templated sends and skip subject/content. Returns 202 Accepted with X-Message-Id header on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personalizations": {
+            "type": "array",
+            "description": "Array of recipient batches (1-1000). Each is {to:[{email,name?}], cc?, bcc?, subject?, headers?, substitutions?, dynamic_template_data?, custom_args?, send_at?}. For a single recipient, use one personalization with one `to`."
+          },
+          "from": {
+            "type": "object",
+            "description": "Sender: {email, name?}. `email` MUST match a SendGrid-authenticated sender. Required."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Default subject (per-personalization subject overrides this). Required unless every personalization has its own subject OR you're using a dynamic template that sets subject."
+          },
+          "content": {
+            "type": "array",
+            "description": "Array of MIME parts: [{type:'text/plain', value:'...'}, {type:'text/html', value:'...'}]. text/plain MUST come before text/html. Required unless using template_id."
+          },
+          "reply_to": {
+            "type": "object",
+            "description": "{email, name?}. Reply-To header."
+          },
+          "template_id": {
+            "type": "string",
+            "description": "If set, use this Dynamic Template — usually 'd-XXXXXXXX'. Omit subject and content in this case (the template provides them). Pass per-personalization data via `dynamic_template_data`."
+          },
+          "categories": {
+            "type": "array",
+            "description": "Up to 10 string categories for stats grouping (alphanumeric + underscore, max 255 chars each)."
+          },
+          "custom_args": {
+            "type": "object",
+            "description": "Arbitrary key/value attached to event webhook payloads. Up to 10KB total."
+          },
+          "send_at": {
+            "type": "integer",
+            "description": "Unix timestamp to schedule the send (up to 72 hours in the future). Omit to send immediately."
+          },
+          "asm": {
+            "type": "object",
+            "description": "Unsubscribe group: {group_id, groups_to_display?}. Required for compliant marketing email if you've defined groups."
+          },
+          "tracking_settings": {
+            "type": "object",
+            "description": "Override tracking: {click_tracking:{enable,enable_text}, open_tracking:{enable,substitution_tag}, subscription_tracking:{enable,text,html,substitution_tag}, ganalytics:{enable, utm_source, utm_medium, utm_campaign, utm_term, utm_content}}."
+          },
+          "mail_settings": {
+            "type": "object",
+            "description": "Message-level settings: {bypass_list_management:{enable}, sandbox_mode:{enable}, footer:{enable,text,html}}. sandbox_mode=true validates without sending (use for tests)."
+          },
+          "attachments": {
+            "type": "array",
+            "description": "Array of {content (base64), type, filename, disposition?, content_id?}. Max 30MB total."
+          },
+          "headers": {
+            "type": "object",
+            "description": "Additional message-level headers, e.g. {'X-Internal-Ref': 'abc'}. Cannot override reserved headers."
+          }
+        },
+        "required": ["personalizations", "from"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/mail/send",
+        "bodyMapping": {
+          "personalizations": "$personalizations",
+          "from": "$from",
+          "subject": "$subject",
+          "content": "$content",
+          "reply_to": "$reply_to",
+          "template_id": "$template_id",
+          "categories": "$categories",
+          "custom_args": "$custom_args",
+          "send_at": "$send_at",
+          "asm": "$asm",
+          "tracking_settings": "$tracking_settings",
+          "mail_settings": "$mail_settings",
+          "attachments": "$attachments",
+          "headers": "$headers"
+        }
+      }
+    },
+    {
+      "name": "sendgrid_list_templates",
+      "description": "List transactional templates (legacy or dynamic) on the account. Returns each template's id, name, generation (legacy|dynamic), and versions[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "generations": {
+            "type": "string",
+            "description": "Filter: 'legacy', 'dynamic', or 'legacy,dynamic'. Default returns dynamic only."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Max per page (default 200, max 200)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Pagination cursor from previous response's _metadata.next."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/templates",
+        "queryParams": {
+          "generations": "$generations",
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "sendgrid_get_template",
+      "description": "Fetch a single template by id, including all its versions. Useful to inspect dynamic template variables before composing a sendgrid_send_mail with `template_id`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "templateId": {
+            "type": "string",
+            "description": "Template ID (e.g. 'd-1234abcd5678efgh9012ijkl3456mnop')."
+          }
+        },
+        "required": ["templateId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/templates/{templateId}"
+      }
+    },
+    {
+      "name": "sendgrid_get_stats",
+      "description": "Get aggregated email statistics across a date range: requests, delivered, opens, unique_opens, clicks, unique_clicks, bounces, spam_reports, unsubscribes. Aggregated daily by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start date YYYY-MM-DD. Required."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date YYYY-MM-DD. Default today."
+          },
+          "aggregated_by": {
+            "type": "string",
+            "description": "day, week, or month."
+          },
+          "categories": {
+            "type": "string",
+            "description": "Comma-separated category filter — only stats for emails tagged with these categories."
+          }
+        },
+        "required": ["start_date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/stats",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "aggregated_by": "$aggregated_by",
+          "categories": "$categories"
+        }
+      }
+    },
+    {
+      "name": "sendgrid_list_bounces",
+      "description": "List bounced email addresses. Hard bounces (5xx) and soft bounces (4xx) are both reported. Recipients on this list will NOT receive transactional mail until removed via the SendGrid UI (removal is intentionally outside MCP scope to prevent automation from re-sending to bad addresses).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "integer",
+            "description": "Unix timestamp — only bounces after this time."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "Unix timestamp — only bounces before this time."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max per page (default 500, max 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Pagination offset."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/suppression/bounces",
+        "queryParams": {
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "sendgrid_get_bounce",
+      "description": "Get the bounce details for a specific email address (reason code, timestamp, status).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address to look up."
+          }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/suppression/bounces/{email}"
+      }
+    },
+    {
+      "name": "sendgrid_list_invalid_emails",
+      "description": "List addresses SendGrid rejected as malformed at submission time (not bounces — these never made it out). Use to clean up your contact source.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "integer",
+            "description": "Unix timestamp filter."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "Unix timestamp filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max per page."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Pagination offset."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/suppression/invalid_emails",
+        "queryParams": {
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "sendgrid_list_spam_reports",
+      "description": "List recipients who reported your emails as spam. These addresses are auto-suppressed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "integer",
+            "description": "Unix timestamp filter."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "Unix timestamp filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max per page."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Pagination offset."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/suppression/spam_reports",
+        "queryParams": {
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "sendgrid_list_marketing_contacts",
+      "description": "List marketing contacts (NOT transactional recipients — these live in the Marketing Campaigns product). Returns id, email, first_name, last_name, list_ids[], custom_fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Max per page (default 50, max 1000)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Pagination cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/marketing/contacts",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "sendgrid_upsert_marketing_contacts",
+      "description": "Add or update up to 30,000 marketing contacts in one PUT call. SendGrid runs an async job — returns a job_id; use sendgrid_get_marketing_import_job_status to track. `list_ids` adds the contacts to those lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_ids": {
+            "type": "array",
+            "description": "Array of list UUIDs to add the contacts to. Optional — omit to upsert without list assignment."
+          },
+          "contacts": {
+            "type": "array",
+            "description": "Array of contact objects (max 30000). Each: {email (required), first_name?, last_name?, address_line_1?, address_line_2?, city?, state_province_region?, postal_code?, country?, alternate_emails?, phone_number?, custom_fields?}."
+          }
+        },
+        "required": ["contacts"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v3/marketing/contacts",
+        "bodyMapping": {
+          "list_ids": "$list_ids",
+          "contacts": "$contacts"
+        }
+      }
+    },
+    {
+      "name": "sendgrid_get_marketing_import_job_status",
+      "description": "Check the status of a contacts-upsert job returned by sendgrid_upsert_marketing_contacts. Returns status (pending, completed, errored, failed) and counts of upserted/errored rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "Job UUID from a prior upsert response."
+          }
+        },
+        "required": ["jobId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/marketing/contacts/imports/{jobId}"
+      }
+    },
+    {
+      "name": "sendgrid_list_marketing_lists",
+      "description": "List all Marketing Campaigns contact lists. Returns id (UUID), name, contact_count, _metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Max per page (default 100, max 1000)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Pagination cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/marketing/lists",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "sendgrid_create_marketing_list",
+      "description": "Create a new Marketing Campaigns contact list. Returns the new list's id (UUID) — use it in sendgrid_upsert_marketing_contacts to add contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "List name (≤100 chars, unique within account)."
+          }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/marketing/lists",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "sendgrid_search_marketing_contacts",
+      "description": "Search marketing contacts using SendGrid Query Language (similar to SQL WHERE). Returns matching contacts with full details. Example query: \"email LIKE '%@acme.com' AND CONTAINS(list_ids, 'list-uuid-here')\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "SGQL query string. See https://docs.sendgrid.com/api-reference/contacts/search-contacts for grammar."
+          }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/marketing/contacts/search",
+        "bodyMapping": {
+          "query": "$query"
+        }
+      }
+    }
+  ]
+}

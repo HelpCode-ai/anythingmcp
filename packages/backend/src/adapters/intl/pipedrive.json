@@ -1,0 +1,899 @@
+{
+  "slug": "pipedrive",
+  "name": "Pipedrive CRM",
+  "description": "Drive Pipedrive (CRM) from any AI agent: search and manage deals, persons, organizations, activities, pipelines, and stages. 18 ready-to-use tools covering the most common sales workflows. API-token auth via query string, no SDK, no OAuth dance.",
+  "instructions": "This connector uses the Pipedrive REST API.\n\n**Versions**: most resources (deals, persons, organizations, activities, pipelines, stages, users) are on the newer **v2** API (`/api/v2/...`). The universal item-search endpoint is still on v1 (`/v1/itemSearch`). The adapter mixes both as appropriate — you don't need to know the distinction, just pick the tool.\n\n**Setup**:\n1. Sign in to Pipedrive → top-right avatar → **Personal preferences → API**. Copy the **personal API token** shown there.\n2. Paste it as `PIPEDRIVE_API_TOKEN`.\n3. (Optional) If your account is on a custom company subdomain that requires it, set `PIPEDRIVE_COMPANY_DOMAIN` to your subdomain (e.g. `acme` if your CRM lives at `acme.pipedrive.com`). The default base URL `https://api.pipedrive.com` works for almost everyone since the token already routes to the right company.\n\n**Authentication**: API token in query string (`?api_token=...`) — every request automatically appends it. The token belongs to a single user; everything the connector does is attributed to that user. For multi-user installs, use a dedicated service-account user with the permissions you want the agent to have.\n\n**Pagination**: v2 endpoints use **cursor-based pagination** (`limit` + `cursor`). Each list response carries `additional_data.next_cursor` — pass it as `cursor` on the next call. `limit` defaults to 100, max 500. The adapter's list tools expose both parameters explicitly.\n\n**Search**: for fuzzy text matching across multiple entity types, use `pipedrive_search` (universal). For type-narrowed search inside a known entity, use the per-resource `pipedrive_search_deals` / `pipedrive_search_persons`.\n\n**Custom fields**: every CRM has custom fields. v2 endpoints accept and return them under the `custom_fields` body/response key. The shape is `{field_api_key: value}` — get the API keys from `GET /v1/dealFields` (and `personFields`, `organizationFields`). The adapter ships `pipedrive_list_deal_fields` / `pipedrive_list_person_fields` / `pipedrive_list_organization_fields` for this.\n\n**Rate limits**: Pipedrive applies a per-token rate limit (~80 req / 2 seconds per company, plus daily quotas that scale with plan). On 429, back off — the engine does NOT auto-retry.\n\n**Webhooks not in scope**: Pipedrive can push webhook events for deal/person changes; receiving them requires a separately-hosted endpoint and is outside this connector's read/write scope.\n\n**Filters & sorting**: list endpoints accept `filter_id`, `owner_id`, `status` for deals; `sort` parameter accepts comma-separated field directives like `add_time DESC,update_time DESC` on v2. Check Pipedrive's API reference for the supported sort fields per resource.\n\n**Out of scope here**: leads (v1 only), products, files, mailbox, projects, and goals — add purpose-built tools if your workflows need them.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "pipedrive",
+  "docsUrl": "https://developers.pipedrive.com/docs/api/v1",
+  "requiredEnvVars": ["PIPEDRIVE_API_TOKEN"],
+  "connector": {
+    "name": "Pipedrive CRM",
+    "type": "REST",
+    "baseUrl": "https://api.pipedrive.com",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "api_token": "{{PIPEDRIVE_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "pipedrive_search",
+      "description": "Universal fuzzy search across deals, persons, organizations, products, files, mailbox messages and projects in one call. Use this when the agent only has a free-text query (a person name, deal title, company name) and doesn't know which entity type to look in. For narrower searches, prefer the per-resource search tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Search query. Min 2 chars normally, min 1 char if exact_match is true."
+          },
+          "item_types": {
+            "type": "string",
+            "description": "Comma-separated list of item types to search. Allowed: deal, person, organization, product, file, mail_attachment, project. Omit for all types."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to search within (e.g. 'title,notes' for deals). Omit to search default fields per type."
+          },
+          "exact_match": {
+            "type": "boolean",
+            "description": "If true, return only items whose searched field contains the term as a whole word (case-insensitive). Default false (substring match)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results per page (default 100, max 500)."
+          }
+        },
+        "required": ["term"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/itemSearch",
+        "queryParams": {
+          "term": "$term",
+          "item_types": "$item_types",
+          "fields": "$fields",
+          "exact_match": "$exact_match",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_list_deals",
+      "description": "List deals with optional filtering by owner, person, organization, pipeline, stage, status. Supports cursor pagination. Returns the deal id, title, value, currency, stage_id, status, owner_id, person_id, org_id, add_time, update_time, expected_close_date and custom_fields for each match.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_id": {
+            "type": "integer",
+            "description": "Apply a saved filter by its numeric ID."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Only deals owned by this user ID."
+          },
+          "person_id": {
+            "type": "integer",
+            "description": "Only deals linked to this person ID."
+          },
+          "org_id": {
+            "type": "integer",
+            "description": "Only deals linked to this organization ID."
+          },
+          "pipeline_id": {
+            "type": "integer",
+            "description": "Only deals in this pipeline ID."
+          },
+          "stage_id": {
+            "type": "integer",
+            "description": "Only deals in this stage ID."
+          },
+          "status": {
+            "type": "string",
+            "description": "One of: open, won, lost, deleted. Default returns all but deleted."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by, e.g. add_time, update_time, value, expected_close_date."
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "asc or desc. Default desc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max deals per page (default 100, max 500)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor from a prior response's additional_data.next_cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/deals",
+        "queryParams": {
+          "filter_id": "$filter_id",
+          "owner_id": "$owner_id",
+          "person_id": "$person_id",
+          "org_id": "$org_id",
+          "pipeline_id": "$pipeline_id",
+          "stage_id": "$stage_id",
+          "status": "$status",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_get_deal",
+      "description": "Fetch a single deal by its numeric ID. Returns the full deal object including custom fields and the linked person, organization and owner details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dealId": {
+            "type": "integer",
+            "description": "Numeric deal ID."
+          }
+        },
+        "required": ["dealId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/deals/{dealId}"
+      }
+    },
+    {
+      "name": "pipedrive_create_deal",
+      "description": "Create a new deal. Only `title` is required; everything else (value, currency, owner, linked person/org, stage, expected_close_date, custom fields) is optional but recommended for forecasting accuracy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Deal title (e.g. 'ACME Inc — Q3 renewal')."
+          },
+          "value": {
+            "type": "number",
+            "description": "Monetary value (in the currency specified)."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 code, e.g. 'USD', 'EUR'. Defaults to the company's default currency."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "User ID of the deal owner. Defaults to the API token's user."
+          },
+          "person_id": {
+            "type": "integer",
+            "description": "ID of the primary contact person on this deal."
+          },
+          "org_id": {
+            "type": "integer",
+            "description": "ID of the organization this deal belongs to."
+          },
+          "pipeline_id": {
+            "type": "integer",
+            "description": "Pipeline ID. Defaults to the default pipeline."
+          },
+          "stage_id": {
+            "type": "integer",
+            "description": "Stage ID (must belong to the pipeline)."
+          },
+          "status": {
+            "type": "string",
+            "description": "open, won, or lost. Default open."
+          },
+          "expected_close_date": {
+            "type": "string",
+            "description": "Expected close date in YYYY-MM-DD format."
+          },
+          "probability": {
+            "type": "number",
+            "description": "Win probability 0-100. Used in forecasts."
+          },
+          "label_ids": {
+            "type": "array",
+            "description": "Array of label IDs to attach."
+          },
+          "visible_to": {
+            "type": "integer",
+            "description": "Visibility level: 1 (Owner & followers), 3 (Entire company). Some plans add 5/7 for group sharing."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Object of custom field API keys to values. Discover keys via pipedrive_list_deal_fields."
+          }
+        },
+        "required": ["title"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/deals",
+        "bodyMapping": {
+          "title": "$title",
+          "value": "$value",
+          "currency": "$currency",
+          "owner_id": "$owner_id",
+          "person_id": "$person_id",
+          "org_id": "$org_id",
+          "pipeline_id": "$pipeline_id",
+          "stage_id": "$stage_id",
+          "status": "$status",
+          "expected_close_date": "$expected_close_date",
+          "probability": "$probability",
+          "label_ids": "$label_ids",
+          "visible_to": "$visible_to",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_update_deal",
+      "description": "Partial-update a deal — only pass the fields you want to change. Common uses: change stage_id (move deal in pipeline), set status=won|lost (close deal), update value or expected_close_date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dealId": {
+            "type": "integer",
+            "description": "Numeric deal ID to update."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "value": {
+            "type": "number",
+            "description": "New value."
+          },
+          "currency": {
+            "type": "string",
+            "description": "New currency (ISO 4217)."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Reassign owner."
+          },
+          "person_id": {
+            "type": "integer",
+            "description": "Change primary person."
+          },
+          "org_id": {
+            "type": "integer",
+            "description": "Change linked org."
+          },
+          "stage_id": {
+            "type": "integer",
+            "description": "Move to a different stage (within the same or a different pipeline)."
+          },
+          "pipeline_id": {
+            "type": "integer",
+            "description": "Move to a different pipeline."
+          },
+          "status": {
+            "type": "string",
+            "description": "open, won, lost or deleted."
+          },
+          "expected_close_date": {
+            "type": "string",
+            "description": "New expected close date (YYYY-MM-DD)."
+          },
+          "probability": {
+            "type": "number",
+            "description": "New probability 0-100."
+          },
+          "label_ids": {
+            "type": "array",
+            "description": "Replace label IDs."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom fields to update."
+          }
+        },
+        "required": ["dealId"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v2/deals/{dealId}",
+        "bodyMapping": {
+          "title": "$title",
+          "value": "$value",
+          "currency": "$currency",
+          "owner_id": "$owner_id",
+          "person_id": "$person_id",
+          "org_id": "$org_id",
+          "stage_id": "$stage_id",
+          "pipeline_id": "$pipeline_id",
+          "status": "$status",
+          "expected_close_date": "$expected_close_date",
+          "probability": "$probability",
+          "label_ids": "$label_ids",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_delete_deal",
+      "description": "Soft-delete a deal. The deal moves to the trash and can be restored within 30 days from the Pipedrive UI. To hard-delete, the operator must purge from the UI separately.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dealId": {
+            "type": "integer",
+            "description": "Numeric deal ID to delete."
+          }
+        },
+        "required": ["dealId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/v2/deals/{dealId}"
+      }
+    },
+    {
+      "name": "pipedrive_search_deals",
+      "description": "Narrower search than pipedrive_search — only looks inside deals (title and custom fields). Use when the agent knows it's looking for a deal specifically.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Search query (min 2 chars, min 1 if exact_match is true)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to search (title, notes, custom_fields). Default: title, custom_fields."
+          },
+          "exact_match": {
+            "type": "boolean",
+            "description": "If true, require whole-word match."
+          },
+          "person_id": {
+            "type": "integer",
+            "description": "Limit to deals linked to this person."
+          },
+          "organization_id": {
+            "type": "integer",
+            "description": "Limit to deals linked to this organization."
+          },
+          "status": {
+            "type": "string",
+            "description": "open, won, lost."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results per page."
+          }
+        },
+        "required": ["term"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/deals/search",
+        "queryParams": {
+          "term": "$term",
+          "fields": "$fields",
+          "exact_match": "$exact_match",
+          "person_id": "$person_id",
+          "organization_id": "$organization_id",
+          "status": "$status",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_list_persons",
+      "description": "List persons (contacts) with optional filtering by owner, organization, or label. Cursor-paginated. Each person has emails[], phones[], owner_id, org_id, label_ids, marketing_status and custom_fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_id": {
+            "type": "integer",
+            "description": "Apply a saved filter by ID."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Only persons owned by this user ID."
+          },
+          "org_id": {
+            "type": "integer",
+            "description": "Only persons linked to this organization."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "add_time, update_time, name, etc."
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "asc or desc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max per page (default 100, max 500)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/persons",
+        "queryParams": {
+          "filter_id": "$filter_id",
+          "owner_id": "$owner_id",
+          "org_id": "$org_id",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_get_person",
+      "description": "Fetch a single person by ID. Returns full contact details including emails, phones, linked organization, owner, label IDs, marketing_status and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "integer",
+            "description": "Numeric person ID."
+          }
+        },
+        "required": ["personId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/persons/{personId}"
+      }
+    },
+    {
+      "name": "pipedrive_create_person",
+      "description": "Create a new person (contact). Only `name` is required. Emails and phones are arrays of objects: `[{value:'a@b.com', primary:true, label:'work'}]`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "User ID of the person's owner."
+          },
+          "org_id": {
+            "type": "integer",
+            "description": "Linked organization ID."
+          },
+          "emails": {
+            "type": "array",
+            "description": "Array of email objects: [{value:'a@b.com', primary:true, label:'work'}]"
+          },
+          "phones": {
+            "type": "array",
+            "description": "Array of phone objects: [{value:'+15551234', primary:true, label:'work'}]"
+          },
+          "label_ids": {
+            "type": "array",
+            "description": "Array of label IDs to attach."
+          },
+          "marketing_status": {
+            "type": "string",
+            "description": "Marketing opt-in status. One of: no_consent, unsubscribed, subscribed, archived."
+          },
+          "visible_to": {
+            "type": "integer",
+            "description": "Visibility level: 1 (Owner & followers), 3 (Entire company)."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom fields object (use pipedrive_list_person_fields to discover keys)."
+          }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/persons",
+        "bodyMapping": {
+          "name": "$name",
+          "owner_id": "$owner_id",
+          "org_id": "$org_id",
+          "emails": "$emails",
+          "phones": "$phones",
+          "label_ids": "$label_ids",
+          "marketing_status": "$marketing_status",
+          "visible_to": "$visible_to",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_update_person",
+      "description": "Partial-update a person. Pass only the fields to change. Emails and phones are REPLACED (not merged) if provided — to add an email, fetch current emails first, append, then send the full array.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "integer",
+            "description": "Person ID."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Reassign owner."
+          },
+          "org_id": {
+            "type": "integer",
+            "description": "Link to a different organization (or null to unlink)."
+          },
+          "emails": {
+            "type": "array",
+            "description": "Full replacement of emails array."
+          },
+          "phones": {
+            "type": "array",
+            "description": "Full replacement of phones array."
+          },
+          "label_ids": {
+            "type": "array",
+            "description": "Replace label IDs."
+          },
+          "marketing_status": {
+            "type": "string",
+            "description": "Update marketing status."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom fields to update."
+          }
+        },
+        "required": ["personId"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v2/persons/{personId}",
+        "bodyMapping": {
+          "name": "$name",
+          "owner_id": "$owner_id",
+          "org_id": "$org_id",
+          "emails": "$emails",
+          "phones": "$phones",
+          "label_ids": "$label_ids",
+          "marketing_status": "$marketing_status",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_list_organizations",
+      "description": "List organizations (companies) with optional filtering by owner or saved filter. Cursor-paginated. Each org has name, address, owner_id, label_ids, custom_fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_id": {
+            "type": "integer",
+            "description": "Saved filter ID."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Owner user ID."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "add_time, update_time, name."
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "asc or desc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max per page."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/organizations",
+        "queryParams": {
+          "filter_id": "$filter_id",
+          "owner_id": "$owner_id",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_create_organization",
+      "description": "Create a new organization. Only `name` is required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Organization name."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Owner user ID."
+          },
+          "address": {
+            "type": "string",
+            "description": "Full street address as a single string."
+          },
+          "label_ids": {
+            "type": "array",
+            "description": "Label IDs."
+          },
+          "visible_to": {
+            "type": "integer",
+            "description": "Visibility level."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom fields."
+          }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/organizations",
+        "bodyMapping": {
+          "name": "$name",
+          "owner_id": "$owner_id",
+          "address": "$address",
+          "label_ids": "$label_ids",
+          "visible_to": "$visible_to",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_list_activities",
+      "description": "List activities (calls, meetings, tasks, emails, etc.) with optional filtering by user, deal, person, type or date range. Activities are the touchpoint log of a CRM and key signal for forecast.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "Filter by assigned user."
+          },
+          "deal_id": {
+            "type": "integer",
+            "description": "Filter by linked deal."
+          },
+          "person_id": {
+            "type": "integer",
+            "description": "Filter by linked person."
+          },
+          "org_id": {
+            "type": "integer",
+            "description": "Filter by linked organization."
+          },
+          "type": {
+            "type": "string",
+            "description": "Activity type key (call, meeting, task, email, deadline, lunch, ...). Use pipedrive_list_activity_types to discover."
+          },
+          "done": {
+            "type": "boolean",
+            "description": "true = only completed activities; false = only open ones; omit for all."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "From date (YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "To date (YYYY-MM-DD)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max per page."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/activities",
+        "queryParams": {
+          "user_id": "$user_id",
+          "deal_id": "$deal_id",
+          "person_id": "$person_id",
+          "org_id": "$org_id",
+          "type": "$type",
+          "done": "$done",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_create_activity",
+      "description": "Log an activity (call, meeting, task, email, etc.). Link to a deal/person/org for context. Setting `due_date` + `due_time` schedules it; omitting both creates an untimed task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Activity title (e.g. 'Discovery call with John')."
+          },
+          "type": {
+            "type": "string",
+            "description": "Activity type key (call, meeting, task, email, deadline, lunch). Required."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (YYYY-MM-DD)."
+          },
+          "due_time": {
+            "type": "string",
+            "description": "Due time (HH:MM, 24h)."
+          },
+          "duration": {
+            "type": "string",
+            "description": "Planned duration (HH:MM). Used for calendar blocking."
+          },
+          "deal_id": {
+            "type": "integer",
+            "description": "Link to a deal."
+          },
+          "person_id": {
+            "type": "integer",
+            "description": "Link to a person."
+          },
+          "org_id": {
+            "type": "integer",
+            "description": "Link to an organization."
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "Assigned user. Defaults to the API token's user."
+          },
+          "note": {
+            "type": "string",
+            "description": "Free-form note (HTML supported)."
+          },
+          "done": {
+            "type": "boolean",
+            "description": "If true, mark as already completed."
+          }
+        },
+        "required": ["subject", "type"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/activities",
+        "bodyMapping": {
+          "subject": "$subject",
+          "type": "$type",
+          "due_date": "$due_date",
+          "due_time": "$due_time",
+          "duration": "$duration",
+          "deal_id": "$deal_id",
+          "person_id": "$person_id",
+          "org_id": "$org_id",
+          "user_id": "$user_id",
+          "note": "$note",
+          "done": "$done"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_list_pipelines",
+      "description": "List all pipelines on this Pipedrive account. Each pipeline returns its id, name, order_nr (display order) and active flag. Pipelines are the funnels deals move through.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/pipelines"
+      }
+    },
+    {
+      "name": "pipedrive_list_stages",
+      "description": "List stages, optionally filtered by pipeline. Each stage has id, name, pipeline_id, order_nr, deal_probability (default win-rate %) and rotten_flag (whether stale deals turn rotten). Use the stage IDs when creating or moving deals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": {
+            "type": "integer",
+            "description": "If set, only stages in this pipeline."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/stages",
+        "queryParams": {
+          "pipeline_id": "$pipeline_id"
+        }
+      }
+    },
+    {
+      "name": "pipedrive_list_users",
+      "description": "List users on this Pipedrive account (sales reps, admins). Use to map user IDs to names when displaying deal owners.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users"
+      }
+    },
+    {
+      "name": "pipedrive_get_current_user",
+      "description": "Return the user account that the API token belongs to (whoami). Useful at agent startup to know whose perspective the agent operates from.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users/me"
+      }
+    },
+    {
+      "name": "pipedrive_list_deal_fields",
+      "description": "List all deal fields including custom fields with their API keys, types, and pick-list options. Required to compose the custom_fields object for pipedrive_create_deal / pipedrive_update_deal.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/dealFields"
+      }
+    },
+    {
+      "name": "pipedrive_list_person_fields",
+      "description": "List all person fields including custom fields with their API keys. Required to compose the custom_fields object for pipedrive_create_person / pipedrive_update_person.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/personFields"
+      }
+    },
+    {
+      "name": "pipedrive_list_organization_fields",
+      "description": "List all organization fields including custom fields with their API keys. Required to compose the custom_fields object for pipedrive_create_organization.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizationFields"
+      }
+    }
+  ]
+}
