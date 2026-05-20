@@ -1,0 +1,242 @@
+{
+  "slug": "beehiiv",
+  "name": "beehiiv",
+  "description": "Drive beehiiv (modern newsletter platform) from any AI agent: publications, posts, subscriptions, segments, custom fields. 11 tools, Bearer auth.",
+  "instructions": "This connector uses the beehiiv API v2 (developers.beehiiv.com).\n\n**Setup**:\n1. Sign in to https://app.beehiiv.com → bottom-left avatar → **Settings → Integrations → API → Generate New API key**.\n2. Set the key to `BEEHIIV_API_KEY`.\n3. Note your **Publication ID** — visible in the URL when you're on a publication's dashboard (`/p/pub_XXX/...`). Set `BEEHIIV_PUBLICATION_ID`.\n\n**Authentication**: `Authorization: Bearer ${BEEHIIV_API_KEY}`.\n\n**Publication-scoped URL**: most endpoints live under `/publications/{publicationId}/...`. The adapter bakes publication ID into baseUrl.\n\n**Subscription model**: each subscriber has email, status (active, validating, inactive, pending, needs_attention), tier (free, premium), subscription_premium_tier_names[], referring_site, utm_source, utm_medium, utm_campaign, custom_fields[].\n\n**Posts**: each post (newsletter issue) has id, title, subtitle, slug, status (draft/confirmed/archived/scheduled), audience (free/premium/all), platform (web/email/both), web_url, content (HTML).\n\n**Pagination**: `?limit=N&page=M` (max 100).\n\n**Out of scope here**: payments/premium-tier management, ads, segments-builder, automation journeys.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "beehiiv",
+  "docsUrl": "https://developers.beehiiv.com/",
+  "requiredEnvVars": ["BEEHIIV_API_KEY", "BEEHIIV_PUBLICATION_ID"],
+  "connector": {
+    "name": "beehiiv v2",
+    "type": "REST",
+    "baseUrl": "https://api.beehiiv.com/v2/publications/{{BEEHIIV_PUBLICATION_ID}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{BEEHIIV_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "beehiiv_get_publication",
+      "description": "Get the publication metadata (name, organization_name, referral_program_enabled, created).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "" }
+    },
+    {
+      "name": "beehiiv_list_posts",
+      "description": "List posts (newsletter issues). Filter by status / audience / platform.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expand": { "type": "string", "description": "Comma-separated: free_email_click_count, free_email_open_count, free_web_view_count, premium_email_click_count, etc." },
+          "audience": { "type": "string", "description": "free, premium, all." },
+          "platform": { "type": "string", "description": "web, email, both, all." },
+          "status": { "type": "string", "description": "draft, confirmed, archived, scheduled." },
+          "content_tags": { "type": "string", "description": "Comma-separated tag names." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "page": { "type": "integer", "description": "Page." },
+          "order_by": { "type": "string", "description": "created, publish_date, displayed_date." },
+          "direction": { "type": "string", "description": "asc or desc." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts",
+        "queryParams": {
+          "expand[]": "$expand",
+          "audience": "$audience",
+          "platform": "$platform",
+          "status": "$status",
+          "content_tags[]": "$content_tags",
+          "limit": "$limit",
+          "page": "$page",
+          "order_by": "$order_by",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "beehiiv_get_post",
+      "description": "Fetch a single post with full content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "string", "description": "Post ID." },
+          "expand": { "type": "string", "description": "Comma-separated expansions." }
+        },
+        "required": ["postId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/{postId}",
+        "queryParams": { "expand[]": "$expand" }
+      }
+    },
+    {
+      "name": "beehiiv_list_subscriptions",
+      "description": "List subscribers with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by exact email." },
+          "status": { "type": "string", "description": "active, validating, inactive, pending, needs_attention." },
+          "tier": { "type": "string", "description": "free, premium." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "page": { "type": "integer", "description": "Page." },
+          "order_by": { "type": "string", "description": "created, email." },
+          "direction": { "type": "string", "description": "asc or desc." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions",
+        "queryParams": {
+          "email": "$email",
+          "status": "$status",
+          "tier": "$tier",
+          "limit": "$limit",
+          "page": "$page",
+          "order_by": "$order_by",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "beehiiv_get_subscription",
+      "description": "Fetch a subscriber by ID or email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": { "type": "string", "description": "Subscription ID OR URL-encoded email." }
+        },
+        "required": ["identifier"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/subscriptions/{identifier}" }
+    },
+    {
+      "name": "beehiiv_create_subscription",
+      "description": "Create a subscription (subscribe an email). Idempotent — re-subscribing an existing email returns the existing record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Subscriber email." },
+          "reactivate_existing": { "type": "boolean", "description": "If true, reactivate inactive subscriber." },
+          "send_welcome_email": { "type": "boolean", "description": "If true, trigger welcome email." },
+          "utm_source": { "type": "string", "description": "Attribution." },
+          "utm_medium": { "type": "string", "description": "Attribution." },
+          "utm_campaign": { "type": "string", "description": "Attribution." },
+          "referring_site": { "type": "string", "description": "Referring URL." },
+          "custom_fields": { "type": "array", "description": "[{name, value}] — custom field overrides." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions",
+        "bodyMapping": {
+          "email": "$email",
+          "reactivate_existing": "$reactivate_existing",
+          "send_welcome_email": "$send_welcome_email",
+          "utm_source": "$utm_source",
+          "utm_medium": "$utm_medium",
+          "utm_campaign": "$utm_campaign",
+          "referring_site": "$referring_site",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "beehiiv_update_subscription",
+      "description": "Update a subscriber (custom fields, UTM tags, tier).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "string", "description": "Subscription ID." },
+          "tier": { "type": "string", "description": "free, premium." },
+          "stripe_customer_id": { "type": "string", "description": "Stripe customer link." },
+          "unsubscribe": { "type": "boolean", "description": "If true, mark unsubscribed." },
+          "custom_fields": { "type": "array", "description": "[{name, value}]." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/subscriptions/{subscriptionId}",
+        "bodyMapping": {
+          "tier": "$tier",
+          "stripe_customer_id": "$stripe_customer_id",
+          "unsubscribe": "$unsubscribe",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "beehiiv_delete_subscription",
+      "description": "Permanently delete a subscriber (GDPR friendly).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "string", "description": "Subscription ID." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/subscriptions/{subscriptionId}" }
+    },
+    {
+      "name": "beehiiv_list_segments",
+      "description": "List segments (saved subscriber queries).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "page": { "type": "integer", "description": "Page." },
+          "status": { "type": "string", "description": "completed, calculating, pending." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "beehiiv_list_custom_fields",
+      "description": "List custom fields defined on subscribers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "page": { "type": "integer", "description": "Page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/custom_fields",
+        "queryParams": { "limit": "$limit", "page": "$page" }
+      }
+    },
+    {
+      "name": "beehiiv_send_test_email",
+      "description": "Send a test email of a post to specific addresses. Useful for previewing before scheduling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "string", "description": "Post ID." },
+          "emails": { "type": "array", "description": "Array of email strings to send to (max 5)." }
+        },
+        "required": ["postId", "emails"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/posts/{postId}/test",
+        "bodyMapping": { "emails": "$emails" }
+      }
+    }
+  ]
+}

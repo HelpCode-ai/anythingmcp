@@ -1,0 +1,135 @@
+{
+  "slug": "wufoo",
+  "name": "Wufoo",
+  "description": "Read Wufoo (SurveyMonkey-owned classic form builder) submissions and form definitions from any AI agent. 6 tools, Basic auth, subdomain-templated URL.",
+  "instructions": "This connector uses the Wufoo API v3 (wufoo.com/api).\n\n**Setup**:\n1. Sign in to Wufoo → top-right avatar → **Account → API Information**.\n2. Note your **API key** and your **subdomain** (e.g. if URL is `acme.wufoo.com` → `acme`).\n3. Set:\n   - `WUFOO_SUBDOMAIN` = your subdomain\n   - `WUFOO_API_KEY` = the API key\n\n**Authentication**: HTTP Basic with username=API_KEY, password='footastic' (literal — Wufoo's convention).\n\n**Subdomain in base URL**: `https://{{WUFOO_SUBDOMAIN}}.wufoo.com/api/v3`.\n\n**Form/Entry model**: forms (the definitions) contain fields (the questions). Entries (submissions) are field_id→value mappings keyed by short_field_id strings like 'Field1', 'Field2'.\n\n**Pagination**: `?pageStart=N&pageSize=M` (max 100).\n\n**Sort/filter**: pass filters via query params `Filter1=Field1+Is_equal_to+ACME&match=AND` (Wufoo's quirky filter syntax).\n\n**Out of scope here**: form creation (UI-only), reports, users, webhooks (configured in UI).",
+  "region": "intl",
+  "category": "forms",
+  "icon": "wufoo",
+  "docsUrl": "https://wufoo.com/docs/api/v3/",
+  "requiredEnvVars": ["WUFOO_SUBDOMAIN", "WUFOO_API_KEY"],
+  "connector": {
+    "name": "Wufoo v3",
+    "type": "REST",
+    "baseUrl": "https://{{WUFOO_SUBDOMAIN}}.wufoo.com/api/v3",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{WUFOO_API_KEY}}",
+      "password": "footastic"
+    }
+  },
+  "tools": [
+    {
+      "name": "wufoo_list_forms",
+      "description": "List all forms on the account. Each form has Hash, Name, Description, EntryCount, DateCreated, DateUpdated, Url, IsPublic.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pretty": { "type": "boolean", "description": "Pretty-print JSON." },
+          "includeTodayCount": { "type": "boolean", "description": "Include today's entry count per form." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms.json",
+        "queryParams": {
+          "pretty": "$pretty",
+          "includeTodayCount": "$includeTodayCount"
+        }
+      }
+    },
+    {
+      "name": "wufoo_get_form",
+      "description": "Fetch a single form's metadata by its Hash.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formIdentifier": { "type": "string", "description": "Form Hash (e.g. 'x7w1q1') or URL slug." }
+        },
+        "required": ["formIdentifier"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/forms/{formIdentifier}.json" }
+    },
+    {
+      "name": "wufoo_get_form_fields",
+      "description": "Get a form's fields (the questions). Returns Title, Type, ID (e.g. 'Field1'), IsRequired, Choices (for picker fields), DefaultVal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formIdentifier": { "type": "string", "description": "Form Hash." },
+          "system": { "type": "boolean", "description": "If true, also return system fields (e.g. EntryId, DateCreated)." }
+        },
+        "required": ["formIdentifier"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{formIdentifier}/fields.json",
+        "queryParams": { "system": "$system" }
+      }
+    },
+    {
+      "name": "wufoo_list_form_entries",
+      "description": "List submissions (entries) for a form. Each entry is a row with Field1/Field2/.../EntryId/DateCreated/IP keys.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formIdentifier": { "type": "string", "description": "Form Hash." },
+          "pageStart": { "type": "integer", "description": "0-based offset." },
+          "pageSize": { "type": "integer", "description": "Per page (max 100)." },
+          "sort": { "type": "string", "description": "Field ID to sort by." },
+          "sortDirection": { "type": "string", "description": "ASC or DESC." },
+          "system": { "type": "boolean", "description": "Include system fields." },
+          "Filter1": { "type": "string", "description": "Filter expression: 'Field1+Is_equal_to+ACME'." },
+          "match": { "type": "string", "description": "AND or OR (for multiple filters)." }
+        },
+        "required": ["formIdentifier"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{formIdentifier}/entries.json",
+        "queryParams": {
+          "pageStart": "$pageStart",
+          "pageSize": "$pageSize",
+          "sort": "$sort",
+          "sortDirection": "$sortDirection",
+          "system": "$system",
+          "Filter1": "$Filter1",
+          "match": "$match"
+        }
+      }
+    },
+    {
+      "name": "wufoo_count_form_entries",
+      "description": "Return just the entry count for a form (cheap — no entry payload).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formIdentifier": { "type": "string", "description": "Form Hash." }
+        },
+        "required": ["formIdentifier"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{formIdentifier}/entries/count.json"
+      }
+    },
+    {
+      "name": "wufoo_create_form_entry",
+      "description": "Submit a new entry to a form (programmatic submission). Body is keyed by Field ID strings: {Field1:'value', Field2:'value', ...}. Get field IDs from wufoo_get_form_fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formIdentifier": { "type": "string", "description": "Form Hash." },
+          "fields": { "type": "object", "description": "Map of {Field1: value, Field2: value, ...}." }
+        },
+        "required": ["formIdentifier", "fields"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{formIdentifier}/entries.json",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": { "fields": "$fields" }
+      }
+    }
+  ]
+}

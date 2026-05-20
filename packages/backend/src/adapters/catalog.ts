@@ -36,10 +36,12 @@ import * as acuityScheduling from './intl/acuity-scheduling.json';
 import * as adyen from './intl/adyen.json';
 import * as apollo from './intl/apollo.json';
 import * as basecamp from './intl/basecamp.json';
+import * as beehiiv from './intl/beehiiv.json';
 import * as bigcommerce from './intl/bigcommerce.json';
 import * as brevo from './intl/brevo.json';
 import * as calendly from './intl/calendly.json';
 import * as chargebee from './intl/chargebee.json';
+import * as clearbit from './intl/clearbit.json';
 import * as clickup from './intl/clickup.json';
 import * as close from './intl/close.json';
 import * as coda from './intl/coda.json';
@@ -52,6 +54,7 @@ import * as fathom from './intl/fathom.json';
 import * as freshdesk from './intl/freshdesk.json';
 import * as front from './intl/front.json';
 import * as ghost from './intl/ghost.json';
+import * as gitbook from './intl/gitbook.json';
 import * as heap from './intl/heap.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hunter from './intl/hunter.json';
@@ -72,6 +75,7 @@ import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as salesloft from './intl/salesloft.json';
 import * as sendgrid from './intl/sendgrid.json';
+import * as snov from './intl/snov.json';
 import * as sorare from './intl/sorare.json';
 import * as statsig from './intl/statsig.json';
 import * as substack from './intl/substack.json';
@@ -84,6 +88,7 @@ import * as typeform from './intl/typeform.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as woocommerce from './intl/woocommerce.json';
 import * as wordpress from './intl/wordpress.json';
+import * as wufoo from './intl/wufoo.json';
 import * as zendesk from './intl/zendesk.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as razorpay from './in/razorpay.json';
@@ -198,10 +203,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   adyen as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
   basecamp as unknown as AdapterDefinition,
+  beehiiv as unknown as AdapterDefinition,
   bigcommerce as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
   chargebee as unknown as AdapterDefinition,
+  clearbit as unknown as AdapterDefinition,
   clickup as unknown as AdapterDefinition,
   close as unknown as AdapterDefinition,
   coda as unknown as AdapterDefinition,
@@ -214,6 +221,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   freshdesk as unknown as AdapterDefinition,
   front as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
+  gitbook as unknown as AdapterDefinition,
   heap as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
@@ -234,6 +242,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   reddit as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
+  snov as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
   statsig as unknown as AdapterDefinition,
   substack as unknown as AdapterDefinition,
@@ -246,6 +255,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   whatsappBusiness as unknown as AdapterDefinition,
   woocommerce as unknown as AdapterDefinition,
   wordpress as unknown as AdapterDefinition,
+  wufoo as unknown as AdapterDefinition,
   zendesk as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   razorpay as unknown as AdapterDefinition,

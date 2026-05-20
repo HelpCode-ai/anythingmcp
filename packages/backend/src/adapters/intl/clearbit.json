@@ -1,0 +1,135 @@
+{
+  "slug": "clearbit",
+  "name": "Clearbit",
+  "description": "Enrich emails, domains and IPs via Clearbit (HubSpot Breeze Intelligence). 6 tools, Bearer auth. Marketing intelligence + technographics + firmographics.",
+  "instructions": "This connector uses the Clearbit Enrichment + Discovery + Risk + Reveal APIs (dashboard.clearbit.com).\n\n**Note**: Clearbit was acquired by HubSpot in 2023 and is now sold as **HubSpot Breeze Intelligence**. The legacy clearbit.com API endpoints remain functional for existing customers as of 2025 but new sign-ups go through HubSpot. Set your CLEARBIT_API_KEY exactly as Clearbit issues it.\n\n**Setup**:\n1. Sign in to https://dashboard.clearbit.com → **API Keys** (or for HubSpot Breeze: HubSpot Settings → Integrations → Breeze Intelligence → API).\n2. Copy the secret API key (prefixed with `sk_`).\n3. Set `CLEARBIT_API_KEY`.\n\n**Authentication**: HTTP Basic with username=API_KEY, password=empty (Stripe-style). The adapter uses BASIC_AUTH.\n\n**Endpoints split across subdomains**:\n  - `person.clearbit.com/v2/people/find?email=X` — Person enrichment by email\n  - `company.clearbit.com/v2/companies/find?domain=X` — Company enrichment by domain\n  - `discovery.clearbit.com/v1/companies/search?query=Q` — Search companies by criteria\n  - `risk.clearbit.com/v1/calculate` — Risk score on an email or IP\n  - `reveal.clearbit.com/v1/companies/find?ip=X` — Reverse-IP-to-company (B2B intent)\nThe adapter uses person.clearbit.com as baseUrl and absolute URLs for others.\n\n**Credit costs**: each enrichment call costs credits. Plans range from 1k/month free to 100k+/month enterprise. Use `/health` (free) for testing.\n\n**Webhook mode**: Clearbit can push enrichment results when the underlying data updates — out of scope for this connector.\n\n**Out of scope here**: Salesforce sync, deanonymization, x-targets, account-targeting webhook receivers.",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "clearbit",
+  "docsUrl": "https://dashboard.clearbit.com/docs",
+  "requiredEnvVars": ["CLEARBIT_API_KEY"],
+  "connector": {
+    "name": "Clearbit",
+    "type": "REST",
+    "baseUrl": "https://person.clearbit.com",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{CLEARBIT_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "clearbit_person_enrich",
+      "description": "Enrich a person by email. Returns name, location, employment (company name, title, role, seniority, domain), social profiles (twitter, linkedin, github, etc.), avatar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email to enrich." },
+          "webhook_url": { "type": "string", "description": "If passed, Clearbit returns 202 and posts results to this URL when data is ready." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/people/find",
+        "queryParams": {
+          "email": "$email",
+          "webhook_url": "$webhook_url"
+        }
+      }
+    },
+    {
+      "name": "clearbit_company_enrich",
+      "description": "Enrich a company by domain. Returns name, legal_name, description, industry, employees, employeesRange, founded_year, location, tech[] (tech stack), metrics (annualRevenue, raisedFunding, etc.), social profiles, logo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": { "type": "string", "description": "Domain (e.g. 'acme.com')." },
+          "webhook_url": { "type": "string", "description": "Async webhook URL." }
+        },
+        "required": ["domain"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://company.clearbit.com/v2/companies/find",
+        "queryParams": {
+          "domain": "$domain",
+          "webhook_url": "$webhook_url"
+        }
+      }
+    },
+    {
+      "name": "clearbit_combined_enrich",
+      "description": "Combined person + company enrichment in one call by email. Returns {person: {...}, company: {...}}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://person-stream.clearbit.com/v2/combined/find",
+        "queryParams": { "email": "$email" }
+      }
+    },
+    {
+      "name": "clearbit_discovery_search",
+      "description": "Search Clearbit's company database by filters (industry, size, location, tech, type). Useful for ICP-based prospecting. Returns paginated companies (NOT contacts — pair with another tool for people).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Filter expression, e.g. 'tech:Salesforce AND employees:1000~10000 AND location:United States'. See https://dashboard.clearbit.com/docs#discovery-api-search-companies for full syntax." },
+          "sort": { "type": "string", "description": "alexa_us_rank, alexa_global_rank, employees, annual_revenue (with :asc or :desc suffix)." },
+          "page": { "type": "integer", "description": "1-based page." },
+          "page_size": { "type": "integer", "description": "Per page (default 50, max 100)." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://discovery.clearbit.com/v1/companies/search",
+        "queryParams": {
+          "query": "$query",
+          "sort": "$sort",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "clearbit_reveal_by_ip",
+      "description": "Reverse-IP lookup: given an IP, return the company it belongs to (B2B intent / website-visitor identification). Great for showing 'Acme Corp is browsing your site'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": { "type": "string", "description": "IPv4 or IPv6 address." }
+        },
+        "required": ["ip"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://reveal.clearbit.com/v1/companies/find",
+        "queryParams": { "ip": "$ip" }
+      }
+    },
+    {
+      "name": "clearbit_company_autocomplete",
+      "description": "Autocomplete company names (no auth required, public). Returns top matches with name, domain, logo. Use for company-picker UIs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Partial company name." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://autocomplete.clearbit.com/v1/companies/suggest",
+        "queryParams": { "query": "$query" }
+      }
+    }
+  ]
+}
