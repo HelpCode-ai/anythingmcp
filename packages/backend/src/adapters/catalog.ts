@@ -43,6 +43,9 @@ import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
 import * as discordBot from './intl/discord-bot.json';
 import * as freshdesk from './intl/freshdesk.json';
+import * as front from './intl/front.json';
+import * as ghost from './intl/ghost.json';
+import * as helpScout from './intl/help-scout.json';
 import * as hunter from './intl/hunter.json';
 import * as klaviyo from './intl/klaviyo.json';
 import * as lemlist from './intl/lemlist.json';
@@ -57,9 +60,11 @@ import * as nominatim from './intl/nominatim.json';
 import * as outreach from './intl/outreach.json';
 import * as pandadoc from './intl/pandadoc.json';
 import * as pipedrive from './intl/pipedrive.json';
+import * as reddit from './intl/reddit.json';
 import * as salesloft from './intl/salesloft.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sorare from './intl/sorare.json';
+import * as substack from './intl/substack.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as tally from './intl/tally.json';
 import * as telegramBot from './intl/telegram-bot.json';
@@ -190,6 +195,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   copper as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
   freshdesk as unknown as AdapterDefinition,
+  front as unknown as AdapterDefinition,
+  ghost as unknown as AdapterDefinition,
+  helpScout as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
   lemlist as unknown as AdapterDefinition,
@@ -204,9 +212,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   outreach as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
   pipedrive as unknown as AdapterDefinition,
+  reddit as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
+  substack as unknown as AdapterDefinition,
   surveymonkey as unknown as AdapterDefinition,
   tally as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,

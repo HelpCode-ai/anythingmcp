@@ -1,0 +1,276 @@
+{
+  "slug": "reddit",
+  "name": "Reddit",
+  "description": "Read and post to Reddit from any AI agent: subreddit listings, post search, comments, user info, submit posts/comments, vote. 12 tools, OAuth2 Bearer auth.",
+  "instructions": "This connector uses the Reddit OAuth2 API (reddit.com/dev/api).\n\n**Setup**:\n1. Sign in to Reddit → https://www.reddit.com/prefs/apps → **Create another app**.\n2. Pick `script` (for personal use) or `web app` (for OAuth users).\n3. Note the **client_id** (under the app name) and **client_secret**.\n4. Obtain an access token via OAuth2 password grant (for script apps) or auth-code (for web apps). Endpoint: `POST https://www.reddit.com/api/v1/access_token` with HTTP Basic (client_id:client_secret).\n5. Set `REDDIT_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${REDDIT_ACCESS_TOKEN}`. Access tokens expire after 1 hour — your orchestrator must refresh.\n\n**User-Agent header REQUIRED**: Reddit blocks requests without a meaningful User-Agent. The adapter pins `User-Agent: AnythingMCP/1.0 (by /u/anythingmcp)`. If Reddit returns 429 unexpectedly, change this string to one specific to your app (Reddit recommends `<platform>:<app ID>:<version> (by /u/<reddit username>)`).\n\n**oauth.reddit.com vs www.reddit.com**: authenticated requests MUST go to `https://oauth.reddit.com` (the adapter does this). Anonymous calls go to www.reddit.com.\n\n**Resource model**: every Reddit object has a `kind` prefix:\n  - t1_ = comment\n  - t2_ = user\n  - t3_ = link/post\n  - t4_ = message\n  - t5_ = subreddit\nA full ID is `kind_id36`, e.g. `t3_abc123`. Plain `id36` works for some endpoints.\n\n**Listings (pagination)**: most list endpoints return a `Listing` with `after` and `before` cursors. Pass `after=t3_abc123` to paginate.\n\n**Rate limits**: 100 queries / minute / OAuth client (free tier as of 2025; commercial tiers higher). Reddit's API became paid for high-volume use in 2023 — read https://www.redditinc.com/policies/data-api-terms.\n\n**Out of scope here**: PRAW-style streaming, moderator actions (ban/approve), wiki edits, multireddits CRUD, scheduled posts.",
+  "region": "intl",
+  "category": "social",
+  "icon": "reddit",
+  "docsUrl": "https://www.reddit.com/dev/api",
+  "requiredEnvVars": ["REDDIT_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Reddit API",
+    "type": "REST",
+    "baseUrl": "https://oauth.reddit.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Bearer {{REDDIT_ACCESS_TOKEN}}",
+      "extraHeaders": {
+        "User-Agent": "AnythingMCP/1.0 (by /u/anythingmcp)"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "reddit_me",
+      "description": "Return the user the token belongs to (whoami): id, name, link_karma, comment_karma, created_utc, is_gold.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/api/v1/me" }
+    },
+    {
+      "name": "reddit_get_subreddit_about",
+      "description": "Fetch a subreddit's info: id, display_name, title, public_description, subscribers, active_user_count, over18, created_utc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subreddit": { "type": "string", "description": "Subreddit name without the 'r/' prefix, e.g. 'programming'." }
+        },
+        "required": ["subreddit"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/r/{subreddit}/about" }
+    },
+    {
+      "name": "reddit_list_subreddit_posts",
+      "description": "List posts in a subreddit, sorted by hot/new/top/rising. Each post has id, title, author, subreddit, score, num_comments, created_utc, selftext, url, permalink, over_18.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subreddit": { "type": "string", "description": "Subreddit name." },
+          "sort": { "type": "string", "description": "hot, new, top, rising, controversial." },
+          "t": { "type": "string", "description": "Time scope for top/controversial: hour, day, week, month, year, all." },
+          "limit": { "type": "integer", "description": "Per page (default 25, max 100)." },
+          "after": { "type": "string", "description": "Cursor — fullname (t3_xxx) of the post to start after." },
+          "before": { "type": "string", "description": "Cursor — fullname of the post to start before." }
+        },
+        "required": ["subreddit"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/r/{subreddit}/{sort}",
+        "queryParams": {
+          "t": "$t",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "reddit_search",
+      "description": "Search posts globally or within a subreddit. Supports query operators: 'title:foo', 'author:bar', 'subreddit:baz', 'site:domain.com', 'self:yes', timestamp:>1234567890.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Search query." },
+          "subreddit": { "type": "string", "description": "Restrict to this subreddit." },
+          "sort": { "type": "string", "description": "relevance, hot, top, new, comments." },
+          "t": { "type": "string", "description": "Time scope: hour, day, week, month, year, all." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "after": { "type": "string", "description": "Cursor." },
+          "restrict_sr": { "type": "boolean", "description": "If true, restrict_sr=1 (only match in subreddit, used with subreddit param)." },
+          "type": { "type": "string", "description": "sr (subreddits), user (users), link (posts only)." }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q",
+          "sort": "$sort",
+          "t": "$t",
+          "limit": "$limit",
+          "after": "$after",
+          "restrict_sr": "$restrict_sr",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "reddit_get_post_comments",
+      "description": "Fetch a post with its comment tree. Comments can be deep — use depth/limit to control.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "string", "description": "Post id36 (without t3_ prefix)." },
+          "limit": { "type": "integer", "description": "Max comments." },
+          "depth": { "type": "integer", "description": "Max thread depth." },
+          "sort": { "type": "string", "description": "best, top, new, controversial, old, qa." }
+        },
+        "required": ["postId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/comments/{postId}",
+        "queryParams": {
+          "limit": "$limit",
+          "depth": "$depth",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "reddit_get_user_about",
+      "description": "Fetch a user's public profile: id, name, link_karma, comment_karma, created_utc, is_gold, verified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string", "description": "Reddit username without u/." }
+        },
+        "required": ["username"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/user/{username}/about" }
+    },
+    {
+      "name": "reddit_get_user_posts",
+      "description": "List a user's submitted posts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string", "description": "Username." },
+          "sort": { "type": "string", "description": "new, hot, top, controversial." },
+          "t": { "type": "string", "description": "Time scope." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "after": { "type": "string", "description": "Cursor." }
+        },
+        "required": ["username"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/{username}/submitted",
+        "queryParams": {
+          "sort": "$sort",
+          "t": "$t",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "reddit_submit_post",
+      "description": "Submit a new post. kind='self' (text post with selftext) or 'link' (URL post with url). Required scope: 'submit'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sr": { "type": "string", "description": "Subreddit name to post to." },
+          "kind": { "type": "string", "description": "self or link." },
+          "title": { "type": "string", "description": "Post title." },
+          "text": { "type": "string", "description": "For kind=self: the markdown body." },
+          "url": { "type": "string", "description": "For kind=link: the URL." },
+          "flair_id": { "type": "string", "description": "Flair template ID (optional)." },
+          "flair_text": { "type": "string", "description": "Flair text override." },
+          "nsfw": { "type": "boolean", "description": "Mark NSFW." },
+          "spoiler": { "type": "boolean", "description": "Mark spoiler." },
+          "sendreplies": { "type": "boolean", "description": "Send inbox replies for comments. Default true." }
+        },
+        "required": ["sr", "kind", "title"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/submit",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "sr": "$sr",
+          "kind": "$kind",
+          "title": "$title",
+          "text": "$text",
+          "url": "$url",
+          "flair_id": "$flair_id",
+          "flair_text": "$flair_text",
+          "nsfw": "$nsfw",
+          "spoiler": "$spoiler",
+          "sendreplies": "$sendreplies",
+          "api_type": "json"
+        }
+      }
+    },
+    {
+      "name": "reddit_post_comment",
+      "description": "Reply to a post or comment. `thing_id` is the fullname (t1_xxx for comment, t3_xxx for post).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thing_id": { "type": "string", "description": "Fullname (e.g. 't3_abc123' or 't1_xyz789')." },
+          "text": { "type": "string", "description": "Comment body (Markdown)." }
+        },
+        "required": ["thing_id", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/comment",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "thing_id": "$thing_id",
+          "text": "$text",
+          "api_type": "json"
+        }
+      }
+    },
+    {
+      "name": "reddit_vote",
+      "description": "Vote on a post or comment. dir=1 upvote, dir=-1 downvote, dir=0 remove vote.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Fullname (t1_xxx or t3_xxx)." },
+          "dir": { "type": "integer", "description": "1, -1, or 0." }
+        },
+        "required": ["id", "dir"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/vote",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id": "$id",
+          "dir": "$dir"
+        }
+      }
+    },
+    {
+      "name": "reddit_save",
+      "description": "Save (bookmark) a post or comment to the user's account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Fullname (t1_xxx or t3_xxx)." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/save",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": { "id": "$id" }
+      }
+    },
+    {
+      "name": "reddit_my_subreddits",
+      "description": "List subreddits the user is subscribed to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": { "type": "string", "description": "subscriber, contributor, moderator." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subreddits/mine/{where}",
+        "queryParams": { "limit": "$limit", "after": "$after" }
+      }
+    }
+  ]
+}

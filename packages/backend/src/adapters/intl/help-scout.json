@@ -1,0 +1,327 @@
+{
+  "slug": "help-scout",
+  "name": "Help Scout",
+  "description": "Drive Help Scout (shared inbox + helpdesk) from any AI agent: conversations, customers, mailboxes, tags, threads. 13 tools, OAuth2 Bearer auth.",
+  "instructions": "This connector uses the Help Scout Mailbox API v2 (developer.helpscout.com/mailbox-api).\n\n**Setup**:\n1. Sign in to Help Scout → **Manage → Apps → My Apps → Create My App**.\n2. Pick app type:\n   - **Personal Access Token** (single-user): get a token from your profile → API Keys → Personal Access Token. Token expires after 2 days — refresh needed.\n   - **OAuth2 App** (multi-user / longer-lived): standard OAuth2 client-credentials or auth-code flow.\n3. Set `HELPSCOUT_ACCESS_TOKEN` to the access token.\n\n**Authentication**: `Authorization: Bearer ${HELPSCOUT_ACCESS_TOKEN}`. Tokens expire — your orchestrator handles refresh.\n\n**Conversations are central**: Help Scout calls tickets 'conversations'. They live in mailboxes. Each has customer (the requester), assignee, status (active/pending/closed/spam), threads (replies/notes).\n\n**Thread types**: customer (inbound from customer), reply (outbound public), note (internal), forward (forwarded by agent), phone (logged call), chat (live-chat).\n\n**Status values**: active, pending (snoozed), closed, spam, open (legacy). Use 'closed' to resolve.\n\n**HAL+JSON**: responses follow the HAL spec — `_embedded` contains nested collections, `_links` for navigation. Pagination via `?page=N&size=M` (max 50).\n\n**Custom fields**: each mailbox has its own custom fields. Set them via `customFields` array in conversation create/update.\n\n**Rate limits**: 400 req/min per API key. On 429 back off.\n\n**Out of scope here**: Docs (separate Help Scout Docs API), Beacon, Reports analytics endpoints, webhooks management.",
+  "region": "intl",
+  "category": "support",
+  "icon": "helpscout",
+  "docsUrl": "https://developer.helpscout.com/mailbox-api/",
+  "requiredEnvVars": ["HELPSCOUT_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Help Scout Mailbox v2",
+    "type": "REST",
+    "baseUrl": "https://api.helpscout.net/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{HELPSCOUT_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "help_scout_list_mailboxes",
+      "description": "List mailboxes (shared inboxes). Each has id, name, slug, email, createdAt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page (1-based)." },
+          "size": { "type": "integer", "description": "Per page (default 10, max 50)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mailboxes",
+        "queryParams": { "page": "$page", "size": "$size" }
+      }
+    },
+    {
+      "name": "help_scout_list_conversations",
+      "description": "List conversations with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mailbox": { "type": "integer", "description": "Filter by mailbox ID." },
+          "folder": { "type": "integer", "description": "Filter by folder ID (mailbox sub-folders)." },
+          "status": { "type": "string", "description": "active, pending, closed, spam, open, all." },
+          "tag": { "type": "string", "description": "Comma-separated tag names." },
+          "assigned_to": { "type": "integer", "description": "Assignee user ID." },
+          "modifiedSince": { "type": "string", "description": "ISO 8601 — only conversations modified after." },
+          "embed": { "type": "string", "description": "threads — include threads inline (saves N+1)." },
+          "query": { "type": "string", "description": "Search query (Help Scout supports advanced syntax like 'subject:foo' AND 'body:bar')." },
+          "sortField": { "type": "string", "description": "createdAt, customerEmail, customerName, status, subject, modifiedAt, etc." },
+          "sortOrder": { "type": "string", "description": "asc or desc." },
+          "page": { "type": "integer", "description": "Page." },
+          "size": { "type": "integer", "description": "Per page (max 50)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations",
+        "queryParams": {
+          "mailbox": "$mailbox",
+          "folder": "$folder",
+          "status": "$status",
+          "tag": "$tag",
+          "assigned_to": "$assigned_to",
+          "modifiedSince": "$modifiedSince",
+          "embed": "$embed",
+          "query": "$query",
+          "sortField": "$sortField",
+          "sortOrder": "$sortOrder",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "help_scout_get_conversation",
+      "description": "Fetch a single conversation with full details. Pass embed=threads to also fetch the thread history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "integer", "description": "Conversation ID." },
+          "embed": { "type": "string", "description": "threads to include the conversation history." }
+        },
+        "required": ["conversationId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversationId}",
+        "queryParams": { "embed": "$embed" }
+      }
+    },
+    {
+      "name": "help_scout_create_conversation",
+      "description": "Create a new conversation (ticket). Required: subject + customer (id OR email) + mailboxId + status + type + threads (at least one initial thread).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": { "type": "string", "description": "Conversation subject." },
+          "customer": { "type": "object", "description": "{id?:N, email?:'a@b'} — at least one required." },
+          "mailboxId": { "type": "integer", "description": "Target mailbox ID." },
+          "type": { "type": "string", "description": "email, chat, phone." },
+          "status": { "type": "string", "description": "active, pending, closed." },
+          "threads": { "type": "array", "description": "Array of thread objects: [{type:'customer'|'reply'|'note', text:'...', customer?:{...}, user?:N}]. Must have at least 1." },
+          "assignTo": { "type": "integer", "description": "User ID to assign." },
+          "tags": { "type": "array", "description": "Tag name strings." },
+          "fields": { "type": "array", "description": "Custom fields: [{id:N, value:'X'}]." }
+        },
+        "required": ["subject", "customer", "mailboxId", "type", "status", "threads"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations",
+        "bodyMapping": {
+          "subject": "$subject",
+          "customer": "$customer",
+          "mailboxId": "$mailboxId",
+          "type": "$type",
+          "status": "$status",
+          "threads": "$threads",
+          "assignTo": "$assignTo",
+          "tags": "$tags",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "help_scout_update_conversation_status",
+      "description": "Change conversation status (close, reopen, snooze). Uses JSON Patch semantics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "integer", "description": "Conversation ID." },
+          "op": { "type": "string", "description": "replace." },
+          "path": { "type": "string", "description": "/status." },
+          "value": { "type": "string", "description": "active, pending, closed, spam." }
+        },
+        "required": ["conversationId", "op", "path", "value"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/conversations/{conversationId}",
+        "bodyMapping": {
+          "op": "$op",
+          "path": "$path",
+          "value": "$value"
+        }
+      }
+    },
+    {
+      "name": "help_scout_add_reply",
+      "description": "Add a public reply (emails the customer) to a conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "integer", "description": "Conversation ID." },
+          "text": { "type": "string", "description": "Reply body (HTML supported)." },
+          "user": { "type": "integer", "description": "User ID sending the reply." },
+          "cc": { "type": "array", "description": "CC email addresses." },
+          "bcc": { "type": "array", "description": "BCC email addresses." },
+          "attachments": { "type": "array", "description": "Attachment IDs (must upload first)." }
+        },
+        "required": ["conversationId", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversationId}/reply",
+        "bodyMapping": {
+          "text": "$text",
+          "user": "$user",
+          "cc": "$cc",
+          "bcc": "$bcc",
+          "attachments": "$attachments"
+        }
+      }
+    },
+    {
+      "name": "help_scout_add_note",
+      "description": "Add an internal note (not visible to customer).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "integer", "description": "Conversation ID." },
+          "text": { "type": "string", "description": "Note body." },
+          "user": { "type": "integer", "description": "User ID." }
+        },
+        "required": ["conversationId", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversationId}/notes",
+        "bodyMapping": {
+          "text": "$text",
+          "user": "$user"
+        }
+      }
+    },
+    {
+      "name": "help_scout_list_conversation_threads",
+      "description": "List all threads (replies, notes, status changes) in a conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "integer", "description": "Conversation ID." },
+          "page": { "type": "integer", "description": "Page." }
+        },
+        "required": ["conversationId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversationId}/threads",
+        "queryParams": { "page": "$page" }
+      }
+    },
+    {
+      "name": "help_scout_list_customers",
+      "description": "List customers (people the business interacts with).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstName": { "type": "string", "description": "Filter by first name." },
+          "lastName": { "type": "string", "description": "Filter by last name." },
+          "email": { "type": "string", "description": "Filter by email exact-match." },
+          "modifiedSince": { "type": "string", "description": "ISO 8601." },
+          "query": { "type": "string", "description": "Search query." },
+          "page": { "type": "integer", "description": "Page." },
+          "size": { "type": "integer", "description": "Per page (max 50)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "email": "$email",
+          "modifiedSince": "$modifiedSince",
+          "query": "$query",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "help_scout_get_customer",
+      "description": "Fetch a customer's full profile including emails[], phones[], chats[], social_profiles[], address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "integer", "description": "Customer ID." }
+        },
+        "required": ["customerId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/customers/{customerId}" }
+    },
+    {
+      "name": "help_scout_create_customer",
+      "description": "Create a customer. Required: firstName or lastName.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstName": { "type": "string", "description": "First name." },
+          "lastName": { "type": "string", "description": "Last name." },
+          "emails": { "type": "array", "description": "[{type:'work'|'home'|'other', value:'a@b'}]." },
+          "phones": { "type": "array", "description": "[{type, value}]." },
+          "address": { "type": "object", "description": "{city, country, lines:[], postalCode, state}." },
+          "organization": { "type": "string", "description": "Company name." },
+          "jobTitle": { "type": "string", "description": "Job title." },
+          "background": { "type": "string", "description": "Notes about the customer." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "emails": "$emails",
+          "phones": "$phones",
+          "address": "$address",
+          "organization": "$organization",
+          "jobTitle": "$jobTitle",
+          "background": "$background"
+        }
+      }
+    },
+    {
+      "name": "help_scout_list_tags",
+      "description": "List tags on the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page." },
+          "size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": { "page": "$page", "size": "$size" }
+      }
+    },
+    {
+      "name": "help_scout_list_users",
+      "description": "List Help Scout agents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by email." },
+          "mailbox": { "type": "integer", "description": "Filter to users in this mailbox." },
+          "page": { "type": "integer", "description": "Page." },
+          "size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "email": "$email",
+          "mailbox": "$mailbox",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    }
+  ]
+}
