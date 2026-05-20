@@ -1,0 +1,110 @@
+{
+  "slug": "savvycal",
+  "name": "SavvyCal",
+  "description": "Drive SavvyCal (modern team scheduling) from any AI agent: scheduling links, meetings, availability. 6 tools, API-key Bearer auth.",
+  "instructions": "This connector uses the SavvyCal API v1 (developer.savvycal.com).\n\n**Setup**:\n1. Sign in to https://savvycal.com → top-right avatar → **Developer → API Keys → Create new key**.\n2. Set `SAVVYCAL_API_KEY`.\n\n**Authentication**: `Authorization: Bearer ${SAVVYCAL_API_KEY}`.\n\n**Resource model**:\n  - **Link**: a scheduling link template (`/me/intro-call`).\n  - **Booking**: a scheduled meeting via a link.\n  - **Calendar**: connected calendar source (Google/Outlook).\n\n**Pagination**: cursor — response has `meta.next_cursor`.\n\n**Out of scope here**: workflows automation editing, payments via Stripe, team round-robin config (UI-only).",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "savvycal",
+  "docsUrl": "https://developer.savvycal.com/",
+  "requiredEnvVars": ["SAVVYCAL_API_KEY"],
+  "connector": {
+    "name": "SavvyCal v1",
+    "type": "REST",
+    "baseUrl": "https://api.savvycal.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SAVVYCAL_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "savvycal_me",
+      "description": "Return the user the token belongs to.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me" }
+    },
+    {
+      "name": "savvycal_list_links",
+      "description": "List scheduling links. Each has id, slug, name, public, single_use, link_url, durations[], owner.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/links",
+        "queryParams": { "limit": "$limit", "after": "$after" }
+      }
+    },
+    {
+      "name": "savvycal_get_link",
+      "description": "Fetch a scheduling link by ID with full details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "linkId": { "type": "string", "description": "Link ID." }
+        },
+        "required": ["linkId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/links/{linkId}" }
+    },
+    {
+      "name": "savvycal_list_meetings",
+      "description": "List meetings (bookings).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": { "type": "string", "description": "Cursor." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "from": { "type": "string", "description": "ISO 8601 — meetings starting after." },
+          "to": { "type": "string", "description": "ISO 8601 — starting before." },
+          "state": { "type": "string", "description": "scheduled, canceled." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/meetings",
+        "queryParams": {
+          "after": "$after",
+          "limit": "$limit",
+          "from": "$from",
+          "to": "$to",
+          "state": "$state"
+        }
+      }
+    },
+    {
+      "name": "savvycal_get_meeting",
+      "description": "Fetch a meeting by ID with invitee details, cancellation URL, reschedule URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meetingId": { "type": "string", "description": "Meeting ID." }
+        },
+        "required": ["meetingId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/meetings/{meetingId}" }
+    },
+    {
+      "name": "savvycal_cancel_meeting",
+      "description": "Cancel a scheduled meeting. The invitee receives a cancellation email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meetingId": { "type": "string", "description": "Meeting ID." },
+          "reason": { "type": "string", "description": "Cancellation reason (shown in email)." }
+        },
+        "required": ["meetingId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/meetings/{meetingId}",
+        "bodyMapping": { "reason": "$reason" }
+      }
+    }
+  ]
+}

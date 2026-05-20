@@ -1,0 +1,118 @@
+{
+  "slug": "medium",
+  "name": "Medium",
+  "description": "Publish posts to Medium (your own profile or a publication) from any AI agent. 5 tools, integration-token Bearer auth.",
+  "instructions": "This connector uses the Medium API v1 (github.com/Medium/medium-api-docs).\n\n**Important — limited write API**: Medium's public API is **write-mostly** for the user that owns the integration token. There's no public read API for posts (Medium walked back most read endpoints in 2019). Use RSS or scraping for reads.\n\n**Setup**:\n1. Sign in to https://medium.com → top-right avatar → **Settings → Security and apps → Integration tokens → New integration token**.\n2. Name it ('AnythingMCP'). Copy the token.\n3. Set `MEDIUM_INTEGRATION_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${MEDIUM_INTEGRATION_TOKEN}`.\n\n**Publishing flow**: get your userId (`medium_me`) → create a post (`medium_create_post`) under your user OR a publication (`medium_create_post_under_publication`).\n\n**Content format**: 'html' or 'markdown'. publishStatus: 'public', 'draft', 'unlisted'.\n\n**Tags**: max 5 tags per post, each ≤25 chars.\n\n**Out of scope here**: read posts (no public API), comments, claps, notifications.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "medium",
+  "docsUrl": "https://github.com/Medium/medium-api-docs",
+  "requiredEnvVars": ["MEDIUM_INTEGRATION_TOKEN"],
+  "connector": {
+    "name": "Medium v1",
+    "type": "REST",
+    "baseUrl": "https://api.medium.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MEDIUM_INTEGRATION_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "medium_me",
+      "description": "Return the authenticated user: id, username, name, url, imageUrl.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me" }
+    },
+    {
+      "name": "medium_list_user_publications",
+      "description": "List publications the user contributes to. Returns each publication's id, name, description, url, imageUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "description": "User ID from medium_me." }
+        },
+        "required": ["userId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/users/{userId}/publications" }
+    },
+    {
+      "name": "medium_get_publication_contributors",
+      "description": "List contributors of a publication.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publicationId": { "type": "string", "description": "Publication ID." }
+        },
+        "required": ["publicationId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/publications/{publicationId}/contributors" }
+    },
+    {
+      "name": "medium_create_post",
+      "description": "Create a post under the user's own profile. Required: userId + title + contentFormat + content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "description": "User ID." },
+          "title": { "type": "string", "description": "Post title." },
+          "contentFormat": { "type": "string", "description": "html or markdown." },
+          "content": { "type": "string", "description": "Post body (HTML or Markdown)." },
+          "canonicalUrl": { "type": "string", "description": "Canonical URL if cross-posting." },
+          "tags": { "type": "array", "description": "Up to 5 tag strings, each ≤25 chars." },
+          "publishStatus": { "type": "string", "description": "public (default), draft, unlisted." },
+          "license": { "type": "string", "description": "all-rights-reserved (default), cc-40-by, cc-40-by-sa, cc-40-by-nd, cc-40-by-nc, cc-40-by-nc-nd, cc-40-by-nc-sa, cc-40-zero, public-domain." },
+          "notifyFollowers": { "type": "boolean", "description": "Notify followers (default true for public posts)." }
+        },
+        "required": ["userId", "title", "contentFormat", "content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{userId}/posts",
+        "bodyMapping": {
+          "title": "$title",
+          "contentFormat": "$contentFormat",
+          "content": "$content",
+          "canonicalUrl": "$canonicalUrl",
+          "tags": "$tags",
+          "publishStatus": "$publishStatus",
+          "license": "$license",
+          "notifyFollowers": "$notifyFollowers"
+        }
+      }
+    },
+    {
+      "name": "medium_create_post_under_publication",
+      "description": "Create a post under a publication. Same fields as medium_create_post but pass publicationId instead of userId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publicationId": { "type": "string", "description": "Publication ID." },
+          "title": { "type": "string", "description": "Title." },
+          "contentFormat": { "type": "string", "description": "html or markdown." },
+          "content": { "type": "string", "description": "Body." },
+          "canonicalUrl": { "type": "string", "description": "Canonical URL." },
+          "tags": { "type": "array", "description": "Tags." },
+          "publishStatus": { "type": "string", "description": "public, draft, unlisted." },
+          "license": { "type": "string", "description": "License." },
+          "notifyFollowers": { "type": "boolean", "description": "Notify followers." }
+        },
+        "required": ["publicationId", "title", "contentFormat", "content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/publications/{publicationId}/posts",
+        "bodyMapping": {
+          "title": "$title",
+          "contentFormat": "$contentFormat",
+          "content": "$content",
+          "canonicalUrl": "$canonicalUrl",
+          "tags": "$tags",
+          "publishStatus": "$publishStatus",
+          "license": "$license",
+          "notifyFollowers": "$notifyFollowers"
+        }
+      }
+    }
+  ]
+}

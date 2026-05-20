@@ -61,6 +61,7 @@ import * as front from './intl/front.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
 import * as heap from './intl/heap.json';
+import * as height from './intl/height.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hunter from './intl/hunter.json';
 import * as insightly from './intl/insightly.json';
@@ -71,6 +72,8 @@ import * as loops from './intl/loops.json';
 import * as magento from './intl/magento.json';
 import * as mailchimp from './intl/mailchimp.json';
 import * as mapbox from './intl/mapbox.json';
+import * as medium from './intl/medium.json';
+import * as messagebird from './intl/messagebird.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mollie from './intl/mollie.json';
 import * as neverbounce from './intl/neverbounce.json';
@@ -81,7 +84,9 @@ import * as pipedrive from './intl/pipedrive.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as salesloft from './intl/salesloft.json';
+import * as savvycal from './intl/savvycal.json';
 import * as sendgrid from './intl/sendgrid.json';
+import * as signwell from './intl/signwell.json';
 import * as slab from './intl/slab.json';
 import * as snov from './intl/snov.json';
 import * as sorare from './intl/sorare.json';
@@ -238,6 +243,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
   heap as unknown as AdapterDefinition,
+  height as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
   insightly as unknown as AdapterDefinition,
@@ -248,6 +254,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   magento as unknown as AdapterDefinition,
   mailchimp as unknown as AdapterDefinition,
   mapbox as unknown as AdapterDefinition,
+  medium as unknown as AdapterDefinition,
+  messagebird as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
   neverbounce as unknown as AdapterDefinition,
@@ -258,7 +266,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
+  savvycal as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
+  signwell as unknown as AdapterDefinition,
   slab as unknown as AdapterDefinition,
   snov as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
