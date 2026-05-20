@@ -50,7 +50,9 @@ import * as copper from './intl/copper.json';
 import * as crisp from './intl/crisp.json';
 import * as discordBot from './intl/discord-bot.json';
 import * as drip from './intl/drip.json';
+import * as etsy from './intl/etsy.json';
 import * as fathom from './intl/fathom.json';
+import * as fillout from './intl/fillout.json';
 import * as freshdesk from './intl/freshdesk.json';
 import * as front from './intl/front.json';
 import * as ghost from './intl/ghost.json';
@@ -58,10 +60,12 @@ import * as gitbook from './intl/gitbook.json';
 import * as heap from './intl/heap.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hunter from './intl/hunter.json';
+import * as insightly from './intl/insightly.json';
 import * as klaviyo from './intl/klaviyo.json';
 import * as lemlist from './intl/lemlist.json';
 import * as lemonsqueezy from './intl/lemonsqueezy.json';
 import * as loops from './intl/loops.json';
+import * as magento from './intl/magento.json';
 import * as mailchimp from './intl/mailchimp.json';
 import * as mapbox from './intl/mapbox.json';
 import * as mintlify from './intl/mintlify.json';
@@ -89,6 +93,7 @@ import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as woocommerce from './intl/woocommerce.json';
 import * as wordpress from './intl/wordpress.json';
 import * as wufoo from './intl/wufoo.json';
+import * as youtubeData from './intl/youtube-data.json';
 import * as zendesk from './intl/zendesk.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as razorpay from './in/razorpay.json';
@@ -217,7 +222,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   crisp as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
   drip as unknown as AdapterDefinition,
+  etsy as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
+  fillout as unknown as AdapterDefinition,
   freshdesk as unknown as AdapterDefinition,
   front as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
@@ -225,10 +232,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   heap as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
+  insightly as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
   lemlist as unknown as AdapterDefinition,
   lemonsqueezy as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
+  magento as unknown as AdapterDefinition,
   mailchimp as unknown as AdapterDefinition,
   mapbox as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
@@ -256,6 +265,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   woocommerce as unknown as AdapterDefinition,
   wordpress as unknown as AdapterDefinition,
   wufoo as unknown as AdapterDefinition,
+  youtubeData as unknown as AdapterDefinition,
   zendesk as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   razorpay as unknown as AdapterDefinition,

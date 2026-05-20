@@ -1,0 +1,266 @@
+{
+  "slug": "magento",
+  "name": "Magento (Adobe Commerce)",
+  "description": "Drive Magento 2 / Adobe Commerce from any AI agent: products, categories, orders, customers, stock. 12 tools, Bearer admin-token auth, per-store base URL.",
+  "instructions": "This connector uses the Magento 2 REST API (devdocs.magento.com).\n\n**Setup**:\n1. As Magento admin → **System → Integrations → Add New Integration**.\n2. Name + email, then on the API tab pick scopes: at minimum Catalog (Products + Categories + Stock), Customers, Sales (Orders + Invoices + Shipments).\n3. **Activate** the integration → grant access. Magento generates an **Access Token** (this is the long-lived bearer token).\n4. Set:\n   - `MAGENTO_BASE_URL` = your storefront base URL (e.g. `https://shop.example.com`)\n   - `MAGENTO_ACCESS_TOKEN` = the integration access token\n   - Optionally `MAGENTO_STORE_VIEW` if you want a specific store view (default 'default' or use 'all')\n\n**Authentication**: `Authorization: Bearer ${MAGENTO_ACCESS_TOKEN}`.\n\n**Path prefix**: `/rest/{store_view}/V1/...`. The adapter uses `/rest/default/V1/` as default — if you need to target a different store view, replace baseUrl accordingly or pass `?storeCode=` (Magento accepts both).\n\n**Search criteria DSL**: Magento has a unique multi-key search syntax for list endpoints:\n```\n?searchCriteria[filter_groups][0][filters][0][field]=status\n&searchCriteria[filter_groups][0][filters][0][value]=1\n&searchCriteria[filter_groups][0][filters][0][condition_type]=eq\n&searchCriteria[pageSize]=20\n&searchCriteria[currentPage]=1\n```\nIt's verbose but powerful. The adapter exposes the most common filters as flat params and lets you pass arbitrary criteria via `searchCriteria_raw` for advanced cases.\n\n**SKU as primary key**: most product endpoints use SKU (not ID) in the URL: `/V1/products/{sku}`.\n\n**Rate limits**: not enforced by Magento core — depends on hosting. On 429 back off.\n\n**Out of scope here**: GraphQL endpoint (separate), Inventory MSI deep features, B2B/Commerce-only features (shared catalogs, company hierarchies), CMS pages/blocks, sales rules editing.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "magento",
+  "docsUrl": "https://devdocs.magento.com/guides/v2.4/rest/bk-rest.html",
+  "requiredEnvVars": ["MAGENTO_BASE_URL", "MAGENTO_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Magento 2 REST",
+    "type": "REST",
+    "baseUrl": "{{MAGENTO_BASE_URL}}/rest/default/V1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MAGENTO_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "magento_search_products",
+      "description": "Search products with Magento's search criteria DSL. For simple filters use the flat params (sku/name/status/visibility). For complex multi-condition use searchCriteria_raw.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_in": { "type": "string", "description": "Comma-separated SKUs (matches with condition_type=in)." },
+          "name_like": { "type": "string", "description": "Name LIKE substring (auto-wraps in %)." },
+          "status": { "type": "integer", "description": "1=enabled, 2=disabled." },
+          "visibility": { "type": "integer", "description": "1=not visible, 2=catalog only, 3=search only, 4=catalog+search." },
+          "pageSize": { "type": "integer", "description": "Per page (default 20, max ~300 due to URL length)." },
+          "currentPage": { "type": "integer", "description": "1-based page." },
+          "sortOrders_field": { "type": "string", "description": "Sort field (e.g. 'created_at', 'price')." },
+          "sortOrders_direction": { "type": "string", "description": "ASC or DESC." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "searchCriteria[filter_groups][0][filters][0][field]": "sku",
+          "searchCriteria[filter_groups][0][filters][0][value]": "$sku_in",
+          "searchCriteria[filter_groups][0][filters][0][condition_type]": "in",
+          "searchCriteria[filter_groups][1][filters][0][field]": "name",
+          "searchCriteria[filter_groups][1][filters][0][value]": "$name_like",
+          "searchCriteria[filter_groups][1][filters][0][condition_type]": "like",
+          "searchCriteria[filter_groups][2][filters][0][field]": "status",
+          "searchCriteria[filter_groups][2][filters][0][value]": "$status",
+          "searchCriteria[filter_groups][2][filters][0][condition_type]": "eq",
+          "searchCriteria[filter_groups][3][filters][0][field]": "visibility",
+          "searchCriteria[filter_groups][3][filters][0][value]": "$visibility",
+          "searchCriteria[filter_groups][3][filters][0][condition_type]": "eq",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage",
+          "searchCriteria[sortOrders][0][field]": "$sortOrders_field",
+          "searchCriteria[sortOrders][0][direction]": "$sortOrders_direction"
+        }
+      }
+    },
+    {
+      "name": "magento_get_product",
+      "description": "Fetch a single product by SKU. Returns full attributes including custom_attributes[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string", "description": "Product SKU (URL-encode if contains special chars)." }
+        },
+        "required": ["sku"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/products/{sku}" }
+    },
+    {
+      "name": "magento_create_product",
+      "description": "Create a product. Required: product.sku + product.name + product.type_id + product.attribute_set_id + product.price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "object",
+            "description": "{sku, name, type_id:'simple'|'configurable'|'virtual'|'bundle'|'grouped'|'downloadable', attribute_set_id:N (usually 4 for default), price, status?:1, visibility?:4, weight?, custom_attributes?:[{attribute_code,value}], extension_attributes?:{stock_item:{qty,is_in_stock}}}."
+          },
+          "saveOptions": { "type": "boolean", "description": "If true, save configurable options too." }
+        },
+        "required": ["product"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "product": "$product",
+          "saveOptions": "$saveOptions"
+        }
+      }
+    },
+    {
+      "name": "magento_update_product",
+      "description": "Update a product by SKU (PUT).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string", "description": "Product SKU." },
+          "product": { "type": "object", "description": "Partial product object — only fields to change." }
+        },
+        "required": ["sku", "product"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{sku}",
+        "bodyMapping": { "product": "$product" }
+      }
+    },
+    {
+      "name": "magento_delete_product",
+      "description": "Permanently delete a product by SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string", "description": "SKU to delete." }
+        },
+        "required": ["sku"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/products/{sku}" }
+    },
+    {
+      "name": "magento_update_stock",
+      "description": "Update inventory stock for a SKU at a source. For single-source (default 'default' source).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string", "description": "SKU." },
+          "stockItem": {
+            "type": "object",
+            "description": "{qty:N, is_in_stock:bool, manage_stock?:bool, min_qty?, max_sale_qty?}."
+          }
+        },
+        "required": ["sku", "stockItem"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{sku}/stockItems/1",
+        "bodyMapping": { "stockItem": "$stockItem" }
+      }
+    },
+    {
+      "name": "magento_list_categories",
+      "description": "List the category tree (or below a rootCategoryId).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rootCategoryId": { "type": "integer", "description": "Root category ID. Default 1 (root)." },
+          "depth": { "type": "integer", "description": "Depth of tree to return." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "rootCategoryId": "$rootCategoryId",
+          "depth": "$depth"
+        }
+      }
+    },
+    {
+      "name": "magento_search_orders",
+      "description": "Search orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "pending, processing, complete, closed, canceled, holded." },
+          "customer_email": { "type": "string", "description": "Filter by customer email." },
+          "created_at_from": { "type": "string", "description": "ISO 8601 — orders created after." },
+          "created_at_to": { "type": "string", "description": "ISO 8601 — created before." },
+          "pageSize": { "type": "integer", "description": "Per page." },
+          "currentPage": { "type": "integer", "description": "1-based page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "searchCriteria[filter_groups][0][filters][0][field]": "status",
+          "searchCriteria[filter_groups][0][filters][0][value]": "$status",
+          "searchCriteria[filter_groups][0][filters][0][condition_type]": "eq",
+          "searchCriteria[filter_groups][1][filters][0][field]": "customer_email",
+          "searchCriteria[filter_groups][1][filters][0][value]": "$customer_email",
+          "searchCriteria[filter_groups][1][filters][0][condition_type]": "eq",
+          "searchCriteria[filter_groups][2][filters][0][field]": "created_at",
+          "searchCriteria[filter_groups][2][filters][0][value]": "$created_at_from",
+          "searchCriteria[filter_groups][2][filters][0][condition_type]": "gteq",
+          "searchCriteria[filter_groups][3][filters][0][field]": "created_at",
+          "searchCriteria[filter_groups][3][filters][0][value]": "$created_at_to",
+          "searchCriteria[filter_groups][3][filters][0][condition_type]": "lteq",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_get_order",
+      "description": "Fetch one order by ID with billing/shipping addresses, items[], status history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer", "description": "Order ID (entity_id)." }
+        },
+        "required": ["orderId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/orders/{orderId}" }
+    },
+    {
+      "name": "magento_cancel_order",
+      "description": "Cancel an order (only valid in pending/processing status). Returns true on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer", "description": "Order ID." }
+        },
+        "required": ["orderId"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/orders/{orderId}/cancel" }
+    },
+    {
+      "name": "magento_search_customers",
+      "description": "Search customers with the same DSL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by email." },
+          "firstname_like": { "type": "string", "description": "First name LIKE." },
+          "lastname_like": { "type": "string", "description": "Last name LIKE." },
+          "pageSize": { "type": "integer", "description": "Per page." },
+          "currentPage": { "type": "integer", "description": "Page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/search",
+        "queryParams": {
+          "searchCriteria[filter_groups][0][filters][0][field]": "email",
+          "searchCriteria[filter_groups][0][filters][0][value]": "$email",
+          "searchCriteria[filter_groups][0][filters][0][condition_type]": "eq",
+          "searchCriteria[filter_groups][1][filters][0][field]": "firstname",
+          "searchCriteria[filter_groups][1][filters][0][value]": "$firstname_like",
+          "searchCriteria[filter_groups][1][filters][0][condition_type]": "like",
+          "searchCriteria[filter_groups][2][filters][0][field]": "lastname",
+          "searchCriteria[filter_groups][2][filters][0][value]": "$lastname_like",
+          "searchCriteria[filter_groups][2][filters][0][condition_type]": "like",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_get_customer",
+      "description": "Fetch one customer by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "integer", "description": "Customer ID." }
+        },
+        "required": ["customerId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/customers/{customerId}" }
+    }
+  ]
+}

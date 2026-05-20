@@ -1,0 +1,199 @@
+{
+  "slug": "etsy",
+  "name": "Etsy",
+  "description": "Read Etsy shop data (listings, transactions, receipts, reviews) from any AI agent. 9 tools, OAuth2 + x-api-key dual auth.",
+  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com).\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/your-apps → **Create New App**.\n2. Note the **Keystring** (this is your x-api-key) and **Shared secret**.\n3. Run OAuth2 PKCE flow with scopes `transactions_r listings_r email_r shops_r` (or write-scopes if needed).\n4. Get the access token (1 hour expiry) + refresh token (long-lived).\n5. Set:\n   - `ETSY_API_KEY` = the Keystring (a.k.a. x-api-key)\n   - `ETSY_ACCESS_TOKEN` = the OAuth2 access token\n\n**Authentication**: BOTH headers needed simultaneously:\n  - `x-api-key: ${ETSY_API_KEY}`\n  - `Authorization: Bearer ${ETSY_ACCESS_TOKEN}`\nThe adapter sets the api-key via API_KEY profile and adds Authorization via extraHeaders (uses the engine's extraHeaders support).\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Out of scope here**: listing image uploads, write-scope listing creation (Etsy's listing publish flow is multi-step), payment account, billing, taxonomy edits.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "etsy",
+  "docsUrl": "https://developers.etsy.com/documentation/",
+  "requiredEnvVars": ["ETSY_API_KEY", "ETSY_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Etsy Open API v3",
+    "type": "REST",
+    "baseUrl": "https://openapi.etsy.com/v3/application",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-api-key",
+      "apiKey": "{{ETSY_API_KEY}}",
+      "extraHeaders": {
+        "Authorization": "Bearer {{ETSY_ACCESS_TOKEN}}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "etsy_get_authenticated_user",
+      "description": "Return the user the OAuth token belongs to. Returns user_id, login_name, primary_email.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/users/me" }
+    },
+    {
+      "name": "etsy_get_user_shops",
+      "description": "List shops owned by the user. Returns shop_id, shop_name, currency_code, languages, login_name, last_updated_tsz, listing_active_count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "integer", "description": "User ID." }
+        },
+        "required": ["user_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/users/{user_id}/shops" }
+    },
+    {
+      "name": "etsy_get_shop",
+      "description": "Fetch one shop by shop_id with full details (announcement, sale message, etc.).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop ID." }
+        },
+        "required": ["shop_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/shops/{shop_id}" }
+    },
+    {
+      "name": "etsy_get_shop_listings_active",
+      "description": "List active listings in a shop.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop ID." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "offset": { "type": "integer", "description": "Pagination offset." },
+          "sort_on": { "type": "string", "description": "created, price, updated, score." },
+          "sort_order": { "type": "string", "description": "asc, ascending, desc, descending, up, down." },
+          "keywords": { "type": "string", "description": "Substring search on title." }
+        },
+        "required": ["shop_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/listings/active",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort_on": "$sort_on",
+          "sort_order": "$sort_order",
+          "keywords": "$keywords"
+        }
+      }
+    },
+    {
+      "name": "etsy_get_listing",
+      "description": "Fetch one listing by listing_id with full details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": { "type": "integer", "description": "Listing ID." },
+          "includes": { "type": "string", "description": "Comma-separated: Shipping, Images, Shop, User, Translations, Inventory, Videos." }
+        },
+        "required": ["listing_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/{listing_id}",
+        "queryParams": { "includes": "$includes" }
+      }
+    },
+    {
+      "name": "etsy_get_shop_receipts",
+      "description": "List orders (receipts) for the shop.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop ID." },
+          "min_created": { "type": "integer", "description": "Unix timestamp." },
+          "max_created": { "type": "integer", "description": "Unix timestamp." },
+          "min_last_modified": { "type": "integer", "description": "Unix timestamp." },
+          "max_last_modified": { "type": "integer", "description": "Unix timestamp." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "offset": { "type": "integer", "description": "Offset." },
+          "sort_on": { "type": "string", "description": "created, updated, receipt_id." },
+          "sort_order": { "type": "string", "description": "asc, desc." },
+          "was_paid": { "type": "boolean", "description": "Filter paid status." },
+          "was_shipped": { "type": "boolean", "description": "Filter shipped status." }
+        },
+        "required": ["shop_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/receipts",
+        "queryParams": {
+          "min_created": "$min_created",
+          "max_created": "$max_created",
+          "min_last_modified": "$min_last_modified",
+          "max_last_modified": "$max_last_modified",
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort_on": "$sort_on",
+          "sort_order": "$sort_order",
+          "was_paid": "$was_paid",
+          "was_shipped": "$was_shipped"
+        }
+      }
+    },
+    {
+      "name": "etsy_get_shop_receipt",
+      "description": "Fetch one receipt with buyer info, transactions[], shipping address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop ID." },
+          "receipt_id": { "type": "integer", "description": "Receipt ID." }
+        },
+        "required": ["shop_id", "receipt_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/receipts/{receipt_id}"
+      }
+    },
+    {
+      "name": "etsy_get_shop_reviews",
+      "description": "List reviews (transactions with feedback) for the shop.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop ID." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Offset." },
+          "min_created": { "type": "integer", "description": "Unix timestamp lower bound." }
+        },
+        "required": ["shop_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/reviews",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "min_created": "$min_created"
+        }
+      }
+    },
+    {
+      "name": "etsy_get_listings_by_shop_section",
+      "description": "List listings filtered by a shop section.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": { "type": "integer", "description": "Shop ID." },
+          "shop_section_ids": { "type": "string", "description": "Comma-separated section IDs." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Offset." }
+        },
+        "required": ["shop_id", "shop_section_ids"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/shop-sections/listings/active",
+        "queryParams": {
+          "shop_section_ids": "$shop_section_ids",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}
