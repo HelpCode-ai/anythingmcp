@@ -1,0 +1,157 @@
+{
+  "slug": "surveymonkey",
+  "name": "SurveyMonkey",
+  "description": "Drive SurveyMonkey from any AI agent: surveys, responses, collectors, contacts. 8 tools, OAuth2 Bearer auth.",
+  "instructions": "This connector uses the SurveyMonkey API v3 (api.surveymonkey.com/v3).\n\n**Setup**:\n1. Register at https://developer.surveymonkey.com → **Add new app** → Private app.\n2. Pick scopes: Surveys (Read), Responses (Read), Collectors (Read+Write), Contacts (Read+Write), Webhooks (Read+Write).\n3. Run the OAuth2 flow to obtain an access token. Set `SURVEYMONKEY_ACCESS_TOKEN`.\n4. SurveyMonkey tokens are LONG-LIVED — but can be revoked by user via app dashboard.\n\n**Authentication**: `Authorization: Bearer ${SURVEYMONKEY_ACCESS_TOKEN}`.\n\n**Survey vs Collector vs Response**:\n  - Survey: the question design.\n  - Collector: a distribution channel (weblink/email/popup/embed) attached to a survey.\n  - Response: a submission to a collector.\n\n**Quirky response shape**: each response has `pages[]` → `questions[]` → `answers[]`. Answer shape varies by question type (single_choice, multiple_choice, text, etc.). Cross-reference with `surveymonkey_get_survey_details` to map answer choice IDs to display text.\n\n**Pagination**: `?page=N&per_page=M` (max 1000 for some endpoints).\n\n**Rate limits**: 500 req/day on Free tier, scales with paid plans. 60 req/min throttle. On 429 honor Retry-After.\n\n**Out of scope here**: survey CRUD (use the SurveyMonkey designer), library themes, A/B testing, sentiment analysis built-ins.",
+  "region": "intl",
+  "category": "forms",
+  "icon": "surveymonkey",
+  "docsUrl": "https://developer.surveymonkey.com/api/v3/",
+  "requiredEnvVars": ["SURVEYMONKEY_ACCESS_TOKEN"],
+  "connector": {
+    "name": "SurveyMonkey v3",
+    "type": "REST",
+    "baseUrl": "https://api.surveymonkey.com/v3",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SURVEYMONKEY_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "surveymonkey_get_user",
+      "description": "Return the user the token belongs to.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/users/me" }
+    },
+    {
+      "name": "surveymonkey_list_surveys",
+      "description": "List surveys. Each returns id, title, nickname, href, question_count, response_count, date_created, date_modified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page." },
+          "per_page": { "type": "integer", "description": "Per page (max 1000)." },
+          "sort_by": { "type": "string", "description": "title or date_modified." },
+          "sort_order": { "type": "string", "description": "ASC or DESC." },
+          "start_modified_at": { "type": "string", "description": "ISO 8601 filter." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/surveys",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order",
+          "start_modified_at": "$start_modified_at"
+        }
+      }
+    },
+    {
+      "name": "surveymonkey_get_survey_details",
+      "description": "Fetch a survey's full structure with pages[].questions[].answers (choice IDs → display text). Required to interpret responses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "surveyId": { "type": "string", "description": "Survey ID." }
+        },
+        "required": ["surveyId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/surveys/{surveyId}/details" }
+    },
+    {
+      "name": "surveymonkey_list_survey_responses",
+      "description": "List responses to a survey (bulk endpoint includes full answer data). Filter by date range, collector, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "surveyId": { "type": "string", "description": "Survey ID." },
+          "page": { "type": "integer", "description": "Page." },
+          "per_page": { "type": "integer", "description": "Per page (max 100 for bulk)." },
+          "sort_by": { "type": "string", "description": "date_modified." },
+          "sort_order": { "type": "string", "description": "ASC or DESC." },
+          "start_created_at": { "type": "string", "description": "ISO 8601." },
+          "end_created_at": { "type": "string", "description": "ISO 8601." },
+          "collector_ids": { "type": "string", "description": "Comma-separated collector IDs to filter." },
+          "status": { "type": "string", "description": "completed, partial, disqualified, overquota." }
+        },
+        "required": ["surveyId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/surveys/{surveyId}/responses/bulk",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order",
+          "start_created_at": "$start_created_at",
+          "end_created_at": "$end_created_at",
+          "collector_ids": "$collector_ids",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "surveymonkey_get_response",
+      "description": "Fetch one response in full detail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "surveyId": { "type": "string", "description": "Survey ID." },
+          "responseId": { "type": "string", "description": "Response ID." }
+        },
+        "required": ["surveyId", "responseId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/surveys/{surveyId}/responses/{responseId}"
+      }
+    },
+    {
+      "name": "surveymonkey_list_collectors",
+      "description": "List collectors (distribution channels) attached to a survey.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "surveyId": { "type": "string", "description": "Survey ID." }
+        },
+        "required": ["surveyId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/surveys/{surveyId}/collectors" }
+    },
+    {
+      "name": "surveymonkey_list_contact_lists",
+      "description": "List contact lists in the account (used for email distribution collectors).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/contact_lists" }
+    },
+    {
+      "name": "surveymonkey_add_contact_to_list",
+      "description": "Add a contact to a contact list. Required: email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": { "type": "string", "description": "Contact list ID." },
+          "first_name": { "type": "string", "description": "First name." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "email": { "type": "string", "description": "Email (required)." },
+          "custom_fields": { "type": "object", "description": "Custom field map (defined in UI)." }
+        },
+        "required": ["listId", "email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contact_lists/{listId}/contacts",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email": "$email",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    }
+  ]
+}

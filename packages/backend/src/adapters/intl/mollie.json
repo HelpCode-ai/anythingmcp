@@ -1,0 +1,314 @@
+{
+  "slug": "mollie",
+  "name": "Mollie",
+  "description": "Drive Mollie (EU-friendly payments) from any AI agent: payments, refunds, customers, subscriptions, mandates, methods. 14 tools, Bearer auth.",
+  "instructions": "This connector uses the Mollie API v2 (docs.mollie.com/reference).\n\n**Setup**:\n1. Sign in to https://my.mollie.com → **Developers → API keys**.\n2. Use a **test key** (`test_...`) for development, **live key** (`live_...`) for production.\n3. Set `MOLLIE_API_KEY` accordingly. (Mollie tells you which environment via the key prefix.)\n\n**Authentication**: `Authorization: Bearer ${MOLLIE_API_KEY}`.\n\n**Amount format**: every monetary amount is `{currency: 'EUR', value: '10.00'}` — value is a STRING with exactly 2 decimals (or whatever the currency requires). Sending `value: 10` (number) errors.\n\n**Payment lifecycle**: created → open → pending → authorized → paid (success) | canceled | expired | failed.\n\n**Profile and mode**: every payment belongs to a profile (website). On Mollie you can have multiple profiles per account. The `profileId` is implicit (uses the default profile of the key); for multi-profile accounts pass it explicitly.\n\n**Subscriptions and mandates**: subscriptions need a mandate (a pre-authorized customer payment method). Workflow: create customer → first one-off payment with `sequenceType=first` → use the resulting mandate to create the subscription.\n\n**Webhooks** out of scope (Mollie pushes payment.* events to a URL you host).\n\n**Pagination**: cursor-based via `from=<resourceId>` + `limit` (max 250). Response has `_links.next.href` for next page.\n\n**Rate limits**: 250 req per 5 sec per IP. On 429 honor headers.\n\n**Out of scope here**: settlements, invoices, profile management, organizations, partners (Mollie Connect), permissions.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "mollie",
+  "docsUrl": "https://docs.mollie.com/reference/",
+  "requiredEnvVars": ["MOLLIE_API_KEY"],
+  "connector": {
+    "name": "Mollie v2",
+    "type": "REST",
+    "baseUrl": "https://api.mollie.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MOLLIE_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "mollie_list_methods",
+      "description": "List payment methods enabled for the profile. Each method has id (e.g. 'ideal', 'creditcard', 'paypal', 'klarna', 'banktransfer'), description, minimumAmount, maximumAmount, image, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sequenceType": { "type": "string", "description": "first, recurring, oneoff." },
+          "locale": { "type": "string", "description": "Locale for descriptions, e.g. 'en_US', 'nl_NL'." },
+          "amount_currency": { "type": "string", "description": "Optional: only methods accepting this currency." },
+          "amount_value": { "type": "string", "description": "Optional: only methods accepting this value (as decimal string)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/methods",
+        "queryParams": {
+          "sequenceType": "$sequenceType",
+          "locale": "$locale",
+          "amount[currency]": "$amount_currency",
+          "amount[value]": "$amount_value"
+        }
+      }
+    },
+    {
+      "name": "mollie_create_payment",
+      "description": "Create a payment. amount is {currency, value}. Always include `redirectUrl` (where the customer returns post-payment) and `webhookUrl` (where Mollie pushes status updates).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "object", "description": "{currency:'EUR', value:'10.00'} — value MUST be a string with 2 decimals." },
+          "description": { "type": "string", "description": "Shown to customer on Mollie checkout (≤255 chars)." },
+          "redirectUrl": { "type": "string", "description": "URL the customer is sent back to after payment." },
+          "webhookUrl": { "type": "string", "description": "Your endpoint that receives payment-status notifications." },
+          "method": { "type": "string", "description": "Restrict to a method (or array of methods). Omit to show Mollie's full checkout." },
+          "metadata": { "type": "object", "description": "Free-form key/value (≤1KB) — passes through unchanged." },
+          "locale": { "type": "string", "description": "Mollie checkout language: en_US, nl_NL, de_DE, fr_FR, es_ES, it_IT, pt_PT, pl_PL, ..." },
+          "customerId": { "type": "string", "description": "Mollie customer ID (for recurring or saved methods)." },
+          "sequenceType": { "type": "string", "description": "first (creates mandate for future recurring), recurring (uses existing mandate), oneoff (default)." },
+          "mandateId": { "type": "string", "description": "Mandate ID for recurring." }
+        },
+        "required": ["amount", "description"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments",
+        "bodyMapping": {
+          "amount": "$amount",
+          "description": "$description",
+          "redirectUrl": "$redirectUrl",
+          "webhookUrl": "$webhookUrl",
+          "method": "$method",
+          "metadata": "$metadata",
+          "locale": "$locale",
+          "customerId": "$customerId",
+          "sequenceType": "$sequenceType",
+          "mandateId": "$mandateId"
+        }
+      }
+    },
+    {
+      "name": "mollie_get_payment",
+      "description": "Fetch a payment by ID. Returns status + _links.checkout (URL to send customer to) for pending payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentId": { "type": "string", "description": "Payment ID (starts with 'tr_')." }
+        },
+        "required": ["paymentId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/payments/{paymentId}" }
+    },
+    {
+      "name": "mollie_list_payments",
+      "description": "List payments. Filter by profile, customer, status, mandate. Cursor-paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "Cursor: payment ID to start from." },
+          "limit": { "type": "integer", "description": "Max per page (default 50, max 250)." },
+          "profileId": { "type": "string", "description": "Filter by profile." },
+          "testmode": { "type": "boolean", "description": "true for test, false for live (defaults to key's environment)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "from": "$from",
+          "limit": "$limit",
+          "profileId": "$profileId",
+          "testmode": "$testmode"
+        }
+      }
+    },
+    {
+      "name": "mollie_cancel_payment",
+      "description": "Cancel a payment in 'open' state (before customer pays). After 'paid' use refund instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentId": { "type": "string", "description": "Payment ID." }
+        },
+        "required": ["paymentId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/payments/{paymentId}" }
+    },
+    {
+      "name": "mollie_create_refund",
+      "description": "Refund a paid payment. Full refund: omit amount. Partial: pass amount {currency,value}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentId": { "type": "string", "description": "Payment ID to refund." },
+          "amount": { "type": "object", "description": "{currency,value} — omit for full refund." },
+          "description": { "type": "string", "description": "Refund description (shown on bank statement when possible)." },
+          "metadata": { "type": "object", "description": "Free-form metadata." }
+        },
+        "required": ["paymentId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/{paymentId}/refunds",
+        "bodyMapping": {
+          "amount": "$amount",
+          "description": "$description",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "mollie_list_refunds",
+      "description": "List refunds (across all payments by default; pass paymentId for per-payment).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentId": { "type": "string", "description": "Optional: limit to one payment." },
+          "from": { "type": "string", "description": "Cursor." },
+          "limit": { "type": "integer", "description": "Max per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/refunds",
+        "queryParams": {
+          "paymentId": "$paymentId",
+          "from": "$from",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "mollie_create_customer",
+      "description": "Create a Mollie customer (required for recurring subscriptions, optional for one-off payments). Customer is the durable identity across payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Customer name." },
+          "email": { "type": "string", "description": "Email." },
+          "locale": { "type": "string", "description": "Default locale for emails/checkout." },
+          "metadata": { "type": "object", "description": "Free-form metadata." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "locale": "$locale",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "mollie_list_customers",
+      "description": "List customers. Cursor-paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "Cursor." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": { "from": "$from", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "mollie_create_subscription",
+      "description": "Create a subscription for a customer. Required: customerId + amount + interval. interval examples: '1 month', '14 days', '1 year'. Requires the customer to have an active mandate (created via a `sequenceType=first` payment).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string", "description": "Customer ID (starts with 'cst_')." },
+          "amount": { "type": "object", "description": "{currency, value}." },
+          "times": { "type": "integer", "description": "Optional max charges (omit for unlimited)." },
+          "interval": { "type": "string", "description": "Charge cadence: '1 month', '14 days', '1 year'." },
+          "startDate": { "type": "string", "description": "YYYY-MM-DD when first charge happens." },
+          "description": { "type": "string", "description": "Shown on each invoice." },
+          "method": { "type": "string", "description": "Restrict to a method (e.g. 'directdebit')." },
+          "mandateId": { "type": "string", "description": "Mandate to use (defaults to customer's most recent)." },
+          "webhookUrl": { "type": "string", "description": "Endpoint for subscription event notifications." },
+          "metadata": { "type": "object", "description": "Free-form metadata." }
+        },
+        "required": ["customerId", "amount", "interval", "description"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customerId}/subscriptions",
+        "bodyMapping": {
+          "amount": "$amount",
+          "times": "$times",
+          "interval": "$interval",
+          "startDate": "$startDate",
+          "description": "$description",
+          "method": "$method",
+          "mandateId": "$mandateId",
+          "webhookUrl": "$webhookUrl",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "mollie_cancel_subscription",
+      "description": "Cancel a subscription (stops future charges immediately).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string", "description": "Customer ID." },
+          "subscriptionId": { "type": "string", "description": "Subscription ID (starts with 'sub_')." }
+        },
+        "required": ["customerId", "subscriptionId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/customers/{customerId}/subscriptions/{subscriptionId}"
+      }
+    },
+    {
+      "name": "mollie_list_subscriptions",
+      "description": "List subscriptions for a customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string", "description": "Customer ID." },
+          "from": { "type": "string", "description": "Cursor." },
+          "limit": { "type": "integer", "description": "Per page." }
+        },
+        "required": ["customerId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customerId}/subscriptions",
+        "queryParams": { "from": "$from", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "mollie_list_mandates",
+      "description": "List mandates (pre-authorized payment methods) on a customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string", "description": "Customer ID." },
+          "from": { "type": "string", "description": "Cursor." },
+          "limit": { "type": "integer", "description": "Per page." }
+        },
+        "required": ["customerId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customerId}/mandates",
+        "queryParams": { "from": "$from", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "mollie_revoke_mandate",
+      "description": "Revoke a mandate (stops future recurring charges using it).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string", "description": "Customer ID." },
+          "mandateId": { "type": "string", "description": "Mandate ID (mdt_*)." }
+        },
+        "required": ["customerId", "mandateId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/customers/{customerId}/mandates/{mandateId}"
+      }
+    }
+  ]
+}
