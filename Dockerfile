@@ -48,6 +48,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/backend/node_modules ./packages/backend/node_modules
 COPY package.json package-lock.json ./
 COPY packages/backend/ ./packages/backend/
+# The backend's `prebuild` hook runs scripts/regenerate-catalog.mjs to keep
+# catalog.ts in sync with the adapter JSON files. The script lives outside
+# packages/backend, so we copy it into the image (one tiny file, no deps).
+COPY scripts/regenerate-catalog.mjs ./scripts/regenerate-catalog.mjs
 
 WORKDIR /app/packages/backend
 # Dummy URL so prisma.config.ts can resolve DATABASE_URL at generate time
