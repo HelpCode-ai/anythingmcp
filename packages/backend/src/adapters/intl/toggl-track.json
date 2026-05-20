@@ -1,0 +1,175 @@
+{
+  "slug": "toggl-track",
+  "name": "Toggl Track",
+  "description": "Manage Toggl Track (time entries, projects, clients, tags, workspaces) from any AI agent. 9 tools, basic-auth with API token.",
+  "instructions": "This connector wraps the Toggl Track API v9 (api.track.toggl.com/api/v9).\n\n**Setup**:\n1. Log into https://track.toggl.com → bottom-left avatar → **Profile settings** → scroll to **API Token** → reveal/copy.\n2. Set `TOGGL_API_TOKEN`.\n\n**Authentication**: HTTP Basic, with API token as the username and the literal string `api_token` as the password:\n  `Authorization: Basic base64(TOKEN:api_token)`\nThe adapter sets this automatically via BASIC_AUTH (username=token, password=api_token). DO NOT pass real user/password — Toggl only accepts the token-pair.\n\n**Workspace IDs**: Toggl Track is workspace-scoped. Most endpoints need a `workspace_id`. Use `toggl_track_me` first — its response contains `default_workspace_id` and `workspaces[].id`.\n\n**Running timer**: Toggl allows exactly ONE running entry per user at a time. Starting a new one stops any prior. To start, POST a time entry with `duration: -1` and `start: <ISO now>`. To stop, PATCH the entry to set `stop: <ISO>` and `duration: <seconds>`.\n\n**Dates**: ISO 8601 with timezone (`2026-05-20T14:30:00+00:00`). Toggl is strict about timezone — naive datetimes get rejected.\n\n**Rate limits**: 1 req/s per IP soft, burst tolerated. 429 with `Retry-After` for hard throttling.\n\n**Out of scope here**: Toggl Reports v3 (different host, paid plans get more — could be a sibling adapter), team management, billing.",
+  "region": "intl",
+  "category": "time-tracking",
+  "icon": "toggl-track",
+  "docsUrl": "https://engineering.toggl.com/docs/",
+  "requiredEnvVars": ["TOGGL_API_TOKEN"],
+  "connector": {
+    "name": "Toggl Track API v9",
+    "type": "REST",
+    "baseUrl": "https://api.track.toggl.com/api/v9",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{TOGGL_API_TOKEN}}",
+      "password": "api_token"
+    }
+  },
+  "tools": [
+    {
+      "name": "toggl_track_me",
+      "description": "Get the authenticated user including default workspace ID, all workspaces, default project/tag. Use this first to find the workspace ID needed by other tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with_related_data": { "type": "boolean", "description": "If true, include projects/clients/tags inline (heavier response)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me",
+        "queryParams": { "with_related_data": "$with_related_data" }
+      }
+    },
+    {
+      "name": "toggl_track_list_workspaces",
+      "description": "List workspaces the user belongs to.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me/workspaces" }
+    },
+    {
+      "name": "toggl_track_list_clients",
+      "description": "List clients in a workspace.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "integer", "description": "Workspace ID." }
+        },
+        "required": ["workspace_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/clients"
+      }
+    },
+    {
+      "name": "toggl_track_list_projects",
+      "description": "List projects in a workspace. Returns id, name, client_id, color, billable, active, estimated_hours, hourly_rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "integer", "description": "Workspace ID." },
+          "active": { "type": "boolean", "description": "Filter active." },
+          "billable": { "type": "boolean", "description": "Filter billable." },
+          "name": { "type": "string", "description": "Filter by name substring." }
+        },
+        "required": ["workspace_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/projects",
+        "queryParams": {
+          "active": "$active",
+          "billable": "$billable",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "toggl_track_get_current_entry",
+      "description": "Return the currently running time entry (if any), else null.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me/time_entries/current" }
+    },
+    {
+      "name": "toggl_track_list_time_entries",
+      "description": "List time entries for the current user. Filter by start/end date window. Returns each entry with id, description, project_id, billable, duration (seconds, negative for running), start/stop.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": { "type": "string", "description": "ISO 8601 datetime or date." },
+          "end_date": { "type": "string", "description": "ISO 8601 datetime or date." },
+          "before": { "type": "string", "description": "ISO 8601: only entries with stop_time before this." },
+          "since": { "type": "integer", "description": "UNIX timestamp; only entries modified after." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/time_entries",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "before": "$before",
+          "since": "$since"
+        }
+      }
+    },
+    {
+      "name": "toggl_track_create_time_entry",
+      "description": "Create a new time entry. Pass `duration: -1` + `start` (ISO 8601) to start a running timer; pass positive duration (seconds) + start to log a completed entry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "integer", "description": "Workspace ID." },
+          "description": { "type": "string", "description": "What you're working on." },
+          "project_id": { "type": "integer", "description": "Project ID (optional)." },
+          "tags": { "type": "array", "description": "Array of tag name strings." },
+          "start": { "type": "string", "description": "ISO 8601 datetime with timezone." },
+          "duration": { "type": "integer", "description": "Seconds. -1 to start a running timer." },
+          "billable": { "type": "boolean", "description": "Mark billable." },
+          "created_with": { "type": "string", "description": "Client identifier (defaults to 'AnythingMCP')." }
+        },
+        "required": ["workspace_id", "start", "duration"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workspaces/{workspace_id}/time_entries",
+        "bodyMapping": {
+          "workspace_id": "$workspace_id",
+          "description": "$description",
+          "project_id": "$project_id",
+          "tags": "$tags",
+          "start": "$start",
+          "duration": "$duration",
+          "billable": "$billable",
+          "created_with": "$created_with"
+        }
+      }
+    },
+    {
+      "name": "toggl_track_stop_time_entry",
+      "description": "Stop a running time entry. Sets stop=now and converts duration to positive seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "integer", "description": "Workspace ID." },
+          "time_entry_id": { "type": "integer", "description": "Time entry ID to stop." }
+        },
+        "required": ["workspace_id", "time_entry_id"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/workspaces/{workspace_id}/time_entries/{time_entry_id}/stop"
+      }
+    },
+    {
+      "name": "toggl_track_delete_time_entry",
+      "description": "Delete a time entry permanently.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "integer", "description": "Workspace ID." },
+          "time_entry_id": { "type": "integer", "description": "Time entry ID." }
+        },
+        "required": ["workspace_id", "time_entry_id"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/workspaces/{workspace_id}/time_entries/{time_entry_id}"
+      }
+    }
+  ]
+}

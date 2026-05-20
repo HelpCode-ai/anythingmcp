@@ -1,0 +1,253 @@
+{
+  "slug": "gorgias",
+  "name": "Gorgias",
+  "description": "Manage Gorgias (e-commerce helpdesk) tickets, messages, customers, integrations from any AI agent. 10 tools, basic-auth.",
+  "instructions": "This connector wraps the Gorgias REST API (per-subdomain).\n\n**Setup**:\n1. Log into your Gorgias dashboard at https://YOUR_SUBDOMAIN.gorgias.com → **Settings → REST API**.\n2. Click **Add new API Key**. The page shows your **email** (the account email) and a freshly-generated **API key**.\n3. Set `GORGIAS_SUBDOMAIN` (just the subdomain part, e.g. `mystore`), `GORGIAS_EMAIL`, `GORGIAS_API_KEY`.\n\n**Authentication**: HTTP Basic with `username = ${GORGIAS_EMAIL}` and `password = ${GORGIAS_API_KEY}`. The adapter wires this via BASIC_AUTH.\n\n**Per-tenant baseUrl**: Gorgias is hosted per-subdomain — `https://${GORGIAS_SUBDOMAIN}.gorgias.com/api`. baseUrl uses {{}} substitution at import time.\n\n**Ticket model**: `Ticket → Messages[]`. A ticket is a conversation thread with a customer; each message is one inbound/outbound email/chat/SMS. To reply, POST a new message to the ticket; to close, PUT the ticket with `status: 'closed'`.\n\n**Channels**: Gorgias unifies email, chat, SMS, Instagram DM, Facebook DM, Shopify, voice. `via` field on each message identifies the channel.\n\n**Pagination**: cursor-based. List endpoints return `meta.next_cursor` and `meta.previous_cursor`. Use `cursor` query param for the next page; `limit` controls page size (max 100).\n\n**Search**: the `tickets` endpoint accepts `view_id` to filter by saved view, and various direct filters. For more complex queries use the dedicated `/views/{id}/items` endpoint.\n\n**Rate limits**: 40 req/s per account; 2 concurrent connections. 429 returns `Retry-After` in seconds.\n\n**Out of scope here**: macro CRUD beyond list, rule management, satisfaction surveys, voice call orchestration.",
+  "region": "intl",
+  "category": "support",
+  "icon": "gorgias",
+  "docsUrl": "https://developers.gorgias.com/reference/introduction",
+  "requiredEnvVars": ["GORGIAS_SUBDOMAIN", "GORGIAS_EMAIL", "GORGIAS_API_KEY"],
+  "connector": {
+    "name": "Gorgias REST API",
+    "type": "REST",
+    "baseUrl": "https://{{GORGIAS_SUBDOMAIN}}.gorgias.com/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{GORGIAS_EMAIL}}",
+      "password": "{{GORGIAS_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "gorgias_list_tickets",
+      "description": "List tickets. Filter by status, channel, assigned user, customer, view. Returns each ticket's id, subject, status, channel, customer, assignee_user, last_message_datetime, created/updated timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "view_id": { "type": "integer", "description": "Filter to a saved view's tickets." },
+          "customer_id": { "type": "integer", "description": "Filter to one customer." },
+          "assignee_user_id": { "type": "integer", "description": "Filter to one assigned user." },
+          "status": { "type": "string", "description": "open, closed, resolved." },
+          "channel": { "type": "string", "description": "email, chat, sms, etc." },
+          "cursor": { "type": "string", "description": "Pagination cursor." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "order_by": { "type": "string", "description": "created_datetime, updated_datetime, last_message_datetime — append :asc or :desc." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets",
+        "queryParams": {
+          "view_id": "$view_id",
+          "customer_id": "$customer_id",
+          "assignee_user_id": "$assignee_user_id",
+          "status": "$status",
+          "channel": "$channel",
+          "cursor": "$cursor",
+          "limit": "$limit",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "gorgias_get_ticket",
+      "description": "Get a single ticket by ID with its meta (does NOT include messages — use gorgias_list_ticket_messages).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": { "type": "integer", "description": "Ticket ID." }
+        },
+        "required": ["ticket_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/tickets/{ticket_id}" }
+    },
+    {
+      "name": "gorgias_list_ticket_messages",
+      "description": "List messages on a ticket (the conversation thread). Each message has body_text, body_html, sender, receiver, via (channel), source.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": { "type": "integer", "description": "Ticket ID." },
+          "cursor": { "type": "string", "description": "Pagination cursor." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." }
+        },
+        "required": ["ticket_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticket_id}/messages",
+        "queryParams": { "cursor": "$cursor", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "gorgias_create_ticket",
+      "description": "Create a new ticket. Must include at least one message — Gorgias rejects empty tickets. Common pattern: pass `customer.email` + `messages: [{...}]`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": { "type": "string", "description": "Ticket subject." },
+          "status": { "type": "string", "description": "open, closed, resolved." },
+          "channel": { "type": "string", "description": "email, chat, sms, api." },
+          "customer": { "type": "object", "description": "Customer object {email, firstname, lastname} OR {id}." },
+          "messages": { "type": "array", "description": "Array of message objects with body_text + sender + receiver + channel + via." },
+          "tags": { "type": "array", "description": "Array of tag objects {name}." }
+        },
+        "required": ["channel", "customer", "messages"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets",
+        "bodyMapping": {
+          "subject": "$subject",
+          "status": "$status",
+          "channel": "$channel",
+          "customer": "$customer",
+          "messages": "$messages",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "gorgias_reply_to_ticket",
+      "description": "Add a reply message to an existing ticket. Pass `body_text` + `sender` (your user) + `receiver` (the customer) + `channel`. Use `via: 'help-center'` to send as outbound.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": { "type": "integer", "description": "Ticket ID." },
+          "body_text": { "type": "string", "description": "Plain-text body." },
+          "body_html": { "type": "string", "description": "HTML body (preferred for rich content)." },
+          "sender": { "type": "object", "description": "{id} of the Gorgias user sending." },
+          "receiver": { "type": "object", "description": "{id} of the customer." },
+          "channel": { "type": "string", "description": "email, chat, sms." },
+          "from_agent": { "type": "boolean", "description": "true for outbound." },
+          "via": { "type": "string", "description": "Source: 'help-center', 'api', etc." }
+        },
+        "required": ["ticket_id", "body_text", "sender", "channel"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{ticket_id}/messages",
+        "bodyMapping": {
+          "body_text": "$body_text",
+          "body_html": "$body_html",
+          "sender": "$sender",
+          "receiver": "$receiver",
+          "channel": "$channel",
+          "from_agent": "$from_agent",
+          "via": "$via"
+        }
+      }
+    },
+    {
+      "name": "gorgias_update_ticket",
+      "description": "Update a ticket's status, assignee, tags, custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": { "type": "integer", "description": "Ticket ID." },
+          "status": { "type": "string", "description": "open, closed, resolved." },
+          "assignee_user": { "type": "object", "description": "{id} of the Gorgias user." },
+          "tags": { "type": "array", "description": "Array of {name} objects." },
+          "priority": { "type": "string", "description": "low, normal, high, urgent." },
+          "subject": { "type": "string", "description": "New subject." }
+        },
+        "required": ["ticket_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tickets/{ticket_id}",
+        "bodyMapping": {
+          "status": "$status",
+          "assignee_user": "$assignee_user",
+          "tags": "$tags",
+          "priority": "$priority",
+          "subject": "$subject"
+        }
+      }
+    },
+    {
+      "name": "gorgias_list_customers",
+      "description": "List customers. Filter by email, external_id. Returns id, email, firstname, lastname, channels (linked accounts).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Exact match on email." },
+          "external_id": { "type": "string", "description": "Exact match on external (Shopify etc.) ID." },
+          "cursor": { "type": "string", "description": "Pagination cursor." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "email": "$email",
+          "external_id": "$external_id",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "gorgias_get_customer",
+      "description": "Get a single customer by ID with full profile and integration data (e.g. Shopify orders count).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": { "type": "integer", "description": "Customer ID." }
+        },
+        "required": ["customer_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/customers/{customer_id}" }
+    },
+    {
+      "name": "gorgias_create_customer",
+      "description": "Create a customer record. Pass at least email + firstname + lastname.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email." },
+          "firstname": { "type": "string", "description": "First name." },
+          "lastname": { "type": "string", "description": "Last name." },
+          "external_id": { "type": "string", "description": "Optional external system ID (Shopify customer ID etc.)." },
+          "language": { "type": "string", "description": "ISO 639-1 language code." },
+          "timezone": { "type": "string", "description": "TZ database name." },
+          "channels": { "type": "array", "description": "Additional channel objects: [{type:'email', address:'...'},{type:'phone', address:'+1...'}]." },
+          "meta": { "type": "object", "description": "Free-form custom metadata object." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "email": "$email",
+          "firstname": "$firstname",
+          "lastname": "$lastname",
+          "external_id": "$external_id",
+          "language": "$language",
+          "timezone": "$timezone",
+          "channels": "$channels",
+          "meta": "$meta"
+        }
+      }
+    },
+    {
+      "name": "gorgias_list_users",
+      "description": "List agents in your Gorgias workspace (the people on your team — sender IDs for reply messages).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": { "type": "string", "description": "Pagination cursor." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": { "cursor": "$cursor", "limit": "$limit" }
+      }
+    }
+  ]
+}

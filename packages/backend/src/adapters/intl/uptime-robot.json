@@ -1,0 +1,194 @@
+{
+  "slug": "uptime-robot",
+  "name": "UptimeRobot",
+  "description": "Manage UptimeRobot (uptime monitoring) monitors, alert contacts, maintenance windows, public status pages from any AI agent. 8 tools, API-key auth.",
+  "instructions": "This connector wraps the UptimeRobot API v2 (api.uptimerobot.com/v2).\n\n**Setup**:\n1. Sign in to https://uptimerobot.com → **My Settings → API Settings**.\n2. Generate the **Main API Key** (full access to your monitors) OR a per-monitor read-only key. Most users want the Main key.\n3. Set `UPTIMEROBOT_API_KEY`.\n\n**Authentication**: every request POSTs to /v2/* with `api_key=...` injected as a query parameter on the URL. The API accepts the key either in the URL or in the body — this adapter uses the URL so each tool's body remains clean form-encoded params. We also always send `format=json` so responses are JSON instead of XML.\n\n**Monitor types** (integer codes):\n- 1: HTTP(s)\n- 2: Keyword (HTTP body must/must-not contain string)\n- 3: Ping (ICMP)\n- 4: Port (TCP)\n- 5: Heartbeat (cron-style — your job pings UptimeRobot every N minutes)\n\n**Status codes** (integer):\n- 0: paused\n- 1: not checked yet\n- 2: up\n- 8: seems down\n- 9: down\n\n**Pagination**: `offset` (0-based) + `limit` (max 50). Total returned in the `pagination.total` field.\n\n**Rate limits**: 10 req/min per API key on the free plan; higher on paid. 429 has no Retry-After — back off 6s.\n\n**Out of scope here**: subscription management, agent / probe location selection (paid feature), white-label status page customization.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "uptime-robot",
+  "docsUrl": "https://uptimerobot.com/api/",
+  "requiredEnvVars": ["UPTIMEROBOT_API_KEY"],
+  "connector": {
+    "name": "UptimeRobot API v2",
+    "type": "REST",
+    "baseUrl": "https://api.uptimerobot.com/v2",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "api_key": "{{UPTIMEROBOT_API_KEY}}",
+      "format": "json"
+    }
+  },
+  "tools": [
+    {
+      "name": "uptimerobot_get_account_details",
+      "description": "Returns account info: email, monitor_limit, monitor_interval, up_monitors, down_monitors, paused_monitors.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "POST", "path": "/getAccountDetails" }
+    },
+    {
+      "name": "uptimerobot_get_monitors",
+      "description": "List monitors. Optional filters by id, status, search string. Use `logs=1` to include up/down event history; `response_times=1` for response-time series; both add latency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitors": { "type": "string", "description": "Comma-separated monitor IDs to fetch (default: all)." },
+          "types": { "type": "string", "description": "Comma-separated type codes (1-5)." },
+          "statuses": { "type": "string", "description": "Comma-separated status codes (0,1,2,8,9)." },
+          "search": { "type": "string", "description": "Substring filter against friendly_name or url." },
+          "logs": { "type": "integer", "description": "1 to include event log; 0 to skip." },
+          "response_times": { "type": "integer", "description": "1 to include response time series." },
+          "offset": { "type": "integer", "description": "Pagination offset (0-based)." },
+          "limit": { "type": "integer", "description": "Page size (max 50)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getMonitors",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "monitors": "$monitors",
+          "types": "$types",
+          "statuses": "$statuses",
+          "search": "$search",
+          "logs": "$logs",
+          "response_times": "$response_times",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "uptimerobot_new_monitor",
+      "description": "Create a new monitor. `type` is required (1=HTTP, 2=Keyword, 3=Ping, 4=Port, 5=Heartbeat). For type=2 you must also supply `keyword_type` (1=exists, 2=not exists) + `keyword_value`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "friendly_name": { "type": "string", "description": "Display name." },
+          "url": { "type": "string", "description": "URL or IP to monitor." },
+          "type": { "type": "integer", "description": "1=HTTP, 2=Keyword, 3=Ping, 4=Port, 5=Heartbeat." },
+          "interval": { "type": "integer", "description": "Check interval in seconds (60-86400). Free plan minimum 300." },
+          "timeout": { "type": "integer", "description": "Timeout in seconds." },
+          "port": { "type": "integer", "description": "Port number (required if type=4)." },
+          "keyword_type": { "type": "integer", "description": "1=exists, 2=not exists (required if type=2)." },
+          "keyword_value": { "type": "string", "description": "Keyword to look for (required if type=2)." },
+          "alert_contacts": { "type": "string", "description": "Format: '<contactId>_<threshold>_<recurrence>-<contactId2>_..'." }
+        },
+        "required": ["friendly_name", "url", "type"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/newMonitor",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "friendly_name": "$friendly_name",
+          "url": "$url",
+          "type": "$type",
+          "interval": "$interval",
+          "timeout": "$timeout",
+          "port": "$port",
+          "keyword_type": "$keyword_type",
+          "keyword_value": "$keyword_value",
+          "alert_contacts": "$alert_contacts"
+        }
+      }
+    },
+    {
+      "name": "uptimerobot_edit_monitor",
+      "description": "Edit an existing monitor. Pass `id` + any field you want to update.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Monitor ID." },
+          "friendly_name": { "type": "string", "description": "New display name." },
+          "url": { "type": "string", "description": "New URL." },
+          "interval": { "type": "integer", "description": "New check interval." },
+          "status": { "type": "integer", "description": "0 to pause, 1 to resume." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/editMonitor",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id": "$id",
+          "friendly_name": "$friendly_name",
+          "url": "$url",
+          "interval": "$interval",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "uptimerobot_delete_monitor",
+      "description": "Permanently delete a monitor. Irreversible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Monitor ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deleteMonitor",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": { "id": "$id" }
+      }
+    },
+    {
+      "name": "uptimerobot_get_alert_contacts",
+      "description": "List configured alert contacts (email, webhook, Slack, Telegram, SMS).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alert_contacts": { "type": "string", "description": "Comma-separated IDs (default: all)." },
+          "offset": { "type": "integer", "description": "Pagination offset." },
+          "limit": { "type": "integer", "description": "Page size." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getAlertContacts",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "alert_contacts": "$alert_contacts",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "uptimerobot_get_mwindows",
+      "description": "List maintenance windows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mwindows": { "type": "string", "description": "Comma-separated maintenance window IDs (default: all)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getMWindows",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": { "mwindows": "$mwindows" }
+      }
+    },
+    {
+      "name": "uptimerobot_get_psps",
+      "description": "List public status pages (PSPs) configured for this account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "psps": { "type": "string", "description": "Comma-separated PSP IDs (default: all)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getPSPs",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": { "psps": "$psps" }
+      }
+    }
+  ]
+}

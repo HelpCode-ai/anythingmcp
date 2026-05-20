@@ -1,0 +1,166 @@
+{
+  "slug": "bugsnag",
+  "name": "Bugsnag",
+  "description": "Read & triage Bugsnag (now SmartBear Insight Hub) errors, projects, organizations, releases, pivots from any AI agent. 9 tools, token auth.",
+  "instructions": "This connector wraps the Bugsnag Data Access API (api.bugsnag.com).\n\n**Setup**:\n1. Log into https://app.bugsnag.com → bottom-left profile → **My Account → Personal Auth Tokens** → Generate.\n2. Pick the scopes you need (`project errors`, `project events`, `project release groups`, `project comments`, `project pivots`).\n3. Set `BUGSNAG_AUTH_TOKEN`.\n\n**Authentication**: every request sends `Authorization: token ${BUGSNAG_AUTH_TOKEN}` AND `X-Version: 2`. The adapter wires both for you.\n\n**Hierarchy**: `Organization → Project → Error → Event(s)`. An \"Error\" is the deduplicated group; \"Events\" are the individual occurrences with stack trace + breadcrumbs + user. To get useful debug info you usually want the latest event of an error.\n\n**Bootstrapping the IDs**:\n1. `bugsnag_list_organizations` → grab `org_id`.\n2. `bugsnag_list_projects` → grab `project_id`.\n3. `bugsnag_list_errors` → grab `error_id`.\n4. `bugsnag_get_event` → full stack trace.\n\n**Filter syntax**: error/event list endpoints accept `filters[field][type][operator]=value` repeated. Common: `filters[event.since][][type]=eq&filters[event.since][][value]=7d` (last 7 days), `filters[error.status][][type]=eq&filters[error.status][][value]=open`. Stick to a few common patterns in tool args — full grammar lives at https://bugsnagapiv2.docs.apiary.io/.\n\n**Rate limits**: 60 req/min per token, 5k/hour. 429 with `Retry-After` header.\n\n**Out of scope here**: project CRUD, account billing, integrations setup, deploys via REST (use the dedicated build reporter SDK instead).",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "bugsnag",
+  "docsUrl": "https://bugsnagapiv2.docs.apiary.io/",
+  "requiredEnvVars": ["BUGSNAG_AUTH_TOKEN"],
+  "connector": {
+    "name": "Bugsnag Data Access API v2",
+    "type": "REST",
+    "baseUrl": "https://api.bugsnag.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "token {{BUGSNAG_AUTH_TOKEN}}",
+      "extraHeaders": {
+        "X-Version": "2"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "bugsnag_current_user",
+      "description": "Return the user account the token belongs to: id, name, email, created_at.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/user" }
+    },
+    {
+      "name": "bugsnag_list_organizations",
+      "description": "List orgs the user belongs to. Each has id, name, slug, billing/plan info, creator. Most users have exactly one.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/user/organizations" }
+    },
+    {
+      "name": "bugsnag_list_projects",
+      "description": "List projects inside an org. Returns id, slug, name, api_key, type (e.g. js, node, ruby), open_error_count, urls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": { "type": "string", "description": "Org ID from bugsnag_list_organizations." },
+          "per_page": { "type": "integer", "description": "Per page (max 100)." },
+          "q": { "type": "string", "description": "Optional name filter." }
+        },
+        "required": ["organization_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id}/projects",
+        "queryParams": { "per_page": "$per_page", "q": "$q" }
+      }
+    },
+    {
+      "name": "bugsnag_list_errors",
+      "description": "List errors in a project. Errors are deduplicated stack-trace groups. Each has id, error_class, message, context, status (open/fixed/snoozed/ignored), severity, events count, users count, first_seen, last_seen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string", "description": "Project ID." },
+          "sort": { "type": "string", "description": "first_seen, last_seen, users, events, unsorted." },
+          "direction": { "type": "string", "description": "asc / desc." },
+          "per_page": { "type": "integer", "description": "Per page (max 30)." },
+          "filters_status": { "type": "string", "description": "Shortcut filter by status: open, fixed, snoozed, ignored. Internally adds filters[error.status]." },
+          "filters_since": { "type": "string", "description": "Shortcut filter by time window, e.g. '7d', '24h', '1m'. Internally adds filters[event.since]." }
+        },
+        "required": ["project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/errors",
+        "queryParams": {
+          "sort": "$sort",
+          "direction": "$direction",
+          "per_page": "$per_page",
+          "filters[error.status][][type]": "eq",
+          "filters[error.status][][value]": "$filters_status",
+          "filters[event.since][][type]": "eq",
+          "filters[event.since][][value]": "$filters_since"
+        }
+      }
+    },
+    {
+      "name": "bugsnag_get_error",
+      "description": "Get a single error by ID with its full metadata, severity, status, top stack frame.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "error_id": { "type": "string", "description": "Error ID." }
+        },
+        "required": ["error_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/errors/{error_id}" }
+    },
+    {
+      "name": "bugsnag_list_events",
+      "description": "List events (individual occurrences) for an error. Each event has the full stack, breadcrumbs, user context, device info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "error_id": { "type": "string", "description": "Error ID." },
+          "per_page": { "type": "integer", "description": "Per page (max 30)." },
+          "full_reports": { "type": "boolean", "description": "If true, include full stack + breadcrumbs in each event (slower)." }
+        },
+        "required": ["error_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/errors/{error_id}/events",
+        "queryParams": { "per_page": "$per_page", "full_reports": "$full_reports" }
+      }
+    },
+    {
+      "name": "bugsnag_get_event",
+      "description": "Get a single event by ID — full stack trace, breadcrumbs, user, app, device, request, custom metadata. This is the most useful tool for debugging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string", "description": "Project ID." },
+          "event_id": { "type": "string", "description": "Event ID." }
+        },
+        "required": ["project_id", "event_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/events/{event_id}"
+      }
+    },
+    {
+      "name": "bugsnag_update_error",
+      "description": "Update the status/severity of an error: fix, ignore, snooze, reopen, change severity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "error_id": { "type": "string", "description": "Error ID." },
+          "operation": { "type": "string", "description": "fix, snooze, ignore, open, override_severity." },
+          "severity": { "type": "string", "description": "If operation=override_severity: error, warning, info." }
+        },
+        "required": ["error_id", "operation"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/errors/{error_id}",
+        "bodyMapping": { "operation": "$operation", "severity": "$severity" }
+      }
+    },
+    {
+      "name": "bugsnag_list_releases",
+      "description": "List releases for a project. Useful for cross-referencing an error spike with a deploy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string", "description": "Project ID." },
+          "per_page": { "type": "integer", "description": "Per page (max 100)." }
+        },
+        "required": ["project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/releases",
+        "queryParams": { "per_page": "$per_page" }
+      }
+    }
+  ]
+}

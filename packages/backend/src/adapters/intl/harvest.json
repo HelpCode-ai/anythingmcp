@@ -1,0 +1,260 @@
+{
+  "slug": "harvest",
+  "name": "Harvest",
+  "description": "Manage Harvest (time tracking, projects, clients, invoices, expenses) from any AI agent. 10 tools, Bearer auth with account-ID header.",
+  "instructions": "This connector wraps the Harvest API v2 (api.harvestapp.com/v2).\n\n**Setup**:\n1. Log into https://id.getharvest.com → bottom-left avatar → **Developers → Create new personal access token**.\n2. Copy the **token** and the **Account ID** shown on the same page (a 7-digit number like `1234567`).\n3. Set both: `HARVEST_ACCESS_TOKEN` and `HARVEST_ACCOUNT_ID`.\n\n**Authentication**: every request requires BOTH:\n- `Authorization: Bearer ${HARVEST_ACCESS_TOKEN}`\n- `Harvest-Account-Id: ${HARVEST_ACCOUNT_ID}`\n- A `User-Agent` header (Harvest API requires it — the adapter sets `AnythingMCP (support@anythingmcp.com)`).\n\nMissing the account header returns `401 Unauthorized` even with a valid token — confusing but documented.\n\n**Hierarchy**: `Client → Project → Task assignment → Time entry`. To log time, you need the project ID + task ID. List projects to find IDs.\n\n**Dates** are ISO 8601 (`2026-05-20`). `spent_date` on a time entry is required.\n\n**Pagination**: `page` (1-based) + `per_page` (max 100). Total in `total_pages`.\n\n**Rate limits**: 100 req / 15s per account; 1k req / 15s globally per token. 429 returns no Retry-After — back off 15s.\n\n**Out of scope here**: invoice line CRUD beyond list/get, estimates, contacts, expenses categories management, recurring schedules.",
+  "region": "intl",
+  "category": "time-tracking",
+  "icon": "harvest",
+  "docsUrl": "https://help.getharvest.com/api-v2/",
+  "requiredEnvVars": ["HARVEST_ACCESS_TOKEN", "HARVEST_ACCOUNT_ID"],
+  "connector": {
+    "name": "Harvest API v2",
+    "type": "REST",
+    "baseUrl": "https://api.harvestapp.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{HARVEST_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Harvest-Account-Id": "{{HARVEST_ACCOUNT_ID}}",
+      "User-Agent": "AnythingMCP (support@anythingmcp.com)"
+    }
+  },
+  "tools": [
+    {
+      "name": "harvest_who_am_i",
+      "description": "Return the currently authenticated user: id, first_name, last_name, email, is_admin, default_hourly_rate, weekly_capacity.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/users/me" }
+    },
+    {
+      "name": "harvest_list_clients",
+      "description": "List clients. Each has id, name, is_active, address, currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "is_active": { "type": "boolean", "description": "Filter to active only." },
+          "updated_since": { "type": "string", "description": "ISO 8601 datetime — only clients updated after this." },
+          "page": { "type": "integer", "description": "1-based page index." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients",
+        "queryParams": {
+          "is_active": "$is_active",
+          "updated_since": "$updated_since",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "harvest_list_projects",
+      "description": "List projects. Most useful filter: `client_id` to drill into one client's projects. Returns id, name, code, is_active, is_billable, budget, hourly_rate, client info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": { "type": "integer", "description": "Filter to one client's projects." },
+          "is_active": { "type": "boolean", "description": "Filter to active only." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "client_id": "$client_id",
+          "is_active": "$is_active",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "harvest_list_tasks",
+      "description": "List task templates (the canonical Harvest 'task' types: 'Programming', 'Design', etc.) that can be assigned to projects.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "is_active": { "type": "boolean", "description": "Filter to active only." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": { "is_active": "$is_active", "page": "$page", "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "harvest_list_time_entries",
+      "description": "List time entries. Most useful filters: `from`/`to` for date range, `user_id` for one user, `project_id` for one project. Returns each entry with hours, notes, billable status, dates, project, task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "integer", "description": "Filter to one user." },
+          "client_id": { "type": "integer", "description": "Filter to one client." },
+          "project_id": { "type": "integer", "description": "Filter to one project." },
+          "task_id": { "type": "integer", "description": "Filter to one task." },
+          "from": { "type": "string", "description": "Start date (ISO 8601 YYYY-MM-DD)." },
+          "to": { "type": "string", "description": "End date (YYYY-MM-DD)." },
+          "is_billed": { "type": "boolean", "description": "Filter by billed status." },
+          "is_running": { "type": "boolean", "description": "Only currently-running timers." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time_entries",
+        "queryParams": {
+          "user_id": "$user_id",
+          "client_id": "$client_id",
+          "project_id": "$project_id",
+          "task_id": "$task_id",
+          "from": "$from",
+          "to": "$to",
+          "is_billed": "$is_billed",
+          "is_running": "$is_running",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "harvest_create_time_entry",
+      "description": "Log time on a project + task. EITHER supply `hours` for a manual entry OR omit hours to start a running timer (you'll need to stop it later with harvest_stop_timer).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "integer", "description": "Project ID." },
+          "task_id": { "type": "integer", "description": "Task ID assigned to this project." },
+          "spent_date": { "type": "string", "description": "Date worked (YYYY-MM-DD)." },
+          "hours": { "type": "number", "description": "Hours worked. Omit to start a running timer." },
+          "notes": { "type": "string", "description": "Optional notes." },
+          "user_id": { "type": "integer", "description": "Defaults to current user; admins can log for others." },
+          "external_reference": { "type": "object", "description": "External system reference {id, group_id, account_id, permalink, service, service_icon_url}." }
+        },
+        "required": ["project_id", "task_id", "spent_date"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/time_entries",
+        "bodyMapping": {
+          "project_id": "$project_id",
+          "task_id": "$task_id",
+          "spent_date": "$spent_date",
+          "hours": "$hours",
+          "notes": "$notes",
+          "user_id": "$user_id",
+          "external_reference": "$external_reference"
+        }
+      }
+    },
+    {
+      "name": "harvest_update_time_entry",
+      "description": "Update fields on an existing time entry (notes, hours, project, task).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_entry_id": { "type": "integer", "description": "Time entry ID." },
+          "hours": { "type": "number", "description": "New hours." },
+          "notes": { "type": "string", "description": "New notes." },
+          "project_id": { "type": "integer", "description": "Move to a different project." },
+          "task_id": { "type": "integer", "description": "Move to a different task." }
+        },
+        "required": ["time_entry_id"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/time_entries/{time_entry_id}",
+        "bodyMapping": {
+          "hours": "$hours",
+          "notes": "$notes",
+          "project_id": "$project_id",
+          "task_id": "$task_id"
+        }
+      }
+    },
+    {
+      "name": "harvest_stop_timer",
+      "description": "Stop a currently-running time entry timer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_entry_id": { "type": "integer", "description": "Running time entry ID." }
+        },
+        "required": ["time_entry_id"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/time_entries/{time_entry_id}/stop"
+      }
+    },
+    {
+      "name": "harvest_list_invoices",
+      "description": "List invoices. Filter by client_id, state ('draft', 'open', 'paid', 'closed'), date range. Returns each invoice's number, amount, due_date, paid_date, currency, line items count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": { "type": "integer", "description": "Filter to one client." },
+          "project_id": { "type": "integer", "description": "Filter to one project." },
+          "state": { "type": "string", "description": "draft, open, paid, closed." },
+          "from": { "type": "string", "description": "Issued from (YYYY-MM-DD)." },
+          "to": { "type": "string", "description": "Issued to (YYYY-MM-DD)." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "client_id": "$client_id",
+          "project_id": "$project_id",
+          "state": "$state",
+          "from": "$from",
+          "to": "$to",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "harvest_list_expenses",
+      "description": "List expenses. Filter by client, project, user, date range. Returns each expense's amount, units, billable status, receipt URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "integer", "description": "Filter to one user." },
+          "client_id": { "type": "integer", "description": "Filter to one client." },
+          "project_id": { "type": "integer", "description": "Filter to one project." },
+          "is_billed": { "type": "boolean", "description": "Filter by billed status." },
+          "from": { "type": "string", "description": "Spent from (YYYY-MM-DD)." },
+          "to": { "type": "string", "description": "Spent to (YYYY-MM-DD)." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses",
+        "queryParams": {
+          "user_id": "$user_id",
+          "client_id": "$client_id",
+          "project_id": "$project_id",
+          "is_billed": "$is_billed",
+          "from": "$from",
+          "to": "$to",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    }
+  ]
+}

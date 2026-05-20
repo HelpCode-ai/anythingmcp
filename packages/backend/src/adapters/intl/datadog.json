@@ -1,0 +1,192 @@
+{
+  "slug": "datadog",
+  "name": "Datadog",
+  "description": "Query Datadog (metrics, logs, monitors, events, incidents, dashboards) from any AI agent. 8 tools, dual-key auth.",
+  "instructions": "This connector wraps the Datadog REST API v1/v2 (api.datadoghq.com).\n\n**Setup**:\n1. In your Datadog org → **Personal Settings → Organization Settings → API Keys** → create or copy an API key. Set `DATADOG_API_KEY`.\n2. **Organization Settings → Application Keys** → create an application key with at least `monitors_read`, `logs_read_data`, `dashboards_read`, `events_read` scopes. Set `DATADOG_APP_KEY`.\n3. **Site matters**: Datadog has multiple regions: US1 (datadoghq.com — default), US3 (us3.datadoghq.com), US5 (us5.datadoghq.com), EU1 (datadoghq.eu), AP1 (ap1.datadoghq.com), US1-FED (ddog-gov.com). If your org is on a non-US1 site, change `baseUrl` accordingly. Wrong site = 403 with `Forbidden` and no useful body.\n\n**Authentication**: Datadog requires BOTH headers on every request:\n- `DD-API-KEY: ${DATADOG_API_KEY}` — identifies the org\n- `DD-APPLICATION-KEY: ${DATADOG_APP_KEY}` — identifies the user/permissions\n\n**Metrics query language**: `q` uses the Datadog metric query syntax — `avg:system.cpu.user{*}` or `sum:trace.web.request.hits{env:prod} by {service}`. See https://docs.datadoghq.com/dashboards/functions/.\n\n**Time windows**: `from` / `to` are UNIX epoch seconds (NOT milliseconds, NOT ISO strings). Default windows: last 1h for metrics, last 15min for logs.\n\n**Logs search**: uses the same query syntax as the Logs Explorer UI — `service:api status:error @http.status_code:>=500`. Returns `data[]` with `attributes.message`, `attributes.tags`, etc.\n\n**Rate limits**: most read endpoints are 300 req/h per org. Monitors API allows 100/min. 429 responses include `X-RateLimit-Reset` (epoch seconds).\n\n**Out of scope here**: agent install / install-script generation, SLO CRUD beyond list, RUM/synthetics CRUD.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "datadog",
+  "docsUrl": "https://docs.datadoghq.com/api/latest/",
+  "requiredEnvVars": ["DATADOG_API_KEY", "DATADOG_APP_KEY"],
+  "connector": {
+    "name": "Datadog API",
+    "type": "REST",
+    "baseUrl": "https://api.datadoghq.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "DD-API-KEY",
+      "apiKey": "{{DATADOG_API_KEY}}",
+      "extraHeaders": {
+        "DD-APPLICATION-KEY": "{{DATADOG_APP_KEY}}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "datadog_query_metrics",
+      "description": "Run a metrics query over a time window. `q` uses the Datadog metric query language: e.g. `avg:system.cpu.user{*}` or `sum:requests{service:api,env:prod} by {host}`. Returns a series array with per-point [timestamp, value] pairs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "integer", "description": "Start UNIX epoch seconds." },
+          "to": { "type": "integer", "description": "End UNIX epoch seconds." },
+          "query": { "type": "string", "description": "Datadog metric query expression." }
+        },
+        "required": ["from", "to", "query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/query",
+        "queryParams": { "from": "$from", "to": "$to", "query": "$query" }
+      }
+    },
+    {
+      "name": "datadog_search_logs",
+      "description": "Search logs using the Logs Search syntax. Use this for 'show me errors in the last hour' or 'find logs containing X in service Y'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Logs query string, e.g. 'service:api status:error'." },
+          "from": { "type": "string", "description": "Start time: ISO 8601 OR relative like 'now-15m'." },
+          "to": { "type": "string", "description": "End time: ISO 8601 OR 'now'." },
+          "limit": { "type": "integer", "description": "Max events (1-1000). Default 10." },
+          "sort": { "type": "string", "description": "'timestamp' (asc) or '-timestamp' (desc)." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/logs/events/search",
+        "bodyMapping": {
+          "filter": { "query": "$query", "from": "$from", "to": "$to" },
+          "page": { "limit": "$limit" },
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "datadog_list_monitors",
+      "description": "List monitors. Filter by tags, name match, or monitor type. Returns each monitor's id, name, query, type, message, state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Filter by name substring." },
+          "tags": { "type": "string", "description": "Comma-separated tag list (AND)." },
+          "monitor_tags": { "type": "string", "description": "Filter by monitor-level tags." },
+          "page": { "type": "integer", "description": "0-based page index." },
+          "page_size": { "type": "integer", "description": "Per page (max 100)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/monitor",
+        "queryParams": {
+          "name": "$name",
+          "tags": "$tags",
+          "monitor_tags": "$monitor_tags",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "datadog_get_monitor",
+      "description": "Get a single monitor by ID with full definition (query, thresholds, notifications, state).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitor_id": { "type": "integer", "description": "Monitor numeric ID." }
+        },
+        "required": ["monitor_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/monitor/{monitor_id}"
+      }
+    },
+    {
+      "name": "datadog_list_dashboards",
+      "description": "List all dashboards in the org. Returns each dashboard's id, title, url, author, modified_at. Use this to find a dashboard ID before fetching its full layout.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_shared": { "type": "boolean", "description": "If true, only shared dashboards." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/dashboard",
+        "queryParams": { "filter[shared]": "$filter_shared" }
+      }
+    },
+    {
+      "name": "datadog_get_dashboard",
+      "description": "Fetch a dashboard's full layout: widgets, queries, template variables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dashboard_id": { "type": "string", "description": "Dashboard ID." }
+        },
+        "required": ["dashboard_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/dashboard/{dashboard_id}"
+      }
+    },
+    {
+      "name": "datadog_list_events",
+      "description": "List events in a time range. Use for 'what deploys/alerts/changes happened today'. Filter by tags, priority, sources, or text query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": { "type": "integer", "description": "Start UNIX epoch seconds." },
+          "end": { "type": "integer", "description": "End UNIX epoch seconds." },
+          "priority": { "type": "string", "description": "'normal' or 'low'." },
+          "sources": { "type": "string", "description": "Comma-separated sources, e.g. 'github,jira'." },
+          "tags": { "type": "string", "description": "Comma-separated tags." },
+          "unaggregated": { "type": "boolean", "description": "If true, return all events (not deduped/aggregated)." }
+        },
+        "required": ["start", "end"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/events",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "priority": "$priority",
+          "sources": "$sources",
+          "tags": "$tags",
+          "unaggregated": "$unaggregated"
+        }
+      }
+    },
+    {
+      "name": "datadog_post_event",
+      "description": "Post an event to the Datadog event stream (useful for marking deploys, releases, manual incidents). Returns the created event's id + url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Event title." },
+          "text": { "type": "string", "description": "Event body (supports @-mentions and Markdown)." },
+          "tags": { "type": "array", "description": "Tag strings like 'env:prod' or 'service:api'." },
+          "alert_type": { "type": "string", "description": "'info', 'warning', 'error', 'success', 'user_update', 'recommendation', 'snapshot'." },
+          "priority": { "type": "string", "description": "'normal' or 'low'." }
+        },
+        "required": ["title", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/events",
+        "bodyMapping": {
+          "title": "$title",
+          "text": "$text",
+          "tags": "$tags",
+          "alert_type": "$alert_type",
+          "priority": "$priority"
+        }
+      }
+    }
+  ]
+}

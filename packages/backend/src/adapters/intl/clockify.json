@@ -1,0 +1,238 @@
+{
+  "slug": "clockify",
+  "name": "Clockify",
+  "description": "Manage Clockify (time tracking, projects, clients, tags, reports) from any AI agent. 10 tools, X-Api-Key auth.",
+  "instructions": "This connector wraps the Clockify REST API v1 (api.clockify.me/api/v1).\n\n**Setup**:\n1. Sign in to https://clockify.me → bottom-left avatar → **Preferences → Advanced → API → Generate API key**.\n2. Set `CLOCKIFY_API_KEY`.\n\n**Authentication**: `X-Api-Key: ${CLOCKIFY_API_KEY}` on every request.\n\n**Workspace IDs**: Clockify is workspace-scoped. Use `clockify_get_user` first — its response contains `defaultWorkspace` and `activeWorkspace`. List workspaces with `clockify_list_workspaces`.\n\n**Time entry shape**: `start` + `end` are ISO 8601 UTC with the literal `Z` suffix (e.g. `2026-05-20T14:30:00Z`). For a running entry, OMIT `end` — the entry will be live until you call `clockify_stop_current_entry`.\n\n**Project / Task / Tag IDs**: every entity ID is a 24-char hex Mongo-style ID (e.g. `5b1e7b7b7e8d8e3a4c5d6f78`). Always look them up first via the list endpoints; user-facing names are not accepted.\n\n**Pagination**: `page` (1-based) + `page-size` (max 5000 but default 50). Some endpoints also support cursor pagination via `cursor`.\n\n**Rate limits**: 50 req/s per workspace; bursts tolerated. 429 with no Retry-After — back off 1s.\n\n**Out of scope here**: Reports endpoints (different base host `reports.api.clockify.me`, would be a sibling adapter), approval workflows, Pumble integration.",
+  "region": "intl",
+  "category": "time-tracking",
+  "icon": "clockify",
+  "docsUrl": "https://docs.clockify.me/",
+  "requiredEnvVars": ["CLOCKIFY_API_KEY"],
+  "connector": {
+    "name": "Clockify API v1",
+    "type": "REST",
+    "baseUrl": "https://api.clockify.me/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{CLOCKIFY_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "clockify_get_user",
+      "description": "Return the authenticated user: id, email, name, activeWorkspace, defaultWorkspace, profile picture URL.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/user" }
+    },
+    {
+      "name": "clockify_list_workspaces",
+      "description": "List workspaces the user belongs to.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/workspaces" }
+    },
+    {
+      "name": "clockify_list_clients",
+      "description": "List clients in a workspace.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "name": { "type": "string", "description": "Substring filter by name." },
+          "archived": { "type": "boolean", "description": "Include archived." },
+          "page": { "type": "integer", "description": "1-based." },
+          "page_size": { "type": "integer", "description": "Default 50, max 5000." }
+        },
+        "required": ["workspace_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/clients",
+        "queryParams": {
+          "name": "$name",
+          "archived": "$archived",
+          "page": "$page",
+          "page-size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "clockify_list_projects",
+      "description": "List projects in a workspace. Returns id, name, clientId, billable, color, archived, public, estimate, hourlyRate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "name": { "type": "string", "description": "Substring filter." },
+          "clients": { "type": "string", "description": "Comma-separated client IDs to filter to." },
+          "archived": { "type": "boolean", "description": "Include archived." },
+          "billable": { "type": "boolean", "description": "Filter billable." },
+          "page": { "type": "integer", "description": "1-based." },
+          "page_size": { "type": "integer", "description": "Default 50." }
+        },
+        "required": ["workspace_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/projects",
+        "queryParams": {
+          "name": "$name",
+          "clients": "$clients",
+          "archived": "$archived",
+          "billable": "$billable",
+          "page": "$page",
+          "page-size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "clockify_list_tags",
+      "description": "List tags in a workspace.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "name": { "type": "string", "description": "Substring filter." },
+          "archived": { "type": "boolean", "description": "Include archived." }
+        },
+        "required": ["workspace_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/tags",
+        "queryParams": { "name": "$name", "archived": "$archived" }
+      }
+    },
+    {
+      "name": "clockify_list_time_entries",
+      "description": "List a user's time entries in a workspace. Filter by start/end window, project, tag, billable. Returns each entry's id, description, project, task, tags, billable, timeInterval (start/end/duration).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "user_id": { "type": "string", "description": "User ID (use clockify_get_user for own ID)." },
+          "start": { "type": "string", "description": "ISO 8601 UTC (e.g. 2026-05-20T00:00:00Z)." },
+          "end": { "type": "string", "description": "ISO 8601 UTC." },
+          "project": { "type": "string", "description": "Project ID filter." },
+          "tags": { "type": "string", "description": "Comma-separated tag IDs." },
+          "billable": { "type": "boolean", "description": "Filter billable." },
+          "in_progress": { "type": "boolean", "description": "Only currently running." },
+          "page": { "type": "integer", "description": "1-based." },
+          "page_size": { "type": "integer", "description": "Default 50, max 5000." }
+        },
+        "required": ["workspace_id", "user_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/user/{user_id}/time-entries",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "project": "$project",
+          "tags": "$tags",
+          "billable": "$billable",
+          "in-progress": "$in_progress",
+          "page": "$page",
+          "page-size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "clockify_start_time_entry",
+      "description": "Start a new time entry. Omit `end` to start a running timer; supply both `start` and `end` to log a completed entry. Starting a new entry stops any currently-running one for the same user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "start": { "type": "string", "description": "ISO 8601 UTC start time." },
+          "end": { "type": "string", "description": "ISO 8601 UTC end time (omit for running)." },
+          "billable": { "type": "boolean", "description": "Billable." },
+          "description": { "type": "string", "description": "Free-text." },
+          "project_id": { "type": "string", "description": "Project ID." },
+          "task_id": { "type": "string", "description": "Task ID inside the project." },
+          "tag_ids": { "type": "array", "description": "Array of tag ID strings." }
+        },
+        "required": ["workspace_id", "start"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workspaces/{workspace_id}/time-entries",
+        "bodyMapping": {
+          "start": "$start",
+          "end": "$end",
+          "billable": "$billable",
+          "description": "$description",
+          "projectId": "$project_id",
+          "taskId": "$task_id",
+          "tagIds": "$tag_ids"
+        }
+      }
+    },
+    {
+      "name": "clockify_stop_current_entry",
+      "description": "Stop the currently running time entry for a user. Sets `end` to the supplied timestamp (default now).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "user_id": { "type": "string", "description": "User ID." },
+          "end": { "type": "string", "description": "ISO 8601 UTC end time." }
+        },
+        "required": ["workspace_id", "user_id", "end"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/workspaces/{workspace_id}/user/{user_id}/time-entries",
+        "bodyMapping": { "end": "$end" }
+      }
+    },
+    {
+      "name": "clockify_update_time_entry",
+      "description": "Update a time entry's description, project, task, tags, billable status, or time range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "time_entry_id": { "type": "string", "description": "Time entry ID." },
+          "start": { "type": "string", "description": "New start (ISO 8601 UTC)." },
+          "end": { "type": "string", "description": "New end (ISO 8601 UTC)." },
+          "billable": { "type": "boolean", "description": "Billable." },
+          "description": { "type": "string", "description": "New description." },
+          "project_id": { "type": "string", "description": "Move to project." },
+          "task_id": { "type": "string", "description": "Move to task." },
+          "tag_ids": { "type": "array", "description": "Replace tags." }
+        },
+        "required": ["workspace_id", "time_entry_id", "start"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/workspaces/{workspace_id}/time-entries/{time_entry_id}",
+        "bodyMapping": {
+          "start": "$start",
+          "end": "$end",
+          "billable": "$billable",
+          "description": "$description",
+          "projectId": "$project_id",
+          "taskId": "$task_id",
+          "tagIds": "$tag_ids"
+        }
+      }
+    },
+    {
+      "name": "clockify_delete_time_entry",
+      "description": "Permanently delete a time entry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "time_entry_id": { "type": "string", "description": "Time entry ID." }
+        },
+        "required": ["workspace_id", "time_entry_id"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/workspaces/{workspace_id}/time-entries/{time_entry_id}"
+      }
+    }
+  ]
+}

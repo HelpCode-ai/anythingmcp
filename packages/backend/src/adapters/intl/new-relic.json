@@ -1,0 +1,159 @@
+{
+  "slug": "new-relic",
+  "name": "New Relic",
+  "description": "Query New Relic (NRQL, alerts, incidents, dashboards, deployments, entities) from any AI agent via NerdGraph + REST. 7 tools, API-key auth.",
+  "instructions": "This connector wraps two New Relic APIs: the modern NerdGraph (GraphQL) at api.newrelic.com/graphql AND the legacy REST API for deployments (api.newrelic.com/v2).\n\n**Setup**:\n1. Log into https://one.newrelic.com → top-right avatar → **API keys**.\n2. Create a **User key** (type: USER, NOT 'License key' / 'Ingest key'). Scopes: account read at minimum; admin if you want to create deployments. Set `NEW_RELIC_USER_KEY`.\n3. Note your **Account ID** (visible in the URL or via the keys page). You'll pass it as a parameter to most tools.\n4. **EU region**: if your org is on the EU data centre, change baseUrl to `https://api.eu.newrelic.com`.\n\n**Authentication**: every request sends `Api-Key: ${NEW_RELIC_USER_KEY}` as a header.\n\n**NerdGraph is the modern API**: most data lives in GraphQL now. The `new-relic_run_nrql` tool wraps the common pattern — pass an account ID + NRQL string, get rows back. For arbitrary queries use `new-relic_graphql_query` (raw GraphQL passthrough).\n\n**NRQL = New Relic Query Language**: SQL-like — `SELECT count(*) FROM Transaction WHERE appName = 'web' SINCE 1 hour ago FACET name`. Use FACET for grouping, TIMESERIES for time-bucketed data, SINCE / UNTIL for windows.\n\n**Time windows**: NRQL uses natural language — `SINCE 30 minutes ago`, `SINCE '2025-01-01' UNTIL '2025-01-02'`.\n\n**Rate limits**: NerdGraph allows 3k req/min per user key; NRQL queries are also gated by a per-account query budget.\n\n**Out of scope here**: agent installation, Synthetics test CRUD, full Alert policy/condition CRUD beyond list (use the dedicated Terraform provider).",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "new-relic",
+  "docsUrl": "https://docs.newrelic.com/docs/apis/nerdgraph/get-started/introduction-new-relic-nerdgraph/",
+  "requiredEnvVars": ["NEW_RELIC_USER_KEY"],
+  "connector": {
+    "name": "New Relic NerdGraph + REST",
+    "type": "REST",
+    "baseUrl": "https://api.newrelic.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Api-Key",
+      "apiKey": "{{NEW_RELIC_USER_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "new_relic_run_nrql",
+      "description": "Run an NRQL (New Relic Query Language) query against an account. Wraps the NerdGraph actor.account.nrql.results pattern — much simpler than authoring raw GraphQL. Use this for 'how many errors in the last hour by service' etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": { "type": "integer", "description": "New Relic account ID." },
+          "nrql": { "type": "string", "description": "NRQL query, e.g. 'SELECT count(*) FROM Transaction SINCE 1 hour ago FACET appName'." }
+        },
+        "required": ["account_id", "nrql"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/graphql",
+        "bodyMapping": {
+          "query": "query($accountId: Int!, $nrql: Nrql!) { actor { account(id: $accountId) { nrql(query: $nrql) { results metadata { facets } } } } }",
+          "variables": { "accountId": "$account_id", "nrql": "$nrql" }
+        }
+      }
+    },
+    {
+      "name": "new_relic_graphql_query",
+      "description": "Run an arbitrary NerdGraph (GraphQL) query/mutation. Use this when run_nrql isn't enough — for entity search, dashboards, workloads, etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "GraphQL document." },
+          "variables": { "type": "object", "description": "Variables map." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/graphql",
+        "bodyMapping": { "query": "$query", "variables": "$variables" }
+      }
+    },
+    {
+      "name": "new_relic_search_entities",
+      "description": "Find entities (services, hosts, browsers, mobile apps, dashboards, workloads) by name + domain + type. Returns entity GUID, name, accountId, alertSeverity, reporting status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query_string": { "type": "string", "description": "Entity search query, e.g. \"name LIKE 'api%' AND domain = 'APM'\"." }
+        },
+        "required": ["query_string"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/graphql",
+        "bodyMapping": {
+          "query": "query($q: String!) { actor { entitySearch(query: $q) { results { entities { guid name domain type alertSeverity reporting accountId } } count } } }",
+          "variables": { "q": "$query_string" }
+        }
+      }
+    },
+    {
+      "name": "new_relic_get_entity",
+      "description": "Fetch an entity by GUID — returns the full entity payload (golden metrics, golden tags, recent issues for APM apps).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "guid": { "type": "string", "description": "Entity GUID from entitySearch." }
+        },
+        "required": ["guid"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/graphql",
+        "bodyMapping": {
+          "query": "query($guid: EntityGuid!) { actor { entity(guid: $guid) { guid name domain type tags { key values } alertSeverity ... on ApmApplicationEntity { goldenMetrics { metrics { name } } } } } }",
+          "variables": { "guid": "$guid" }
+        }
+      }
+    },
+    {
+      "name": "new_relic_list_deployments",
+      "description": "List recent deployments recorded for an APM application via the legacy REST API. Returns each deployment's id, revision, description, user, timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": { "type": "integer", "description": "Legacy APM application numeric ID (NOT entity GUID)." }
+        },
+        "required": ["application_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/applications/{application_id}/deployments.json"
+      }
+    },
+    {
+      "name": "new_relic_create_deployment",
+      "description": "Record a deployment marker on an APM application's chart. Useful for correlating regressions with releases.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": { "type": "integer", "description": "Legacy APM application numeric ID." },
+          "revision": { "type": "string", "description": "Version / git SHA / build number." },
+          "description": { "type": "string", "description": "What changed." },
+          "user": { "type": "string", "description": "Who deployed (free-text)." },
+          "changelog": { "type": "string", "description": "Optional release notes." }
+        },
+        "required": ["application_id", "revision"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/applications/{application_id}/deployments.json",
+        "bodyMapping": {
+          "deployment": {
+            "revision": "$revision",
+            "description": "$description",
+            "user": "$user",
+            "changelog": "$changelog"
+          }
+        }
+      }
+    },
+    {
+      "name": "new_relic_recent_incidents",
+      "description": "List recent open incidents for an account from the AI/AIops issue stream.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": { "type": "integer", "description": "Account ID." }
+        },
+        "required": ["account_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/graphql",
+        "bodyMapping": {
+          "query": "query($accountId: Int!) { actor { account(id: $accountId) { aiIssues { issues(filter: { states: [ACTIVE] }) { issues { issueId title priority createdAt entityNames } } } } } }",
+          "variables": { "accountId": "$account_id" }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "slug": "newsapi",
+  "name": "NewsAPI",
+  "description": "Search worldwide news headlines, sources and articles from newsapi.org via any AI agent. 3 tools, API-key auth.",
+  "instructions": "This connector wraps the NewsAPI v2 REST API (newsapi.org).\n\n**Setup**:\n1. Register at https://newsapi.org/register for a free Developer key.\n2. Set `NEWSAPI_API_KEY`.\n\n**Authentication**: NewsAPI accepts the key as either the `X-Api-Key` header (used by this adapter) OR an `apiKey` query string. We use the header so it doesn't appear in URL logs.\n\n**Plan limits — IMPORTANT**:\n- Developer (free): 100 requests / day, articles delayed by 24h, no commercial use, results capped at 100 per query.\n- Paid plans: live articles, no daily cap, full historical archive.\n\n**Three endpoints**:\n- `everything` — full archive search, the most powerful. Filter by `q`, `sources`, `domains`, `from`/`to` date, `language`, `sortBy`.\n- `top-headlines` — breaking news, filtered by `country`, `category`, `sources`, or `q`. You CANNOT mix `country`/`category` with `sources` in the same call.\n- `top-headlines/sources` — list all sources, optional filters by `category`, `language`, `country`.\n\n**Query syntax**: `q` supports `AND`, `OR`, `NOT`, exact-phrase double quotes, and grouping with parentheses. Example: `q=(apple AND iphone) NOT macbook`.\n\n**Languages**: ISO-639-1 codes — `en`, `it`, `de`, `es`, `fr`, ... See docs for full list.\n\n**Out of scope here**: NewsAPI does NOT expose article full text — only `title`, `description`, `content` (truncated to ~200 chars). For full text you must fetch the `url` separately.",
+  "region": "intl",
+  "category": "data",
+  "icon": "newsapi",
+  "docsUrl": "https://newsapi.org/docs",
+  "requiredEnvVars": ["NEWSAPI_API_KEY"],
+  "connector": {
+    "name": "NewsAPI v2",
+    "type": "REST",
+    "baseUrl": "https://newsapi.org/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{NEWSAPI_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "newsapi_everything",
+      "description": "Full-archive search across millions of articles from 80k+ sources. Use this when the user wants 'articles about X' or 'news mentioning Y this week'. Requires at least one of `q`, `qInTitle`, `sources`, or `domains`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Keywords/phrases. Supports AND/OR/NOT, quotes, parentheses." },
+          "qInTitle": { "type": "string", "description": "Same as `q` but only matches against the article title." },
+          "sources": { "type": "string", "description": "Comma-separated source IDs (e.g. 'bbc-news,the-verge'). Find IDs via newsapi_sources." },
+          "domains": { "type": "string", "description": "Comma-separated domains (e.g. 'bbc.co.uk,nytimes.com')." },
+          "excludeDomains": { "type": "string", "description": "Comma-separated domains to EXCLUDE." },
+          "from": { "type": "string", "description": "ISO 8601 date or datetime. Oldest article date." },
+          "to": { "type": "string", "description": "ISO 8601 date or datetime. Newest article date." },
+          "language": { "type": "string", "description": "ISO-639-1: en, it, de, es, fr, ..." },
+          "sortBy": { "type": "string", "description": "'relevancy', 'popularity', 'publishedAt'. Default 'publishedAt'." },
+          "pageSize": { "type": "integer", "description": "Results per page (1-100). Default 100." },
+          "page": { "type": "integer", "description": "1-based page index." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/everything",
+        "queryParams": {
+          "q": "$q",
+          "qInTitle": "$qInTitle",
+          "sources": "$sources",
+          "domains": "$domains",
+          "excludeDomains": "$excludeDomains",
+          "from": "$from",
+          "to": "$to",
+          "language": "$language",
+          "sortBy": "$sortBy",
+          "pageSize": "$pageSize",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "newsapi_top_headlines",
+      "description": "Breaking news headlines. Filter by `country` + `category` for a country front-page, OR by `sources` for specific outlets, OR by `q` for a topic. You CANNOT combine `country`/`category` with `sources` in one call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": { "type": "string", "description": "2-letter ISO 3166-1 (e.g. 'us', 'it', 'de'). Cannot be used with `sources`." },
+          "category": { "type": "string", "description": "business, entertainment, general, health, science, sports, technology. Cannot be used with `sources`." },
+          "sources": { "type": "string", "description": "Comma-separated source IDs. Cannot be used with `country`/`category`." },
+          "q": { "type": "string", "description": "Keywords/phrases." },
+          "pageSize": { "type": "integer", "description": "1-100." },
+          "page": { "type": "integer", "description": "1-based." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/top-headlines",
+        "queryParams": {
+          "country": "$country",
+          "category": "$category",
+          "sources": "$sources",
+          "q": "$q",
+          "pageSize": "$pageSize",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "newsapi_sources",
+      "description": "List all news sources NewsAPI tracks. Returns each source's id (used by other endpoints), name, description, url, category, language, country.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": { "type": "string", "description": "Filter by category." },
+          "language": { "type": "string", "description": "ISO-639-1." },
+          "country": { "type": "string", "description": "2-letter ISO 3166-1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/top-headlines/sources",
+        "queryParams": { "category": "$category", "language": "$language", "country": "$country" }
+      }
+    }
+  ]
+}

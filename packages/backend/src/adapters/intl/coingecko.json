@@ -1,0 +1,168 @@
+{
+  "slug": "coingecko",
+  "name": "CoinGecko",
+  "description": "Query CoinGecko (crypto prices, market data, historical, exchanges, NFT floor prices) from any AI agent. 8 tools, optional API-key auth.",
+  "instructions": "This connector wraps the CoinGecko REST API.\n\n**Setup**:\n1. The PUBLIC API (api.coingecko.com/api/v3) requires NO API key but is harshly rate-limited (~10-30 calls/min) and missing some endpoints.\n2. For higher throughput, sign up for the free DEMO plan at https://www.coingecko.com/en/developers/dashboard → create an `x-cg-demo-api-key`. This raises the limit to 30 calls/min and stays free.\n3. Paid PRO plans use a different host (pro-api.coingecko.com) and header `x-cg-pro-api-key` — switch baseUrl + auth header accordingly.\n4. Set `COINGECKO_API_KEY` if you have one; leave unset for anonymous public access.\n\n**Authentication**: optional. When `COINGECKO_API_KEY` is set, the adapter sends `x-cg-demo-api-key: ${KEY}`. When unset, no auth header is sent.\n\n**Coin IDs not symbols**: CoinGecko endpoints want the internal coin ID (`bitcoin`, `ethereum`, `solana`), not the ticker (`BTC`, `ETH`, `SOL`). Use `coingecko_search` or `coingecko_list_coins` first to look up the canonical ID. The mapping is one-way: 'BTC' → 'bitcoin'.\n\n**Pagination**: most list endpoints support `per_page` (1-250) and `page` (1-based). Default `per_page` is 100.\n\n**Currency codes**: pass `vs_currency=usd|eur|btc|eth` lowercase. The full list is at `/simple/supported_vs_currencies`.\n\n**Rate limits**: 429 responses come with a `Retry-After` header — respect it. Public tier: ~10-30/min; Demo: 30/min; Pro: from 500/min.\n\n**Out of scope here**: streaming/WebSocket price feeds, DEX-specific GraphQL endpoints (use the dedicated Onchain DEX API instead), CSV bulk export.",
+  "region": "intl",
+  "category": "data",
+  "icon": "coingecko",
+  "docsUrl": "https://docs.coingecko.com/reference/introduction",
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "CoinGecko API v3",
+    "type": "REST",
+    "baseUrl": "https://api.coingecko.com/api/v3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-cg-demo-api-key",
+      "apiKey": "{{COINGECKO_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "coingecko_ping",
+      "description": "Sanity check — returns `{gecko_says: '(V3) To the Moon!'}` if the API is up. Useful as a connectivity probe.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/ping" }
+    },
+    {
+      "name": "coingecko_simple_price",
+      "description": "Cheapest way to get current price(s). Pass comma-separated coin IDs and currencies. Optionally include 24h volume, market cap, last-updated, 24h change. Use this for 'what's the price of X' — much faster than full market data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": { "type": "string", "description": "Comma-separated CoinGecko coin IDs, e.g. 'bitcoin,ethereum,solana'." },
+          "vs_currencies": { "type": "string", "description": "Comma-separated target currencies, e.g. 'usd,eur'." },
+          "include_market_cap": { "type": "boolean", "description": "Include market cap." },
+          "include_24hr_vol": { "type": "boolean", "description": "Include 24h volume." },
+          "include_24hr_change": { "type": "boolean", "description": "Include 24h % change." },
+          "include_last_updated_at": { "type": "boolean", "description": "Include last-updated UNIX timestamp." }
+        },
+        "required": ["ids", "vs_currencies"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/simple/price",
+        "queryParams": {
+          "ids": "$ids",
+          "vs_currencies": "$vs_currencies",
+          "include_market_cap": "$include_market_cap",
+          "include_24hr_vol": "$include_24hr_vol",
+          "include_24hr_change": "$include_24hr_change",
+          "include_last_updated_at": "$include_last_updated_at"
+        }
+      }
+    },
+    {
+      "name": "coingecko_search",
+      "description": "Search coins, categories and markets by free-text query. Returns matching CoinGecko IDs — use this when the user gives a ticker or partial name and you need the canonical ID for downstream calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search text, e.g. 'bitcoin' or 'BTC' or 'arbitr'." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": { "query": "$query" }
+      }
+    },
+    {
+      "name": "coingecko_list_coins",
+      "description": "Full list of every coin with id, symbol, name. Heavy (~13k entries) — prefer `coingecko_search` unless you really need the whole map.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_platform": { "type": "boolean", "description": "Include contract address on each chain." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coins/list",
+        "queryParams": { "include_platform": "$include_platform" }
+      }
+    },
+    {
+      "name": "coingecko_coin_markets",
+      "description": "Market data for top coins by market cap. Returns price, market cap, volume, supply, ATH/ATL, 24h/7d/30d % change. Sorted by market cap desc by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vs_currency": { "type": "string", "description": "Target currency, e.g. 'usd'." },
+          "ids": { "type": "string", "description": "Optional comma-separated coin IDs to filter to." },
+          "order": { "type": "string", "description": "market_cap_desc, market_cap_asc, volume_desc, volume_asc, id_asc, id_desc." },
+          "per_page": { "type": "integer", "description": "1-250. Default 100." },
+          "page": { "type": "integer", "description": "1-based page index." },
+          "price_change_percentage": { "type": "string", "description": "Comma-separated windows: 1h,24h,7d,14d,30d,200d,1y." }
+        },
+        "required": ["vs_currency"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coins/markets",
+        "queryParams": {
+          "vs_currency": "$vs_currency",
+          "ids": "$ids",
+          "order": "$order",
+          "per_page": "$per_page",
+          "page": "$page",
+          "price_change_percentage": "$price_change_percentage"
+        }
+      }
+    },
+    {
+      "name": "coingecko_coin_detail",
+      "description": "Full profile of one coin: description in many languages, links, image URLs, market data, community + developer stats, public interest score. Heavy payload — prefer simple_price for snippets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "CoinGecko coin ID (e.g. 'bitcoin')." },
+          "localization": { "type": "boolean", "description": "Include localized descriptions (large response)." },
+          "tickers": { "type": "boolean", "description": "Include per-exchange tickers." },
+          "market_data": { "type": "boolean", "description": "Include market data block." },
+          "community_data": { "type": "boolean", "description": "Include Reddit / Twitter follower counts." },
+          "developer_data": { "type": "boolean", "description": "Include GitHub stars/forks/PRs." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coins/{id}",
+        "queryParams": {
+          "localization": "$localization",
+          "tickers": "$tickers",
+          "market_data": "$market_data",
+          "community_data": "$community_data",
+          "developer_data": "$developer_data"
+        }
+      }
+    },
+    {
+      "name": "coingecko_coin_market_chart",
+      "description": "Historical price/marketcap/volume series for a coin over a window. Granularity auto-selected by CoinGecko based on `days`: minutely for 1, hourly for 2-90, daily for >90.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "CoinGecko coin ID." },
+          "vs_currency": { "type": "string", "description": "Target currency." },
+          "days": { "type": "string", "description": "Window: '1', '7', '30', '90', '365', 'max'." },
+          "interval": { "type": "string", "description": "Override granularity. Most users leave this empty." }
+        },
+        "required": ["id", "vs_currency", "days"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coins/{id}/market_chart",
+        "queryParams": { "vs_currency": "$vs_currency", "days": "$days", "interval": "$interval" }
+      }
+    },
+    {
+      "name": "coingecko_trending",
+      "description": "Top-7 trending coins on CoinGecko in the last 24h (by search volume). Bonus payload: top NFT collections + categories trending.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/search/trending" }
+    }
+  ]
+}

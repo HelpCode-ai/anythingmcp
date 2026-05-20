@@ -1,0 +1,130 @@
+{
+  "slug": "openweather",
+  "name": "OpenWeather",
+  "description": "Query OpenWeather (current weather, forecasts, air quality, geocoding) from any AI agent. 6 tools, API-key auth.",
+  "instructions": "This connector wraps the OpenWeather REST API (api.openweathermap.org).\n\n**Setup**:\n1. Sign up at https://openweathermap.org/users/sign_up (free tier: 60 calls/min, 1M/month).\n2. Go to https://home.openweathermap.org/api_keys → copy the default key OR create a new one labelled e.g. `mcp`.\n3. Wait ~10 minutes — new keys take time to activate on the free tier.\n4. Set `OPENWEATHER_API_KEY`.\n\n**Authentication**: every request takes `appid=${OPENWEATHER_API_KEY}` as a query string. The adapter injects it automatically — never include it in tool arguments.\n\n**Coordinates first**: most endpoints want `lat`/`lon`, not city names. Use `openweather_geocode_city` first to translate `London,GB` into coordinates, then call the weather endpoints with the coordinates. The Geocoding API is free and unlimited within the regular rate limit.\n\n**Units**: pass `units=metric` (Celsius, m/s) or `units=imperial` (Fahrenheit, mph). Default (`standard`) returns Kelvin and m/s — usually NOT what you want.\n\n**Language**: pass `lang=it` / `de` / `en` for localized weather descriptions. The numeric data is always identical, only the human-readable `weather[0].description` string changes.\n\n**Forecast endpoints**: the free tier exposes the 5-day/3-hour forecast (`/data/2.5/forecast`). The newer One Call 3.0 API (hourly + daily + minutely) requires a paid subscription — gated separately in the tool descriptions.\n\n**Rate limits**: 60 calls/min on free tier; tighter limits on burst. On 429, exponential backoff. Errors come back as `{cod, message}` with HTTP 401 for bad key, 404 for unknown city, 429 for rate-limit.\n\n**Out of scope here**: historical data (paid), weather maps tiles (different host, image returns), severe weather alerts (paid).",
+  "region": "intl",
+  "category": "data",
+  "icon": "openweather",
+  "docsUrl": "https://openweathermap.org/api",
+  "requiredEnvVars": ["OPENWEATHER_API_KEY"],
+  "connector": {
+    "name": "OpenWeather API",
+    "type": "REST",
+    "baseUrl": "https://api.openweathermap.org",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "appid": "{{OPENWEATHER_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "openweather_geocode_city",
+      "description": "Translate a city name (optionally with state and country code) into latitude/longitude. Always run this first when the user asks about a city — every other tool wants lat/lon, not city names. Returns up to `limit` candidates; the first is usually the most populous.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Location query, e.g. 'Rome,IT' or 'Springfield,IL,US' (city,state,country)." },
+          "limit": { "type": "integer", "description": "Max results (1-5). Default 1." }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/geo/1.0/direct",
+        "queryParams": { "q": "$q", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "openweather_reverse_geocode",
+      "description": "Translate latitude/longitude back into a list of nearby place names. Useful when you have GPS coordinates from another tool and need a human-readable label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat": { "type": "number", "description": "Latitude." },
+          "lon": { "type": "number", "description": "Longitude." },
+          "limit": { "type": "integer", "description": "Max results (1-5). Default 1." }
+        },
+        "required": ["lat", "lon"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/geo/1.0/reverse",
+        "queryParams": { "lat": "$lat", "lon": "$lon", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "openweather_current_weather",
+      "description": "Current weather at given coordinates: temperature, humidity, wind, conditions, sunrise/sunset. Snapshot only — for forecasts use openweather_forecast_5day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat": { "type": "number", "description": "Latitude." },
+          "lon": { "type": "number", "description": "Longitude." },
+          "units": { "type": "string", "description": "'metric' (°C, m/s), 'imperial' (°F, mph), or 'standard' (K, m/s)." },
+          "lang": { "type": "string", "description": "ISO 639-1 code for localized descriptions (it, de, en, es, ...)." }
+        },
+        "required": ["lat", "lon"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/2.5/weather",
+        "queryParams": { "lat": "$lat", "lon": "$lon", "units": "$units", "lang": "$lang" }
+      }
+    },
+    {
+      "name": "openweather_forecast_5day",
+      "description": "5-day weather forecast at 3-hour intervals. Returns a `list` of 40 entries; each has dt, temperature, weather[], wind, pop (precipitation probability). Use this for 'will it rain tomorrow' style questions on the free tier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat": { "type": "number", "description": "Latitude." },
+          "lon": { "type": "number", "description": "Longitude." },
+          "units": { "type": "string", "description": "'metric' / 'imperial' / 'standard'." },
+          "lang": { "type": "string", "description": "Locale for descriptions." },
+          "cnt": { "type": "integer", "description": "Limit number of 3-hour timestamps returned (1-40)." }
+        },
+        "required": ["lat", "lon"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/2.5/forecast",
+        "queryParams": { "lat": "$lat", "lon": "$lon", "units": "$units", "lang": "$lang", "cnt": "$cnt" }
+      }
+    },
+    {
+      "name": "openweather_air_pollution",
+      "description": "Current air-quality index (AQI 1-5) + concentrations of CO, NO, NO2, O3, SO2, PM2.5, PM10, NH3 at given coordinates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat": { "type": "number", "description": "Latitude." },
+          "lon": { "type": "number", "description": "Longitude." }
+        },
+        "required": ["lat", "lon"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/2.5/air_pollution",
+        "queryParams": { "lat": "$lat", "lon": "$lon" }
+      }
+    },
+    {
+      "name": "openweather_air_pollution_forecast",
+      "description": "Hourly air-pollution forecast for the next ~4 days at given coordinates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat": { "type": "number", "description": "Latitude." },
+          "lon": { "type": "number", "description": "Longitude." }
+        },
+        "required": ["lat", "lon"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/data/2.5/air_pollution/forecast",
+        "queryParams": { "lat": "$lat", "lon": "$lon" }
+      }
+    }
+  ]
+}
