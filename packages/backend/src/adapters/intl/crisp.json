@@ -1,0 +1,251 @@
+{
+  "slug": "crisp",
+  "name": "Crisp",
+  "description": "Drive Crisp (live chat + helpdesk) from any AI agent: conversations, messages, people, tickets. 11 tools, plugin-token Basic auth + tier header.",
+  "instructions": "This connector uses the Crisp REST API v1 (docs.crisp.chat/api/v1/).\n\n**Setup**:\n1. Sign in to Crisp → **Marketplace → Create a Plugin** (the modern way for API access; the legacy User token approach is deprecated).\n2. Pick scopes: at minimum `website:conversation:read`, `website:conversation:write`, `website:people:read`.\n3. After creating + reviewing, you get `plugin_id`, `plugin_identifier`, `plugin_key` (the credentials).\n4. Install the plugin on your website (give it a website_id to act on).\n5. Set:\n   - `CRISP_PLUGIN_IDENTIFIER` = the identifier\n   - `CRISP_PLUGIN_KEY` = the key\n   - `CRISP_WEBSITE_ID` = the website ID to operate on\n\n**Authentication**: HTTP Basic with username=PLUGIN_IDENTIFIER + password=PLUGIN_KEY + custom header `X-Crisp-Tier: plugin` on every request.\n\n**Conversation model**: every conversation has a `session_id` (unique per chat). Messages live inside a conversation, ordered chronologically.\n\n**Session vs People**: Crisp tracks `people` (long-lived contact profiles) and `sessions` (single chat). A session attaches to a people record by email/phone/segment matching.\n\n**Message origins**: chat, email, sms, twitter, facebook, instagram, whatsapp, telegram, slack, messenger, line, etc. Crisp normalizes them in the same conversation thread.\n\n**Rate limits**: 100 req per 10 sec per website. On 429 back off.\n\n**Out of scope here**: plugin management, RTM/WebSocket events, MagicType (AI-generated reply suggestions), Crisp Status (status page), Triggers.",
+  "region": "intl",
+  "category": "support",
+  "icon": "crisp",
+  "docsUrl": "https://docs.crisp.chat/api/v1/",
+  "requiredEnvVars": ["CRISP_PLUGIN_IDENTIFIER", "CRISP_PLUGIN_KEY", "CRISP_WEBSITE_ID"],
+  "connector": {
+    "name": "Crisp v1",
+    "type": "REST",
+    "baseUrl": "https://api.crisp.chat/v1/website/{{CRISP_WEBSITE_ID}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{CRISP_PLUGIN_IDENTIFIER}}",
+      "password": "{{CRISP_PLUGIN_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "crisp_get_website",
+      "description": "Get website info (name, domain, logo).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    },
+    {
+      "name": "crisp_list_conversations",
+      "description": "List conversations with filters. Cursor-paginated (page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page (1-based)." },
+          "search_query": { "type": "string", "description": "Free-text search." },
+          "search_type": { "type": "string", "description": "Match type: 'text' (default), 'segment', 'meta-id'." },
+          "search_operator": { "type": "string", "description": "and or or." },
+          "filter_unread": { "type": "integer", "description": "1 = only unread." },
+          "filter_resolved": { "type": "integer", "description": "1 = only resolved." },
+          "filter_not_resolved": { "type": "integer", "description": "1 = only not resolved." },
+          "filter_mentions": { "type": "integer", "description": "1 = only with mentions." },
+          "filter_assigned": { "type": "integer", "description": "1 = only assigned." },
+          "filter_unassigned": { "type": "integer", "description": "1 = only unassigned." },
+          "filter_date_start": { "type": "string", "description": "ISO 8601 — filter by created_at >=." },
+          "filter_date_end": { "type": "string", "description": "ISO 8601." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{page}",
+        "queryParams": {
+          "search_query": "$search_query",
+          "search_type": "$search_type",
+          "search_operator": "$search_operator",
+          "filter_unread": "$filter_unread",
+          "filter_resolved": "$filter_resolved",
+          "filter_not_resolved": "$filter_not_resolved",
+          "filter_mentions": "$filter_mentions",
+          "filter_assigned": "$filter_assigned",
+          "filter_unassigned": "$filter_unassigned",
+          "filter_date_start": "$filter_date_start",
+          "filter_date_end": "$filter_date_end"
+        },
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    },
+    {
+      "name": "crisp_get_conversation",
+      "description": "Fetch a conversation by session_id with metadata + state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": "string", "description": "Conversation session ID." }
+        },
+        "required": ["session_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversation/{session_id}",
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    },
+    {
+      "name": "crisp_list_messages",
+      "description": "List messages in a conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": "string", "description": "Session ID." },
+          "timestamp_before": { "type": "integer", "description": "Unix ms — messages before this." }
+        },
+        "required": ["session_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversation/{session_id}/messages",
+        "queryParams": { "timestamp_before": "$timestamp_before" },
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    },
+    {
+      "name": "crisp_send_message",
+      "description": "Send a message in a conversation as the operator. type='text' for plain text; 'note' for internal-only notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": "string", "description": "Session ID." },
+          "type": { "type": "string", "description": "text, file, animation, audio, picker, field, carousel, note, event." },
+          "from": { "type": "string", "description": "user or operator. operator = the agent." },
+          "origin": { "type": "string", "description": "chat (default), email, etc." },
+          "content": { "description": "For type=text: the string body. For other types: typed content object." },
+          "user": { "type": "object", "description": "{nickname?, avatar?, type?:'website'} — display info." },
+          "mentions": { "type": "array", "description": "Operator user_ids to mention." },
+          "stealth": { "type": "boolean", "description": "If true, hidden from the user (internal only)." }
+        },
+        "required": ["session_id", "type", "from", "origin", "content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversation/{session_id}/message",
+        "bodyMapping": {
+          "type": "$type",
+          "from": "$from",
+          "origin": "$origin",
+          "content": "$content",
+          "user": "$user",
+          "mentions": "$mentions",
+          "stealth": "$stealth"
+        },
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    },
+    {
+      "name": "crisp_update_conversation_state",
+      "description": "Change conversation state: pending, unresolved, resolved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": "string", "description": "Session ID." },
+          "state": { "type": "string", "description": "pending, unresolved, resolved." }
+        },
+        "required": ["session_id", "state"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/conversation/{session_id}/state",
+        "bodyMapping": { "state": "$state" },
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    },
+    {
+      "name": "crisp_assign_conversation_routing",
+      "description": "Assign a conversation to an operator. operator_id is the user_id of the agent (use crisp_list_operators to discover).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": "string", "description": "Session ID." },
+          "assigned": { "type": "object", "description": "{user_id: 'operator-uuid'} or {team_id: 'team-uuid'}." }
+        },
+        "required": ["session_id", "assigned"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/conversation/{session_id}/routing",
+        "bodyMapping": { "assigned": "$assigned" },
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    },
+    {
+      "name": "crisp_list_people_profiles",
+      "description": "List people (contact profiles) across the website.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page." },
+          "search_text": { "type": "string", "description": "Free-text search." },
+          "filter_segments": { "type": "string", "description": "Comma-separated segments." },
+          "sort_field": { "type": "string", "description": "created_at, updated_at, last_active." },
+          "sort_order": { "type": "integer", "description": "1 (asc) or -1 (desc)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/profiles/{page}",
+        "queryParams": {
+          "search_text": "$search_text",
+          "filter_segments": "$filter_segments",
+          "sort_field": "$sort_field",
+          "sort_order": "$sort_order"
+        },
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    },
+    {
+      "name": "crisp_get_people_profile",
+      "description": "Fetch a people profile by people_id (UUID) or email/phone (URL-encoded).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "people_id": { "type": "string", "description": "People ID (UUID) or URL-encoded email/phone." }
+        },
+        "required": ["people_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/profile/{people_id}",
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    },
+    {
+      "name": "crisp_update_people_profile",
+      "description": "Update a people profile (segments, attributes, notes).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "people_id": { "type": "string", "description": "People ID." },
+          "email": { "type": "string", "description": "Email." },
+          "person": { "type": "object", "description": "{nickname?, avatar?, gender?, locales?:[], phone?, address?, description?, employment?:{name,title,role?}}." },
+          "segments": { "type": "array", "description": "Replace segments." },
+          "notepad": { "type": "string", "description": "Internal notes." }
+        },
+        "required": ["people_id"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/people/profile/{people_id}",
+        "bodyMapping": {
+          "email": "$email",
+          "person": "$person",
+          "segments": "$segments",
+          "notepad": "$notepad"
+        },
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    },
+    {
+      "name": "crisp_list_operators",
+      "description": "List operators (agents) on the website. Returns user_id (use as operator_id), email, full_name, avatar, role.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/operators/list",
+        "headers": { "X-Crisp-Tier": "plugin" }
+      }
+    }
+  ]
+}

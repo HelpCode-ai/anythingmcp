@@ -1,0 +1,215 @@
+{
+  "slug": "statsig",
+  "name": "Statsig",
+  "description": "Drive Statsig (feature flags + experiments + analytics) from any AI agent: evaluate gates/dynamic configs/experiments, log events, manage console-side gates and experiments. 10 tools, server-secret-key auth.",
+  "instructions": "This connector uses the Statsig HTTP API (docs.statsig.com).\n\n**Two distinct APIs**:\n  - **Server SDK API** (`api.statsig.com/v1/...`) — runtime evaluation + event logging. Requires `STATSIG_SERVER_SECRET_KEY` (starts with `secret-`).\n  - **Console API** (`statsigapi.net/console/v1/...`) — admin operations like creating gates. Requires `STATSIG_CONSOLE_API_KEY` (starts with `console-`).\nThe adapter uses the Server SDK base by default; tools that hit the Console API set explicit absolute URLs in their endpointMapping.\n\n**Setup**:\n1. Sign in to https://console.statsig.com → **Settings → Keys & Environments**.\n2. Copy the **Server Secret Key** (`secret-...`) for runtime ops.\n3. Copy a **Console API Key** (`console-...`) for admin ops (Settings → Project Settings → API Keys → Create Console API Key).\n4. Set `STATSIG_SERVER_SECRET_KEY` and (optionally, for admin tools) `STATSIG_CONSOLE_API_KEY`.\n\n**Authentication**: Server SDK uses `statsig-api-key: ${SERVER_SECRET}` header. Console uses `STATSIG-API-KEY: ${CONSOLE_KEY}` header.\n\n**Statsig-Client-Time header**: server SDK endpoints prefer a `STATSIG-CLIENT-TIME` header (Unix ms) — Statsig uses for evaluation timing. Skip for simple cases.\n\n**User object**: every gate/config/experiment evaluation needs a `user` object with at minimum `userID` (your stable user ID). Add `email`, `country`, `appVersion`, `custom` for targeting accuracy.\n\n**Out of scope here**: Layers API (experiment layers), holdouts, GitHub integration, audit log, project membership management.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "statsig",
+  "docsUrl": "https://docs.statsig.com/server-core/http-api/",
+  "requiredEnvVars": ["STATSIG_SERVER_SECRET_KEY"],
+  "connector": {
+    "name": "Statsig Server SDK",
+    "type": "REST",
+    "baseUrl": "https://api.statsig.com/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "statsig-api-key",
+      "apiKey": "{{STATSIG_SERVER_SECRET_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "statsig_check_gate",
+      "description": "Evaluate a feature gate (boolean flag) for a user. Returns {name, value:bool, rule_id, group_name, secondary_exposures}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": { "type": "object", "description": "{userID, email?, country?, ip?, userAgent?, appVersion?, custom?:{}, customIDs?:{}, privateAttributes?:{}}." },
+          "gateName": { "type": "string", "description": "Gate name (case-sensitive)." }
+        },
+        "required": ["user", "gateName"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/check_gate",
+        "bodyMapping": {
+          "user": "$user",
+          "gateName": "$gateName"
+        }
+      }
+    },
+    {
+      "name": "statsig_get_config",
+      "description": "Evaluate a Dynamic Config for a user. Returns {name, value:{...}, rule_id, group_name}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": { "type": "object", "description": "User object." },
+          "configName": { "type": "string", "description": "Dynamic Config name." }
+        },
+        "required": ["user", "configName"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_config",
+        "bodyMapping": {
+          "user": "$user",
+          "configName": "$configName"
+        }
+      }
+    },
+    {
+      "name": "statsig_get_experiment",
+      "description": "Evaluate an experiment for a user. Returns variant assignment + dynamic-config-like value object.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": { "type": "object", "description": "User object." },
+          "experimentName": { "type": "string", "description": "Experiment name." }
+        },
+        "required": ["user", "experimentName"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_experiment",
+        "bodyMapping": {
+          "user": "$user",
+          "experimentName": "$experimentName"
+        }
+      }
+    },
+    {
+      "name": "statsig_initialize",
+      "description": "Bulk evaluate ALL gates/configs/experiments for a user in one call. Returns the complete state — useful for client bootstrap.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": { "type": "object", "description": "User object." },
+          "statsigMetadata": { "type": "object", "description": "{sdkType?, sdkVersion?, sessionID?} — optional SDK metadata." }
+        },
+        "required": ["user"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/initialize",
+        "bodyMapping": {
+          "user": "$user",
+          "statsigMetadata": "$statsigMetadata"
+        }
+      }
+    },
+    {
+      "name": "statsig_log_event",
+      "description": "Log a custom event for analytics + experiment exposure tracking. Events are async — Statsig buffers them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "description": "[{user, eventName, value?, metadata?, time? (Unix ms)}]. Batch many at once."
+          }
+        },
+        "required": ["events"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/log_event",
+        "bodyMapping": {
+          "events": "$events"
+        }
+      }
+    },
+    {
+      "name": "statsig_list_gates",
+      "description": "Console: list feature gates defined in the project. Requires CONSOLE API key (set STATSIG_CONSOLE_API_KEY).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://statsigapi.net/console/v1/gates",
+        "queryParams": { "page": "$page", "limit": "$limit" },
+        "headers": { "STATSIG-API-KEY": "{{STATSIG_CONSOLE_API_KEY}}" }
+      }
+    },
+    {
+      "name": "statsig_get_gate_config",
+      "description": "Console: fetch a gate's definition (rules, targeting). Requires CONSOLE key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gateName": { "type": "string", "description": "Gate name." }
+        },
+        "required": ["gateName"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://statsigapi.net/console/v1/gates/{gateName}",
+        "headers": { "STATSIG-API-KEY": "{{STATSIG_CONSOLE_API_KEY}}" }
+      }
+    },
+    {
+      "name": "statsig_create_gate",
+      "description": "Console: create a new feature gate. Requires CONSOLE key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Gate name (unique)." },
+          "description": { "type": "string", "description": "Description." },
+          "idType": { "type": "string", "description": "userID, stableID, or custom name." },
+          "rules": { "type": "array", "description": "Targeting rules: [{name, conditions:[{type,operator,targetValue,field?}], passPercentage:0-100, returnValue?:bool}]." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://statsigapi.net/console/v1/gates",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "idType": "$idType",
+          "rules": "$rules"
+        },
+        "headers": { "STATSIG-API-KEY": "{{STATSIG_CONSOLE_API_KEY}}" }
+      }
+    },
+    {
+      "name": "statsig_list_experiments",
+      "description": "Console: list experiments. Requires CONSOLE key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://statsigapi.net/console/v1/experiments",
+        "queryParams": { "page": "$page", "limit": "$limit" },
+        "headers": { "STATSIG-API-KEY": "{{STATSIG_CONSOLE_API_KEY}}" }
+      }
+    },
+    {
+      "name": "statsig_get_experiment_results",
+      "description": "Console: fetch experiment metric results (pulse readout). Requires CONSOLE key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "experimentName": { "type": "string", "description": "Experiment name." }
+        },
+        "required": ["experimentName"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://statsigapi.net/console/v1/experiments/{experimentName}/results",
+        "headers": { "STATSIG-API-KEY": "{{STATSIG_CONSOLE_API_KEY}}" }
+      }
+    }
+  ]
+}

@@ -33,16 +33,19 @@ import * as companiesHouse from './gb/companies-house.json';
 import * as wise from './gb/wise.json';
 import * as activecampaign from './intl/activecampaign.json';
 import * as acuityScheduling from './intl/acuity-scheduling.json';
+import * as adyen from './intl/adyen.json';
 import * as apollo from './intl/apollo.json';
 import * as basecamp from './intl/basecamp.json';
 import * as bigcommerce from './intl/bigcommerce.json';
 import * as brevo from './intl/brevo.json';
 import * as calendly from './intl/calendly.json';
+import * as chargebee from './intl/chargebee.json';
 import * as clickup from './intl/clickup.json';
 import * as close from './intl/close.json';
 import * as coda from './intl/coda.json';
 import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
+import * as crisp from './intl/crisp.json';
 import * as discordBot from './intl/discord-bot.json';
 import * as drip from './intl/drip.json';
 import * as fathom from './intl/fathom.json';
@@ -65,10 +68,12 @@ import * as nominatim from './intl/nominatim.json';
 import * as outreach from './intl/outreach.json';
 import * as pandadoc from './intl/pandadoc.json';
 import * as pipedrive from './intl/pipedrive.json';
+import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as salesloft from './intl/salesloft.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sorare from './intl/sorare.json';
+import * as statsig from './intl/statsig.json';
 import * as substack from './intl/substack.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as tally from './intl/tally.json';
@@ -190,16 +195,19 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wise as unknown as AdapterDefinition,
   activecampaign as unknown as AdapterDefinition,
   acuityScheduling as unknown as AdapterDefinition,
+  adyen as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
   basecamp as unknown as AdapterDefinition,
   bigcommerce as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
+  chargebee as unknown as AdapterDefinition,
   clickup as unknown as AdapterDefinition,
   close as unknown as AdapterDefinition,
   coda as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
+  crisp as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
   drip as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
@@ -222,10 +230,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   outreach as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
   pipedrive as unknown as AdapterDefinition,
+  recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
+  statsig as unknown as AdapterDefinition,
   substack as unknown as AdapterDefinition,
   surveymonkey as unknown as AdapterDefinition,
   tally as unknown as AdapterDefinition,

@@ -1,0 +1,291 @@
+{
+  "slug": "recurly",
+  "name": "Recurly",
+  "description": "Drive Recurly (subscription billing, US-focused) from any AI agent: accounts, subscriptions, invoices, plans, coupons. 11 tools, Basic-auth.",
+  "instructions": "This connector uses the Recurly API v2021-02-25 (recurly.com/developers).\n\n**Setup**:\n1. Sign in to Recurly → **Integrations → API Credentials → Add Key**.\n2. Pick a Private API key (NOT a public site key — different purpose).\n3. Set `RECURLY_API_KEY`.\n\n**Authentication**: HTTP Basic with username=API_KEY, password=empty (Stripe-style).\n\n**Required Accept header pinned per-tool**: Recurly REQUIRES `Accept: application/vnd.recurly.v2021-02-25` on every request. The adapter pins this on each endpoint's headers.\n\n**Account model**: every customer is an `account`. Subscriptions, invoices, transactions all link to an account. Accounts can be `parent_account` for hierarchies (B2B).\n\n**Subscription states**: future, active, paused, expired, canceled, failed.\n\n**Currency**: each account has a 3-letter currency code. Subscriptions must use one of the plan's supported currencies.\n\n**Pagination**: cursor-based — `limit` (max 200) + response includes `has_more` + `next` URL.\n\n**Rate limits**: 1000 req/min per site. On 429 honor headers.\n\n**Out of scope here**: hosted pages, billing-info CRUD beyond list, refunds beyond invoice creation, gift cards, measured units, transactions detail, custom fields management.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "recurly",
+  "docsUrl": "https://recurly.com/developers/api/",
+  "requiredEnvVars": ["RECURLY_API_KEY"],
+  "connector": {
+    "name": "Recurly v2021-02-25",
+    "type": "REST",
+    "baseUrl": "https://v3.recurly.com",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{RECURLY_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "recurly_list_accounts",
+      "description": "List accounts (customers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber": { "type": "boolean", "description": "true = only with active subscription." },
+          "email": { "type": "string", "description": "Filter by email." },
+          "begin_time": { "type": "string", "description": "ISO 8601 — accounts modified after." },
+          "end_time": { "type": "string", "description": "ISO 8601." },
+          "sort": { "type": "string", "description": "created_at, updated_at." },
+          "order": { "type": "string", "description": "asc or desc." },
+          "limit": { "type": "integer", "description": "Per page (max 200)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "subscriber": "$subscriber",
+          "email": "$email",
+          "begin_time": "$begin_time",
+          "end_time": "$end_time",
+          "sort": "$sort",
+          "order": "$order",
+          "limit": "$limit"
+        },
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25" }
+      }
+    },
+    {
+      "name": "recurly_get_account",
+      "description": "Fetch one account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": { "type": "string", "description": "Account ID (or code prefixed with 'code-')." }
+        },
+        "required": ["accountId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{accountId}",
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25" }
+      }
+    },
+    {
+      "name": "recurly_create_account",
+      "description": "Create an account. Required: code (your unique customer ID).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "description": "Your unique customer code." },
+          "username": { "type": "string", "description": "Username." },
+          "email": { "type": "string", "description": "Email." },
+          "first_name": { "type": "string", "description": "First name." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "company": { "type": "string", "description": "Company." },
+          "vat_number": { "type": "string", "description": "VAT number." },
+          "preferred_locale": { "type": "string", "description": "Locale (en-US, de-DE, etc.)." },
+          "preferred_time_zone": { "type": "string", "description": "TZ database name." },
+          "cc_emails": { "type": "string", "description": "Comma-separated CC emails for invoices." },
+          "address": { "type": "object", "description": "{street1, street2?, city, region, postal_code, country, phone?}." },
+          "billing_info": { "type": "object", "description": "{token_id?, number?, month?, year?, cvv?, first_name?, last_name?, address?}." }
+        },
+        "required": ["code"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounts",
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25", "Content-Type": "application/json" },
+        "bodyMapping": {
+          "code": "$code",
+          "username": "$username",
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "company": "$company",
+          "vat_number": "$vat_number",
+          "preferred_locale": "$preferred_locale",
+          "preferred_time_zone": "$preferred_time_zone",
+          "cc_emails": "$cc_emails",
+          "address": "$address",
+          "billing_info": "$billing_info"
+        }
+      }
+    },
+    {
+      "name": "recurly_list_subscriptions",
+      "description": "List subscriptions with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": { "type": "string", "description": "future, active, paused, expired, canceled, failed." },
+          "begin_time": { "type": "string", "description": "ISO 8601." },
+          "end_time": { "type": "string", "description": "ISO 8601." },
+          "sort": { "type": "string", "description": "created_at, updated_at." },
+          "order": { "type": "string", "description": "asc or desc." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions",
+        "queryParams": {
+          "state": "$state",
+          "begin_time": "$begin_time",
+          "end_time": "$end_time",
+          "sort": "$sort",
+          "order": "$order",
+          "limit": "$limit"
+        },
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25" }
+      }
+    },
+    {
+      "name": "recurly_get_subscription",
+      "description": "Fetch one subscription.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "string", "description": "Subscription UUID." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions/{subscriptionId}",
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25" }
+      }
+    },
+    {
+      "name": "recurly_create_subscription",
+      "description": "Create a subscription on an account. Required: account.code OR account_id + plan_code + currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_code": { "type": "string", "description": "Plan code." },
+          "currency": { "type": "string", "description": "ISO 4217 currency (USD, EUR, etc.)." },
+          "account": { "type": "object", "description": "{code:'EXISTING' OR code+billing_info+address+...} — Recurly auto-creates the account if it doesn't exist." },
+          "unit_amount": { "type": "number", "description": "Override plan price." },
+          "quantity": { "type": "integer", "description": "Default 1." },
+          "coupon_code": { "type": "string", "description": "Coupon to apply." },
+          "trial_ends_at": { "type": "string", "description": "ISO 8601 — extend/override trial." },
+          "starts_at": { "type": "string", "description": "ISO 8601 — future start." },
+          "po_number": { "type": "string", "description": "Purchase order." },
+          "auto_renew": { "type": "boolean", "description": "Default true. false = cancels at period end." }
+        },
+        "required": ["plan_code", "currency", "account"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions",
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25", "Content-Type": "application/json" },
+        "bodyMapping": {
+          "plan_code": "$plan_code",
+          "currency": "$currency",
+          "account": "$account",
+          "unit_amount": "$unit_amount",
+          "quantity": "$quantity",
+          "coupon_code": "$coupon_code",
+          "trial_ends_at": "$trial_ends_at",
+          "starts_at": "$starts_at",
+          "po_number": "$po_number",
+          "auto_renew": "$auto_renew"
+        }
+      }
+    },
+    {
+      "name": "recurly_cancel_subscription",
+      "description": "Cancel a subscription at the end of the current term. Use recurly_terminate for immediate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "string", "description": "Subscription UUID." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscriptions/{subscriptionId}/cancel",
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25" }
+      }
+    },
+    {
+      "name": "recurly_terminate_subscription",
+      "description": "Immediately terminate a subscription with refund options (none/partial/full).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "string", "description": "Subscription UUID." },
+          "refund": { "type": "string", "description": "none (default), partial, full." },
+          "charge": { "type": "boolean", "description": "If true, post any unsettled charges." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscriptions/{subscriptionId}/terminate",
+        "queryParams": {
+          "refund": "$refund",
+          "charge": "$charge"
+        },
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25" }
+      }
+    },
+    {
+      "name": "recurly_list_invoices",
+      "description": "List invoices across the site.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": { "type": "string", "description": "pending, processing, past_due, paid, failed, voided, closed." },
+          "type": { "type": "string", "description": "charge, credit, legacy, non_legacy." },
+          "begin_time": { "type": "string", "description": "ISO 8601." },
+          "end_time": { "type": "string", "description": "ISO 8601." },
+          "sort": { "type": "string", "description": "created_at, updated_at." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "state": "$state",
+          "type": "$type",
+          "begin_time": "$begin_time",
+          "end_time": "$end_time",
+          "sort": "$sort",
+          "limit": "$limit"
+        },
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25" }
+      }
+    },
+    {
+      "name": "recurly_list_plans",
+      "description": "List plans (subscription products). Each has code, name, intervals[], currencies[], trial_length, setup_fee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": { "type": "string", "description": "active, inactive." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/plans",
+        "queryParams": { "state": "$state", "limit": "$limit" },
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25" }
+      }
+    },
+    {
+      "name": "recurly_list_coupons",
+      "description": "List coupons.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": { "type": "string", "description": "redeemable, expired, maxed_out, inactive." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coupons",
+        "queryParams": { "state": "$state", "limit": "$limit" },
+        "headers": { "Accept": "application/vnd.recurly.v2021-02-25" }
+      }
+    }
+  ]
+}

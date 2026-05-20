@@ -48,7 +48,11 @@ export class RestEngine {
       path = path.replace(`{${key}}`, String(value));
     }
 
-    const url = `${config.baseUrl}${path}`;
+    // Allow per-tool absolute URLs to escape the connector's baseUrl. Useful
+    // when a vendor publishes multiple distinct API hosts under one product
+    // (e.g. Statsig: api.statsig.com for SDK + statsigapi.net for Console),
+    // so a single adapter can cover both without two connector records.
+    const url = /^https?:\/\//i.test(path) ? path : `${config.baseUrl}${path}`;
     await assertSafeOutboundUrl(url);
 
     // Resolve dynamic headers from endpoint mapping ($param references)

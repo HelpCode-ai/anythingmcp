@@ -1,0 +1,264 @@
+{
+  "slug": "adyen",
+  "name": "Adyen",
+  "description": "Drive Adyen (global payment processor) checkout + payments + balance platform from any AI agent. 10 tools, API-key auth, separate live and test environments.",
+  "instructions": "This connector uses the Adyen Checkout API v71 and Payments Modifications API (docs.adyen.com).\n\n**Setup**:\n1. Sign in to https://ca-test.adyen.com (test) or https://ca-live.adyen.com (live) → **Developers → API credentials → New credential → API user**.\n2. Generate the API key. Note your **merchant account name** (visible in top dropdown, e.g. `AcmeCo`).\n3. Set:\n   - `ADYEN_API_KEY` = the API key\n   - `ADYEN_MERCHANT_ACCOUNT` = the merchant account name\n   - `ADYEN_ENV` = `test` or `live`\n   - For LIVE only: also set `ADYEN_LIVE_URL_PREFIX` = the URL prefix Adyen issued you (something like `abc123def-AcmeCo`). Find in CA → Developers → API URLs.\n\n**Authentication**: header `X-API-Key: ${ADYEN_API_KEY}`.\n\n**Base URL switches environment**: Adyen test → `https://checkout-test.adyen.com/v71`. Live → `https://{PREFIX}-checkout-live.adyenpayments.com/checkout/v71`. The adapter uses test by default; for live, point `ADYEN_CHECKOUT_BASE_URL` env var at the prefixed live URL.\n\n**Amount format**: `{currency: 'EUR', value: 1099}` — value in MINOR units (cents). EUR uses 2 decimals, JPY 0 decimals — Adyen handles per ISO 4217. NEVER pass decimals.\n\n**Idempotency**: pass `Idempotency-Key` header on POST `/payments` to dedupe retries.\n\n**Payment flow**:\n  1. `adyen_payment_methods` — get available methods for currency/country/amount.\n  2. `adyen_create_payment` — create the payment. Response includes `resultCode` (Authorised/Refused/Pending/RedirectShopper/etc.) and optional `action` (redirect/3DS challenge).\n  3. If action: shopper completes it client-side; server gets back `details` to submit.\n  4. `adyen_payments_details` — finalize.\n  5. Track via `adyen_payments_capture` (manual capture flow), `adyen_payments_refund`, `adyen_payments_cancel`.\n\n**Modifications**: capture/refund/cancel use the dedicated modification endpoints, NOT the same endpoint as create.\n\n**Webhooks** out of scope.\n\n**Out of scope here**: Terminal API (in-person), Balance Platform deep features, Marketpay, Recurring API beyond basic.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "adyen",
+  "docsUrl": "https://docs.adyen.com/api-explorer/",
+  "requiredEnvVars": ["ADYEN_API_KEY", "ADYEN_MERCHANT_ACCOUNT"],
+  "connector": {
+    "name": "Adyen Checkout v71",
+    "type": "REST",
+    "baseUrl": "https://checkout-test.adyen.com/v71",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-Key",
+      "apiKey": "{{ADYEN_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "adyen_payment_methods",
+      "description": "List available payment methods for a given currency / country / amount. Returns the methods array that the Adyen Drop-in/Components SDKs render.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchantAccount": { "type": "string", "description": "Merchant account name (use ADYEN_MERCHANT_ACCOUNT)." },
+          "amount": { "type": "object", "description": "{currency:'EUR', value:1099} — minor units." },
+          "countryCode": { "type": "string", "description": "ISO 3166-1 alpha-2 country (e.g. 'DE', 'US')." },
+          "shopperLocale": { "type": "string", "description": "Locale (e.g. 'en-US', 'de-DE')." },
+          "channel": { "type": "string", "description": "iOS, Android, Web." },
+          "shopperReference": { "type": "string", "description": "Shopper unique ID — required for showing stored payment methods." }
+        },
+        "required": ["merchantAccount"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/paymentMethods",
+        "bodyMapping": {
+          "merchantAccount": "$merchantAccount",
+          "amount": "$amount",
+          "countryCode": "$countryCode",
+          "shopperLocale": "$shopperLocale",
+          "channel": "$channel",
+          "shopperReference": "$shopperReference"
+        }
+      }
+    },
+    {
+      "name": "adyen_create_payment",
+      "description": "Create a payment. paymentMethod object varies by method type (card, ideal, paypal, etc.) — usually you get an opaque `paymentMethod` object from the client-side Drop-in. Returns resultCode + action (if 3DS/redirect needed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchantAccount": { "type": "string", "description": "Merchant account name." },
+          "amount": { "type": "object", "description": "{currency, value (minor units)}." },
+          "reference": { "type": "string", "description": "Your unique reference for this payment (shown on reports)." },
+          "paymentMethod": { "type": "object", "description": "Method-specific payload, e.g. {type:'scheme', encryptedCardNumber:..., encryptedExpiryMonth:..., encryptedExpiryYear:..., encryptedSecurityCode:..., holderName:...}. From Drop-in/Components." },
+          "returnUrl": { "type": "string", "description": "Where to return shopper after redirect-based payments (3DS, iDEAL)." },
+          "shopperReference": { "type": "string", "description": "Stable shopper ID for storing payment methods." },
+          "shopperEmail": { "type": "string", "description": "Email." },
+          "shopperIP": { "type": "string", "description": "Shopper IP (for risk scoring)." },
+          "shopperInteraction": { "type": "string", "description": "Ecommerce (default) or ContAuth (recurring)." },
+          "recurringProcessingModel": { "type": "string", "description": "CardOnFile, Subscription, UnscheduledCardOnFile — required for storing payment methods." },
+          "storePaymentMethod": { "type": "boolean", "description": "If true and shopperReference is set, store the payment method for future use." },
+          "billingAddress": { "type": "object", "description": "{street, houseNumberOrName, postalCode, city, country, stateOrProvince?}." },
+          "channel": { "type": "string", "description": "Web, iOS, Android." }
+        },
+        "required": ["merchantAccount", "amount", "reference", "paymentMethod"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments",
+        "bodyMapping": {
+          "merchantAccount": "$merchantAccount",
+          "amount": "$amount",
+          "reference": "$reference",
+          "paymentMethod": "$paymentMethod",
+          "returnUrl": "$returnUrl",
+          "shopperReference": "$shopperReference",
+          "shopperEmail": "$shopperEmail",
+          "shopperIP": "$shopperIP",
+          "shopperInteraction": "$shopperInteraction",
+          "recurringProcessingModel": "$recurringProcessingModel",
+          "storePaymentMethod": "$storePaymentMethod",
+          "billingAddress": "$billingAddress",
+          "channel": "$channel"
+        }
+      }
+    },
+    {
+      "name": "adyen_payments_details",
+      "description": "Finalize a payment with the action result (3DS challenge result, redirect result, etc.). Called after the shopper completes the action returned by create_payment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "details": { "type": "object", "description": "Action-specific details (e.g. {redirectResult:'...'} for redirect, {threeDSResult:'...'} for 3DS1)." },
+          "paymentData": { "type": "string", "description": "paymentData string from the create response." }
+        },
+        "required": ["details"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/details",
+        "bodyMapping": {
+          "details": "$details",
+          "paymentData": "$paymentData"
+        }
+      }
+    },
+    {
+      "name": "adyen_payments_capture",
+      "description": "Capture an authorised payment (manual-capture flow). For instant capture, set captureDelayHours=0 on create_payment instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentPspReference": { "type": "string", "description": "The pspReference from a prior successful payment authorisation." },
+          "merchantAccount": { "type": "string", "description": "Merchant account name." },
+          "amount": { "type": "object", "description": "{currency, value} — must match authorisation currency. Smaller value = partial capture." },
+          "reference": { "type": "string", "description": "Your reference for the capture." }
+        },
+        "required": ["paymentPspReference", "merchantAccount", "amount"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/{paymentPspReference}/captures",
+        "bodyMapping": {
+          "merchantAccount": "$merchantAccount",
+          "amount": "$amount",
+          "reference": "$reference"
+        }
+      }
+    },
+    {
+      "name": "adyen_payments_refund",
+      "description": "Refund a captured payment. Partial refunds OK (smaller amount).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentPspReference": { "type": "string", "description": "Original payment pspReference." },
+          "merchantAccount": { "type": "string", "description": "Merchant account." },
+          "amount": { "type": "object", "description": "{currency, value}." },
+          "reference": { "type": "string", "description": "Your refund reference." }
+        },
+        "required": ["paymentPspReference", "merchantAccount", "amount"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/{paymentPspReference}/refunds",
+        "bodyMapping": {
+          "merchantAccount": "$merchantAccount",
+          "amount": "$amount",
+          "reference": "$reference"
+        }
+      }
+    },
+    {
+      "name": "adyen_payments_cancel",
+      "description": "Cancel an authorisation that hasn't been captured yet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentPspReference": { "type": "string", "description": "Payment pspReference." },
+          "merchantAccount": { "type": "string", "description": "Merchant account." },
+          "reference": { "type": "string", "description": "Your reference." }
+        },
+        "required": ["paymentPspReference", "merchantAccount"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/{paymentPspReference}/cancels",
+        "bodyMapping": {
+          "merchantAccount": "$merchantAccount",
+          "reference": "$reference"
+        }
+      }
+    },
+    {
+      "name": "adyen_payments_reversal",
+      "description": "Reverse an authorisation (handles capture + refund as one atomic op if needed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentPspReference": { "type": "string", "description": "Payment pspReference." },
+          "merchantAccount": { "type": "string", "description": "Merchant account." },
+          "reference": { "type": "string", "description": "Your reference." }
+        },
+        "required": ["paymentPspReference", "merchantAccount"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/{paymentPspReference}/reversals",
+        "bodyMapping": {
+          "merchantAccount": "$merchantAccount",
+          "reference": "$reference"
+        }
+      }
+    },
+    {
+      "name": "adyen_sessions_create",
+      "description": "Create a payment session (used by Drop-in v5+). Returns a session ID + sessionData the client uses to initialise the SDK.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchantAccount": { "type": "string", "description": "Merchant account." },
+          "amount": { "type": "object", "description": "{currency, value}." },
+          "reference": { "type": "string", "description": "Your unique reference." },
+          "returnUrl": { "type": "string", "description": "Return URL." },
+          "countryCode": { "type": "string", "description": "ISO country." },
+          "shopperLocale": { "type": "string", "description": "Shopper locale." },
+          "channel": { "type": "string", "description": "Web, iOS, Android." }
+        },
+        "required": ["merchantAccount", "amount", "reference", "returnUrl"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sessions",
+        "bodyMapping": {
+          "merchantAccount": "$merchantAccount",
+          "amount": "$amount",
+          "reference": "$reference",
+          "returnUrl": "$returnUrl",
+          "countryCode": "$countryCode",
+          "shopperLocale": "$shopperLocale",
+          "channel": "$channel"
+        }
+      }
+    },
+    {
+      "name": "adyen_session_get_result",
+      "description": "Get the result of a session (after the shopper has completed payment in Drop-in).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string", "description": "Session ID from sessions_create." },
+          "sessionResult": { "type": "string", "description": "sessionResult string from Drop-in's onPaymentCompleted." }
+        },
+        "required": ["sessionId", "sessionResult"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sessions/{sessionId}",
+        "queryParams": { "sessionResult": "$sessionResult" }
+      }
+    },
+    {
+      "name": "adyen_origin_keys",
+      "description": "Get origin keys for web-Drop-in (deprecated since 2023 in favor of clientKey — included for legacy integrations).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "originDomains": { "type": "array", "description": "Array of URLs (e.g. ['https://shop.acme.com'])." }
+        },
+        "required": ["originDomains"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/originKeys",
+        "bodyMapping": { "originDomains": "$originDomains" }
+      }
+    }
+  ]
+}
