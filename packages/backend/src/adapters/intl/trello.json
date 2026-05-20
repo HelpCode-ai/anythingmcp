@@ -1,0 +1,301 @@
+{
+  "slug": "trello",
+  "name": "Trello",
+  "description": "Drive Trello (Kanban boards) from any AI agent: boards, lists, cards, members, labels, checklists, attachments-by-URL. 13 tools. API key + user token query-string auth (Trello-specific).",
+  "instructions": "This connector uses the Trello REST API v1.\n\n**Setup**:\n1. Sign in to Trello → go to https://trello.com/power-ups/admin → **+ New** to create a Power-Up (this is just the modern way to mint API keys).\n2. After creation, open the Power-Up → **API key** section → copy the **API key**.\n3. Below it, click **Token** → authorize the Power-Up → copy the generated user **Token**.\n4. Set:\n   - `TRELLO_API_KEY` = the Power-Up key (a long alphanumeric)\n   - `TRELLO_TOKEN` = the user token (much longer)\n\n**Authentication**: query-string `?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}` on every request. The token is per-user — actions are attributed to that user. To act as a different user, mint a separate token via their Trello account.\n\n**Hierarchy**: Workspace (Organization) → Board → List → Card. Cards have members[], labels[], checklists[], attachments[], comments (= actions of type commentCard).\n\n**ID format**: 24-character hex (e.g. `abc123def456789012345678`). Boards / lists / cards / members all use this format. Discover board IDs via `trello_list_my_boards` → list IDs via `trello_get_board_lists` → card IDs via `trello_list_cards_in_list`.\n\n**`fields` parameter**: virtually every endpoint accepts `?fields=all` or `?fields=comma,separated,list`. Default returns a sensible subset — for full payloads pass `fields=all`.\n\n**Position values**: lists and cards have a `pos` (float) for ordering. `pos=top` or `pos=bottom` shortcuts work for moves; otherwise pass an explicit number between the neighbors' positions.\n\n**Labels**: are board-level. A label has color (green/yellow/orange/red/purple/blue/sky/lime/pink/black/null) + name. Cards reference labels by their ID. Use `trello_list_board_labels` to discover IDs.\n\n**Attachments**: upload via multipart not supported in single call. Use URL attachments via the `url` parameter — Trello fetches it.\n\n**Webhooks** out of scope.\n\n**Rate limits**: 100 req per 10 sec per API key, 300 per 10 sec per token. Returns 429 with `X-Rate-Limit-Api-Key-Remaining` header.\n\n**Out of scope here**: Power-Up actions, custom fields (Power-Up only), board backgrounds, voting, plugin data, butler automations.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "trello",
+  "docsUrl": "https://developer.atlassian.com/cloud/trello/rest/",
+  "requiredEnvVars": ["TRELLO_API_KEY", "TRELLO_TOKEN"],
+  "connector": {
+    "name": "Trello v1",
+    "type": "REST",
+    "baseUrl": "https://api.trello.com/1",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "key": "{{TRELLO_API_KEY}}",
+      "token": "{{TRELLO_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "trello_get_me",
+      "description": "Return the user the token belongs to: id, username, fullName, email, avatarUrl. Health check + whoami.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/members/me" }
+    },
+    {
+      "name": "trello_list_my_boards",
+      "description": "List boards the user is a member of. Each board has id, name, desc, url, closed, idOrganization.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "all, members, organization, public, open, closed, pinned, unpinned, starred." },
+          "fields": { "type": "string", "description": "all or comma-separated list." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members/me/boards",
+        "queryParams": { "filter": "$filter", "fields": "$fields" }
+      }
+    },
+    {
+      "name": "trello_get_board",
+      "description": "Fetch a board with optional nested resources (lists/cards/labels/members) via inclusion params.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "boardId": { "type": "string", "description": "Board ID." },
+          "fields": { "type": "string", "description": "Board fields or 'all'." },
+          "lists": { "type": "string", "description": "Include lists: none, all, open, closed." },
+          "cards": { "type": "string", "description": "Include cards: none, all, open, closed, visible." },
+          "members": { "type": "string", "description": "Include members: none, normal, admins, owners, all." },
+          "labels": { "type": "string", "description": "Include labels: none, all." }
+        },
+        "required": ["boardId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{boardId}",
+        "queryParams": {
+          "fields": "$fields",
+          "lists": "$lists",
+          "cards": "$cards",
+          "members": "$members",
+          "labels": "$labels"
+        }
+      }
+    },
+    {
+      "name": "trello_get_board_lists",
+      "description": "List the lists (columns) on a board.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "boardId": { "type": "string", "description": "Board ID." },
+          "filter": { "type": "string", "description": "all, open, closed, none." },
+          "fields": { "type": "string", "description": "Fields or 'all'." }
+        },
+        "required": ["boardId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{boardId}/lists",
+        "queryParams": { "filter": "$filter", "fields": "$fields" }
+      }
+    },
+    {
+      "name": "trello_list_cards_in_list",
+      "description": "List cards in a list. Each card has id, name, desc, idMembers, idLabels, due, dueComplete, shortUrl, pos.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": { "type": "string", "description": "List ID." },
+          "fields": { "type": "string", "description": "Card fields or 'all'." }
+        },
+        "required": ["listId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists/{listId}/cards",
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "trello_get_card",
+      "description": "Fetch a single card with optional members/labels/checklists/attachments included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cardId": { "type": "string", "description": "Card ID." },
+          "fields": { "type": "string", "description": "Card fields." },
+          "members": { "type": "boolean", "description": "Include full member objects." },
+          "checklists": { "type": "string", "description": "all or none." },
+          "attachments": { "type": "string", "description": "true, false, cover." }
+        },
+        "required": ["cardId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cards/{cardId}",
+        "queryParams": {
+          "fields": "$fields",
+          "members": "$members",
+          "checklists": "$checklists",
+          "attachments": "$attachments"
+        }
+      }
+    },
+    {
+      "name": "trello_create_card",
+      "description": "Create a card in a list. Required: idList + name. due is ISO 8601. idMembers/idLabels are comma-separated ID strings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idList": { "type": "string", "description": "Target list ID." },
+          "name": { "type": "string", "description": "Card name." },
+          "desc": { "type": "string", "description": "Description (Markdown)." },
+          "pos": { "type": "string", "description": "Position: 'top', 'bottom', or numeric (e.g. '65535')." },
+          "due": { "type": "string", "description": "Due date ISO 8601." },
+          "dueComplete": { "type": "boolean", "description": "If true, due is marked complete." },
+          "idMembers": { "type": "string", "description": "Comma-separated member IDs." },
+          "idLabels": { "type": "string", "description": "Comma-separated label IDs." },
+          "urlSource": { "type": "string", "description": "If set, attach this URL to the card on create." },
+          "address": { "type": "string", "description": "Location address." },
+          "locationName": { "type": "string", "description": "Location name." },
+          "coordinates": { "type": "string", "description": "lat,lng coordinates." }
+        },
+        "required": ["idList", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cards",
+        "bodyMapping": {
+          "idList": "$idList",
+          "name": "$name",
+          "desc": "$desc",
+          "pos": "$pos",
+          "due": "$due",
+          "dueComplete": "$dueComplete",
+          "idMembers": "$idMembers",
+          "idLabels": "$idLabels",
+          "urlSource": "$urlSource",
+          "address": "$address",
+          "locationName": "$locationName",
+          "coordinates": "$coordinates"
+        }
+      }
+    },
+    {
+      "name": "trello_update_card",
+      "description": "Update a card. Common: idList (move to another column), pos, due/dueComplete, name/desc, idMembers (replace whole array via comma-separated string), idLabels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cardId": { "type": "string", "description": "Card ID." },
+          "name": { "type": "string", "description": "New name." },
+          "desc": { "type": "string", "description": "New description." },
+          "closed": { "type": "boolean", "description": "Archive the card (true = archive)." },
+          "idMembers": { "type": "string", "description": "Comma-separated member IDs (full replacement)." },
+          "idAttachmentCover": { "type": "string", "description": "Attachment ID to use as cover." },
+          "idList": { "type": "string", "description": "Move to this list ID." },
+          "idLabels": { "type": "string", "description": "Comma-separated label IDs (full replacement)." },
+          "idBoard": { "type": "string", "description": "Move to a different board." },
+          "pos": { "type": "string", "description": "top, bottom, or numeric." },
+          "due": { "type": "string", "description": "ISO 8601 or null to clear." },
+          "dueComplete": { "type": "boolean", "description": "Mark due complete." }
+        },
+        "required": ["cardId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/cards/{cardId}",
+        "bodyMapping": {
+          "name": "$name",
+          "desc": "$desc",
+          "closed": "$closed",
+          "idMembers": "$idMembers",
+          "idAttachmentCover": "$idAttachmentCover",
+          "idList": "$idList",
+          "idLabels": "$idLabels",
+          "idBoard": "$idBoard",
+          "pos": "$pos",
+          "due": "$due",
+          "dueComplete": "$dueComplete"
+        }
+      }
+    },
+    {
+      "name": "trello_delete_card",
+      "description": "Permanently delete a card. Use trello_update_card with closed=true for archive (recoverable).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cardId": { "type": "string", "description": "Card ID." }
+        },
+        "required": ["cardId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/cards/{cardId}" }
+    },
+    {
+      "name": "trello_add_card_comment",
+      "description": "Add a comment to a card (creates an action of type commentCard).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cardId": { "type": "string", "description": "Card ID." },
+          "text": { "type": "string", "description": "Comment text (Markdown)." }
+        },
+        "required": ["cardId", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cards/{cardId}/actions/comments",
+        "bodyMapping": { "text": "$text" }
+      }
+    },
+    {
+      "name": "trello_attach_url_to_card",
+      "description": "Attach a URL (link) to a card. For file uploads use the Trello UI — multipart upload via API is not supported here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cardId": { "type": "string", "description": "Card ID." },
+          "url": { "type": "string", "description": "URL to attach." },
+          "name": { "type": "string", "description": "Display name for the attachment." },
+          "setCover": { "type": "boolean", "description": "If true and the URL is an image, use it as the card cover." }
+        },
+        "required": ["cardId", "url"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cards/{cardId}/attachments",
+        "bodyMapping": {
+          "url": "$url",
+          "name": "$name",
+          "setCover": "$setCover"
+        }
+      }
+    },
+    {
+      "name": "trello_list_board_labels",
+      "description": "List labels available on a board. Returns id, name, color.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "boardId": { "type": "string", "description": "Board ID." }
+        },
+        "required": ["boardId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/boards/{boardId}/labels" }
+    },
+    {
+      "name": "trello_search",
+      "description": "Universal search across boards, cards, members and organizations. Supports the same operators as the Trello UI search (board:X, list:Y, label:Z, member:W, due:next-week, has:attachments, etc.).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query (min 1 char)." },
+          "modelTypes": { "type": "string", "description": "Comma-separated: actions,boards,cards,members,organizations." },
+          "cards_limit": { "type": "integer", "description": "Max cards returned (default 10, max 1000)." },
+          "boards_limit": { "type": "integer", "description": "Max boards." },
+          "partial": { "type": "boolean", "description": "Partial match (default true)." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "query": "$query",
+          "modelTypes": "$modelTypes",
+          "cards_limit": "$cards_limit",
+          "boards_limit": "$boards_limit",
+          "partial": "$partial"
+        }
+      }
+    }
+  ]
+}

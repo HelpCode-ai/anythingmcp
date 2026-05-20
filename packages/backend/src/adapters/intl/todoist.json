@@ -1,0 +1,254 @@
+{
+  "slug": "todoist",
+  "name": "Todoist",
+  "description": "Drive Todoist (personal/team task manager) from any AI agent: projects, tasks, comments, labels, sections. 12 tools, Bearer token auth, REST API v2.",
+  "instructions": "This connector uses the Todoist API v1 (the modern unified API — the older `/rest/v2` and `/sync/v9` are deprecated).\n\n**Setup**:\n1. Sign in to https://todoist.com → top-right avatar → **Settings → Integrations → Developer → API token → Copy**.\n2. Set `TODOIST_API_TOKEN` to it.\n\n**Authentication**: `Authorization: Bearer ${TODOIST_API_TOKEN}`. The token is per-user; everything done with it appears as that user's actions. Personal API tokens never expire.\n\n**Hierarchy**: Project → Section (optional) → Task → Sub-task. Tasks can also live directly in a project without a section. The Inbox is a special project (`inbox_project=true`).\n\n**Date strings**: Todoist accepts natural language for `due_string` (e.g. 'tomorrow at noon', 'every monday 9am', 'in 3 days', 'next friday') OR explicit `due_date` (YYYY-MM-DD) / `due_datetime` (ISO 8601 RFC 3339). For recurring tasks, the natural-language form is required to set recurrence rules.\n\n**Priorities**: 1-4 in the API (1=lowest, 4=urgent). The Todoist UI shows them inverted (P1 in UI = priority 4 in API).\n\n**Filters**: when listing tasks via `todoist_get_active_tasks`, the `filter` parameter accepts Todoist's filter syntax: 'today', 'overdue', 'p1 & @work', 'due before: +7 days', etc.\n\n**Pagination**: not used — the REST API returns full lists (sometimes thousands of items). Use filters to narrow.\n\n**Rate limits**: 1000 requests per 15 min per user. On 429 back off.\n\n**Sync API not exposed here**: Todoist also has a Sync API (single batch endpoint that returns all data at once) — useful for full local mirrors but more complex. This connector uses the simpler REST endpoints.\n\n**Out of scope here**: webhooks, attachments upload, project sharing/collaboration changes (only show collaborators), karma stats, premium-only filters management.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "todoist",
+  "docsUrl": "https://developer.todoist.com/rest/v2",
+  "requiredEnvVars": ["TODOIST_API_TOKEN"],
+  "connector": {
+    "name": "Todoist API v1",
+    "type": "REST",
+    "baseUrl": "https://api.todoist.com/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TODOIST_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "todoist_get_projects",
+      "description": "List all projects the user can access. Each project has id, name, color, parent_id, order, comment_count, is_shared, is_favorite, is_inbox_project, url.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/projects" }
+    },
+    {
+      "name": "todoist_create_project",
+      "description": "Create a new project. Required: name. Color names: berry_red, red, orange, yellow, olive_green, lime_green, green, mint_green, teal, sky_blue, light_blue, blue, grape, violet, lavender, magenta, salmon, charcoal, grey, taupe.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Project name." },
+          "parent_id": { "type": "string", "description": "Parent project ID (nest as sub-project)." },
+          "color": { "type": "string", "description": "Color name (see description)." },
+          "is_favorite": { "type": "boolean", "description": "Add to favorites." },
+          "view_style": { "type": "string", "description": "list (default) or board (Kanban view)." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects",
+        "bodyMapping": {
+          "name": "$name",
+          "parent_id": "$parent_id",
+          "color": "$color",
+          "is_favorite": "$is_favorite",
+          "view_style": "$view_style"
+        }
+      }
+    },
+    {
+      "name": "todoist_get_active_tasks",
+      "description": "List active (non-completed) tasks with filters. The `filter` parameter is powerful — use Todoist filter syntax like 'today', 'overdue', 'p1 & @home', 'due before: +7 days'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string", "description": "Filter by project ID." },
+          "section_id": { "type": "string", "description": "Filter by section ID." },
+          "label": { "type": "string", "description": "Filter by label name." },
+          "filter": { "type": "string", "description": "Todoist filter string, e.g. 'today', 'overdue', '@work & p1', 'due before: +7 days'." },
+          "ids": { "type": "string", "description": "Comma-separated specific task IDs." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "project_id": "$project_id",
+          "section_id": "$section_id",
+          "label": "$label",
+          "filter": "$filter",
+          "ids": "$ids"
+        }
+      }
+    },
+    {
+      "name": "todoist_get_task",
+      "description": "Fetch a single task by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/tasks/{taskId}" }
+    },
+    {
+      "name": "todoist_create_task",
+      "description": "Create a task. Required: content. Use due_string for natural-language dates ('tomorrow 9am', 'every monday'). Set parent_id to create a subtask.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "string", "description": "Task content (the title). Supports Markdown links." },
+          "description": { "type": "string", "description": "Longer description (Markdown)." },
+          "project_id": { "type": "string", "description": "Target project ID. Defaults to Inbox." },
+          "section_id": { "type": "string", "description": "Section within the project." },
+          "parent_id": { "type": "string", "description": "Make this a subtask of the given task ID." },
+          "order": { "type": "integer", "description": "Order within the parent." },
+          "labels": { "type": "array", "description": "Array of label names (auto-creates labels if new)." },
+          "priority": { "type": "integer", "description": "1-4. 4 = highest (UI P1)." },
+          "due_string": { "type": "string", "description": "Natural language: 'tomorrow at 9am', 'every monday', 'in 3 days'. Required for recurring tasks." },
+          "due_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "due_datetime": { "type": "string", "description": "ISO 8601 with timezone." },
+          "due_lang": { "type": "string", "description": "Language for due_string parsing (en, de, fr, ru, ja, etc.)." },
+          "assignee_id": { "type": "string", "description": "User ID — only valid for shared projects." },
+          "duration": { "type": "integer", "description": "Duration in minutes (for time-blocking)." },
+          "duration_unit": { "type": "string", "description": "minute or day." }
+        },
+        "required": ["content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMapping": {
+          "content": "$content",
+          "description": "$description",
+          "project_id": "$project_id",
+          "section_id": "$section_id",
+          "parent_id": "$parent_id",
+          "order": "$order",
+          "labels": "$labels",
+          "priority": "$priority",
+          "due_string": "$due_string",
+          "due_date": "$due_date",
+          "due_datetime": "$due_datetime",
+          "due_lang": "$due_lang",
+          "assignee_id": "$assignee_id",
+          "duration": "$duration",
+          "duration_unit": "$duration_unit"
+        }
+      }
+    },
+    {
+      "name": "todoist_update_task",
+      "description": "Update a task. To move it to a different project, use the dedicated todoist_move_task tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." },
+          "content": { "type": "string", "description": "New content." },
+          "description": { "type": "string", "description": "New description." },
+          "labels": { "type": "array", "description": "Replace labels." },
+          "priority": { "type": "integer", "description": "1-4." },
+          "due_string": { "type": "string", "description": "Natural-language date." },
+          "due_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "due_datetime": { "type": "string", "description": "ISO 8601." },
+          "assignee_id": { "type": "string", "description": "Reassign (shared projects)." },
+          "duration": { "type": "integer", "description": "Duration minutes." },
+          "duration_unit": { "type": "string", "description": "minute or day." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks/{taskId}",
+        "bodyMapping": {
+          "content": "$content",
+          "description": "$description",
+          "labels": "$labels",
+          "priority": "$priority",
+          "due_string": "$due_string",
+          "due_date": "$due_date",
+          "due_datetime": "$due_datetime",
+          "assignee_id": "$assignee_id",
+          "duration": "$duration",
+          "duration_unit": "$duration_unit"
+        }
+      }
+    },
+    {
+      "name": "todoist_complete_task",
+      "description": "Mark a task as completed. For recurring tasks, the next occurrence is auto-created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/tasks/{taskId}/close" }
+    },
+    {
+      "name": "todoist_reopen_task",
+      "description": "Reopen a previously-completed task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/tasks/{taskId}/reopen" }
+    },
+    {
+      "name": "todoist_delete_task",
+      "description": "Permanently delete a task. Irreversible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/tasks/{taskId}" }
+    },
+    {
+      "name": "todoist_get_comments",
+      "description": "List comments on a project OR a task. Provide either project_id or task_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string", "description": "Project ID." },
+          "task_id": { "type": "string", "description": "Task ID." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/comments",
+        "queryParams": { "project_id": "$project_id", "task_id": "$task_id" }
+      }
+    },
+    {
+      "name": "todoist_create_comment",
+      "description": "Add a comment to a project or task. Required: content + one of (project_id, task_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": { "type": "string", "description": "Task ID (mutually exclusive with project_id)." },
+          "project_id": { "type": "string", "description": "Project ID." },
+          "content": { "type": "string", "description": "Comment body (Markdown)." }
+        },
+        "required": ["content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/comments",
+        "bodyMapping": {
+          "task_id": "$task_id",
+          "project_id": "$project_id",
+          "content": "$content"
+        }
+      }
+    },
+    {
+      "name": "todoist_get_labels",
+      "description": "List the user's personal labels. Each has id, name, color, order, is_favorite.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/labels" }
+    }
+  ]
+}

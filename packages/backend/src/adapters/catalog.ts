@@ -33,9 +33,12 @@ import * as companiesHouse from './gb/companies-house.json';
 import * as wise from './gb/wise.json';
 import * as activecampaign from './intl/activecampaign.json';
 import * as apollo from './intl/apollo.json';
+import * as basecamp from './intl/basecamp.json';
 import * as brevo from './intl/brevo.json';
 import * as calendly from './intl/calendly.json';
+import * as clickup from './intl/clickup.json';
 import * as close from './intl/close.json';
+import * as coda from './intl/coda.json';
 import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
 import * as discordBot from './intl/discord-bot.json';
@@ -50,6 +53,8 @@ import * as salesloft from './intl/salesloft.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sorare from './intl/sorare.json';
 import * as telegramBot from './intl/telegram-bot.json';
+import * as todoist from './intl/todoist.json';
+import * as trello from './intl/trello.json';
 import * as typeform from './intl/typeform.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as woocommerce from './intl/woocommerce.json';
@@ -165,9 +170,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wise as unknown as AdapterDefinition,
   activecampaign as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
+  basecamp as unknown as AdapterDefinition,
   brevo as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
+  clickup as unknown as AdapterDefinition,
   close as unknown as AdapterDefinition,
+  coda as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
@@ -182,6 +190,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sendgrid as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
+  todoist as unknown as AdapterDefinition,
+  trello as unknown as AdapterDefinition,
   typeform as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
   woocommerce as unknown as AdapterDefinition,
