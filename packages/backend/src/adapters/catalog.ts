@@ -42,11 +42,16 @@ import * as coda from './intl/coda.json';
 import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
 import * as discordBot from './intl/discord-bot.json';
+import * as hunter from './intl/hunter.json';
 import * as klaviyo from './intl/klaviyo.json';
 import * as lemlist from './intl/lemlist.json';
 import * as lemonsqueezy from './intl/lemonsqueezy.json';
 import * as loops from './intl/loops.json';
 import * as mailchimp from './intl/mailchimp.json';
+import * as mapbox from './intl/mapbox.json';
+import * as mintlify from './intl/mintlify.json';
+import * as neverbounce from './intl/neverbounce.json';
+import * as nominatim from './intl/nominatim.json';
 import * as outreach from './intl/outreach.json';
 import * as pipedrive from './intl/pipedrive.json';
 import * as salesloft from './intl/salesloft.json';
@@ -179,11 +184,16 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   convertkit as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
+  hunter as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
   lemlist as unknown as AdapterDefinition,
   lemonsqueezy as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
   mailchimp as unknown as AdapterDefinition,
+  mapbox as unknown as AdapterDefinition,
+  mintlify as unknown as AdapterDefinition,
+  neverbounce as unknown as AdapterDefinition,
+  nominatim as unknown as AdapterDefinition,
   outreach as unknown as AdapterDefinition,
   pipedrive as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,

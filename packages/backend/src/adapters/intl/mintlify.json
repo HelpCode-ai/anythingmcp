@@ -1,0 +1,102 @@
+{
+  "slug": "mintlify",
+  "name": "Mintlify",
+  "description": "Trigger Mintlify documentation updates, query analytics, and manage assistant queries via the Mintlify API. 5 tools, Bearer-token auth.",
+  "instructions": "This connector uses the Mintlify API v1 (mintlify.com/docs/api-reference).\n\n**Setup**:\n1. Sign in to https://dashboard.mintlify.com → **Settings → API Keys → Create API key**.\n2. Copy the key (starts with `mint_`). Set `MINTLIFY_API_KEY`.\n\n**Authentication**: `Authorization: Bearer ${MINTLIFY_API_KEY}`.\n\n**Mintlify's API is scoped**: most write operations (trigger update, manage content) are not exposed because Mintlify expects content to live in a git repo and update on push. The API focuses on:\n  - Triggering re-deploys\n  - Querying assistant (chat) interactions\n  - Pulling analytics / search data\n\n**Out of scope here**: page/content CRUD (manage via the git repo), team management, OAuth user actions.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "mintlify",
+  "docsUrl": "https://mintlify.com/docs/api-reference",
+  "requiredEnvVars": ["MINTLIFY_API_KEY"],
+  "connector": {
+    "name": "Mintlify v1",
+    "type": "REST",
+    "baseUrl": "https://api.mintlify.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MINTLIFY_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "mintlify_trigger_update",
+      "description": "Trigger a re-deploy of the documentation site (forces Mintlify to pull from the connected git repo and re-build). Use after a content change pipeline.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "POST", "path": "/project/update" }
+    },
+    {
+      "name": "mintlify_get_project_info",
+      "description": "Get project metadata: name, repo, deployment status, custom domain.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/project" }
+    },
+    {
+      "name": "mintlify_list_assistant_conversations",
+      "description": "List user conversations with the Mintlify AI assistant on your docs site. Returns query text, timestamp, helpful flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max per page." },
+          "page": { "type": "integer", "description": "Page number." },
+          "start_date": { "type": "string", "description": "ISO 8601." },
+          "end_date": { "type": "string", "description": "ISO 8601." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assistant/conversations",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "mintlify_list_search_queries",
+      "description": "List user search queries on the docs site (analytics). Useful to identify missing or confusing content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max per page." },
+          "page": { "type": "integer", "description": "Page number." },
+          "start_date": { "type": "string", "description": "ISO 8601." },
+          "end_date": { "type": "string", "description": "ISO 8601." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/queries",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "mintlify_get_analytics",
+      "description": "Retrieve site analytics aggregations (pageviews, unique visitors, top pages) for a date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": { "type": "string", "description": "ISO 8601 start." },
+          "end_date": { "type": "string", "description": "ISO 8601 end." },
+          "granularity": { "type": "string", "description": "hour, day, week, month." }
+        },
+        "required": ["start_date", "end_date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/analytics",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "granularity": "$granularity"
+        }
+      }
+    }
+  ]
+}

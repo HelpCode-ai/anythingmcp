@@ -1,0 +1,145 @@
+{
+  "slug": "neverbounce",
+  "name": "NeverBounce",
+  "description": "Validate single emails or run bulk-list verification jobs via NeverBounce. 6 tools, query-string API-key auth.",
+  "instructions": "This connector uses the NeverBounce API v4.2 (developers.neverbounce.com).\n\n**Setup**:\n1. Sign in to https://app.neverbounce.com → **Apps → New API Key**.\n2. Copy the key. Set `NEVERBOUNCE_API_KEY`.\n\n**Authentication**: query-string `?key=...`. NeverBounce also supports a custom `Auth` header but query-string is the primary.\n\n**Single vs Bulk**:\n  - `neverbounce_single_check`: synchronous single-email verification. ~1 credit. Returns result (valid/invalid/disposable/catchall/unknown) + flags + suggested_correction.\n  - `neverbounce_create_job`: async bulk verification of a list (up to 1M emails). Returns job_id; poll status with `neverbounce_job_status` until status='complete'; then `neverbounce_job_results` to fetch.\n\n**Result codes**: 0=valid, 1=invalid, 2=disposable, 3=catchall, 4=unknown. Use ONLY 0 (valid) for safe sends if you're conservative.\n\n**Bulk job flow**: 1) create_job with input.payload=array of {email,name?,id?} OR input.payload=URL to CSV. 2) parse the job into ready state via `parse_async` OR `auto_parse=true` flag at create. 3) start the job via `start`. 4) poll `status`. 5) fetch `results`. The adapter abstracts steps 2-3 via the `auto_parse + auto_start` flags on create.\n\n**Cost**: per credit per email checked. Bulk jobs are slightly cheaper than singles.\n\n**Out of scope here**: account billing, custom integrations dashboard.",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "neverbounce",
+  "docsUrl": "https://developers.neverbounce.com/",
+  "requiredEnvVars": ["NEVERBOUNCE_API_KEY"],
+  "connector": {
+    "name": "NeverBounce v4.2",
+    "type": "REST",
+    "baseUrl": "https://api.neverbounce.com/v4.2",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "key": "{{NEVERBOUNCE_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "neverbounce_account_info",
+      "description": "Return account credit balance and details. Use to check remaining credits before bulk operations.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/account/info" }
+    },
+    {
+      "name": "neverbounce_single_check",
+      "description": "Verify a single email synchronously. Returns result (valid/invalid/disposable/catchall/unknown), flags (has_dns_mx, smtp_connectable, etc.), suggested_correction (typo fix).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email to verify." },
+          "address_info": { "type": "integer", "description": "1 = also return parsed address parts." },
+          "credits_info": { "type": "integer", "description": "1 = also return remaining credits in response." },
+          "timeout": { "type": "integer", "description": "Max seconds for the check (3-30, default 10)." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/single/check",
+        "queryParams": {
+          "email": "$email",
+          "address_info": "$address_info",
+          "credits_info": "$credits_info",
+          "timeout": "$timeout"
+        }
+      }
+    },
+    {
+      "name": "neverbounce_create_job",
+      "description": "Create a bulk verification job. input.payload is either an array of {email,name?,id?} (max 1k inline) OR a URL to a CSV file. Set auto_parse=true and run_sample=false + auto_start=true to skip the manual parse+start steps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input_location": { "type": "string", "description": "'supplied' (inline array) or 'remote_url' (CSV at the URL)." },
+          "input": { "description": "If input_location=supplied: array of {email,name?,id?} objects. If remote_url: the URL string." },
+          "filename": { "type": "string", "description": "Optional friendly name for the job." },
+          "auto_parse": { "type": "boolean", "description": "If true, NeverBounce auto-parses the input — saves a separate /jobs/parse call." },
+          "auto_start": { "type": "boolean", "description": "If true, the job runs immediately after parse." },
+          "run_sample": { "type": "boolean", "description": "If true, NeverBounce runs the first ~1000 first as a sample to estimate credit usage." },
+          "allow_manual_review": { "type": "boolean", "description": "If true, low-confidence items go to manual review (slower, higher accuracy)." }
+        },
+        "required": ["input_location", "input"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobs/create",
+        "bodyMapping": {
+          "input_location": "$input_location",
+          "input": "$input",
+          "filename": "$filename",
+          "auto_parse": "$auto_parse",
+          "auto_start": "$auto_start",
+          "run_sample": "$run_sample",
+          "allow_manual_review": "$allow_manual_review"
+        }
+      }
+    },
+    {
+      "name": "neverbounce_job_status",
+      "description": "Poll the status of a bulk verification job. Returns job_status (queued/waiting/working/complete/failed/parsing/manual_review), progress (0-100), total/processed/valid/invalid counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "integer", "description": "Job ID returned by create_job." }
+        },
+        "required": ["job_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/status",
+        "queryParams": { "job_id": "$job_id" }
+      }
+    },
+    {
+      "name": "neverbounce_job_results",
+      "description": "Fetch verification results for a complete job, paginated. Each result row has email, name, id (your input ID), verification (result code), flags[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "integer", "description": "Job ID." },
+          "page": { "type": "integer", "description": "1-based page." },
+          "items_per_page": { "type": "integer", "description": "Default 10, max 1000." }
+        },
+        "required": ["job_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/results",
+        "queryParams": {
+          "job_id": "$job_id",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    },
+    {
+      "name": "neverbounce_jobs_search",
+      "description": "Search past jobs by status, name, date. Useful to find historical verification runs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "integer", "description": "Exact job ID." },
+          "filename": { "type": "string", "description": "Filename substring." },
+          "job_status": { "type": "string", "description": "queued, waiting, working, complete, failed, parsing." },
+          "page": { "type": "integer", "description": "Page." },
+          "items_per_page": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/search",
+        "queryParams": {
+          "job_id": "$job_id",
+          "filename": "$filename",
+          "job_status": "$job_status",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    }
+  ]
+}

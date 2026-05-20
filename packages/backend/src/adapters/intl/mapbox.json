@@ -1,0 +1,213 @@
+{
+  "slug": "mapbox",
+  "name": "Mapbox",
+  "description": "Drive Mapbox APIs (geocoding, directions, isochrones, matrix, tilequery) from any AI agent. 8 tools, access-token query auth.",
+  "instructions": "This connector uses Mapbox's various REST APIs (docs.mapbox.com/api/).\n\n**Setup**:\n1. Sign in to https://account.mapbox.com → **Access tokens → Create a token**.\n2. Pick scopes: usually `styles:read` + `fonts:read` + `geocoding` + `directions` + `matrix` + `isochrone` + `tilequery`.\n3. Copy the token (starts with `pk.`). Set `MAPBOX_ACCESS_TOKEN`.\n\n**Authentication**: query-string `?access_token=...`.\n\n**Coordinate convention** (Mapbox-specific): **longitude FIRST**, then latitude. The order is `lng,lat`, NOT `lat,lng` like Google Maps. Trip up on this and your results land in the wrong country.\n\n**Geocoding v6 (forward + reverse)** is now the default — uses `/search/geocode/v6/forward` and `/reverse`. v5 still works at `/geocoding/v5/mapbox.places/...` but is in maintenance.\n\n**Directions profiles**: driving, walking, cycling, driving-traffic (live traffic, premium tier).\n\n**Cost**: all Mapbox APIs have a generous free tier (50k geocoding/month, 100k directions/month). Beyond that, paid per request — check pricing page. Each API call counts as 1 'API hit'.\n\n**Out of scope here**: tile rendering (use Mapbox GL JS), uploads, custom datasets, navigation SDK.",
+  "region": "intl",
+  "category": "maps",
+  "icon": "mapbox",
+  "docsUrl": "https://docs.mapbox.com/api/",
+  "requiredEnvVars": ["MAPBOX_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Mapbox API",
+    "type": "REST",
+    "baseUrl": "https://api.mapbox.com",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "access_token": "{{MAPBOX_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "mapbox_geocode_forward",
+      "description": "Forward geocoding (address text → coordinates). Returns ranked candidates with [longitude, latitude], place_name, address components.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Free-text address or place name." },
+          "limit": { "type": "integer", "description": "Max results (1-10, default 5)." },
+          "country": { "type": "string", "description": "Comma-separated ISO 3166-1 alpha-2 codes to limit results (e.g. 'us,ca')." },
+          "proximity": { "type": "string", "description": "'lng,lat' coordinate to bias results toward (e.g. user's current location)." },
+          "language": { "type": "string", "description": "IETF tag for the language of results (en, de, fr, es, ja, zh, etc.)." },
+          "types": { "type": "string", "description": "Comma-separated place types: country,region,postcode,district,place,locality,neighborhood,address,poi." }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/geocode/v6/forward",
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit",
+          "country": "$country",
+          "proximity": "$proximity",
+          "language": "$language",
+          "types": "$types"
+        }
+      }
+    },
+    {
+      "name": "mapbox_geocode_reverse",
+      "description": "Reverse geocoding (coordinates → address). Pass longitude + latitude.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "longitude": { "type": "number", "description": "Longitude in decimal degrees." },
+          "latitude": { "type": "number", "description": "Latitude in decimal degrees." },
+          "types": { "type": "string", "description": "Place types to consider." },
+          "language": { "type": "string", "description": "Result language tag." },
+          "limit": { "type": "integer", "description": "Max results (default 1)." }
+        },
+        "required": ["longitude", "latitude"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/geocode/v6/reverse",
+        "queryParams": {
+          "longitude": "$longitude",
+          "latitude": "$latitude",
+          "types": "$types",
+          "language": "$language",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "mapbox_directions",
+      "description": "Compute driving / walking / cycling directions between waypoints. Returns route geometry, duration (seconds), distance (meters), turn-by-turn steps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": { "type": "string", "description": "driving, walking, cycling, driving-traffic." },
+          "coordinates": { "type": "string", "description": "Semicolon-separated 'lng,lat' waypoints (2-25). E.g. '13.4050,52.5200;9.9937,53.5511'." },
+          "alternatives": { "type": "boolean", "description": "Return alternative routes too." },
+          "geometries": { "type": "string", "description": "geojson, polyline, polyline6 (default polyline)." },
+          "overview": { "type": "string", "description": "full, simplified, false." },
+          "steps": { "type": "boolean", "description": "Include turn-by-turn steps." },
+          "language": { "type": "string", "description": "Voice/text language." }
+        },
+        "required": ["profile", "coordinates"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/directions/v5/mapbox/{profile}/{coordinates}",
+        "queryParams": {
+          "alternatives": "$alternatives",
+          "geometries": "$geometries",
+          "overview": "$overview",
+          "steps": "$steps",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "mapbox_isochrone",
+      "description": "Get the area reachable within N minutes from a starting point (an 'isochrone' — like 'how far can I drive in 15 min?'). Returns a GeoJSON polygon.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": { "type": "string", "description": "driving, walking, cycling." },
+          "coordinates": { "type": "string", "description": "Origin 'lng,lat'." },
+          "contours_minutes": { "type": "string", "description": "Comma-separated minute thresholds (e.g. '5,10,15'). Max 4 contours, max 60 min each." },
+          "contours_meters": { "type": "string", "description": "Or distance-based: '500,1000,1500' meters (alternative to minutes)." },
+          "polygons": { "type": "boolean", "description": "If true return polygons (default), if false return linestrings." },
+          "generalize": { "type": "number", "description": "Smoothing in meters (positive number)." }
+        },
+        "required": ["profile", "coordinates"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/isochrone/v1/mapbox/{profile}/{coordinates}",
+        "queryParams": {
+          "contours_minutes": "$contours_minutes",
+          "contours_meters": "$contours_meters",
+          "polygons": "$polygons",
+          "generalize": "$generalize"
+        }
+      }
+    },
+    {
+      "name": "mapbox_matrix",
+      "description": "Compute travel-time and distance MATRIX between many origins and destinations (e.g. 5 warehouses × 100 customers = 500 cells). Returns durations[][] in seconds and distances[][] in meters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": { "type": "string", "description": "driving, walking, cycling, driving-traffic." },
+          "coordinates": { "type": "string", "description": "Semicolon-separated 'lng,lat' (max 25 for driving/walking/cycling, 10 for driving-traffic)." },
+          "sources": { "type": "string", "description": "Comma-separated 0-based indices into coordinates to use as sources. 'all' to use all." },
+          "destinations": { "type": "string", "description": "Same for destinations." },
+          "annotations": { "type": "string", "description": "duration, distance, or 'duration,distance' (default duration only)." }
+        },
+        "required": ["profile", "coordinates"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/directions-matrix/v1/mapbox/{profile}/{coordinates}",
+        "queryParams": {
+          "sources": "$sources",
+          "destinations": "$destinations",
+          "annotations": "$annotations"
+        }
+      }
+    },
+    {
+      "name": "mapbox_static_image",
+      "description": "Generate a static PNG/JPG map of a location with optional pin overlays. Returns the image binary URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string", "description": "Mapbox style username (typically 'mapbox' for built-in styles)." },
+          "style_id": { "type": "string", "description": "Style ID, e.g. 'streets-v12', 'outdoors-v12', 'satellite-v9'." },
+          "overlay": { "type": "string", "description": "Optional pin overlay, e.g. 'pin-s-a+9ed4bd(-87.0186,32.4055)'." },
+          "lng": { "type": "number", "description": "Center longitude." },
+          "lat": { "type": "number", "description": "Center latitude." },
+          "zoom": { "type": "number", "description": "0-22." },
+          "width": { "type": "integer", "description": "Pixels (max 1280)." },
+          "height": { "type": "integer", "description": "Pixels (max 1280)." }
+        },
+        "required": ["username", "style_id", "lng", "lat", "zoom", "width", "height"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/styles/v1/{username}/{style_id}/static/{overlay}{lng},{lat},{zoom}/{width}x{height}"
+      }
+    },
+    {
+      "name": "mapbox_tilequery",
+      "description": "Query features in a vector tileset at a specific point — e.g. find which neighborhood a coordinate falls in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tileset_id": { "type": "string", "description": "Tileset ID, e.g. 'mapbox.mapbox-streets-v8'." },
+          "lng": { "type": "number", "description": "Longitude." },
+          "lat": { "type": "number", "description": "Latitude." },
+          "radius": { "type": "integer", "description": "Search radius in meters (default 0)." },
+          "layers": { "type": "string", "description": "Comma-separated layer names to query." },
+          "limit": { "type": "integer", "description": "Max features (default 5, max 50)." }
+        },
+        "required": ["tileset_id", "lng", "lat"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v4/{tileset_id}/tilequery/{lng},{lat}.json",
+        "queryParams": {
+          "radius": "$radius",
+          "layers": "$layers",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "mapbox_list_styles",
+      "description": "List custom map styles owned by your account. Use to discover style IDs for the static-image endpoint.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string", "description": "Mapbox account username." }
+        },
+        "required": ["username"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/styles/v1/{username}" }
+    }
+  ]
+}
