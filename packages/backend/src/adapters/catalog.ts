@@ -34,6 +34,7 @@ import * as wise from './gb/wise.json';
 import * as activecampaign from './intl/activecampaign.json';
 import * as acuityScheduling from './intl/acuity-scheduling.json';
 import * as adyen from './intl/adyen.json';
+import * as amadeus from './intl/amadeus.json';
 import * as apollo from './intl/apollo.json';
 import * as attio from './intl/attio.json';
 import * as basecamp from './intl/basecamp.json';
@@ -71,13 +72,16 @@ import * as klaviyo from './intl/klaviyo.json';
 import * as kustomer from './intl/kustomer.json';
 import * as lemlist from './intl/lemlist.json';
 import * as lemonsqueezy from './intl/lemonsqueezy.json';
+import * as linkedin from './intl/linkedin.json';
 import * as loops from './intl/loops.json';
 import * as magento from './intl/magento.json';
 import * as mailchimp from './intl/mailchimp.json';
+import * as mailshake from './intl/mailshake.json';
 import * as mapbox from './intl/mapbox.json';
 import * as medium from './intl/medium.json';
 import * as messagebird from './intl/messagebird.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
+import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mollie from './intl/mollie.json';
 import * as neverbounce from './intl/neverbounce.json';
@@ -221,6 +225,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   activecampaign as unknown as AdapterDefinition,
   acuityScheduling as unknown as AdapterDefinition,
   adyen as unknown as AdapterDefinition,
+  amadeus as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
   attio as unknown as AdapterDefinition,
   basecamp as unknown as AdapterDefinition,
@@ -258,13 +263,16 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   kustomer as unknown as AdapterDefinition,
   lemlist as unknown as AdapterDefinition,
   lemonsqueezy as unknown as AdapterDefinition,
+  linkedin as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
   magento as unknown as AdapterDefinition,
   mailchimp as unknown as AdapterDefinition,
+  mailshake as unknown as AdapterDefinition,
   mapbox as unknown as AdapterDefinition,
   medium as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
   microsoftBookings as unknown as AdapterDefinition,
+  microsoftTeams as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
   neverbounce as unknown as AdapterDefinition,

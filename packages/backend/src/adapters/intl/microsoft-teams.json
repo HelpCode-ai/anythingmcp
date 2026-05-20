@@ -1,0 +1,156 @@
+{
+  "slug": "microsoft-teams",
+  "name": "Microsoft Teams",
+  "description": "Drive Microsoft Teams (chat + collaboration) via the Graph API: teams, channels, messages, members. 9 tools, OAuth2 Bearer auth (Microsoft Graph).",
+  "instructions": "This connector uses the Microsoft Graph API v1.0 — Teams endpoints (learn.microsoft.com/en-us/graph/api/resources/teams-api-overview).\n\n**Setup**:\n1. Register an Azure AD app at https://portal.azure.com → **App registrations**.\n2. **API permissions → Microsoft Graph → Delegated** (or Application) → add: `Team.ReadBasic.All`, `Channel.ReadBasic.All`, `ChannelMessage.Send`, `ChannelMessage.Read.All` (write needs admin consent).\n3. Run OAuth2 to get an access token. Set `MICROSOFT_GRAPH_ACCESS_TOKEN` (shared with Microsoft Bookings adapter).\n\n**Authentication**: `Authorization: Bearer ${MICROSOFT_GRAPH_ACCESS_TOKEN}`.\n\n**Teams hierarchy**: Team → Channel → Message (+ replies). Each Team is also a Microsoft 365 Group.\n\n**Message content**: `body.contentType` is `text` or `html`. `body.content` is the message. Mentions go in `mentions[]` with `mentionText` matching the user's display name and `mentioned.user.id` set to their Azure AD user ID.\n\n**Pagination**: standard OData `@odata.nextLink` cursor.\n\n**Rate limits**: Graph throttling — ~10k req per 10 min per app per user. Teams-specific endpoints often have lower limits. On 429 honor Retry-After.\n\n**Out of scope here**: chat (DMs) beyond list, calls/meetings, apps installed in teams, shifts, planner.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "microsoft-teams",
+  "docsUrl": "https://learn.microsoft.com/en-us/graph/api/resources/teams-api-overview",
+  "requiredEnvVars": ["MICROSOFT_GRAPH_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Microsoft Graph (Teams)",
+    "type": "REST",
+    "baseUrl": "https://graph.microsoft.com/v1.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MICROSOFT_GRAPH_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "microsoft_teams_list_joined_teams",
+      "description": "List teams the authenticated user is a member of (for delegated auth) — returns id, displayName, description, internalId.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me/joinedTeams" }
+    },
+    {
+      "name": "microsoft_teams_get_team",
+      "description": "Get a team by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Team ID (GUID)." }
+        },
+        "required": ["teamId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/teams/{teamId}" }
+    },
+    {
+      "name": "microsoft_teams_list_channels",
+      "description": "List channels in a team. Each channel has id, displayName, description, membershipType (standard/private/shared).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Team ID." }
+        },
+        "required": ["teamId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/teams/{teamId}/channels" }
+    },
+    {
+      "name": "microsoft_teams_get_channel",
+      "description": "Get a channel by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Team ID." },
+          "channelId": { "type": "string", "description": "Channel ID." }
+        },
+        "required": ["teamId", "channelId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/teams/{teamId}/channels/{channelId}" }
+    },
+    {
+      "name": "microsoft_teams_list_channel_messages",
+      "description": "List recent messages in a channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Team ID." },
+          "channelId": { "type": "string", "description": "Channel ID." },
+          "$top": { "type": "integer", "description": "Max per page (default 20, max 50)." }
+        },
+        "required": ["teamId", "channelId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{teamId}/channels/{channelId}/messages",
+        "queryParams": { "$top": "$$top" }
+      }
+    },
+    {
+      "name": "microsoft_teams_send_channel_message",
+      "description": "Send a message to a channel. body.contentType 'text' (plain) or 'html'. Mentions array required for @-mentions to fire notifications.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Team ID." },
+          "channelId": { "type": "string", "description": "Channel ID." },
+          "body": {
+            "type": "object",
+            "description": "{contentType:'text'|'html', content:'Hello team!'}."
+          },
+          "subject": { "type": "string", "description": "Optional message subject (shown in announcement channels)." },
+          "importance": { "type": "string", "description": "normal, high, urgent." },
+          "mentions": { "type": "array", "description": "[{id:0, mentionText:'Jane Doe', mentioned:{user:{id:'azure-ad-user-id', displayName:'Jane Doe', userIdentityType:'aadUser'}}}]." }
+        },
+        "required": ["teamId", "channelId", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/teams/{teamId}/channels/{channelId}/messages",
+        "bodyMapping": {
+          "body": "$body",
+          "subject": "$subject",
+          "importance": "$importance",
+          "mentions": "$mentions"
+        }
+      }
+    },
+    {
+      "name": "microsoft_teams_reply_to_message",
+      "description": "Post a reply in a thread on a channel message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Team ID." },
+          "channelId": { "type": "string", "description": "Channel ID." },
+          "messageId": { "type": "string", "description": "Parent message ID." },
+          "body": { "type": "object", "description": "{contentType, content}." }
+        },
+        "required": ["teamId", "channelId", "messageId", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/teams/{teamId}/channels/{channelId}/messages/{messageId}/replies",
+        "bodyMapping": { "body": "$body" }
+      }
+    },
+    {
+      "name": "microsoft_teams_list_channel_members",
+      "description": "List members of a channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Team ID." },
+          "channelId": { "type": "string", "description": "Channel ID." }
+        },
+        "required": ["teamId", "channelId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/teams/{teamId}/channels/{channelId}/members" }
+    },
+    {
+      "name": "microsoft_teams_list_team_members",
+      "description": "List members of a team. Each member has id, displayName, email, roles[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Team ID." }
+        },
+        "required": ["teamId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/teams/{teamId}/members" }
+    }
+  ]
+}

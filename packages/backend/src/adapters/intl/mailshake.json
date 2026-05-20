@@ -1,0 +1,168 @@
+{
+  "slug": "mailshake",
+  "name": "Mailshake",
+  "description": "Drive Mailshake (cold email / sales engagement) from any AI agent: campaigns, recipients, leads, replies. 8 tools, Basic auth (API key as user).",
+  "instructions": "This connector uses the Mailshake API v1 (mailshake.com/api/v1).\n\n**Setup**:\n1. Sign in to https://mailshake.com → top-right avatar → **API Keys → Create API Key**.\n2. Set `MAILSHAKE_API_KEY`.\n\n**Authentication**: HTTP Basic with username=API_KEY, password=empty.\n\n**Campaign**: a sequence of email steps. Add recipients to a campaign → they start receiving emails on schedule.\n\n**Recipient state**: each recipient has a status (pending, sending, paused, finished, replied, bounced, unsubscribed).\n\n**Pagination**: `?perPage=N&cursor=...`.\n\n**Out of scope here**: campaign content editor (UI), team management, AI features, copy-A/B-testing config.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "mailshake",
+  "docsUrl": "https://mailshake.com/api/v1/",
+  "requiredEnvVars": ["MAILSHAKE_API_KEY"],
+  "connector": {
+    "name": "Mailshake v1",
+    "type": "REST",
+    "baseUrl": "https://api.mailshake.com/2017-04-01",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{MAILSHAKE_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "mailshake_me",
+      "description": "Return the team the API key belongs to.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "POST", "path": "/users/me" }
+    },
+    {
+      "name": "mailshake_list_campaigns",
+      "description": "List campaigns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "perPage": { "type": "integer", "description": "Per page (default 25, max 100)." },
+          "cursor": { "type": "string", "description": "Pagination cursor." },
+          "search": { "type": "string", "description": "Name substring filter." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/list",
+        "bodyMapping": {
+          "perPage": "$perPage",
+          "cursor": "$cursor",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "mailshake_get_campaign",
+      "description": "Get a campaign by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Campaign ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/get",
+        "bodyMapping": { "id": "$id" }
+      }
+    },
+    {
+      "name": "mailshake_pause_campaign",
+      "description": "Pause a campaign (stops all future sends until resumed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Campaign ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/pause",
+        "bodyMapping": { "id": "$id" }
+      }
+    },
+    {
+      "name": "mailshake_unpause_campaign",
+      "description": "Resume a paused campaign.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Campaign ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/unpause",
+        "bodyMapping": { "id": "$id" }
+      }
+    },
+    {
+      "name": "mailshake_add_recipients_to_campaign",
+      "description": "Add recipients to a campaign. recipients is array of {emailAddress, fullName?, firstName?, lastName?, phone?, companyName?, ...customFields}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignID": { "type": "integer", "description": "Campaign ID." },
+          "recipients": {
+            "type": "array",
+            "description": "[{emailAddress, fullName?, firstName?, lastName?, phone?, companyName?, ...any custom variables defined in the campaign}]."
+          },
+          "addDuplicates": { "type": "boolean", "description": "If true, add even if email already in campaign." }
+        },
+        "required": ["campaignID", "recipients"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/recipients/add",
+        "bodyMapping": {
+          "campaignID": "$campaignID",
+          "recipients": "$recipients",
+          "addDuplicates": "$addDuplicates"
+        }
+      }
+    },
+    {
+      "name": "mailshake_list_recipients",
+      "description": "List recipients in a campaign with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignID": { "type": "integer", "description": "Campaign ID." },
+          "perPage": { "type": "integer", "description": "Per page." },
+          "cursor": { "type": "string", "description": "Cursor." },
+          "status": { "type": "string", "description": "pending, sending, paused, finished, replied, bounced, unsubscribed." },
+          "search": { "type": "string", "description": "Substring filter." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/recipients/list",
+        "bodyMapping": {
+          "campaignID": "$campaignID",
+          "perPage": "$perPage",
+          "cursor": "$cursor",
+          "status": "$status",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "mailshake_pause_recipient",
+      "description": "Pause a recipient by emailAddress + campaignID (stops further emails to them without unsubscribing).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "emailAddress": { "type": "string", "description": "Recipient email." },
+          "campaignID": { "type": "integer", "description": "Campaign ID." }
+        },
+        "required": ["emailAddress", "campaignID"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/recipients/pause",
+        "bodyMapping": {
+          "emailAddress": "$emailAddress",
+          "campaignID": "$campaignID"
+        }
+      }
+    }
+  ]
+}

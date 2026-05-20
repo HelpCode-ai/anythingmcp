@@ -1,0 +1,239 @@
+{
+  "slug": "amadeus",
+  "name": "Amadeus for Developers",
+  "description": "Drive Amadeus Travel APIs (flight offers, hotel search, airport autocomplete, points of interest) from any AI agent. 8 tools, OAuth2 client-credentials Bearer auth.",
+  "instructions": "This connector uses the Amadeus Self-Service REST APIs (developers.amadeus.com).\n\n**Setup**:\n1. Register at https://developers.amadeus.com → **My Self-Service Workspace → Create New App**.\n2. Get **API Key** + **API Secret**. Use the **test** environment by default (free, real data, low rate limits); switch to production after applying for production access.\n3. Run OAuth2 client_credentials flow to get an access token (~30 min expiry):\n   ```\n   POST https://test.api.amadeus.com/v1/security/oauth2/token\n   grant_type=client_credentials&client_id=...&client_secret=...\n   ```\n4. Set `AMADEUS_ACCESS_TOKEN`. Refresh externally.\n\n**Authentication**: `Authorization: Bearer ${AMADEUS_ACCESS_TOKEN}`.\n\n**Test vs Production base URL**:\n  - Test: `https://test.api.amadeus.com`\n  - Production: `https://api.amadeus.com`\nThe adapter uses test by default; switch to production by overriding `AMADEUS_BASE_URL` env var (not exposed as a connector field — change baseUrl in your fork).\n\n**Date format**: ISO 8601 (YYYY-MM-DD).\n\n**Currency / Locale**: most search endpoints accept `currencyCode` (ISO 4217) and locale-specific responses.\n\n**Rate limits**: test environment is heavily throttled (~10 req/sec). On 429 back off significantly.\n\n**Out of scope here**: booking flow (Flight Create Orders requires special partnership), Self-Service vs Enterprise APIs differences, Amadeus Travel Channel API, hotel ratings via Sabre (different vendor).",
+  "region": "intl",
+  "category": "travel",
+  "icon": "amadeus",
+  "docsUrl": "https://developers.amadeus.com/self-service",
+  "requiredEnvVars": ["AMADEUS_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Amadeus Self-Service",
+    "type": "REST",
+    "baseUrl": "https://test.api.amadeus.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{AMADEUS_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "amadeus_flight_offers_search",
+      "description": "Search for flight offers. Returns ranked itineraries with price, segments, validatingAirlineCodes, travelerPricings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "originLocationCode": { "type": "string", "description": "IATA airport/city code (e.g. 'JFK', 'NYC')." },
+          "destinationLocationCode": { "type": "string", "description": "IATA airport/city code (e.g. 'LHR', 'LON')." },
+          "departureDate": { "type": "string", "description": "YYYY-MM-DD." },
+          "returnDate": { "type": "string", "description": "YYYY-MM-DD — omit for one-way." },
+          "adults": { "type": "integer", "description": "Number of adults (default 1)." },
+          "children": { "type": "integer", "description": "Number of children (2-11 years)." },
+          "infants": { "type": "integer", "description": "Infants (<2 years)." },
+          "travelClass": { "type": "string", "description": "ECONOMY, PREMIUM_ECONOMY, BUSINESS, FIRST." },
+          "includedAirlineCodes": { "type": "string", "description": "Comma-separated airline codes to include." },
+          "excludedAirlineCodes": { "type": "string", "description": "Comma-separated to exclude." },
+          "nonStop": { "type": "boolean", "description": "If true, only non-stop." },
+          "currencyCode": { "type": "string", "description": "ISO 4217." },
+          "maxPrice": { "type": "integer", "description": "Max price per traveler." },
+          "max": { "type": "integer", "description": "Max offers returned (1-250, default 250)." }
+        },
+        "required": ["originLocationCode", "destinationLocationCode", "departureDate", "adults"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/shopping/flight-offers",
+        "queryParams": {
+          "originLocationCode": "$originLocationCode",
+          "destinationLocationCode": "$destinationLocationCode",
+          "departureDate": "$departureDate",
+          "returnDate": "$returnDate",
+          "adults": "$adults",
+          "children": "$children",
+          "infants": "$infants",
+          "travelClass": "$travelClass",
+          "includedAirlineCodes": "$includedAirlineCodes",
+          "excludedAirlineCodes": "$excludedAirlineCodes",
+          "nonStop": "$nonStop",
+          "currencyCode": "$currencyCode",
+          "maxPrice": "$maxPrice",
+          "max": "$max"
+        }
+      }
+    },
+    {
+      "name": "amadeus_flight_offer_price",
+      "description": "Confirm the price + availability of a previously-found flight offer. POST the flight offer back to validate before booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "{type:'flight-offers-pricing', flightOffers:[...]} — wrap the flight offer(s) from search."
+          }
+        },
+        "required": ["data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/shopping/flight-offers/pricing",
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "amadeus_flight_destinations",
+      "description": "Cheapest destinations from a city (inspirational search). Required: origin.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin": { "type": "string", "description": "IATA city code." },
+          "departureDate": { "type": "string", "description": "YYYY-MM-DD or YYYY-MM-DD,YYYY-MM-DD range." },
+          "oneWay": { "type": "boolean", "description": "Default false (round trip)." },
+          "duration": { "type": "string", "description": "Duration of stay range, e.g. '1,15' days." },
+          "nonStop": { "type": "boolean", "description": "Direct only." },
+          "maxPrice": { "type": "integer", "description": "Max price." },
+          "currencyCode": { "type": "string", "description": "ISO 4217." }
+        },
+        "required": ["origin"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/shopping/flight-destinations",
+        "queryParams": {
+          "origin": "$origin",
+          "departureDate": "$departureDate",
+          "oneWay": "$oneWay",
+          "duration": "$duration",
+          "nonStop": "$nonStop",
+          "maxPrice": "$maxPrice",
+          "currencyCode": "$currencyCode"
+        }
+      }
+    },
+    {
+      "name": "amadeus_airport_search",
+      "description": "Search for airports/cities by keyword (autocomplete).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": { "type": "string", "description": "Substring of city or airport name." },
+          "subType": { "type": "string", "description": "AIRPORT, CITY, or AIRPORT,CITY." },
+          "page_limit": { "type": "integer", "description": "Max results (default 10, max 100)." },
+          "view": { "type": "string", "description": "FULL or LIGHT." }
+        },
+        "required": ["keyword", "subType"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/reference-data/locations",
+        "queryParams": {
+          "keyword": "$keyword",
+          "subType": "$subType",
+          "page[limit]": "$page_limit",
+          "view": "$view"
+        }
+      }
+    },
+    {
+      "name": "amadeus_hotel_list_by_city",
+      "description": "List hotels in a city (returns hotelIds you can use in hotel offer search).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cityCode": { "type": "string", "description": "IATA city code (e.g. 'PAR' for Paris)." },
+          "radius": { "type": "integer", "description": "Search radius (default 5)." },
+          "radiusUnit": { "type": "string", "description": "KM or MILE." },
+          "ratings": { "type": "string", "description": "Comma-separated 1-5 star ratings." }
+        },
+        "required": ["cityCode"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/reference-data/locations/hotels/by-city",
+        "queryParams": {
+          "cityCode": "$cityCode",
+          "radius": "$radius",
+          "radiusUnit": "$radiusUnit",
+          "ratings": "$ratings"
+        }
+      }
+    },
+    {
+      "name": "amadeus_hotel_search_offers",
+      "description": "Search hotel offers (available rates) for a set of hotelIds + check-in/out dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hotelIds": { "type": "string", "description": "Comma-separated hotelIds (from hotel_list_by_city)." },
+          "adults": { "type": "integer", "description": "Number of adults." },
+          "checkInDate": { "type": "string", "description": "YYYY-MM-DD." },
+          "checkOutDate": { "type": "string", "description": "YYYY-MM-DD." },
+          "roomQuantity": { "type": "integer", "description": "Number of rooms." },
+          "currency": { "type": "string", "description": "ISO 4217." },
+          "lang": { "type": "string", "description": "Language code." }
+        },
+        "required": ["hotelIds", "adults", "checkInDate", "checkOutDate"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/shopping/hotel-offers",
+        "queryParams": {
+          "hotelIds": "$hotelIds",
+          "adults": "$adults",
+          "checkInDate": "$checkInDate",
+          "checkOutDate": "$checkOutDate",
+          "roomQuantity": "$roomQuantity",
+          "currency": "$currency",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "amadeus_points_of_interest",
+      "description": "Get points of interest around a location (sightseeing/attractions). Returns POIs with name, category, rank, tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": { "type": "number", "description": "Latitude." },
+          "longitude": { "type": "number", "description": "Longitude." },
+          "radius": { "type": "integer", "description": "Search radius in km (default 1, max 20)." },
+          "categories": { "type": "string", "description": "Comma-separated: SIGHTS, NIGHTLIFE, RESTAURANT, SHOPPING." }
+        },
+        "required": ["latitude", "longitude"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/reference-data/locations/pois",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "radius": "$radius",
+          "categories": "$categories"
+        }
+      }
+    },
+    {
+      "name": "amadeus_flight_status",
+      "description": "Get real-time flight status by carrier code + flight number + date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrierCode": { "type": "string", "description": "Airline IATA code (e.g. 'BA' for British Airways)." },
+          "flightNumber": { "type": "string", "description": "Flight number (digits only)." },
+          "scheduledDepartureDate": { "type": "string", "description": "YYYY-MM-DD." }
+        },
+        "required": ["carrierCode", "flightNumber", "scheduledDepartureDate"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/schedule/flights",
+        "queryParams": {
+          "carrierCode": "$carrierCode",
+          "flightNumber": "$flightNumber",
+          "scheduledDepartureDate": "$scheduledDepartureDate"
+        }
+      }
+    }
+  ]
+}
