@@ -1,0 +1,83 @@
+---
+title: "WhatsApp Business zu MCP — WhatsApp-Nachrichten aus jedem KI-Agent senden"
+description: "Metas WhatsApp Business Cloud API mit AnythingMCP als MCP-Server exponieren. 14 fertige Tools für Text, Vorlagen, Medien (Bild/Audio/Sprach/Video/Dokument), Standort, interaktive Buttons und Verwaltung des Geschäftsprofils. Bearer-Token-Auth, kein SDK, kein Client-Code."
+category: "connectors"
+keyword: "WhatsApp MCP, WhatsApp Business API MCP, WhatsApp KI-Agent, WhatsApp Cloud API, WhatsApp aus KI senden"
+publishedAt: "2026-05-19"
+adapterSlug: "whatsapp-business"
+lang: "de"
+---
+
+> 💡 **Keine Installation? Nutze [cloud.anythingmcp.com](https://cloud.anythingmcp.com) direkt.** Einloggen, **Connectors → WhatsApp Business** klicken, dauerhaftes System-User-Access-Token + WhatsApp Business Account ID einfügen, MCP-API-Key erzeugen — fertig. Kein Docker, kein `git clone`, kein lokaler Server. Du kannst die lokalen Installationsschritte unten überspringen und direkt zur Client-Konfiguration weitergehen.
+
+## WhatsApp Business auf dem Model Context Protocol
+
+Die [WhatsApp Business Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api) ist Metas offiziell gehostetes Gateway zum programmatischen Versenden von WhatsApp-Nachrichten — Text, vorab genehmigte Vorlagen, Medien, Standortmarkierungen, interaktive Button-Flows und Geschäftsprofil-Verwaltung. AnythingMCP wickelt sie als **MCP-Server** ein, sodass jeder Agent — Claude, ChatGPT, Copilot, dein eigener — sie per natürlicher Sprache steuern kann.
+
+Der WhatsApp-Adapter ist eingebaut. Es gibt kein SDK zu pflegen und keinen Client-Code zu schreiben: Die Engine erledigt die Bearer-Token-Authentifizierung und erzeugt Requests, die exakt zu Metas `messaging_product=whatsapp`-Schema für jeden Nachrichtentyp passen.
+
+### Warum WhatsApp ohne AnythingMCP umständlich ist
+
+| Schritt | Was die WhatsApp Cloud API verlangt |
+|---|---|
+| 1 | Ein dauerhaftes System-User-Access-Token in der Meta Business Suite erzeugen (≠ vom temporären 24h-Dev-Token) mit `whatsapp_business_messaging` + `whatsapp_business_management`-Berechtigungen |
+| 2 | Die `phoneNumberId` jedes Absende-Numerus unter deinem WhatsApp Business Account (WABA) ermitteln |
+| 3 | Den korrekten JSON-Body pro Nachrichtentyp bauen — `text`/`template`/`image`/`audio`/`video`/`document`/`location`/`interactive` — jeder mit eigenem Schema und Feldplatzierungs-Eigenheiten |
+| 4 | Auf einer noch unterstützten Graph-API-Version bleiben (v15 ist tot, v20 läuft September 2026 aus; der Adapter nutzt **v22.0**) |
+| 5 | Das 24-Stunden-Kundenservice-Fenster respektieren — außerhalb davon sind nur vorab genehmigte Vorlagen erlaubt |
+
+Das ist das gesamte **`BEARER_TOKEN`**-Auth-Profil + 14 Message-Shape-Tools, einmal als JSON in der Adapter-Spec deklariert. Kein Client-Code zu pflegen.
+
+### Installation
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffne `http://localhost:3000/connectors/store`, wähle **WhatsApp Business** und trage ein:
+
+| Feld | Wert |
+|---|---|
+| `WHATSAPP_ACCESS_TOKEN` | das dauerhafte System-User-Access-Token |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | deine WABA ID (z. B. `123456789012345`) |
+
+Erzeuge einen MCP-API-Key unter **Profile → MCP API Keys** und richte deinen Agenten auf `http://localhost:4000/mcp`.
+
+### Verfügbare Tools (14)
+
+| Tool | Was es tut |
+|---|---|
+| `whatsapp_list_phone_numbers` | Ermittelt die `phoneNumberId` jeder Nummer auf deinem WABA |
+| `whatsapp_list_message_templates` | Listet genehmigte Vorlagen mit ihren Komponenten |
+| `whatsapp_get_message_template` | Holt eine einzelne Vorlage per ID |
+| `whatsapp_send_text_message` | Sendet freien Text (nur im 24h-Fenster) |
+| `whatsapp_send_template_message` | Sendet eine vorab genehmigte Vorlage (immer erlaubt) |
+| `whatsapp_send_image` | Sendet JPG/PNG per öffentlicher URL oder Media-ID |
+| `whatsapp_send_audio` | Sendet eine Audiodatei — OGG-Opus erscheint als echte Sprachnachricht |
+| `whatsapp_send_video` | Sendet ein MP4/3GPP-Video |
+| `whatsapp_send_document` | Sendet PDF/DOC/XLS mit optionalem Dateinamen |
+| `whatsapp_send_location` | Sendet einen Standort |
+| `whatsapp_send_interactive_buttons` | Sendet 1–3 Antwort-Buttons |
+| `whatsapp_mark_message_as_read` | Sendet eine Lesebestätigung (doppelter blauer Haken) |
+| `whatsapp_get_business_profile` | Liest das öffentliche Geschäftsprofil |
+| `whatsapp_update_business_profile` | Aktualisiert About/Adresse/E-Mail/Webseiten |
+
+### Das 24-Stunden-Fenster, erklärt
+
+WhatsApp erzwingt ein **Kundenservice-Fenster**: Freitext-Nachrichten (Text, Medien, interaktiv, Standort) sind nur in den 24 Stunden nach der letzten eingehenden Nachricht des Nutzers an deine Nummer erlaubt. Außerhalb dieses Fensters sind nur **vorab genehmigte Vorlagen** erlaubt — du erstellst sie in der Meta Business Suite, wartest auf die Genehmigung und rufst dann `whatsapp_send_template_message` mit Name und Sprachcode der Vorlage auf.
+
+Der Adapter verfolgt das Fenster nicht für dich. Er ruft nur die API; Meta gibt den Fehlercode `131047` ("Re-engagement message") zurück, wenn du außerhalb des Fensters Freitext sendest. Das `instructions`-Feld des Adapters erklärt die Regel, damit dein Agent weiß, wann auf eine Vorlage zurückzugreifen ist.
+
+### Medien — URL vs. Upload
+
+WhatsApp akzeptiert Medien auf zwei Wegen: zuerst eine Binärdatei nach `/PHONE_NUMBER_ID/media` hochladen, um eine `media_id` zu erhalten, oder einen öffentlichen HTTPS-`link` übergeben. AnythingMCP empfiehlt den **Link-Pfad**, weil die REST-Engine den Multipart-Upload-und-Send-Tanz nicht in einem einzigen Tool-Call orchestriert. Hoste die Datei auf einem CDN oder einem Signed-URL-Bucket und gib die URL an `whatsapp_send_image` / `audio` / `video` / `document`. Das `mediaId`-Feld steht als Escape-Hatch zur Verfügung, falls du anderswo vor-hochlädst.
+
+### Eingehende Nachrichten — nicht im Umfang
+
+Dieser Connector ist **nur outbound**. WhatsApp liefert eingehende Nachrichten über einen Webhook aus, den du selbst hostest, und die aktuelle Architektur von AnythingMCP ist Request/Response. Wenn du einen Chatbot brauchst, der auf Nutzernachrichten antwortet, betreibe einen kleinen Webhook-Receiver neben AnythingMCP und nutze diesen Connector für die Outbound-Seite (plus `whatsapp_mark_message_as_read` für Lesebestätigungen).
+
+### Nächste Schritte
+
+- [WhatsApp Business mit Claude verbinden](./connect-whatsapp-business-to-claude)
+- [WhatsApp Business mit ChatGPT verbinden](./connect-whatsapp-business-to-chatgpt)

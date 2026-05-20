@@ -1,0 +1,87 @@
+---
+title: "How to Connect WhatsApp Business to ChatGPT — Send WhatsApp from ChatGPT via MCP"
+description: "Connect Meta's WhatsApp Business Cloud API to ChatGPT (Plus / Pro / Team / Enterprise) with AnythingMCP. Send text, templates, media, voice notes, and interactive buttons from ChatGPT in natural language."
+category: "connectors"
+keyword: "WhatsApp ChatGPT, WhatsApp AI, WhatsApp MCP ChatGPT, WhatsApp Business ChatGPT, send WhatsApp from ChatGPT"
+publishedAt: "2026-05-19"
+adapterSlug: "whatsapp-business"
+lang: "en"
+---
+
+> 💡 **No install? Use [cloud.anythingmcp.com](https://cloud.anythingmcp.com) directly.** Sign in, click **Connectors → WhatsApp Business**, paste your permanent System User access token + WhatsApp Business Account ID, mint an MCP API key — done. No Docker, no `git clone`, no local server to run. You can skip the local-install steps below and jump straight to the client-wiring section.
+
+## Connect WhatsApp Business to ChatGPT
+
+WhatsApp Business Cloud API is Meta's hosted gateway for sending WhatsApp messages programmatically — text, templates, media, voice notes, interactive buttons, location pins. With AnythingMCP you drive all of it from ChatGPT in plain English.
+
+ChatGPT supports MCP servers via the **Connectors** feature (Plus / Pro / Team / Enterprise plans). Once wired, all 14 WhatsApp tools show up natively in your ChatGPT toolbar.
+
+### What you can do
+
+- "Send 'Your booking is confirmed for Friday at 18:00' to +44 7700 900123."
+- "Send the `appointment_reminder` template (it) to all the numbers in this CSV, fill in their first name and date."
+- "Send the PDF at https://acme.com/inv/9912.pdf to my customer with caption 'Invoice 9912'."
+- "Mark the last inbound message from +1 555 123 4567 as read."
+
+### Prerequisites
+
+- A **WhatsApp Business Account (WABA)** with at least one verified sending number.
+- A **permanent System User access token** with `whatsapp_business_messaging` + `whatsapp_business_management` permissions.
+- AnythingMCP running locally or on cloud.anythingmcp.com (3-minute setup).
+- A ChatGPT **Plus / Pro / Team / Enterprise** account (free tier does not support custom Connectors).
+
+### Step 1 — Get your WhatsApp Business credentials
+
+1. Open https://developers.facebook.com/ → your App → **WhatsApp → API Setup**. Note the **WhatsApp Business Account ID** (WABA ID).
+2. Go to **Meta Business Suite → Business Settings → System Users**, create a System User, assign your WABA, and **Generate a New Token** with both `whatsapp_business_messaging` and `whatsapp_business_management` permissions. Copy it — you can't see it again.
+
+### Step 2 — Install the WhatsApp Business adapter
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Open `http://localhost:3000/connectors/store`, click **WhatsApp Business**, fill in the token + WABA ID, click **Install**.
+
+### Step 3 — Add the connector in ChatGPT (no code, 4 clicks)
+
+1. Open **ChatGPT → Settings → Connectors** (or click the 🔧 icon in the composer → **Manage connectors**).
+2. Click **"Add custom connector"**.
+3. Fill in:
+   - **Name:** `WhatsApp Business`
+   - **MCP server URL:** `https://cloud.anythingmcp.com/mcp`
+   - **Authentication:** Bearer token → paste your MCP API key (from AnythingMCP → **Profile → MCP API Keys → New Key**)
+4. Click **Connect** to authorize.
+
+All 14 WhatsApp tools now appear in the ChatGPT 🔧 menu.
+
+### Available tools (14 total)
+
+| Group | Tools |
+|---|---|
+| **Discovery** | `whatsapp_list_phone_numbers`, `whatsapp_list_message_templates`, `whatsapp_get_message_template` |
+| **Text & template** | `whatsapp_send_text_message`, `whatsapp_send_template_message` |
+| **Media (URL or media ID)** | `whatsapp_send_image`, `whatsapp_send_audio`, `whatsapp_send_video`, `whatsapp_send_document` |
+| **Interactive & location** | `whatsapp_send_location`, `whatsapp_send_interactive_buttons` |
+| **Read receipts & profile** | `whatsapp_mark_message_as_read`, `whatsapp_get_business_profile`, `whatsapp_update_business_profile` |
+
+### The 24-hour window
+
+WhatsApp only lets you send **free-form** messages (text, media, interactive, location) inside the **24 hours** following the user's last inbound message. Outside that window: pre-approved **templates only**. The adapter's `instructions` field teaches ChatGPT this rule, so it'll reach for `whatsapp_send_template_message` when needed.
+
+### FAQ
+
+**Does ChatGPT free tier work with custom MCP connectors?**
+No. You need Plus, Pro, Team, or Enterprise to add custom connectors.
+
+**Voice notes?**
+Use `whatsapp_send_audio` with an OGG-Opus file hosted on a public HTTPS URL — WhatsApp renders it as a true voice message.
+
+**Can ChatGPT receive inbound WhatsApp messages?**
+Not via this connector — Meta delivers inbound via webhooks (outside the MCP request/response model). Host a small webhook receiver next to AnythingMCP for the inbound side.
+
+### Next steps
+
+- [WhatsApp Business to MCP — the generic guide](./whatsapp-business-to-mcp)
+- [Connect WhatsApp Business to Claude](./connect-whatsapp-business-to-claude)

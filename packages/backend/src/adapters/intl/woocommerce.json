@@ -1,0 +1,1180 @@
+{
+  "slug": "woocommerce",
+  "name": "WooCommerce",
+  "description": "AI-native commerce operations for any WooCommerce store. Semantic tools for products, variations, inventory, orders, refunds, customers, categories, and reports — plus documented multi-step recipes (inventory optimisation, SEO refresh, upsell/cross-sell, abandoned-order triage, revenue analysis).",
+  "instructions": "This connector talks to the WooCommerce REST API v3 (`/wp-json/wc/v3`). Works against any WordPress + WooCommerce site. HTTPS required.\n\n## Setup\n\n1. **`WOOCOMMERCE_URL`** — site root (e.g. `https://shop.example.com`). Do NOT include `/wp-json`; the adapter appends `/wp-json/wc/v3`.\n2. **`WOOCOMMERCE_CONSUMER_KEY`** + **`WOOCOMMERCE_CONSUMER_SECRET`** — generate in WP admin → WooCommerce → Settings → Advanced → REST API → Add key. Use **Read/Write** for full functionality.\n\nHTTPS is mandatory: on HTTP, WC requires OAuth1 instead of Basic Auth (the connector only does Basic Auth).\n\n## Pagination\n\nList endpoints default to `per_page=10`, max `100`. Pass explicit `per_page` + iterate `page` for full catalog scans. Total counts are in `X-WP-Total` / `X-WP-TotalPages` headers (not returned in the JSON body).\n\n## Bulk writes\n\nFor ≥ 3 product updates use `woocommerce_batch_update_products` (one call, up to 100 entries). Don't fan out single `update_product` calls.\n\n## SEO meta (Yoast / Rank Math) on products\n\nMeta lives in the `meta_data` array on the product. Set it via `woocommerce_update_product`:\n\n```json\n\"meta_data\": [\n  { \"key\": \"_yoast_wpseo_metadesc\", \"value\": \"...\" },\n  { \"key\": \"_yoast_wpseo_focuskw\", \"value\": \"...\" }\n]\n```\n\nRank Math: `rank_math_description`, `rank_math_focus_keyword`, `rank_math_title`. Full reference: `wordpress_list_seo_meta_keys` (sibling WordPress connector).\n\n## Multi-step workflows\n\nFor inventory optimisation, product SEO, upsell/cross-sell, low-conversion analysis, abandoned-order triage, or KPI snapshots → call the dedicated **`woocommerce_skill_*`** tool. It returns the step-by-step playbook on demand. Don't preload that knowledge here.\n\n## Enum reference cards\n\nValid values for order status / product type / stock status / report period / payment methods → call **`woocommerce_list_*_options`**.\n\n## Permissions cheat-sheet\n\n- All list / get / reports: Read-only key.\n- Product create/update/delete, order update, refund, batch: Read/Write key.\n- Customer create / coupon create: Read/Write key.",
+  "region": "intl",
+  "category": "ecommerce",
+  "icon": "woocommerce",
+  "docsUrl": "https://woocommerce.github.io/woocommerce-rest-api-docs/",
+  "requiredEnvVars": [
+    "WOOCOMMERCE_URL",
+    "WOOCOMMERCE_CONSUMER_KEY",
+    "WOOCOMMERCE_CONSUMER_SECRET"
+  ],
+  "priority": 50,
+  "connector": {
+    "name": "WooCommerce",
+    "type": "REST",
+    "baseUrl": "{{WOOCOMMERCE_URL}}/wp-json/wc/v3",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{WOOCOMMERCE_CONSUMER_KEY}}",
+      "password": "{{WOOCOMMERCE_CONSUMER_SECRET}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "woocommerce_search_products",
+      "description": "Search/list products with rich filters — keyword (`search`), SKU, status, type (simple/variable/grouped/external), stock_status, on_sale, price range, category, tag, featured. Paginate with `page` + `per_page` (max 100).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "1-based page." },
+          "per_page": { "type": "integer", "description": "1-100." },
+          "search": { "type": "string", "description": "Free-text search across product name/description/SKU." },
+          "sku": { "type": "string", "description": "Filter by exact SKU." },
+          "slug": { "type": "string", "description": "Filter by exact slug." },
+          "status": { "type": "string", "description": "any | draft | pending | private | publish. Default: publish." },
+          "type": { "type": "string", "description": "simple | grouped | external | variable." },
+          "category": { "type": "string", "description": "Category term id." },
+          "tag": { "type": "string", "description": "Tag term id." },
+          "stock_status": { "type": "string", "description": "instock | outofstock | onbackorder." },
+          "on_sale": { "type": "boolean" },
+          "featured": { "type": "boolean" },
+          "min_price": { "type": "string", "description": "Decimal as string." },
+          "max_price": { "type": "string", "description": "Decimal as string." },
+          "orderby": { "type": "string", "description": "date | id | include | title | slug | price | popularity | rating | menu_order." },
+          "order": { "type": "string", "description": "asc | desc." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "sku": "$sku",
+          "slug": "$slug",
+          "status": "$status",
+          "type": "$type",
+          "category": "$category",
+          "tag": "$tag",
+          "stock_status": "$stock_status",
+          "on_sale": "$on_sale",
+          "featured": "$featured",
+          "min_price": "$min_price",
+          "max_price": "$max_price",
+          "orderby": "$orderby",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_get_product",
+      "description": "Get a single product by id, including all fields: name, slug, description, short_description, sku, price/regular_price/sale_price, stock_quantity, stock_status, categories, tags, images, attributes, variations array (for variable products), upsell_ids, cross_sell_ids, meta_data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer", "description": "Product id." }
+        },
+        "required": ["productId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{productId}"
+      }
+    },
+    {
+      "name": "woocommerce_create_product",
+      "description": "Create a product. Minimal required: `name`. For variable products set `type=variable` and add variations via `woocommerce_create_product_variation` after creation. Pass `meta_data` array for Yoast / Rank Math SEO keys.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "type": { "type": "string", "description": "simple | grouped | external | variable. Default: simple." },
+          "status": { "type": "string", "description": "publish | draft | pending | private." },
+          "featured": { "type": "boolean" },
+          "catalog_visibility": { "type": "string", "description": "visible | catalog | search | hidden." },
+          "description": { "type": "string", "description": "Long description (HTML)." },
+          "short_description": { "type": "string", "description": "Short description (HTML)." },
+          "sku": { "type": "string" },
+          "regular_price": { "type": "string", "description": "Decimal as string." },
+          "sale_price": { "type": "string" },
+          "manage_stock": { "type": "boolean" },
+          "stock_quantity": { "type": "integer" },
+          "stock_status": { "type": "string", "description": "instock | outofstock | onbackorder." },
+          "backorders": { "type": "string", "description": "no | notify | yes." },
+          "weight": { "type": "string" },
+          "dimensions": { "type": "object", "description": "{ length, width, height } — strings (cm or per store unit)." },
+          "categories": { "type": "array", "description": "Array of { id }.", "items": { "type": "object" } },
+          "tags": { "type": "array", "description": "Array of { id }.", "items": { "type": "object" } },
+          "images": { "type": "array", "description": "Array of { id } (existing media) or { src } (URL — WC will sideload). First image = featured.", "items": { "type": "object" } },
+          "attributes": { "type": "array", "description": "Product attributes — see WC REST docs.", "items": { "type": "object" } },
+          "upsell_ids": { "type": "array", "description": "Product IDs to show as upsells.", "items": { "type": "integer" } },
+          "cross_sell_ids": { "type": "array", "description": "Product IDs to show as cross-sells.", "items": { "type": "integer" } },
+          "meta_data": { "type": "array", "description": "Array of { key, value } — for Yoast/Rank Math SEO keys.", "items": { "type": "object" } }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "name": "$name",
+          "slug": "$slug",
+          "type": "$type",
+          "status": "$status",
+          "featured": "$featured",
+          "catalog_visibility": "$catalog_visibility",
+          "description": "$description",
+          "short_description": "$short_description",
+          "sku": "$sku",
+          "regular_price": "$regular_price",
+          "sale_price": "$sale_price",
+          "manage_stock": "$manage_stock",
+          "stock_quantity": "$stock_quantity",
+          "stock_status": "$stock_status",
+          "backorders": "$backorders",
+          "weight": "$weight",
+          "dimensions": "$dimensions",
+          "categories": "$categories",
+          "tags": "$tags",
+          "images": "$images",
+          "attributes": "$attributes",
+          "upsell_ids": "$upsell_ids",
+          "cross_sell_ids": "$cross_sell_ids",
+          "meta_data": "$meta_data"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_update_product",
+      "description": "Partial-update a product by id. Only fields you pass are touched. Use for single-product edits; for bulk use `woocommerce_batch_update_products`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer" },
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "type": { "type": "string", "description": "simple | grouped | external | variable." },
+          "status": { "type": "string" },
+          "featured": { "type": "boolean" },
+          "catalog_visibility": { "type": "string", "description": "visible | catalog | search | hidden." },
+          "description": { "type": "string" },
+          "short_description": { "type": "string" },
+          "sku": { "type": "string" },
+          "regular_price": { "type": "string" },
+          "sale_price": { "type": "string" },
+          "manage_stock": { "type": "boolean" },
+          "stock_quantity": { "type": "integer" },
+          "stock_status": { "type": "string" },
+          "backorders": { "type": "string" },
+          "weight": { "type": "string" },
+          "dimensions": { "type": "object", "description": "{ length, width, height } — strings (cm or per store unit)." },
+          "categories": { "type": "array", "items": { "type": "object" } },
+          "tags": { "type": "array", "items": { "type": "object" } },
+          "images": { "type": "array", "items": { "type": "object" } },
+          "attributes": { "type": "array", "items": { "type": "object" } },
+          "upsell_ids": { "type": "array", "items": { "type": "integer" } },
+          "cross_sell_ids": { "type": "array", "items": { "type": "integer" } },
+          "meta_data": { "type": "array", "items": { "type": "object" } }
+        },
+        "required": ["productId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{productId}",
+        "bodyMapping": {
+          "name": "$name",
+          "slug": "$slug",
+          "type": "$type",
+          "status": "$status",
+          "featured": "$featured",
+          "catalog_visibility": "$catalog_visibility",
+          "description": "$description",
+          "short_description": "$short_description",
+          "sku": "$sku",
+          "regular_price": "$regular_price",
+          "sale_price": "$sale_price",
+          "manage_stock": "$manage_stock",
+          "stock_quantity": "$stock_quantity",
+          "stock_status": "$stock_status",
+          "backorders": "$backorders",
+          "weight": "$weight",
+          "dimensions": "$dimensions",
+          "categories": "$categories",
+          "tags": "$tags",
+          "images": "$images",
+          "attributes": "$attributes",
+          "upsell_ids": "$upsell_ids",
+          "cross_sell_ids": "$cross_sell_ids",
+          "meta_data": "$meta_data"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_delete_product",
+      "description": "Move a product to trash, or pass `force=true` to delete permanently (cannot be undone).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer" },
+          "force": { "type": "boolean", "description": "true = permanent delete; false (default) = move to trash." }
+        },
+        "required": ["productId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/products/{productId}",
+        "queryParams": {
+          "force": "$force"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_batch_update_products",
+      "description": "Bulk create / update / delete products in a single call. WooCommerce allows up to 100 entries per array. Best primitive for inventory bumps, SEO refresh waves, or category re-tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "create": { "type": "array", "description": "Array of product objects to create.", "items": { "type": "object" } },
+          "update": { "type": "array", "description": "Array of product objects — each MUST include an `id` field.", "items": { "type": "object" } },
+          "delete": { "type": "array", "description": "Array of product IDs to delete.", "items": { "type": "integer" } }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/batch",
+        "bodyMapping": {
+          "create": "$create",
+          "update": "$update",
+          "delete": "$delete"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_list_product_variations",
+      "description": "List variations for a variable product. Returns id, sku, price, stock_quantity, attributes per variation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer", "description": "Parent (variable) product id." },
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string" },
+          "stock_status": { "type": "string" },
+          "on_sale": { "type": "boolean" }
+        },
+        "required": ["productId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{productId}/variations",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "stock_status": "$stock_status",
+          "on_sale": "$on_sale"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_update_product_variation",
+      "description": "Update a single variation of a variable product — price, SKU, stock, attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer", "description": "Parent product id." },
+          "variationId": { "type": "integer", "description": "Variation id." },
+          "sku": { "type": "string" },
+          "regular_price": { "type": "string" },
+          "sale_price": { "type": "string" },
+          "manage_stock": { "type": "boolean" },
+          "stock_quantity": { "type": "integer" },
+          "stock_status": { "type": "string" },
+          "weight": { "type": "string" },
+          "meta_data": { "type": "array", "items": { "type": "object" } }
+        },
+        "required": ["productId", "variationId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{productId}/variations/{variationId}",
+        "bodyMapping": {
+          "sku": "$sku",
+          "regular_price": "$regular_price",
+          "sale_price": "$sale_price",
+          "manage_stock": "$manage_stock",
+          "stock_quantity": "$stock_quantity",
+          "stock_status": "$stock_status",
+          "weight": "$weight",
+          "meta_data": "$meta_data"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_list_product_categories",
+      "description": "List product categories. Returns id, name, slug, parent, count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string" },
+          "parent": { "type": "integer" },
+          "hide_empty": { "type": "boolean" },
+          "orderby": { "type": "string" },
+          "order": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/categories",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "parent": "$parent",
+          "hide_empty": "$hide_empty",
+          "orderby": "$orderby",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_create_product_category",
+      "description": "Create a product category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "parent": { "type": "integer" },
+          "description": { "type": "string" },
+          "display": { "type": "string", "description": "default | products | subcategories | both." },
+          "image": { "type": "object", "description": "{ id } or { src } for the category image." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/categories",
+        "bodyMapping": {
+          "name": "$name",
+          "slug": "$slug",
+          "parent": "$parent",
+          "description": "$description",
+          "display": "$display",
+          "image": "$image"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_list_product_tags",
+      "description": "List product tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string" },
+          "hide_empty": { "type": "boolean" },
+          "orderby": { "type": "string" },
+          "order": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/tags",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "hide_empty": "$hide_empty",
+          "orderby": "$orderby",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_list_product_attributes",
+      "description": "List the global attribute definitions configured for the store (e.g. Size, Colour). Needed when building variable products.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/attributes"
+      }
+    },
+    {
+      "name": "woocommerce_find_low_stock",
+      "description": "Find products that are out of stock OR have `manage_stock=true` with `stock_quantity` at/below `threshold`. Pages through the catalog using `per_page` (max 100) and the supplied `page`. Returns the raw `/products` page filtered by stock status — combine with the agent's own threshold check on `stock_quantity` if needed. For the simple case, set `stock_status=outofstock` or `stock_status=onbackorder`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_status": { "type": "string", "description": "outofstock | onbackorder | instock. Default: outofstock." },
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer", "description": "Max 100." },
+          "category": { "type": "string", "description": "Restrict to a category id." },
+          "orderby": { "type": "string", "description": "Default: date." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "stock_status": "$stock_status",
+          "page": "$page",
+          "per_page": "$per_page",
+          "category": "$category",
+          "orderby": "$orderby"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_update_stock",
+      "description": "Convenience wrapper over `update_product`: enables stock management and sets quantity + status in one call. Use for single-product stock bumps; for bulk use `batch_update_products`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer" },
+          "stock_quantity": { "type": "integer", "description": "New on-hand quantity." },
+          "stock_status": { "type": "string", "description": "instock | outofstock | onbackorder. Default: instock." },
+          "manage_stock": { "type": "boolean", "description": "Default: true (enables WooCommerce stock management)." }
+        },
+        "required": ["productId", "stock_quantity"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{productId}",
+        "bodyMapping": {
+          "manage_stock": "$manage_stock",
+          "stock_quantity": "$stock_quantity",
+          "stock_status": "$stock_status"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_list_orders",
+      "description": "List orders with status, date, customer, and product filters. For abandoned-order triage use status=pending,on-hold,failed with a recent `after`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string" },
+          "status": { "type": "string", "description": "Comma-separated: any | pending | processing | on-hold | completed | cancelled | refunded | failed | trash." },
+          "customer": { "type": "integer", "description": "Customer user id." },
+          "product": { "type": "integer", "description": "Filter to orders that include this product id." },
+          "after": { "type": "string", "description": "ISO 8601." },
+          "before": { "type": "string", "description": "ISO 8601." },
+          "orderby": { "type": "string", "description": "date | id | include | title | slug." },
+          "order": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "status": "$status",
+          "customer": "$customer",
+          "product": "$product",
+          "after": "$after",
+          "before": "$before",
+          "orderby": "$orderby",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_get_order",
+      "description": "Get a single order by id — full payload incl. line_items, billing, shipping, customer_id, totals, payment, refunds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer" }
+        },
+        "required": ["orderId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{orderId}"
+      }
+    },
+    {
+      "name": "woocommerce_update_order_status",
+      "description": "Set an order's status (e.g. processing → completed, on-hold → cancelled). Triggers WooCommerce's email + stock side-effects associated with the new status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer" },
+          "status": { "type": "string", "description": "pending | processing | on-hold | completed | cancelled | refunded | failed." }
+        },
+        "required": ["orderId", "status"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{orderId}",
+        "bodyMapping": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_add_order_note",
+      "description": "Add a note to an order. Customer-visible notes trigger an email; private notes are admin-only (audit trail).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer" },
+          "note": { "type": "string", "description": "Note body (plain text)." },
+          "customer_note": { "type": "boolean", "description": "true = customer-visible + emailed; false (default) = private admin note." }
+        },
+        "required": ["orderId", "note"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{orderId}/notes",
+        "bodyMapping": {
+          "note": "$note",
+          "customer_note": "$customer_note"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_list_refunds",
+      "description": "List refunds attached to an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer" }
+        },
+        "required": ["orderId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{orderId}/refunds"
+      }
+    },
+    {
+      "name": "woocommerce_create_refund",
+      "description": "Create a refund against an order. Pass an `amount` for a partial refund, or `api_refund=true` to also trigger refund via the payment gateway (Stripe, PayPal, etc.) when supported. Pass `line_items` to refund specific line items with their quantities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer" },
+          "amount": { "type": "string", "description": "Decimal as string. Omit for full refund." },
+          "reason": { "type": "string", "description": "Internal reason (admin-visible)." },
+          "refunded_by": { "type": "integer", "description": "User id performing the refund." },
+          "api_refund": { "type": "boolean", "description": "When true (WC default), also refund via the payment gateway API (Stripe, PayPal, ...) where supported. Pass false to record the refund in WC only — useful for manual / bank-transfer flows." },
+          "line_items": { "type": "array", "description": "Array of { id, quantity, refund_total, refund_tax }.", "items": { "type": "object" } }
+        },
+        "required": ["orderId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{orderId}/refunds",
+        "bodyMapping": {
+          "amount": "$amount",
+          "reason": "$reason",
+          "refunded_by": "$refunded_by",
+          "api_refund": "$api_refund",
+          "line_items": "$line_items"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_list_customers",
+      "description": "List customers. Filter by email, role, or registration date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string", "description": "Match against email / first/last name." },
+          "email": { "type": "string", "description": "Exact email match." },
+          "role": { "type": "string", "description": "Default: customer." },
+          "orderby": { "type": "string", "description": "id | include | name | registered_date." },
+          "order": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "email": "$email",
+          "role": "$role",
+          "orderby": "$orderby",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_get_customer",
+      "description": "Get a customer by id (includes billing/shipping addresses, order count, total spent, last_order info).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "integer" }
+        },
+        "required": ["customerId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customerId}"
+      }
+    },
+    {
+      "name": "woocommerce_sales_report",
+      "description": "Sales report for a date window or named period. Returns total_sales, net_sales, average_sales, total_orders, total_items, total_tax, total_shipping, total_refunds, total_discount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": { "type": "string", "description": "week | month | last_month | year. Mutually exclusive with date_min/date_max." },
+          "date_min": { "type": "string", "description": "YYYY-MM-DD." },
+          "date_max": { "type": "string", "description": "YYYY-MM-DD." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/sales",
+        "queryParams": {
+          "period": "$period",
+          "date_min": "$date_min",
+          "date_max": "$date_max"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_top_sellers_report",
+      "description": "Top-selling products for a date window or named period. Returns array of { title, product_id, quantity }.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": { "type": "string", "description": "week | month | last_month | year." },
+          "date_min": { "type": "string" },
+          "date_max": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/top_sellers",
+        "queryParams": {
+          "period": "$period",
+          "date_min": "$date_min",
+          "date_max": "$date_max"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_coupons_totals_report",
+      "description": "Coupon counts grouped by discount type (percent | fixed_cart | fixed_product). NOTE: this endpoint accepts NO query params — it returns store-wide totals, not a usage-over-time window. For per-coupon usage history pair this with `woocommerce_list_orders` filtered to a date window and aggregate over `coupon_lines` client-side.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/coupons/totals"
+      }
+    },
+    {
+      "name": "woocommerce_orders_totals_report",
+      "description": "Counts of orders grouped by status (pending, processing, completed, ...). Lightweight KPI snapshot of pipeline state.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/orders/totals"
+      }
+    },
+    {
+      "name": "woocommerce_update_customer",
+      "description": "Partial-update a customer by id. Only fields you pass are touched. Use for fixing email, billing/shipping addresses, or password resets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "integer" },
+          "email": { "type": "string" },
+          "first_name": { "type": "string" },
+          "last_name": { "type": "string" },
+          "username": { "type": "string", "description": "WC may reject username changes after creation depending on store settings." },
+          "password": { "type": "string", "description": "Set a new password." },
+          "billing": { "type": "object" },
+          "shipping": { "type": "object" },
+          "meta_data": { "type": "array", "items": { "type": "object" } }
+        },
+        "required": ["customerId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/customers/{customerId}",
+        "bodyMapping": {
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "username": "$username",
+          "password": "$password",
+          "billing": "$billing",
+          "shipping": "$shipping",
+          "meta_data": "$meta_data"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_delete_customer",
+      "description": "Permanently delete a customer. WC does NOT trash customers — deletion is always permanent. `force=true` is mandatory. Optionally pass `reassign` to transfer the deleted customer's orders to another user id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "integer" },
+          "force": { "type": "boolean", "description": "Must be true. WC REST refuses customer delete without it." },
+          "reassign": { "type": "integer", "description": "User id to reassign orders/content to. Omit to keep the data orphaned." }
+        },
+        "required": ["customerId", "force"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/customers/{customerId}",
+        "queryParams": {
+          "force": "$force",
+          "reassign": "$reassign"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_create_customer",
+      "description": "Create a customer account. Email + at least one identifying field required. WC will hash the password and email a welcome message (unless suppressed by the store config).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string" },
+          "first_name": { "type": "string" },
+          "last_name": { "type": "string" },
+          "username": { "type": "string", "description": "Leave empty to let WC derive from email." },
+          "password": { "type": "string", "description": "Initial password. Omit to let WC auto-generate and email." },
+          "billing": { "type": "object", "description": "{ first_name, last_name, company, address_1, address_2, city, state, postcode, country, email, phone }." },
+          "shipping": { "type": "object", "description": "{ first_name, last_name, company, address_1, address_2, city, state, postcode, country }." },
+          "meta_data": { "type": "array", "items": { "type": "object" } }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "username": "$username",
+          "password": "$password",
+          "billing": "$billing",
+          "shipping": "$shipping",
+          "meta_data": "$meta_data"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_create_order",
+      "description": "Create an order. Useful for manual order creation, B2B quote-to-order flows, or migrating data from another system. Pass `line_items` as array of `{ product_id, quantity, variation_id?, total? }`. Defaults to `status=pending` — use `status=processing` to skip the pending step.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "pending | processing | on-hold | completed. Default pending." },
+          "customer_id": { "type": "integer", "description": "Existing customer id, or 0 for guest order." },
+          "currency": { "type": "string", "description": "ISO 4217. Defaults to store currency." },
+          "customer_note": { "type": "string" },
+          "billing": { "type": "object" },
+          "shipping": { "type": "object" },
+          "line_items": { "type": "array", "description": "Array of { product_id, quantity, variation_id?, subtotal?, total? }.", "items": { "type": "object" } },
+          "shipping_lines": { "type": "array", "description": "Array of { method_id, method_title, total }.", "items": { "type": "object" } },
+          "fee_lines": { "type": "array", "items": { "type": "object" } },
+          "coupon_lines": { "type": "array", "description": "Array of { code }.", "items": { "type": "object" } },
+          "payment_method": { "type": "string", "description": "Slug, e.g. `bacs`, `cheque`, `cod`, `stripe`." },
+          "payment_method_title": { "type": "string" },
+          "set_paid": { "type": "boolean", "description": "If true, mark order as paid immediately (sets `date_paid`)." },
+          "meta_data": { "type": "array", "items": { "type": "object" } }
+        },
+        "required": ["line_items"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders",
+        "bodyMapping": {
+          "status": "$status",
+          "customer_id": "$customer_id",
+          "currency": "$currency",
+          "customer_note": "$customer_note",
+          "billing": "$billing",
+          "shipping": "$shipping",
+          "line_items": "$line_items",
+          "shipping_lines": "$shipping_lines",
+          "fee_lines": "$fee_lines",
+          "coupon_lines": "$coupon_lines",
+          "payment_method": "$payment_method",
+          "payment_method_title": "$payment_method_title",
+          "set_paid": "$set_paid",
+          "meta_data": "$meta_data"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_delete_order",
+      "description": "Move an order to trash, or pass `force=true` to delete permanently. Permanent delete is irreversible and unlinks all order notes / refunds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer" },
+          "force": { "type": "boolean", "description": "true = permanent delete; false (default) = trash." }
+        },
+        "required": ["orderId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/orders/{orderId}",
+        "queryParams": {
+          "force": "$force"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_list_order_notes",
+      "description": "List notes attached to an order (both internal admin notes and customer-visible notes). Used for audit trails and to read the message history attached to an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer" },
+          "type": { "type": "string", "description": "Filter: `any` (default) | `internal` | `customer`." }
+        },
+        "required": ["orderId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{orderId}/notes",
+        "queryParams": {
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_get_order_note",
+      "description": "Retrieve a single order note by id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer" },
+          "noteId": { "type": "integer" }
+        },
+        "required": ["orderId", "noteId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{orderId}/notes/{noteId}"
+      }
+    },
+    {
+      "name": "woocommerce_delete_order_note",
+      "description": "Delete an order note. Always permanent — order notes do not support trash.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer" },
+          "noteId": { "type": "integer" },
+          "force": { "type": "boolean", "description": "Must be true for WC to allow deletion of an order note." }
+        },
+        "required": ["orderId", "noteId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/orders/{orderId}/notes/{noteId}",
+        "queryParams": {
+          "force": "$force"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_list_coupons",
+      "description": "List discount coupons in the store. Filter by code or product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string", "description": "Match against coupon code." },
+          "code": { "type": "string", "description": "Exact code match." },
+          "after": { "type": "string", "description": "ISO 8601 — created after." },
+          "before": { "type": "string", "description": "ISO 8601 — created before." },
+          "orderby": { "type": "string" },
+          "order": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coupons",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "code": "$code",
+          "after": "$after",
+          "before": "$before",
+          "orderby": "$orderby",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_create_coupon",
+      "description": "Create a discount coupon. Use for marketing campaigns, recovery emails, or B2B negotiated discounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "description": "Coupon code (case-insensitive)." },
+          "discount_type": { "type": "string", "description": "percent | fixed_cart | fixed_product. Default: fixed_cart." },
+          "amount": { "type": "string", "description": "Decimal as string. For percent: a number like '10' = 10%." },
+          "description": { "type": "string" },
+          "date_expires": { "type": "string", "description": "ISO 8601 (in site timezone)." },
+          "individual_use": { "type": "boolean", "description": "If true, can't be combined with other coupons." },
+          "product_ids": { "type": "array", "description": "Restrict to these products.", "items": { "type": "integer" } },
+          "excluded_product_ids": { "type": "array", "items": { "type": "integer" } },
+          "usage_limit": { "type": "integer", "description": "Max total usages across all customers." },
+          "usage_limit_per_user": { "type": "integer" },
+          "limit_usage_to_x_items": { "type": "integer", "description": "Max number of items the discount applies to." },
+          "free_shipping": { "type": "boolean" },
+          "product_categories": { "type": "array", "items": { "type": "integer" } },
+          "excluded_product_categories": { "type": "array", "items": { "type": "integer" } },
+          "exclude_sale_items": { "type": "boolean" },
+          "minimum_amount": { "type": "string", "description": "Min cart total to qualify." },
+          "maximum_amount": { "type": "string" },
+          "email_restrictions": { "type": "array", "description": "Whitelist of customer emails (supports wildcards: `*@example.com`).", "items": { "type": "string" } }
+        },
+        "required": ["code", "discount_type", "amount"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/coupons",
+        "bodyMapping": {
+          "code": "$code",
+          "discount_type": "$discount_type",
+          "amount": "$amount",
+          "description": "$description",
+          "date_expires": "$date_expires",
+          "individual_use": "$individual_use",
+          "product_ids": "$product_ids",
+          "excluded_product_ids": "$excluded_product_ids",
+          "usage_limit": "$usage_limit",
+          "usage_limit_per_user": "$usage_limit_per_user",
+          "limit_usage_to_x_items": "$limit_usage_to_x_items",
+          "free_shipping": "$free_shipping",
+          "product_categories": "$product_categories",
+          "excluded_product_categories": "$excluded_product_categories",
+          "exclude_sale_items": "$exclude_sale_items",
+          "minimum_amount": "$minimum_amount",
+          "maximum_amount": "$maximum_amount",
+          "email_restrictions": "$email_restrictions"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_get_coupon",
+      "description": "Get a single coupon by id, including full usage stats (`usage_count`, `used_by` array).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "couponId": { "type": "integer" }
+        },
+        "required": ["couponId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coupons/{couponId}"
+      }
+    },
+    {
+      "name": "woocommerce_update_coupon",
+      "description": "Partial-update a coupon. Common use: extend expiry, change amount, raise usage limit, restrict to additional products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "couponId": { "type": "integer" },
+          "code": { "type": "string", "description": "WC allows code rename but it's risky for existing campaigns." },
+          "discount_type": { "type": "string" },
+          "amount": { "type": "string" },
+          "description": { "type": "string" },
+          "date_expires": { "type": "string" },
+          "individual_use": { "type": "boolean" },
+          "product_ids": { "type": "array", "items": { "type": "integer" } },
+          "excluded_product_ids": { "type": "array", "items": { "type": "integer" } },
+          "usage_limit": { "type": "integer" },
+          "usage_limit_per_user": { "type": "integer" },
+          "limit_usage_to_x_items": { "type": "integer" },
+          "free_shipping": { "type": "boolean" },
+          "product_categories": { "type": "array", "items": { "type": "integer" } },
+          "excluded_product_categories": { "type": "array", "items": { "type": "integer" } },
+          "exclude_sale_items": { "type": "boolean" },
+          "minimum_amount": { "type": "string" },
+          "maximum_amount": { "type": "string" },
+          "email_restrictions": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["couponId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/coupons/{couponId}",
+        "bodyMapping": {
+          "code": "$code",
+          "discount_type": "$discount_type",
+          "amount": "$amount",
+          "description": "$description",
+          "date_expires": "$date_expires",
+          "individual_use": "$individual_use",
+          "product_ids": "$product_ids",
+          "excluded_product_ids": "$excluded_product_ids",
+          "usage_limit": "$usage_limit",
+          "usage_limit_per_user": "$usage_limit_per_user",
+          "limit_usage_to_x_items": "$limit_usage_to_x_items",
+          "free_shipping": "$free_shipping",
+          "product_categories": "$product_categories",
+          "excluded_product_categories": "$excluded_product_categories",
+          "exclude_sale_items": "$exclude_sale_items",
+          "minimum_amount": "$minimum_amount",
+          "maximum_amount": "$maximum_amount",
+          "email_restrictions": "$email_restrictions"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_delete_coupon",
+      "description": "Move a coupon to trash, or pass `force=true` to delete permanently.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "couponId": { "type": "integer" },
+          "force": { "type": "boolean", "description": "true = permanent; false (default) = trash." }
+        },
+        "required": ["couponId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/coupons/{couponId}",
+        "queryParams": {
+          "force": "$force"
+        }
+      }
+    },
+    {
+      "name": "woocommerce_list_order_status_options",
+      "description": "Reference card: valid order status slugs. Use when calling `woocommerce_list_orders` (filter), `woocommerce_create_order` / `woocommerce_update_order_status`.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# WooCommerce order status — valid slugs\n\n| Slug         | Description                                                                                |\n|--------------|--------------------------------------------------------------------------------------------|\n| `pending`    | Received, awaiting payment. Default for new orders that didn't reach payment.              |\n| `processing` | Payment received, stock reduced, awaiting fulfilment.                                      |\n| `on-hold`    | Awaiting payment confirmation (manual gateway like bank transfer / cheque). Stock reserved.|\n| `completed`  | Fulfilled. Final state.                                                                    |\n| `cancelled`  | Cancelled by admin or auto-expired. Stock returned.                                        |\n| `refunded`   | Fully refunded. Stock returned.                                                            |\n| `failed`     | Payment failed or was declined. Doesn't reduce stock.                                      |\n| `trash`      | Soft-deleted. Set via `woocommerce_delete_order`, not via `update_order_status`.           |\n\n## Filter syntax\n\nIn `woocommerce_list_orders`, comma-separated: `status=processing,on-hold`.\n\n## Lifecycle gotchas\n\n- `processing → completed` is typical fulfilment flow.\n- `pending → cancelled` releases stock and is the right move for abandoned checkout cleanup.\n- Plugins may register additional statuses (e.g. `wc-awaiting-shipment`); use `woocommerce_orders_totals_report` to see what your store actually has.\n"
+      }
+    },
+    {
+      "name": "woocommerce_list_product_type_options",
+      "description": "Reference card: valid `type` values for `woocommerce_create_product` / `woocommerce_update_product` and product type filter on search.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# WooCommerce product type — valid values\n\n| Type        | Description                                                                                   |\n|-------------|-----------------------------------------------------------------------------------------------|\n| `simple`    | Default. One SKU, one price, optional stock.                                                  |\n| `grouped`   | Container for child products that customer buys together. No price on the parent.             |\n| `external`  | Listed in catalogue but \"Buy\" button links off-site (affiliate / external).                   |\n| `variable`  | Has variations (size / colour / etc.). Each variation is its own SKU + price + stock.         |\n\n## When using `variable`\n\n1. Create the parent with `type=variable` + `attributes` array describing the variation axes.\n2. Create each variation via `woocommerce_update_product_variation` (the actual variations endpoint is `/products/{id}/variations` — create variations one by one or use `woocommerce_batch_update_products` on the parent).\n\n## When using `grouped`\n\n1. Create the children first (`simple` products with their own SKUs).\n2. Create the parent with `type=grouped` + `grouped_products: [<child_ids>]`.\n\n## Plugin types\n\nSubscriptions, bookings, and similar plugins register additional types (`subscription`, `variable-subscription`, `booking`). Behaviour depends on the plugin — read its docs.\n"
+      }
+    },
+    {
+      "name": "woocommerce_list_stock_status_options",
+      "description": "Reference card: valid `stock_status` values for product create/update + list filter.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# WooCommerce stock status — valid values\n\n| Value          | Description                                                                                 |\n|----------------|---------------------------------------------------------------------------------------------|\n| `instock`      | Available now.                                                                              |\n| `outofstock`   | Not available. Add-to-cart hidden by default.                                               |\n| `onbackorder`  | Not currently in stock but accepting orders (with delayed shipment).                        |\n\n## Related: the `backorders` field\n\nWhen `manage_stock=true` and `stock_quantity=0`, the `backorders` field controls behaviour:\n\n| `backorders` | Behaviour                                                                                  |\n|--------------|--------------------------------------------------------------------------------------------|\n| `no` (default) | Show out-of-stock, block purchase.                                                       |\n| `notify`     | Allow purchase, notify customer that backorder.                                            |\n| `yes`        | Allow purchase silently as backorder.                                                      |\n\n## In `woocommerce_search_products`\n\nFilter with `stock_status=instock` (single value, not CSV). For multi-status filtering you'd need multiple calls.\n"
+      }
+    },
+    {
+      "name": "woocommerce_list_report_period_options",
+      "description": "Reference card: valid `period` values for `woocommerce_sales_report` and `woocommerce_top_sellers_report`. Plus the alternative date-range syntax.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# WooCommerce report period — valid values\n\nFor `woocommerce_sales_report` and `woocommerce_top_sellers_report`.\n\n## Named periods (shortcut)\n\n| Period       | Window                                                |\n|--------------|-------------------------------------------------------|\n| `week`       | Current week (Sunday or Monday start per WP setting). |\n| `month`      | Current calendar month, day 1 → today.                |\n| `last_month` | Entire previous calendar month.                       |\n| `year`       | Current calendar year, Jan 1 → today.                 |\n\nUsage: `period=\"month\"`.\n\n## Custom date range\n\nMutually exclusive with `period`. Use both `date_min` and `date_max`:\n\n```\nwoocommerce_sales_report(date_min=\"2026-01-01\", date_max=\"2026-03-31\")\n```\n\nDates are `YYYY-MM-DD` (inclusive). Interpreted in the store's timezone (`wordpress_get_settings.timezone_string` on the WP side).\n\n## Endpoints that do NOT accept date filters\n\n- `woocommerce_orders_totals_report` (counts by status — always store-wide).\n- `woocommerce_coupons_totals_report` (counts by discount type — always store-wide).\n\nFor period-over-period growth, call `sales_report` twice and compute deltas in context.\n"
+      }
+    },
+    {
+      "name": "woocommerce_skill_inventory_optimization",
+      "description": "Skill recipe: find out-of-stock and low-stock products, cross-reference with demand (top sellers), and bulk-bump stock via batch update.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: inventory optimisation\n\nGoal: identify stock gaps in the catalogue and bump quantities based on demand signals.\n\n## Steps\n\n1. **Out-of-stock products**\n   - `woocommerce_find_low_stock` with `stock_status=outofstock&per_page=100`. Iterate pages until exhausted.\n\n2. **Backorder products**\n   - `woocommerce_find_low_stock` with `stock_status=onbackorder&per_page=100`.\n\n3. **Demand leaders**\n   - `woocommerce_top_sellers_report` with `period=month` (or `last_month`). Returns `[{ title, product_id, quantity }]`.\n\n4. **Cross-reference** (agent-side)\n   - OUT-OF-STOCK ∩ TOP-SELLERS = URGENT restock. Add note for buyer review.\n   - OUT-OF-STOCK − TOP-SELLERS = low priority. Consider `catalog_visibility=hidden` if 3+ months stagnant.\n   - LOW STOCK ∩ TOP-SELLERS = preemptive bump (call `woocommerce_get_product` to read current `stock_quantity`, then decide a target).\n\n5. **Bulk-bump**\n   - `woocommerce_batch_update_products` with `update=[ { id, stock_quantity, stock_status: 'instock' }, ... ]`. Up to 100 entries per call.\n   - For items that should accept backorders: also `backorders: \"notify\"`. Run `woocommerce_list_stock_status_options` if you forget the values.\n\n6. **Verify**\n   - Repeat step 1: out-of-stock list should be smaller.\n\n## Gotchas\n\n- For ≥3 products, ALWAYS use `batch_update_products`. Don't fan out single calls.\n- `top_sellers_report` returns top 5 by default — for deeper analysis, also fetch `sales_report` and pair with category breakdown.\n- The decision logic (target quantity, backorder policy) is the agent's — the connector just persists.\n"
+      }
+    },
+    {
+      "name": "woocommerce_skill_product_seo_optimization",
+      "description": "Skill recipe: optimise a product's name, description, slug, and Yoast/Rank Math SEO meta.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: product SEO optimisation\n\nGoal: improve a product's organic search performance.\n\n## Steps\n\n1. **Read the full product**\n   - `woocommerce_get_product` with `productId=<id>`. Note `name`, `slug`, `short_description`, `description`, existing `meta_data`.\n\n2. **Rewrite in context** (agent-side)\n   - `name`: lead with the primary keyword. Brand/model precise. ≤ 60 chars.\n   - `short_description`: ~150 chars, conversion-focused.\n   - `description`: long-form HTML. Include keyword 2-3x naturally, plus secondary terms. Bullet key features.\n   - `slug`: kebab-case, ≤ 60 chars, no stop words. Leave existing slug alone unless it's truly bad (changes break URLs).\n\n3. **Persist core fields**\n   - `woocommerce_update_product` with `productId=<id>` + the rewritten fields.\n\n4. **Set SEO meta**\n   - Call `wordpress_list_seo_meta_keys` if you don't remember the keys.\n   - Append/overwrite entries in `meta_data`:\n     ```json\n     {\n       \"productId\": <id>,\n       \"meta_data\": [\n         { \"key\": \"_yoast_wpseo_metadesc\", \"value\": \"...\" },\n         { \"key\": \"_yoast_wpseo_focuskw\", \"value\": \"...\" }\n       ]\n     }\n     ```\n   - Send via `woocommerce_update_product`. `meta_data` is upsert: existing keys overwritten, new keys added, untouched keys preserved.\n\n5. **For batch (≥5 products)**\n   - Build an `update` array → `woocommerce_batch_update_products`.\n\n## Gotchas\n\n- Don't change `slug` on an indexed product. URL changes need a 301 upstream.\n- For variable products: optimise the parent + each variation separately (variation has its own description / sku / price).\n- Verify that Yoast/Rank Math is installed and at a version that registers `meta_data` keys in REST — see `wordpress_list_seo_meta_keys`.\n"
+      }
+    },
+    {
+      "name": "woocommerce_skill_upsell_cross_sell",
+      "description": "Skill recipe: build upsell + cross-sell relationships for a product based on category, price tier, and tags.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: upsell / cross-sell recommendations\n\nGoal: configure the 'You may also like' relationships rendered by WooCommerce.\n\n## Steps\n\n1. **Read the target product**\n   - `woocommerce_get_product` with `productId=<id>`. Note `categories`, `tags`, `regular_price`, current `upsell_ids` / `cross_sell_ids`.\n\n2. **Find candidates**\n   - Same category, similar price: `woocommerce_search_products` with `category=<id>&min_price=<X>&max_price=<Y>&stock_status=instock&per_page=20`.\n   - Same tag: `woocommerce_search_products` with `tag=<tag_id>&stock_status=instock&per_page=20`.\n\n3. **Score candidates** (agent-side)\n   - **UPSELL** = higher tier: 1.3-2.0× the source price, same category.\n   - **CROSS-SELL** = same tier: 0.7-1.3× the source price, complementary (different functional category).\n\n4. **Pick 3-5 per list** based on margin, current stock, and complementarity. Reject anything `stock_status != instock`.\n\n5. **Persist**\n   - `woocommerce_update_product` with:\n     ```json\n     {\n       \"productId\": <id>,\n       \"upsell_ids\": [<3-5 higher-tier ids>],\n       \"cross_sell_ids\": [<3-5 same-tier ids>]\n     }\n     ```\n\n## Where they appear\n\n- **Upsells**: product page, 'You might also like' block.\n- **Cross-sells**: cart page, 'Frequently bought with' block.\n\n## Gotchas\n\n- Both fields are ARRAYS OF PRODUCT IDS — not objects.\n- Don't include the source product itself (filter `id !== productId`).\n- Stagnant relationships: re-run periodically (e.g. monthly) as the catalogue evolves.\n"
+      }
+    },
+    {
+      "name": "woocommerce_skill_low_conversion_analysis",
+      "description": "Skill recipe: identify products visible in the catalogue but not selling, with an honest framing of what WooCommerce REST can and cannot measure.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: low-conversion product analysis\n\nGoal: identify products that exist in the catalogue but underperform.\n\n## Honest framing\n\nWooCommerce REST does NOT expose impressions, add-to-cart, or page-view data — only purchases. So 'low conversion' here is actually 'low purchases per catalog-day'. For real funnel metrics, pair with a web analytics connector (Google Analytics, Plausible).\n\n## Steps\n\n1. **List visible candidates**\n   - `woocommerce_search_products` with `status=publish&stock_status=instock&per_page=100`. Page through.\n\n2. **List top sellers for the window**\n   - `woocommerce_top_sellers_report` with `period=month` (or `last_month`). Returns `[{ product_id, quantity }]`.\n\n3. **Set difference** (agent-side)\n   - `visible_ids − top_seller_ids` = products in catalogue with zero/few sales in the window.\n\n4. **Filter by age** — exclude products that haven't had time to sell\n   - `woocommerce_search_products` with `before=<14_days_ago_iso>` to keep only products older than 14 days.\n\n5. **Diagnose each candidate** (agent-side)\n   - `woocommerce_get_product` on each. Common low-conversion causes:\n     - Missing/bad images.\n     - Short / generic `description`.\n     - Price out-of-line with category siblings.\n     - Missing SEO `meta_data`.\n     - No `upsell_ids` / `cross_sell_ids`.\n\n6. **Generate recommendations**\n   - For each candidate, propose specific fixes. Then run the corresponding skill: `woocommerce_skill_product_seo_optimization`, `woocommerce_skill_upsell_cross_sell`, or surface for manual buyer review.\n\n## Gotchas\n\n- 'Zero sales' over a short window can be noise. Use month or last_month, not week, for confidence.\n- For seasonal items, compare to same period last year if possible (custom `date_min` / `date_max`).\n- Don't auto-hide products. Surface the list for human triage first.\n"
+      }
+    },
+    {
+      "name": "woocommerce_skill_abandoned_order_triage",
+      "description": "Skill recipe: process stuck orders (pending / on-hold / failed) — chase or cancel based on age and reason.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: abandoned-order triage\n\nGoal: process orders that are stuck in pending / on-hold / failed and decide chase vs cancel.\n\n## Honest framing\n\nWC REST has NO 'abandoned cart' endpoint — that requires a plugin (e.g. WooCommerce Cart Abandonment Recovery). The closest proxy in core is `status=pending` (reached checkout, didn't complete payment).\n\n## Steps\n\n1. **List stuck orders**\n   - `woocommerce_list_orders` with `status=pending,on-hold,failed&per_page=50&orderby=date&order=asc`. Oldest first.\n\n2. **Per order** — `woocommerce_get_order` to see customer, line_items, payment_method, date_created.\n\n3. **Classify by age + status** (agent-side)\n   - `pending` > 24h → payment never completed. Email reminder OR cancel.\n   - `on-hold` > 7d (manual gateway like bank transfer) → chase customer OR cancel.\n   - `failed` → log + cancel (rarely worth chasing).\n\n4. **Act per case**\n   - Customer-visible reminder: `woocommerce_add_order_note` with `customer_note=true`. Triggers an email.\n   - Internal audit note: `woocommerce_add_order_note` with `customer_note=false`.\n   - Give up on the order: `woocommerce_update_order_status` with `status=cancelled`. Releases stock automatically.\n   - For permanent cleanup: `woocommerce_delete_order` with `force=true`.\n\n## Gotchas\n\n- Cancelling restores stock to inventory immediately.\n- Some gateways (Stripe, PayPal) auto-expire pending after 24-48h — check before manual cleanup.\n- Customer emails go through WP's mailer; ensure SMTP is configured.\n- For a real abandoned-cart funnel (started checkout but didn't finish), install the cart-abandonment-recovery plugin and add its endpoints in a v2.\n"
+      }
+    },
+    {
+      "name": "woocommerce_skill_revenue_kpi_snapshot",
+      "description": "Skill recipe: build a one-page KPI snapshot — revenue, AOV, top sellers, pipeline state, coupon mix.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: revenue / KPI snapshot\n\nGoal: produce a one-page markdown KPI report for a date window.\n\n## Steps\n\n1. **Sales totals for the window**\n   - `woocommerce_sales_report` with `period=month` (or `date_min` / `date_max` for custom). Returns `total_sales`, `net_sales`, `average_sales`, `total_orders`, `total_items`, `total_tax`, `total_shipping`, `total_refunds`, `total_discount`.\n\n2. **Top sellers for the same window**\n   - `woocommerce_top_sellers_report` with the same period / dates.\n\n3. **Store-wide pipeline + coupon mix** (always store-wide, no date filter)\n   - `woocommerce_orders_totals_report` → counts grouped by status.\n   - `woocommerce_coupons_totals_report` → counts grouped by discount type.\n\n4. **(Optional) Period-over-period**\n   - Call `sales_report` again with the previous window (same length, ending right before this window's start). Compute deltas in context.\n\n5. **Compose the markdown report** (agent-side)\n   - Headline: window, total revenue, orders, AOV (= net_sales / total_orders).\n   - Top sellers table.\n   - Pipeline state (status counts as a small table).\n   - Coupon mix (counts per discount type).\n   - Deltas vs previous period if available.\n\n## Gotchas\n\n- Currency comes from `woocommerce_currency` site option (read via `wordpress_get_settings`).\n- Reports use store timezone, not UTC — same gotcha as scheduled publishing.\n- `*_totals_report` endpoints don't accept date filters — they're snapshots, not windowed. Don't try to backdate them.\n- `top_sellers_report` returns top 5 by default. To rank deeper, the agent must combine multiple `sales_report` calls or query `list_orders` with date filter.\n"
+      }
+    }
+  ]
+}

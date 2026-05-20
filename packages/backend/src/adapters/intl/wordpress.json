@@ -1,0 +1,904 @@
+{
+  "slug": "wordpress",
+  "name": "WordPress",
+  "description": "AI-native publishing and content operations for any self-hosted WordPress site. Semantic tools for posts, pages, taxonomies, media metadata, users, comments, SEO meta and site health — plus documented multi-step recipes (SEO content pipeline, scheduled publishing, content refresh, internal linking, media optimisation).",
+  "instructions": "This connector talks to the WordPress core REST API (`/wp-json/wp/v2`). WordPress 5.6+ (Application Passwords) and HTTPS required.\n\n## Setup\n\n1. **`WORDPRESS_URL`** — the site root (e.g. `https://example.com`). Do NOT include `/wp-json`; the adapter appends it. HTTPS mandatory.\n2. **`WORDPRESS_USERNAME`** — login name with the role needed (Editor for posts, Administrator for users / site-health).\n3. **`WORDPRESS_APP_PASSWORD`** — generate in `/wp-admin/profile.php` → Application Passwords. Forward verbatim (spaces or no-spaces both work).\n\n## Payload control\n\nWP responses are large by default. Every `list_*` and `get_*` accepts `_fields` (comma-separated allowlist, e.g. `id,title,status,modified,slug,link`). Use it.\n\n## SEO plugin meta keys (Yoast / Rank Math)\n\nMeta is REST-visible only if registered with `show_in_rest: true`. Yoast and Rank Math do this on modern versions. Call `wordpress_list_seo_meta_keys` for the full reference card.\n\n## Multi-step workflows\n\nFor recipes like SEO refresh, content refresh, scheduled publishing, internal linking, or media optimisation, call the dedicated **`wordpress_skill_*`** tool — it returns the step-by-step playbook on demand. Don't preload that knowledge here.\n\n## Enum reference cards\n\nFor valid values of status / role / comment-status / site-health test slugs, call the corresponding **`wordpress_list_*_options`** tool. The site-health slugs in particular use hyphens, not underscores — easy to get wrong.\n\n## Permissions cheat-sheet\n\nPosts CRUD: Editor. Users CRUD: Administrator. Site health / settings: Administrator. Comments moderate: Editor. `rest_cannot_*` errors mean the App Password user lacks the capability.",
+  "region": "intl",
+  "category": "cms",
+  "icon": "wordpress",
+  "docsUrl": "https://developer.wordpress.org/rest-api/",
+  "requiredEnvVars": [
+    "WORDPRESS_URL",
+    "WORDPRESS_USERNAME",
+    "WORDPRESS_APP_PASSWORD"
+  ],
+  "priority": 50,
+  "connector": {
+    "name": "WordPress",
+    "type": "REST",
+    "baseUrl": "{{WORDPRESS_URL}}/wp-json",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{WORDPRESS_USERNAME}}",
+      "password": "{{WORDPRESS_APP_PASSWORD}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "wordpress_list_posts",
+      "description": "List posts with rich filtering — status, author, search term, taxonomy (categories/tags), date range, ordering. Use `_fields` to trim the response (recommended: `id,title,status,date,modified,slug,link,author`). Default order is newest-first; pass `orderby=modified&order=asc` to find stalest content for refresh workflows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "1-based page number." },
+          "per_page": { "type": "integer", "description": "Results per page (1-100, default 10)." },
+          "search": { "type": "string", "description": "Full-text search across title/content." },
+          "status": { "type": "string", "description": "Comma-separated: publish, future, draft, pending, private, trash, auto-draft. Default: publish." },
+          "author": { "type": "string", "description": "Comma-separated author user IDs." },
+          "categories": { "type": "string", "description": "Comma-separated category term IDs." },
+          "tags": { "type": "string", "description": "Comma-separated tag term IDs." },
+          "after": { "type": "string", "description": "ISO 8601 — return posts published after this date." },
+          "before": { "type": "string", "description": "ISO 8601 — return posts published before this date." },
+          "orderby": { "type": "string", "description": "date | modified | title | slug | id | include | author. Default date." },
+          "order": { "type": "string", "description": "asc | desc. Default desc." },
+          "_fields": { "type": "string", "description": "Comma-separated allowlist of top-level fields to return — keeps payloads small." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/posts",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "status": "$status",
+          "author": "$author",
+          "categories": "$categories",
+          "tags": "$tags",
+          "after": "$after",
+          "before": "$before",
+          "orderby": "$orderby",
+          "order": "$order",
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_get_post",
+      "description": "Get a single post by id. Returns full content (rendered + raw blocks if available), title, status, author, categories, tags, featured_media id, and any REST-exposed meta keys. Pass `_fields` to trim.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "integer", "description": "Post ID." },
+          "context": { "type": "string", "description": "view | embed | edit. Use `edit` to get raw block content for refresh workflows (requires edit_posts capability)." },
+          "_fields": { "type": "string", "description": "Comma-separated field allowlist." }
+        },
+        "required": ["postId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/posts/{postId}",
+        "queryParams": {
+          "context": "$context",
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_create_post",
+      "description": "Create a post. For drafts pass `status: draft`; to schedule pass `status: future` plus an ISO `date` (site timezone). Content accepts HTML or Gutenberg block markup. Categories/tags are term IDs (use `wordpress_list_categories` / `wordpress_list_tags` first).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Post title (plain text or HTML)." },
+          "content": { "type": "string", "description": "Post body — HTML or Gutenberg blocks." },
+          "excerpt": { "type": "string", "description": "Optional excerpt." },
+          "status": { "type": "string", "description": "publish | future | draft | pending | private. Default: draft." },
+          "date": { "type": "string", "description": "ISO 8601 publish date (site timezone). Required when status=future." },
+          "slug": { "type": "string", "description": "URL slug. Omit to let WordPress derive from title." },
+          "author": { "type": "integer", "description": "Author user id." },
+          "categories": { "type": "array", "description": "Array of category term IDs.", "items": { "type": "integer" } },
+          "tags": { "type": "array", "description": "Array of tag term IDs.", "items": { "type": "integer" } },
+          "featured_media": { "type": "integer", "description": "Media library id for the featured image." },
+          "meta": { "type": "object", "description": "Map of REST-exposed meta keys (e.g. Yoast/Rank Math fields)." },
+          "comment_status": { "type": "string", "description": "open | closed." },
+          "ping_status": { "type": "string", "description": "open | closed." },
+          "sticky": { "type": "boolean", "description": "Whether to pin to the front page." }
+        },
+        "required": ["title"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/posts",
+        "bodyMapping": {
+          "title": "$title",
+          "content": "$content",
+          "excerpt": "$excerpt",
+          "status": "$status",
+          "date": "$date",
+          "slug": "$slug",
+          "author": "$author",
+          "categories": "$categories",
+          "tags": "$tags",
+          "featured_media": "$featured_media",
+          "meta": "$meta",
+          "comment_status": "$comment_status",
+          "ping_status": "$ping_status",
+          "sticky": "$sticky"
+        }
+      }
+    },
+    {
+      "name": "wordpress_update_post",
+      "description": "Partial-update a post by id. Only fields you pass are touched — omit `content` to keep the body, etc. `modified` is bumped automatically by WordPress. Use for the content-refresh recipe.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "integer", "description": "Post id to update." },
+          "title": { "type": "string", "description": "New title." },
+          "content": { "type": "string", "description": "New body — HTML or Gutenberg blocks." },
+          "excerpt": { "type": "string", "description": "New excerpt." },
+          "status": { "type": "string", "description": "publish | future | draft | pending | private | trash." },
+          "date": { "type": "string", "description": "ISO 8601 publish date." },
+          "slug": { "type": "string", "description": "New slug." },
+          "categories": { "type": "array", "description": "Replacement array of category term IDs.", "items": { "type": "integer" } },
+          "tags": { "type": "array", "description": "Replacement array of tag term IDs.", "items": { "type": "integer" } },
+          "featured_media": { "type": "integer", "description": "Featured media id (0 to clear)." },
+          "meta": { "type": "object", "description": "Map of REST-exposed meta keys to overwrite." },
+          "comment_status": { "type": "string", "description": "open | closed." },
+          "sticky": { "type": "boolean", "description": "Pin to front page." }
+        },
+        "required": ["postId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/posts/{postId}",
+        "bodyMapping": {
+          "title": "$title",
+          "content": "$content",
+          "excerpt": "$excerpt",
+          "status": "$status",
+          "date": "$date",
+          "slug": "$slug",
+          "categories": "$categories",
+          "tags": "$tags",
+          "featured_media": "$featured_media",
+          "meta": "$meta",
+          "comment_status": "$comment_status",
+          "sticky": "$sticky"
+        }
+      }
+    },
+    {
+      "name": "wordpress_delete_post",
+      "description": "Move a post to trash, or pass `force=true` to delete permanently. Trash is reversible from the admin UI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "integer", "description": "Post id." },
+          "force": { "type": "boolean", "description": "true = permanent delete; false (default) = move to trash." }
+        },
+        "required": ["postId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/wp/v2/posts/{postId}",
+        "queryParams": {
+          "force": "$force"
+        }
+      }
+    },
+    {
+      "name": "wordpress_list_pages",
+      "description": "List static pages. Same filter/order semantics as posts. Pages support hierarchy via `parent`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string" },
+          "status": { "type": "string", "description": "Comma-separated statuses." },
+          "parent": { "type": "string", "description": "Comma-separated parent IDs (0 = top-level)." },
+          "orderby": { "type": "string", "description": "date | modified | title | menu_order | slug | id." },
+          "order": { "type": "string", "description": "asc | desc." },
+          "_fields": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/pages",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "status": "$status",
+          "parent": "$parent",
+          "orderby": "$orderby",
+          "order": "$order",
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_get_page",
+      "description": "Get a single page by id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageId": { "type": "integer", "description": "Page id." },
+          "context": { "type": "string", "description": "view | embed | edit." },
+          "_fields": { "type": "string" }
+        },
+        "required": ["pageId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/pages/{pageId}",
+        "queryParams": {
+          "context": "$context",
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_create_page",
+      "description": "Create a static page (`/wp/v2/pages`). Supports `parent` for hierarchy and `menu_order` for sorting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "content": { "type": "string" },
+          "excerpt": { "type": "string" },
+          "status": { "type": "string", "description": "publish | future | draft | pending | private." },
+          "date": { "type": "string" },
+          "slug": { "type": "string" },
+          "parent": { "type": "integer", "description": "Parent page id (0 = top-level)." },
+          "menu_order": { "type": "integer", "description": "Sort order within siblings." },
+          "featured_media": { "type": "integer" },
+          "meta": { "type": "object" },
+          "template": { "type": "string", "description": "Theme template slug (when the theme registers page templates)." }
+        },
+        "required": ["title"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/pages",
+        "bodyMapping": {
+          "title": "$title",
+          "content": "$content",
+          "excerpt": "$excerpt",
+          "status": "$status",
+          "date": "$date",
+          "slug": "$slug",
+          "parent": "$parent",
+          "menu_order": "$menu_order",
+          "featured_media": "$featured_media",
+          "meta": "$meta",
+          "template": "$template"
+        }
+      }
+    },
+    {
+      "name": "wordpress_update_page",
+      "description": "Partial-update a page by id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageId": { "type": "integer" },
+          "title": { "type": "string" },
+          "content": { "type": "string" },
+          "excerpt": { "type": "string" },
+          "status": { "type": "string" },
+          "slug": { "type": "string" },
+          "parent": { "type": "integer" },
+          "menu_order": { "type": "integer" },
+          "featured_media": { "type": "integer" },
+          "meta": { "type": "object" },
+          "template": { "type": "string" }
+        },
+        "required": ["pageId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/pages/{pageId}",
+        "bodyMapping": {
+          "title": "$title",
+          "content": "$content",
+          "excerpt": "$excerpt",
+          "status": "$status",
+          "slug": "$slug",
+          "parent": "$parent",
+          "menu_order": "$menu_order",
+          "featured_media": "$featured_media",
+          "meta": "$meta",
+          "template": "$template"
+        }
+      }
+    },
+    {
+      "name": "wordpress_list_categories",
+      "description": "List post categories. Returns id, name, slug, parent, count, description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string" },
+          "parent": { "type": "integer", "description": "Filter to children of this parent term id." },
+          "hide_empty": { "type": "boolean", "description": "Hide categories with no posts." },
+          "orderby": { "type": "string", "description": "id | include | name | slug | count | term_group." },
+          "order": { "type": "string", "description": "asc | desc." },
+          "_fields": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/categories",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "parent": "$parent",
+          "hide_empty": "$hide_empty",
+          "orderby": "$orderby",
+          "order": "$order",
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_create_category",
+      "description": "Create a category term.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Display name." },
+          "slug": { "type": "string", "description": "URL slug (defaults to derived from name)." },
+          "description": { "type": "string" },
+          "parent": { "type": "integer", "description": "Parent term id (0 = top-level)." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/categories",
+        "bodyMapping": {
+          "name": "$name",
+          "slug": "$slug",
+          "description": "$description",
+          "parent": "$parent"
+        }
+      }
+    },
+    {
+      "name": "wordpress_list_tags",
+      "description": "List post tags. Returns id, name, slug, count, description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string" },
+          "hide_empty": { "type": "boolean" },
+          "orderby": { "type": "string" },
+          "order": { "type": "string" },
+          "_fields": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/tags",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "hide_empty": "$hide_empty",
+          "orderby": "$orderby",
+          "order": "$order",
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_create_tag",
+      "description": "Create a tag term.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/tags",
+        "bodyMapping": {
+          "name": "$name",
+          "slug": "$slug",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "wordpress_list_media",
+      "description": "List media-library items. Filter by `media_type` (image | video | audio | application) and `mime_type` (e.g. image/jpeg). Use `_fields=id,alt_text,caption,media_details,source_url` to keep the payload small for the media-optimisation recipe.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string" },
+          "media_type": { "type": "string", "description": "image | video | audio | application | text." },
+          "mime_type": { "type": "string", "description": "Specific MIME, e.g. image/png." },
+          "author": { "type": "string", "description": "Comma-separated author IDs." },
+          "after": { "type": "string" },
+          "before": { "type": "string" },
+          "orderby": { "type": "string" },
+          "order": { "type": "string" },
+          "_fields": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/media",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "media_type": "$media_type",
+          "mime_type": "$mime_type",
+          "author": "$author",
+          "after": "$after",
+          "before": "$before",
+          "orderby": "$orderby",
+          "order": "$order",
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_get_media",
+      "description": "Get a single media-library item by id. Use for inspecting `alt_text`, `caption`, image sizes, EXIF.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mediaId": { "type": "integer" },
+          "_fields": { "type": "string" }
+        },
+        "required": ["mediaId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/media/{mediaId}",
+        "queryParams": {
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_update_media",
+      "description": "Update metadata on an existing media item — alt text (accessibility + SEO), caption, description, title. Does NOT replace the binary; v1 does not support binary upload (see connector instructions).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mediaId": { "type": "integer" },
+          "alt_text": { "type": "string", "description": "Image alt text. Empty string clears it." },
+          "caption": { "type": "string", "description": "Caption (shown below image in some themes)." },
+          "description": { "type": "string", "description": "Long description (shown on the attachment page)." },
+          "title": { "type": "string", "description": "Media library title." },
+          "post": { "type": "integer", "description": "Attach to a specific parent post id (0 to detach)." }
+        },
+        "required": ["mediaId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/media/{mediaId}",
+        "bodyMapping": {
+          "alt_text": "$alt_text",
+          "caption": "$caption",
+          "description": "$description",
+          "title": "$title",
+          "post": "$post"
+        }
+      }
+    },
+    {
+      "name": "wordpress_set_featured_image",
+      "description": "Convenience tool: attach an existing media-library item as the featured image of a post or page. Equivalent to `wordpress_update_post` / `wordpress_update_page` with `featured_media: <mediaId>`, but explicit about intent. Pass `mediaId=0` to clear.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postType": { "type": "string", "description": "REST base for the target object — typically `posts` or `pages`. For a custom post type pass its `rest_base`." },
+          "postId": { "type": "integer", "description": "Target post or page id." },
+          "mediaId": { "type": "integer", "description": "Media-library id (0 to clear)." }
+        },
+        "required": ["postType", "postId", "mediaId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/{postType}/{postId}",
+        "bodyMapping": {
+          "featured_media": "$mediaId"
+        }
+      }
+    },
+    {
+      "name": "wordpress_list_users",
+      "description": "List users. Requires Administrator for full visibility; lower roles see only public author info. Use for finding author IDs when creating/assigning posts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string" },
+          "roles": { "type": "string", "description": "Comma-separated role slugs: administrator, editor, author, contributor, subscriber." },
+          "orderby": { "type": "string", "description": "id | include | name | registered_date | slug | email | url." },
+          "order": { "type": "string" },
+          "_fields": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/users",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "roles": "$roles",
+          "orderby": "$orderby",
+          "order": "$order",
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_list_comments",
+      "description": "List comments across all posts, with status filter for moderation workflows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "search": { "type": "string" },
+          "post": { "type": "string", "description": "Comma-separated post IDs to filter to." },
+          "status": { "type": "string", "description": "approve | hold | spam | trash. Default: approve." },
+          "author_email": { "type": "string" },
+          "after": { "type": "string" },
+          "before": { "type": "string" },
+          "_fields": { "type": "string" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/comments",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search": "$search",
+          "post": "$post",
+          "status": "$status",
+          "author_email": "$author_email",
+          "after": "$after",
+          "before": "$before",
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_moderate_comment",
+      "description": "Change a comment's moderation status — approve, hold, spam, or trash. To delete permanently use status=trash plus a follow-up DELETE (not exposed in v1).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "commentId": { "type": "integer" },
+          "status": { "type": "string", "description": "approve | hold | spam | trash." }
+        },
+        "required": ["commentId", "status"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/comments/{commentId}",
+        "bodyMapping": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "wordpress_search",
+      "description": "Cross-post-type full-text search via `/wp/v2/search`. Returns lightweight hits ({id, title, url, type, subtype}) — use this when you don't know whether the match is a post or a page. Pair with `wordpress_get_post` / `wordpress_get_page` to fetch full content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string", "description": "Search term." },
+          "type": { "type": "string", "description": "post | term | post-format. Default: post." },
+          "subtype": { "type": "string", "description": "Restrict to a specific post type slug (e.g. `post`, `page`, or a custom post type). Default: any." },
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" }
+        },
+        "required": ["search"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/search",
+        "queryParams": {
+          "search": "$search",
+          "type": "$type",
+          "subtype": "$subtype",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "wordpress_update_post_meta",
+      "description": "Overwrite REST-exposed meta keys on a post — typically Yoast (`_yoast_wpseo_title`, `_yoast_wpseo_metadesc`, `_yoast_wpseo_focuskw`) or Rank Math (`rank_math_title`, `rank_math_description`, `rank_math_focus_keyword`). Pass any subset of keys; only those keys are written. Returns the updated post.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "integer" },
+          "meta": {
+            "type": "object",
+            "description": "Map of meta key → value. Keys must be registered with `show_in_rest: true` (Yoast/Rank Math do this by default)."
+          }
+        },
+        "required": ["postId", "meta"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/posts/{postId}",
+        "bodyMapping": {
+          "meta": "$meta"
+        }
+      }
+    },
+    {
+      "name": "wordpress_site_health_status",
+      "description": "Run one of WordPress's built-in Site Health checks. Wraps `/wp-site-health/v1/tests/{test}` (core since WP 5.5) — requires Administrator. Useful for an agent triaging deploy / hosting issues. Call once per test slug. NOTE: test slugs use hyphens, not underscores.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "test": {
+            "type": "string",
+            "description": "Test slug (hyphenated): background-updates | loopback-requests | https-status | dotorg-communication | authorization-header | page-cache."
+          }
+        },
+        "required": ["test"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp-site-health/v1/tests/{test}"
+      }
+    },
+    {
+      "name": "wordpress_get_settings",
+      "description": "Read site-level settings (title, description, url, timezone_string, date_format, posts_per_page, default_category, etc.). Requires Administrator.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/settings"
+      }
+    },
+    {
+      "name": "wordpress_get_user",
+      "description": "Get a single user by id. Public fields for any role; private fields (email, registration date, capabilities) require Administrator. Use to resolve an author id when creating/assigning posts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "integer", "description": "User id. Pass `0` and use `me=true` to read the authenticated user." },
+          "context": { "type": "string", "description": "view | embed | edit. `edit` returns email / registered_date / capabilities (Admin only)." },
+          "_fields": { "type": "string", "description": "Comma-separated field allowlist." }
+        },
+        "required": ["userId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wp/v2/users/{userId}",
+        "queryParams": {
+          "context": "$context",
+          "_fields": "$_fields"
+        }
+      }
+    },
+    {
+      "name": "wordpress_create_user",
+      "description": "Create a user account. Requires Administrator. Returns the full user object including id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string", "description": "Login (lowercase, no spaces)." },
+          "email": { "type": "string" },
+          "password": { "type": "string", "description": "Initial password. The user can change it after login." },
+          "first_name": { "type": "string" },
+          "last_name": { "type": "string" },
+          "name": { "type": "string", "description": "Display name (defaults to username)." },
+          "nickname": { "type": "string" },
+          "url": { "type": "string", "description": "Author URL." },
+          "description": { "type": "string", "description": "Biographical info." },
+          "roles": { "type": "array", "description": "Array of role slugs. Common: subscriber, contributor, author, editor, administrator.", "items": { "type": "string" } },
+          "locale": { "type": "string", "description": "e.g. `en_US`, `it_IT`." }
+        },
+        "required": ["username", "email", "password"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/users",
+        "bodyMapping": {
+          "username": "$username",
+          "email": "$email",
+          "password": "$password",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "name": "$name",
+          "nickname": "$nickname",
+          "url": "$url",
+          "description": "$description",
+          "roles": "$roles",
+          "locale": "$locale"
+        }
+      }
+    },
+    {
+      "name": "wordpress_update_user",
+      "description": "Partial-update an existing user. Only fields you pass are touched. Requires Administrator (or the user updating their own profile).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "integer" },
+          "email": { "type": "string" },
+          "password": { "type": "string", "description": "Set a new password." },
+          "first_name": { "type": "string" },
+          "last_name": { "type": "string" },
+          "name": { "type": "string" },
+          "nickname": { "type": "string" },
+          "url": { "type": "string" },
+          "description": { "type": "string" },
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "locale": { "type": "string" }
+        },
+        "required": ["userId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/wp/v2/users/{userId}",
+        "bodyMapping": {
+          "email": "$email",
+          "password": "$password",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "name": "$name",
+          "nickname": "$nickname",
+          "url": "$url",
+          "description": "$description",
+          "roles": "$roles",
+          "locale": "$locale"
+        }
+      }
+    },
+    {
+      "name": "wordpress_delete_user",
+      "description": "Permanently delete a user. WordPress does NOT trash users — deletion is always permanent. `reassign` is required: pass the user id that should inherit the deleted user's posts (or `0` to delete the posts too). Requires Administrator.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "integer" },
+          "reassign": { "type": "integer", "description": "User id to reassign content to. Pass 0 to delete the user's posts and links as well." },
+          "force": { "type": "boolean", "description": "Must be true — WP REST refuses user delete without it." }
+        },
+        "required": ["userId", "reassign", "force"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/wp/v2/users/{userId}",
+        "queryParams": {
+          "reassign": "$reassign",
+          "force": "$force"
+        }
+      }
+    },
+    {
+      "name": "wordpress_list_post_status_options",
+      "description": "Reference card: the valid `status` values you can pass to `wordpress_create_post` / `wordpress_update_post`. Call this on-demand instead of guessing.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# WordPress post status — valid values\n\n| Status     | Meaning                                                                 |\n|------------|-------------------------------------------------------------------------|\n| `publish`  | Public.                                                                 |\n| `future`   | Scheduled — requires `date` in the future (ISO 8601, site timezone).    |\n| `draft`    | Saved, not visible.                                                     |\n| `pending`  | Awaiting review (typically Contributor-submitted).                      |\n| `private`  | Visible only to logged-in users with appropriate role.                  |\n| `trash`    | Soft-deleted. Set via `wordpress_delete_post` (DELETE), not by update.  |\n| `auto-draft` | Internal — created by autosave. Don't set explicitly.                 |\n\n## Filter syntax\n\nIn `wordpress_list_posts`, the `status` param accepts comma-separated values: `status=draft,pending`.\n\n## Notes\n\n- `trash` is NOT a value to pass on update. Use the DELETE call.\n- `future` requires a `date` parameter strictly in the future, in the site's timezone (read via `wordpress_get_settings`).\n- Custom post types may register additional statuses via `register_post_status`.\n"
+      }
+    },
+    {
+      "name": "wordpress_list_comment_status_options",
+      "description": "Reference card: valid `status` values for `wordpress_moderate_comment` and `wordpress_list_comments` filtering.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# WordPress comment status — valid values\n\n| Status       | Synonym   | Description                                                |\n|--------------|-----------|------------------------------------------------------------|\n| `approve`    | `approved`| Visible publicly.                                          |\n| `hold`       | `unapproved` | In moderation queue.                                    |\n| `spam`       |           | Flagged as spam (typically by Akismet).                    |\n| `trash`      |           | Soft-deleted.                                              |\n\nBoth the short (`approve` / `hold`) and long (`approved` / `unapproved`) variants are accepted by WP core. In `wordpress_list_comments` you can pass comma-separated: `status=approve,hold`.\n"
+      }
+    },
+    {
+      "name": "wordpress_list_user_role_options",
+      "description": "Reference card: built-in WordPress user roles and their core capabilities. Use when calling `wordpress_create_user` or `wordpress_update_user` with the `roles` array.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# WordPress built-in user roles\n\n| Role slug         | Description                                                                            |\n|-------------------|----------------------------------------------------------------------------------------|\n| `administrator`   | Full access to all administrative features within a single site.                       |\n| `editor`          | Can publish and manage posts including the posts of other users.                       |\n| `author`          | Can publish and manage their own posts.                                                |\n| `contributor`     | Can write and manage their own posts but cannot publish them.                          |\n| `subscriber`      | Can read content and manage their own profile.                                         |\n\n## WooCommerce additions (when WooCommerce is installed)\n\n| Role slug         | Description                                                                            |\n|-------------------|----------------------------------------------------------------------------------------|\n| `customer`        | Default role for shop customers (read-only on the store).                              |\n| `shop_manager`    | Can manage products, orders, customers without admin access.                           |\n\n## Notes\n\n- The `roles` parameter is an array; pass `[\"editor\"]` even for a single role.\n- Plugins can register custom roles; if `wordpress_create_user` returns `rest_invalid_param` on `roles`, check what the site has registered.\n- A user can have multiple roles; capabilities are the union.\n"
+      }
+    },
+    {
+      "name": "wordpress_list_site_health_test_slugs",
+      "description": "Reference card: the exact slugs you can pass to `wordpress_site_health_status`. They use HYPHENS, not underscores — a very common gotcha.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Site Health test slugs\n\nWordPress core registers these tests at `/wp-json/wp-site-health/v1/tests/{slug}`. **Slugs use hyphens, not underscores.**\n\n| Slug                       | What it checks                                                              |\n|----------------------------|-----------------------------------------------------------------------------|\n| `background-updates`       | Can the install receive core auto-updates?                                  |\n| `loopback-requests`        | Can WP make HTTP requests to itself (needed for cron, async tasks).         |\n| `https-status`             | Is the site fully on HTTPS, and is the SSL config valid.                    |\n| `dotorg-communication`     | Can WP reach api.wordpress.org (for updates and plugin info).               |\n| `authorization-header`     | Does the server pass through the `Authorization` header to PHP (critical for REST + App Passwords). |\n| `page-cache`               | Is a page cache active (and if so, is it configured correctly).             |\n\n## Calling\n\nOne test per call: `wordpress_site_health_status` with `test=\"background-updates\"`.\n\nFor a full health sweep, call all six in sequence and aggregate the responses in context.\n\n## Notes\n\n- All require Administrator capability.\n- Custom plugins may register additional test slugs via the `site_status_tests` filter — these are not in core and not listed here.\n"
+      }
+    },
+    {
+      "name": "wordpress_list_seo_meta_keys",
+      "description": "Reference card: the most useful Yoast SEO and Rank Math meta keys for use with `wordpress_update_post_meta` or `meta` in `wordpress_create_post` / `wordpress_update_post`.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# SEO plugin meta keys (Yoast SEO & Rank Math)\n\nThese keys are written via `wordpress_update_post_meta` with `meta={ \"<key>\": \"<value>\", ... }`. They become REST-visible because the plugin (Yoast/Rank Math) calls `register_post_meta` with `show_in_rest: true`. If a key doesn't take effect, the plugin isn't installed or is out of date.\n\n## Yoast SEO (`_yoast_wpseo_*`)\n\n| Key                          | Purpose                                                  |\n|------------------------------|----------------------------------------------------------|\n| `_yoast_wpseo_title`         | SEO title (overrides default).                           |\n| `_yoast_wpseo_metadesc`      | Meta description (~155 chars).                           |\n| `_yoast_wpseo_focuskw`       | Focus keyphrase.                                         |\n| `_yoast_wpseo_canonical`     | Custom canonical URL.                                    |\n| `_yoast_wpseo_meta-robots-noindex`   | `1` to noindex this post.                        |\n| `_yoast_wpseo_meta-robots-nofollow`  | `1` to nofollow links from this post.            |\n| `_yoast_wpseo_opengraph-title`       | Custom OG title (Facebook / generic).            |\n| `_yoast_wpseo_opengraph-description` | Custom OG description.                           |\n| `_yoast_wpseo_opengraph-image`       | Custom OG image URL.                             |\n| `_yoast_wpseo_twitter-title`         | Custom Twitter card title.                       |\n| `_yoast_wpseo_twitter-description`   | Custom Twitter card description.                 |\n| `_yoast_wpseo_twitter-image`         | Custom Twitter card image URL.                   |\n\n## Rank Math (`rank_math_*`)\n\n| Key                          | Purpose                                                  |\n|------------------------------|----------------------------------------------------------|\n| `rank_math_title`            | SEO title.                                               |\n| `rank_math_description`      | Meta description.                                        |\n| `rank_math_focus_keyword`    | Focus keyword (comma-separated for secondary).           |\n| `rank_math_canonical_url`    | Custom canonical.                                        |\n| `rank_math_robots`           | Array, e.g. `[\"noindex\",\"nofollow\"]`.                    |\n| `rank_math_facebook_title`   | Facebook OG title.                                       |\n| `rank_math_facebook_description` | Facebook OG description.                             |\n| `rank_math_facebook_image`   | Facebook OG image URL.                                   |\n| `rank_math_twitter_title`    | Twitter card title.                                      |\n| `rank_math_twitter_description` | Twitter card description.                             |\n| `rank_math_twitter_image`    | Twitter card image URL.                                  |\n| `rank_math_schema_*`         | Various Schema.org structured-data overrides.            |\n\n## Calling\n\n```\nwordpress_update_post_meta(postId=42, meta={\n  \"_yoast_wpseo_title\": \"Best practices for WP REST in 2026\",\n  \"_yoast_wpseo_metadesc\": \"A practical guide ... (~155 chars).\",\n  \"_yoast_wpseo_focuskw\": \"wordpress rest api\"\n})\n```\n\nFor WooCommerce products, use these same keys inside the `meta_data` array on `woocommerce_update_product` (different syntax — see that tool's docs).\n"
+      }
+    },
+    {
+      "name": "wordpress_skill_seo_content_pipeline",
+      "description": "Skill recipe: improve the SEO of an existing post on a target keyword. Returns the exact step-by-step tool chain (search → get → rewrite → update post → update meta).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: SEO content pipeline\n\nGoal: improve the SEO of an existing post on a target keyword.\n\n## Steps\n\n1. **Find the post**\n   - `wordpress_search` with `search=<topic keywords>&type=post&per_page=5` → light hits `{id, title, url, type, subtype}`.\n   - If you already know the slug or id, skip this step.\n\n2. **Read the current content (raw)**\n   - `wordpress_get_post` with `postId=<id>&context=edit&_fields=id,title,slug,content,excerpt,categories,tags,meta`.\n   - `context=edit` returns raw block content (requires `edit_posts` capability).\n\n3. **Rewrite in context** (agent-side, no tool call)\n   - Title: include the primary keyword early. Stay under 60 chars.\n   - Body: keep heading structure. Add keyword to ≥1 H2 naturally. Don't inflate length more than ~30%.\n   - Excerpt: ~155 chars, conversion-focused.\n\n4. **Persist body + title**\n   - `wordpress_update_post` with `postId=<id>`, the rewritten `title`, `content`, `excerpt`. WordPress bumps `modified` automatically.\n\n5. **Set SEO meta**\n   - Call `wordpress_list_seo_meta_keys` first if you don't remember the keys.\n   - `wordpress_update_post_meta` with:\n     ```json\n     { \"postId\": <id>, \"meta\": {\n       \"_yoast_wpseo_title\": \"<title>\",\n       \"_yoast_wpseo_metadesc\": \"<desc ~155ch>\",\n       \"_yoast_wpseo_focuskw\": \"<keyword>\"\n     } }\n     ```\n   - Rank Math equivalents: `rank_math_title`, `rank_math_description`, `rank_math_focus_keyword`.\n\n## Gotchas\n\n- If `update_post_meta` silently no-ops, the key isn't registered with `show_in_rest: true`. Verify Yoast/Rank Math is active and up-to-date.\n- Don't change `slug` on an indexed post unless you also set a 301 upstream.\n- For 2+ posts, chain this skill — don't try to batch via a single call.\n"
+      }
+    },
+    {
+      "name": "wordpress_skill_content_refresh",
+      "description": "Skill recipe: find stale posts and refresh them. Returns the playbook for finding oldest-by-modified, reviewing, and persisting updates.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: content refresh\n\nGoal: find posts whose `modified` date is stale and refresh them.\n\n## Steps\n\n1. **Surface the stalest content**\n   - `wordpress_list_posts` with `orderby=modified&order=asc&per_page=20&_fields=id,title,modified,link,categories`.\n   - First items = oldest by last-modified. Page through with `page=2,3,...` as needed.\n\n2. **Pick a candidate** (agent-side)\n   - Title relevance to current trends.\n   - Age (anything > 12 months is fair game).\n   - Categories — pick high-traffic categories first.\n\n3. **Read full body**\n   - `wordpress_get_post` with `postId=<id>&context=edit`. No `_fields` — you want everything.\n\n4. **Refresh in context**\n   - Update outdated facts, broken links, year references, screenshots references.\n   - Keep voice, structure, internal links intact.\n   - Add a discreet \"Updated <Month Year>\" note near the top.\n\n5. **Push the update**\n   - `wordpress_update_post` with new `content`. WordPress bumps `modified` automatically.\n\n6. **(Optional) Refresh SEO meta**\n   - If the focus keyword should shift, follow up with `wordpress_update_post_meta`.\n\n## Gotchas\n\n- Do NOT change `date` (the original publish date). Only `modified` should update. URL/slug stays the same.\n- For pages, swap `list_posts` → `list_pages` and `update_post` → `update_page`.\n- Don't refresh everything in one session — small batches, human-reviewable.\n"
+      }
+    },
+    {
+      "name": "wordpress_skill_scheduled_publishing",
+      "description": "Skill recipe: publish a post at a future date with categories, tags, and featured image.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: scheduled publishing\n\nGoal: schedule a new post to publish at a future date with all metadata in place.\n\n## Steps\n\n1. **Prepare media first** (if you need a featured image)\n   - `wordpress_list_media` with `mime_type=image&per_page=20&_fields=id,title,source_url,alt_text` to find a reusable asset.\n   - Note: binary upload is NOT supported in v1. To use a new image: upload via WP admin or sideload externally, then reference its id.\n\n2. **Resolve taxonomy IDs**\n   - `wordpress_list_categories` and `wordpress_list_tags` with `search=...` to find term ids.\n   - Missing? Create them: `wordpress_create_category` / `wordpress_create_tag`.\n\n3. **Check site timezone**\n   - `wordpress_get_settings` → `timezone_string` (e.g. `Europe/Berlin`). The `date` you pass will be interpreted in that timezone.\n\n4. **Create the future-dated post**\n   - `wordpress_create_post` with:\n     ```json\n     {\n       \"title\": \"...\",\n       \"content\": \"...\",\n       \"excerpt\": \"...\",\n       \"status\": \"future\",\n       \"date\": \"2026-06-01T09:00:00\",\n       \"categories\": [<ids>],\n       \"tags\": [<ids>],\n       \"featured_media\": <media_id>\n     }\n     ```\n\n5. **(Optional) Set SEO meta** with `wordpress_update_post_meta` after creation. See `wordpress_list_seo_meta_keys`.\n\n## Gotchas\n\n- `status=\"future\"` with a `date` in the past becomes immediately `publish`.\n- Dates are SITE-TIMEZONE, not UTC. Always check `timezone_string` first.\n- For repeating series, run this skill per post — there's no schedule-recurring endpoint in core WP.\n"
+      }
+    },
+    {
+      "name": "wordpress_skill_internal_linking",
+      "description": "Skill recipe: add internal links to an existing post by finding anchor candidates via wordpress_search.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: internal linking\n\nGoal: add 2-4 internal links to an existing post to improve the site link graph.\n\n## Steps\n\n1. **Read the target post (raw)**\n   - `wordpress_get_post` with `postId=<id>&context=edit`.\n\n2. **Identify 3-5 keyword anchors** (agent-side)\n   - Pick phrases naturally present in the body that relate to other content on the site. Avoid generic phrases (\"learn more\", \"click here\").\n\n3. **Find anchor candidates per keyword**\n   - For each candidate keyword: `wordpress_search` with `search=<keyword>&type=post&per_page=5`.\n   - Returns up to 5 hits `{id, title, url}`.\n   - Filter out self-links (don't link to `<id>` itself).\n\n4. **Decide which anchors to insert** (agent-side)\n   - 2-4 internal links per 1000 words of body. Use natural anchor text from the source body — DON'T keyword-stuff.\n   - Choose the most topically relevant hit per keyword.\n\n5. **Rewrite the HTML/blocks** (agent-side)\n   - Wrap the phrase in `<a href=\"<url>\">...</a>`.\n   - For Gutenberg blocks, preserve `<!-- wp:paragraph -->` comments unchanged. The connector does NO HTML parsing.\n\n6. **Persist**\n   - `wordpress_update_post` with the rewritten `content`.\n\n## Gotchas\n\n- The connector does no HTML/block parsing — the agent owns rewrites entirely. Verify the body before pushing.\n- Don't link the same phrase twice in one post.\n- For a site-wide linking pass: pair with `wordpress_skill_content_refresh` to surface posts to update.\n"
+      }
+    },
+    {
+      "name": "wordpress_skill_media_optimization",
+      "description": "Skill recipe: bulk-fix missing alt text and captions on media library items for accessibility + SEO.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "# Skill: media optimisation (alt text / SEO)\n\nGoal: bulk-fix media items with empty / generic alt text.\n\n## Steps\n\n1. **Survey the library**\n   - `wordpress_list_media` with `media_type=image&per_page=50&_fields=id,alt_text,caption,source_url,media_details,post`.\n   - Page through (`page=2,3,...`) until exhausted.\n\n2. **Identify gaps** (agent-side)\n   - Empty `alt_text`.\n   - Generic alt (`DSC_*`, `IMG_*`, `image-1`, filename without extension).\n\n3. **Generate alt text** (agent-side)\n   - If you have vision capability: fetch `source_url` and describe the image factually.\n   - Otherwise: read the parent post via `wordpress_get_post` on the `post` field and infer from context.\n   - Aim for 5-15 words, factual, no \"image of\" / \"photo of\" prefix.\n\n4. **Update each item**\n   - `wordpress_update_media` with `mediaId=<id>&alt_text=<descriptive>`.\n   - Optionally also set `caption` (visible under the image in some themes) and `description` (the attachment page body).\n\n## Gotchas\n\n- Decorative images (dividers, icons): leave `alt_text=\"\"`. That is the CORRECT accessibility behavior — don't generate alt text for them.\n- Run in batches of 10-20 with a human spot-check between batches.\n- Alt text should describe the image, NOT repeat the page/post title or stuff keywords.\n"
+      }
+    }
+  ]
+}
