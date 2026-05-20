@@ -1,0 +1,345 @@
+{
+  "slug": "telegram-bot",
+  "name": "Telegram Bot",
+  "description": "Send Telegram messages, photos, documents, audio, location and polls from any AI agent via the Telegram Bot API. 14 tools, bot-token auth. Outbound + lightweight read of recent updates (no long-polling).",
+  "instructions": "This connector uses the official Telegram Bot API (https://core.telegram.org/bots/api).\n\n**Setup**:\n1. In Telegram, open chat with **@BotFather** → `/newbot` → pick a display name and a username ending in `bot`.\n2. BotFather replies with an HTTP API token like `123456789:ABCDEFghijklmnopqrstuvwxyz`. **Treat as a secret** — anyone with it can send as your bot.\n3. Set `TELEGRAM_BOT_TOKEN` to the full token.\n\n**Authentication model** (Telegram-specific): the bot token goes in the URL path, NOT in a header. The base URL is `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` and every endpoint is appended as `/methodName`. The adapter substitutes the token via the `{{TELEGRAM_BOT_TOKEN}}` env-var template in `baseUrl`.\n\n**chat_id model**: every Telegram chat (user, group, channel) has a numeric `chat_id`. For groups and channels the bot must be ADDED first; for users, the user must have sent a `/start` to the bot at least once (Telegram's privacy rule). Once you have a chat_id (extract it from `getUpdates`), pin it.\n\n**Channels**: for **public channels** you can also pass `@channelusername` (with the `@`) instead of a numeric chat_id. Private channels REQUIRE the numeric ID, which always starts with `-100`.\n\n**Markdown vs HTML**: messages support 3 parse modes — `MarkdownV2` (current, escape special chars), `HTML` (`<b>`, `<i>`, `<a href>`), or no formatting. Telegram's `MarkdownV2` requires escaping `_ * [ ] ( ) ~ ` > # + - = | { } . !` — agents that don't escape will get 400 'can't parse entities'. The HTML mode is easier for agents to compose safely.\n\n**File send model**: media tools (sendPhoto, sendDocument, sendAudio, etc.) accept the media as:\n  - **HTTPS URL** (recommended on AnythingMCP): Telegram fetches it server-side. URL must be ≤ 5MB for photos, ≤ 20MB for documents via URL.\n  - **file_id**: a string returned from a previous send (caching — reuse the same file_id to re-send the same content without re-uploading).\n  - **multipart binary**: NOT supported by this connector in a single tool call. Pre-upload elsewhere and pass the resulting URL or file_id.\n\n**getUpdates vs webhooks**: this connector exposes `telegram_get_updates` (long-polling pull) for one-shot reading of recent inbound messages. For continuous inbound stream (chatbot), use Telegram's webhook (setWebhook) and host the receiver yourself — outside the MCP request/response model.\n\n**Rate limits**: 30 messages/sec to different chats, 1 msg/sec to the same chat, 20 messages/minute to the same group. On 429, honor the `retry_after` in the response.\n\n**Out of scope**: payments, inline mode, callback query answers (these usually require a long-running webhook), passport, game scores, sticker management.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "telegram",
+  "docsUrl": "https://core.telegram.org/bots/api",
+  "requiredEnvVars": ["TELEGRAM_BOT_TOKEN"],
+  "connector": {
+    "name": "Telegram Bot API",
+    "type": "REST",
+    "baseUrl": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "telegram_bot_get_me",
+      "description": "Return the bot's own user info: id, username, first_name, can_join_groups, can_read_all_group_messages, supports_inline_queries. Health check + whoami in one call.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/getMe" }
+    },
+    {
+      "name": "telegram_bot_send_message",
+      "description": "Send a text message to a chat. Required: chat_id + text. Use parse_mode='HTML' for safe formatting (`<b>`, `<i>`, `<code>`, `<a href>`). reply_to_message_id quotes a prior message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Numeric chat_id OR '@channelusername' for public channels. For users, they must have started the bot first." },
+          "text": { "type": "string", "description": "Message text, max 4096 chars. For longer, split into multiple sends." },
+          "parse_mode": { "type": "string", "description": "MarkdownV2, HTML, or omit for no formatting. HTML is safer for agents." },
+          "disable_web_page_preview": { "type": "boolean", "description": "If true, no link preview is shown for URLs in the text." },
+          "disable_notification": { "type": "boolean", "description": "If true, send silently (no push notification sound)." },
+          "reply_to_message_id": { "type": "integer", "description": "Quote a prior message by its message_id." },
+          "reply_markup": { "type": "object", "description": "Inline keyboard or reply keyboard markup. See Telegram docs for InlineKeyboardMarkup shape." }
+        },
+        "required": ["chat_id", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendMessage",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "text": "$text",
+          "parse_mode": "$parse_mode",
+          "disable_web_page_preview": "$disable_web_page_preview",
+          "disable_notification": "$disable_notification",
+          "reply_to_message_id": "$reply_to_message_id",
+          "reply_markup": "$reply_markup"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_photo",
+      "description": "Send a photo (JPG/PNG, ≤5MB via URL) by HTTPS URL or by reusable file_id. Optional caption supports parse_mode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Chat ID or @channelusername." },
+          "photo": { "type": "string", "description": "Either a public HTTPS URL OR a file_id from a prior send." },
+          "caption": { "type": "string", "description": "Caption ≤1024 chars." },
+          "parse_mode": { "type": "string", "description": "MarkdownV2, HTML, or omit." },
+          "disable_notification": { "type": "boolean", "description": "Silent send." },
+          "reply_to_message_id": { "type": "integer", "description": "Reply target message_id." }
+        },
+        "required": ["chat_id", "photo"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendPhoto",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "photo": "$photo",
+          "caption": "$caption",
+          "parse_mode": "$parse_mode",
+          "disable_notification": "$disable_notification",
+          "reply_to_message_id": "$reply_to_message_id"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_document",
+      "description": "Send a document (any type, ≤20MB via URL) by HTTPS URL or file_id. Use for PDFs, spreadsheets, code, etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Chat ID or @channelusername." },
+          "document": { "type": "string", "description": "Public HTTPS URL or file_id." },
+          "caption": { "type": "string", "description": "Caption ≤1024 chars." },
+          "parse_mode": { "type": "string", "description": "MarkdownV2, HTML, or omit." },
+          "disable_notification": { "type": "boolean", "description": "Silent." },
+          "reply_to_message_id": { "type": "integer", "description": "Reply target." }
+        },
+        "required": ["chat_id", "document"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendDocument",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "document": "$document",
+          "caption": "$caption",
+          "parse_mode": "$parse_mode",
+          "disable_notification": "$disable_notification",
+          "reply_to_message_id": "$reply_to_message_id"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_audio",
+      "description": "Send an audio file (MP3, M4A, ≤20MB via URL). Telegram displays it with a music player + duration + title. For voice notes use sendVoice instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Chat ID or @channelusername." },
+          "audio": { "type": "string", "description": "HTTPS URL or file_id." },
+          "caption": { "type": "string", "description": "Optional caption." },
+          "duration": { "type": "integer", "description": "Duration in seconds (improves UX)." },
+          "performer": { "type": "string", "description": "Performer/artist name." },
+          "title": { "type": "string", "description": "Track title." },
+          "disable_notification": { "type": "boolean", "description": "Silent." }
+        },
+        "required": ["chat_id", "audio"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendAudio",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "audio": "$audio",
+          "caption": "$caption",
+          "duration": "$duration",
+          "performer": "$performer",
+          "title": "$title",
+          "disable_notification": "$disable_notification"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_voice",
+      "description": "Send a voice note (OGG-Opus encoded). Telegram renders it as a microphone bubble with waveform — the canonical 'voice memo' format. Other audio codecs use sendAudio instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Chat ID." },
+          "voice": { "type": "string", "description": "HTTPS URL of an OGG-Opus file OR a file_id." },
+          "caption": { "type": "string", "description": "Optional caption." },
+          "duration": { "type": "integer", "description": "Duration in seconds." }
+        },
+        "required": ["chat_id", "voice"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendVoice",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "voice": "$voice",
+          "caption": "$caption",
+          "duration": "$duration"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_video",
+      "description": "Send a video (MP4, H.264, AAC, ≤20MB via URL). Telegram streams it inline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Chat ID." },
+          "video": { "type": "string", "description": "HTTPS URL of MP4 or file_id." },
+          "caption": { "type": "string", "description": "Caption ≤1024 chars." },
+          "duration": { "type": "integer", "description": "Duration seconds." },
+          "width": { "type": "integer", "description": "Width px." },
+          "height": { "type": "integer", "description": "Height px." },
+          "supports_streaming": { "type": "boolean", "description": "If true, video is streamable." },
+          "parse_mode": { "type": "string", "description": "Markup mode for caption." }
+        },
+        "required": ["chat_id", "video"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendVideo",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "video": "$video",
+          "caption": "$caption",
+          "duration": "$duration",
+          "width": "$width",
+          "height": "$height",
+          "supports_streaming": "$supports_streaming",
+          "parse_mode": "$parse_mode"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_location",
+      "description": "Send a location point. Optional `live_period` (60-86400 sec) makes the location auto-update in real time for that duration.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Chat ID." },
+          "latitude": { "type": "number", "description": "Latitude decimal degrees." },
+          "longitude": { "type": "number", "description": "Longitude decimal degrees." },
+          "live_period": { "type": "integer", "description": "Seconds the location stays live (60-86400). Omit for static." },
+          "horizontal_accuracy": { "type": "number", "description": "Accuracy in meters (0-1500)." }
+        },
+        "required": ["chat_id", "latitude", "longitude"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendLocation",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "live_period": "$live_period",
+          "horizontal_accuracy": "$horizontal_accuracy"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_send_poll",
+      "description": "Send a poll (regular or quiz). For a quiz, set type='quiz' and correct_option_id (zero-based). Anonymous unless is_anonymous=false. Closes after open_period seconds or manually with stopPoll.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Chat ID." },
+          "question": { "type": "string", "description": "Poll question (1-300 chars)." },
+          "options": { "type": "array", "description": "Array of 2-10 string options." },
+          "type": { "type": "string", "description": "regular or quiz." },
+          "is_anonymous": { "type": "boolean", "description": "Default true." },
+          "allows_multiple_answers": { "type": "boolean", "description": "Only for type=regular." },
+          "correct_option_id": { "type": "integer", "description": "0-based index — required for type=quiz." },
+          "explanation": { "type": "string", "description": "Explanation shown when a quiz answer is wrong (≤200 chars)." },
+          "open_period": { "type": "integer", "description": "Seconds before the poll auto-closes (5-600)." }
+        },
+        "required": ["chat_id", "question", "options"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sendPoll",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "question": "$question",
+          "options": "$options",
+          "type": "$type",
+          "is_anonymous": "$is_anonymous",
+          "allows_multiple_answers": "$allows_multiple_answers",
+          "correct_option_id": "$correct_option_id",
+          "explanation": "$explanation",
+          "open_period": "$open_period"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_edit_message_text",
+      "description": "Edit the text of a previously-sent message (your bot's own messages only). Use to refresh status messages, fix typos, or update interactive UIs without sending a new bubble.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Chat ID containing the message." },
+          "message_id": { "type": "integer", "description": "message_id of the message to edit." },
+          "text": { "type": "string", "description": "New text." },
+          "parse_mode": { "type": "string", "description": "MarkdownV2 / HTML." },
+          "disable_web_page_preview": { "type": "boolean", "description": "Hide link preview." },
+          "reply_markup": { "type": "object", "description": "New inline keyboard (or omit to keep current)." }
+        },
+        "required": ["chat_id", "message_id", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/editMessageText",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "message_id": "$message_id",
+          "text": "$text",
+          "parse_mode": "$parse_mode",
+          "disable_web_page_preview": "$disable_web_page_preview",
+          "reply_markup": "$reply_markup"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_delete_message",
+      "description": "Delete a message the bot sent (within ~48 hours for groups, anytime for own DMs). Bots cannot delete arbitrary user messages without group-admin rights.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Chat ID." },
+          "message_id": { "type": "integer", "description": "message_id to delete." }
+        },
+        "required": ["chat_id", "message_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deleteMessage",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "message_id": "$message_id"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_get_chat",
+      "description": "Fetch chat info: title, type (private/group/supergroup/channel), photo, description, invite_link, member_count, permissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Chat ID." }
+        },
+        "required": ["chat_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getChat",
+        "bodyMapping": { "chat_id": "$chat_id" }
+      }
+    },
+    {
+      "name": "telegram_bot_get_updates",
+      "description": "Long-poll recent inbound messages (one-shot — pulls all updates since the last `offset+1`). For continuous inbound, use webhooks instead. Telegram queues updates for 24 hours if not consumed; consuming with this tool clears them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": { "type": "integer", "description": "Return updates with update_id >= this value. Pass last_seen_id+1 to ack prior batch." },
+          "limit": { "type": "integer", "description": "Max updates 1-100 (default 100)." },
+          "timeout": { "type": "integer", "description": "Long-poll wait in seconds 0-50 (default 0 = short poll). Don't use long timeouts in a request/response MCP." },
+          "allowed_updates": { "type": "array", "description": "Update types to receive, e.g. ['message','callback_query']. Omit for all except chat_member." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getUpdates",
+        "bodyMapping": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "timeout": "$timeout",
+          "allowed_updates": "$allowed_updates"
+        }
+      }
+    }
+  ]
+}

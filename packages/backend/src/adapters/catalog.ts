@@ -31,10 +31,13 @@ import * as weclapp from './de/weclapp.json';
 import * as xentral from './de/xentral.json';
 import * as companiesHouse from './gb/companies-house.json';
 import * as wise from './gb/wise.json';
+import * as calendly from './intl/calendly.json';
+import * as discordBot from './intl/discord-bot.json';
 import * as mailchimp from './intl/mailchimp.json';
 import * as pipedrive from './intl/pipedrive.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sorare from './intl/sorare.json';
+import * as telegramBot from './intl/telegram-bot.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as woocommerce from './intl/woocommerce.json';
 import * as wordpress from './intl/wordpress.json';
@@ -146,10 +149,13 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   xentral as unknown as AdapterDefinition,
   companiesHouse as unknown as AdapterDefinition,
   wise as unknown as AdapterDefinition,
+  calendly as unknown as AdapterDefinition,
+  discordBot as unknown as AdapterDefinition,
   mailchimp as unknown as AdapterDefinition,
   pipedrive as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
+  telegramBot as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
   woocommerce as unknown as AdapterDefinition,
   wordpress as unknown as AdapterDefinition,
