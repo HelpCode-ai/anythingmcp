@@ -33,14 +33,18 @@ import * as companiesHouse from './gb/companies-house.json';
 import * as wise from './gb/wise.json';
 import * as calendly from './intl/calendly.json';
 import * as discordBot from './intl/discord-bot.json';
+import * as klaviyo from './intl/klaviyo.json';
+import * as lemonsqueezy from './intl/lemonsqueezy.json';
 import * as mailchimp from './intl/mailchimp.json';
 import * as pipedrive from './intl/pipedrive.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sorare from './intl/sorare.json';
 import * as telegramBot from './intl/telegram-bot.json';
+import * as typeform from './intl/typeform.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as woocommerce from './intl/woocommerce.json';
 import * as wordpress from './intl/wordpress.json';
+import * as zendesk from './intl/zendesk.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as razorpay from './in/razorpay.json';
 import * as lineMessaging from './jp/line-messaging.json';
@@ -151,14 +155,18 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wise as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
+  klaviyo as unknown as AdapterDefinition,
+  lemonsqueezy as unknown as AdapterDefinition,
   mailchimp as unknown as AdapterDefinition,
   pipedrive as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
+  typeform as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
   woocommerce as unknown as AdapterDefinition,
   wordpress as unknown as AdapterDefinition,
+  zendesk as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   razorpay as unknown as AdapterDefinition,
   lineMessaging as unknown as AdapterDefinition,

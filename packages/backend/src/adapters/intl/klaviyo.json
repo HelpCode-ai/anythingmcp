@@ -1,0 +1,303 @@
+{
+  "slug": "klaviyo",
+  "name": "Klaviyo",
+  "description": "Drive Klaviyo (e-commerce email + SMS) from any AI agent: profiles, lists, segments, events tracking, flows, campaigns, catalogs. 14 tools targeting the modern 2024+ API.",
+  "instructions": "This connector uses the Klaviyo REST API revision **2024-10-15** (current stable).\n\n**Setup**:\n1. Sign in to Klaviyo → bottom-left avatar → **Settings → API Keys → Create Private API Key**.\n2. Set scopes — at minimum: Profiles (Full), Lists (Full), Segments (Read), Events (Full), Catalogs (Read), Campaigns (Read), Flows (Read).\n3. Copy the key. It's prefixed with `pk_`. Set `KLAVIYO_PRIVATE_API_KEY`.\n\n**Authentication**: `Authorization: Klaviyo-API-Key ${KLAVIYO_PRIVATE_API_KEY}` (the literal prefix is `Klaviyo-API-Key`, NOT `Bearer`). The adapter sets this via API_KEY + custom apiKey value.\n\n**Revision header**: every request MUST include `revision: 2024-10-15`. The adapter pins this in `connector.headers`. If you upgrade revision, expect breaking changes — read https://developers.klaviyo.com/en/docs/api_versioning_and_deprecation_policy.\n\n**JSON:API spec**: Klaviyo follows JSON:API for resource shape. Every response: `{data: {id, type, attributes, relationships}, links, meta}`. Use `?include=` (comma-separated) to side-load related resources in one call.\n\n**Filtering syntax**: Klaviyo uses a custom filter DSL on most list endpoints. Example: `?filter=equals(properties,{'$source':'newsletter'})` or `?filter=greater-than(created,2025-01-01T00:00:00Z)`. The adapter exposes common filters as explicit query params.\n\n**Profile model**: Klaviyo's central object. Each profile has `email`, `phone_number`, `external_id`, plus arbitrary `properties` (custom fields). Profiles are upserted by email/phone/external_id — you cannot have duplicates on the same identifier.\n\n**Events**: the heart of Klaviyo's behavioral targeting. Send events via `klaviyo_create_event` with a profile identifier + a metric name (e.g. 'Placed Order') + properties. Klaviyo automatically creates the metric if it doesn't exist. Events drive flows (triggered automations) — sending the right events at the right time is 80% of Klaviyo work.\n\n**Pagination**: cursor-based via `page[cursor]` (response includes `links.next` with the cursor). `page[size]` is typically 20 default, 100 max.\n\n**Lists vs Segments**: lists are static (manually-managed subscribers). Segments are dynamic queries (recompute every few minutes). Use lists for opt-in newsletters, segments for behavioral cohorts ('opened a campaign in last 30 days').\n\n**Rate limits**: vary per endpoint. Profile reads: 75/sec burst, 700/min steady. Profile writes: 150/min. Klaviyo returns `429` with `Retry-After` — honor it.\n\n**Webhooks** out of scope (use Klaviyo's UI to configure event webhooks to your hosted endpoint).\n\n**Out of scope here**: sending individual emails via the legacy track/identify endpoints (use the Events API + flows instead), template editing, image library, reviews, the older v1/v2 REST API.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "klaviyo",
+  "docsUrl": "https://developers.klaviyo.com/en/reference/api_overview",
+  "requiredEnvVars": ["KLAVIYO_PRIVATE_API_KEY"],
+  "connector": {
+    "name": "Klaviyo API (2024-10-15)",
+    "type": "REST",
+    "baseUrl": "https://a.klaviyo.com/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Klaviyo-API-Key {{KLAVIYO_PRIVATE_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "klaviyo_get_accounts",
+      "description": "Return account info: id, name, contact_info, industry, locale, timezone, public_api_key (for client-side tracking). Health check + identifies which Klaviyo account the key is for.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json" }
+      }
+    },
+    {
+      "name": "klaviyo_list_profiles",
+      "description": "List profiles (paginated). Supports filtering by email, phone_number, external_id, created/updated date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "Klaviyo filter DSL, e.g. equals(email,'a@b.com') or greater-than(updated,2024-01-01T00:00:00Z)." },
+          "fields_profile": { "type": "string", "description": "Comma-separated attributes to return (sparse fieldsets)." },
+          "include": { "type": "string", "description": "Side-load: lists, segments." },
+          "sort": { "type": "string", "description": "Sort by created, updated, email, etc. Prefix with - for desc." },
+          "page_cursor": { "type": "string", "description": "Pagination cursor (from prior links.next)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/profiles",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter": "$filter",
+          "fields[profile]": "$fields_profile",
+          "include": "$include",
+          "sort": "$sort",
+          "page[cursor]": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "klaviyo_get_profile",
+      "description": "Fetch one profile by ID. Returns email, phone_number, external_id, first/last_name, organization, properties (custom fields), created, updated, last_event_date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profileId": { "type": "string", "description": "Klaviyo profile ID (starts with '01...')." },
+          "include": { "type": "string", "description": "Side-load: lists, segments." }
+        },
+        "required": ["profileId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/profiles/{profileId}",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json" },
+        "queryParams": { "include": "$include" }
+      }
+    },
+    {
+      "name": "klaviyo_create_or_update_profile",
+      "description": "Upsert a profile by email, phone_number, or external_id (in that priority). Returns the profile (status 201 if new, 200 if updated). Use this for onboarding new subscribers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "{type: 'profile', attributes: {email?, phone_number?, external_id?, first_name?, last_name?, organization?, title?, image?, location:{address1,city,country,...}, properties:{custom...}}}. Wrap inside {data:{...}}. At least one identifier (email/phone/external_id) required."
+          }
+        },
+        "required": ["data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/profile-import",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json", "Content-Type": "application/vnd.api+json" },
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "klaviyo_list_lists",
+      "description": "List all opted-in lists (newsletter subscriber lists). Each list has name, created, updated, opt_in_process (single_opt_in or double_opt_in).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "Filter DSL." },
+          "page_cursor": { "type": "string", "description": "Pagination cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json" },
+        "queryParams": { "filter": "$filter", "page[cursor]": "$page_cursor" }
+      }
+    },
+    {
+      "name": "klaviyo_add_profiles_to_list",
+      "description": "Subscribe profiles to a list (silent — does NOT send the double-opt-in email even on lists that require it; for double-opt-in respecting, use klaviyo_subscribe_profiles instead).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": { "type": "string", "description": "List ID." },
+          "data": {
+            "type": "array",
+            "description": "Array of profile references: [{type:'profile', id:'01...'}, ...]. Each profile must already exist (use klaviyo_create_or_update_profile first)."
+          }
+        },
+        "required": ["listId", "data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lists/{listId}/relationships/profiles",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json", "Content-Type": "application/vnd.api+json" },
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "klaviyo_subscribe_profiles",
+      "description": "Subscribe profiles to a list with CONSENT (triggers the double-opt-in email if the list requires it). Use this instead of klaviyo_add_profiles_to_list for compliance-sensitive onboarding.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "{type:'profile-subscription-bulk-create-job', attributes:{custom_source?:'string',profiles:{data:[{type:'profile',attributes:{email,subscriptions:{email:{marketing:{consent:'SUBSCRIBED'}}}}}]},relationships:{list:{data:{type:'list',id:'LIST_ID'}}}}}. Wrap in {data:{...}}."
+          }
+        },
+        "required": ["data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/profile-subscription-bulk-create-jobs",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json", "Content-Type": "application/vnd.api+json" },
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "klaviyo_remove_profiles_from_list",
+      "description": "Unsubscribe profiles from a list. Removes them from the list — does NOT mark them as globally unsubscribed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": { "type": "string", "description": "List ID." },
+          "data": {
+            "type": "array",
+            "description": "Array of profile references: [{type:'profile', id:'01...'}]."
+          }
+        },
+        "required": ["listId", "data"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/lists/{listId}/relationships/profiles",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json", "Content-Type": "application/vnd.api+json" },
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "klaviyo_list_segments",
+      "description": "List dynamic segments. Each segment has name, definition, profile_count (estimated), is_active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "Filter DSL." },
+          "page_cursor": { "type": "string", "description": "Pagination cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json" },
+        "queryParams": { "filter": "$filter", "page[cursor]": "$page_cursor" }
+      }
+    },
+    {
+      "name": "klaviyo_create_event",
+      "description": "Track an event on a profile — the cornerstone of Klaviyo's behavioral targeting. Use for purchases, page views, cart adds, support tickets, anything triggering a flow.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "{type:'event', attributes:{properties:{...}, metric:{data:{type:'metric',attributes:{name:'Placed Order',service:'api'}}}, profile:{data:{type:'profile',attributes:{email:'a@b.com'}}}, value?:99.99, value_currency?:'USD', unique_id?:'uuid', time?:'2025-01-15T12:00:00Z'}}. Wrap in {data:{...}}."
+          }
+        },
+        "required": ["data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json", "Content-Type": "application/vnd.api+json" },
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "klaviyo_list_events",
+      "description": "List events with filters. Each event has metric_id, profile_id, properties, datetime, uuid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "Filter DSL: equals(metric_id,'METRIC_ID'), greater-than(datetime,2024-01-01T00:00:00Z), etc." },
+          "include": { "type": "string", "description": "Side-load: profile, metric." },
+          "sort": { "type": "string", "description": "datetime, -datetime, timestamp, -timestamp." },
+          "page_cursor": { "type": "string", "description": "Pagination cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter": "$filter",
+          "include": "$include",
+          "sort": "$sort",
+          "page[cursor]": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "klaviyo_list_metrics",
+      "description": "List metrics (event types) the account has seen. Each metric has name, integration_id, created, updated. Use to discover metric IDs for event filtering.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "Filter DSL on name or integration name." },
+          "page_cursor": { "type": "string", "description": "Pagination cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metrics",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json" },
+        "queryParams": { "filter": "$filter", "page[cursor]": "$page_cursor" }
+      }
+    },
+    {
+      "name": "klaviyo_list_campaigns",
+      "description": "List email/SMS campaigns. Filter by channel (email|sms) and status (Sent/Draft/Scheduled/etc).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "REQUIRED: must include equals(messages.channel,'email') or 'sms'. E.g. 'and(equals(messages.channel,\\'email\\'),equals(status,\\'Sent\\'))'." },
+          "include": { "type": "string", "description": "Side-load: campaign-messages, tags." },
+          "sort": { "type": "string", "description": "created_at, scheduled_at." },
+          "page_cursor": { "type": "string", "description": "Pagination cursor." }
+        },
+        "required": ["filter"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter": "$filter",
+          "include": "$include",
+          "sort": "$sort",
+          "page[cursor]": "$page_cursor"
+        }
+      }
+    },
+    {
+      "name": "klaviyo_list_flows",
+      "description": "List flows (triggered automation sequences). Each flow has name, status, trigger_type, created, updated. Filter by status (active/draft/manual).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "Filter DSL." },
+          "include": { "type": "string", "description": "Side-load: flow-actions, tags." },
+          "sort": { "type": "string", "description": "id, name, status, created, updated, trigger_type." },
+          "page_cursor": { "type": "string", "description": "Pagination cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/flows",
+        "headers": { "revision": "2024-10-15", "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter": "$filter",
+          "include": "$include",
+          "sort": "$sort",
+          "page[cursor]": "$page_cursor"
+        }
+      }
+    }
+  ]
+}

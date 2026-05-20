@@ -1,0 +1,187 @@
+{
+  "slug": "typeform",
+  "name": "Typeform",
+  "description": "Read Typeform responses, list forms, fetch form definitions and manage workspaces from any AI agent. 10 tools, Personal Token Bearer auth. Optimized for read+analysis flows (the heavy form-builder write side is out of scope).",
+  "instructions": "This connector uses the Typeform Create/Responses API.\n\n**Setup**:\n1. Sign in to Typeform → top-right avatar → **Settings → Personal tokens → Generate a new token**.\n2. Grant the scopes you need — at minimum `forms:read`, `responses:read`, `workspaces:read`. For write operations add `forms:write`. The connector's `instructions` documents what scopes each tool requires implicitly.\n3. Copy the token (shown ONCE). Set `TYPEFORM_PERSONAL_TOKEN`.\n\n**Authentication**: Bearer token. Same token for all endpoints.\n\n**Form IDs**: each form has an 8-character alphanumeric ID (e.g. `Wf2hrM`), visible at the end of the form's public URL (`yourname.typeform.com/to/Wf2hrM` → ID is `Wf2hrM`). Use `typeform_list_forms` once to discover IDs you own.\n\n**Responses model**: Typeform stores each submission as a 'response' with `landed_at`, `submitted_at`, `answers[]`. Each answer is keyed by the field's `id` (UUID) AND by a `type` (text/email/multiple_choice/number/...) — so reading answers requires knowing the form's fields. Cross-reference with `typeform_get_form` to map field IDs to user-readable titles.\n\n**Pagination for responses**: `typeform_list_responses` accepts `since`/`until` timestamps or `before`/`after` token cursors. Default page_size 25, max 1000. For large exports, prefer date-range pagination over token cursors.\n\n**Incremental sync pattern**: store the highest `submitted_at` you've processed and use it as `since` on the next call. Typeform sorts responses newest-first by default — set `sort=submitted_at,asc` to walk forward.\n\n**Webhooks** out of scope (Typeform pushes on submission to a URL you host).\n\n**Hidden fields**: the `hidden` object on a response captures URL parameters passed to the form (e.g. `?utm_source=newsletter`). Read them via `responses[].hidden`.\n\n**Forms with logic / outcomes**: scoring branches, calculator outputs, and ranking results appear in `responses[].calculated` and `responses[].metadata`. Score-based quizzes typically use `calculated.score`.\n\n**Rate limits**: 2 requests/sec per token (Typeform default), 10000/day. On 429, back off — `Retry-After` header tells you how long.\n\n**Out of scope here**: creating/editing form structure (use the Typeform UI; the API for `forms:write` exists but the JSON tree is dense and rarely worth automating), images/themes upload, custom workspaces beyond list.",
+  "region": "intl",
+  "category": "forms",
+  "icon": "typeform",
+  "docsUrl": "https://www.typeform.com/developers/",
+  "requiredEnvVars": ["TYPEFORM_PERSONAL_TOKEN"],
+  "connector": {
+    "name": "Typeform API",
+    "type": "REST",
+    "baseUrl": "https://api.typeform.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TYPEFORM_PERSONAL_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "typeform_get_current_user",
+      "description": "Return the user the personal token belongs to: email, alias, language. Health check + whoami.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me" }
+    },
+    {
+      "name": "typeform_list_forms",
+      "description": "List forms (paginated). Returns each form's id, title, type, settings.is_public, _links.display URL, last_updated_at, workspace_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page number (1-based, default 1)." },
+          "page_size": { "type": "integer", "description": "Forms per page (default 10, max 200)." },
+          "search": { "type": "string", "description": "Substring filter on form titles." },
+          "workspace_id": { "type": "string", "description": "Only forms in this workspace." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "search": "$search",
+          "workspace_id": "$workspace_id"
+        }
+      }
+    },
+    {
+      "name": "typeform_get_form",
+      "description": "Fetch a form's full definition: title, fields[] (each with id, title, type, properties, ref, validations), thankyou_screens, welcome_screens, logic, settings. Required to map answer field IDs to human-readable titles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "8-char form ID." }
+        },
+        "required": ["formId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/forms/{formId}" }
+    },
+    {
+      "name": "typeform_list_responses",
+      "description": "List responses (submissions) for a form, paginated. Each response: response_id, landed_at, submitted_at, hidden{utm_*}, answers[{field:{id,type,ref}, type, ...typed value...}], metadata{platform,browser,network_id}, calculated{score?}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." },
+          "page_size": { "type": "integer", "description": "Responses per page (default 25, max 1000)." },
+          "since": { "type": "string", "description": "ISO 8601 — only responses with submitted_at >= this. Best for incremental sync." },
+          "until": { "type": "string", "description": "ISO 8601 — submitted_at < this." },
+          "after": { "type": "string", "description": "Token cursor — return responses after this token (from prior page)." },
+          "before": { "type": "string", "description": "Token cursor — return responses before this token." },
+          "included_response_ids": { "type": "string", "description": "Comma-separated response_id list to bypass pagination and fetch specific ones." },
+          "completed": { "type": "boolean", "description": "true=only completed, false=only partial, omit=all." },
+          "sort": { "type": "string", "description": "Sort by submitted_at: 'submitted_at,asc' (oldest first) or 'submitted_at,desc' (default)." },
+          "query": { "type": "string", "description": "Full-text search across answers." },
+          "fields": { "type": "string", "description": "Comma-separated field IDs to return only answers for these (reduces response size)." }
+        },
+        "required": ["formId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{formId}/responses",
+        "queryParams": {
+          "page_size": "$page_size",
+          "since": "$since",
+          "until": "$until",
+          "after": "$after",
+          "before": "$before",
+          "included_response_ids": "$included_response_ids",
+          "completed": "$completed",
+          "sort": "$sort",
+          "query": "$query",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "typeform_delete_responses",
+      "description": "Delete responses by their IDs (max 1000 per call). Irreversible. Use for GDPR right-to-be-forgotten requests; for normal cleanup prefer keeping data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." },
+          "included_response_ids": { "type": "string", "description": "Comma-separated response IDs to delete." }
+        },
+        "required": ["formId", "included_response_ids"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/forms/{formId}/responses",
+        "queryParams": {
+          "included_response_ids": "$included_response_ids"
+        }
+      }
+    },
+    {
+      "name": "typeform_list_workspaces",
+      "description": "List workspaces (folders for organizing forms). Each workspace has id, name, default flag, members count, forms count, _links.self URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page number." },
+          "page_size": { "type": "integer", "description": "Per page (default 10)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces",
+        "queryParams": { "page": "$page", "page_size": "$page_size" }
+      }
+    },
+    {
+      "name": "typeform_get_workspace",
+      "description": "Fetch one workspace's full details including members[] and forms[] (URI list).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspaceId": { "type": "string", "description": "Workspace ID." }
+        },
+        "required": ["workspaceId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/workspaces/{workspaceId}" }
+    },
+    {
+      "name": "typeform_list_form_messages",
+      "description": "Get the localized messages (button text, validation errors, etc.) configured on a form. Useful when building a custom embed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." }
+        },
+        "required": ["formId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/forms/{formId}/messages" }
+    },
+    {
+      "name": "typeform_get_form_insights",
+      "description": "Fetch aggregate insights (visits, submissions, completion_rate, average_time_to_complete, etc.) for a form. Returns one summary block.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." }
+        },
+        "required": ["formId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/insights/{formId}/summary" }
+    },
+    {
+      "name": "typeform_list_themes",
+      "description": "List visual themes (color/font/background combos) available on the account. Use to apply a theme when programmatically creating forms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page number." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/themes",
+        "queryParams": { "page": "$page", "page_size": "$page_size" }
+      }
+    }
+  ]
+}
