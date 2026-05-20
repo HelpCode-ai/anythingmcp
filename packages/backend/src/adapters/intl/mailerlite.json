@@ -1,0 +1,182 @@
+{
+  "slug": "mailerlite",
+  "name": "MailerLite",
+  "description": "Manage MailerLite (email marketing: subscribers, groups, campaigns, automations, fields) from any AI agent. 10 tools, Bearer token.",
+  "instructions": "This connector wraps the MailerLite API v2 (connect.mailerlite.com/api).\n\n**Setup**:\n1. Log into https://dashboard.mailerlite.com → bottom-left avatar → **Integrations → MailerLite API → Generate new token**.\n2. Pick scopes (read/write subscribers, groups, campaigns, fields, automations).\n3. Set `MAILERLITE_API_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${MAILERLITE_API_TOKEN}` + `Accept: application/json`.\n\n**Subscriber lifecycle**: every email becomes a `Subscriber` with status (active, unsubscribed, junk, unconfirmed, bounced). Adding the same email twice updates rather than duplicating.\n\n**Groups**: tags for segmentation. A subscriber can belong to many groups.\n\n**Pagination**: `cursor` style — response includes `links.next` with cursor URL. Use `cursor` query param to page. `limit` (max 100).\n\n**Rate limits**: 120 req/min per token (Free/Growing); 240/min on Advanced. 429 with `Retry-After`.\n\n**Out of scope here**: landing pages, popups, segment SQL builder, e-commerce attribution.",
+  "region": "intl",
+  "category": "email",
+  "icon": "mailerlite",
+  "docsUrl": "https://developers.mailerlite.com/docs/",
+  "requiredEnvVars": ["MAILERLITE_API_TOKEN"],
+  "connector": {
+    "name": "MailerLite API",
+    "type": "REST",
+    "baseUrl": "https://connect.mailerlite.com/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MAILERLITE_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "mailerlite_list_subscribers",
+      "description": "List subscribers. Filter by status, group, search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "active, unsubscribed, junk, unconfirmed, bounced." },
+          "filter_search": { "type": "string", "description": "Email/name search." },
+          "limit": { "type": "integer", "description": "Max 100." },
+          "cursor": { "type": "string", "description": "Pagination cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscribers",
+        "queryParams": {
+          "filter[status]": "$status",
+          "filter[search]": "$filter_search",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "mailerlite_get_subscriber",
+      "description": "Get one subscriber by ID or email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id_or_email": { "type": "string", "description": "Numeric ID OR email." }
+        },
+        "required": ["subscriber_id_or_email"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscribers/{subscriber_id_or_email}"
+      }
+    },
+    {
+      "name": "mailerlite_upsert_subscriber",
+      "description": "Create or update a subscriber (idempotent on email). `fields` is a flat map of field-name → value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email (required)." },
+          "fields": { "type": "object", "description": "Custom field map (e.g. {name:'Jane', city:'Berlin'})." },
+          "groups": { "type": "array", "description": "Array of group ID strings to add to." },
+          "status": { "type": "string", "description": "active, unsubscribed, unconfirmed, ..." },
+          "subscribed_at": { "type": "string", "description": "ISO 8601 datetime." },
+          "ip_address": { "type": "string", "description": "Subscriber IP." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscribers",
+        "bodyMapping": {
+          "email": "$email",
+          "fields": "$fields",
+          "groups": "$groups",
+          "status": "$status",
+          "subscribed_at": "$subscribed_at",
+          "ip_address": "$ip_address"
+        }
+      }
+    },
+    {
+      "name": "mailerlite_delete_subscriber",
+      "description": "Permanently delete a subscriber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": { "type": "string", "description": "Subscriber ID." }
+        },
+        "required": ["subscriber_id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/subscribers/{subscriber_id}" }
+    },
+    {
+      "name": "mailerlite_list_groups",
+      "description": "List groups.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max 100." },
+          "filter_name": { "type": "string", "description": "Filter by name." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups",
+        "queryParams": { "limit": "$limit", "filter[name]": "$filter_name" }
+      }
+    },
+    {
+      "name": "mailerlite_create_group",
+      "description": "Create a group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Group name." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/groups",
+        "bodyMapping": { "name": "$name" }
+      }
+    },
+    {
+      "name": "mailerlite_assign_to_group",
+      "description": "Add a subscriber to a group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_id": { "type": "string", "description": "Subscriber ID." },
+          "group_id": { "type": "string", "description": "Group ID." }
+        },
+        "required": ["subscriber_id", "group_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscribers/{subscriber_id}/groups/{group_id}"
+      }
+    },
+    {
+      "name": "mailerlite_list_campaigns",
+      "description": "List campaigns. Filter by status (draft, sent, ready, queued).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "draft, sent, ready, queued, canceled." },
+          "limit": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "queryParams": { "filter[status]": "$status", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "mailerlite_get_campaign",
+      "description": "Get one campaign with delivery stats.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": { "type": "string", "description": "Campaign ID." }
+        },
+        "required": ["campaign_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/campaigns/{campaign_id}" }
+    },
+    {
+      "name": "mailerlite_list_fields",
+      "description": "List subscriber fields (built-in + custom). Use to discover what `fields` keys you can populate.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/fields" }
+    }
+  ]
+}

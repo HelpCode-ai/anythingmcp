@@ -1,0 +1,219 @@
+{
+  "slug": "wrike",
+  "name": "Wrike",
+  "description": "Manage Wrike (work management: tasks, folders, projects, comments, timelogs, attachments) from any AI agent. 10 tools, Bearer token.",
+  "instructions": "This connector wraps the Wrike API v4 (per-host).\n\n**Setup**:\n1. Log into your Wrike account → top-right profile → **Apps & Integrations → API → Create new application**.\n2. Generate a permanent access token. Note your host — most accounts are `www.wrike.com`, but EU accounts use `app-eu.wrike.com`. Change baseUrl accordingly.\n3. Set `WRIKE_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${WRIKE_ACCESS_TOKEN}`.\n\n**Entity model**: `Account → Folder/Project → Task → Subtask`. A folder can contain folders + tasks. Projects are folders with `project: true` metadata.\n\n**ID format**: Wrike IDs are short opaque strings (`IEAAGYTSI4ABCDEF`). Always discover via list endpoints; don't construct.\n\n**Pagination**: cursor-based via `nextPageToken`. Pass back as `nextPageToken` query param.\n\n**Rate limits**: 100 req / 60s per token. 429 with `X-Rate-Limit-Remaining`.\n\n**Out of scope here**: blueprints, custom workflows CRUD, dashboard widgets, approvals, the Wrike Integrate (Workato wrap) extras.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "wrike",
+  "docsUrl": "https://developers.wrike.com/",
+  "requiredEnvVars": ["WRIKE_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Wrike API v4",
+    "type": "REST",
+    "baseUrl": "https://www.wrike.com/api/v4",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WRIKE_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "wrike_get_account",
+      "description": "Return account info.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/account" }
+    },
+    {
+      "name": "wrike_list_folders",
+      "description": "List all top-level folders + projects in the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "permalink": { "type": "string", "description": "Direct lookup by full Wrike URL." },
+          "descendants": { "type": "boolean", "description": "If true include descendants tree." },
+          "metadata": { "type": "string", "description": "JSON-encoded metadata filter." },
+          "fields": { "type": "string", "description": "Optional fields: ['parentIds','childIds','customFields','project']." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folders",
+        "queryParams": {
+          "permalink": "$permalink",
+          "descendants": "$descendants",
+          "metadata": "$metadata",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "wrike_get_folder",
+      "description": "Get a folder/project by ID with details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": { "type": "string", "description": "Folder ID." }
+        },
+        "required": ["folder_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/folders/{folder_id}" }
+    },
+    {
+      "name": "wrike_create_folder",
+      "description": "Create a folder or project inside a parent folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_folder_id": { "type": "string", "description": "Parent folder ID." },
+          "title": { "type": "string", "description": "Folder/project title." },
+          "description": { "type": "string", "description": "Description." },
+          "shareds": { "type": "array", "description": "Array of user IDs to share with." },
+          "project": { "type": "object", "description": "If present, makes it a project: {ownerIds, status, startDate, endDate}." }
+        },
+        "required": ["parent_folder_id", "title"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/folders/{parent_folder_id}/folders",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "shareds": "$shareds",
+          "project": "$project"
+        }
+      }
+    },
+    {
+      "name": "wrike_list_tasks",
+      "description": "List tasks. Filter by folder, status, assignee, completed/scheduled date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": { "type": "string", "description": "Filter to folder's tasks." },
+          "status": { "type": "string", "description": "Active, Completed, Deferred, Cancelled." },
+          "responsibles": { "type": "string", "description": "JSON array of user IDs." },
+          "scheduledDate": { "type": "string", "description": "JSON {start, end} window." },
+          "fields": { "type": "string", "description": "Optional fields list." },
+          "nextPageToken": { "type": "string", "description": "Pagination cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "folderId": "$folder_id",
+          "status": "$status",
+          "responsibles": "$responsibles",
+          "scheduledDate": "$scheduledDate",
+          "fields": "$fields",
+          "nextPageToken": "$nextPageToken"
+        }
+      }
+    },
+    {
+      "name": "wrike_get_task",
+      "description": "Get one task with full custom fields, dates, parents, shareds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": { "type": "string", "description": "Task ID." }
+        },
+        "required": ["task_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/tasks/{task_id}" }
+    },
+    {
+      "name": "wrike_create_task",
+      "description": "Create a task in a folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": { "type": "string", "description": "Parent folder ID." },
+          "title": { "type": "string", "description": "Task title." },
+          "description": { "type": "string", "description": "Description (HTML allowed)." },
+          "responsibles": { "type": "array", "description": "Array of user IDs to assign." },
+          "status": { "type": "string", "description": "Active, Completed, Deferred, Cancelled." },
+          "importance": { "type": "string", "description": "Low, Normal, High." },
+          "dates": { "type": "object", "description": "{type:'Backlog'|'Milestone'|'Planned', start:'YYYY-MM-DD', due:'YYYY-MM-DD', duration: <minutes>}." }
+        },
+        "required": ["folder_id", "title"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/folders/{folder_id}/tasks",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "responsibles": "$responsibles",
+          "status": "$status",
+          "importance": "$importance",
+          "dates": "$dates"
+        }
+      }
+    },
+    {
+      "name": "wrike_update_task",
+      "description": "Update task fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": { "type": "string", "description": "Task ID." },
+          "title": { "type": "string", "description": "New title." },
+          "description": { "type": "string", "description": "New description." },
+          "status": { "type": "string", "description": "New status." },
+          "addResponsibles": { "type": "array", "description": "User IDs to add." },
+          "removeResponsibles": { "type": "array", "description": "User IDs to remove." },
+          "dates": { "type": "object", "description": "Dates structure." }
+        },
+        "required": ["task_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tasks/{task_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "status": "$status",
+          "addResponsibles": "$addResponsibles",
+          "removeResponsibles": "$removeResponsibles",
+          "dates": "$dates"
+        }
+      }
+    },
+    {
+      "name": "wrike_add_comment",
+      "description": "Add a comment to a task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": { "type": "string", "description": "Task ID." },
+          "text": { "type": "string", "description": "Comment body (Markdown supported)." },
+          "plain_text": { "type": "boolean", "description": "If true, render as plain text." }
+        },
+        "required": ["task_id", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks/{task_id}/comments",
+        "bodyMapping": { "text": "$text", "plainText": "$plain_text" }
+      }
+    },
+    {
+      "name": "wrike_list_contacts",
+      "description": "List users (Wrike calls them 'contacts').",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "me": { "type": "boolean", "description": "If true, only the authenticated user." },
+          "metadata": { "type": "string", "description": "JSON-encoded metadata filter." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": { "me": "$me", "metadata": "$metadata" }
+      }
+    }
+  ]
+}

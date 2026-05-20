@@ -1,0 +1,228 @@
+{
+  "slug": "zoho-crm",
+  "name": "Zoho CRM",
+  "description": "Manage Zoho CRM (leads, contacts, accounts, deals, tasks, notes, custom modules) from any AI agent. 10 tools, OAuth refresh-token auth.",
+  "instructions": "This connector wraps the Zoho CRM API v8 (www.zohoapis.com/crm/v8).\n\n**Setup — OAuth client + refresh token**:\n1. Go to https://api-console.zoho.com → **Add Client → Self Client**. Generate a 'grant token' with scope `ZohoCRM.modules.ALL,ZohoCRM.settings.READ,ZohoCRM.users.READ` and copy it.\n2. Exchange it for a refresh token via:\n   `curl -X POST 'https://accounts.zoho.com/oauth/v2/token?grant_type=authorization_code&client_id=CLIENT_ID&client_secret=CLIENT_SECRET&code=GRANT_TOKEN'`\n3. Save the `refresh_token` from the response. Set `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`.\n4. **Data centre matters**: Zoho hosts data in regional clusters: `.com` (US, default), `.eu` (EU), `.in` (India), `.com.au` (AU), `.jp` (Japan). If your org is on a non-US DC change baseUrl + token URL accordingly — wrong DC returns `INVALID_TOKEN`.\n\n**Authentication**: the engine handles the OAuth2 refresh flow — every call exchanges the refresh token for a short-lived (1h) access token and sends it as `Authorization: Zoho-oauthtoken ACCESS_TOKEN`. Zoho uses `Zoho-oauthtoken` instead of `Bearer` — non-standard but documented.\n\n**Module API**: every record type (Leads/Contacts/Accounts/Deals/Tasks/...) lives at `/crm/v8/{module}`. Custom modules use their API name (`Cf__Custom_Module1`). List of module API names is exposed via the modules metadata endpoint.\n\n**Bulk writes**: insert/update endpoints expect `{data: [{...}, {...}], trigger: ['approval','workflow','blueprint']}` shape — wrap a single record in an array.\n\n**Pagination**: `page` + `per_page` (max 200). Response has `info: {more_records: bool, page: N, per_page: N}`.\n\n**Rate limits**: 50 req/min per OAuth client + daily credits (5k on free, 25k on Standard, 250k on Enterprise). 429 → exponential backoff.\n\n**Out of scope here**: bulk import (CSV upload + polling), territory rules CRUD, workflow execution, Sandbox switching.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "zoho-crm",
+  "docsUrl": "https://www.zoho.com/crm/developer/docs/api/v8/",
+  "requiredEnvVars": ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"],
+  "connector": {
+    "name": "Zoho CRM API v8",
+    "type": "REST",
+    "baseUrl": "https://www.zohoapis.com/crm/v8",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{ZOHO_CLIENT_ID}}",
+      "clientSecret": "{{ZOHO_CLIENT_SECRET}}",
+      "refreshToken": "{{ZOHO_REFRESH_TOKEN}}",
+      "tokenUrl": "https://accounts.zoho.com/oauth/v2/token",
+      "tokenPrefix": "Zoho-oauthtoken"
+    }
+  },
+  "tools": [
+    {
+      "name": "zoho_crm_list_records",
+      "description": "List records of any module (Leads, Contacts, Accounts, Deals, Tasks, custom). Pass module API name. Use `fields` to project specific fields and limit payload size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": { "type": "string", "description": "Module API name: Leads, Contacts, Accounts, Deals, Tasks, Calls, Notes, ..." },
+          "fields": { "type": "string", "description": "Comma-separated field API names to return (highly recommended for performance)." },
+          "page": { "type": "integer", "description": "1-based page index." },
+          "per_page": { "type": "integer", "description": "Max 200, default 200." },
+          "sort_by": { "type": "string", "description": "Field API name to sort by." },
+          "sort_order": { "type": "string", "description": "'asc' or 'desc'." }
+        },
+        "required": ["module"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{module}",
+        "queryParams": {
+          "fields": "$fields",
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order"
+        }
+      }
+    },
+    {
+      "name": "zoho_crm_get_record",
+      "description": "Get a single record by ID from any module.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": { "type": "string", "description": "Module API name." },
+          "record_id": { "type": "string", "description": "Record ID (Zoho's internal numeric/string ID)." },
+          "fields": { "type": "string", "description": "Comma-separated field API names." }
+        },
+        "required": ["module", "record_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{module}/{record_id}",
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "zoho_crm_search_records",
+      "description": "Search records using one of three modes: `criteria` (Zoho's COQL-like criteria syntax), `email`, `phone`, or `word` (text search). Returns matching records with all fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": { "type": "string", "description": "Module API name." },
+          "criteria": { "type": "string", "description": "Criteria expression, e.g. '(Last_Name:equals:Doe)'." },
+          "email": { "type": "string", "description": "Exact-email match." },
+          "phone": { "type": "string", "description": "Exact-phone match." },
+          "word": { "type": "string", "description": "Substring search across primary fields." },
+          "page": { "type": "integer", "description": "1-based page." },
+          "per_page": { "type": "integer", "description": "Max 200." }
+        },
+        "required": ["module"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{module}/search",
+        "queryParams": {
+          "criteria": "$criteria",
+          "email": "$email",
+          "phone": "$phone",
+          "word": "$word",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zoho_crm_create_records",
+      "description": "Create one or more records in a module. Pass `data` as an array even for one record. Returns per-record success/failure with the new record IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": { "type": "string", "description": "Module API name." },
+          "data": { "type": "array", "description": "Array of record objects with field-API-name → value pairs." },
+          "trigger": { "type": "array", "description": "Array of triggers to fire: 'approval', 'workflow', 'blueprint'. Empty to skip all." }
+        },
+        "required": ["module", "data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{module}",
+        "bodyMapping": { "data": "$data", "trigger": "$trigger" }
+      }
+    },
+    {
+      "name": "zoho_crm_update_records",
+      "description": "Update one or more records. Each item in `data` must include `id` of the record to update.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": { "type": "string", "description": "Module API name." },
+          "data": { "type": "array", "description": "Array of record objects, each must include `id` + the fields to change." },
+          "trigger": { "type": "array", "description": "Triggers to fire (see create)." }
+        },
+        "required": ["module", "data"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/{module}",
+        "bodyMapping": { "data": "$data", "trigger": "$trigger" }
+      }
+    },
+    {
+      "name": "zoho_crm_upsert_records",
+      "description": "Insert OR update by duplicate-check fields. Useful when sync'ing from external systems. Pass `duplicate_check_fields` (comma-separated field API names) to define how matches are detected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": { "type": "string", "description": "Module API name." },
+          "data": { "type": "array", "description": "Array of record objects." },
+          "duplicate_check_fields": { "type": "array", "description": "Field API names used to detect duplicates." },
+          "trigger": { "type": "array", "description": "Triggers." }
+        },
+        "required": ["module", "data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{module}/upsert",
+        "bodyMapping": {
+          "data": "$data",
+          "duplicate_check_fields": "$duplicate_check_fields",
+          "trigger": "$trigger"
+        }
+      }
+    },
+    {
+      "name": "zoho_crm_delete_record",
+      "description": "Delete a single record by ID. Optionally trigger workflows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": { "type": "string", "description": "Module API name." },
+          "record_id": { "type": "string", "description": "Record ID." },
+          "wf_trigger": { "type": "boolean", "description": "Fire workflows on delete." }
+        },
+        "required": ["module", "record_id"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/{module}/{record_id}",
+        "queryParams": { "wf_trigger": "$wf_trigger" }
+      }
+    },
+    {
+      "name": "zoho_crm_list_notes",
+      "description": "List notes attached to a record (works on any module).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": { "type": "string", "description": "Parent module API name." },
+          "record_id": { "type": "string", "description": "Parent record ID." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 200." }
+        },
+        "required": ["module", "record_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{module}/{record_id}/Notes",
+        "queryParams": { "page": "$page", "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "zoho_crm_create_note",
+      "description": "Add a note to a record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": { "type": "string", "description": "Parent module API name." },
+          "record_id": { "type": "string", "description": "Parent record ID." },
+          "note_title": { "type": "string", "description": "Note title." },
+          "note_content": { "type": "string", "description": "Note body." }
+        },
+        "required": ["module", "record_id", "note_content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{module}/{record_id}/Notes",
+        "bodyMapping": {
+          "data": [
+            {
+              "Note_Title": "$note_title",
+              "Note_Content": "$note_content"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "zoho_crm_list_modules",
+      "description": "List all modules in the org (standard + custom) with their API names, display names, and whether they're CRM-modifiable. Use this to discover which `module` strings you can pass to the other tools.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/settings/modules" }
+    }
+  ]
+}

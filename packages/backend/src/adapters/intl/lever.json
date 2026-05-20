@@ -1,0 +1,213 @@
+{
+  "slug": "lever",
+  "name": "Lever",
+  "description": "Manage Lever ATS (candidates, opportunities, postings, stages, feedback) from any AI agent. 10 tools, basic-auth.",
+  "instructions": "This connector wraps the Lever Hire API v1 (api.lever.co/v1).\n\n**Setup**:\n1. In Lever → **Settings → Integrations and API → API Credentials → Generate new key**.\n2. Set `LEVER_API_KEY`.\n3. **Sandbox**: use `https://api.sandbox.lever.co/v1` instead during testing.\n\n**Authentication**: HTTP Basic — API key as username, empty password.\n\n**Opportunity vs Candidate**: in Lever's modern API, an `Opportunity` represents a candidate's interest in a single posting. A person can have multiple opportunities (one per role). The legacy `Candidate` endpoint still works but Opportunity is preferred.\n\n**Pagination**: cursor-based. List endpoints return `next` (cursor) in the response body; pass back as `offset`.\n\n**Rate limits**: 8 req/sec per API key. 429 with `Retry-After`.\n\n**Out of scope here**: requisitions CRUD beyond list, EEO survey responses, the separate Nurture / Sourcer extension APIs.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "lever",
+  "docsUrl": "https://hire.lever.co/developer/documentation",
+  "requiredEnvVars": ["LEVER_API_KEY"],
+  "connector": {
+    "name": "Lever Hire API v1",
+    "type": "REST",
+    "baseUrl": "https://api.lever.co/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{LEVER_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "lever_list_opportunities",
+      "description": "List opportunities (candidate × posting). Filter by stage, posting, owner, created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stage_id": { "type": "string", "description": "Filter by stage." },
+          "posting_id": { "type": "string", "description": "Filter by posting." },
+          "owner_id": { "type": "string", "description": "Filter by owner." },
+          "archived": { "type": "boolean", "description": "Include archived." },
+          "created_at_start": { "type": "integer", "description": "UNIX epoch ms." },
+          "created_at_end": { "type": "integer", "description": "UNIX epoch ms." },
+          "limit": { "type": "integer", "description": "Max per page." },
+          "offset": { "type": "string", "description": "Cursor from previous response." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities",
+        "queryParams": {
+          "stage_id": "$stage_id",
+          "posting_id": "$posting_id",
+          "owner_id": "$owner_id",
+          "archived": "$archived",
+          "created_at_start": "$created_at_start",
+          "created_at_end": "$created_at_end",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "lever_get_opportunity",
+      "description": "Get one opportunity with full contact, links, tags, applications.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": { "type": "string", "description": "Opportunity ID." }
+        },
+        "required": ["opportunity_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/opportunities/{opportunity_id}" }
+    },
+    {
+      "name": "lever_create_opportunity",
+      "description": "Create an opportunity (candidate with associated posting). Required: name + at least one email; perform_as is the Lever user ID acting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "perform_as": { "type": "string", "description": "Lever user ID making the create." },
+          "name": { "type": "string", "description": "Candidate name." },
+          "emails": { "type": "array", "description": "Array of email strings." },
+          "phones": { "type": "array", "description": "Array of {type, value}." },
+          "location": { "type": "object", "description": "{name} location." },
+          "postings": { "type": "array", "description": "Array of posting ID strings to apply to." },
+          "stage": { "type": "string", "description": "Initial stage ID." },
+          "owner": { "type": "string", "description": "Lever user ID owner." },
+          "tags": { "type": "array", "description": "Tag strings." },
+          "origin": { "type": "string", "description": "applied, referred, sourced." }
+        },
+        "required": ["perform_as", "name", "emails"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/opportunities",
+        "queryParams": { "perform_as": "$perform_as" },
+        "bodyMapping": {
+          "name": "$name",
+          "emails": "$emails",
+          "phones": "$phones",
+          "location": "$location",
+          "postings": "$postings",
+          "stage": "$stage",
+          "owner": "$owner",
+          "tags": "$tags",
+          "origin": "$origin"
+        }
+      }
+    },
+    {
+      "name": "lever_update_opportunity_stage",
+      "description": "Move an opportunity to a different stage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": { "type": "string", "description": "Opportunity ID." },
+          "perform_as": { "type": "string", "description": "Lever user ID." },
+          "stage": { "type": "string", "description": "Target stage ID." }
+        },
+        "required": ["opportunity_id", "perform_as", "stage"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/opportunities/{opportunity_id}/stage",
+        "queryParams": { "perform_as": "$perform_as" },
+        "bodyMapping": { "stage": "$stage" }
+      }
+    },
+    {
+      "name": "lever_archive_opportunity",
+      "description": "Archive an opportunity with an archive reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": { "type": "string", "description": "Opportunity ID." },
+          "perform_as": { "type": "string", "description": "Lever user ID." },
+          "reason": { "type": "string", "description": "Archive reason ID." }
+        },
+        "required": ["opportunity_id", "perform_as", "reason"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/opportunities/{opportunity_id}/archived",
+        "queryParams": { "perform_as": "$perform_as" },
+        "bodyMapping": { "reason": "$reason" }
+      }
+    },
+    {
+      "name": "lever_list_postings",
+      "description": "List job postings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": { "type": "string", "description": "published, internal, closed, draft, pending, rejected." },
+          "team": { "type": "string", "description": "Filter by team." },
+          "location": { "type": "string", "description": "Filter by location." },
+          "limit": { "type": "integer", "description": "Max per page." },
+          "offset": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/postings",
+        "queryParams": {
+          "state": "$state",
+          "team": "$team",
+          "location": "$location",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "lever_list_stages",
+      "description": "List pipeline stages.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/stages" }
+    },
+    {
+      "name": "lever_list_users",
+      "description": "List Lever users (recruiters, hiring managers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_role": { "type": "string", "description": "Filter by role." },
+          "email": { "type": "string", "description": "Filter by email." },
+          "limit": { "type": "integer", "description": "Max per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "access_role": "$access_role",
+          "email": "$email",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "lever_list_archive_reasons",
+      "description": "List archive reasons configured in the org. Use this to find valid `reason` IDs for archive calls.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/archive_reasons" }
+    },
+    {
+      "name": "lever_list_feedback",
+      "description": "List interview feedback forms attached to an opportunity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": { "type": "string", "description": "Opportunity ID." }
+        },
+        "required": ["opportunity_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities/{opportunity_id}/feedback"
+      }
+    }
+  ]
+}

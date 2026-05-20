@@ -1,0 +1,246 @@
+{
+  "slug": "plaid",
+  "name": "Plaid",
+  "description": "Read Plaid (bank-linking, transactions, balances, identity, liabilities, investments) from any AI agent. 10 tools, body-credential auth.",
+  "instructions": "This connector wraps the Plaid REST API (per-environment).\n\n**Setup**:\n1. Sign up at https://dashboard.plaid.com → **Team Settings → Keys**. Note your `client_id` and one of: `sandbox`, `development`, `production` secret.\n2. **Environment matters**: change baseUrl: `sandbox.plaid.com` (free, fake banks), `development.plaid.com` (real banks, 100 free items), `production.plaid.com` (paid). Defaults to sandbox.\n3. Set `PLAID_CLIENT_ID` and `PLAID_SECRET`.\n\n**Authentication**: every POST sends `client_id` + `secret` in the JSON body — NOT as headers. The adapter merges them automatically via envVars.\n\n**Link flow**: Plaid is server+client — to obtain an `access_token`, your frontend uses Plaid Link with a `link_token` you minted server-side. This adapter assumes you already have an `access_token` for an Item (one connected bank). For Link itself use `plaid_link_token_create`.\n\n**Identifiers**:\n- `link_token`: short-lived (~30 min), passed to Link.\n- `public_token`: returned by Link, exchanged once for an access_token.\n- `access_token`: long-lived, scoped to one Item (institution+user).\n- `item_id`: stable ID for an access_token's Item.\n\n**Rate limits**: vary by environment + product. Sandbox is loose; production limits depend on plan. 429 with `Retry-After`.\n\n**Out of scope here**: webhooks setup, Plaid Signal (risk scores), Income/Employment products' end-user flows, Transfer (ACH origination).",
+  "region": "intl",
+  "category": "payments",
+  "icon": "plaid",
+  "docsUrl": "https://plaid.com/docs/api/",
+  "requiredEnvVars": ["PLAID_CLIENT_ID", "PLAID_SECRET"],
+  "connector": {
+    "name": "Plaid API",
+    "type": "REST",
+    "baseUrl": "https://sandbox.plaid.com",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "plaid_link_token_create",
+      "description": "Create a short-lived link_token to pass to the Plaid Link client. The client returns a public_token after the user authenticates with their bank; exchange that for an access_token via plaid_item_public_token_exchange.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_client_user_id": { "type": "string", "description": "Your unique ID for this end-user (will be associated with the Item)." },
+          "client_name": { "type": "string", "description": "Display name shown in Link UI." },
+          "products": { "type": "array", "description": "Array: transactions, auth, identity, assets, investments, liabilities, ..." },
+          "country_codes": { "type": "array", "description": "ISO 3166-1 alpha-2 list, e.g. ['US']." },
+          "language": { "type": "string", "description": "en, es, fr, ..." },
+          "webhook": { "type": "string", "description": "Webhook URL for Item updates." }
+        },
+        "required": ["user_client_user_id", "client_name", "products", "country_codes", "language"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/link/token/create",
+        "bodyMapping": {
+          "client_id": "$PLAID_CLIENT_ID",
+          "secret": "$PLAID_SECRET",
+          "user": { "client_user_id": "$user_client_user_id" },
+          "client_name": "$client_name",
+          "products": "$products",
+          "country_codes": "$country_codes",
+          "language": "$language",
+          "webhook": "$webhook"
+        }
+      }
+    },
+    {
+      "name": "plaid_item_public_token_exchange",
+      "description": "Exchange a public_token (from Plaid Link) for a long-lived access_token + item_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "public_token": { "type": "string", "description": "public_token from Link." }
+        },
+        "required": ["public_token"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/item/public_token/exchange",
+        "bodyMapping": {
+          "client_id": "$PLAID_CLIENT_ID",
+          "secret": "$PLAID_SECRET",
+          "public_token": "$public_token"
+        }
+      }
+    },
+    {
+      "name": "plaid_item_get",
+      "description": "Get metadata about an Item (institution, products, billed products, status, error).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_token": { "type": "string", "description": "Item access token." }
+        },
+        "required": ["access_token"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/item/get",
+        "bodyMapping": {
+          "client_id": "$PLAID_CLIENT_ID",
+          "secret": "$PLAID_SECRET",
+          "access_token": "$access_token"
+        }
+      }
+    },
+    {
+      "name": "plaid_accounts_get",
+      "description": "List accounts for an Item with name, mask, type (depository, credit, loan, investment), subtype.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_token": { "type": "string", "description": "Item access token." }
+        },
+        "required": ["access_token"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounts/get",
+        "bodyMapping": {
+          "client_id": "$PLAID_CLIENT_ID",
+          "secret": "$PLAID_SECRET",
+          "access_token": "$access_token"
+        }
+      }
+    },
+    {
+      "name": "plaid_accounts_balance_get",
+      "description": "Get real-time balances for an Item's accounts (may trigger a refresh — slower than accounts_get).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_token": { "type": "string", "description": "Item access token." },
+          "options": { "type": "object", "description": "{account_ids: [...]} to subset." }
+        },
+        "required": ["access_token"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounts/balance/get",
+        "bodyMapping": {
+          "client_id": "$PLAID_CLIENT_ID",
+          "secret": "$PLAID_SECRET",
+          "access_token": "$access_token",
+          "options": "$options"
+        }
+      }
+    },
+    {
+      "name": "plaid_transactions_get",
+      "description": "Get transactions in a date range (up to 730 days back). Paginated via `count` + `offset`. Note: for ongoing sync prefer `/transactions/sync`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_token": { "type": "string", "description": "Item access token." },
+          "start_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "end_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "options": { "type": "object", "description": "{count: 500, offset: 0, account_ids: [...]}." }
+        },
+        "required": ["access_token", "start_date", "end_date"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions/get",
+        "bodyMapping": {
+          "client_id": "$PLAID_CLIENT_ID",
+          "secret": "$PLAID_SECRET",
+          "access_token": "$access_token",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "options": "$options"
+        }
+      }
+    },
+    {
+      "name": "plaid_transactions_sync",
+      "description": "Incremental transactions sync. Pass `cursor` from previous response (empty string for first call). Returns `added`, `modified`, `removed`, `next_cursor`, `has_more`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_token": { "type": "string", "description": "Item access token." },
+          "cursor": { "type": "string", "description": "Cursor (empty string on first sync)." },
+          "count": { "type": "integer", "description": "Max per page (500)." }
+        },
+        "required": ["access_token"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions/sync",
+        "bodyMapping": {
+          "client_id": "$PLAID_CLIENT_ID",
+          "secret": "$PLAID_SECRET",
+          "access_token": "$access_token",
+          "cursor": "$cursor",
+          "count": "$count"
+        }
+      }
+    },
+    {
+      "name": "plaid_identity_get",
+      "description": "Get identity info attached to the Item's accounts (names, emails, addresses, phone numbers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_token": { "type": "string", "description": "Item access token." }
+        },
+        "required": ["access_token"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/identity/get",
+        "bodyMapping": {
+          "client_id": "$PLAID_CLIENT_ID",
+          "secret": "$PLAID_SECRET",
+          "access_token": "$access_token"
+        }
+      }
+    },
+    {
+      "name": "plaid_auth_get",
+      "description": "Get bank routing + account numbers for ACH/EFT setup. Requires `auth` product on the Item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_token": { "type": "string", "description": "Item access token." }
+        },
+        "required": ["access_token"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/auth/get",
+        "bodyMapping": {
+          "client_id": "$PLAID_CLIENT_ID",
+          "secret": "$PLAID_SECRET",
+          "access_token": "$access_token"
+        }
+      }
+    },
+    {
+      "name": "plaid_institutions_search",
+      "description": "Search Plaid's catalog of supported financial institutions by name + country.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Institution name fragment." },
+          "products": { "type": "array", "description": "Array of products the institution must support." },
+          "country_codes": { "type": "array", "description": "ISO 3166-1 alpha-2 list." }
+        },
+        "required": ["query", "country_codes"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/institutions/search",
+        "bodyMapping": {
+          "client_id": "$PLAID_CLIENT_ID",
+          "secret": "$PLAID_SECRET",
+          "query": "$query",
+          "products": "$products",
+          "country_codes": "$country_codes"
+        }
+      }
+    }
+  ]
+}

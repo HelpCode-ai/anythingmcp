@@ -1,0 +1,235 @@
+{
+  "slug": "invoiced",
+  "name": "Invoiced",
+  "description": "Manage Invoiced (A/R automation: customers, invoices, payments, subscriptions, credit notes) from any AI agent. 9 tools, basic-auth.",
+  "instructions": "This connector wraps the Invoiced REST API (api.invoiced.com).\n\n**Setup**:\n1. Log into https://app.invoiced.com → **Developers → API Keys → Create API Key**.\n2. Set `INVOICED_API_KEY`.\n3. **Sandbox**: for testing, point baseUrl at `https://api.sandbox.invoiced.com` instead.\n\n**Authentication**: HTTP Basic — API key as username, empty password.\n\n**Hierarchy**: `Customer → Invoice → Line items → Payments`. Subscriptions generate recurring invoices automatically.\n\n**Pagination**: cursor-based via `Link` headers. Use `per_page` (max 100) and `page` (1-based).\n\n**Rate limits**: 60 req/min per API key, 1k/hr. 429 with `Retry-After`.\n\n**Out of scope here**: chasing workflow editor, payment-processor setup, dunning emails template management.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "invoiced",
+  "docsUrl": "https://invoiced.com/api",
+  "requiredEnvVars": ["INVOICED_API_KEY"],
+  "connector": {
+    "name": "Invoiced API",
+    "type": "REST",
+    "baseUrl": "https://api.invoiced.com",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{INVOICED_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "invoiced_list_customers",
+      "description": "List customers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_name": { "type": "string", "description": "Name filter." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "filter[name]": "$filter_name",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "invoiced_get_customer",
+      "description": "Get one customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Customer ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/customers/{id}" }
+    },
+    {
+      "name": "invoiced_create_customer",
+      "description": "Create a customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Customer or company name." },
+          "email": { "type": "string", "description": "Email." },
+          "type": { "type": "string", "description": "'company' or 'person'." },
+          "phone": { "type": "string", "description": "Phone." },
+          "billing_address1": { "type": "string", "description": "Billing street." },
+          "billing_city": { "type": "string", "description": "Billing city." },
+          "billing_postal_code": { "type": "string", "description": "Billing ZIP." },
+          "billing_country": { "type": "string", "description": "ISO 3166-1 alpha-2." },
+          "payment_terms": { "type": "string", "description": "e.g. 'NET 30'." },
+          "language": { "type": "string", "description": "ISO 639-1." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "type": "$type",
+          "phone": "$phone",
+          "billing_address1": "$billing_address1",
+          "billing_city": "$billing_city",
+          "billing_postal_code": "$billing_postal_code",
+          "billing_country": "$billing_country",
+          "payment_terms": "$payment_terms",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "invoiced_list_invoices",
+      "description": "List invoices. Filter by customer, status (draft, sent, paid, voided), date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": { "type": "integer", "description": "Customer ID filter." },
+          "status": { "type": "string", "description": "draft, not_sent, sent, paid, voided." },
+          "date_from": { "type": "integer", "description": "UNIX epoch (seconds)." },
+          "date_to": { "type": "integer", "description": "UNIX epoch (seconds)." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "customer": "$customer",
+          "status": "$status",
+          "date[start]": "$date_from",
+          "date[end]": "$date_to",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "invoiced_get_invoice",
+      "description": "Get one invoice with line items + payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Invoice ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/invoices/{id}" }
+    },
+    {
+      "name": "invoiced_create_invoice",
+      "description": "Create an invoice. `items` is an array of {name, quantity, unit_cost, description}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": { "type": "integer", "description": "Customer ID." },
+          "items": { "type": "array", "description": "Line items." },
+          "date": { "type": "integer", "description": "Invoice date UNIX epoch." },
+          "due_date": { "type": "integer", "description": "Due UNIX epoch." },
+          "currency": { "type": "string", "description": "ISO 4217 (lowercase)." },
+          "notes": { "type": "string", "description": "Free-text notes." },
+          "payment_terms": { "type": "string", "description": "e.g. 'NET 30'." },
+          "draft": { "type": "boolean", "description": "If true, create as draft." }
+        },
+        "required": ["customer", "items"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices",
+        "bodyMapping": {
+          "customer": "$customer",
+          "items": "$items",
+          "date": "$date",
+          "due_date": "$due_date",
+          "currency": "$currency",
+          "notes": "$notes",
+          "payment_terms": "$payment_terms",
+          "draft": "$draft"
+        }
+      }
+    },
+    {
+      "name": "invoiced_send_invoice",
+      "description": "Send an invoice via email to its customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Invoice ID." },
+          "to": { "type": "array", "description": "Array of {name, address}." },
+          "subject": { "type": "string", "description": "Subject." },
+          "message": { "type": "string", "description": "Body." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/{id}/emails",
+        "bodyMapping": { "to": "$to", "subject": "$subject", "message": "$message" }
+      }
+    },
+    {
+      "name": "invoiced_list_payments",
+      "description": "List payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": { "type": "integer", "description": "Customer ID filter." },
+          "invoice": { "type": "integer", "description": "Invoice ID filter." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "customer": "$customer",
+          "invoice": "$invoice",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "invoiced_create_payment",
+      "description": "Record a payment (off-system) and optionally apply it to invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": { "type": "integer", "description": "Customer ID." },
+          "amount": { "type": "number", "description": "Payment amount." },
+          "currency": { "type": "string", "description": "ISO 4217 lowercase." },
+          "method": { "type": "string", "description": "ach, cash, check, credit_card, wire_transfer, ..." },
+          "date": { "type": "integer", "description": "Date UNIX epoch." },
+          "reference": { "type": "string", "description": "Reference / check number." },
+          "applied_to": { "type": "array", "description": "Array of {type:'invoice', invoice: <id>, amount: <n>} entries." }
+        },
+        "required": ["customer", "amount"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments",
+        "bodyMapping": {
+          "customer": "$customer",
+          "amount": "$amount",
+          "currency": "$currency",
+          "method": "$method",
+          "date": "$date",
+          "reference": "$reference",
+          "applied_to": "$applied_to"
+        }
+      }
+    }
+  ]
+}

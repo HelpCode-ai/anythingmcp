@@ -239,9 +239,11 @@ export class RestEngine {
           config.authConfig,
           config.connectorId,
         );
+        // Some vendors use a non-standard prefix (e.g. Zoho: "Zoho-oauthtoken").
+        const prefix = String(config.authConfig?.tokenPrefix ?? 'Bearer');
         axiosConfig.headers = {
           ...axiosConfig.headers,
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `${prefix} ${accessToken}`,
         };
         break;
       }

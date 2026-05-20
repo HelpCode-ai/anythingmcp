@@ -1,0 +1,162 @@
+{
+  "slug": "timetastic",
+  "name": "Timetastic",
+  "description": "Manage Timetastic (PTO / annual leave tracking) users, holidays, departments, leave types from any AI agent. 8 tools, Bearer token.",
+  "instructions": "This connector wraps the Timetastic REST API v2 (app.timetastic.co.uk/api).\n\n**Setup**:\n1. Log into https://app.timetastic.co.uk → top-right avatar → **Settings → Integrations → API → Generate API token**.\n2. Set `TIMETASTIC_API_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${TIMETASTIC_API_TOKEN}`.\n\n**Entities**: `User` (employees) → `Holiday` (leave requests). Each holiday has start/end, type (annual, sickness, etc.), status (approved/declined/pending).\n\n**Pagination**: most endpoints return everything (paginated only by `Start`/`End` filters). Use date windows aggressively.\n\n**Rate limits**: 60 req/min per token. 429 with `Retry-After`.\n\n**Out of scope here**: WallChart UI, custom reports, multi-tenant org switching.",
+  "region": "intl",
+  "category": "time-tracking",
+  "icon": "timetastic",
+  "docsUrl": "https://timetastic.docs.apiary.io/",
+  "requiredEnvVars": ["TIMETASTIC_API_TOKEN"],
+  "connector": {
+    "name": "Timetastic API v2",
+    "type": "REST",
+    "baseUrl": "https://app.timetastic.co.uk/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TIMETASTIC_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "timetastic_list_users",
+      "description": "List all users (employees) in the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "active_only": { "type": "boolean", "description": "If true, exclude archived users." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": { "active": "$active_only" }
+      }
+    },
+    {
+      "name": "timetastic_get_user",
+      "description": "Get one user with leave allowance, department, manager.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "integer", "description": "User ID." }
+        },
+        "required": ["user_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/users/{user_id}" }
+    },
+    {
+      "name": "timetastic_create_user",
+      "description": "Create an employee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstname": { "type": "string", "description": "First name." },
+          "surname": { "type": "string", "description": "Surname." },
+          "email": { "type": "string", "description": "Email." },
+          "department_id": { "type": "integer", "description": "Department ID." },
+          "annual_allowance": { "type": "number", "description": "Days of leave per year." },
+          "start_date": { "type": "string", "description": "Employment start (YYYY-MM-DD)." }
+        },
+        "required": ["firstname", "surname", "email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users",
+        "bodyMapping": {
+          "firstname": "$firstname",
+          "surname": "$surname",
+          "email": "$email",
+          "departmentId": "$department_id",
+          "annualAllowance": "$annual_allowance",
+          "startDate": "$start_date"
+        }
+      }
+    },
+    {
+      "name": "timetastic_list_holidays",
+      "description": "List holiday (leave) requests. Filter by date range, status, user, department.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": { "type": "string", "description": "YYYY-MM-DD." },
+          "end": { "type": "string", "description": "YYYY-MM-DD." },
+          "user_id": { "type": "integer", "description": "Filter by user." },
+          "department_id": { "type": "integer", "description": "Filter by department." },
+          "status": { "type": "string", "description": "Approved, Declined, Pending, Cancelled." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/holidays",
+        "queryParams": {
+          "Start": "$start",
+          "End": "$end",
+          "userId": "$user_id",
+          "departmentId": "$department_id",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "timetastic_create_holiday",
+      "description": "Create a leave request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "integer", "description": "User ID." },
+          "start_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "start_type": { "type": "string", "description": "Morning, Afternoon, Fullday." },
+          "end_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "end_type": { "type": "string", "description": "Morning, Afternoon, Fullday." },
+          "leave_type": { "type": "string", "description": "Annual leave, Sickness, ... (must match a configured type)." },
+          "reason": { "type": "string", "description": "Free-text." }
+        },
+        "required": ["user_id", "start_date", "end_date"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/holidays",
+        "bodyMapping": {
+          "userId": "$user_id",
+          "startDate": "$start_date",
+          "startType": "$start_type",
+          "endDate": "$end_date",
+          "endType": "$end_type",
+          "leaveType": "$leave_type",
+          "reason": "$reason"
+        }
+      }
+    },
+    {
+      "name": "timetastic_decide_holiday",
+      "description": "Approve or decline a pending holiday request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "holiday_id": { "type": "integer", "description": "Holiday request ID." },
+          "decision": { "type": "string", "description": "Approved or Declined." },
+          "reason": { "type": "string", "description": "Optional decline reason." }
+        },
+        "required": ["holiday_id", "decision"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/holidays/{holiday_id}/decision",
+        "bodyMapping": { "decision": "$decision", "reason": "$reason" }
+      }
+    },
+    {
+      "name": "timetastic_list_departments",
+      "description": "List departments.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/departments" }
+    },
+    {
+      "name": "timetastic_list_leave_types",
+      "description": "List configured leave types (Annual leave, Sickness, etc.).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/leavetypes" }
+    }
+  ]
+}

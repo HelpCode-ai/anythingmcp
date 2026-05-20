@@ -1,0 +1,228 @@
+{
+  "slug": "freshbooks",
+  "name": "FreshBooks",
+  "description": "Manage FreshBooks (invoices, clients, expenses, time entries, payments) from any AI agent. 9 tools, OAuth2 auth.",
+  "instructions": "This connector wraps the FreshBooks New API (api.freshbooks.com/accounting).\n\n**Setup — OAuth2 refresh flow**:\n1. Go to https://my.freshbooks.com/#/developer → **Create an App**. Set redirect URI to your callback.\n2. Run the auth flow: `https://my.freshbooks.com/oauth/authorize?response_type=code&client_id=...&redirect_uri=...&scope=user:profile:read user:clients:read user:invoices:read user:invoices:write user:expenses:read user:time_entries:read user:payments:read user:payments:write`.\n3. Exchange the code at `https://api.freshbooks.com/auth/oauth/token` for access + refresh tokens.\n4. **Account ID**: the FreshBooks API requires an Account ID (`bzz...`) on most endpoints — find it via `GET /auth/api/v1/users/me` (the `accountid` of your first business). Set `FRESHBOOKS_ACCOUNT_ID`.\n5. Set `FRESHBOOKS_CLIENT_ID`, `FRESHBOOKS_CLIENT_SECRET`, `FRESHBOOKS_REFRESH_TOKEN`, `FRESHBOOKS_ACCOUNT_ID`.\n\n**Authentication**: OAuth2 with the engine's refresh handling. Access token sent as `Bearer`. Account ID goes in the URL path on most endpoints — substituted via runtime envVar.\n\n**Two-account-types**: classic 'accounting' (US) and 'projects' (international, the new product). This adapter covers the accounting endpoints.\n\n**Response shape**: FreshBooks wraps everything in `{response: {result: {<entity_plural>: [...]}}}`. The adapter does not unwrap automatically — handle in the caller.\n\n**Pagination**: `page` (1-based) + `per_page` (max 100). Cursor on some newer endpoints.\n\n**Rate limits**: 30 req/min per token, 3600/hr. 429 → exponential.\n\n**Out of scope here**: reports, journal entries, project tracking (separate `/projects` API).",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "freshbooks",
+  "docsUrl": "https://www.freshbooks.com/api/start",
+  "requiredEnvVars": ["FRESHBOOKS_CLIENT_ID", "FRESHBOOKS_CLIENT_SECRET", "FRESHBOOKS_REFRESH_TOKEN", "FRESHBOOKS_ACCOUNT_ID"],
+  "connector": {
+    "name": "FreshBooks New API",
+    "type": "REST",
+    "baseUrl": "https://api.freshbooks.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{FRESHBOOKS_CLIENT_ID}}",
+      "clientSecret": "{{FRESHBOOKS_CLIENT_SECRET}}",
+      "refreshToken": "{{FRESHBOOKS_REFRESH_TOKEN}}",
+      "tokenUrl": "https://api.freshbooks.com/auth/oauth/token"
+    }
+  },
+  "tools": [
+    {
+      "name": "freshbooks_me",
+      "description": "Return the authenticated user with business memberships and their account IDs.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/auth/api/v1/users/me" }
+    },
+    {
+      "name": "freshbooks_list_clients",
+      "description": "List clients in an account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." },
+          "search_email": { "type": "string", "description": "Filter by email substring." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/account/{FRESHBOOKS_ACCOUNT_ID}/users/clients",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "search[email_like]": "$search_email"
+        }
+      }
+    },
+    {
+      "name": "freshbooks_create_client",
+      "description": "Create a client.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fname": { "type": "string", "description": "First name." },
+          "lname": { "type": "string", "description": "Last name." },
+          "organization": { "type": "string", "description": "Company name." },
+          "email": { "type": "string", "description": "Email." },
+          "currency_code": { "type": "string", "description": "ISO 4217." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounting/account/{FRESHBOOKS_ACCOUNT_ID}/users/clients",
+        "bodyMapping": {
+          "client": {
+            "fname": "$fname",
+            "lname": "$lname",
+            "organization": "$organization",
+            "email": "$email",
+            "currency_code": "$currency_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshbooks_list_invoices",
+      "description": "List invoices. Filter by client, status, date range. Status codes: 1=Draft, 2=Sent, 3=Viewed, 4=Paid, 5=AutoPaid, 6=Retry, 7=Failed, 8=Partial, 9=Disputed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "clientid": { "type": "integer", "description": "Filter by client ID." },
+          "status": { "type": "integer", "description": "Status code." },
+          "date_from": { "type": "string", "description": "YYYY-MM-DD." },
+          "date_to": { "type": "string", "description": "YYYY-MM-DD." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/account/{FRESHBOOKS_ACCOUNT_ID}/invoices/invoices",
+        "queryParams": {
+          "search[clientid]": "$clientid",
+          "search[status]": "$status",
+          "search[date_min]": "$date_from",
+          "search[date_max]": "$date_to",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshbooks_get_invoice",
+      "description": "Get a single invoice with all lines + payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": { "type": "integer", "description": "Invoice ID." }
+        },
+        "required": ["invoice_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/account/{FRESHBOOKS_ACCOUNT_ID}/invoices/invoices/{invoice_id}"
+      }
+    },
+    {
+      "name": "freshbooks_create_invoice",
+      "description": "Create an invoice. `lines` is an array of line items {name, qty, unit_cost, type:0|1, description}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerid": { "type": "integer", "description": "Client ID." },
+          "create_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "lines": { "type": "array", "description": "Array of line items." },
+          "notes": { "type": "string", "description": "Invoice notes." },
+          "currency_code": { "type": "string", "description": "ISO 4217." },
+          "terms": { "type": "string", "description": "Payment terms text." }
+        },
+        "required": ["customerid", "create_date", "lines"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounting/account/{FRESHBOOKS_ACCOUNT_ID}/invoices/invoices",
+        "bodyMapping": {
+          "invoice": {
+            "customerid": "$customerid",
+            "create_date": "$create_date",
+            "lines": "$lines",
+            "notes": "$notes",
+            "currency_code": "$currency_code",
+            "terms": "$terms"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshbooks_list_expenses",
+      "description": "List expenses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": { "type": "string", "description": "YYYY-MM-DD." },
+          "date_to": { "type": "string", "description": "YYYY-MM-DD." },
+          "categoryid": { "type": "integer", "description": "Filter by category." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/account/{FRESHBOOKS_ACCOUNT_ID}/expenses/expenses",
+        "queryParams": {
+          "search[date_min]": "$date_from",
+          "search[date_max]": "$date_to",
+          "search[categoryid]": "$categoryid",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshbooks_list_payments",
+      "description": "List payments received against invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceid": { "type": "integer", "description": "Filter by invoice." },
+          "clientid": { "type": "integer", "description": "Filter by client." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/account/{FRESHBOOKS_ACCOUNT_ID}/payments/payments",
+        "queryParams": {
+          "search[invoiceid]": "$invoiceid",
+          "search[clientid]": "$clientid",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshbooks_record_payment",
+      "description": "Record a payment against an invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceid": { "type": "integer", "description": "Invoice ID." },
+          "amount": { "type": "object", "description": "{amount: '100.00', code: 'USD'}." },
+          "date": { "type": "string", "description": "YYYY-MM-DD." },
+          "type": { "type": "string", "description": "Bank Transfer, Cash, Check, Credit Card, ..." },
+          "note": { "type": "string", "description": "Free-text." }
+        },
+        "required": ["invoiceid", "amount", "date", "type"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounting/account/{FRESHBOOKS_ACCOUNT_ID}/payments/payments",
+        "bodyMapping": {
+          "payment": {
+            "invoiceid": "$invoiceid",
+            "amount": "$amount",
+            "date": "$date",
+            "type": "$type",
+            "note": "$note"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,251 @@
+{
+  "slug": "teamwork-projects",
+  "name": "Teamwork Projects",
+  "description": "Manage Teamwork.com (projects, tasks, milestones, time entries, comments, people) from any AI agent. 10 tools, basic-auth with API key.",
+  "instructions": "This connector wraps the Teamwork Projects REST API v3 (per-subdomain — yoursubdomain.teamwork.com/projects/api/v3).\n\n**Setup**:\n1. Log into your Teamwork account → top-right avatar → **Edit my details → API & Mobile → Get my API Key**.\n2. Note your subdomain (the part before `.teamwork.com`).\n3. Set `TEAMWORK_SUBDOMAIN` and `TEAMWORK_API_KEY`.\n\n**Authentication**: HTTP Basic — API key as username, literal `x` as password.\n\n**Per-tenant baseUrl**: `https://${TEAMWORK_SUBDOMAIN}.teamwork.com/projects/api/v3`. Substituted at import time.\n\n**API versions**: v3 is the modern REST. v1/v2 still exist for some endpoints. This adapter uses v3 where available.\n\n**Pagination**: `page` (1-based) + `pageSize` (max 250). Some endpoints use `pageOffset`.\n\n**Rate limits**: 150 req/min per token. 429 with `Retry-After`.\n\n**Out of scope here**: Spaces (separate product API), CRM, Desk (helpdesk), Chat — each is a sibling product with its own API.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "teamwork-projects",
+  "docsUrl": "https://apidocs.teamwork.com/",
+  "requiredEnvVars": ["TEAMWORK_SUBDOMAIN", "TEAMWORK_API_KEY"],
+  "connector": {
+    "name": "Teamwork Projects API v3",
+    "type": "REST",
+    "baseUrl": "https://{{TEAMWORK_SUBDOMAIN}}.teamwork.com/projects/api/v3",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{TEAMWORK_API_KEY}}",
+      "password": "x"
+    }
+  },
+  "tools": [
+    {
+      "name": "teamwork_list_projects",
+      "description": "List projects. Filter by status (active, archived, current, late, upcoming, completed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "active, archived, current, late, upcoming, completed, all." },
+          "searchTerm": { "type": "string", "description": "Name search." },
+          "page": { "type": "integer", "description": "1-based." },
+          "pageSize": { "type": "integer", "description": "Max 250." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects.json",
+        "queryParams": {
+          "status": "$status",
+          "searchTerm": "$searchTerm",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "teamwork_get_project",
+      "description": "Get one project with summary metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "integer", "description": "Project ID." }
+        },
+        "required": ["project_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/projects/{project_id}.json" }
+    },
+    {
+      "name": "teamwork_create_project",
+      "description": "Create a project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Project name." },
+          "description": { "type": "string", "description": "Description." },
+          "companyId": { "type": "integer", "description": "Owning company ID." },
+          "categoryId": { "type": "integer", "description": "Category ID." },
+          "startAt": { "type": "string", "description": "YYYYMMDD." },
+          "endAt": { "type": "string", "description": "YYYYMMDD." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects.json",
+        "bodyMapping": {
+          "project": {
+            "name": "$name",
+            "description": "$description",
+            "companyId": "$companyId",
+            "categoryId": "$categoryId",
+            "startAt": "$startAt",
+            "endAt": "$endAt"
+          }
+        }
+      }
+    },
+    {
+      "name": "teamwork_list_tasks",
+      "description": "List tasks across all projects (or one). Filter by assignee, status, due date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "integer", "description": "Filter to one project." },
+          "assignedTo": { "type": "string", "description": "Comma-separated user IDs." },
+          "status": { "type": "string", "description": "completed, incomplete, all." },
+          "dueDateFrom": { "type": "string", "description": "YYYYMMDD." },
+          "dueDateTo": { "type": "string", "description": "YYYYMMDD." },
+          "page": { "type": "integer", "description": "1-based." },
+          "pageSize": { "type": "integer", "description": "Max 250." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks.json",
+        "queryParams": {
+          "projectIds": "$project_id",
+          "assignedTo": "$assignedTo",
+          "status": "$status",
+          "dueDateFrom": "$dueDateFrom",
+          "dueDateTo": "$dueDateTo",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "teamwork_get_task",
+      "description": "Get one task with all custom fields, time logs, dependencies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": { "type": "integer", "description": "Task ID." }
+        },
+        "required": ["task_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/tasks/{task_id}.json" }
+    },
+    {
+      "name": "teamwork_create_task",
+      "description": "Create a task inside a task list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasklist_id": { "type": "integer", "description": "Tasklist ID." },
+          "content": { "type": "string", "description": "Task title." },
+          "description": { "type": "string", "description": "Description (HTML)." },
+          "responsiblePartyId": { "type": "string", "description": "User ID(s), comma-separated for multi." },
+          "priority": { "type": "string", "description": "low, medium, high." },
+          "startDate": { "type": "string", "description": "YYYYMMDD." },
+          "dueDate": { "type": "string", "description": "YYYYMMDD." },
+          "estimatedMinutes": { "type": "integer", "description": "Estimated effort." }
+        },
+        "required": ["tasklist_id", "content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasklists/{tasklist_id}/tasks.json",
+        "bodyMapping": {
+          "todo-item": {
+            "content": "$content",
+            "description": "$description",
+            "responsible-party-id": "$responsiblePartyId",
+            "priority": "$priority",
+            "start-date": "$startDate",
+            "due-date": "$dueDate",
+            "estimated-minutes": "$estimatedMinutes"
+          }
+        }
+      }
+    },
+    {
+      "name": "teamwork_complete_task",
+      "description": "Mark a task complete.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": { "type": "integer", "description": "Task ID." }
+        },
+        "required": ["task_id"]
+      },
+      "endpointMapping": { "method": "PUT", "path": "/tasks/{task_id}/complete.json" }
+    },
+    {
+      "name": "teamwork_log_time",
+      "description": "Log time on a task or project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": { "type": "integer", "description": "Task ID (or use project_id)." },
+          "project_id": { "type": "integer", "description": "Project ID if no task." },
+          "person_id": { "type": "integer", "description": "User logging time." },
+          "date": { "type": "string", "description": "YYYYMMDD." },
+          "hours": { "type": "integer", "description": "Whole hours." },
+          "minutes": { "type": "integer", "description": "Whole minutes." },
+          "description": { "type": "string", "description": "Notes." },
+          "isbillable": { "type": "boolean", "description": "Billable." }
+        },
+        "required": ["person_id", "date", "hours"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/time_entries.json",
+        "bodyMapping": {
+          "time-entry": {
+            "person-id": "$person_id",
+            "date": "$date",
+            "hours": "$hours",
+            "minutes": "$minutes",
+            "description": "$description",
+            "isbillable": "$isbillable",
+            "task-id": "$task_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "teamwork_list_milestones",
+      "description": "List milestones across projects.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "integer", "description": "Filter to one project." },
+          "find": { "type": "string", "description": "all, upcoming, late, completed." },
+          "page": { "type": "integer", "description": "1-based." },
+          "pageSize": { "type": "integer", "description": "Max 250." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/milestones.json",
+        "queryParams": {
+          "projectIds": "$project_id",
+          "find": "$find",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "teamwork_list_people",
+      "description": "List users (people).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "1-based." },
+          "pageSize": { "type": "integer", "description": "Max 250." },
+          "showDeleted": { "type": "boolean", "description": "Include deleted users." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people.json",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize",
+          "showDeleted": "$showDeleted"
+        }
+      }
+    }
+  ]
+}

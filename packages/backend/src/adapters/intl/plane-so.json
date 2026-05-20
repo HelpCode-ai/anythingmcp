@@ -1,0 +1,220 @@
+{
+  "slug": "plane-so",
+  "name": "Plane",
+  "description": "Manage Plane (open-source project management) workspaces, projects, issues, cycles, modules from any AI agent. 10 tools, API key auth.",
+  "instructions": "This connector wraps the Plane REST API v1 (api.plane.so/api/v1 — or your self-hosted host).\n\n**Setup**:\n1. Log into your Plane instance → top-right avatar → **API Tokens → Create new token**.\n2. Note the **workspace slug** (the part of URLs like `app.plane.so/<slug>/projects`).\n3. Set `PLANE_API_KEY`. For self-hosted, also set `PLANE_HOST` (e.g. `https://plane.yourdomain.com`) — defaults to cloud (api.plane.so).\n\n**Authentication**: `X-API-Key: ${PLANE_API_KEY}`.\n\n**Hierarchy**: `Workspace → Project → Issue → Sub-issue`. Cycles + Modules are issue containers within a project for sprint planning / feature grouping.\n\n**Pagination**: `per_page` (max 100) + `cursor` (opaque, returned in response).\n\n**Rate limits**: 60 req/min on cloud. 429 with `Retry-After`.\n\n**Out of scope here**: workflow automation, view layout CRUD, document pages editor, the GraphQL backend used by the web app (not officially supported for third-party use).",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "plane-so",
+  "docsUrl": "https://docs.plane.so/api-reference/introduction",
+  "requiredEnvVars": ["PLANE_API_KEY"],
+  "connector": {
+    "name": "Plane API v1",
+    "type": "REST",
+    "baseUrl": "https://api.plane.so/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-Key",
+      "apiKey": "{{PLANE_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "plane_list_workspaces",
+      "description": "List all workspaces the API key can access.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/workspaces/" }
+    },
+    {
+      "name": "plane_list_projects",
+      "description": "List projects in a workspace.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_slug": { "type": "string", "description": "Workspace slug." }
+        },
+        "required": ["workspace_slug"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_slug}/projects/"
+      }
+    },
+    {
+      "name": "plane_get_project",
+      "description": "Get one project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_slug": { "type": "string", "description": "Workspace slug." },
+          "project_id": { "type": "string", "description": "Project UUID." }
+        },
+        "required": ["workspace_slug", "project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_slug}/projects/{project_id}/"
+      }
+    },
+    {
+      "name": "plane_list_issues",
+      "description": "List issues in a project. Filter by state, priority, assignee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_slug": { "type": "string", "description": "Workspace slug." },
+          "project_id": { "type": "string", "description": "Project UUID." },
+          "state": { "type": "string", "description": "Filter by state UUID." },
+          "priority": { "type": "string", "description": "urgent, high, medium, low, none." },
+          "assignees": { "type": "string", "description": "Comma-separated user UUIDs." },
+          "per_page": { "type": "integer", "description": "Max 100." },
+          "cursor": { "type": "string", "description": "Pagination cursor." }
+        },
+        "required": ["workspace_slug", "project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_slug}/projects/{project_id}/issues/",
+        "queryParams": {
+          "state": "$state",
+          "priority": "$priority",
+          "assignees": "$assignees",
+          "per_page": "$per_page",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "plane_get_issue",
+      "description": "Get one issue with full description + custom properties.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_slug": { "type": "string", "description": "Workspace slug." },
+          "project_id": { "type": "string", "description": "Project UUID." },
+          "issue_id": { "type": "string", "description": "Issue UUID." }
+        },
+        "required": ["workspace_slug", "project_id", "issue_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_slug}/projects/{project_id}/issues/{issue_id}/"
+      }
+    },
+    {
+      "name": "plane_create_issue",
+      "description": "Create an issue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_slug": { "type": "string", "description": "Workspace slug." },
+          "project_id": { "type": "string", "description": "Project UUID." },
+          "name": { "type": "string", "description": "Issue title." },
+          "description_html": { "type": "string", "description": "HTML description." },
+          "state": { "type": "string", "description": "State UUID." },
+          "priority": { "type": "string", "description": "urgent, high, medium, low, none." },
+          "assignees": { "type": "array", "description": "Array of user UUIDs." },
+          "labels": { "type": "array", "description": "Array of label UUIDs." },
+          "parent": { "type": "string", "description": "Parent issue UUID (for sub-issues)." },
+          "estimate_point": { "type": "integer", "description": "Estimate point." },
+          "start_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "target_date": { "type": "string", "description": "YYYY-MM-DD." }
+        },
+        "required": ["workspace_slug", "project_id", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workspaces/{workspace_slug}/projects/{project_id}/issues/",
+        "bodyMapping": {
+          "name": "$name",
+          "description_html": "$description_html",
+          "state": "$state",
+          "priority": "$priority",
+          "assignees": "$assignees",
+          "labels": "$labels",
+          "parent": "$parent",
+          "estimate_point": "$estimate_point",
+          "start_date": "$start_date",
+          "target_date": "$target_date"
+        }
+      }
+    },
+    {
+      "name": "plane_update_issue",
+      "description": "Update an issue (PATCH semantics).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_slug": { "type": "string", "description": "Workspace slug." },
+          "project_id": { "type": "string", "description": "Project UUID." },
+          "issue_id": { "type": "string", "description": "Issue UUID." },
+          "name": { "type": "string", "description": "New title." },
+          "state": { "type": "string", "description": "Move to state UUID." },
+          "priority": { "type": "string", "description": "New priority." },
+          "assignees": { "type": "array", "description": "Replace assignees." },
+          "description_html": { "type": "string", "description": "New HTML description." }
+        },
+        "required": ["workspace_slug", "project_id", "issue_id"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/workspaces/{workspace_slug}/projects/{project_id}/issues/{issue_id}/",
+        "bodyMapping": {
+          "name": "$name",
+          "state": "$state",
+          "priority": "$priority",
+          "assignees": "$assignees",
+          "description_html": "$description_html"
+        }
+      }
+    },
+    {
+      "name": "plane_list_states",
+      "description": "List states (issue statuses) defined in a project. Use to discover state UUIDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_slug": { "type": "string", "description": "Workspace slug." },
+          "project_id": { "type": "string", "description": "Project UUID." }
+        },
+        "required": ["workspace_slug", "project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_slug}/projects/{project_id}/states/"
+      }
+    },
+    {
+      "name": "plane_list_cycles",
+      "description": "List cycles (sprints) in a project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_slug": { "type": "string", "description": "Workspace slug." },
+          "project_id": { "type": "string", "description": "Project UUID." }
+        },
+        "required": ["workspace_slug", "project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_slug}/projects/{project_id}/cycles/"
+      }
+    },
+    {
+      "name": "plane_list_modules",
+      "description": "List modules (feature groups) in a project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_slug": { "type": "string", "description": "Workspace slug." },
+          "project_id": { "type": "string", "description": "Project UUID." }
+        },
+        "required": ["workspace_slug", "project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_slug}/projects/{project_id}/modules/"
+      }
+    }
+  ]
+}

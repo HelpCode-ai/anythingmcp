@@ -1,0 +1,223 @@
+{
+  "slug": "deel",
+  "name": "Deel",
+  "description": "Manage Deel (global EOR / contractor platform: people, contracts, invoices, payments, organizations) from any AI agent. 10 tools, Bearer token.",
+  "instructions": "This connector wraps the Deel API v2 (api.letsdeel.com/rest/v2).\n\n**Setup**:\n1. Log into https://app.deel.com → top-right avatar → **Developer Center → Create API token**.\n2. Pick scopes (read/write people, contracts, invoices, etc.).\n3. Set `DEEL_API_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${DEEL_API_TOKEN}`.\n\n**Entity model**: `Person` (worker) → `Contract` (engagement: EOR, contractor, direct employee) → `Invoice` (per pay period) → `Payment` (the disbursement). Each has its own endpoint.\n\n**Pagination**: `limit` (max 250) + `offset` (0-based). Response has `total` count.\n\n**Rate limits**: 100 req/min per token. 429 with `Retry-After`.\n\n**Out of scope here**: equity grants, expense reimbursements multi-step (upload + claim), payroll-cycle adjustments, the legacy v1 endpoints.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "deel",
+  "docsUrl": "https://developer.deel.com/reference/",
+  "requiredEnvVars": ["DEEL_API_TOKEN"],
+  "connector": {
+    "name": "Deel API v2",
+    "type": "REST",
+    "baseUrl": "https://api.letsdeel.com/rest/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{DEEL_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "deel_list_organizations",
+      "description": "List organizations the token can access.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/organizations" }
+    },
+    {
+      "name": "deel_list_people",
+      "description": "List people (workers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max 250." },
+          "offset": { "type": "integer", "description": "0-based." },
+          "name": { "type": "string", "description": "Name filter." },
+          "email": { "type": "string", "description": "Email filter." },
+          "hiring_status": { "type": "string", "description": "active, inactive." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "name": "$name",
+          "email": "$email",
+          "hiring_status": "$hiring_status"
+        }
+      }
+    },
+    {
+      "name": "deel_get_person",
+      "description": "Get one person with full profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": { "type": "string", "description": "Person hris_id (Deel public ID)." }
+        },
+        "required": ["person_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/people/{person_id}" }
+    },
+    {
+      "name": "deel_list_contracts",
+      "description": "List contracts. Filter by status (in_progress, terminated, draft), type (eor, contractor, direct_employee).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after_cursor": { "type": "string", "description": "Cursor pagination." },
+          "limit": { "type": "integer", "description": "Max 250." },
+          "types": { "type": "string", "description": "Comma-separated contract types." },
+          "statuses": { "type": "string", "description": "Comma-separated statuses." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contracts",
+        "queryParams": {
+          "after_cursor": "$after_cursor",
+          "limit": "$limit",
+          "types": "$types",
+          "statuses": "$statuses"
+        }
+      }
+    },
+    {
+      "name": "deel_get_contract",
+      "description": "Get one contract with full terms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": { "type": "string", "description": "Contract ID." }
+        },
+        "required": ["contract_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contracts/{contract_id}" }
+    },
+    {
+      "name": "deel_terminate_contract",
+      "description": "Terminate a contract.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": { "type": "string", "description": "Contract ID." },
+          "termination_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "reason": { "type": "string", "description": "Free-text termination reason." },
+          "additional_information": { "type": "string", "description": "Optional notes." }
+        },
+        "required": ["contract_id", "termination_date"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contracts/{contract_id}/terminations",
+        "bodyMapping": {
+          "termination_date": "$termination_date",
+          "reason": "$reason",
+          "additional_information": "$additional_information"
+        }
+      }
+    },
+    {
+      "name": "deel_list_invoices",
+      "description": "List invoices (per-contract pay period). Filter by date range, status (paid, awaiting_payment).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "Issued from (YYYY-MM-DD)." },
+          "to": { "type": "string", "description": "Issued to." },
+          "status": { "type": "string", "description": "paid, awaiting_payment, overdue." },
+          "limit": { "type": "integer", "description": "Max 250." },
+          "offset": { "type": "integer", "description": "0-based." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "status": "$status",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "deel_list_payments",
+      "description": "List payments (disbursements to workers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "YYYY-MM-DD." },
+          "to": { "type": "string", "description": "YYYY-MM-DD." },
+          "limit": { "type": "integer", "description": "Max 250." },
+          "offset": { "type": "integer", "description": "0-based." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "deel_list_time_offs",
+      "description": "List time-off requests (for direct employees and EOR workers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "YYYY-MM-DD." },
+          "to": { "type": "string", "description": "YYYY-MM-DD." },
+          "type": { "type": "string", "description": "Time off type." },
+          "status": { "type": "string", "description": "approved, pending, rejected." },
+          "limit": { "type": "integer", "description": "Max 250." },
+          "offset": { "type": "integer", "description": "0-based." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time-offs",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "type": "$type",
+          "status": "$status",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "deel_add_adjustment",
+      "description": "Add a one-off pay adjustment to a contract's invoice cycle (e.g. bonus, commission, deduction).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": { "type": "string", "description": "Contract ID." },
+          "amount": { "type": "number", "description": "Amount (positive=add, negative=deduct)." },
+          "description": { "type": "string", "description": "What it's for." },
+          "date": { "type": "string", "description": "Apply on (YYYY-MM-DD)." },
+          "category": { "type": "string", "description": "bonus, commission, overtime, expense, deduction, ..." }
+        },
+        "required": ["contract_id", "amount", "description", "date"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contracts/{contract_id}/adjustments",
+        "bodyMapping": {
+          "amount": "$amount",
+          "description": "$description",
+          "date": "$date",
+          "category": "$category"
+        }
+      }
+    }
+  ]
+}

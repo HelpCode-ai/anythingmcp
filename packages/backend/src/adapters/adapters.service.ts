@@ -54,6 +54,21 @@ export class AdaptersService {
     // Resolve {{VAR}} placeholders in baseUrl (e.g. weclapp tenant)
     const resolvedBaseUrl = this.resolveString(adapter.connector.baseUrl, credentials);
 
+    // Resolve {{VAR}} placeholders in static connector headers (e.g. Harvest
+    // requires a per-tenant Harvest-Account-Id header on every call).
+    const adapterHeaders = (adapter.connector as { headers?: Record<string, string> }).headers;
+    const resolvedHeaders = adapterHeaders
+      ? (this.resolveTemplate(adapterHeaders, credentials) as Record<string, string>)
+      : null;
+
+    // Persist the import credentials as envVars so the engine can use them
+    // for runtime $varname substitution inside tool bodies/queries/paths.
+    // (authConfig has its own {{VAR}} substitution; envVars covers everything
+    // outside auth/baseUrl.)
+    const envVarsToPersist = credentials && Object.keys(credentials).length > 0
+      ? (credentials as Record<string, unknown>)
+      : null;
+
     const connector = await this.prisma.connector.create({
       data: {
         userId,
@@ -64,6 +79,8 @@ export class AdaptersService {
         isActive: true,
         authType: (adapter.connector.authType as any) || 'NONE',
         authConfig: encryptedAuth,
+        headers: resolvedHeaders as any,
+        envVars: envVarsToPersist as any,
         instructions: adapter.instructions || null,
       },
     });

@@ -1,0 +1,191 @@
+{
+  "slug": "freshchat",
+  "name": "Freshchat",
+  "description": "Manage Freshchat (live chat + messaging: users, conversations, messages, channels, agents) from any AI agent. 9 tools, Bearer token.",
+  "instructions": "This connector wraps the Freshchat API v2 (per-region — api.freshchat.com/v2).\n\n**Setup**:\n1. Log into your Freshchat portal → **⚙️ → Account Settings → API Tokens → Generate Token**.\n2. Note your region — Freshchat hosts data per region: `api.freshchat.com` (US), `api.eu.freshchat.com` (EU), `api.au.freshchat.com` (AU), `api.in.freshchat.com` (IN). Change baseUrl to match.\n3. Set `FRESHCHAT_API_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${FRESHCHAT_API_TOKEN}`.\n\n**Conversation model**: `User → Conversation → Messages[]`. A conversation is associated with at most one user; messages carry actor + actor_type (user, agent, system).\n\n**Pagination**: `page` (1-based) + `items_per_page` (default 25, max 100).\n\n**Rate limits**: 60 req/min per token. 429 with `Retry-After`.\n\n**Out of scope here**: bot flow editor, IntelliAssign automation, billing.",
+  "region": "intl",
+  "category": "support",
+  "icon": "freshchat",
+  "docsUrl": "https://developers.freshchat.com/api/",
+  "requiredEnvVars": ["FRESHCHAT_API_TOKEN"],
+  "connector": {
+    "name": "Freshchat API v2",
+    "type": "REST",
+    "baseUrl": "https://api.freshchat.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FRESHCHAT_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "freshchat_list_users",
+      "description": "List users (end-customers). Filter by email or reference_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by email." },
+          "reference_id": { "type": "string", "description": "External system reference ID." },
+          "page": { "type": "integer", "description": "1-based." },
+          "items_per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "email": "$email",
+          "reference_id": "$reference_id",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    },
+    {
+      "name": "freshchat_get_user",
+      "description": "Get one user by ID with profile + properties + tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "string", "description": "User ID." }
+        },
+        "required": ["user_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/users/{user_id}" }
+    },
+    {
+      "name": "freshchat_create_user",
+      "description": "Create an end-user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": { "type": "string", "description": "First name." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "email": { "type": "string", "description": "Email." },
+          "phone": { "type": "string", "description": "Phone (E.164)." },
+          "reference_id": { "type": "string", "description": "External ID." },
+          "properties": { "type": "array", "description": "Array of {name, value} custom properties." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email": "$email",
+          "phone": "$phone",
+          "reference_id": "$reference_id",
+          "properties": "$properties"
+        }
+      }
+    },
+    {
+      "name": "freshchat_list_conversations",
+      "description": "List conversations of a user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "string", "description": "User ID." },
+          "items_per_page": { "type": "integer", "description": "Max 100." },
+          "page": { "type": "integer", "description": "1-based." }
+        },
+        "required": ["user_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/conversations",
+        "queryParams": { "items_per_page": "$items_per_page", "page": "$page" }
+      }
+    },
+    {
+      "name": "freshchat_get_conversation",
+      "description": "Get one conversation with status + assigned agent + recent messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": { "type": "string", "description": "Conversation ID." }
+        },
+        "required": ["conversation_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/conversations/{conversation_id}" }
+    },
+    {
+      "name": "freshchat_send_message",
+      "description": "Post a message into a conversation. `actor_type` = 'agent' for staff replies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": { "type": "string", "description": "Conversation ID." },
+          "message_parts": { "type": "array", "description": "Array of {text:{content:'...'}}." },
+          "actor_id": { "type": "string", "description": "Agent or user ID sending." },
+          "actor_type": { "type": "string", "description": "'agent' or 'user'." },
+          "message_type": { "type": "string", "description": "normal, private, system." }
+        },
+        "required": ["conversation_id", "message_parts", "actor_id", "actor_type"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversation_id}/messages",
+        "bodyMapping": {
+          "message_parts": "$message_parts",
+          "actor_id": "$actor_id",
+          "actor_type": "$actor_type",
+          "message_type": "$message_type"
+        }
+      }
+    },
+    {
+      "name": "freshchat_update_conversation",
+      "description": "Update a conversation's status, assigned agent, group, or tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": { "type": "string", "description": "Conversation ID." },
+          "status": { "type": "string", "description": "new, assigned, resolved, reopened." },
+          "assigned_agent_id": { "type": "string", "description": "Agent to assign." },
+          "assigned_group_id": { "type": "string", "description": "Group to assign." },
+          "properties": { "type": "object", "description": "Custom properties." }
+        },
+        "required": ["conversation_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/conversations/{conversation_id}",
+        "bodyMapping": {
+          "status": "$status",
+          "assigned_agent_id": "$assigned_agent_id",
+          "assigned_group_id": "$assigned_group_id",
+          "properties": "$properties"
+        }
+      }
+    },
+    {
+      "name": "freshchat_list_agents",
+      "description": "List agents (staff).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email filter." },
+          "page": { "type": "integer", "description": "1-based." },
+          "items_per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents",
+        "queryParams": {
+          "email": "$email",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    },
+    {
+      "name": "freshchat_list_channels",
+      "description": "List channels (topics) — the conversation routing targets.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/channels" }
+    }
+  ]
+}

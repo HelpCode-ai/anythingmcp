@@ -1,0 +1,203 @@
+{
+  "slug": "omnisend",
+  "name": "Omnisend",
+  "description": "Manage Omnisend (e-commerce marketing automation: contacts, campaigns, events, products, categories) from any AI agent. 9 tools, X-API-KEY auth.",
+  "instructions": "This connector wraps the Omnisend REST API v3 (api.omnisend.com/v3).\n\n**Setup**:\n1. Log into https://app.omnisend.com → top-right avatar → **Store settings → Integrations & API → API keys → Create API key**.\n2. Set `OMNISEND_API_KEY`.\n\n**Authentication**: `X-API-KEY: ${OMNISEND_API_KEY}`.\n\n**Contact statuses**: `subscribed`, `unsubscribed`, `nonSubscribed` — per channel (email vs SMS).\n\n**Custom events**: trigger automations via the events endpoint. Send an event with name + email/contactID + properties; Omnisend matches it to active workflows.\n\n**Pagination**: cursor-based via `paging.next`. `limit` (max 250).\n\n**Rate limits**: 400 req/min per token. 429 with `Retry-After`.\n\n**Out of scope here**: workflow editor, SMS sender ID setup, product feed sync (use the dedicated `/products` endpoint), GDPR-erasure flow.",
+  "region": "intl",
+  "category": "email",
+  "icon": "omnisend",
+  "docsUrl": "https://api-docs.omnisend.com/",
+  "requiredEnvVars": ["OMNISEND_API_KEY"],
+  "connector": {
+    "name": "Omnisend API v3",
+    "type": "REST",
+    "baseUrl": "https://api.omnisend.com/v3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{OMNISEND_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "omnisend_list_contacts",
+      "description": "List contacts. Filter by email, status, channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by email." },
+          "status": { "type": "string", "description": "subscribed, unsubscribed, nonSubscribed." },
+          "channel": { "type": "string", "description": "email or sms." },
+          "limit": { "type": "integer", "description": "Max 250." },
+          "offset": { "type": "integer", "description": "0-based offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "email": "$email",
+          "status": "$status",
+          "channel": "$channel",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "omnisend_get_contact",
+      "description": "Get one contact by Omnisend contactID OR email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": { "type": "string", "description": "Contact ID." }
+        },
+        "required": ["contact_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/{contact_id}" }
+    },
+    {
+      "name": "omnisend_upsert_contact",
+      "description": "Create or update a contact. Required: `identifiers` (array of {type: 'email'|'phone', id, channels: {email: {status}}}). `tags`, `customProperties` optional.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifiers": { "type": "array", "description": "Array of identifier objects." },
+          "firstName": { "type": "string", "description": "First name." },
+          "lastName": { "type": "string", "description": "Last name." },
+          "tags": { "type": "array", "description": "Array of tag strings." },
+          "customProperties": { "type": "object", "description": "Free-form custom field map." },
+          "country": { "type": "string", "description": "ISO 3166-1 alpha-2 country code." }
+        },
+        "required": ["identifiers"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "identifiers": "$identifiers",
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "tags": "$tags",
+          "customProperties": "$customProperties",
+          "country": "$country"
+        }
+      }
+    },
+    {
+      "name": "omnisend_trigger_event",
+      "description": "Trigger a custom event for a contact. Used by Omnisend automations as a workflow start node.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventName": { "type": "string", "description": "Custom event name (matches workflow trigger)." },
+          "email": { "type": "string", "description": "Contact email." },
+          "phone": { "type": "string", "description": "Contact phone." },
+          "contactID": { "type": "string", "description": "Omnisend contact ID (alternative to email/phone)." },
+          "fields": { "type": "object", "description": "Event payload — free-form key/value." }
+        },
+        "required": ["eventName"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events",
+        "bodyMapping": {
+          "eventName": "$eventName",
+          "email": "$email",
+          "phone": "$phone",
+          "contactID": "$contactID",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "omnisend_list_campaigns",
+      "description": "List campaigns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "draft, sending, sent, paused, scheduled, ..." },
+          "type": { "type": "string", "description": "standard, ab, sms." },
+          "limit": { "type": "integer", "description": "Max 250." },
+          "offset": { "type": "integer", "description": "0-based." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "queryParams": {
+          "status": "$status",
+          "type": "$type",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "omnisend_get_campaign",
+      "description": "Get one campaign with stats.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": { "type": "string", "description": "Campaign ID." }
+        },
+        "required": ["campaign_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/campaigns/{campaign_id}" }
+    },
+    {
+      "name": "omnisend_list_products",
+      "description": "List products in the Omnisend catalog (used by product-recommendation blocks).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max 250." },
+          "offset": { "type": "integer", "description": "0-based." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": { "limit": "$limit", "offset": "$offset" }
+      }
+    },
+    {
+      "name": "omnisend_upsert_product",
+      "description": "Add or update a product in the catalog.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productID": { "type": "string", "description": "Your internal product ID." },
+          "title": { "type": "string", "description": "Product title." },
+          "status": { "type": "string", "description": "inStock, outOfStock, notAvailable." },
+          "description": { "type": "string", "description": "Description." },
+          "currency": { "type": "string", "description": "ISO 4217." },
+          "productUrl": { "type": "string", "description": "Public URL." },
+          "imageUrl": { "type": "string", "description": "Product image URL." },
+          "variants": { "type": "array", "description": "Array of variant objects." }
+        },
+        "required": ["productID", "title"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "productID": "$productID",
+          "title": "$title",
+          "status": "$status",
+          "description": "$description",
+          "currency": "$currency",
+          "productUrl": "$productUrl",
+          "imageUrl": "$imageUrl",
+          "variants": "$variants"
+        }
+      }
+    },
+    {
+      "name": "omnisend_list_categories",
+      "description": "List product categories.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/categories" }
+    }
+  ]
+}

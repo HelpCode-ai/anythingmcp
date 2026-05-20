@@ -1,0 +1,165 @@
+{
+  "slug": "workable",
+  "name": "Workable",
+  "description": "Manage Workable ATS (candidates, jobs, members, stages, comments) from any AI agent. 9 tools, Bearer token auth.",
+  "instructions": "This connector wraps the Workable Hiring API (per-subdomain — yoursub.workable.com/spi/v3).\n\n**Setup**:\n1. Log into your Workable account → top-right avatar → **Integrations → Workable API → Generate access token**.\n2. Note your subdomain (the part before `.workable.com`).\n3. Set `WORKABLE_SUBDOMAIN` and `WORKABLE_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${WORKABLE_ACCESS_TOKEN}`.\n\n**Per-tenant baseUrl**: `https://${WORKABLE_SUBDOMAIN}.workable.com/spi/v3`. Substituted at import time.\n\n**Job 'shortcode'**: Workable identifies jobs by short hash strings (`AC123ABCDE`) in URLs/API. Use `workable_list_jobs` to discover.\n\n**Candidate disqualification**: writes use a stage `disqualified` and a `disqualification_reason_id`. Reasons are configured per-account.\n\n**Pagination**: cursor-based — response has `paging.next` (full URL). Pass back the URL's `since_id` or use the full cursor query.\n\n**Rate limits**: 300 req/min per account. 429 → exponential.\n\n**Out of scope here**: assessments, video interviews, requisitions, payroll fields (Workable HR Cloud is separate).",
+  "region": "intl",
+  "category": "hr",
+  "icon": "workable",
+  "docsUrl": "https://workable.readme.io/reference/",
+  "requiredEnvVars": ["WORKABLE_SUBDOMAIN", "WORKABLE_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Workable Hiring API v3",
+    "type": "REST",
+    "baseUrl": "https://{{WORKABLE_SUBDOMAIN}}.workable.com/spi/v3",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WORKABLE_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "workable_account_info",
+      "description": "Returns the account info (subdomain, name, summary).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/" }
+    },
+    {
+      "name": "workable_list_jobs",
+      "description": "List jobs. Filter by state (published, draft, closed, archived).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": { "type": "string", "description": "published, draft, closed, archived." },
+          "department": { "type": "string", "description": "Filter by department." },
+          "include_fields": { "type": "string", "description": "Comma-separated extras: description, requirements, benefits." },
+          "limit": { "type": "integer", "description": "Max per page (100 default)." },
+          "since_id": { "type": "string", "description": "Cursor — only newer than this job shortcode." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs",
+        "queryParams": {
+          "state": "$state",
+          "department": "$department",
+          "include_fields": "$include_fields",
+          "limit": "$limit",
+          "since_id": "$since_id"
+        }
+      }
+    },
+    {
+      "name": "workable_get_job",
+      "description": "Get a single job by shortcode with full description + requirements + benefits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shortcode": { "type": "string", "description": "Job shortcode (e.g. AC123ABCDE)." }
+        },
+        "required": ["shortcode"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/jobs/{shortcode}" }
+    },
+    {
+      "name": "workable_list_candidates",
+      "description": "List candidates for a job. Filter by stage, state, created date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shortcode": { "type": "string", "description": "Job shortcode." },
+          "stage": { "type": "string", "description": "Stage slug to filter (e.g. 'interview')." },
+          "state": { "type": "string", "description": "active, hired, disqualified." },
+          "limit": { "type": "integer", "description": "Max per page." },
+          "since_id": { "type": "string", "description": "Cursor." }
+        },
+        "required": ["shortcode"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/{shortcode}/candidates",
+        "queryParams": {
+          "stage": "$stage",
+          "state": "$state",
+          "limit": "$limit",
+          "since_id": "$since_id"
+        }
+      }
+    },
+    {
+      "name": "workable_get_candidate",
+      "description": "Get one candidate by ID with full profile + answers to job questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": { "type": "string", "description": "Candidate ID." }
+        },
+        "required": ["candidate_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/candidates/{candidate_id}" }
+    },
+    {
+      "name": "workable_create_candidate",
+      "description": "Create a candidate on a job (sourced / referral). Required: candidate.firstname, candidate.lastname, candidate.email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shortcode": { "type": "string", "description": "Job shortcode." },
+          "sourced": { "type": "boolean", "description": "If true, marks as sourced; otherwise applied." },
+          "candidate": { "type": "object", "description": "Candidate object {firstname, lastname, email, phone, address, headline, summary, resume_url, ...}." }
+        },
+        "required": ["shortcode", "candidate"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobs/{shortcode}/candidates",
+        "bodyMapping": { "sourced": "$sourced", "candidate": "$candidate" }
+      }
+    },
+    {
+      "name": "workable_move_candidate_stage",
+      "description": "Move a candidate to a different pipeline stage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": { "type": "string", "description": "Candidate ID." },
+          "target_stage": { "type": "string", "description": "Target stage slug." },
+          "member_id": { "type": "string", "description": "Member performing the move." }
+        },
+        "required": ["candidate_id", "target_stage"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidates/{candidate_id}/move",
+        "bodyMapping": { "target_stage": "$target_stage", "member_id": "$member_id" }
+      }
+    },
+    {
+      "name": "workable_disqualify_candidate",
+      "description": "Disqualify (reject) a candidate with a reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": { "type": "string", "description": "Candidate ID." },
+          "disqualification_reason_id": { "type": "string", "description": "Reason ID configured in Workable." },
+          "member_id": { "type": "string", "description": "Member performing the disqualification." }
+        },
+        "required": ["candidate_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidates/{candidate_id}/disqualify",
+        "bodyMapping": {
+          "disqualification_reason_id": "$disqualification_reason_id",
+          "member_id": "$member_id"
+        }
+      }
+    },
+    {
+      "name": "workable_list_stages",
+      "description": "List pipeline stages defined in the account.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/stages" }
+    }
+  ]
+}

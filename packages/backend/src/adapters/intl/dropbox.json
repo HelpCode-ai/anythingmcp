@@ -1,0 +1,209 @@
+{
+  "slug": "dropbox",
+  "name": "Dropbox",
+  "description": "Manage Dropbox (file storage: list, download, upload, move, copy, delete, search, share, metadata) from any AI agent. 10 tools, OAuth2 token.",
+  "instructions": "This connector wraps the Dropbox API v2 (api.dropboxapi.com).\n\n**Setup — OAuth2**:\n1. Register at https://www.dropbox.com/developers/apps → **Create app** → 'Scoped access' → 'App folder' or 'Full Dropbox' depending on need.\n2. Add the scopes you need (files.metadata.read, files.content.read, files.content.write, sharing.write, ...).\n3. Generate a **Refresh token** via OAuth flow with `token_access_type=offline`.\n4. Set `DROPBOX_CLIENT_ID`, `DROPBOX_CLIENT_SECRET`, `DROPBOX_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 refresh handled by engine. Sends `Authorization: Bearer ACCESS_TOKEN`.\n\n**Two API hosts**: most endpoints live at `api.dropboxapi.com/2`. Content endpoints (upload/download) use `content.dropboxapi.com/2` — out of scope here for upload (multipart streaming). Use the link-based pattern: have content already accessible via URL → use `dropbox_save_url` to ingest, or use external upload then create_shared_link to share.\n\n**Path format**: paths use `/Folder/Subfolder/File.txt` (case-insensitive, no leading drive). Root is empty string or `/`. For App-folder apps, paths are relative to the app folder.\n\n**Pagination**: most list endpoints use a `cursor` returned in the response. Pass back as `cursor` to continue.\n\n**Rate limits**: per-endpoint quotas, generally 100-1000 req/min. 429 with `Retry-After`.\n\n**Out of scope here**: direct file upload (multipart, separate API), Paper docs, team admin, the legacy v1 API.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "dropbox",
+  "docsUrl": "https://www.dropbox.com/developers/documentation/http/documentation",
+  "requiredEnvVars": ["DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET", "DROPBOX_REFRESH_TOKEN"],
+  "connector": {
+    "name": "Dropbox API v2",
+    "type": "REST",
+    "baseUrl": "https://api.dropboxapi.com/2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{DROPBOX_CLIENT_ID}}",
+      "clientSecret": "{{DROPBOX_CLIENT_SECRET}}",
+      "refreshToken": "{{DROPBOX_REFRESH_TOKEN}}",
+      "tokenUrl": "https://api.dropboxapi.com/oauth2/token"
+    }
+  },
+  "tools": [
+    {
+      "name": "dropbox_get_current_account",
+      "description": "Return the authenticated user's account (account_id, name, email, country, locale, account_type).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/get_current_account",
+        "bodyMapping": {}
+      }
+    },
+    {
+      "name": "dropbox_list_folder",
+      "description": "List contents of a folder. Use `recursive=true` to walk subfolders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Path like '/My Folder' or '' for root." },
+          "recursive": { "type": "boolean", "description": "Walk subfolders." },
+          "limit": { "type": "integer", "description": "Max per page (default 2000)." },
+          "include_deleted": { "type": "boolean", "description": "Include deleted entries." }
+        },
+        "required": ["path"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/list_folder",
+        "bodyMapping": {
+          "path": "$path",
+          "recursive": "$recursive",
+          "limit": "$limit",
+          "include_deleted": "$include_deleted"
+        }
+      }
+    },
+    {
+      "name": "dropbox_list_folder_continue",
+      "description": "Continue a list_folder cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": { "type": "string", "description": "Cursor from previous response." }
+        },
+        "required": ["cursor"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/list_folder/continue",
+        "bodyMapping": { "cursor": "$cursor" }
+      }
+    },
+    {
+      "name": "dropbox_get_metadata",
+      "description": "Get metadata for a single file/folder at a path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Path." },
+          "include_deleted": { "type": "boolean", "description": "Include if deleted." }
+        },
+        "required": ["path"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/get_metadata",
+        "bodyMapping": { "path": "$path", "include_deleted": "$include_deleted" }
+      }
+    },
+    {
+      "name": "dropbox_search",
+      "description": "Search files by query within a path. Filter by file extension, category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query." },
+          "path": { "type": "string", "description": "Restrict to this folder ('' for root)." },
+          "max_results": { "type": "integer", "description": "Default 100, max 1000." },
+          "file_extensions": { "type": "array", "description": "Array of extensions like ['pdf','docx']." },
+          "file_categories": { "type": "array", "description": "Array: image, document, pdf, spreadsheet, presentation, audio, video, folder, ..." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/search_v2",
+        "bodyMapping": {
+          "query": "$query",
+          "options": {
+            "path": "$path",
+            "max_results": "$max_results",
+            "file_extensions": "$file_extensions",
+            "file_categories": "$file_categories"
+          }
+        }
+      }
+    },
+    {
+      "name": "dropbox_create_folder",
+      "description": "Create a folder at a path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Folder path to create." },
+          "autorename": { "type": "boolean", "description": "If true, append a counter on conflict." }
+        },
+        "required": ["path"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/create_folder_v2",
+        "bodyMapping": { "path": "$path", "autorename": "$autorename" }
+      }
+    },
+    {
+      "name": "dropbox_move",
+      "description": "Move a file/folder to a new path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_path": { "type": "string", "description": "Source path." },
+          "to_path": { "type": "string", "description": "Destination path." },
+          "autorename": { "type": "boolean", "description": "Append counter on conflict." }
+        },
+        "required": ["from_path", "to_path"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/move_v2",
+        "bodyMapping": {
+          "from_path": "$from_path",
+          "to_path": "$to_path",
+          "autorename": "$autorename"
+        }
+      }
+    },
+    {
+      "name": "dropbox_copy",
+      "description": "Copy a file/folder to a new path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_path": { "type": "string", "description": "Source path." },
+          "to_path": { "type": "string", "description": "Destination path." }
+        },
+        "required": ["from_path", "to_path"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/copy_v2",
+        "bodyMapping": { "from_path": "$from_path", "to_path": "$to_path" }
+      }
+    },
+    {
+      "name": "dropbox_delete",
+      "description": "Delete a file/folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Path to delete." }
+        },
+        "required": ["path"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/delete_v2",
+        "bodyMapping": { "path": "$path" }
+      }
+    },
+    {
+      "name": "dropbox_create_shared_link",
+      "description": "Create a public shared link for a file/folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Path to share." },
+          "settings": { "type": "object", "description": "{requested_visibility:'public'|'team_only'|'password', link_password:'...', expires:'<ISO>'}." }
+        },
+        "required": ["path"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sharing/create_shared_link_with_settings",
+        "bodyMapping": { "path": "$path", "settings": "$settings" }
+      }
+    }
+  ]
+}

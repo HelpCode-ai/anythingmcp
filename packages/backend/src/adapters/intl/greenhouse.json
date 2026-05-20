@@ -1,0 +1,224 @@
+{
+  "slug": "greenhouse",
+  "name": "Greenhouse",
+  "description": "Manage Greenhouse (ATS recruiting: candidates, applications, jobs, scorecards, offers) from any AI agent. 10 tools, basic-auth.",
+  "instructions": "This connector wraps the Greenhouse Harvest API v1 (harvest.greenhouse.io/v1).\n\n**Setup**:\n1. In Greenhouse → **⚙️ Configure → Dev Center → API Credential Management → Create New API Key**.\n2. Type: **Harvest**. Permissions: pick what you need (read candidates/applications/jobs minimum; write for create endpoints).\n3. Set `GREENHOUSE_API_KEY`.\n\n**Authentication**: HTTP Basic — API key as username, empty password.\n\n**On-Behalf-Of header**: write endpoints REQUIRE `On-Behalf-Of: <user_id>` to attribute the action to a specific Greenhouse user. Pass `on_behalf_of` parameter when writing.\n\n**Candidate model**: a `Candidate` is the person; an `Application` is their candidacy to a specific Job. One candidate can have many applications. Scorecards, interviews, and offers all hang off Application.\n\n**Pagination**: `per_page` (max 500) + `page` (1-based). Total pages in `Link` header.\n\n**Rate limits**: 50 req/10s per API key. 429 with `Retry-After`.\n\n**Out of scope here**: candidate-survey responses, EEOC fields beyond list, custom-org chart navigation, the separate Partner / Job Board / Onboarding APIs (each have their own keys).",
+  "region": "intl",
+  "category": "hr",
+  "icon": "greenhouse",
+  "docsUrl": "https://developers.greenhouse.io/harvest.html",
+  "requiredEnvVars": ["GREENHOUSE_API_KEY"],
+  "connector": {
+    "name": "Greenhouse Harvest API v1",
+    "type": "REST",
+    "baseUrl": "https://harvest.greenhouse.io/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{GREENHOUSE_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "greenhouse_list_candidates",
+      "description": "List candidates. Filter by created/updated date, job, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": { "type": "integer", "description": "Max 500." },
+          "page": { "type": "integer", "description": "1-based." },
+          "created_after": { "type": "string", "description": "ISO 8601 datetime." },
+          "updated_after": { "type": "string", "description": "ISO 8601." },
+          "job_id": { "type": "integer", "description": "Filter to candidates with an application on this job." },
+          "email": { "type": "string", "description": "Filter by primary email." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/candidates",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page",
+          "created_after": "$created_after",
+          "updated_after": "$updated_after",
+          "job_id": "$job_id",
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "greenhouse_get_candidate",
+      "description": "Get one candidate with all applications + custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": { "type": "integer", "description": "Candidate ID." }
+        },
+        "required": ["candidate_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/candidates/{candidate_id}" }
+    },
+    {
+      "name": "greenhouse_create_candidate",
+      "description": "Create a candidate (+ optionally an application).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": { "type": "string", "description": "First name." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "email_addresses": { "type": "array", "description": "Array of {value, type:'personal'|'work'}." },
+          "phone_numbers": { "type": "array", "description": "Array of {value, type}." },
+          "applications": { "type": "array", "description": "Array of {job_id, source_id?, initial_stage_id?}." },
+          "on_behalf_of": { "type": "integer", "description": "Greenhouse user ID to attribute the create to." }
+        },
+        "required": ["first_name", "last_name", "on_behalf_of"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidates",
+        "headers": { "On-Behalf-Of": "${on_behalf_of}" },
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email_addresses": "$email_addresses",
+          "phone_numbers": "$phone_numbers",
+          "applications": "$applications"
+        }
+      }
+    },
+    {
+      "name": "greenhouse_list_applications",
+      "description": "List applications. Filter by candidate, job, status (active, hired, rejected).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": { "type": "integer", "description": "Filter to one candidate." },
+          "job_id": { "type": "integer", "description": "Filter to one job." },
+          "status": { "type": "string", "description": "active, rejected, hired, converted." },
+          "per_page": { "type": "integer", "description": "Max 500." },
+          "page": { "type": "integer", "description": "1-based." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/applications",
+        "queryParams": {
+          "candidate_id": "$candidate_id",
+          "job_id": "$job_id",
+          "status": "$status",
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "greenhouse_advance_application",
+      "description": "Move an application to the next pipeline stage. Optionally specify `to_stage_id` to skip stages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": { "type": "integer", "description": "Application ID." },
+          "on_behalf_of": { "type": "integer", "description": "Greenhouse user ID." },
+          "from_stage_id": { "type": "integer", "description": "Current stage (defensive concurrency check)." },
+          "to_stage_id": { "type": "integer", "description": "Target stage. Omit to advance one." }
+        },
+        "required": ["application_id", "on_behalf_of"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/applications/{application_id}/advance",
+        "headers": { "On-Behalf-Of": "${on_behalf_of}" },
+        "bodyMapping": { "from_stage_id": "$from_stage_id", "to_stage_id": "$to_stage_id" }
+      }
+    },
+    {
+      "name": "greenhouse_reject_application",
+      "description": "Reject an application with a reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": { "type": "integer", "description": "Application ID." },
+          "on_behalf_of": { "type": "integer", "description": "Greenhouse user ID." },
+          "rejection_reason_id": { "type": "integer", "description": "Rejection reason ID." },
+          "notes": { "type": "string", "description": "Optional notes visible to recruiters." }
+        },
+        "required": ["application_id", "on_behalf_of", "rejection_reason_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/applications/{application_id}/reject",
+        "headers": { "On-Behalf-Of": "${on_behalf_of}" },
+        "bodyMapping": { "rejection_reason_id": "$rejection_reason_id", "notes": "$notes" }
+      }
+    },
+    {
+      "name": "greenhouse_list_jobs",
+      "description": "List jobs. Filter by status (open, closed, draft), department.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "open, closed, draft." },
+          "department_id": { "type": "integer", "description": "Filter by department." },
+          "per_page": { "type": "integer", "description": "Max 500." },
+          "page": { "type": "integer", "description": "1-based." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs",
+        "queryParams": {
+          "status": "$status",
+          "department_id": "$department_id",
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "greenhouse_get_job",
+      "description": "Get one job with full job_post + hiring team + openings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "integer", "description": "Job ID." }
+        },
+        "required": ["job_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/jobs/{job_id}" }
+    },
+    {
+      "name": "greenhouse_list_scorecards",
+      "description": "List scorecards for an application.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_id": { "type": "integer", "description": "Application ID." },
+          "per_page": { "type": "integer", "description": "Max 500." }
+        },
+        "required": ["application_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/applications/{application_id}/scorecards",
+        "queryParams": { "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "greenhouse_list_users",
+      "description": "List Greenhouse users (recruiters, interviewers, etc.).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": { "type": "integer", "description": "Max 500." },
+          "page": { "type": "integer", "description": "1-based." },
+          "email": { "type": "string", "description": "Filter by email." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": { "per_page": "$per_page", "page": "$page", "email": "$email" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,182 @@
+{
+  "slug": "sage-business-cloud",
+  "name": "Sage Business Cloud Accounting",
+  "description": "Manage Sage Business Cloud Accounting (contacts, products, invoices, bank accounts, transactions) from any AI agent. 9 tools, OAuth2 auth.",
+  "instructions": "This connector wraps the Sage Business Cloud Accounting API v3.1 (api.accounting.sage.com).\n\n**Setup — OAuth2**:\n1. Register at https://developer.sage.com/accounting → **Create app**. Set callback URL.\n2. Complete the auth flow at `https://www.sageone.com/oauth2/auth/central?response_type=code&client_id=...&redirect_uri=...&scope=full_access&country=gb` (use the country code matching your Sage subscription — gb, us, ca, de, fr, ie, es).\n3. Exchange the code at `https://oauth.accounting.sage.com/token`.\n4. Set `SAGE_CLIENT_ID`, `SAGE_CLIENT_SECRET`, `SAGE_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 — engine handles refresh. Sends `Authorization: Bearer ${ACCESS_TOKEN}`.\n\n**Business ID header**: Sage scopes everything to a business. Pass `X-Business: <BUSINESS_ID>` header on each call OR rely on the default business of the user. To discover IDs: `GET /v3.1/businesses`.\n\n**Pagination**: `page` (1-based) + `items_per_page` (max 200).\n\n**Rate limits**: 100 req/min per token, 10k/day. 429 with `Retry-After`.\n\n**Out of scope here**: VAT return submission, Stripe-connect setup, multi-currency journal lines beyond standard, asset register.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "sage-business-cloud",
+  "docsUrl": "https://developer.sage.com/accounting/reference/",
+  "requiredEnvVars": ["SAGE_CLIENT_ID", "SAGE_CLIENT_SECRET", "SAGE_REFRESH_TOKEN"],
+  "connector": {
+    "name": "Sage Business Cloud Accounting v3.1",
+    "type": "REST",
+    "baseUrl": "https://api.accounting.sage.com/v3.1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{SAGE_CLIENT_ID}}",
+      "clientSecret": "{{SAGE_CLIENT_SECRET}}",
+      "refreshToken": "{{SAGE_REFRESH_TOKEN}}",
+      "tokenUrl": "https://oauth.accounting.sage.com/token"
+    }
+  },
+  "tools": [
+    {
+      "name": "sage_list_businesses",
+      "description": "List all businesses the authenticated user can access. Use this first to discover business IDs.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/businesses" }
+    },
+    {
+      "name": "sage_list_contacts",
+      "description": "List contacts (customers + vendors).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string", "description": "Name/email substring search." },
+          "contact_type_id": { "type": "string", "description": "Filter: CUSTOMER, VENDOR." },
+          "page": { "type": "integer", "description": "1-based." },
+          "items_per_page": { "type": "integer", "description": "Max 200." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "search": "$search",
+          "contact_type_id": "$contact_type_id",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    },
+    {
+      "name": "sage_get_contact",
+      "description": "Get one contact by ID with full address + tax info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Contact ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/{id}" }
+    },
+    {
+      "name": "sage_create_contact",
+      "description": "Create a contact. `contact_type_ids` is an array of contact types.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Contact name." },
+          "contact_type_ids": { "type": "array", "description": "Array of 'CUSTOMER' / 'VENDOR'." },
+          "email": { "type": "string", "description": "Email." },
+          "main_address": { "type": "object", "description": "{address_type_id, address_line_1, city, postal_code, country_id}." }
+        },
+        "required": ["name", "contact_type_ids"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "contact": {
+            "name": "$name",
+            "contact_type_ids": "$contact_type_ids",
+            "email": "$email",
+            "main_address": "$main_address"
+          }
+        }
+      }
+    },
+    {
+      "name": "sage_list_sales_invoices",
+      "description": "List sales (customer) invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": { "type": "string", "description": "Filter by customer." },
+          "from_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "to_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "status_id": { "type": "string", "description": "DRAFT, COMPLETE, VOIDED." },
+          "page": { "type": "integer", "description": "1-based." },
+          "items_per_page": { "type": "integer", "description": "Max 200." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales_invoices",
+        "queryParams": {
+          "contact_id": "$contact_id",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "status_id": "$status_id",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    },
+    {
+      "name": "sage_get_sales_invoice",
+      "description": "Get one sales invoice with lines + applied payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Invoice ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/sales_invoices/{id}" }
+    },
+    {
+      "name": "sage_list_products",
+      "description": "List products and services.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string", "description": "Name search." },
+          "page": { "type": "integer", "description": "1-based." },
+          "items_per_page": { "type": "integer", "description": "Max 200." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "items_per_page": "$items_per_page"
+        }
+      }
+    },
+    {
+      "name": "sage_list_bank_accounts",
+      "description": "List bank accounts.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/bank_accounts" }
+    },
+    {
+      "name": "sage_list_transactions",
+      "description": "List bank transactions on an account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bank_account_id": { "type": "string", "description": "Bank account ID." },
+          "from_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "to_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "page": { "type": "integer", "description": "1-based." }
+        },
+        "required": ["bank_account_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bank_transactions",
+        "queryParams": {
+          "bank_account_id": "$bank_account_id",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "page": "$page"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,152 @@
+{
+  "slug": "kashflow",
+  "name": "KashFlow",
+  "description": "Manage KashFlow (UK accounting) customers, suppliers, invoices, receipts, products via SOAP envelope from any AI agent. 8 tools, embedded-auth.",
+  "instructions": "This connector wraps the KashFlow REST API (securedwebapp.com/api).\n\n**Setup**:\n1. Log into https://securedwebapp.com → **Settings → API → Enable API access**.\n2. Note your Username + API password (separate from your login password).\n3. Set `KASHFLOW_USERNAME` and `KASHFLOW_PASSWORD`.\n\n**Authentication**: KashFlow uses a REST API with username + password in the URL path: `/api/v2/{username}/{password}/<endpoint>`. The adapter substitutes both via runtime envVars — the credentials never appear in query string or body.\n\n**API surface**: KashFlow exposes only a slim subset of the SOAP API as REST: customers, suppliers, invoices (CRUD), receipts, products. For features missing here (nominal codes, journals, projects) you'd need to call the SOAP endpoint directly — out of scope.\n\n**Pagination**: most list endpoints return a max of 100; pass `from` / `to` IDs to page.\n\n**Rate limits**: 60 req/min per account. 429 → back off 1s.\n\n**Out of scope here**: payroll, CIS, mileage logs, batch journals.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "kashflow",
+  "docsUrl": "https://www.kashflow.com/developers/",
+  "requiredEnvVars": ["KASHFLOW_USERNAME", "KASHFLOW_PASSWORD"],
+  "connector": {
+    "name": "KashFlow REST API v2",
+    "type": "REST",
+    "baseUrl": "https://securedwebapp.com/api/v2",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "kashflow_list_customers",
+      "description": "List customers.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{KASHFLOW_USERNAME}/{KASHFLOW_PASSWORD}/customers"
+      }
+    },
+    {
+      "name": "kashflow_get_customer",
+      "description": "Get one customer by KashFlow CustomerID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": { "type": "integer", "description": "CustomerID." }
+        },
+        "required": ["customer_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{KASHFLOW_USERNAME}/{KASHFLOW_PASSWORD}/customers/{customer_id}"
+      }
+    },
+    {
+      "name": "kashflow_create_customer",
+      "description": "Create a customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string", "description": "Display name." },
+          "Code": { "type": "string", "description": "Internal code." },
+          "Email": { "type": "string", "description": "Email." },
+          "Telephone": { "type": "string", "description": "Phone." },
+          "Address1": { "type": "string", "description": "Address line 1." },
+          "Address2": { "type": "string", "description": "Address line 2." },
+          "Address3": { "type": "string", "description": "Town." },
+          "Address4": { "type": "string", "description": "County." },
+          "Postcode": { "type": "string", "description": "Postcode." },
+          "CountryCode": { "type": "string", "description": "ISO 3166-1 alpha-2." }
+        },
+        "required": ["Name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{KASHFLOW_USERNAME}/{KASHFLOW_PASSWORD}/customers",
+        "bodyMapping": {
+          "Name": "$Name",
+          "Code": "$Code",
+          "Email": "$Email",
+          "Telephone": "$Telephone",
+          "Address1": "$Address1",
+          "Address2": "$Address2",
+          "Address3": "$Address3",
+          "Address4": "$Address4",
+          "Postcode": "$Postcode",
+          "CountryCode": "$CountryCode"
+        }
+      }
+    },
+    {
+      "name": "kashflow_list_suppliers",
+      "description": "List suppliers.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{KASHFLOW_USERNAME}/{KASHFLOW_PASSWORD}/suppliers"
+      }
+    },
+    {
+      "name": "kashflow_list_invoices",
+      "description": "List sales invoices.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{KASHFLOW_USERNAME}/{KASHFLOW_PASSWORD}/invoices"
+      }
+    },
+    {
+      "name": "kashflow_get_invoice",
+      "description": "Get a single invoice with line items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": { "type": "integer", "description": "InvoiceID." }
+        },
+        "required": ["invoice_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{KASHFLOW_USERNAME}/{KASHFLOW_PASSWORD}/invoices/{invoice_id}"
+      }
+    },
+    {
+      "name": "kashflow_create_invoice",
+      "description": "Create a sales invoice. `Lines` is an array of {Quantity, Description, Rate, ChargeType, VatRate, VatAmount, ProductID}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "CustomerID": { "type": "integer", "description": "Customer ID." },
+          "InvoiceDate": { "type": "string", "description": "ISO 8601 date." },
+          "DueDate": { "type": "string", "description": "ISO 8601 date." },
+          "InvoiceNumber": { "type": "integer", "description": "Invoice number (set 0 to auto-allocate)." },
+          "Lines": { "type": "array", "description": "Line items." },
+          "CustomerReference": { "type": "string", "description": "Customer PO ref." },
+          "ProjectID": { "type": "integer", "description": "Project ID (optional)." }
+        },
+        "required": ["CustomerID", "InvoiceDate", "Lines"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{KASHFLOW_USERNAME}/{KASHFLOW_PASSWORD}/invoices",
+        "bodyMapping": {
+          "CustomerID": "$CustomerID",
+          "InvoiceDate": "$InvoiceDate",
+          "DueDate": "$DueDate",
+          "InvoiceNumber": "$InvoiceNumber",
+          "Lines": "$Lines",
+          "CustomerReference": "$CustomerReference",
+          "ProjectID": "$ProjectID"
+        }
+      }
+    },
+    {
+      "name": "kashflow_list_products",
+      "description": "List products / services.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{KASHFLOW_USERNAME}/{KASHFLOW_PASSWORD}/products"
+      }
+    }
+  ]
+}
