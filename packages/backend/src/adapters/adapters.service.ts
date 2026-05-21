@@ -82,6 +82,9 @@ export class AdaptersService {
         headers: resolvedHeaders as any,
         envVars: envVarsToPersist as any,
         instructions: adapter.instructions || null,
+        // Persist the source adapter slug so the UI can resolve the brand
+        // logo (via resolveAdapterIcon) even after the connector is renamed.
+        config: { adapterSlug: slug },
       },
     });
 

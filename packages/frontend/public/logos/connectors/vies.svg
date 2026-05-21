@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="10" fill="#003399"/>
+  <g fill="#FFCC00">
+    <circle cx="32" cy="14" r="1.6"/>
+    <circle cx="42" cy="17" r="1.6"/>
+    <circle cx="48" cy="25" r="1.6"/>
+    <circle cx="48" cy="35" r="1.6"/>
+    <circle cx="42" cy="43" r="1.6"/>
+    <circle cx="32" cy="46" r="1.6"/>
+    <circle cx="22" cy="43" r="1.6"/>
+    <circle cx="16" cy="35" r="1.6"/>
+    <circle cx="16" cy="25" r="1.6"/>
+    <circle cx="22" cy="17" r="1.6"/>
+  </g>
+  <text x="32" y="36" text-anchor="middle" font-family="-apple-system,sans-serif" font-weight="800" font-size="9" letter-spacing="0.5" fill="#fff">VAT</text>
+</svg>

@@ -9,6 +9,7 @@ import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
+import { resolveAdapterIcon } from './connector-icon.util';
 
 @Injectable()
 export class ConnectorsService {
@@ -48,17 +49,18 @@ export class ConnectorsService {
   async findByOrg(
     organizationId: string,
     opts?: { limit?: number; offset?: number },
-  ): Promise<Connector[]> {
-    return this.prisma.connector.findMany({
+  ): Promise<Array<Connector & { icon: string | null }>> {
+    const rows = await this.prisma.connector.findMany({
       where: { organizationId },
       include: { tools: true },
       orderBy: { createdAt: 'desc' },
       ...(opts?.limit !== undefined ? { take: opts.limit } : {}),
       ...(opts?.offset !== undefined ? { skip: opts.offset } : {}),
     });
+    return rows.map((c) => ({ ...c, icon: resolveAdapterIcon(c) }));
   }
 
-  async findById(id: string): Promise<Connector> {
+  async findById(id: string): Promise<Connector & { icon: string | null }> {
     const connector = await this.prisma.connector.findUnique({
       where: { id },
       include: { tools: true, resources: true, prompts: true, mcpServers: { select: { mcpServerId: true } } },
@@ -66,7 +68,7 @@ export class ConnectorsService {
     if (!connector) {
       throw new NotFoundException(`Connector ${id} not found`);
     }
-    return connector;
+    return { ...connector, icon: resolveAdapterIcon(connector) };
   }
 
   async findByIdInternal(id: string): Promise<Connector> {

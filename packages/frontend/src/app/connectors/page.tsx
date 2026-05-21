@@ -19,6 +19,41 @@ const TYPE_STYLES: Record<string, { text: string; bg: string; icon: string }> = 
   DATABASE: { text: 'Database', bg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400', icon: 'DB' },
 };
 
+/**
+ * Brand logo for a connector, with type-badge fallback.
+ *
+ * The backend enriches every connector with `icon` resolved from the source
+ * adapter (see `resolveAdapterIcon`). If the icon is set AND the file is
+ * present under /logos/connectors/<icon>.svg, render the brand mark. If the
+ * file 404s or the connector wasn't imported from an adapter, fall back to
+ * the language-tag badge (REST/GraphQL/SOAP/MCP/DB).
+ */
+function ConnectorLogo({ icon, type }: { icon?: string | null; type: string }) {
+  const [failed, setFailed] = useState(false);
+  if (icon && !failed) {
+    return (
+      <span className="inline-flex items-center justify-center w-7 h-7 bg-white rounded p-0.5 ring-1 ring-black/5 dark:ring-white/10 flex-shrink-0">
+        <img
+          src={`/logos/connectors/${icon}.svg`}
+          alt={icon}
+          className="w-full h-full object-contain"
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      </span>
+    );
+  }
+  const ts =
+    TYPE_STYLES[type] || {
+      text: type,
+      bg: 'bg-[var(--muted)] text-[var(--muted-foreground)]',
+      icon: '?',
+    };
+  return (
+    <span className={`text-xs font-bold px-2 py-1 rounded ${ts.bg}`}>{ts.icon}</span>
+  );
+}
+
 const SUPPORTED_TYPES = [
   { type: 'REST', label: 'REST APIs' },
   { type: 'GRAPHQL', label: 'GraphQL' },
@@ -399,13 +434,12 @@ export default function ConnectorsPage() {
 
             <div className="space-y-3">
               {filtered.map((c) => {
-                const ts = TYPE_STYLES[c.type] || { text: c.type, bg: 'bg-[var(--muted)] text-[var(--muted-foreground)]', icon: '?' };
                 return (
                   <div key={c.id} className="border border-[var(--border)] rounded-lg p-4 hover:border-[var(--brand)] transition-colors group">
                     <div className="flex items-center justify-between gap-4">
                       <Link href={`/connectors/${c.id}`} className="flex-1 min-w-0">
                         <div className="flex items-center gap-3">
-                          <span className={`text-xs font-bold px-2 py-1 rounded ${ts.bg}`}>{ts.icon}</span>
+                          <ConnectorLogo icon={c.icon} type={c.type} />
                           <h3 className="font-medium group-hover:text-[var(--brand)] transition-colors">{c.name}</h3>
                           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c.isActive ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
                           <span className="text-xs text-[var(--muted-foreground)]">{c.isActive ? 'Active' : 'Inactive'}</span>
