@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Providers } from './providers';
 import { TrialBanner } from '@/components/trial-banner';
+import { UsageBanner } from '@/components/usage-banner';
 import { LicenseWall } from '@/components/license-wall';
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ export default function RootLayout({
       <body>
         <Providers>
           <TrialBanner />
+          <UsageBanner />
           <LicenseWall />
           {children}
         </Providers>

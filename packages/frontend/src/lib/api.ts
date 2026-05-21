@@ -366,6 +366,14 @@ export const license = {
     }),
   getInstanceId: () =>
     request<{ instanceId: string }>('/api/license/instance-id'),
+  getUsage: (token?: string) =>
+    request<{
+      plan: string | null;
+      connectors: { current: number; max: number | null; isOver: boolean };
+      mcpServers: { current: number; max: number | null; isOver: boolean };
+      users: { current: number; max: number | null; isOver: boolean };
+      isOverAny: boolean;
+    }>('/api/license/usage', { token }),
 };
 
 // MCP Servers

@@ -15,6 +15,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { IsString, Matches } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { LicenseService } from './license.service';
+import { LicenseGuardService } from './license-guard.service';
 import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
 import { DeploymentService } from '../common/deployment.service';
@@ -34,6 +35,7 @@ export class LicenseController {
 
   constructor(
     private readonly licenseService: LicenseService,
+    private readonly licenseGuard: LicenseGuardService,
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
     private readonly deployment: DeploymentService,
@@ -83,6 +85,38 @@ export class LicenseController {
   async getInstanceId() {
     const instanceId = await this.licenseService.getInstanceId();
     return { instanceId };
+  }
+
+  @Get('usage')
+  @ApiOperation({
+    summary:
+      'Current usage vs caps for the org. Drives the soft-warn upgrade banner in the UI.',
+  })
+  async getUsage(@Req() req: any) {
+    // Optional auth — anonymous self-hosted single-user instances still get
+    // their global usage. Cloud requires an org-scoped JWT.
+    let organizationId: string | undefined;
+    let userId: string | undefined;
+    const authHeader = req.headers?.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      try {
+        const payload = this.authService.verifyToken(authHeader.substring(7));
+        organizationId = payload.organizationId ?? undefined;
+        userId = payload.sub ?? undefined;
+      } catch {}
+    }
+
+    if (this.deployment.isCloud() && !organizationId) {
+      return {
+        plan: null,
+        connectors: { current: 0, max: null, isOver: false },
+        mcpServers: { current: 0, max: null, isOver: false },
+        users: { current: 0, max: null, isOver: false },
+        isOverAny: false,
+      };
+    }
+
+    return this.licenseGuard.getUsage(userId, organizationId);
   }
 
   @Put('key')
