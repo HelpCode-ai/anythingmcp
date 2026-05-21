@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <strong>⭐ Star this repo</strong> if you find it useful &middot; <strong>👀 Watch</strong> to get notified about new adapters and releases &middot; <strong>🔱 Fork</strong> to add your own connector
+  <strong>⭐ Star this repo</strong> if you find it useful &middot; <strong>👀 Watch</strong> to get notified about new adapters and releases &middot;
 </p>
 
 <p align="center">
