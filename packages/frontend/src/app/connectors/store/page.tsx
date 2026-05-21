@@ -17,6 +17,78 @@ const REGION_LABELS: Record<string, string> = {
   intl: 'International',
 };
 
+const REGION_FLAGS: Record<string, string> = {
+  de: '🇩🇪',
+  eu: '🇪🇺',
+  global: '🌐',
+  intl: '🌐',
+  uk: '🇬🇧',
+  gb: '🇬🇧',
+  in: '🇮🇳',
+  br: '🇧🇷',
+  ng: '🇳🇬',
+  jp: '🇯🇵',
+};
+
+/* Deterministic colour palette for the monogram fallback when no SVG exists.
+   Mirrors lib/adapters.ts on the marketing site for visual consistency. */
+const MONOGRAM_PALETTE = [
+  '#2563eb', '#7c3aed', '#0ea5e9', '#10b981', '#f59e0b',
+  '#ef4444', '#ec4899', '#14b8a6', '#6366f1', '#84cc16',
+  '#0891b2', '#a855f7', '#f97316', '#06b6d4', '#22c55e',
+];
+
+function monogramOf(name: string): string {
+  const stripped = name.replace(/[().]/g, '').trim();
+  const parts = stripped.split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return stripped.slice(0, 2).toUpperCase();
+}
+
+function brandColor(slug: string): string {
+  let h = 0;
+  for (let i = 0; i < slug.length; i++) h = (h * 31 + slug.charCodeAt(i)) >>> 0;
+  return MONOGRAM_PALETTE[h % MONOGRAM_PALETTE.length];
+}
+
+/* Brand logo or coloured monogram fallback. Matches the marketing-site
+   Marketplace card visual exactly so the in-app store feels like the same
+   product surface. */
+function BrandTile({ adapter, size = 44 }: { adapter: AdapterItem; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  if (adapter.icon && !failed) {
+    return (
+      <div
+        className="flex shrink-0 items-center justify-center overflow-hidden rounded-xl p-1.5 bg-white ring-1 ring-black/5 dark:ring-white/10"
+        style={{ width: size, height: size }}
+      >
+        <img
+          src={`/logos/connectors/${adapter.icon}.svg`}
+          alt={adapter.name}
+          width={size - 12}
+          height={size - 12}
+          className="h-full w-full object-contain"
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      </div>
+    );
+  }
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center rounded-xl font-bold text-white ring-1 ring-inset ring-black/5"
+      style={{
+        width: size,
+        height: size,
+        background: brandColor(adapter.slug),
+        fontSize: size >= 56 ? 22 : 14,
+      }}
+    >
+      {monogramOf(adapter.name)}
+    </div>
+  );
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   logistics: 'Logistics',
   finance: 'Finance',
@@ -54,7 +126,10 @@ const AUTH_LABELS: Record<string, string> = {
   BEARER_TOKEN: 'Bearer Token',
   OAUTH2: 'OAuth 2.0',
   BASIC: 'Basic Auth',
-  NONE: 'None (Public API)',
+  BASIC_AUTH: 'Basic Auth',
+  QUERY_AUTH: 'Query Param Auth',
+  LOGIN_TOKEN: 'Login Token',
+  NONE: 'Public API',
 };
 
 interface AdapterItem {
@@ -67,6 +142,7 @@ interface AdapterItem {
   docsUrl: string;
   requiredEnvVars: string[];
   toolCount: number;
+  authType?: string;
 }
 
 interface AdapterDetail extends AdapterItem {
@@ -301,62 +377,103 @@ function AdapterStoreContent() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((adapter) => (
-              <div
-                key={adapter.slug}
-                className="border border-[var(--border)] rounded-lg p-6 hover:border-[var(--brand)] transition-colors flex flex-col"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <h3 className="font-semibold text-lg">{adapter.name}</h3>
-                  <div className="flex gap-1.5 flex-shrink-0">
-                    {adapter.region && (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400 uppercase">
-                        {REGION_LABELS[adapter.region] || adapter.region}
+            {filtered.map((adapter) => {
+              const isPublic = adapter.authType === 'NONE';
+              const isImporting = importing === adapter.slug;
+              /* log-ish 1..10 segment scale, same as the marketing-site card */
+              const fillCount = Math.max(
+                1,
+                Math.min(10, Math.round(Math.log2(adapter.toolCount + 1) * 2.2)),
+              );
+              return (
+                <article
+                  key={adapter.slug}
+                  className="group relative flex flex-col rounded-2xl border border-[var(--border)] bg-[var(--card,var(--background))] p-5 transition hover:-translate-y-0.5 hover:border-[var(--brand)] hover:shadow-md"
+                >
+                  <div className="flex items-start gap-3">
+                    <BrandTile adapter={adapter} size={44} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-[15px] font-semibold leading-tight">
+                          {adapter.name}
+                        </span>
+                        <span aria-hidden className="shrink-0 text-sm">
+                          {REGION_FLAGS[adapter.region] || '🌐'}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-wider text-[var(--muted-foreground)]">
+                        <span>
+                          {CATEGORY_LABELS[adapter.category] || adapter.category}
+                        </span>
+                        <span className="text-[var(--border)]">·</span>
+                        <span>{REGION_LABELS[adapter.region] || adapter.region}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-[var(--muted-foreground)] flex-1">
+                    {adapter.description}
+                  </p>
+
+                  <div className="mt-4 flex items-center justify-between gap-3 border-t border-dashed border-[var(--border)] pt-3">
+                    <div className="flex items-center gap-2 font-mono text-[11px] text-[var(--muted-foreground)]">
+                      <span className="font-semibold text-[var(--foreground)]">
+                        {adapter.toolCount}
                       </span>
-                    )}
+                      <span>tool{adapter.toolCount !== 1 ? 's' : ''}</span>
+                      <span aria-hidden className="ml-1 inline-flex gap-[1.5px]">
+                        {Array.from({ length: 10 }, (_, i) => (
+                          <span
+                            key={i}
+                            className={`block h-[6px] w-[3px] rounded-[1px] ${
+                              i < fillCount ? 'bg-[var(--brand)]' : 'bg-[var(--border)]'
+                            }`}
+                          />
+                        ))}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {adapter.authType && (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-wider ${
+                            isPublic
+                              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                              : 'bg-[var(--muted)] text-[var(--foreground)] opacity-80'
+                          }`}
+                        >
+                          {isPublic ? <SparklesIcon /> : <LockIcon />}
+                          {AUTH_LABELS[adapter.authType] || adapter.authType}
+                        </span>
+                      )}
+                      {adapter.docsUrl && (
+                        <a
+                          href={adapter.docsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="API documentation"
+                          aria-label="API documentation"
+                          className="inline-flex size-7 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--card,var(--background))] text-[var(--muted-foreground)] transition hover:border-[var(--brand)] hover:text-[var(--foreground)]"
+                        >
+                          <ExternalLinkIcon />
+                        </a>
+                      )}
+                      <button
+                        onClick={() => handleImportClick(adapter)}
+                        disabled={isImporting || configLoading}
+                        className="inline-flex h-7 items-center gap-1 rounded-md bg-[var(--brand)] px-2.5 text-[12px] font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                      >
+                        {isImporting ? 'Importing…' : (
+                          <>
+                            Install
+                            <ArrowRightIcon />
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
-
-                <p className="text-sm text-[var(--muted-foreground)] mb-4 flex-1">
-                  {adapter.description}
-                </p>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
-                    {adapter.category && (
-                      <span>{CATEGORY_LABELS[adapter.category] || adapter.category}</span>
-                    )}
-                    <span>{adapter.toolCount} tool{adapter.toolCount !== 1 ? 's' : ''}</span>
-                  </div>
-
-                  <button
-                    onClick={() => handleImportClick(adapter)}
-                    disabled={importing === adapter.slug || configLoading}
-                    className="bg-[var(--brand)] text-white px-3 py-1.5 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
-                  >
-                    {importing === adapter.slug ? (
-                      'Importing...'
-                    ) : (
-                      <>
-                        <DownloadIcon />
-                        Import
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {adapter.docsUrl && (
-                  <a
-                    href={adapter.docsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] underline"
-                  >
-                    API Documentation
-                  </a>
-                )}
-              </div>
-            ))}
+                </article>
+              );
+            })}
           </div>
         )}
       </main>
@@ -509,9 +626,36 @@ function CloseIcon() {
 
 function LockIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+function SparklesIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </svg>
+  );
+}
+
+function ArrowRightIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 12h14" />
+      <path d="m12 5 7 7-7 7" />
     </svg>
   );
 }

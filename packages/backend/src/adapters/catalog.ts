@@ -180,6 +180,9 @@ export interface AdapterMeta {
   docsUrl: string;
   requiredEnvVars: string[];
   toolCount: number;
+  /** Surfaced on cards so the UI can render an auth-type chip without an
+   *  extra round-trip to /api/adapters/:slug. */
+  authType?: string;
   /** When true, surfaced in the marketing site's "Featured" rail. */
   featured?: boolean;
   /** Higher = ranked earlier in catalog listings. Default 0. */
@@ -422,6 +425,7 @@ export function listAdapters(): AdapterMeta[] {
     docsUrl: adapter.docsUrl,
     requiredEnvVars: adapter.requiredEnvVars,
     toolCount: adapter.tools.length,
+    authType: adapter.connector.authType,
     featured: adapter.featured,
     priority: adapter.priority,
   }));
