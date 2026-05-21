@@ -1,0 +1,337 @@
+{
+  "slug": "chargebee",
+  "name": "Chargebee",
+  "description": "Drive Chargebee (subscription billing) from any AI agent: customers, subscriptions, invoices, plans, addons, coupons. 14 tools, Basic-auth, per-site base URL.",
+  "instructions": "This connector uses the Chargebee API v2 (apidocs.chargebee.com/docs/api).\n\n**Setup**:\n1. Sign in to Chargebee → **Settings → API Keys → + Create a Key**.\n2. Pick a Full-Access key for write operations OR a Restricted Key for read-only.\n3. Note your **site subdomain** (e.g. `acme-test` if your URL is `acme-test.chargebee.com`).\n4. Set:\n   - `CHARGEBEE_SITE` = the subdomain (without `.chargebee.com`)\n   - `CHARGEBEE_API_KEY` = the full API key (`live_...` or `test_...`)\n\n**Authentication**: HTTP Basic with username=API_KEY, password=empty.\n\n**Site-templated URL**: `https://{{CHARGEBEE_SITE}}.chargebee.com/api/v2`. Test vs Live sites are different subdomains (e.g. `acme-test` vs `acme`) and have different API keys.\n\n**Amount format**: monetary values are integers in MINOR units (cents) — `1000` = $10.00 USD or €10.00 EUR. Match the site's primary currency (or pass `currency_code`).\n\n**Idempotency**: pass `chargebee-idempotency-key` header on writes to dedupe retries. (The adapter exposes this as a regular `idempotency_key` parameter on write tools.)\n\n**Form-encoded requests**: Chargebee historically uses application/x-www-form-urlencoded for POST/PUT bodies (with nested keys as `subscription[plan_id]=...`). The adapter handles this via bodyEncoding=form-urlencoded.\n\n**Subscription lifecycle**: future → in_trial → active → non_renewing → cancelled. Pause via `chargebee_pause_subscription` (returns paused), resume via `chargebee_resume_subscription`.\n\n**Webhooks** out of scope.\n\n**Rate limits**: 750 req per 5 min per site on Standard. On 429 honor X-Rate-Limit-Reset.\n\n**Out of scope here**: hosted pages, portal session, refundable credits, gifts, transactions detail, hierarchies, comments, virtual bank accounts, gateway/payment-source CRUD.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "chargebee",
+  "docsUrl": "https://apidocs.chargebee.com/docs/api",
+  "requiredEnvVars": ["CHARGEBEE_SITE", "CHARGEBEE_API_KEY"],
+  "connector": {
+    "name": "Chargebee v2",
+    "type": "REST",
+    "baseUrl": "https://{{CHARGEBEE_SITE}}.chargebee.com/api/v2",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{CHARGEBEE_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "chargebee_list_customers",
+      "description": "List customers with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by email." },
+          "company": { "type": "string", "description": "Filter by company." },
+          "first_name": { "type": "string", "description": "First name." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "auto_collection": { "type": "string", "description": "on or off." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "offset": { "type": "string", "description": "Pagination offset cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "email[is]": "$email",
+          "company[is]": "$company",
+          "first_name[is]": "$first_name",
+          "last_name[is]": "$last_name",
+          "auto_collection[is]": "$auto_collection",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "chargebee_get_customer",
+      "description": "Fetch a customer by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string", "description": "Customer ID (you assign it or Chargebee auto-generates)." }
+        },
+        "required": ["customerId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/customers/{customerId}" }
+    },
+    {
+      "name": "chargebee_create_customer",
+      "description": "Create a customer. id is optional — Chargebee generates one if omitted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Optional customer ID." },
+          "first_name": { "type": "string", "description": "First name." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "email": { "type": "string", "description": "Email." },
+          "phone": { "type": "string", "description": "Phone." },
+          "company": { "type": "string", "description": "Company." },
+          "vat_number": { "type": "string", "description": "VAT number." },
+          "auto_collection": { "type": "string", "description": "on (auto-charge cards) or off (manual)." },
+          "net_term_days": { "type": "integer", "description": "Days for invoice payment." },
+          "allow_direct_debit": { "type": "boolean", "description": "Allow SEPA/Bacs etc." },
+          "locale": { "type": "string", "description": "Customer locale (en, de, fr, ...)." },
+          "billing_address": { "type": "object", "description": "{first_name?, last_name?, company?, line1, city, state, country, zip, phone?}." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id": "$id",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email": "$email",
+          "phone": "$phone",
+          "company": "$company",
+          "vat_number": "$vat_number",
+          "auto_collection": "$auto_collection",
+          "net_term_days": "$net_term_days",
+          "allow_direct_debit": "$allow_direct_debit",
+          "locale": "$locale"
+        }
+      }
+    },
+    {
+      "name": "chargebee_list_subscriptions",
+      "description": "List subscriptions with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": { "type": "string", "description": "Filter by customer." },
+          "plan_id": { "type": "string", "description": "Filter by plan." },
+          "status": { "type": "string", "description": "future, in_trial, active, non_renewing, cancelled, paused." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "offset": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions",
+        "queryParams": {
+          "customer_id[is]": "$customer_id",
+          "plan_id[is]": "$plan_id",
+          "status[is]": "$status",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "chargebee_get_subscription",
+      "description": "Fetch a subscription by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "string", "description": "Subscription ID." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/subscriptions/{subscriptionId}" }
+    },
+    {
+      "name": "chargebee_create_subscription_for_customer",
+      "description": "Create a subscription for an existing customer. Uses 'item-prices' model (Chargebee 2.0+).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string", "description": "Customer ID." },
+          "subscription_items": {
+            "type": "array",
+            "description": "Array of items: [{item_price_id:'plan-1-EUR-monthly', quantity?:1, billing_cycles?:N}]. At least one plan item required."
+          },
+          "auto_collection": { "type": "string", "description": "on or off." },
+          "po_number": { "type": "string", "description": "Purchase order #." },
+          "start_date": { "type": "integer", "description": "Unix timestamp — future start (delay). Omit for now." },
+          "trial_end": { "type": "integer", "description": "Unix timestamp end of trial." }
+        },
+        "required": ["customerId", "subscription_items"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customerId}/subscription_for_items",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "subscription_items": "$subscription_items",
+          "auto_collection": "$auto_collection",
+          "po_number": "$po_number",
+          "start_date": "$start_date",
+          "trial_end": "$trial_end"
+        }
+      }
+    },
+    {
+      "name": "chargebee_cancel_subscription",
+      "description": "Cancel a subscription. end_of_term=true delays cancellation to current period end.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "string", "description": "Subscription ID." },
+          "end_of_term": { "type": "boolean", "description": "If true, cancel at period end (graceful)." },
+          "credit_option_for_current_term_charges": { "type": "string", "description": "none, prorate, full." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions/{subscriptionId}/cancel_for_items",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "end_of_term": "$end_of_term",
+          "credit_option_for_current_term_charges": "$credit_option_for_current_term_charges"
+        }
+      }
+    },
+    {
+      "name": "chargebee_pause_subscription",
+      "description": "Pause a subscription. Specify pause_option (immediately/end_of_term/specific_date).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "string", "description": "Subscription ID." },
+          "pause_option": { "type": "string", "description": "immediately, end_of_term, specific_date." },
+          "pause_date": { "type": "integer", "description": "Unix timestamp (required if pause_option=specific_date)." },
+          "resume_date": { "type": "integer", "description": "Optional auto-resume Unix timestamp." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions/{subscriptionId}/pause",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "pause_option": "$pause_option",
+          "pause_date": "$pause_date",
+          "resume_date": "$resume_date"
+        }
+      }
+    },
+    {
+      "name": "chargebee_resume_subscription",
+      "description": "Resume a paused subscription.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "string", "description": "Subscription ID." },
+          "resume_option": { "type": "string", "description": "immediately, specific_date." },
+          "resume_date": { "type": "integer", "description": "Unix timestamp (required if resume_option=specific_date)." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions/{subscriptionId}/resume",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "resume_option": "$resume_option",
+          "resume_date": "$resume_date"
+        }
+      }
+    },
+    {
+      "name": "chargebee_list_invoices",
+      "description": "List invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": { "type": "string", "description": "Filter by customer." },
+          "subscription_id": { "type": "string", "description": "Filter by subscription." },
+          "status": { "type": "string", "description": "paid, posted, payment_due, not_paid, voided, pending." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "customer_id[is]": "$customer_id",
+          "subscription_id[is]": "$subscription_id",
+          "status[is]": "$status",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "chargebee_get_invoice",
+      "description": "Fetch an invoice with line items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": { "type": "string", "description": "Invoice ID." }
+        },
+        "required": ["invoiceId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/invoices/{invoiceId}" }
+    },
+    {
+      "name": "chargebee_list_items",
+      "description": "List items (Chargebee 2.0 catalog: plans + addons + charges are all items).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "description": "plan, addon, charge." },
+          "status": { "type": "string", "description": "active, archived, deleted." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items",
+        "queryParams": {
+          "type[is]": "$type",
+          "status[is]": "$status",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "chargebee_list_item_prices",
+      "description": "List item prices (each item has multiple prices per currency/interval).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": { "type": "string", "description": "Filter by item ID." },
+          "status": { "type": "string", "description": "active, archived, deleted." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/item_prices",
+        "queryParams": {
+          "item_id[is]": "$item_id",
+          "status[is]": "$status",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "chargebee_list_coupons",
+      "description": "List coupons (discounts). Each has id, name, discount_type (fixed_amount/percentage), discount_amount/percentage, valid_till, duration_type (one_time/forever/limited_period).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "status": { "type": "string", "description": "active, expired, archived, deleted." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coupons",
+        "queryParams": {
+          "limit": "$limit",
+          "status[is]": "$status"
+        }
+      }
+    }
+  ]
+}

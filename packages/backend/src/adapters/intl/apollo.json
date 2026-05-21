@@ -1,0 +1,260 @@
+{
+  "slug": "apollo",
+  "name": "Apollo.io",
+  "description": "Drive Apollo.io (B2B sales platform with contact database + enrichment + sequences) from any AI agent: people search, organization search, contact CRUD, deal stages, sequences. 11 tools.",
+  "instructions": "This connector uses the Apollo.io API v1 (docs.apollo.io).\n\n**Setup**:\n1. Sign in to Apollo.io → top-right avatar → **Settings → Integrations → API → API Keys → Create New API Key**.\n2. Name it ('AnythingMCP'). Copy the key.\n3. Set `APOLLO_API_KEY`.\n\n**Authentication**: header `X-Api-Key: ${APOLLO_API_KEY}`. (Note: Apollo also supports the api_key query parameter and the legacy `Authorization` header; this connector uses the header form.)\n\n**Search vs Enrich**: Apollo's central feature is searching its 275M+ people database (`/v1/mixed_people/search`). `match` endpoints enrich a known person/company by email/domain. People search is the entry point for prospecting workflows.\n\n**Credits model**: every `enrich`, `mixed_people/search` result, and reveal-email/phone call costs API credits. Read your plan's credit balance before bulk operations. Apollo returns `429 quota exceeded` (NOT a normal 429) when credits run out.\n\n**Email reveal mechanics**: searching returns 'unrevealed' contacts with email=null. To get the email, call `apollo_people_enrich` for that specific person — that consumes credits. Plan accordingly.\n\n**Sequences**: Apollo's outreach engine. Pulling contacts via search → adding them to a sequence is the most common write flow. Cadences are configured in the UI; the API just adds/removes contacts.\n\n**Filters**: people search accepts many filters — person_titles, person_locations, organization_num_employees_ranges, organization_industry_tag_ids, contact_email_status, etc. The adapter exposes the most common.\n\n**Pagination**: 1-based `page` parameter, `per_page` max 100. `pagination.total_pages` tells you when to stop.\n\n**Rate limits**: per plan — varies wildly. Enterprise has multi-thousand req/min, Starter much lower. On 429 honor `Retry-After`.\n\n**Out of scope here**: lead-scoring config, sequence template editing, conversation intelligence, plays/dispositions, billing.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "apollo",
+  "docsUrl": "https://docs.apollo.io/reference/",
+  "requiredEnvVars": ["APOLLO_API_KEY"],
+  "connector": {
+    "name": "Apollo.io v1",
+    "type": "REST",
+    "baseUrl": "https://api.apollo.io/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{APOLLO_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "apollo_search_people",
+      "description": "Search Apollo's 275M+ contact database. Apollo's flagship feature. Returns paginated people matches with title, organization, location, seniority — email is null unless you enrich (consumes credits). Use filters aggressively to narrow before enriching.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q_keywords": { "type": "string", "description": "Free-text search across name, title, company." },
+          "person_titles": { "type": "array", "description": "Array of title strings — e.g. ['CTO','VP Engineering']." },
+          "person_locations": { "type": "array", "description": "Array of location strings — e.g. ['San Francisco, CA','Germany']." },
+          "person_seniorities": { "type": "array", "description": "founder, c_suite, partner, vp, head, director, manager, senior, entry, intern." },
+          "organization_num_employees_ranges": { "type": "array", "description": "Ranges like ['1,10','11,50','51,200','201,500','501,1000','1001,5000','5001,10000','10001'] (last = '10001+')." },
+          "organization_industry_tag_ids": { "type": "array", "description": "Apollo industry tag IDs (discover via Apollo UI's industry filter)." },
+          "contact_email_status": { "type": "array", "description": "Filter by email status: ['verified','likely_to_engage','unverified']." },
+          "page": { "type": "integer", "description": "1-based page." },
+          "per_page": { "type": "integer", "description": "Per page (default 25, max 100)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/mixed_people/search",
+        "bodyMapping": {
+          "q_keywords": "$q_keywords",
+          "person_titles": "$person_titles",
+          "person_locations": "$person_locations",
+          "person_seniorities": "$person_seniorities",
+          "organization_num_employees_ranges": "$organization_num_employees_ranges",
+          "organization_industry_tag_ids": "$organization_industry_tag_ids",
+          "contact_email_status": "$contact_email_status",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "apollo_people_enrich",
+      "description": "Enrich a person — provide ONE of email / first_name+last_name+organization_name / linkedin_url / id. Returns full profile including verified email (and often phone). CONSUMES CREDITS.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email to lookup." },
+          "first_name": { "type": "string", "description": "First name (combine with last_name + organization_name)." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "organization_name": { "type": "string", "description": "Company name." },
+          "linkedin_url": { "type": "string", "description": "LinkedIn profile URL." },
+          "id": { "type": "string", "description": "Apollo person ID (24-char hex)." },
+          "reveal_personal_emails": { "type": "boolean", "description": "If true, also reveal personal email if found (extra credit cost)." },
+          "reveal_phone_number": { "type": "boolean", "description": "If true, reveal mobile/work phone (extra credits, slower 401 if your plan doesn't include phones)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/people/match",
+        "bodyMapping": {
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "organization_name": "$organization_name",
+          "linkedin_url": "$linkedin_url",
+          "id": "$id",
+          "reveal_personal_emails": "$reveal_personal_emails",
+          "reveal_phone_number": "$reveal_phone_number"
+        }
+      }
+    },
+    {
+      "name": "apollo_search_organizations",
+      "description": "Search Apollo's company database. Returns paginated organizations with industry, employee count, technologies used, funding, location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q_organization_keyword_tags": { "type": "array", "description": "Keyword tags for the company (industry/topic)." },
+          "q_organization_name": { "type": "string", "description": "Name substring." },
+          "organization_locations": { "type": "array", "description": "Location strings." },
+          "organization_num_employees_ranges": { "type": "array", "description": "Employee count ranges." },
+          "organization_industry_tag_ids": { "type": "array", "description": "Industry tag IDs." },
+          "technology_uids": { "type": "array", "description": "Apollo tech UIDs (e.g. 'salesforce', 'hubspot' — find via tech filter in UI)." },
+          "page": { "type": "integer", "description": "Page." },
+          "per_page": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/mixed_companies/search",
+        "bodyMapping": {
+          "q_organization_keyword_tags": "$q_organization_keyword_tags",
+          "q_organization_name": "$q_organization_name",
+          "organization_locations": "$organization_locations",
+          "organization_num_employees_ranges": "$organization_num_employees_ranges",
+          "organization_industry_tag_ids": "$organization_industry_tag_ids",
+          "technology_uids": "$technology_uids",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "apollo_organization_enrich",
+      "description": "Enrich an organization — provide domain (most common) OR id. Returns full org profile with technographics, funding, employee count, contact patterns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": { "type": "string", "description": "Company domain (e.g. 'acme.com')." }
+        },
+        "required": ["domain"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/enrich",
+        "queryParams": { "domain": "$domain" }
+      }
+    },
+    {
+      "name": "apollo_search_contacts",
+      "description": "Search YOUR Apollo CRM contacts (people already in your account — NOT the public database). Returns contacts you've enriched or added with the labels and stage info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q_keywords": { "type": "string", "description": "Free-text search." },
+          "contact_stage_ids": { "type": "array", "description": "Filter by contact stage IDs." },
+          "sort_by_field": { "type": "string", "description": "contact_last_activity_date, created_at, name, etc." },
+          "sort_ascending": { "type": "boolean", "description": "Sort direction." },
+          "page": { "type": "integer", "description": "Page." },
+          "per_page": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/search",
+        "bodyMapping": {
+          "q_keywords": "$q_keywords",
+          "contact_stage_ids": "$contact_stage_ids",
+          "sort_by_field": "$sort_by_field",
+          "sort_ascending": "$sort_ascending",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "apollo_create_contact",
+      "description": "Create or update a contact in YOUR Apollo CRM. Pass first_name + last_name + email at minimum. label_names auto-creates labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": { "type": "string", "description": "First name." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "email": { "type": "string", "description": "Email." },
+          "title": { "type": "string", "description": "Job title." },
+          "account_id": { "type": "string", "description": "Apollo account/org ID." },
+          "label_names": { "type": "array", "description": "Array of label name strings." },
+          "contact_stage_id": { "type": "string", "description": "Stage ID." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email": "$email",
+          "title": "$title",
+          "account_id": "$account_id",
+          "label_names": "$label_names",
+          "contact_stage_id": "$contact_stage_id"
+        }
+      }
+    },
+    {
+      "name": "apollo_update_contact",
+      "description": "Update an Apollo CRM contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": { "type": "string", "description": "Contact ID." },
+          "first_name": { "type": "string", "description": "New first name." },
+          "last_name": { "type": "string", "description": "New last name." },
+          "email": { "type": "string", "description": "New email." },
+          "title": { "type": "string", "description": "New title." },
+          "label_names": { "type": "array", "description": "Replace labels." },
+          "contact_stage_id": { "type": "string", "description": "Move to a different stage." }
+        },
+        "required": ["contactId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{contactId}",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email": "$email",
+          "title": "$title",
+          "label_names": "$label_names",
+          "contact_stage_id": "$contact_stage_id"
+        }
+      }
+    },
+    {
+      "name": "apollo_list_contact_stages",
+      "description": "List your account's contact stages (Cold/Working/Replied/Customer/etc.). Required for composing contact_stage_id values.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/contact_stages" }
+    },
+    {
+      "name": "apollo_list_email_sequences",
+      "description": "List outreach sequences. Each sequence has id, name, num_steps, status (active/paused/archived), num_active_steps.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/emailer_campaigns" }
+    },
+    {
+      "name": "apollo_add_contact_to_sequence",
+      "description": "Enroll a contact in an outreach sequence. Required: contact_ids (array, max 10) + emailer_campaign_id + send_email_from_email_account_id. The send-from email account must be already configured in Apollo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "emailer_campaign_id": { "type": "string", "description": "Sequence ID." },
+          "contact_ids": { "type": "array", "description": "Array of contact IDs (max 10 per call)." },
+          "send_email_from_email_account_id": { "type": "string", "description": "Email account ID to send from (set up in Apollo UI)." },
+          "sequence_no_email": { "type": "boolean", "description": "If true, the contact's email is unverified — Apollo skips email-step actions but runs other step types (LinkedIn, calls)." }
+        },
+        "required": ["emailer_campaign_id", "contact_ids", "send_email_from_email_account_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/emailer_campaigns/{emailer_campaign_id}/add_contact_ids",
+        "bodyMapping": {
+          "contact_ids": "$contact_ids",
+          "send_email_from_email_account_id": "$send_email_from_email_account_id",
+          "sequence_no_email": "$sequence_no_email"
+        }
+      }
+    },
+    {
+      "name": "apollo_list_email_accounts",
+      "description": "List email accounts connected to Apollo (used as sending identities for sequences). Returns id, email, user_id, active flag.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/email_accounts" }
+    }
+  ]
+}

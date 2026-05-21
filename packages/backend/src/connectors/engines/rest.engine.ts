@@ -48,7 +48,11 @@ export class RestEngine {
       path = path.replace(`{${key}}`, String(value));
     }
 
-    const url = `${config.baseUrl}${path}`;
+    // Allow per-tool absolute URLs to escape the connector's baseUrl. Useful
+    // when a vendor publishes multiple distinct API hosts under one product
+    // (e.g. Statsig: api.statsig.com for SDK + statsigapi.net for Console),
+    // so a single adapter can cover both without two connector records.
+    const url = /^https?:\/\//i.test(path) ? path : `${config.baseUrl}${path}`;
     await assertSafeOutboundUrl(url);
 
     // Resolve dynamic headers from endpoint mapping ($param references)
@@ -199,14 +203,25 @@ export class RestEngine {
     if (!config.authConfig) return;
 
     switch (config.authType) {
-      case 'API_KEY':
+      case 'API_KEY': {
         axiosConfig.headers = {
           ...axiosConfig.headers,
           [String(config.authConfig.headerName || 'X-API-Key')]: String(
             config.authConfig.apiKey,
           ),
         };
+        // Some vendors require additional fixed headers alongside the key
+        // (e.g. Copper sends X-PW-AccessToken + X-PW-Application + X-PW-UserEmail).
+        const extra = config.authConfig.extraHeaders as
+          | Record<string, string>
+          | undefined;
+        if (extra && typeof extra === 'object') {
+          for (const [k, v] of Object.entries(extra)) {
+            axiosConfig.headers[k] = String(v);
+          }
+        }
         break;
+      }
       case 'BEARER_TOKEN':
         axiosConfig.headers = {
           ...axiosConfig.headers,
@@ -224,9 +239,11 @@ export class RestEngine {
           config.authConfig,
           config.connectorId,
         );
+        // Some vendors use a non-standard prefix (e.g. Zoho: "Zoho-oauthtoken").
+        const prefix = String(config.authConfig?.tokenPrefix ?? 'Bearer');
         axiosConfig.headers = {
           ...axiosConfig.headers,
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `${prefix} ${accessToken}`,
         };
         break;
       }

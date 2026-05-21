@@ -1,0 +1,209 @@
+{
+  "slug": "attio",
+  "name": "Attio",
+  "description": "Drive Attio (modern relationship-graph CRM) from any AI agent: records (people, companies, deals, custom objects), lists, tasks, notes. 12 tools, Bearer auth.",
+  "instructions": "This connector uses the Attio REST API v2 (developers.attio.com).\n\n**Setup**:\n1. Sign in to Attio → top-right avatar → **API & access → Create an access token** (or set up an OAuth app).\n2. Pick scopes: at minimum `object_configuration:read`, `record_permission:read`, `record_permission:read-write`, `list_configuration:read`, `note:read-write`.\n3. Copy the token. Set `ATTIO_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${ATTIO_ACCESS_TOKEN}`.\n\n**Object model**: Attio is highly schema-flexible. Default objects are `people`, `companies`, `deals`, `users`, `workspaces`. You can add custom objects (object_slug). Each object has attributes (fields) — different per workspace.\n\n**Records have a path-style ID**: `{object: 'people', record_id: 'abc-123-uuid'}`. Use `attio_list_objects` to see what's available.\n\n**Attributes / Values**: writing values requires the right shape per attribute type (text, number, date, status, select, multi-select, email-address, phone-number, currency, location, personal-name, record-reference). Wrap values in arrays: `{values: {email_addresses: [{email_address:'a@b.com'}]}}`.\n\n**Lists**: views/collections of records. Different from CRMs that use 'segments' or 'tags'. Each list has entries (record references).\n\n**Pagination**: `limit + offset`. Default 100, max 1000.\n\n**Rate limits**: 100 req per 10 sec per token. On 429 back off.\n\n**Out of scope here**: object/attribute schema CRUD, workspaces management, webhook subscription management.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "attio",
+  "docsUrl": "https://developers.attio.com/reference",
+  "requiredEnvVars": ["ATTIO_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Attio v2",
+    "type": "REST",
+    "baseUrl": "https://api.attio.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ATTIO_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "attio_self",
+      "description": "Return the token's identity (workspace_id, workspace_name, access_token id, permissions).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/self" }
+    },
+    {
+      "name": "attio_list_objects",
+      "description": "List all objects defined in the workspace (built-in + custom). Returns id, api_slug, singular_noun, plural_noun, created_at.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/objects" }
+    },
+    {
+      "name": "attio_list_object_attributes",
+      "description": "List attributes (fields) on an object. Returns id, api_slug, title, type (text/number/date/status/select/email-address/...), is_required, is_unique.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objectSlug": { "type": "string", "description": "Object api slug (e.g. 'people', 'companies')." }
+        },
+        "required": ["objectSlug"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/objects/{objectSlug}/attributes" }
+    },
+    {
+      "name": "attio_query_records",
+      "description": "Query records on an object with filters + sorting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objectSlug": { "type": "string", "description": "Object api slug." },
+          "filter": { "type": "object", "description": "Attio filter object, e.g. {email_addresses:{email_address:{contains:'@acme.com'}}}." },
+          "sorts": { "type": "array", "description": "[{attribute:'last_interaction', field:'interacted_at', direction:'desc'}]." },
+          "limit": { "type": "integer", "description": "Per page (default 100, max 1000)." },
+          "offset": { "type": "integer", "description": "Offset." }
+        },
+        "required": ["objectSlug"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/objects/{objectSlug}/records/query",
+        "bodyMapping": {
+          "filter": "$filter",
+          "sorts": "$sorts",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "attio_get_record",
+      "description": "Fetch a single record by object + record_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objectSlug": { "type": "string", "description": "Object slug." },
+          "recordId": { "type": "string", "description": "Record UUID." }
+        },
+        "required": ["objectSlug", "recordId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/objects/{objectSlug}/records/{recordId}" }
+    },
+    {
+      "name": "attio_create_record",
+      "description": "Create a record. Values are nested under `values` and keyed by attribute api_slug. Most attributes accept ARRAYS even for single-value (Attio's design for multi-value support).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objectSlug": { "type": "string", "description": "Object slug." },
+          "data": {
+            "type": "object",
+            "description": "{values: {api_slug: <value or [array of typed values]>, ...}}. E.g. for a person: {name:[{first_name:'Jane',last_name:'Doe'}], email_addresses:[{email_address:'a@b.com'}]}."
+          }
+        },
+        "required": ["objectSlug", "data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/objects/{objectSlug}/records",
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "attio_update_record",
+      "description": "Update a record (PATCH semantics — only updates passed values). Use append=true to add to multi-value, false to replace.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objectSlug": { "type": "string", "description": "Object slug." },
+          "recordId": { "type": "string", "description": "Record UUID." },
+          "data": { "type": "object", "description": "{values:{...}} — only attributes to update." }
+        },
+        "required": ["objectSlug", "recordId", "data"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/objects/{objectSlug}/records/{recordId}",
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "attio_assert_record",
+      "description": "Upsert by a unique attribute (e.g. email). Required: matching_attribute parameter to identify the unique attribute. Creates if missing, updates if exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objectSlug": { "type": "string", "description": "Object slug." },
+          "data": { "type": "object", "description": "{values:{...}} as in create." },
+          "matching_attribute": { "type": "string", "description": "Attribute api_slug used for matching (e.g. 'email_addresses')." }
+        },
+        "required": ["objectSlug", "data", "matching_attribute"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/objects/{objectSlug}/records",
+        "queryParams": { "matching_attribute": "$matching_attribute" },
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "attio_list_lists",
+      "description": "List the workspace's lists (views/collections of records). Returns id, name, parent_object, workspace_access.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/lists" }
+    },
+    {
+      "name": "attio_add_record_to_list",
+      "description": "Add a record (as a list entry) to a list. Required: listId + parent_record_id (the source record).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": { "type": "string", "description": "List ID." },
+          "data": {
+            "type": "object",
+            "description": "{parent_object: 'people', parent_record_id: 'uuid', entry_values?: {stage?:[{value:'New'}], ...} — list-specific attributes}."
+          }
+        },
+        "required": ["listId", "data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lists/{listId}/entries",
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "attio_list_notes",
+      "description": "List notes on records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Offset." },
+          "parent_object": { "type": "string", "description": "Filter to notes on a specific object slug." },
+          "parent_record_id": { "type": "string", "description": "Filter to notes on a specific record." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notes",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "parent_object": "$parent_object",
+          "parent_record_id": "$parent_record_id"
+        }
+      }
+    },
+    {
+      "name": "attio_create_note",
+      "description": "Add a note to a record. format='plaintext' (default) or 'markdown'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "{parent_object: 'people', parent_record_id: 'uuid', title?: 'Meeting notes', format:'plaintext'|'markdown', content:'Discussed Q3...'}."
+          }
+        },
+        "required": ["data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notes",
+        "bodyMapping": { "data": "$data" }
+      }
+    }
+  ]
+}

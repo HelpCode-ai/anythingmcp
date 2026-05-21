@@ -1,0 +1,308 @@
+{
+  "slug": "activecampaign",
+  "name": "ActiveCampaign",
+  "description": "Drive ActiveCampaign (marketing automation + CRM) from any AI agent: contacts, lists, tags, deals, pipelines, campaigns, automations. 16 tools. Custom Api-Token header auth, per-account API URL.",
+  "instructions": "This connector uses the ActiveCampaign API v3.\n\n**Setup**:\n1. Sign in to ActiveCampaign → **Settings → Developer**. Two values:\n   - **URL** (your account's API URL): `https://{ACCOUNT}.api-us1.com` (or .api-eu1.com, etc.)\n   - **Key**: a long alphanumeric API key.\n2. Set `ACTIVECAMPAIGN_API_URL` = the full URL from step 1 (no trailing slash, no `/api/3`).\n3. Set `ACTIVECAMPAIGN_API_KEY` = the key.\n\n**Authentication**: custom header `Api-Token: ${ACTIVECAMPAIGN_API_KEY}`.\n\n**Account-scoped base URL**: every account has its own subdomain. The adapter substitutes `{{ACTIVECAMPAIGN_API_URL}}/api/3` as the base. If you use OAuth2 instead of the API key, the URL is the same.\n\n**Contact model**: every contact has `email` (primary key), plus optional firstName, lastName, phone. Custom fields are 'field values' — separate POSTs to `/fieldValues`. The adapter exposes both contact CRUD and field-value management.\n\n**Lists are static, Tags are flexible**: lists need explicit subscribe operations and trigger double-opt-in by default. Tags are unlimited, free-form labels — easier for segmentation.\n\n**Status values for contact-list memberships**: 1=Active, 2=Unsubscribed, 0=Pending double-opt-in confirmation. Pass these as integers in `contactList.status`.\n\n**Deals are CRM-side**: separate from contacts (one deal links to one primary contact + one organization). Has stage_id (pipeline position), value, currency.\n\n**Pagination**: most list endpoints support `limit` (max 100) + `offset`. `?include=...` side-loads related resources.\n\n**Rate limits**: ~5 req/sec per account on Plus/Pro, higher on Enterprise. On 429, back off.\n\n**Out of scope here**: campaign content composition (use UI), automation creation (UI-only), site tracking JS, deep CRM custom-object schemas, eCommerce integrations.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "activecampaign",
+  "docsUrl": "https://developers.activecampaign.com/reference/overview",
+  "requiredEnvVars": ["ACTIVECAMPAIGN_API_URL", "ACTIVECAMPAIGN_API_KEY"],
+  "connector": {
+    "name": "ActiveCampaign v3",
+    "type": "REST",
+    "baseUrl": "{{ACTIVECAMPAIGN_API_URL}}/api/3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Api-Token",
+      "apiKey": "{{ACTIVECAMPAIGN_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "activecampaign_list_contacts",
+      "description": "List contacts with optional filters. Each contact returns id, email, firstName, lastName, phone, cdate (created), udate (updated), fieldValues[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Exact email filter." },
+          "email_like": { "type": "string", "description": "Substring match on email." },
+          "listid": { "type": "integer", "description": "Filter to contacts on this list." },
+          "tagid": { "type": "integer", "description": "Filter to contacts with this tag." },
+          "status": { "type": "integer", "description": "Filter by membership status: 1=Active, 2=Unsubscribed, 3=Bounced, 0=Pending." },
+          "search": { "type": "string", "description": "Free-text search across name + email." },
+          "limit": { "type": "integer", "description": "Per page (default 20, max 100)." },
+          "offset": { "type": "integer", "description": "Pagination offset." },
+          "orders_email": { "type": "string", "description": "Sort by email asc/desc." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "email": "$email",
+          "email_like": "$email_like",
+          "listid": "$listid",
+          "tagid": "$tagid",
+          "status": "$status",
+          "search": "$search",
+          "limit": "$limit",
+          "offset": "$offset",
+          "orders[email]": "$orders_email"
+        }
+      }
+    },
+    {
+      "name": "activecampaign_get_contact",
+      "description": "Fetch a contact by ID with relationships (contactLists, contactTags, fieldValues, etc.).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": { "type": "integer", "description": "Contact ID." },
+          "include": { "type": "string", "description": "Side-load: contactLists,contactTags,fieldValues,contactDeals (comma-separated)." }
+        },
+        "required": ["contactId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contactId}",
+        "queryParams": { "include": "$include" }
+      }
+    },
+    {
+      "name": "activecampaign_sync_contact",
+      "description": "Upsert a contact by email (creates if missing, updates if exists). The preferred way to onboard contacts — avoids the 422 'duplicate' error of POST /contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact": {
+            "type": "object",
+            "description": "{email, firstName?, lastName?, phone?, fieldValues?: [{field, value}]}. Wrap inside {contact: {...}}."
+          }
+        },
+        "required": ["contact"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contact/sync",
+        "bodyMapping": { "contact": "$contact" }
+      }
+    },
+    {
+      "name": "activecampaign_update_contact",
+      "description": "Update an existing contact by ID. Use sync if you don't know whether the contact exists yet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": { "type": "integer", "description": "Contact ID." },
+          "contact": {
+            "type": "object",
+            "description": "{email?, firstName?, lastName?, phone?}. Wrap inside {contact: {...}}."
+          }
+        },
+        "required": ["contactId", "contact"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{contactId}",
+        "bodyMapping": { "contact": "$contact" }
+      }
+    },
+    {
+      "name": "activecampaign_delete_contact",
+      "description": "Permanently delete a contact (GDPR right-to-be-forgotten). Irreversible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": { "type": "integer", "description": "Contact ID." }
+        },
+        "required": ["contactId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/contacts/{contactId}" }
+    },
+    {
+      "name": "activecampaign_subscribe_contact_to_list",
+      "description": "Add a contact to a list with the given status. status=1 = Active (skips double-opt-in), 2=Unsubscribed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactList": {
+            "type": "object",
+            "description": "{list: LIST_ID, contact: CONTACT_ID, status: 1|2|0}. Wrap inside {contactList: {...}}."
+          }
+        },
+        "required": ["contactList"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contactLists",
+        "bodyMapping": { "contactList": "$contactList" }
+      }
+    },
+    {
+      "name": "activecampaign_list_lists",
+      "description": "List all subscriber lists. Each returns id, name, subscriber_count, created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Pagination offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists",
+        "queryParams": { "limit": "$limit", "offset": "$offset" }
+      }
+    },
+    {
+      "name": "activecampaign_list_tags",
+      "description": "List tags. Each tag has id, tag (the name), tagType (contact/template), created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string", "description": "Substring search on tag name." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Pagination offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": { "search": "$search", "limit": "$limit", "offset": "$offset" }
+      }
+    },
+    {
+      "name": "activecampaign_add_tag_to_contact",
+      "description": "Attach a tag to a contact (creates a contactTag join).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactTag": {
+            "type": "object",
+            "description": "{contact: CONTACT_ID, tag: TAG_ID}. Wrap inside {contactTag: {...}}."
+          }
+        },
+        "required": ["contactTag"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contactTags",
+        "bodyMapping": { "contactTag": "$contactTag" }
+      }
+    },
+    {
+      "name": "activecampaign_remove_tag_from_contact",
+      "description": "Remove a tag→contact join (NOT delete the tag itself).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactTagId": { "type": "integer", "description": "contactTag ID (NOT the tag ID — get it from contactTags list under the contact)." }
+        },
+        "required": ["contactTagId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/contactTags/{contactTagId}" }
+    },
+    {
+      "name": "activecampaign_list_deals",
+      "description": "List CRM deals with optional filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stage": { "type": "integer", "description": "Filter by pipeline stage ID." },
+          "status": { "type": "integer", "description": "0=Open, 1=Won, 2=Lost." },
+          "search": { "type": "string", "description": "Search title." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals",
+        "queryParams": {
+          "filters[stage]": "$stage",
+          "filters[status]": "$status",
+          "search": "$search",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "activecampaign_create_deal",
+      "description": "Create a CRM deal. Required: title, value (in cents), currency, group (pipeline ID), stage (stage ID), owner (user ID). Contact link via `contact` field.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deal": {
+            "type": "object",
+            "description": "{title, description?, value: cents, currency:'usd', group: PIPELINE_ID, stage: STAGE_ID, owner: USER_ID, contact: CONTACT_ID?, fields?:[{customFieldId, fieldValue}]}. Wrap inside {deal: {...}}."
+          }
+        },
+        "required": ["deal"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deals",
+        "bodyMapping": { "deal": "$deal" }
+      }
+    },
+    {
+      "name": "activecampaign_update_deal",
+      "description": "Update a deal — common: change stage_id (move pipeline), set status=1 (won) or 2 (lost), update value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dealId": { "type": "integer", "description": "Deal ID." },
+          "deal": {
+            "type": "object",
+            "description": "{title?, value?, stage?, status?, owner?, fields?}. Wrap inside {deal: {...}}."
+          }
+        },
+        "required": ["dealId", "deal"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/deals/{dealId}",
+        "bodyMapping": { "deal": "$deal" }
+      }
+    },
+    {
+      "name": "activecampaign_list_pipelines",
+      "description": "List deal pipelines (each pipeline has multiple stages). Returns id, title, currency, allow_html_descriptions.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/dealGroups" }
+    },
+    {
+      "name": "activecampaign_list_pipeline_stages",
+      "description": "List stages, optionally filtered to a pipeline. Each stage has id, title, color, width, order, group (pipeline ID).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "d_groupid": { "type": "integer", "description": "Filter by pipeline ID." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dealStages",
+        "queryParams": { "filters[d_groupid]": "$d_groupid" }
+      }
+    },
+    {
+      "name": "activecampaign_list_custom_fields",
+      "description": "List custom fields defined on contacts. Returns id, title, type (text/dropdown/date/...), perstag (the merge tag name).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Pagination offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fields",
+        "queryParams": { "limit": "$limit", "offset": "$offset" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,355 @@
+{
+  "slug": "brevo",
+  "name": "Brevo",
+  "description": "Drive Brevo (formerly Sendinblue) — transactional email/SMS, marketing campaigns, contacts and lists — from any AI agent. 14 tools, api-key header auth, EU-based deliverability.",
+  "instructions": "This connector uses the Brevo REST API v3 (formerly known as Sendinblue API).\n\n**Setup**:\n1. Sign in to https://app.brevo.com → top-right avatar → **SMTP & API → API Keys → Generate a new API key**.\n2. Name it ('AnythingMCP'). It's prefixed `xkeysib-`. Set `BREVO_API_KEY`.\n\n**Authentication**: custom header `api-key: ${BREVO_API_KEY}` (lowercase header name — Brevo-specific). The adapter sets it via API_KEY profile.\n\n**Verified sender**: just like SendGrid, you must verify your sending domain or sender email before transactional email actually delivers (otherwise it lands in spam or is rejected). Brevo → **Senders & IP → Senders → Add a sender** OR domain authentication via SPF/DKIM.\n\n**Transactional vs Marketing**: `brevo_send_transactional_email` is for app-triggered 1-to-1 sends (receipts, password resets). `brevo_create_email_campaign` + `brevo_send_email_campaign_now` are for newsletter-style sends to a list. Pricing tiers are split per channel.\n\n**Contact lists vs folders**: contacts can belong to multiple `lists`. Lists can be organized into `folders` (for UI tidiness; folders have no behavioral meaning). Use `brevo_list_contact_lists` to discover list IDs.\n\n**Custom attributes**: each contact has `attributes` (FIRSTNAME, LASTNAME, plus any you define). Set them in `brevo_create_contact` via the `attributes` object: `{FIRSTNAME:'Jane', LANGUAGE:'fr'}`.\n\n**Pagination**: most list endpoints use `limit` (max 50 typically, 100 for some) + `offset`.\n\n**SMS sending**: also via the API. `brevo_send_transactional_sms` requires a verified sender name (≤11 chars, alphanumeric) AND the recipient phone in international format with `+` prefix.\n\n**Webhooks** out of scope (configured in UI for delivery to your hosted endpoint).\n\n**Rate limits**: ~400 req/sec for transactional email, lower for management endpoints. On 429, `Retry-After` is set.\n\n**Out of scope here**: WhatsApp Business via Brevo (use the dedicated WhatsApp Business connector), CRM/deals (separate Brevo product, not on the same API surface), conversations, automation workflows, attribute creation.",
+  "region": "intl",
+  "category": "email",
+  "icon": "brevo",
+  "docsUrl": "https://developers.brevo.com/",
+  "requiredEnvVars": ["BREVO_API_KEY"],
+  "connector": {
+    "name": "Brevo v3",
+    "type": "REST",
+    "baseUrl": "https://api.brevo.com/v3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "api-key",
+      "apiKey": "{{BREVO_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "brevo_get_account",
+      "description": "Return account info: companyName, email, firstName, lastName, address, plan (credits, type, creditsType), relay servers. Health check + plan visibility.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/account" }
+    },
+    {
+      "name": "brevo_send_transactional_email",
+      "description": "Send a transactional email. Required: sender + to + (subject AND htmlContent/textContent) OR templateId+params. For templates, design + variables come from Brevo's UI templates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sender": { "type": "object", "description": "{email, name?}. email MUST be a verified sender." },
+          "to": { "type": "array", "description": "Recipients: [{email, name?}]. Up to 50 per call (more = use bulk endpoint)." },
+          "cc": { "type": "array", "description": "Optional CCs: [{email, name?}]." },
+          "bcc": { "type": "array", "description": "Optional BCCs." },
+          "replyTo": { "type": "object", "description": "{email, name?}." },
+          "subject": { "type": "string", "description": "Email subject (required unless using templateId)." },
+          "htmlContent": { "type": "string", "description": "HTML body." },
+          "textContent": { "type": "string", "description": "Plain-text body. Recommended alongside htmlContent for deliverability." },
+          "templateId": { "type": "integer", "description": "Brevo template ID. Omit subject/htmlContent if using." },
+          "params": { "type": "object", "description": "Template variables (referenced as {{params.X}} in the template)." },
+          "attachment": { "type": "array", "description": "Up to 100 attachments: [{name, content (base64)}] or [{name, url}]." },
+          "tags": { "type": "array", "description": "Up to 5 tag strings for stats grouping." },
+          "headers": { "type": "object", "description": "Custom headers (e.g. {'X-My-Tag':'abc'})." },
+          "scheduledAt": { "type": "string", "description": "ISO 8601 datetime to schedule the send (up to 72h ahead)." }
+        },
+        "required": ["sender", "to"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/smtp/email",
+        "bodyMapping": {
+          "sender": "$sender",
+          "to": "$to",
+          "cc": "$cc",
+          "bcc": "$bcc",
+          "replyTo": "$replyTo",
+          "subject": "$subject",
+          "htmlContent": "$htmlContent",
+          "textContent": "$textContent",
+          "templateId": "$templateId",
+          "params": "$params",
+          "attachment": "$attachment",
+          "tags": "$tags",
+          "headers": "$headers",
+          "scheduledAt": "$scheduledAt"
+        }
+      }
+    },
+    {
+      "name": "brevo_send_transactional_sms",
+      "description": "Send a transactional SMS. Required: sender (≤11 alphanumeric chars, must be pre-approved), recipient (international format with +), content (≤160 chars per part).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sender": { "type": "string", "description": "Alphanumeric sender name ≤11 chars, must be pre-registered in Brevo." },
+          "recipient": { "type": "string", "description": "Phone in international format with leading +, e.g. '+33612345678'." },
+          "content": { "type": "string", "description": "SMS body. Per SMSC encoding (GSM-7 = 160 chars/part, UCS-2 = 70 chars/part)." },
+          "type": { "type": "string", "description": "transactional or marketing. Default transactional." },
+          "tag": { "type": "string", "description": "Stats tag." },
+          "webUrl": { "type": "string", "description": "Optional URL for click-tracking." },
+          "unicodeEnabled": { "type": "boolean", "description": "true = allow non-GSM chars (emoji, é, ç) — encoding flips to UCS-2." }
+        },
+        "required": ["sender", "recipient", "content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactionalSMS/sms",
+        "bodyMapping": {
+          "sender": "$sender",
+          "recipient": "$recipient",
+          "content": "$content",
+          "type": "$type",
+          "tag": "$tag",
+          "webUrl": "$webUrl",
+          "unicodeEnabled": "$unicodeEnabled"
+        }
+      }
+    },
+    {
+      "name": "brevo_list_contacts",
+      "description": "List contacts (paginated). Each contact has id, email, attributes object, createdAt, modifiedAt, listIds[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max per page (default 50, max 1000)." },
+          "offset": { "type": "integer", "description": "Pagination offset." },
+          "modifiedSince": { "type": "string", "description": "ISO 8601 — only contacts modified after this time." },
+          "createdSince": { "type": "string", "description": "ISO 8601." },
+          "sort": { "type": "string", "description": "asc or desc by id." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "modifiedSince": "$modifiedSince",
+          "createdSince": "$createdSince",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "brevo_get_contact",
+      "description": "Fetch a contact by email or ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": { "type": "string", "description": "URL-encoded email address OR numeric contact ID." }
+        },
+        "required": ["identifier"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/{identifier}" }
+    },
+    {
+      "name": "brevo_create_contact",
+      "description": "Create or update a contact (upsert by email). Set `listIds` to add to existing lists. `updateEnabled:true` to update if email already exists (default false → 409 on duplicate).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Contact email (required unless using ext_id)." },
+          "ext_id": { "type": "string", "description": "External ID if you maintain a separate identifier system." },
+          "attributes": { "type": "object", "description": "{FIRSTNAME, LASTNAME, SMS:'+33...', LANGUAGE:'fr', custom...}. Reserved attrs are uppercase." },
+          "emailBlacklisted": { "type": "boolean", "description": "true = mark as unsubscribed from emails." },
+          "smsBlacklisted": { "type": "boolean", "description": "true = mark as unsubscribed from SMS." },
+          "listIds": { "type": "array", "description": "Array of list IDs to add to." },
+          "updateEnabled": { "type": "boolean", "description": "true = update existing if email already exists. Default false." },
+          "smtpBlacklistSender": { "type": "array", "description": "List of senders to block." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "email": "$email",
+          "ext_id": "$ext_id",
+          "attributes": "$attributes",
+          "emailBlacklisted": "$emailBlacklisted",
+          "smsBlacklisted": "$smsBlacklisted",
+          "listIds": "$listIds",
+          "updateEnabled": "$updateEnabled",
+          "smtpBlacklistSender": "$smtpBlacklistSender"
+        }
+      }
+    },
+    {
+      "name": "brevo_update_contact",
+      "description": "Partial update of an existing contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": { "type": "string", "description": "URL-encoded email or numeric ID." },
+          "attributes": { "type": "object", "description": "Attributes to update." },
+          "emailBlacklisted": { "type": "boolean", "description": "Mark unsubscribed." },
+          "smsBlacklisted": { "type": "boolean", "description": "Mark SMS unsubscribed." },
+          "listIds": { "type": "array", "description": "Lists to ADD to (use unlinkListIds to remove)." },
+          "unlinkListIds": { "type": "array", "description": "Lists to remove from." }
+        },
+        "required": ["identifier"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{identifier}",
+        "bodyMapping": {
+          "attributes": "$attributes",
+          "emailBlacklisted": "$emailBlacklisted",
+          "smsBlacklisted": "$smsBlacklisted",
+          "listIds": "$listIds",
+          "unlinkListIds": "$unlinkListIds"
+        }
+      }
+    },
+    {
+      "name": "brevo_list_contact_lists",
+      "description": "List contact lists. Each list has id, name, folderId, totalSubscribers, totalBlacklisted, createdAt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max per page (default 10, max 50)." },
+          "offset": { "type": "integer", "description": "Pagination offset." },
+          "sort": { "type": "string", "description": "asc or desc by id." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/lists",
+        "queryParams": { "limit": "$limit", "offset": "$offset", "sort": "$sort" }
+      }
+    },
+    {
+      "name": "brevo_create_contact_list",
+      "description": "Create a new list. Each list belongs to a folder (use brevo_list_folders to discover folderId).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "List name (unique within folder)." },
+          "folderId": { "type": "integer", "description": "Parent folder ID." }
+        },
+        "required": ["name", "folderId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/lists",
+        "bodyMapping": { "name": "$name", "folderId": "$folderId" }
+      }
+    },
+    {
+      "name": "brevo_list_folders",
+      "description": "List folders (organize contact lists).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Offset." },
+          "sort": { "type": "string", "description": "asc or desc." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/folders",
+        "queryParams": { "limit": "$limit", "offset": "$offset", "sort": "$sort" }
+      }
+    },
+    {
+      "name": "brevo_list_email_campaigns",
+      "description": "List email campaigns (newsletters). Filter by type (classic/trigger) and status (suspended/archive/sent/queued/draft/inProcess).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "description": "classic or trigger." },
+          "status": { "type": "string", "description": "suspended, archive, sent, queued, draft, inProcess." },
+          "startDate": { "type": "string", "description": "ISO 8601 — only campaigns starting after." },
+          "endDate": { "type": "string", "description": "ISO 8601." },
+          "limit": { "type": "integer", "description": "Max per page (default 500, max 1000)." },
+          "offset": { "type": "integer", "description": "Pagination offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emailCampaigns",
+        "queryParams": {
+          "type": "$type",
+          "status": "$status",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "brevo_create_email_campaign",
+      "description": "Create an email campaign (does NOT send — see brevo_send_email_campaign_now to fire). Required: name, subject, sender (verified), htmlContent OR templateId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Internal campaign name." },
+          "subject": { "type": "string", "description": "Email subject line." },
+          "sender": { "type": "object", "description": "{name?, email|id}. email must be verified, OR id of a sender object." },
+          "htmlContent": { "type": "string", "description": "HTML body OR omit if using templateId." },
+          "textContent": { "type": "string", "description": "Plain-text body." },
+          "templateId": { "type": "integer", "description": "Use a saved template." },
+          "params": { "type": "object", "description": "Template vars." },
+          "recipients": { "type": "object", "description": "{listIds:[N], excludedListIds?:[M], segmentIds?:[K]}." },
+          "scheduledAt": { "type": "string", "description": "ISO 8601 — schedule. Omit to leave as draft." },
+          "replyTo": { "type": "string", "description": "Reply-To email." },
+          "toField": { "type": "string", "description": "Personalized To-field, e.g. '{{FIRSTNAME}} {{LASTNAME}}'." },
+          "tag": { "type": "string", "description": "Stats tag." }
+        },
+        "required": ["name", "subject", "sender", "recipients"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/emailCampaigns",
+        "bodyMapping": {
+          "name": "$name",
+          "subject": "$subject",
+          "sender": "$sender",
+          "htmlContent": "$htmlContent",
+          "textContent": "$textContent",
+          "templateId": "$templateId",
+          "params": "$params",
+          "recipients": "$recipients",
+          "scheduledAt": "$scheduledAt",
+          "replyTo": "$replyTo",
+          "toField": "$toField",
+          "tag": "$tag"
+        }
+      }
+    },
+    {
+      "name": "brevo_send_email_campaign_now",
+      "description": "Send a previously-created email campaign immediately (overrides any scheduledAt). The campaign must pass Brevo's content/sender checks first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "integer", "description": "Campaign ID to send now." }
+        },
+        "required": ["campaignId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/emailCampaigns/{campaignId}/sendNow"
+      }
+    },
+    {
+      "name": "brevo_get_transactional_email_report",
+      "description": "Get aggregated transactional email stats for a date range: total requests, delivered, hardBounces, softBounces, opened, clicked, spam.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "days": { "type": "integer", "description": "Last N days (1, 7, 30, 90, 365)." },
+          "startDate": { "type": "string", "description": "YYYY-MM-DD (mutually exclusive with days)." },
+          "endDate": { "type": "string", "description": "YYYY-MM-DD." },
+          "tag": { "type": "string", "description": "Filter by tag." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/smtp/statistics/aggregatedReport",
+        "queryParams": {
+          "days": "$days",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "tag": "$tag"
+        }
+      }
+    }
+  ]
+}

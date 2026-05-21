@@ -1,0 +1,222 @@
+{
+  "slug": "drip",
+  "name": "Drip",
+  "description": "Drive Drip (e-commerce-focused email + SMS automation) from any AI agent: subscribers, tags, campaigns, events, orders. 12 tools, Basic-auth + account_id in URL.",
+  "instructions": "This connector uses the Drip REST API v2 (developer.drip.com).\n\n**Setup**:\n1. Sign in to https://www.getdrip.com → top-right avatar → **My User Settings → API → API Token**.\n2. Note your **Account ID** (visible in the URL, e.g. `getdrip.com/9876543/...` → 9876543).\n3. Set:\n   - `DRIP_API_TOKEN` = the API token\n   - `DRIP_ACCOUNT_ID` = numeric account ID\n\n**Authentication**: HTTP Basic with username=API_TOKEN, password='' (empty). Adapter uses BASIC_AUTH with empty password.\n\n**Account-scoped URLs**: every endpoint is prefixed with `/v2/{account_id}/...`. The adapter substitutes via env var.\n\n**Subscriber model**: subscribers are identified by email (primary) or by external `user_id` (your DB's ID). Custom fields are unlimited key/value pairs.\n\n**Events drive workflows**: Drip's selling point is sending behavioral events (`drip_create_event`) that trigger automated workflows you've designed in the UI. Events: 'Placed Order', 'Browsed Category', 'Abandoned Cart', etc.\n\n**Tags**: simpler segmentation primitive. Apply via `drip_tag_subscriber` (POST /subscribers/{email}/tags).\n\n**Pagination**: `?page=N&per_page=M` (max 1000 for subscribers, smaller for others).\n\n**Rate limits**: 3600 req/hour per account on Free, higher on paid. On 429 honor Retry-After.\n\n**Out of scope here**: workflow management (UI-only), broadcasts (UI), conversion tracking goals, A/B testing.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "drip",
+  "docsUrl": "https://developer.drip.com/",
+  "requiredEnvVars": ["DRIP_API_TOKEN", "DRIP_ACCOUNT_ID"],
+  "connector": {
+    "name": "Drip v2",
+    "type": "REST",
+    "baseUrl": "https://api.getdrip.com/v2/{{DRIP_ACCOUNT_ID}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{DRIP_API_TOKEN}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "drip_list_subscribers",
+      "description": "List subscribers with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "active, unsubscribed, all." },
+          "tags": { "type": "string", "description": "Comma-separated tag names." },
+          "subscribed_before": { "type": "string", "description": "ISO 8601." },
+          "subscribed_after": { "type": "string", "description": "ISO 8601." },
+          "page": { "type": "integer", "description": "Page (1-based)." },
+          "per_page": { "type": "integer", "description": "Per page (max 1000)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscribers",
+        "queryParams": {
+          "status": "$status",
+          "tags": "$tags",
+          "subscribed_before": "$subscribed_before",
+          "subscribed_after": "$subscribed_after",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "drip_get_subscriber",
+      "description": "Fetch subscriber by ID OR email (URL-encoded). Returns all fields including tags, custom_fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": { "type": "string", "description": "Subscriber ID or URL-encoded email." }
+        },
+        "required": ["identifier"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/subscribers/{identifier}" }
+    },
+    {
+      "name": "drip_create_or_update_subscriber",
+      "description": "Upsert subscriber by email. Drip auto-creates if missing, updates if exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscribers": {
+            "type": "array",
+            "description": "[{email, user_id?, first_name?, last_name?, status?:'active'|'unsubscribed', address1?, city?, state?, country?, postal_code?, time_zone?, lifetime_value?, custom_fields?:{...}, tags?:[], remove_tags?:[]}]. Wrap inside array."
+          }
+        },
+        "required": ["subscribers"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscribers",
+        "bodyMapping": { "subscribers": "$subscribers" }
+      }
+    },
+    {
+      "name": "drip_unsubscribe",
+      "description": "Unsubscribe by email or ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": { "type": "string", "description": "ID or URL-encoded email." }
+        },
+        "required": ["identifier"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscribers/{identifier}/unsubscribe_all"
+      }
+    },
+    {
+      "name": "drip_tag_subscriber",
+      "description": "Add a single tag to a subscriber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tags": {
+            "type": "array",
+            "description": "[{email, tag:'TagName'}]."
+          }
+        },
+        "required": ["tags"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tags",
+        "bodyMapping": { "tags": "$tags" }
+      }
+    },
+    {
+      "name": "drip_remove_tag",
+      "description": "Remove a tag from a subscriber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "URL-encoded email." },
+          "tag": { "type": "string", "description": "Tag name." }
+        },
+        "required": ["email", "tag"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/subscribers/{email}/tags/{tag}"
+      }
+    },
+    {
+      "name": "drip_create_event",
+      "description": "Send a behavioral event for a subscriber. Triggers Drip workflows. Common: 'Placed Order', 'Browsed Category', 'Watched Video'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "description": "[{email OR user_id, action:'EventName', properties?:{...}, occurred_at?:ISO 8601}]. Wrap inside array."
+          }
+        },
+        "required": ["events"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events",
+        "bodyMapping": { "events": "$events" }
+      }
+    },
+    {
+      "name": "drip_list_campaigns",
+      "description": "List campaigns (active workflows / autoresponders). Each has id, name, status, from_email, from_name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "active, draft, paused, all." },
+          "page": { "type": "integer", "description": "Page." },
+          "per_page": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "queryParams": {
+          "status": "$status",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "drip_subscribe_to_campaign",
+      "description": "Subscribe a contact to a campaign (enrolls in the workflow).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "integer", "description": "Campaign ID." },
+          "subscribers": {
+            "type": "array",
+            "description": "[{email, double_opt_in?:false, reactivate_if_removed?:true, ...subscriber fields...}]."
+          }
+        },
+        "required": ["campaignId", "subscribers"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaignId}/subscribers",
+        "bodyMapping": { "subscribers": "$subscribers" }
+      }
+    },
+    {
+      "name": "drip_record_order",
+      "description": "Record an e-commerce order (used by Drip for revenue attribution and shopper segmentation). Required: order with email + provider + identifier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "description": "[{email, provider:'shopify'|'woocommerce'|..., identifier:'#1001', amount:9999 (cents), items:[{product_id, sku, name, quantity, price, ...}], occurred_at?:ISO, currency?:'USD'}]."
+          }
+        },
+        "required": ["orders"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders",
+        "bodyMapping": { "orders": "$orders" }
+      }
+    },
+    {
+      "name": "drip_list_tags",
+      "description": "List all tags in the account with usage counts.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/tags" }
+    },
+    {
+      "name": "drip_list_custom_fields",
+      "description": "List custom field names defined on subscribers.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/custom_field_identifiers" }
+    }
+  ]
+}

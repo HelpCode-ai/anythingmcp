@@ -1,0 +1,288 @@
+{
+  "slug": "coda",
+  "name": "Coda",
+  "description": "Drive Coda (docs + tables + formulas) from any AI agent: docs, tables, rows, columns, formulas, packs, controls. 13 tools, Bearer token auth.",
+  "instructions": "This connector uses the Coda API v1 (coda.io/developers/apis/v1).\n\n**Setup**:\n1. Sign in to https://coda.io → top-right avatar → **Account → API settings → Generate API token**.\n2. Name the token. Copy it. Set `CODA_API_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${CODA_API_TOKEN}`.\n\n**Resource hierarchy**: Doc → Section (Page) → Table → Row → Cell. Coda's twist: tables are first-class with structured columns and types; rows are addressable individually; columns can hold formulas.\n\n**Doc IDs** look like `dXXXXXXXXXX` (10-char prefix `d`). Visible in the doc URL.\n\n**Table IDs** look like `grid-XXXXX`. Discover via `coda_list_tables(docId)`.\n\n**Column IDs** look like `c-XXXX`. Discover via `coda_list_columns(docId, tableId)`. When upserting rows you reference cells by column ID OR column name.\n\n**Row IDs** look like `i-XXXX`. Available after a row is created.\n\n**Upserting rows (with key columns)**: pass `keyColumns` (array of column IDs/names) to `coda_upsert_rows` — Coda matches existing rows by those columns and updates them, otherwise inserts. Without `keyColumns`, it always inserts.\n\n**Cell value formats**:\n  - Text/Number/Boolean: pass the raw value.\n  - Date/DateTime: ISO 8601 string.\n  - Person: pass an object `{email}`.\n  - Lookup/Relation: pass the row ID of the related row OR the display value.\n  - Image/Attachment: pass a public HTTPS URL.\n\n**Sync vs disableParsing**: by default Coda parses cell values (interprets formulas, types). Set `disableParsing=true` if you want raw string passthrough.\n\n**Pagination**: cursor via `pageToken` (returned in response's `nextPageToken`). `limit` default 25, max 200.\n\n**Rate limits**: 100 req/min per token. On 429 back off.\n\n**Out of scope here**: doc creation/publishing, control updates beyond list, pack version management, automations, formula evaluation arbitrary, sections beyond list.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "coda",
+  "docsUrl": "https://coda.io/developers/apis/v1",
+  "requiredEnvVars": ["CODA_API_TOKEN"],
+  "connector": {
+    "name": "Coda v1",
+    "type": "REST",
+    "baseUrl": "https://coda.io/apis/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{CODA_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "coda_whoami",
+      "description": "Return the user the token belongs to. Returns name, loginId (email), pictureLink, type, tokenName, workspace.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/whoami" }
+    },
+    {
+      "name": "coda_list_docs",
+      "description": "List docs the user can access. Filter by owner, query, workspace. Pagination via pageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "isOwner": { "type": "boolean", "description": "Only docs the user owns." },
+          "isPublished": { "type": "boolean", "description": "Only published docs." },
+          "query": { "type": "string", "description": "Substring search across doc names." },
+          "sourceDoc": { "type": "string", "description": "Filter to copies of this doc ID." },
+          "isStarred": { "type": "boolean", "description": "Only starred." },
+          "inGallery": { "type": "boolean", "description": "Only gallery docs." },
+          "workspaceId": { "type": "string", "description": "Filter by workspace." },
+          "folderId": { "type": "string", "description": "Filter by folder." },
+          "limit": { "type": "integer", "description": "Max per page (default 25, max 100)." },
+          "pageToken": { "type": "string", "description": "Pagination cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/docs",
+        "queryParams": {
+          "isOwner": "$isOwner",
+          "isPublished": "$isPublished",
+          "query": "$query",
+          "sourceDoc": "$sourceDoc",
+          "isStarred": "$isStarred",
+          "inGallery": "$inGallery",
+          "workspaceId": "$workspaceId",
+          "folderId": "$folderId",
+          "limit": "$limit",
+          "pageToken": "$pageToken"
+        }
+      }
+    },
+    {
+      "name": "coda_get_doc",
+      "description": "Fetch a single doc by ID. Returns metadata: name, owner, ownerName, browserLink, icon, workspace.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "string", "description": "Doc ID (e.g. 'dXXXXXXXXXX')." }
+        },
+        "required": ["docId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/docs/{docId}" }
+    },
+    {
+      "name": "coda_list_tables",
+      "description": "List tables in a doc. Each table has id (e.g. 'grid-XXXXX'), name, tableType (table/view), rowCount, displayColumn, sorts, layout.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "string", "description": "Doc ID." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "pageToken": { "type": "string", "description": "Pagination cursor." },
+          "sortBy": { "type": "string", "description": "name." },
+          "tableTypes": { "type": "string", "description": "Comma-separated: table,view." }
+        },
+        "required": ["docId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/docs/{docId}/tables",
+        "queryParams": {
+          "limit": "$limit",
+          "pageToken": "$pageToken",
+          "sortBy": "$sortBy",
+          "tableTypes": "$tableTypes"
+        }
+      }
+    },
+    {
+      "name": "coda_list_columns",
+      "description": "List columns in a table. Each column has id (e.g. 'c-XXXX'), name, display (true if it's the display column), calculated, formula, format (type info).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "string", "description": "Doc ID." },
+          "tableId": { "type": "string", "description": "Table ID." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "pageToken": { "type": "string", "description": "Cursor." }
+        },
+        "required": ["docId", "tableId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/docs/{docId}/tables/{tableId}/columns",
+        "queryParams": { "limit": "$limit", "pageToken": "$pageToken" }
+      }
+    },
+    {
+      "name": "coda_list_rows",
+      "description": "List rows in a table or view. Supports filtering by a query like 'Status=\"Active\"' (uses Coda formula syntax with column IDs or names).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "string", "description": "Doc ID." },
+          "tableId": { "type": "string", "description": "Table ID." },
+          "query": { "type": "string", "description": "Filter formula, e.g. 'c-XXXX:\"Active\"' or 'Status=\"Active\"'." },
+          "useColumnNames": { "type": "boolean", "description": "If true, returned cells are keyed by column name. Default false (keyed by ID)." },
+          "valueFormat": { "type": "string", "description": "Output format: simple, simpleWithArrays, rich." },
+          "sortBy": { "type": "string", "description": "natural (default table order) or createdAt." },
+          "visibleOnly": { "type": "boolean", "description": "Skip hidden columns." },
+          "limit": { "type": "integer", "description": "Per page (default 25, max 200)." },
+          "pageToken": { "type": "string", "description": "Cursor." }
+        },
+        "required": ["docId", "tableId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/docs/{docId}/tables/{tableId}/rows",
+        "queryParams": {
+          "query": "$query",
+          "useColumnNames": "$useColumnNames",
+          "valueFormat": "$valueFormat",
+          "sortBy": "$sortBy",
+          "visibleOnly": "$visibleOnly",
+          "limit": "$limit",
+          "pageToken": "$pageToken"
+        }
+      }
+    },
+    {
+      "name": "coda_get_row",
+      "description": "Fetch a single row by ID. Returns cells keyed by column ID (or name if useColumnNames=true).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "string", "description": "Doc ID." },
+          "tableId": { "type": "string", "description": "Table ID." },
+          "rowId": { "type": "string", "description": "Row ID (e.g. 'i-XXXX')." },
+          "useColumnNames": { "type": "boolean", "description": "Key cells by name vs ID." },
+          "valueFormat": { "type": "string", "description": "simple, simpleWithArrays, rich." }
+        },
+        "required": ["docId", "tableId", "rowId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/docs/{docId}/tables/{tableId}/rows/{rowId}",
+        "queryParams": {
+          "useColumnNames": "$useColumnNames",
+          "valueFormat": "$valueFormat"
+        }
+      }
+    },
+    {
+      "name": "coda_insert_rows",
+      "description": "Insert (or upsert with keyColumns) rows into a table. Returns a requestId for tracking the async ingest job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "string", "description": "Doc ID." },
+          "tableId": { "type": "string", "description": "Table ID." },
+          "rows": {
+            "type": "array",
+            "description": "Array of row objects: [{cells: [{column: 'c-XXXX' or column-name, value: ...}, ...]}, ...]. value can be string/number/boolean OR object for person ({email}) / row link (rowId string)."
+          },
+          "keyColumns": { "type": "array", "description": "Array of column IDs/names to match for upsert. Omit for pure insert." },
+          "disableParsing": { "type": "boolean", "description": "If true, send raw values without Coda parsing." }
+        },
+        "required": ["docId", "tableId", "rows"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/docs/{docId}/tables/{tableId}/rows",
+        "bodyMapping": {
+          "rows": "$rows",
+          "keyColumns": "$keyColumns"
+        },
+        "queryParams": { "disableParsing": "$disableParsing" }
+      }
+    },
+    {
+      "name": "coda_update_row",
+      "description": "Update a specific row by ID. Returns a requestId for tracking async update.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "string", "description": "Doc ID." },
+          "tableId": { "type": "string", "description": "Table ID." },
+          "rowId": { "type": "string", "description": "Row ID." },
+          "row": {
+            "type": "object",
+            "description": "{cells: [{column: 'c-XXXX' or name, value: ...}, ...]}."
+          },
+          "disableParsing": { "type": "boolean", "description": "Skip parsing." }
+        },
+        "required": ["docId", "tableId", "rowId", "row"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/docs/{docId}/tables/{tableId}/rows/{rowId}",
+        "bodyMapping": { "row": "$row" },
+        "queryParams": { "disableParsing": "$disableParsing" }
+      }
+    },
+    {
+      "name": "coda_delete_row",
+      "description": "Delete a single row by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "string", "description": "Doc ID." },
+          "tableId": { "type": "string", "description": "Table ID." },
+          "rowId": { "type": "string", "description": "Row ID." }
+        },
+        "required": ["docId", "tableId", "rowId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/docs/{docId}/tables/{tableId}/rows/{rowId}"
+      }
+    },
+    {
+      "name": "coda_delete_rows",
+      "description": "Bulk-delete rows by IDs (more efficient than per-row).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "string", "description": "Doc ID." },
+          "tableId": { "type": "string", "description": "Table ID." },
+          "rowIds": { "type": "array", "description": "Array of row IDs to delete." }
+        },
+        "required": ["docId", "tableId", "rowIds"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/docs/{docId}/tables/{tableId}/rows",
+        "bodyMapping": { "rowIds": "$rowIds" }
+      }
+    },
+    {
+      "name": "coda_get_formula_result",
+      "description": "Evaluate a named formula on a doc. Returns the current value of a formula by name (defined in the doc via Add Formula).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "string", "description": "Doc ID." },
+          "formulaIdOrName": { "type": "string", "description": "Formula ID or name (URL-encoded)." }
+        },
+        "required": ["docId", "formulaIdOrName"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/docs/{docId}/formulas/{formulaIdOrName}"
+      }
+    },
+    {
+      "name": "coda_get_mutation_status",
+      "description": "Check the status of an async mutation (insert/update/delete) by its requestId returned from those calls. Returns completed boolean.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "description": "RequestId from a prior mutation call." }
+        },
+        "required": ["requestId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/mutationStatus/{requestId}" }
+    }
+  ]
+}

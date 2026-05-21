@@ -1,0 +1,153 @@
+{
+  "slug": "hunter",
+  "name": "Hunter.io",
+  "description": "Find and verify email addresses via Hunter.io. 7 tools for domain search, email finder, email verifier, account stats. Bearer-token / query-key auth.",
+  "instructions": "This connector uses the Hunter.io API v2 (hunter.io/api-documentation/v2).\n\n**Setup**:\n1. Sign in to https://hunter.io → top-right avatar → **API → API Keys**.\n2. Copy the key. Set `HUNTER_API_KEY`.\n\n**Authentication**: query-string `?api_key=...` on every call (QUERY_AUTH). Hunter also accepts the API key in an `X-API-Key` header but query-string is the documented default.\n\n**Credits model**: every request consumes credits per your plan. `domain_search` is the most expensive (returns up to 100 emails per call); `email_verifier` and `email_finder` are 1 credit each. `email_count` and `account` are FREE (don't deduct).\n\n**Confidence scores**: every email returned has a `confidence` 0-100 — Hunter's estimate of deliverability. >90 = reliable, 50-90 = use with care, <50 = high bounce risk.\n\n**Verifier vs Finder**:\n  - `email_verifier`: 'is this email deliverable?' — returns status (valid/invalid/accept_all/disposable/webmail/unknown).\n  - `email_finder`: 'find the email for this person at this company' — returns the most-likely email pattern with confidence.\n\n**Out of scope here**: Hunter Campaigns (their cold-email product), Leads (CRM-lite), webhooks.",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "hunter",
+  "docsUrl": "https://hunter.io/api-documentation/v2",
+  "requiredEnvVars": ["HUNTER_API_KEY"],
+  "connector": {
+    "name": "Hunter.io v2",
+    "type": "REST",
+    "baseUrl": "https://api.hunter.io/v2",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "api_key": "{{HUNTER_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "hunter_account",
+      "description": "Return account info: email, plan_name, plan_level, calls.used, calls.available. FREE — doesn't consume credits. Use at startup to verify credentials and check remaining quota.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/account" }
+    },
+    {
+      "name": "hunter_domain_search",
+      "description": "Find email addresses associated with a domain. Returns up to 100 emails (per_page param) with name, position, seniority, department, confidence, sources. The most credit-expensive endpoint.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": { "type": "string", "description": "Domain to search (e.g. 'acme.com'). Mutually exclusive with company." },
+          "company": { "type": "string", "description": "Company name (Hunter resolves to domain)." },
+          "limit": { "type": "integer", "description": "Max emails to return (default 10, max 100)." },
+          "offset": { "type": "integer", "description": "Pagination offset." },
+          "type": { "type": "string", "description": "Filter by type: personal or generic." },
+          "seniority": { "type": "string", "description": "Filter: junior, senior, executive (comma-separated)." },
+          "department": { "type": "string", "description": "Filter by department: executive, it, finance, management, sales, legal, support, hr, marketing, communication, education, design, health, operations (comma-separated)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain-search",
+        "queryParams": {
+          "domain": "$domain",
+          "company": "$company",
+          "limit": "$limit",
+          "offset": "$offset",
+          "type": "$type",
+          "seniority": "$seniority",
+          "department": "$department"
+        }
+      }
+    },
+    {
+      "name": "hunter_email_finder",
+      "description": "Find the most-likely email for a specific person at a domain. Required: domain + (first_name+last_name OR full_name). Returns email + confidence + sources.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": { "type": "string", "description": "Domain (e.g. 'acme.com'). Mutually exclusive with company." },
+          "company": { "type": "string", "description": "Company name." },
+          "first_name": { "type": "string", "description": "First name." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "full_name": { "type": "string", "description": "Or full name as single string." },
+          "max_duration": { "type": "integer", "description": "Max seconds Hunter spends searching (3-20, default 10)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/email-finder",
+        "queryParams": {
+          "domain": "$domain",
+          "company": "$company",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "full_name": "$full_name",
+          "max_duration": "$max_duration"
+        }
+      }
+    },
+    {
+      "name": "hunter_email_verifier",
+      "description": "Verify if an email is deliverable. Returns status (valid/invalid/accept_all/webmail/disposable/unknown) + score 0-100 + smtp_check + mx_records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email to verify." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/email-verifier",
+        "queryParams": { "email": "$email" }
+      }
+    },
+    {
+      "name": "hunter_email_count",
+      "description": "Count emails Hunter has indexed for a domain. FREE (no credits). Useful to estimate before a domain_search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": { "type": "string", "description": "Domain." },
+          "company": { "type": "string", "description": "Or company name." },
+          "type": { "type": "string", "description": "personal or generic." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/email-count",
+        "queryParams": {
+          "domain": "$domain",
+          "company": "$company",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "hunter_combined_enrichment",
+      "description": "Combined person + company enrichment in one call. Provide an email — returns the person's name, role, employment + the company's industry, employees, location, technologies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email to enrich." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/combined/find",
+        "queryParams": { "email": "$email" }
+      }
+    },
+    {
+      "name": "hunter_company_enrichment",
+      "description": "Enrich a company by domain. Returns industry, employee count, address, country, technologies, social profiles, description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": { "type": "string", "description": "Company domain." }
+        },
+        "required": ["domain"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/find",
+        "queryParams": { "domain": "$domain" }
+      }
+    }
+  ]
+}

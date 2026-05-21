@@ -1,0 +1,195 @@
+{
+  "slug": "nimble",
+  "name": "Nimble",
+  "description": "Manage Nimble CRM (contacts, activities, deals, tasks, notes) from any AI agent. 9 tools, OAuth2 auth.",
+  "instructions": "This connector wraps the Nimble REST API v1 (app.nimble.com/api/v1).\n\n**Setup — OAuth2 refresh flow**:\n1. Sign in to https://app.nimble.com → **Settings → Integrations → API → Create OAuth app**.\n2. Note the `client_id`, `client_secret`, and complete the OAuth dance at `https://app.nimble.com/oauth/authorize?response_type=code&client_id=...&redirect_uri=...&scope=...` to get an authorization code.\n3. Exchange for tokens: `POST https://app.nimble.com/oauth/token?grant_type=authorization_code&code=...&client_id=...&client_secret=...&redirect_uri=...`.\n4. Save the `refresh_token`. Set `NIMBLE_CLIENT_ID`, `NIMBLE_CLIENT_SECRET`, `NIMBLE_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 — engine handles the refresh. Access token sent as `Authorization: Bearer ACCESS_TOKEN`.\n\n**Contact model**: Nimble unifies leads + contacts + companies into a single 'Contact' object with `record_type` discriminator (`person` or `company`). Fields are namespaced — `fields['email'][0].value`, `fields['first name'][0].value` etc.\n\n**Pagination**: `page` (1-based) + `per_page` (max 30).\n\n**Rate limits**: 5 req/sec per token. 429 → exponential backoff.\n\n**Out of scope here**: pipeline analytics, social-listening streams, email-sync settings, group messaging.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "nimble",
+  "docsUrl": "https://nimble.readme.io/",
+  "requiredEnvVars": ["NIMBLE_CLIENT_ID", "NIMBLE_CLIENT_SECRET", "NIMBLE_REFRESH_TOKEN"],
+  "connector": {
+    "name": "Nimble API v1",
+    "type": "REST",
+    "baseUrl": "https://app.nimble.com/api/v1",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{NIMBLE_CLIENT_ID}}",
+      "clientSecret": "{{NIMBLE_CLIENT_SECRET}}",
+      "refreshToken": "{{NIMBLE_REFRESH_TOKEN}}",
+      "tokenUrl": "https://app.nimble.com/oauth/token"
+    }
+  },
+  "tools": [
+    {
+      "name": "nimble_myself",
+      "description": "Return the authenticated user info.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/myself" }
+    },
+    {
+      "name": "nimble_list_contacts",
+      "description": "List contacts (people + companies). Filter by record_type, query, tag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "record_type": { "type": "string", "description": "person, company, lead." },
+          "query": { "type": "string", "description": "Free-text search." },
+          "tag": { "type": "string", "description": "Filter by tag name." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 30." },
+          "sort": { "type": "string", "description": "Field name. Prefix with - for desc." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "record_type": "$record_type",
+          "query": "$query",
+          "tag": "$tag",
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "nimble_get_contact",
+      "description": "Get one contact by ID with all fields, tags, social-network links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Contact ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contact/{id}" }
+    },
+    {
+      "name": "nimble_create_contact",
+      "description": "Create a contact. `fields` is the Nimble namespaced shape — `{\"first name\":[{value:'John'}], email:[{value:'a@b.com', modifier:'work'}]}`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "record_type": { "type": "string", "description": "person or company." },
+          "fields": { "type": "object", "description": "Field-name → array-of-{value, modifier?} map." },
+          "tags": { "type": "array", "description": "Array of tag names." }
+        },
+        "required": ["record_type", "fields"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contact",
+        "bodyMapping": {
+          "record_type": "$record_type",
+          "fields": "$fields",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "nimble_update_contact",
+      "description": "Update a contact (PATCH semantics — supply only fields you want changed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Contact ID." },
+          "fields": { "type": "object", "description": "Fields to update." }
+        },
+        "required": ["id", "fields"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contact/{id}",
+        "bodyMapping": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "nimble_delete_contact",
+      "description": "Permanently delete a contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Contact ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/contact/{id}" }
+    },
+    {
+      "name": "nimble_list_activities",
+      "description": "List activities (calls, meetings, tasks, emails) for the workspace.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": { "type": "string", "description": "Filter to one contact." },
+          "type": { "type": "string", "description": "task, event, phone_call, email." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 30." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/activities",
+        "queryParams": {
+          "contact_id": "$contact_id",
+          "type": "$type",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "nimble_create_activity",
+      "description": "Create an activity (task, call note, meeting log).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "description": "task, event, phone_call, email." },
+          "subject": { "type": "string", "description": "Subject / title." },
+          "description": { "type": "string", "description": "Body." },
+          "contact_id": { "type": "string", "description": "Linked contact." },
+          "start_time": { "type": "string", "description": "ISO 8601 start." },
+          "end_time": { "type": "string", "description": "ISO 8601 end." }
+        },
+        "required": ["type", "subject"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/activity",
+        "bodyMapping": {
+          "type": "$type",
+          "subject": "$subject",
+          "description": "$description",
+          "contact_id": "$contact_id",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "nimble_list_deals",
+      "description": "List sales deals/opportunities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stage": { "type": "string", "description": "Filter by stage name." },
+          "owner": { "type": "string", "description": "Filter by owner ID." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 30." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals",
+        "queryParams": {
+          "stage": "$stage",
+          "owner": "$owner",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    }
+  ]
+}

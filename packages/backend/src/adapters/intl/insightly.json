@@ -1,0 +1,294 @@
+{
+  "slug": "insightly",
+  "name": "Insightly",
+  "description": "Drive Insightly (CRM + project management) from any AI agent: contacts, organisations, leads, opportunities, projects, tasks. 12 tools, Basic auth.",
+  "instructions": "This connector uses the Insightly REST API v3.1 (api.insightly.com/v3.1).\n\n**Setup**:\n1. Sign in to Insightly → bottom-left avatar → **User Settings → API Key**.\n2. Copy the key. Set `INSIGHTLY_API_KEY`.\n3. Note the **API URL pod** — visible in the same screen as the API key (e.g. `api.na1.insightly.com` for North America #1). Set `INSIGHTLY_POD` (just the pod part, e.g. `na1`, `eu2`).\n\n**Authentication**: HTTP Basic with username=API_KEY, password=empty.\n\n**Pod-specific URL**: `https://api.{{INSIGHTLY_POD}}.insightly.com/v3.1`. Wrong pod → 404.\n\n**Lead vs Contact**: Insightly has both. Leads are unqualified (no opportunity yet); contacts are people in opportunities or just relationships.\n\n**Custom fields**: stored under `CUSTOMFIELDS` array of `{FIELD_NAME, FIELD_VALUE, CUSTOM_FIELD_ID}`.\n\n**Pipeline / Stage IDs**: opportunities live in pipelines with stages. Discover via `insightly_list_pipelines` + `insightly_list_pipeline_stages`.\n\n**Pagination**: `?skip=N&top=M` (max 500 per page).\n\n**Out of scope here**: emails CRUD, tasks recurrence, file attachments, custom-object schemas, project templates.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "insightly",
+  "docsUrl": "https://api.insightly.com/v3.1/Help",
+  "requiredEnvVars": ["INSIGHTLY_API_KEY", "INSIGHTLY_POD"],
+  "connector": {
+    "name": "Insightly v3.1",
+    "type": "REST",
+    "baseUrl": "https://api.{{INSIGHTLY_POD}}.insightly.com/v3.1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{INSIGHTLY_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "insightly_get_current_user",
+      "description": "Return the user the API key belongs to (whoami).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/Users/me" }
+    },
+    {
+      "name": "insightly_list_contacts",
+      "description": "List contacts with filter/sort.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": { "type": "integer", "description": "Pagination offset." },
+          "top": { "type": "integer", "description": "Per page (max 500)." },
+          "brief": { "type": "boolean", "description": "true = compact response without long-text fields." },
+          "updated_after_utc": { "type": "string", "description": "ISO 8601 — contacts modified after." },
+          "field_name": { "type": "string", "description": "Filter field name." },
+          "field_value": { "type": "string", "description": "Filter value." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Contacts",
+        "queryParams": {
+          "skip": "$skip",
+          "top": "$top",
+          "brief": "$brief",
+          "updated_after_utc": "$updated_after_utc",
+          "field_name": "$field_name",
+          "field_value": "$field_value"
+        }
+      }
+    },
+    {
+      "name": "insightly_get_contact",
+      "description": "Fetch one contact by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": { "type": "integer", "description": "Contact ID." }
+        },
+        "required": ["contactId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/Contacts/{contactId}" }
+    },
+    {
+      "name": "insightly_create_contact",
+      "description": "Create a contact. Required: FIRST_NAME or LAST_NAME.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "FIRST_NAME": { "type": "string", "description": "First name." },
+          "LAST_NAME": { "type": "string", "description": "Last name." },
+          "EMAIL_ADDRESS": { "type": "string", "description": "Email." },
+          "TITLE": { "type": "string", "description": "Job title." },
+          "PHONE": { "type": "string", "description": "Phone." },
+          "PHONE_MOBILE": { "type": "string", "description": "Mobile phone." },
+          "ORGANISATION_ID": { "type": "integer", "description": "Linked organisation." },
+          "OWNER_USER_ID": { "type": "integer", "description": "Owner user." },
+          "BACKGROUND": { "type": "string", "description": "Notes." },
+          "CUSTOMFIELDS": { "type": "array", "description": "[{FIELD_NAME, FIELD_VALUE, CUSTOM_FIELD_ID}]." },
+          "TAGS": { "type": "array", "description": "[{TAG_NAME}]." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Contacts",
+        "bodyMapping": {
+          "FIRST_NAME": "$FIRST_NAME",
+          "LAST_NAME": "$LAST_NAME",
+          "EMAIL_ADDRESS": "$EMAIL_ADDRESS",
+          "TITLE": "$TITLE",
+          "PHONE": "$PHONE",
+          "PHONE_MOBILE": "$PHONE_MOBILE",
+          "ORGANISATION_ID": "$ORGANISATION_ID",
+          "OWNER_USER_ID": "$OWNER_USER_ID",
+          "BACKGROUND": "$BACKGROUND",
+          "CUSTOMFIELDS": "$CUSTOMFIELDS",
+          "TAGS": "$TAGS"
+        }
+      }
+    },
+    {
+      "name": "insightly_list_organisations",
+      "description": "List organisations (companies).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": { "type": "integer", "description": "Offset." },
+          "top": { "type": "integer", "description": "Per page." },
+          "brief": { "type": "boolean", "description": "Compact response." },
+          "field_name": { "type": "string", "description": "Filter field." },
+          "field_value": { "type": "string", "description": "Filter value." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Organisations",
+        "queryParams": {
+          "skip": "$skip",
+          "top": "$top",
+          "brief": "$brief",
+          "field_name": "$field_name",
+          "field_value": "$field_value"
+        }
+      }
+    },
+    {
+      "name": "insightly_list_leads",
+      "description": "List leads (unqualified prospects).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": { "type": "integer", "description": "Offset." },
+          "top": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Leads",
+        "queryParams": { "skip": "$skip", "top": "$top" }
+      }
+    },
+    {
+      "name": "insightly_create_lead",
+      "description": "Create a lead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "FIRST_NAME": { "type": "string", "description": "First name." },
+          "LAST_NAME": { "type": "string", "description": "Last name." },
+          "ORGANISATION_NAME": { "type": "string", "description": "Company name (free text — not linked to organisations record)." },
+          "EMAIL": { "type": "string", "description": "Email." },
+          "PHONE_NUMBER": { "type": "string", "description": "Phone." },
+          "TITLE": { "type": "string", "description": "Job title." },
+          "LEAD_SOURCE_ID": { "type": "integer", "description": "Lead source ID." },
+          "LEAD_STATUS_ID": { "type": "integer", "description": "Lead status ID." },
+          "OWNER_USER_ID": { "type": "integer", "description": "Owner." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Leads",
+        "bodyMapping": {
+          "FIRST_NAME": "$FIRST_NAME",
+          "LAST_NAME": "$LAST_NAME",
+          "ORGANISATION_NAME": "$ORGANISATION_NAME",
+          "EMAIL": "$EMAIL",
+          "PHONE_NUMBER": "$PHONE_NUMBER",
+          "TITLE": "$TITLE",
+          "LEAD_SOURCE_ID": "$LEAD_SOURCE_ID",
+          "LEAD_STATUS_ID": "$LEAD_STATUS_ID",
+          "OWNER_USER_ID": "$OWNER_USER_ID"
+        }
+      }
+    },
+    {
+      "name": "insightly_list_opportunities",
+      "description": "List opportunities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": { "type": "integer", "description": "Offset." },
+          "top": { "type": "integer", "description": "Per page." },
+          "field_name": { "type": "string", "description": "Filter field." },
+          "field_value": { "type": "string", "description": "Filter value." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Opportunities",
+        "queryParams": {
+          "skip": "$skip",
+          "top": "$top",
+          "field_name": "$field_name",
+          "field_value": "$field_value"
+        }
+      }
+    },
+    {
+      "name": "insightly_create_opportunity",
+      "description": "Create an opportunity. Required: OPPORTUNITY_NAME.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "OPPORTUNITY_NAME": { "type": "string", "description": "Name." },
+          "OPPORTUNITY_DETAILS": { "type": "string", "description": "Description." },
+          "OPPORTUNITY_STATE": { "type": "string", "description": "OPEN, WON, LOST, SUSPENDED, ABANDONED." },
+          "PIPELINE_ID": { "type": "integer", "description": "Pipeline ID." },
+          "STAGE_ID": { "type": "integer", "description": "Stage ID within pipeline." },
+          "BID_AMOUNT": { "type": "number", "description": "Deal value." },
+          "BID_CURRENCY": { "type": "string", "description": "ISO 4217 code." },
+          "FORECAST_CLOSE_DATE": { "type": "string", "description": "ISO 8601." },
+          "PROBABILITY": { "type": "integer", "description": "0-100." },
+          "OWNER_USER_ID": { "type": "integer", "description": "Owner." },
+          "RESPONSIBLE_USER_ID": { "type": "integer", "description": "Responsible user." }
+        },
+        "required": ["OPPORTUNITY_NAME"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Opportunities",
+        "bodyMapping": {
+          "OPPORTUNITY_NAME": "$OPPORTUNITY_NAME",
+          "OPPORTUNITY_DETAILS": "$OPPORTUNITY_DETAILS",
+          "OPPORTUNITY_STATE": "$OPPORTUNITY_STATE",
+          "PIPELINE_ID": "$PIPELINE_ID",
+          "STAGE_ID": "$STAGE_ID",
+          "BID_AMOUNT": "$BID_AMOUNT",
+          "BID_CURRENCY": "$BID_CURRENCY",
+          "FORECAST_CLOSE_DATE": "$FORECAST_CLOSE_DATE",
+          "PROBABILITY": "$PROBABILITY",
+          "OWNER_USER_ID": "$OWNER_USER_ID",
+          "RESPONSIBLE_USER_ID": "$RESPONSIBLE_USER_ID"
+        }
+      }
+    },
+    {
+      "name": "insightly_list_pipelines",
+      "description": "List pipelines + their stages (FOR_OPPORTUNITIES or FOR_PROJECTS).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": { "type": "integer", "description": "Offset." },
+          "top": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Pipelines",
+        "queryParams": { "skip": "$skip", "top": "$top" }
+      }
+    },
+    {
+      "name": "insightly_list_projects",
+      "description": "List projects.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": { "type": "integer", "description": "Offset." },
+          "top": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Projects",
+        "queryParams": { "skip": "$skip", "top": "$top" }
+      }
+    },
+    {
+      "name": "insightly_list_tasks",
+      "description": "List tasks (CRM activities).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": { "type": "integer", "description": "Offset." },
+          "top": { "type": "integer", "description": "Per page." },
+          "status": { "type": "string", "description": "NOT STARTED, IN PROGRESS, COMPLETED, DEFERRED, WAITING." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Tasks",
+        "queryParams": {
+          "skip": "$skip",
+          "top": "$top",
+          "field_name": "STATUS",
+          "field_value": "$status"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,250 @@
+{
+  "slug": "discord-bot",
+  "name": "Discord Bot",
+  "description": "Send messages, embeds, files and reactions to Discord channels and DMs from any AI agent via the Discord REST API. 13 tools, Bot Token auth. Outbound + lightweight channel/guild reads (no gateway / websocket / voice).",
+  "instructions": "This connector uses the Discord REST API v10 (https://discord.com/developers/docs).\n\n**Setup**:\n1. Open https://discord.com/developers/applications → **New Application** → name it (this becomes the app, not the bot).\n2. Sidebar → **Bot → Reset Token → copy the token**. Treat as a secret — anyone with it can act as the bot.\n3. Sidebar → **Installation** (or **OAuth2 → URL Generator** in older UI): pick scope `bot`, then permissions like Send Messages, Embed Links, Attach Files, Read Message History, Add Reactions, View Channels. Open the generated URL in a browser to **install the bot into a server** (you must be admin or have Manage Server). Repeat per server.\n4. Set `DISCORD_BOT_TOKEN` to the token from step 2.\n\n**Authentication**: header `Authorization: Bot {{DISCORD_BOT_TOKEN}}` — note the literal `Bot ` prefix (NOT `Bearer`). The adapter sets this header via authType=API_KEY with the `Authorization` header name.\n\n**Snowflake IDs**: every channel, guild, user, message in Discord is a numeric snowflake (~18-19 digits, string-typed). Discover them via `discord_bot_list_guilds` → `discord_bot_list_guild_channels` → drill down. In the Discord client, enable **Developer Mode** (User Settings → Advanced) and right-click any object → 'Copy ID' to grab snowflakes manually.\n\n**Channel types**: 0=text, 2=voice, 4=category, 5=announcement, 11=public thread, 12=private thread, 13=stage, 15=forum. Messages can be sent to text (0), announcement (5), threads (11/12), forum posts (15 via thread).\n\n**Sending a message — embeds vs content**:\n- `content`: plain text (Markdown supported, ≤ 2000 chars).\n- `embeds`: rich card with title/description/color/fields/image/timestamp (up to 10 per message, each ≤ 6000 chars total).\nUse embeds for structured data (release notes, alerts, dashboards).\n\n**File attachments**: must be uploaded as multipart in the same request — NOT supported in a single tool call here. Workaround: host the file on a public URL and include it as an embed image or a hyperlink in the content. For attaching the file itself, do the multipart upload externally and pass the resulting message_id.\n\n**Threads vs channels**: threads are child channels of a parent channel; the API treats them like channels (same endpoint `/channels/{id}/messages`). The thread_id IS the channel_id.\n\n**Rate limits**: per-route AND global. Discord returns `X-RateLimit-Remaining` / `X-RateLimit-Reset-After` headers. On 429, wait the `retry_after` seconds. Hard cap: 50 req/sec global per token.\n\n**Permission errors (50001 / 50013)**: bot needs the right server permission in the channel. Adjust the bot's role permissions or grant per-channel overrides.\n\n**DMs to users**: you can't DM a user out of the blue — you must first call `discord_bot_create_dm_channel` with the user_id to open a DM channel, then send to that channel_id. The user must also share at least one server with the bot.\n\n**Inbound / gateway / voice / slash commands**: out of scope here. The Discord WebSocket gateway (for receiving messages, presence, voice) and Interactions endpoints (slash commands) need a long-running process or a registered interactions webhook — separate plan.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "discord",
+  "docsUrl": "https://discord.com/developers/docs/reference",
+  "requiredEnvVars": ["DISCORD_BOT_TOKEN"],
+  "connector": {
+    "name": "Discord REST API v10",
+    "type": "REST",
+    "baseUrl": "https://discord.com/api/v10",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Bot {{DISCORD_BOT_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "discord_bot_get_current_user",
+      "description": "Return the bot's own user object (id, username, discriminator, avatar). Health check + whoami.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/users/@me" }
+    },
+    {
+      "name": "discord_bot_list_guilds",
+      "description": "List the servers (guilds) the bot is a member of. Returns id, name, icon, owner flag, permissions bitfield. Bot must be installed in a server to see it here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max 1-200 (default 200)." },
+          "before": { "type": "string", "description": "Snowflake ID — return guilds before this ID (pagination)." },
+          "after": { "type": "string", "description": "Snowflake ID — return guilds after this ID (pagination)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/@me/guilds",
+        "queryParams": { "limit": "$limit", "before": "$before", "after": "$after" }
+      }
+    },
+    {
+      "name": "discord_bot_get_guild",
+      "description": "Fetch a single guild by ID. Returns name, icon, splash, owner_id, region, afk_channel, system_channel, features, member_count (if with_counts=true).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "guildId": { "type": "string", "description": "Guild snowflake ID." },
+          "with_counts": { "type": "boolean", "description": "If true, include approximate_member_count and approximate_presence_count." }
+        },
+        "required": ["guildId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/guilds/{guildId}",
+        "queryParams": { "with_counts": "$with_counts" }
+      }
+    },
+    {
+      "name": "discord_bot_list_guild_channels",
+      "description": "List all channels (text, voice, category, threads' parents) in a guild. Use to discover channel_id values to send messages into.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "guildId": { "type": "string", "description": "Guild snowflake ID." }
+        },
+        "required": ["guildId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/guilds/{guildId}/channels" }
+    },
+    {
+      "name": "discord_bot_get_channel",
+      "description": "Fetch a single channel by ID. Returns type, name, topic, parent_id, position, permission_overwrites, last_message_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channelId": { "type": "string", "description": "Channel snowflake." }
+        },
+        "required": ["channelId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/channels/{channelId}" }
+    },
+    {
+      "name": "discord_bot_send_message",
+      "description": "Send a message to a channel or thread. Provide `content` (text) OR `embeds` OR both. For DMs, first open a DM channel with discord_bot_create_dm_channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channelId": { "type": "string", "description": "Channel snowflake (text channel, thread, or DM channel ID)." },
+          "content": { "type": "string", "description": "Text content ≤2000 chars. Supports Discord Markdown." },
+          "embeds": { "type": "array", "description": "Array of up to 10 embed objects. Each: {title, description, url, color (decimal RGB), timestamp ISO 8601, footer{text,icon_url}, image{url}, thumbnail{url}, author{name,url,icon_url}, fields[{name,value,inline?}]}. Total ≤6000 chars." },
+          "tts": { "type": "boolean", "description": "If true, send as text-to-speech (rarely useful)." },
+          "allowed_mentions": { "type": "object", "description": "Control which mentions trigger notifications: {parse:['users','roles','everyone'], users:[id], roles:[id], replied_user:bool}. Use {parse:[]} to suppress all pings." },
+          "message_reference": { "type": "object", "description": "Reply to an existing message: {message_id, channel_id?, guild_id?, fail_if_not_exists?}." }
+        },
+        "required": ["channelId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/channels/{channelId}/messages",
+        "bodyMapping": {
+          "content": "$content",
+          "embeds": "$embeds",
+          "tts": "$tts",
+          "allowed_mentions": "$allowed_mentions",
+          "message_reference": "$message_reference"
+        }
+      }
+    },
+    {
+      "name": "discord_bot_edit_message",
+      "description": "Edit a message the bot previously sent. Cannot edit messages from other users.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channelId": { "type": "string", "description": "Channel snowflake." },
+          "messageId": { "type": "string", "description": "Message snowflake to edit." },
+          "content": { "type": "string", "description": "New text content (or null to clear)." },
+          "embeds": { "type": "array", "description": "New embeds array (or [] to clear)." }
+        },
+        "required": ["channelId", "messageId"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/channels/{channelId}/messages/{messageId}",
+        "bodyMapping": {
+          "content": "$content",
+          "embeds": "$embeds"
+        }
+      }
+    },
+    {
+      "name": "discord_bot_delete_message",
+      "description": "Delete a message. Bot needs Manage Messages permission to delete others' messages; can always delete its own.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channelId": { "type": "string", "description": "Channel snowflake." },
+          "messageId": { "type": "string", "description": "Message snowflake to delete." }
+        },
+        "required": ["channelId", "messageId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/channels/{channelId}/messages/{messageId}"
+      }
+    },
+    {
+      "name": "discord_bot_list_messages",
+      "description": "Fetch recent messages from a channel. Bot needs Read Message History. Default 50; max 100. Use `before` for older history (paginate backwards).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channelId": { "type": "string", "description": "Channel snowflake." },
+          "limit": { "type": "integer", "description": "Max messages 1-100 (default 50)." },
+          "before": { "type": "string", "description": "Snowflake — return messages with ID less than this (older)." },
+          "after": { "type": "string", "description": "Snowflake — return messages with ID greater than this (newer)." },
+          "around": { "type": "string", "description": "Snowflake — return messages centered around this ID." }
+        },
+        "required": ["channelId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/{channelId}/messages",
+        "queryParams": {
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "around": "$around"
+        }
+      }
+    },
+    {
+      "name": "discord_bot_add_reaction",
+      "description": "Add a reaction emoji to a message as the bot. For unicode emoji pass the literal char (e.g. '👍'). For custom guild emoji pass 'name:id'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channelId": { "type": "string", "description": "Channel snowflake." },
+          "messageId": { "type": "string", "description": "Message snowflake." },
+          "emoji": { "type": "string", "description": "URL-encoded emoji. Unicode like '%F0%9F%91%8D' for 👍, or 'name:id' for custom emoji." }
+        },
+        "required": ["channelId", "messageId", "emoji"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/channels/{channelId}/messages/{messageId}/reactions/{emoji}/@me"
+      }
+    },
+    {
+      "name": "discord_bot_create_dm_channel",
+      "description": "Open a DM channel with a user. Returns a channel object with `id` — use that channel_id in discord_bot_send_message to actually DM them. The user must share at least one server with the bot.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recipient_id": { "type": "string", "description": "User snowflake to DM." }
+        },
+        "required": ["recipient_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/@me/channels",
+        "bodyMapping": {
+          "recipient_id": "$recipient_id"
+        }
+      }
+    },
+    {
+      "name": "discord_bot_create_thread_from_message",
+      "description": "Start a public thread anchored to an existing message. Useful for spawning discussion threads from bot announcements.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channelId": { "type": "string", "description": "Parent channel snowflake." },
+          "messageId": { "type": "string", "description": "Message to anchor the thread to." },
+          "name": { "type": "string", "description": "Thread name (1-100 chars)." },
+          "auto_archive_duration": { "type": "integer", "description": "Auto-archive minutes: 60, 1440, 4320, or 10080." }
+        },
+        "required": ["channelId", "messageId", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/channels/{channelId}/messages/{messageId}/threads",
+        "bodyMapping": {
+          "name": "$name",
+          "auto_archive_duration": "$auto_archive_duration"
+        }
+      }
+    },
+    {
+      "name": "discord_bot_get_guild_member",
+      "description": "Fetch a guild member by user_id. Returns user object, nick, roles[], joined_at, premium_since, permissions in the guild.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "guildId": { "type": "string", "description": "Guild snowflake." },
+          "userId": { "type": "string", "description": "User snowflake." }
+        },
+        "required": ["guildId", "userId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/guilds/{guildId}/members/{userId}"
+      }
+    }
+  ]
+}

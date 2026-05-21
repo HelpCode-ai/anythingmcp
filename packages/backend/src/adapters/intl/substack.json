@@ -1,0 +1,93 @@
+{
+  "slug": "substack",
+  "name": "Substack",
+  "description": "Read Substack publication content, posts, comments, podcast episodes via public RSS/JSON feeds. 5 tools, no auth required.",
+  "instructions": "This connector uses Substack's PUBLIC content endpoints (Substack does not yet publish a formal REST API for writes — programmatic post creation/comments require the legacy session-cookie API which isn't supported here).\n\n**Setup**: NO API KEY. Set `SUBSTACK_PUBLICATION_URL` = the publication's base URL (e.g. `https://lennysnewsletter.substack.com`). For tools that target a specific publication, the URL is taken from this env var.\n\n**Authentication**: NONE. All reads use public endpoints (the same JSON Substack's own site fetches).\n\n**Content endpoints available**:\n  - `/api/v1/posts?limit=N&offset=M` — paginated posts list (each post: id, title, slug, post_date, audience, type)\n  - `/api/v1/posts/by-id/{id}` — single post detail\n  - `/api/v1/comments/{post_id}` — top comments on a post\n  - `/api/v1/podcast/feed` — podcast episodes (audio newsletters only)\n  - `/feed` — standard RSS feed\n\n**Out of scope here**: creating posts (no public write API), email subscribers list, paid-subscriber management, comment moderation. All UI-only as of 2025.\n\n**Rate limits**: Substack doesn't publish numbers; be polite (1 req/sec recommended) and cache aggressively. They'll throttle abusive IPs.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "substack",
+  "docsUrl": "https://substack.com/help/articles/4445-substack-content-api",
+  "requiredEnvVars": ["SUBSTACK_PUBLICATION_URL"],
+  "connector": {
+    "name": "Substack public",
+    "type": "REST",
+    "baseUrl": "{{SUBSTACK_PUBLICATION_URL}}",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "substack_list_posts",
+      "description": "List recent posts from the publication. Each post has id, title, subtitle, slug, post_date, audience (everyone/only_paid/only_free/founding), type (newsletter/podcast/thread), wordcount, reactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max per page (default 12, max 50 typically)." },
+          "offset": { "type": "integer", "description": "Pagination offset." },
+          "sort": { "type": "string", "description": "new (most-recent first, default) or popular." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/posts",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "substack_search_posts",
+      "description": "Search posts in the publication.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query." },
+          "limit": { "type": "integer", "description": "Max results." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/posts/search",
+        "queryParams": { "query": "$query", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "substack_get_post_by_id",
+      "description": "Fetch a single post by its numeric ID. Returns full body_html, subtitle, post_date, audience, podcast_url if applicable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "integer", "description": "Post numeric ID." }
+        },
+        "required": ["postId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/posts/by-id/{postId}"
+      }
+    },
+    {
+      "name": "substack_get_comments",
+      "description": "Get top comments on a post. Returns nested comment threads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "integer", "description": "Post ID." }
+        },
+        "required": ["postId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/post/{postId}/comments"
+      }
+    },
+    {
+      "name": "substack_get_rss_feed",
+      "description": "Fetch the publication's standard RSS feed (Atom format). Useful for systems that already speak RSS.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/feed" }
+    }
+  ]
+}

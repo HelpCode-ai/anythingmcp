@@ -1,0 +1,199 @@
+{
+  "slug": "mastodon",
+  "name": "Mastodon",
+  "description": "Read & post on any Mastodon instance from any AI agent. 10 tools, Bearer token auth.",
+  "instructions": "This connector wraps the Mastodon REST API (any instance — set baseUrl to your instance).\n\n**Setup**:\n1. Pick your instance (e.g. `https://mastodon.social`, `https://fosstodon.org`, your self-hosted one).\n2. Log in → **Preferences → Development → New application**.\n3. Name it (e.g. 'mcp'). Scopes: `read`, `write`, `follow`, `push` — tick whatever your use case needs (don't over-grant).\n4. Save → copy the **Your access token** value (shown only once). This is a personal access token tied to your account.\n5. Set `MASTODON_INSTANCE_URL` (e.g. `https://mastodon.social`) and `MASTODON_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${MASTODON_ACCESS_TOKEN}` on every request.\n\n**Per-instance API**: Mastodon is federated — every instance hosts its own API. baseUrl is your home instance. To read posts from other instances, the API will federate transparently when you provide a status ID OR you can use the public timeline endpoints.\n\n**IDs are per-instance**: a status ID from mastodon.social is NOT the same as the same status on fosstodon.org (each instance assigns its own internal ID even if the status was federated). To look up cross-instance: use `mastodon_search` with the full URL.\n\n**Post (toot) limits**: most instances allow 500 characters; some configure more. Polls have separate rules.\n\n**Pagination**: cursor-based via Link headers (`max_id`, `min_id`, `since_id`). The adapter exposes `max_id` / `since_id` as parameters.\n\n**Visibility**: when posting, `visibility` is one of `public`, `unlisted`, `private` (followers-only), `direct` (mentioned-only). Default per-account.\n\n**Rate limits**: 300 req / 5min per token on most instances. 429 with `X-RateLimit-Reset` header.\n\n**Out of scope here**: image/video upload multipart (use the dedicated media endpoint with a separate flow), instance admin, lists CRUD, push subscriptions.",
+  "region": "intl",
+  "category": "social",
+  "icon": "mastodon",
+  "docsUrl": "https://docs.joinmastodon.org/api/",
+  "requiredEnvVars": ["MASTODON_INSTANCE_URL", "MASTODON_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Mastodon REST API",
+    "type": "REST",
+    "baseUrl": "{{MASTODON_INSTANCE_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MASTODON_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "mastodon_verify_credentials",
+      "description": "Return the authenticated account: id, username, acct (full handle), display_name, note, avatar, statuses_count, followers_count, following_count.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/api/v1/accounts/verify_credentials" }
+    },
+    {
+      "name": "mastodon_get_account",
+      "description": "Fetch a public account by ID. For lookup by handle, use mastodon_search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": { "type": "string", "description": "Account ID." }
+        },
+        "required": ["account_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/api/v1/accounts/{account_id}" }
+    },
+    {
+      "name": "mastodon_account_statuses",
+      "description": "Get a user's recent statuses (toots).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": { "type": "string", "description": "Account ID." },
+          "limit": { "type": "integer", "description": "Max 40." },
+          "max_id": { "type": "string", "description": "Pagination — return statuses older than this id." },
+          "since_id": { "type": "string", "description": "Pagination — return statuses newer than this id." },
+          "exclude_replies": { "type": "boolean", "description": "Skip replies." },
+          "exclude_reblogs": { "type": "boolean", "description": "Skip boosts." },
+          "only_media": { "type": "boolean", "description": "Only statuses with attachments." }
+        },
+        "required": ["account_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/accounts/{account_id}/statuses",
+        "queryParams": {
+          "limit": "$limit",
+          "max_id": "$max_id",
+          "since_id": "$since_id",
+          "exclude_replies": "$exclude_replies",
+          "exclude_reblogs": "$exclude_reblogs",
+          "only_media": "$only_media"
+        }
+      }
+    },
+    {
+      "name": "mastodon_home_timeline",
+      "description": "Get the authenticated user's home timeline (their follows).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max 40." },
+          "max_id": { "type": "string", "description": "Older than." },
+          "since_id": { "type": "string", "description": "Newer than." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/timelines/home",
+        "queryParams": { "limit": "$limit", "max_id": "$max_id", "since_id": "$since_id" }
+      }
+    },
+    {
+      "name": "mastodon_public_timeline",
+      "description": "Get the public timeline. `local=true` = only this instance's accounts; `remote=true` = only federated. Default: federated public.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "local": { "type": "boolean", "description": "Only this instance." },
+          "remote": { "type": "boolean", "description": "Only federated remote accounts." },
+          "only_media": { "type": "boolean", "description": "Only statuses with media." },
+          "limit": { "type": "integer", "description": "Max 40." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/timelines/public",
+        "queryParams": {
+          "local": "$local",
+          "remote": "$remote",
+          "only_media": "$only_media",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "mastodon_hashtag_timeline",
+      "description": "Get statuses tagged with a hashtag (no # prefix).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hashtag": { "type": "string", "description": "Tag, no '#'." },
+          "local": { "type": "boolean", "description": "Only local accounts." },
+          "limit": { "type": "integer", "description": "Max 40." },
+          "max_id": { "type": "string", "description": "Older than." }
+        },
+        "required": ["hashtag"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/timelines/tag/{hashtag}",
+        "queryParams": { "local": "$local", "limit": "$limit", "max_id": "$max_id" }
+      }
+    },
+    {
+      "name": "mastodon_search",
+      "description": "Full-text search across accounts, statuses and hashtags. Pass a full status URL in `q` to look up federated content by URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Query text or URL." },
+          "type": { "type": "string", "description": "Restrict: 'accounts', 'statuses', or 'hashtags'." },
+          "resolve": { "type": "boolean", "description": "If true and `q` is a URL, fetch it from the remote instance." },
+          "limit": { "type": "integer", "description": "Max 40." }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/search",
+        "queryParams": { "q": "$q", "type": "$type", "resolve": "$resolve", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "mastodon_get_status",
+      "description": "Fetch a single status by ID. Returns content, account, media, mentions, tags, replies/favourites/reblogs counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_id": { "type": "string", "description": "Status ID (per-instance)." }
+        },
+        "required": ["status_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/api/v1/statuses/{status_id}" }
+    },
+    {
+      "name": "mastodon_post_status",
+      "description": "Post a new status (toot). `status` is the text; optionally include `in_reply_to_id` to thread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "Status text. Most instances cap at 500 chars." },
+          "in_reply_to_id": { "type": "string", "description": "ID of status this is a reply to." },
+          "sensitive": { "type": "boolean", "description": "Mark media as sensitive (CW)." },
+          "spoiler_text": { "type": "string", "description": "Content warning text (subject line)." },
+          "visibility": { "type": "string", "description": "'public', 'unlisted', 'private', 'direct'." },
+          "language": { "type": "string", "description": "ISO 639-1 language code." }
+        },
+        "required": ["status"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/statuses",
+        "bodyMapping": {
+          "status": "$status",
+          "in_reply_to_id": "$in_reply_to_id",
+          "sensitive": "$sensitive",
+          "spoiler_text": "$spoiler_text",
+          "visibility": "$visibility",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "mastodon_delete_status",
+      "description": "Delete one of your own statuses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_id": { "type": "string", "description": "Status ID." }
+        },
+        "required": ["status_id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/api/v1/statuses/{status_id}" }
+    }
+  ]
+}

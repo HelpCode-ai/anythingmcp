@@ -1,0 +1,236 @@
+{
+  "slug": "pandadoc",
+  "name": "PandaDoc",
+  "description": "Drive PandaDoc (proposals + e-signature) from any AI agent: documents, templates, contacts, recipients, sending for signature, status tracking. 10 tools, API-key auth.",
+  "instructions": "This connector uses the PandaDoc API v1 (developers.pandadoc.com).\n\n**Setup**:\n1. Sign in to https://app.pandadoc.com → top-right avatar → **API → API Key**.\n2. Use the **Production API Key** (or **Sandbox** for testing). The key format is `<long-string>`.\n3. Set `PANDADOC_API_KEY`.\n\n**Authentication**: `Authorization: API-Key ${PANDADOC_API_KEY}` — literal `API-Key ` prefix, NOT `Bearer`. Adapter handles via API_KEY profile.\n\n**Document workflow**:\n  1. Create document from template (`pandadoc_create_document`) — fills template variables with `tokens` and pricing tables, sets recipients.\n  2. Wait for document.status = 'document.draft' (initial state).\n  3. Send for signature (`pandadoc_send_document`).\n  4. Recipients receive emails; poll `pandadoc_get_document_status` to track signing.\n  5. When all signed, status = 'document.completed' and you can download via `pandadoc_download_document`.\n\n**Templates**: build the visual template in PandaDoc UI; access via `pandadoc_list_templates` to get template_id. Templates have `tokens` (placeholders), `fields` (form inputs filled by recipients), `pricing_tables`, and roles (named recipient slots like 'Client', 'Vendor').\n\n**Status values**: document.draft, document.sent, document.viewed, document.waiting_approval, document.approved, document.rejected, document.completed, document.expired, document.declined, document.voided.\n\n**Pagination**: `?page=N&count=M` (max 100). Headers include X-Total-Count.\n\n**Rate limits**: 100 req/min per API key. On 429 back off.\n\n**Out of scope here**: webhooks management, OAuth (for multi-tenant apps), in-app branding, payment forms config.",
+  "region": "intl",
+  "category": "e-signature",
+  "icon": "pandadoc",
+  "docsUrl": "https://developers.pandadoc.com/reference/about",
+  "requiredEnvVars": ["PANDADOC_API_KEY"],
+  "connector": {
+    "name": "PandaDoc v1",
+    "type": "REST",
+    "baseUrl": "https://api.pandadoc.com/public/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "API-Key {{PANDADOC_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "pandadoc_list_documents",
+      "description": "List documents in the workspace, with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page (1-based)." },
+          "count": { "type": "integer", "description": "Per page (max 100)." },
+          "q": { "type": "string", "description": "Substring search on document name." },
+          "status": { "type": "integer", "description": "Filter by numeric status: 0=draft, 1=sent, 2=completed, 3=viewed, 4=waiting_approval, 5=approved, 6=rejected, 7=expired, 8=declined, 9=voided, 11=waiting_pay, 12=paid, 13=external_review." },
+          "tag": { "type": "string", "description": "Filter by tag." },
+          "folder_uuid": { "type": "string", "description": "Filter by folder." },
+          "template_id": { "type": "string", "description": "Only docs created from this template." },
+          "completed_from": { "type": "string", "description": "ISO 8601 date." },
+          "completed_to": { "type": "string", "description": "ISO 8601." },
+          "created_from": { "type": "string", "description": "ISO 8601." },
+          "created_to": { "type": "string", "description": "ISO 8601." },
+          "modified_from": { "type": "string", "description": "ISO 8601." },
+          "modified_to": { "type": "string", "description": "ISO 8601." },
+          "order_by": { "type": "string", "description": "name, date_created, date_modified. Prefix with - for desc." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents",
+        "queryParams": {
+          "page": "$page",
+          "count": "$count",
+          "q": "$q",
+          "status": "$status",
+          "tag": "$tag",
+          "folder_uuid": "$folder_uuid",
+          "template_id": "$template_id",
+          "completed_from": "$completed_from",
+          "completed_to": "$completed_to",
+          "created_from": "$created_from",
+          "created_to": "$created_to",
+          "modified_from": "$modified_from",
+          "modified_to": "$modified_to",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "pandadoc_create_document",
+      "description": "Create a document from a template. Required: name + template_uuid + recipients (with email + first_name + last_name + role). Tokens fill template placeholders. Pricing tables for line-item docs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Document name." },
+          "template_uuid": { "type": "string", "description": "Template UUID to instantiate." },
+          "recipients": { "type": "array", "description": "[{email, first_name, last_name, role:'Client'|'Vendor'|..., signing_order?:N}]. role matches a template role." },
+          "tokens": { "type": "array", "description": "[{name:'Client.Company', value:'ACME'}] — replaces {{Client.Company}} in template content." },
+          "fields": { "type": "object", "description": "{field_name:{value, role?}} — fills form fields in template." },
+          "pricing_tables": { "type": "array", "description": "Pricing tables data (template-defined)." },
+          "metadata": { "type": "object", "description": "Free-form metadata (string K/V)." },
+          "tags": { "type": "array", "description": "Tag strings." },
+          "folder_uuid": { "type": "string", "description": "Put in folder." }
+        },
+        "required": ["name", "template_uuid", "recipients"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents",
+        "bodyMapping": {
+          "name": "$name",
+          "template_uuid": "$template_uuid",
+          "recipients": "$recipients",
+          "tokens": "$tokens",
+          "fields": "$fields",
+          "pricing_tables": "$pricing_tables",
+          "metadata": "$metadata",
+          "tags": "$tags",
+          "folder_uuid": "$folder_uuid"
+        }
+      }
+    },
+    {
+      "name": "pandadoc_get_document_status",
+      "description": "Quick status check for a document. Returns id, status, expiration_date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "Document UUID." }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/documents/{documentId}" }
+    },
+    {
+      "name": "pandadoc_get_document_details",
+      "description": "Fetch document full details — recipients with signing status, tokens, fields, pricing data, attachments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "Document UUID." }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/documents/{documentId}/details" }
+    },
+    {
+      "name": "pandadoc_send_document",
+      "description": "Send the document for signing/review. Required: documentId. Optional: subject + message (the email content recipients receive).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "Document UUID." },
+          "subject": { "type": "string", "description": "Email subject." },
+          "message": { "type": "string", "description": "Email body." },
+          "silent": { "type": "boolean", "description": "If true, skip recipient notification emails (you handle communication yourself)." }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents/{documentId}/send",
+        "bodyMapping": {
+          "subject": "$subject",
+          "message": "$message",
+          "silent": "$silent"
+        }
+      }
+    },
+    {
+      "name": "pandadoc_download_document",
+      "description": "Download the finalized PDF of a document. Returns binary PDF (the engine returns it as the response body — handle it as a file).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "Document UUID." },
+          "watermark_text": { "type": "string", "description": "Optional watermark." },
+          "watermark_color": { "type": "string", "description": "Hex color for watermark." },
+          "watermark_font_size": { "type": "integer", "description": "Watermark font size." },
+          "watermark_opacity": { "type": "number", "description": "0.0-1.0." }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/{documentId}/download",
+        "queryParams": {
+          "watermark_text": "$watermark_text",
+          "watermark_color": "$watermark_color",
+          "watermark_font_size": "$watermark_font_size",
+          "watermark_opacity": "$watermark_opacity"
+        }
+      }
+    },
+    {
+      "name": "pandadoc_delete_document",
+      "description": "Delete (move to trash) a document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "Document UUID." }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/documents/{documentId}" }
+    },
+    {
+      "name": "pandadoc_list_templates",
+      "description": "List templates available in the workspace. Required to know which template_uuid to pass to create_document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page." },
+          "count": { "type": "integer", "description": "Per page." },
+          "q": { "type": "string", "description": "Name substring." },
+          "tag": { "type": "string", "description": "Tag filter." },
+          "folder_uuid": { "type": "string", "description": "Folder filter." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates",
+        "queryParams": {
+          "page": "$page",
+          "count": "$count",
+          "q": "$q",
+          "tag": "$tag",
+          "folder_uuid": "$folder_uuid"
+        }
+      }
+    },
+    {
+      "name": "pandadoc_get_template_details",
+      "description": "Fetch a template's full structure: roles[], tokens[], fields[], pricing_tables, content. Required to know what tokens/fields to fill when creating a document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "templateId": { "type": "string", "description": "Template UUID." }
+        },
+        "required": ["templateId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/templates/{templateId}/details" }
+    },
+    {
+      "name": "pandadoc_list_contacts",
+      "description": "List contacts in the workspace (saved recipients).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by exact email." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": { "email": "$email" }
+      }
+    }
+  ]
+}

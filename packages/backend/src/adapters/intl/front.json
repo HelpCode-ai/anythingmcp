@@ -1,0 +1,279 @@
+{
+  "slug": "front",
+  "name": "Front",
+  "description": "Drive Front (collaborative inbox) from any AI agent: conversations, messages, contacts, tags, inboxes, teammates. 13 tools, API-key Bearer auth.",
+  "instructions": "This connector uses the Front Core API (dev.frontapp.com/reference).\n\n**Setup**:\n1. Sign in to Front → **Settings (top-right) → Developers → API Tokens → Create API Token**.\n2. Pick scope: `private` (full-access to all inboxes/conversations) or scoped to a specific inbox/role.\n3. Copy the token. Set `FRONT_API_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${FRONT_API_TOKEN}`.\n\n**Front's tile model**:\n  - **Conversation** = a thread between your team and one or more contacts. Has status (open/archived/spam/deleted), assignee, inbox, tags.\n  - **Message** = each inbound/outbound email, SMS, chat, etc. within a conversation.\n  - **Contact** = an external entity (a customer). Has handles[] of various types (email, phone, twitter, custom).\n  - **Inbox** = a shared mailbox (could map to an email address, a Slack channel, an SMS number).\n  - **Teammate** = a Front user.\n\n**Sending replies**: a 'reply' is a new message in an existing conversation. POST `/conversations/{id}/messages` (the adapter wraps as `front_send_reply`). For new outbound conversations, POST `/channels/{id}/messages` (different endpoint).\n\n**Pagination**: cursor-based via `?limit=N&page_token=...`. Response includes `_pagination.next` URL.\n\n**Tagged dates**: dates on objects come as Unix timestamps (seconds, NOT ms).\n\n**Resource references**: many fields are URLs like `https://api2.frontapp.com/contacts/cnt_xxx` instead of plain IDs — extract the ID after the last `/` if you need a bare ID, or just pass the URL back to Front in subsequent calls (Front accepts both).\n\n**Rate limits**: ~50 req/sec per token (varies). On 429 honor headers.\n\n**Out of scope here**: rules/automation, analytics endpoints, custom-channel creation, signature management, knowledge-base.",
+  "region": "intl",
+  "category": "support",
+  "icon": "front",
+  "docsUrl": "https://dev.frontapp.com/reference",
+  "requiredEnvVars": ["FRONT_API_TOKEN"],
+  "connector": {
+    "name": "Front API",
+    "type": "REST",
+    "baseUrl": "https://api2.frontapp.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FRONT_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "front_me",
+      "description": "Return the API token's identity (id, name, email).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me" }
+    },
+    {
+      "name": "front_list_inboxes",
+      "description": "List inboxes the token can access. Each has id, name, type (private/shared), send_as.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "page_token": { "type": "string", "description": "Pagination cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inboxes",
+        "queryParams": { "limit": "$limit", "page_token": "$page_token" }
+      }
+    },
+    {
+      "name": "front_list_conversations",
+      "description": "List conversations with optional filtering. Front's filter syntax: `q[statuses][]=open&q[statuses][]=archived&q[tag_ids][]=tag_xxx`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q_statuses": { "type": "array", "description": "Filter statuses: open, archived, spam, deleted." },
+          "q_tag_ids": { "type": "array", "description": "Filter by tag IDs." },
+          "q_inbox_id": { "type": "string", "description": "Filter by inbox ID." },
+          "q_assignee_id": { "type": "string", "description": "Filter by assignee." },
+          "q_after": { "type": "integer", "description": "Unix timestamp (seconds) — created after." },
+          "q_before": { "type": "integer", "description": "Unix timestamp — created before." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "page_token": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations",
+        "queryParams": {
+          "q[statuses][]": "$q_statuses",
+          "q[tag_ids][]": "$q_tag_ids",
+          "q[inbox_id]": "$q_inbox_id",
+          "q[assignee_id]": "$q_assignee_id",
+          "q[after]": "$q_after",
+          "q[before]": "$q_before",
+          "limit": "$limit",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "front_get_conversation",
+      "description": "Fetch a single conversation including assignee, tags, recipient handles, links to messages/comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "string", "description": "Conversation ID (starts with 'cnv_')." }
+        },
+        "required": ["conversationId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/conversations/{conversationId}" }
+    },
+    {
+      "name": "front_list_conversation_messages",
+      "description": "List all messages in a conversation chronologically.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "string", "description": "Conversation ID." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "page_token": { "type": "string", "description": "Cursor." }
+        },
+        "required": ["conversationId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversationId}/messages",
+        "queryParams": { "limit": "$limit", "page_token": "$page_token" }
+      }
+    },
+    {
+      "name": "front_send_reply",
+      "description": "Send a reply (new message) in an existing conversation. Required: body. Sender is the API token's identity unless `author_id` overrides.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "string", "description": "Conversation ID." },
+          "body": { "type": "string", "description": "Reply body (HTML for email, plain for SMS/chat)." },
+          "text": { "type": "string", "description": "Plain-text fallback (for HTML body)." },
+          "to": { "type": "array", "description": "Override recipients (defaults to conversation participants)." },
+          "cc": { "type": "array", "description": "CC list." },
+          "bcc": { "type": "array", "description": "BCC list." },
+          "subject": { "type": "string", "description": "Override subject (defaults to conversation subject)." },
+          "author_id": { "type": "string", "description": "Teammate ID — send AS this person (impersonation, requires admin scope)." },
+          "channel_id": { "type": "string", "description": "Channel to send through (if conversation has multiple)." },
+          "options": { "type": "object", "description": "{archive?:bool, tag_ids?:[]} — auto-archive on send, tag." }
+        },
+        "required": ["conversationId", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversationId}/messages",
+        "bodyMapping": {
+          "body": "$body",
+          "text": "$text",
+          "to": "$to",
+          "cc": "$cc",
+          "bcc": "$bcc",
+          "subject": "$subject",
+          "author_id": "$author_id",
+          "channel_id": "$channel_id",
+          "options": "$options"
+        }
+      }
+    },
+    {
+      "name": "front_add_comment",
+      "description": "Add an internal comment (private note) to a conversation. Only visible to teammates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "string", "description": "Conversation ID." },
+          "body": { "type": "string", "description": "Comment text (Markdown)." },
+          "author_id": { "type": "string", "description": "Teammate ID (defaults to token's user)." }
+        },
+        "required": ["conversationId", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{conversationId}/comments",
+        "bodyMapping": {
+          "body": "$body",
+          "author_id": "$author_id"
+        }
+      }
+    },
+    {
+      "name": "front_update_conversation",
+      "description": "Update conversation status, assignee, or tags. PATCH semantics — only pass what to change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "string", "description": "Conversation ID." },
+          "status": { "type": "string", "description": "open, archived, spam, deleted." },
+          "assignee_id": { "type": "string", "description": "Teammate ID to assign (or null to unassign)." },
+          "tag_ids": { "type": "array", "description": "Replace tag set." },
+          "inbox_id": { "type": "string", "description": "Move to different inbox." }
+        },
+        "required": ["conversationId"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/conversations/{conversationId}",
+        "bodyMapping": {
+          "status": "$status",
+          "assignee_id": "$assignee_id",
+          "tag_ids": "$tag_ids",
+          "inbox_id": "$inbox_id"
+        }
+      }
+    },
+    {
+      "name": "front_list_contacts",
+      "description": "List contacts (external entities).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "page_token": { "type": "string", "description": "Cursor." },
+          "q_updated_after": { "type": "integer", "description": "Unix seconds." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "q[updated_after]": "$q_updated_after"
+        }
+      }
+    },
+    {
+      "name": "front_get_contact",
+      "description": "Fetch a contact with all handles[] (email/phone/twitter/custom).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": { "type": "string", "description": "Contact ID (starts with 'cnt_') OR handle URL like 'alt:email:a@b.com'." }
+        },
+        "required": ["contactId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/{contactId}" }
+    },
+    {
+      "name": "front_create_contact",
+      "description": "Create a contact. Required: handles (at least one).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Contact name." },
+          "description": { "type": "string", "description": "Notes." },
+          "avatar_url": { "type": "string", "description": "Avatar URL." },
+          "handles": { "type": "array", "description": "[{handle:'a@b.com', source:'email'}] — source can be email, phone, twitter, custom, etc." },
+          "links": { "type": "array", "description": "Array of URL strings (e.g. their CRM record)." },
+          "custom_fields": { "type": "object", "description": "Custom field name → value." }
+        },
+        "required": ["handles"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "avatar_url": "$avatar_url",
+          "handles": "$handles",
+          "links": "$links",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "front_list_tags",
+      "description": "List tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "page_token": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": { "limit": "$limit", "page_token": "$page_token" }
+      }
+    },
+    {
+      "name": "front_list_teammates",
+      "description": "List teammates (Front users).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "page_token": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teammates",
+        "queryParams": { "limit": "$limit", "page_token": "$page_token" }
+      }
+    }
+  ]
+}

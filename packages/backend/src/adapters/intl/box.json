@@ -1,0 +1,223 @@
+{
+  "slug": "box",
+  "name": "Box",
+  "description": "Manage Box (enterprise content: files, folders, collaborations, comments, tasks, metadata) from any AI agent. 10 tools, OAuth2 token.",
+  "instructions": "This connector wraps the Box Content API v2 (api.box.com/2.0).\n\n**Setup — OAuth2**:\n1. Register at https://app.box.com/developers/console → **Create New App** → 'OAuth 2.0 with JWT' or 'OAuth 2.0 with User Authentication'.\n2. For user OAuth: complete the auth flow at `https://account.box.com/api/oauth2/authorize?response_type=code&client_id=...&redirect_uri=...`.\n3. Exchange the code at `https://api.box.com/oauth2/token`. Save the refresh_token.\n4. For JWT (server auth): generate an enterprise-level access token differently — out of scope for this OAuth-based adapter.\n5. Set `BOX_CLIENT_ID`, `BOX_CLIENT_SECRET`, `BOX_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 refresh handled by engine. Sends `Authorization: Bearer ACCESS_TOKEN`.\n\n**Folder ID 0** is the root folder of the authenticated user.\n\n**File-vs-Folder IDs**: Box assigns numeric IDs that are unique within file-space and folder-space but can collide across (file 123 ≠ folder 123). Always know whether you're operating on a file or folder.\n\n**Upload**: file upload uses a different host (`upload.box.com`) with multipart. Out of scope here for content upload — use the create_shared_link pattern with externally-hosted files for ingest.\n\n**Pagination**: `limit` (max 1000) + `offset` (0-based). Some endpoints support `marker` cursor pagination — pass `usemarker=true`.\n\n**Rate limits**: ~16 req/sec per token, soft. 429 with `Retry-After`.\n\n**Out of scope here**: file upload multipart, Box Sign workflows, retention policies, the new Box AI inference endpoints.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "box",
+  "docsUrl": "https://developer.box.com/reference/",
+  "requiredEnvVars": ["BOX_CLIENT_ID", "BOX_CLIENT_SECRET", "BOX_REFRESH_TOKEN"],
+  "connector": {
+    "name": "Box Content API v2",
+    "type": "REST",
+    "baseUrl": "https://api.box.com/2.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{BOX_CLIENT_ID}}",
+      "clientSecret": "{{BOX_CLIENT_SECRET}}",
+      "refreshToken": "{{BOX_REFRESH_TOKEN}}",
+      "tokenUrl": "https://api.box.com/oauth2/token"
+    }
+  },
+  "tools": [
+    {
+      "name": "box_get_current_user",
+      "description": "Return the authenticated user.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/users/me" }
+    },
+    {
+      "name": "box_get_folder_items",
+      "description": "List items in a folder (files + subfolders). Use folder_id=0 for the root.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": { "type": "string", "description": "Folder ID (use '0' for root)." },
+          "fields": { "type": "string", "description": "Comma-separated fields to project, e.g. 'name,size,modified_at,modified_by'." },
+          "limit": { "type": "integer", "description": "Max 1000." },
+          "offset": { "type": "integer", "description": "0-based offset." }
+        },
+        "required": ["folder_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folders/{folder_id}/items",
+        "queryParams": {
+          "fields": "$fields",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "box_get_folder",
+      "description": "Get folder metadata (name, created_by, modified_by, item_collection summary).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": { "type": "string", "description": "Folder ID." },
+          "fields": { "type": "string", "description": "Fields to project." }
+        },
+        "required": ["folder_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folders/{folder_id}",
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "box_create_folder",
+      "description": "Create a folder inside a parent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_id": { "type": "string", "description": "Parent folder ID." },
+          "name": { "type": "string", "description": "Folder name." }
+        },
+        "required": ["parent_id", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/folders",
+        "bodyMapping": {
+          "name": "$name",
+          "parent": { "id": "$parent_id" }
+        }
+      }
+    },
+    {
+      "name": "box_get_file",
+      "description": "Get file metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": { "type": "string", "description": "File ID." },
+          "fields": { "type": "string", "description": "Fields to project." }
+        },
+        "required": ["file_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{file_id}",
+        "queryParams": { "fields": "$fields" }
+      }
+    },
+    {
+      "name": "box_copy_file",
+      "description": "Copy a file to a different folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": { "type": "string", "description": "Source file ID." },
+          "parent_id": { "type": "string", "description": "Destination folder ID." },
+          "name": { "type": "string", "description": "Optional new name." },
+          "version": { "type": "string", "description": "Copy a specific version." }
+        },
+        "required": ["file_id", "parent_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/files/{file_id}/copy",
+        "bodyMapping": {
+          "parent": { "id": "$parent_id" },
+          "name": "$name",
+          "version": "$version"
+        }
+      }
+    },
+    {
+      "name": "box_move_or_rename_file",
+      "description": "Move file to a different folder and/or rename. Update other fields too.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": { "type": "string", "description": "File ID." },
+          "parent_id": { "type": "string", "description": "New parent folder." },
+          "name": { "type": "string", "description": "New name." },
+          "description": { "type": "string", "description": "New description." }
+        },
+        "required": ["file_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/files/{file_id}",
+        "bodyMapping": {
+          "parent": { "id": "$parent_id" },
+          "name": "$name",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "box_delete_file",
+      "description": "Delete a file (moves to trash; restore via /files/{id}/trash endpoint).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": { "type": "string", "description": "File ID." }
+        },
+        "required": ["file_id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/files/{file_id}" }
+    },
+    {
+      "name": "box_search",
+      "description": "Search across content. Filter by type (file/folder/web_link), file extensions, content types, date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query." },
+          "type": { "type": "string", "description": "file, folder, web_link." },
+          "file_extensions": { "type": "string", "description": "Comma-separated extensions." },
+          "content_types": { "type": "string", "description": "Comma-separated: name, description, file_content, comments, tags." },
+          "ancestor_folder_ids": { "type": "string", "description": "Comma-separated folder IDs to restrict search to." },
+          "limit": { "type": "integer", "description": "Max 200." },
+          "offset": { "type": "integer", "description": "0-based." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "query": "$query",
+          "type": "$type",
+          "file_extensions": "$file_extensions",
+          "content_types": "$content_types",
+          "ancestor_folder_ids": "$ancestor_folder_ids",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "box_create_shared_link",
+      "description": "Create or update a shared link on a file. Returns the shared URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": { "type": "string", "description": "File ID." },
+          "access": { "type": "string", "description": "open (public), company, collaborators." },
+          "password": { "type": "string", "description": "Optional password." },
+          "unshared_at": { "type": "string", "description": "Optional ISO 8601 expiry." },
+          "can_download": { "type": "boolean", "description": "Allow downloads." }
+        },
+        "required": ["file_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/files/{file_id}",
+        "bodyMapping": {
+          "shared_link": {
+            "access": "$access",
+            "password": "$password",
+            "unshared_at": "$unshared_at",
+            "permissions": { "can_download": "$can_download" }
+          }
+        }
+      }
+    }
+  ]
+}

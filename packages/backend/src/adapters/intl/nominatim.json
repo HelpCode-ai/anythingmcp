@@ -1,0 +1,128 @@
+{
+  "slug": "nominatim",
+  "name": "Nominatim (OpenStreetMap)",
+  "description": "Free, no-auth geocoding using OpenStreetMap's Nominatim service. Forward + reverse geocoding + place lookup + search. 4 tools.",
+  "instructions": "This connector uses Nominatim — OpenStreetMap's free geocoding service (nominatim.org).\n\n**Setup**: NO API KEY REQUIRED. Just install the connector. The base URL is `https://nominatim.openstreetmap.org`.\n\n**HOWEVER — usage policy you MUST respect** (otherwise you'll get banned):\n  1. **Max 1 request per second** per IP. The connector does NOT throttle for you — your agent must self-limit. For bulk usage, run a self-hosted Nominatim or use a paid Nominatim host.\n  2. **User-Agent header REQUIRED** — every request must identify you. The connector pins `User-Agent: AnythingMCP (https://anythingmcp.com)` automatically.\n  3. **No heavy bulk geocoding** — if you need >100 requests/hour, switch to MapTiler / OpenCage / Mapbox / Google.\n  4. **Cache results** for at least 24h — avoid re-geocoding the same address.\n\n**Coordinate convention**: latitude FIRST then longitude (unlike Mapbox). Format is `lat,lon` in some endpoints, `lat=X&lon=Y` query params in others.\n\n**Languages**: pass `accept-language` query param (e.g. `de`, `en`, `fr`) to localize place names.\n\n**Result format**: `format=json` (compact), `format=jsonv2` (richer), `format=geojson` (GeoJSON Feature). Default `xml` — always pass `format=json` for our tools.\n\n**Address importance ranking**: results include `importance` (0-1, Wikipedia-derived). High importance = well-known place; low = obscure.\n\n**Out of scope here**: address_lookup batch (use repeated single calls), search by category beyond default, photon (separate but related service).",
+  "region": "intl",
+  "category": "maps",
+  "icon": "openstreetmap",
+  "docsUrl": "https://nominatim.org/release-docs/develop/api/Overview/",
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "Nominatim",
+    "type": "REST",
+    "baseUrl": "https://nominatim.openstreetmap.org",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "nominatim_search",
+      "description": "Forward geocode (free-text address → coordinates + structured address). Be polite: max 1 req/sec, cache results, set realistic User-Agent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Free-text query, e.g. 'Brandenburg Gate, Berlin'." },
+          "format": { "type": "string", "description": "json (compact), jsonv2 (more fields), geojson. Default json." },
+          "addressdetails": { "type": "integer", "description": "1 = include parsed address components." },
+          "extratags": { "type": "integer", "description": "1 = include extra OSM tags." },
+          "namedetails": { "type": "integer", "description": "1 = include localized name variants." },
+          "limit": { "type": "integer", "description": "Max results (default 10, max 50)." },
+          "countrycodes": { "type": "string", "description": "Comma-separated ISO 3166-1 alpha-2 codes (e.g. 'de,fr')." },
+          "viewbox": { "type": "string", "description": "Bounding box 'left,top,right,bottom' (lng,lat) to bias." },
+          "bounded": { "type": "integer", "description": "If 1 with viewbox, restrict to box." },
+          "accept_language": { "type": "string", "description": "Localized output language (e.g. 'de', 'en-US')." },
+          "dedupe": { "type": "integer", "description": "1 = deduplicate (default)." }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q",
+          "format": "$format",
+          "addressdetails": "$addressdetails",
+          "extratags": "$extratags",
+          "namedetails": "$namedetails",
+          "limit": "$limit",
+          "countrycodes": "$countrycodes",
+          "viewbox": "$viewbox",
+          "bounded": "$bounded",
+          "accept-language": "$accept_language",
+          "dedupe": "$dedupe"
+        },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "nominatim_reverse",
+      "description": "Reverse geocode (coordinates → address). Returns display_name + address components.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat": { "type": "number", "description": "Latitude in decimal degrees." },
+          "lon": { "type": "number", "description": "Longitude in decimal degrees." },
+          "format": { "type": "string", "description": "json (compact), jsonv2, geojson." },
+          "zoom": { "type": "integer", "description": "Address detail level: 3 (country) → 18 (building). Default 18." },
+          "addressdetails": { "type": "integer", "description": "1 = parsed address parts." },
+          "accept_language": { "type": "string", "description": "Output language." }
+        },
+        "required": ["lat", "lon"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reverse",
+        "queryParams": {
+          "lat": "$lat",
+          "lon": "$lon",
+          "format": "$format",
+          "zoom": "$zoom",
+          "addressdetails": "$addressdetails",
+          "accept-language": "$accept_language"
+        },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "nominatim_lookup",
+      "description": "Look up known OSM IDs (N1234, W5678, R9012 for nodes/ways/relations). Comma-separated up to 50.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "osm_ids": { "type": "string", "description": "Comma-separated OSM IDs prefixed with N/W/R, e.g. 'R146656,W104393803,N240109189'." },
+          "format": { "type": "string", "description": "json, jsonv2, geojson." },
+          "addressdetails": { "type": "integer", "description": "1 = address parts." },
+          "accept_language": { "type": "string", "description": "Output language." }
+        },
+        "required": ["osm_ids"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lookup",
+        "queryParams": {
+          "osm_ids": "$osm_ids",
+          "format": "$format",
+          "addressdetails": "$addressdetails",
+          "accept-language": "$accept_language"
+        },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "nominatim_status",
+      "description": "Service status check. Returns 'OK' if Nominatim is up. Useful health check.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "format": { "type": "string", "description": "text or json." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/status",
+        "queryParams": { "format": "$format" },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    }
+  ]
+}

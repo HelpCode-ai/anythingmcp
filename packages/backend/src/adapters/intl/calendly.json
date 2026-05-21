@@ -1,0 +1,253 @@
+{
+  "slug": "calendly",
+  "name": "Calendly",
+  "description": "Drive Calendly scheduling from any AI agent: list booked events, fetch invitees, query event types, check availability windows, generate single-use scheduling links and cancel meetings. 12 tools, Bearer-token auth.",
+  "instructions": "This connector uses the Calendly API v2.\n\n**Setup**:\n1. Sign in to https://calendly.com → **Integrations & Apps → API & webhooks → Personal Access Tokens → Create new token**.\n2. Give it a name (e.g. 'AnythingMCP'). The token is shown ONCE, copy it immediately. Personal Access Tokens never expire and inherit your user permissions.\n3. Set `CALENDLY_PERSONAL_ACCESS_TOKEN` to the token.\n\n**Authentication**: Bearer token. Calendly also supports OAuth2 for multi-user apps but Personal Access Tokens are the right fit for single-account agent use.\n\n**The URI model**: every Calendly resource is identified by a full HTTPS URI, NOT a bare ID. For instance a user is `https://api.calendly.com/users/AAAAAAAAAAAAAAAA`, not just `AAAAAAAAAAAAAAAA`. List endpoints expect these URIs as query parameters (e.g. `?user=https%3A%2F%2Fapi.calendly.com%2Fusers%2F...`). Always grab the URI from a prior tool's response — the easiest starting point is `calendly_get_current_user`, whose `resource.uri` is your user URI. Same model for organizations, event types, and scheduled events.\n\n**Pagination**: cursor-based. Each list response has `pagination.next_page_token`. Pass it as `page_token` on the next call.\n\n**Cancelling a meeting**: counter-intuitively uses POST, not DELETE (`POST /scheduled_events/{uuid}/cancellation`). Body accepts a `reason` text that's shown to the invitee. The adapter exposes this as `calendly_cancel_scheduled_event`.\n\n**Availability windows**: `calendly_list_event_type_available_times` returns the open slots between `start_time` and `end_time` for an event type. The span MUST be ≤ 7 days; longer ranges return 400. For multi-week scans, call it once per week.\n\n**Single-use scheduling links**: `calendly_create_single_use_scheduling_link` produces a URL that can be booked ONCE (max_event_count=1) for a specific event type. Useful when an agent wants to invite one specific person without exposing your generic Calendly profile.\n\n**Read-mostly**: Calendly's API is heavier on reads than writes. There's no 'create new event type' or 'create new booking on behalf of someone' endpoint — bookings come from invitees clicking a scheduling link.\n\n**Rate limits**: 100k requests / day per account, with a burst window. On 429, back off.\n\n**Webhooks** out of scope (`/webhook_subscriptions` is supported via API but receiving the payloads needs a hosted endpoint).\n\n**Plan gating**: certain endpoints (organizations, memberships, routing forms) require Teams or Enterprise plans. Personal accounts get 403 — error message identifies the plan required.",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "calendly",
+  "docsUrl": "https://developer.calendly.com/api-docs",
+  "requiredEnvVars": ["CALENDLY_PERSONAL_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Calendly v2",
+    "type": "REST",
+    "baseUrl": "https://api.calendly.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{CALENDLY_PERSONAL_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "calendly_get_current_user",
+      "description": "Return the user the personal access token belongs to (whoami). The response's `resource.uri` is THE user URI you'll need to pass to most other tools. Call this first when the agent starts.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/users/me" }
+    },
+    {
+      "name": "calendly_get_user",
+      "description": "Get any user by their URI. Use when you have a user URI from a prior response (e.g. an event organizer) and need their full profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userUuid": { "type": "string", "description": "User UUID (the last segment of the user URI)." }
+        },
+        "required": ["userUuid"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/users/{userUuid}" }
+    },
+    {
+      "name": "calendly_list_event_types",
+      "description": "List the event types (meeting types: '30-min intro', 'demo call', etc.) for a user or organization. Each event type has a URI, name, slug, duration, kind (solo/group/round_robin), active flag, and scheduling_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": { "type": "string", "description": "Full user URI: https://api.calendly.com/users/UUID. Mutually exclusive with `organization`." },
+          "organization": { "type": "string", "description": "Full organization URI. Mutually exclusive with `user`." },
+          "active": { "type": "boolean", "description": "Filter active-only event types. Default returns all." },
+          "count": { "type": "integer", "description": "Max per page (default 20, max 100)." },
+          "page_token": { "type": "string", "description": "Pagination cursor from prior pagination.next_page_token." },
+          "sort": { "type": "string", "description": "Sort by: name:asc, name:desc, position:asc, position:desc." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/event_types",
+        "queryParams": {
+          "user": "$user",
+          "organization": "$organization",
+          "active": "$active",
+          "count": "$count",
+          "page_token": "$page_token",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "calendly_get_event_type",
+      "description": "Fetch a single event type's full config including custom questions, location options, color, kind, scheduling_url and pooling_type (for round-robin event types).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventTypeUuid": { "type": "string", "description": "Event type UUID (last URI segment)." }
+        },
+        "required": ["eventTypeUuid"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/event_types/{eventTypeUuid}" }
+    },
+    {
+      "name": "calendly_list_event_type_available_times",
+      "description": "Return open availability slots for an event type between start_time and end_time. **The window MUST be ≤ 7 days** — Calendly rejects longer ranges with 400. Each slot returns start_time, status, scheduling_url and invitees_remaining (for round-robin).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_type": { "type": "string", "description": "Full event type URI: https://api.calendly.com/event_types/UUID." },
+          "start_time": { "type": "string", "description": "ISO 8601 datetime, e.g. '2026-06-01T00:00:00Z'. Must be in the future." },
+          "end_time": { "type": "string", "description": "ISO 8601 datetime. Must be ≤ 7 days after start_time." }
+        },
+        "required": ["event_type", "start_time", "end_time"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/event_type_available_times",
+        "queryParams": {
+          "event_type": "$event_type",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "calendly_list_scheduled_events",
+      "description": "List booked events (meetings) for a user or organization, with optional status / date-range filters. Each event has uri, name, status (active/canceled), start_time, end_time, event_type, location, invitees_counter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": { "type": "string", "description": "User URI. Mutually exclusive with `organization`." },
+          "organization": { "type": "string", "description": "Organization URI." },
+          "invitee_email": { "type": "string", "description": "Filter to events booked by this invitee email." },
+          "status": { "type": "string", "description": "active or canceled. Default returns both." },
+          "min_start_time": { "type": "string", "description": "ISO 8601 — events starting at or after this time." },
+          "max_start_time": { "type": "string", "description": "ISO 8601 — events starting at or before this time." },
+          "count": { "type": "integer", "description": "Max per page (default 20, max 100)." },
+          "page_token": { "type": "string", "description": "Pagination cursor." },
+          "sort": { "type": "string", "description": "Sort: start_time:asc, start_time:desc." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scheduled_events",
+        "queryParams": {
+          "user": "$user",
+          "organization": "$organization",
+          "invitee_email": "$invitee_email",
+          "status": "$status",
+          "min_start_time": "$min_start_time",
+          "max_start_time": "$max_start_time",
+          "count": "$count",
+          "page_token": "$page_token",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "calendly_get_scheduled_event",
+      "description": "Fetch one scheduled event by UUID. Returns location, meeting_notes_plain, meeting_notes_html, cancel_url, reschedule_url, event_memberships (the host(s)).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventUuid": { "type": "string", "description": "Scheduled event UUID." }
+        },
+        "required": ["eventUuid"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/scheduled_events/{eventUuid}" }
+    },
+    {
+      "name": "calendly_list_scheduled_event_invitees",
+      "description": "List invitees (the people who booked) on a scheduled event. Each invitee has uri, email, name, status, timezone, questions_and_answers (custom questions they answered), and any payment details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventUuid": { "type": "string", "description": "Scheduled event UUID." },
+          "status": { "type": "string", "description": "active or canceled." },
+          "email": { "type": "string", "description": "Filter to a specific invitee email." },
+          "count": { "type": "integer", "description": "Max per page." },
+          "page_token": { "type": "string", "description": "Pagination cursor." }
+        },
+        "required": ["eventUuid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scheduled_events/{eventUuid}/invitees",
+        "queryParams": {
+          "status": "$status",
+          "email": "$email",
+          "count": "$count",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "calendly_cancel_scheduled_event",
+      "description": "Cancel a scheduled event. The invitee receives a cancellation email with the reason. Counter-intuitively uses POST (not DELETE) per Calendly's REST convention.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventUuid": { "type": "string", "description": "Scheduled event UUID." },
+          "reason": { "type": "string", "description": "Human-readable cancellation reason shown to the invitee (max 1024 chars)." }
+        },
+        "required": ["eventUuid"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/scheduled_events/{eventUuid}/cancellation",
+        "bodyMapping": {
+          "reason": "$reason"
+        }
+      }
+    },
+    {
+      "name": "calendly_create_single_use_scheduling_link",
+      "description": "Create a one-time-use booking URL for a specific event type. Once an invitee books through this URL, it can't be reused. Useful when sending an invitation to one specific person without exposing your generic /username profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_event_count": { "type": "integer", "description": "Always 1 for single-use links (only value Calendly accepts here)." },
+          "owner": { "type": "string", "description": "Full event type URI (https://api.calendly.com/event_types/UUID)." },
+          "owner_type": { "type": "string", "description": "Always 'EventType'." }
+        },
+        "required": ["max_event_count", "owner", "owner_type"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/scheduling_links",
+        "bodyMapping": {
+          "max_event_count": "$max_event_count",
+          "owner": "$owner",
+          "owner_type": "$owner_type"
+        }
+      }
+    },
+    {
+      "name": "calendly_list_organization_memberships",
+      "description": "List the members of an organization (Teams/Enterprise plan). Each membership has user URI, role (owner/admin/user), updated_at. Use to map user URIs to display names for the entire team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization": { "type": "string", "description": "Full organization URI." },
+          "user": { "type": "string", "description": "Filter to a specific user URI." },
+          "email": { "type": "string", "description": "Filter to a specific email." },
+          "count": { "type": "integer", "description": "Max per page." },
+          "page_token": { "type": "string", "description": "Pagination cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organization_memberships",
+        "queryParams": {
+          "organization": "$organization",
+          "user": "$user",
+          "email": "$email",
+          "count": "$count",
+          "page_token": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "calendly_get_invitee",
+      "description": "Fetch a single invitee on a scheduled event by their invitee UUID. Returns full Q&A, no_show data, reschedule_url, cancel_url and timezone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventUuid": { "type": "string", "description": "Scheduled event UUID." },
+          "inviteeUuid": { "type": "string", "description": "Invitee UUID." }
+        },
+        "required": ["eventUuid", "inviteeUuid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scheduled_events/{eventUuid}/invitees/{inviteeUuid}"
+      }
+    }
+  ]
+}

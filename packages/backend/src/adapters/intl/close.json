@@ -1,0 +1,353 @@
+{
+  "slug": "close",
+  "name": "Close CRM",
+  "description": "Drive Close (sales-team CRM) from any AI agent: leads, contacts, opportunities, activities (calls/emails/SMS/notes), tasks, smart views and custom fields. 16 tools, API-key Basic-auth.",
+  "instructions": "This connector uses the Close API v1 (https://developer.close.com).\n\n**Setup**:\n1. Sign in to Close → top-right avatar → **Settings → Developer → API Keys → New API Key**.\n2. Name it ('AnythingMCP'), copy the key (starts with `api_`). Set `CLOSE_API_KEY`.\n\n**Authentication**: HTTP Basic auth with username=API_KEY and password empty. The adapter passes `Authorization: Basic base64(API_KEY:)`. Same as Stripe's auth model.\n\n**Lead is the top-level object** — a 'lead' in Close is what other CRMs call an 'account' or 'company': it groups multiple `contacts` (the actual people), `opportunities` (deal-level pipeline records), and `activities` (timeline of calls/emails/notes/SMS). When in doubt, the agent should start with `close_search_leads` (Smart View query) rather than searching contacts directly.\n\n**Custom field IDs**: like Pipedrive, custom fields have opaque IDs. Discover via `close_list_lead_custom_fields` / `close_list_contact_custom_fields` / `close_list_opportunity_custom_fields`. Reference them in writes via `custom.cf_XYZ` keys on the resource.\n\n**Smart Views (saved searches)**: Close's central UX is filtered queries. The API exposes them via `close_search_leads` with a `query` JSON (the same DSL the UI builds). Easiest: build the view in the UI, copy its Smart View ID, then call `close_get_smart_view` to inspect — but for ad-hoc queries the `query` param accepts the JSON directly.\n\n**Activities are typed**: call, email, sms, note, meeting, task_completed, lead_status_change, opportunity_status_change. Use `close_create_note_activity` for plain notes; for calls/emails the SaaS expects you to use Close's built-in dialer / email integration, not POST a fake activity (the agent shouldn't fabricate a sent email).\n\n**Pagination**: cursor-based via `_skip` + `_limit` (max 100 per page) plus `has_more` boolean. Some list endpoints return total counts in `meta`.\n\n**Rate limits**: ~80 requests/sec burst per organization. On 429, back off — `RateLimit-Reset` header is set.\n\n**Out of scope here**: dialer call recording, email sequences (use Close UI), reports/analytics computation, integrations (Mailchimp/Stripe sync), webhook subscription management.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "close",
+  "docsUrl": "https://developer.close.com/",
+  "requiredEnvVars": ["CLOSE_API_KEY"],
+  "connector": {
+    "name": "Close v1",
+    "type": "REST",
+    "baseUrl": "https://api.close.com/api/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{CLOSE_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "close_get_me",
+      "description": "Return the user the API key belongs to plus the organization context (id, name, plan, addresses). Health check + whoami.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/me/" }
+    },
+    {
+      "name": "close_list_leads",
+      "description": "List leads (companies) with optional query filter and pagination. Each lead has display_name, status_id, contacts[], opportunities[], custom fields, addresses, url, description, integration_links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Close query string — e.g. 'has:opportunities lead_status:\"Customer\"' or 'has:contacts'. Empty string returns all." },
+          "_fields": { "type": "string", "description": "Comma-separated fields to return (sparse). Default returns all." },
+          "_limit": { "type": "integer", "description": "Max per page (default 100, max 100)." },
+          "_skip": { "type": "integer", "description": "Pagination offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lead/",
+        "queryParams": {
+          "query": "$query",
+          "_fields": "$_fields",
+          "_limit": "$_limit",
+          "_skip": "$_skip"
+        }
+      }
+    },
+    {
+      "name": "close_get_lead",
+      "description": "Fetch one lead by ID. Returns display_name, contacts[], opportunities[], tasks[], custom fields, all the activity rollups.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "leadId": { "type": "string", "description": "Lead ID (starts with 'lead_')." }
+        },
+        "required": ["leadId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/lead/{leadId}/" }
+    },
+    {
+      "name": "close_create_lead",
+      "description": "Create a new lead (company). Pass contacts inline to create them in one call. Display_name auto-derives from name if omitted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Company name (e.g. 'ACME Inc')." },
+          "url": { "type": "string", "description": "Website URL." },
+          "description": { "type": "string", "description": "Free-text description." },
+          "status_id": { "type": "string", "description": "Lead status ID (discover via close_list_lead_statuses)." },
+          "addresses": { "type": "array", "description": "Array of {address_1, address_2?, city, state, zipcode, country, label}." },
+          "contacts": { "type": "array", "description": "Inline contacts to create: [{name, title?, emails:[{type,email}], phones:[{type,phone}], urls?:[{type,url}]}]." },
+          "custom": { "type": "object", "description": "Custom fields keyed by 'cf_XYZ' field IDs." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lead/",
+        "bodyMapping": {
+          "name": "$name",
+          "url": "$url",
+          "description": "$description",
+          "status_id": "$status_id",
+          "addresses": "$addresses",
+          "contacts": "$contacts",
+          "custom": "$custom"
+        }
+      }
+    },
+    {
+      "name": "close_update_lead",
+      "description": "Partial-update a lead. Pass only fields to change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "leadId": { "type": "string", "description": "Lead ID." },
+          "name": { "type": "string", "description": "New name." },
+          "url": { "type": "string", "description": "New URL." },
+          "description": { "type": "string", "description": "New description." },
+          "status_id": { "type": "string", "description": "New status." },
+          "addresses": { "type": "array", "description": "Full address array (replaces)." },
+          "custom": { "type": "object", "description": "Custom fields to update (cf_XYZ keys)." }
+        },
+        "required": ["leadId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/lead/{leadId}/",
+        "bodyMapping": {
+          "name": "$name",
+          "url": "$url",
+          "description": "$description",
+          "status_id": "$status_id",
+          "addresses": "$addresses",
+          "custom": "$custom"
+        }
+      }
+    },
+    {
+      "name": "close_list_contacts",
+      "description": "List contacts (people) — typically scoped to a lead via the lead_id query param.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": { "type": "string", "description": "Filter by lead." },
+          "_limit": { "type": "integer", "description": "Max per page." },
+          "_skip": { "type": "integer", "description": "Pagination offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contact/",
+        "queryParams": {
+          "lead_id": "$lead_id",
+          "_limit": "$_limit",
+          "_skip": "$_skip"
+        }
+      }
+    },
+    {
+      "name": "close_create_contact",
+      "description": "Create a contact on a lead. Required: lead_id + name. Emails/phones are arrays of {type, email|phone}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": { "type": "string", "description": "Parent lead ID." },
+          "name": { "type": "string", "description": "Person's full name." },
+          "title": { "type": "string", "description": "Job title." },
+          "emails": { "type": "array", "description": "[{type:'office'|'mobile'|'home'|'direct'|'fax'|'other', email}]." },
+          "phones": { "type": "array", "description": "[{type, phone}]." },
+          "urls": { "type": "array", "description": "[{type:'url', url}]." },
+          "custom": { "type": "object", "description": "Custom fields (cf_XYZ)." }
+        },
+        "required": ["lead_id", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contact/",
+        "bodyMapping": {
+          "lead_id": "$lead_id",
+          "name": "$name",
+          "title": "$title",
+          "emails": "$emails",
+          "phones": "$phones",
+          "urls": "$urls",
+          "custom": "$custom"
+        }
+      }
+    },
+    {
+      "name": "close_list_opportunities",
+      "description": "List opportunities (deals). Filter by lead_id, status_id, status_type (active/won/lost), date_won range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": { "type": "string", "description": "Filter by lead." },
+          "status_id": { "type": "string", "description": "Filter by status." },
+          "status_type": { "type": "string", "description": "active, won, lost." },
+          "_limit": { "type": "integer", "description": "Per page." },
+          "_skip": { "type": "integer", "description": "Pagination offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunity/",
+        "queryParams": {
+          "lead_id": "$lead_id",
+          "status_id": "$status_id",
+          "status_type": "$status_type",
+          "_limit": "$_limit",
+          "_skip": "$_skip"
+        }
+      }
+    },
+    {
+      "name": "close_create_opportunity",
+      "description": "Create an opportunity (deal). Value is in cents (e.g. 100000 = $1000.00). value_period: one_time, monthly, annual.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": { "type": "string", "description": "Parent lead ID." },
+          "note": { "type": "string", "description": "Opportunity note (description)." },
+          "value": { "type": "integer", "description": "Deal value in cents." },
+          "value_currency": { "type": "string", "description": "ISO 4217 (USD, EUR, ...)." },
+          "value_period": { "type": "string", "description": "one_time, monthly, annual." },
+          "status_id": { "type": "string", "description": "Status ID." },
+          "confidence": { "type": "integer", "description": "Win probability 0-100." },
+          "custom": { "type": "object", "description": "Custom fields." }
+        },
+        "required": ["lead_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/opportunity/",
+        "bodyMapping": {
+          "lead_id": "$lead_id",
+          "note": "$note",
+          "value": "$value",
+          "value_currency": "$value_currency",
+          "value_period": "$value_period",
+          "status_id": "$status_id",
+          "confidence": "$confidence",
+          "custom": "$custom"
+        }
+      }
+    },
+    {
+      "name": "close_update_opportunity",
+      "description": "Update an opportunity. Common uses: set status_id (move pipeline stage), update value, set confidence.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunityId": { "type": "string", "description": "Opportunity ID (oppo_XXX)." },
+          "status_id": { "type": "string", "description": "New status." },
+          "value": { "type": "integer", "description": "New value (cents)." },
+          "value_currency": { "type": "string", "description": "New currency." },
+          "value_period": { "type": "string", "description": "New period." },
+          "confidence": { "type": "integer", "description": "New confidence 0-100." },
+          "note": { "type": "string", "description": "New note." },
+          "custom": { "type": "object", "description": "Custom fields." }
+        },
+        "required": ["opportunityId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/opportunity/{opportunityId}/",
+        "bodyMapping": {
+          "status_id": "$status_id",
+          "value": "$value",
+          "value_currency": "$value_currency",
+          "value_period": "$value_period",
+          "confidence": "$confidence",
+          "note": "$note",
+          "custom": "$custom"
+        }
+      }
+    },
+    {
+      "name": "close_create_note_activity",
+      "description": "Log a free-text note on a lead (timeline). Use for AI-generated meeting notes, summaries, observations. Do NOT use for fake emails/calls (those have their own typed activities).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": { "type": "string", "description": "Lead to attach the note to." },
+          "note": { "type": "string", "description": "Note body. Supports basic plain-text." }
+        },
+        "required": ["lead_id", "note"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/activity/note/",
+        "bodyMapping": {
+          "lead_id": "$lead_id",
+          "note": "$note"
+        }
+      }
+    },
+    {
+      "name": "close_list_activities",
+      "description": "List activities (timeline events) — call, email, sms, note, meeting, etc. Filter by lead_id, contact_id, type, date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": { "type": "string", "description": "Filter by lead." },
+          "contact_id": { "type": "string", "description": "Filter by contact." },
+          "_type": { "type": "string", "description": "Activity type: call, email, sms, note, meeting, task_completed, etc." },
+          "date_created__gte": { "type": "string", "description": "Created on/after (ISO 8601)." },
+          "date_created__lt": { "type": "string", "description": "Created before (ISO 8601)." },
+          "_limit": { "type": "integer", "description": "Per page." },
+          "_skip": { "type": "integer", "description": "Pagination offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/activity/",
+        "queryParams": {
+          "lead_id": "$lead_id",
+          "contact_id": "$contact_id",
+          "_type": "$_type",
+          "date_created__gte": "$date_created__gte",
+          "date_created__lt": "$date_created__lt",
+          "_limit": "$_limit",
+          "_skip": "$_skip"
+        }
+      }
+    },
+    {
+      "name": "close_create_task",
+      "description": "Create a task on a lead. Tasks are reminders for the assignee user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": { "type": "string", "description": "Parent lead ID." },
+          "text": { "type": "string", "description": "Task text." },
+          "due_date": { "type": "string", "description": "ISO 8601 date YYYY-MM-DD." },
+          "assigned_to": { "type": "string", "description": "User ID to assign to (defaults to the API key's user)." }
+        },
+        "required": ["lead_id", "text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/task/",
+        "bodyMapping": {
+          "lead_id": "$lead_id",
+          "text": "$text",
+          "due_date": "$due_date",
+          "assigned_to": "$assigned_to"
+        }
+      }
+    },
+    {
+      "name": "close_list_lead_statuses",
+      "description": "List the lead status values configured on the organization (e.g. 'Potential', 'Qualified', 'Customer', 'Bad Fit').",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/status/lead/" }
+    },
+    {
+      "name": "close_list_opportunity_statuses",
+      "description": "List the opportunity (pipeline stage) status values — typically active stages + won/lost terminal states.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/status/opportunity/" }
+    },
+    {
+      "name": "close_list_lead_custom_fields",
+      "description": "List the custom fields defined on leads with their IDs (cf_XYZ), types, and pick-list options. Required to compose `custom` objects in create/update.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/custom_fields/lead/" }
+    }
+  ]
+}

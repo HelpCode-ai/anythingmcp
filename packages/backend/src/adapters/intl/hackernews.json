@@ -1,0 +1,80 @@
+{
+  "slug": "hackernews",
+  "name": "Hacker News",
+  "description": "Read Hacker News (stories, comments, users, top/new/best/ask/show/job lists) from any AI agent via the official Firebase API. 8 tools, no auth.",
+  "instructions": "This connector wraps the official Hacker News API hosted on Firebase (hacker-news.firebaseio.com).\n\n**Setup**: nothing. The API is public, read-only, and unauthenticated.\n\n**No write access**: the official API is READ-ONLY. There is no way to post stories, comments, or vote via this connector — those require a session cookie obtained by submitting an HTML login form to news.ycombinator.com, which is out of scope for an MCP adapter.\n\n**Two-step pattern**: list endpoints return arrays of integer IDs only (e.g. top 500 story IDs). You must then fetch each ID via `hackernews_get_item` to get the actual title/url/text/score. Plan accordingly — fetching 500 top stories means 501 requests.\n\n**Item types**: `story`, `comment`, `job`, `poll`, `pollopt`. Each has different fields — comments have `parent` + `text`, stories have `title` + `url` (or `text` for Ask HN), jobs have `title` + `url` + `text`.\n\n**Comment trees**: comments are a tree via `kids` (array of IDs) on each item. Walk recursively, watch for `deleted: true` or `dead: true` entries.\n\n**Rate limits**: no published limit, but Firebase will throttle aggressive clients. Stay under ~30 req/s and you'll be fine.\n\n**Cache friendly**: every item is content-addressable by ID and immutable once posted (votes update but story body doesn't). Long TTLs work well.\n\n**Out of scope here**: HN Algolia full-text search (different API at hn.algolia.com — could be a separate adapter), write/vote, email subscription.",
+  "region": "intl",
+  "category": "data",
+  "icon": "hackernews",
+  "docsUrl": "https://github.com/HackerNews/API",
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "Hacker News Firebase API",
+    "type": "REST",
+    "baseUrl": "https://hacker-news.firebaseio.com/v0",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "hackernews_top_stories",
+      "description": "Returns an array of up to 500 item IDs for the current front-page (top) stories. Use hackernews_get_item to resolve each ID into the actual story.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/topstories.json" }
+    },
+    {
+      "name": "hackernews_new_stories",
+      "description": "Returns an array of up to 500 newest story IDs.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/newstories.json" }
+    },
+    {
+      "name": "hackernews_best_stories",
+      "description": "Returns an array of up to 500 'best' story IDs (HN's algorithmic top).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/beststories.json" }
+    },
+    {
+      "name": "hackernews_ask_stories",
+      "description": "Returns up to 200 Ask HN story IDs.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/askstories.json" }
+    },
+    {
+      "name": "hackernews_show_stories",
+      "description": "Returns up to 200 Show HN story IDs.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/showstories.json" }
+    },
+    {
+      "name": "hackernews_job_stories",
+      "description": "Returns up to 200 'Who is hiring / job' story IDs.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/jobstories.json" }
+    },
+    {
+      "name": "hackernews_get_item",
+      "description": "Fetch a single item (story, comment, job, poll, pollopt) by ID. Returns the full payload including `type`, `by`, `time`, `title`, `url`, `text`, `score`, `kids` (child comment IDs), `parent`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "HN item ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/item/{id}.json" }
+    },
+    {
+      "name": "hackernews_get_user",
+      "description": "Fetch user profile by case-sensitive username: returns `id`, `created`, `karma`, `about`, `submitted` (array of recent item IDs).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string", "description": "HN username, case-sensitive." }
+        },
+        "required": ["username"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/user/{username}.json" }
+    }
+  ]
+}

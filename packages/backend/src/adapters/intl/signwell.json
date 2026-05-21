@@ -1,0 +1,200 @@
+{
+  "slug": "signwell",
+  "name": "SignWell",
+  "description": "Drive SignWell (developer-friendly e-signature) from any AI agent: documents, templates, signature requests, signers. 8 tools, API key + application ID auth.",
+  "instructions": "This connector uses the SignWell API v1 (developers.signwell.com).\n\n**Setup**:\n1. Sign in to https://app.signwell.com → top-right avatar → **API → Create application**.\n2. Note the **Application ID** and **API Key**.\n3. Set:\n   - `SIGNWELL_API_KEY` = the API key\n   - `SIGNWELL_APPLICATION_ID` = the application ID\n\n**Authentication**: header `X-Api-Key: ${SIGNWELL_API_KEY}` + `X-Api-Application: ${SIGNWELL_APPLICATION_ID}` (both required).\n\n**test_mode**: every write endpoint accepts `test_mode=true` to validate without sending real emails or burning credits.\n\n**Document workflow**: create document from URL/upload → status='Sent' → recipients sign → status='Completed' → download PDF.\n\n**Signers / Recipients**: each has id, name, email, message, status (waiting/seen/signed/declined). Decline/cancel is supported via update endpoints.\n\n**Pagination**: `?offset=N&limit=M` (max 100).\n\n**Out of scope here**: webhook subscription management, custom fields per template, API app management.",
+  "region": "intl",
+  "category": "e-signature",
+  "icon": "signwell",
+  "docsUrl": "https://developers.signwell.com/reference",
+  "requiredEnvVars": ["SIGNWELL_API_KEY", "SIGNWELL_APPLICATION_ID"],
+  "connector": {
+    "name": "SignWell v1",
+    "type": "REST",
+    "baseUrl": "https://www.signwell.com/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{SIGNWELL_API_KEY}}",
+      "extraHeaders": {
+        "X-Api-Application": "{{SIGNWELL_APPLICATION_ID}}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "signwell_list_documents",
+      "description": "List documents with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "offset": { "type": "integer", "description": "Offset." },
+          "search": { "type": "string", "description": "Substring filter on document name." },
+          "status": { "type": "string", "description": "Draft, Sent, Completed, Canceled, Declined." },
+          "folder_id": { "type": "string", "description": "Filter by folder." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "search": "$search",
+          "status": "$status",
+          "folder_id": "$folder_id"
+        }
+      }
+    },
+    {
+      "name": "signwell_get_document",
+      "description": "Fetch a document by ID with recipients + signing status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "Document ID." }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/documents/{documentId}/" }
+    },
+    {
+      "name": "signwell_create_document_from_url",
+      "description": "Create a document from public file URLs and send for signature. Required: files + recipients. test_mode=true is safe.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Document name." },
+          "subject": { "type": "string", "description": "Email subject." },
+          "message": { "type": "string", "description": "Email body." },
+          "test_mode": { "type": "boolean", "description": "true = test (no real signature/email)." },
+          "draft": { "type": "boolean", "description": "true = create as draft (don't send yet)." },
+          "files": { "type": "array", "description": "[{file_url:'https://...pdf', name:'Contract.pdf'}]." },
+          "recipients": { "type": "array", "description": "[{id:'r1', name, email, message?, signing_order?, sender:bool, deliver_email:bool}]. ids are arbitrary strings that you use to place fields." },
+          "fields": { "type": "array", "description": "Optional: pre-placed signature/text/date fields [[{type:'signature', recipient_id:'r1', x:100, y:100, page:1, width:200, height:50}]]. Inner array per page." },
+          "expires_in": { "type": "integer", "description": "Days until expiration." },
+          "reminders": { "type": "boolean", "description": "Send automatic reminders." },
+          "redirect_url": { "type": "string", "description": "URL signer sees after completing." },
+          "metadata": { "type": "object", "description": "Free-form metadata (string K/V)." },
+          "with_signature_page": { "type": "boolean", "description": "Append SignWell signature page (audit trail)." }
+        },
+        "required": ["files", "recipients"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents/",
+        "bodyMapping": {
+          "name": "$name",
+          "subject": "$subject",
+          "message": "$message",
+          "test_mode": "$test_mode",
+          "draft": "$draft",
+          "files": "$files",
+          "recipients": "$recipients",
+          "fields": "$fields",
+          "expires_in": "$expires_in",
+          "reminders": "$reminders",
+          "redirect_url": "$redirect_url",
+          "metadata": "$metadata",
+          "with_signature_page": "$with_signature_page"
+        }
+      }
+    },
+    {
+      "name": "signwell_create_document_from_template",
+      "description": "Create a document from a SignWell template + recipient mapping. Required: template_id + recipients.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": { "type": "string", "description": "Template ID." },
+          "name": { "type": "string", "description": "Document name." },
+          "subject": { "type": "string", "description": "Email subject." },
+          "message": { "type": "string", "description": "Email body." },
+          "test_mode": { "type": "boolean", "description": "Test mode." },
+          "draft": { "type": "boolean", "description": "Create as draft." },
+          "recipients": { "type": "array", "description": "[{placeholder_name:'Client', name, email}]. placeholder_name matches a placeholder defined on the template." },
+          "template_fields": { "type": "array", "description": "[{api_id:'company_name', value:'ACME'}] — pre-fill template variables." },
+          "expires_in": { "type": "integer", "description": "Expiration days." },
+          "reminders": { "type": "boolean", "description": "Reminders." },
+          "redirect_url": { "type": "string", "description": "Post-sign redirect." },
+          "metadata": { "type": "object", "description": "Metadata." }
+        },
+        "required": ["template_id", "recipients"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/document_templates/documents/",
+        "bodyMapping": {
+          "template_id": "$template_id",
+          "name": "$name",
+          "subject": "$subject",
+          "message": "$message",
+          "test_mode": "$test_mode",
+          "draft": "$draft",
+          "recipients": "$recipients",
+          "template_fields": "$template_fields",
+          "expires_in": "$expires_in",
+          "reminders": "$reminders",
+          "redirect_url": "$redirect_url",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "signwell_send_reminder",
+      "description": "Send a reminder email to pending recipients on a document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "Document ID." }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents/{documentId}/remind/"
+      }
+    },
+    {
+      "name": "signwell_cancel_document",
+      "description": "Cancel a document (no further signing). Irreversible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "Document ID." }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/documents/{documentId}/" }
+    },
+    {
+      "name": "signwell_get_document_files",
+      "description": "Get URLs of the document's signed files. Returns presigned URLs valid for ~24h.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentId": { "type": "string", "description": "Document ID." }
+        },
+        "required": ["documentId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/documents/{documentId}/completed_pdf/" }
+    },
+    {
+      "name": "signwell_list_templates",
+      "description": "List templates available on the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document_templates/",
+        "queryParams": { "limit": "$limit", "offset": "$offset" }
+      }
+    }
+  ]
+}

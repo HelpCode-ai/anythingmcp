@@ -1,0 +1,211 @@
+{
+  "slug": "microsoft-bookings",
+  "name": "Microsoft Bookings",
+  "description": "Drive Microsoft Bookings (Microsoft 365 scheduling product) via the Graph API: businesses, services, staff, appointments, customers. 8 tools, OAuth2 Bearer auth.",
+  "instructions": "This connector uses the Microsoft Graph API v1.0 \u2014 Bookings endpoints (learn.microsoft.com/en-us/graph/api/resources/booking-api-overview).\n\n**Setup**:\n1. Register an Azure AD app at https://portal.azure.com \u2192 **App registrations \u2192 New registration**.\n2. **API permissions \u2192 Microsoft Graph \u2192 Delegated** (or Application) \u2192 add: `Bookings.Read.All`, `BookingsAppointment.ReadWrite.All` (write needs admin consent).\n3. Run OAuth2 authorization-code (or client-credentials) flow against `login.microsoftonline.com/{tenant}/oauth2/v2.0/token` to get an access token.\n4. Set `MICROSOFT_GRAPH_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${MICROSOFT_GRAPH_ACCESS_TOKEN}`.\n\n**Booking Business ID**: every Microsoft Bookings 'page' is a Booking Business. Discover them via `bookings_list_businesses`. The id looks like `Contoso@yourtenant.onmicrosoft.com` (an SMTP-like address, NOT a UUID).\n\n**Public booking endpoints**: most of Microsoft Bookings is private (admin-only). The public 'self-service' booking pages are at `https://outlook.office.com/owa/calendar/{biz_id}@{tenant}/bookings/` \u2014 out of scope; agents use the admin endpoints here.\n\n**Rate limits**: Graph throttling kicks in around 10k req per 10 min per app per user. On 429 honor Retry-After.\n\n**Out of scope here**: webhooks, custom questions per service, Microsoft Bookings staff scheduling rules.",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "microsoft-bookings",
+  "docsUrl": "https://learn.microsoft.com/en-us/graph/api/resources/booking-api-overview",
+  "requiredEnvVars": [
+    "MICROSOFT_GRAPH_ACCESS_TOKEN"
+  ],
+  "connector": {
+    "name": "Microsoft Graph (Bookings)",
+    "type": "REST",
+    "baseUrl": "https://graph.microsoft.com/v1.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MICROSOFT_GRAPH_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "microsoft_bookings_list_businesses",
+      "description": "List all Bookings Businesses (mailbox-style booking pages) on the tenant.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/solutions/bookingBusinesses"
+      }
+    },
+    {
+      "name": "microsoft_bookings_get_business",
+      "description": "Get a Booking Business by ID with its public profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "businessId": {
+            "type": "string",
+            "description": "Bookings business ID (Contoso@tenant.onmicrosoft.com)."
+          }
+        },
+        "required": [
+          "businessId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/solutions/bookingBusinesses/{businessId}"
+      }
+    },
+    {
+      "name": "microsoft_bookings_list_services",
+      "description": "List services (offerings) of a Booking Business. Each service has id, displayName, duration, defaultPrice, staffMemberIds[], smsNotificationsEnabled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "businessId": {
+            "type": "string",
+            "description": "Business ID."
+          }
+        },
+        "required": [
+          "businessId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/solutions/bookingBusinesses/{businessId}/services"
+      }
+    },
+    {
+      "name": "microsoft_bookings_list_staff_members",
+      "description": "List staff members of a Booking Business.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "businessId": {
+            "type": "string",
+            "description": "Business ID."
+          }
+        },
+        "required": [
+          "businessId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/solutions/bookingBusinesses/{businessId}/staffMembers"
+      }
+    },
+    {
+      "name": "microsoft_bookings_list_appointments",
+      "description": "List appointments (bookings) in a Booking Business.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "businessId": {
+            "type": "string",
+            "description": "Business ID."
+          },
+          "$top": {
+            "type": "integer",
+            "description": "Max results per page."
+          },
+          "$filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. 'start/dateTime ge 2025-01-01T00:00:00Z'."
+          }
+        },
+        "required": [
+          "businessId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/solutions/bookingBusinesses/{businessId}/appointments",
+        "queryParams": {
+          "$top": "$$top",
+          "$filter": "$$filter"
+        }
+      }
+    },
+    {
+      "name": "microsoft_bookings_get_appointment",
+      "description": "Get one appointment by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "businessId": {
+            "type": "string",
+            "description": "Business ID."
+          },
+          "appointmentId": {
+            "type": "string",
+            "description": "Appointment ID."
+          }
+        },
+        "required": [
+          "businessId",
+          "appointmentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/solutions/bookingBusinesses/{businessId}/appointments/{appointmentId}"
+      }
+    },
+    {
+      "name": "microsoft_bookings_create_appointment",
+      "description": "Create a booked appointment. Required: serviceId + start + end + customers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "businessId": {
+            "type": "string",
+            "description": "Business ID."
+          },
+          "appointment": {
+            "type": "object",
+            "description": "{serviceId, start:{dateTime:'2025-01-01T15:00:00', timeZone:'Pacific Standard Time'}, end:{...}, customers:[{customerId? OR name+emailAddress}], staffMemberIds?:[], serviceLocation?:{...}, customerNotes?, smsNotificationsEnabled?:bool, isLocationOnline?:bool}."
+          }
+        },
+        "required": [
+          "businessId",
+          "appointment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/solutions/bookingBusinesses/{businessId}/appointments",
+        "bodyTemplate": "${appointment}"
+      }
+    },
+    {
+      "name": "microsoft_bookings_cancel_appointment",
+      "description": "Cancel an appointment. Optional cancellationMessage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "businessId": {
+            "type": "string",
+            "description": "Business ID."
+          },
+          "appointmentId": {
+            "type": "string",
+            "description": "Appointment ID."
+          },
+          "cancellationMessage": {
+            "type": "string",
+            "description": "Message sent to the customer."
+          }
+        },
+        "required": [
+          "businessId",
+          "appointmentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/solutions/bookingBusinesses/{businessId}/appointments/{appointmentId}/cancel",
+        "bodyMapping": {
+          "cancellationMessage": "$cancellationMessage"
+        }
+      }
+    }
+  ]
+}

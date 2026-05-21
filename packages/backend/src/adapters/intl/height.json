@@ -1,0 +1,154 @@
+{
+  "slug": "height",
+  "name": "Height",
+  "description": "Drive Height (modern AI-native project management) from any AI agent: tasks, lists, fields, users, activities. 9 tools, API-key Bearer auth.",
+  "instructions": "This connector uses the Height API v1 (height.app/api/docs).\n\n**Setup**:\n1. Sign in to Height → top-right avatar → **Settings → API & webhooks → Generate API key**.\n2. Set `HEIGHT_API_KEY`.\n\n**Authentication**: `Authorization: api-key ${HEIGHT_API_KEY}` (literal `api-key ` prefix, NOT `Bearer`).\n\n**Tasks** are the primary object. Each task has status, name, description, assignees, dueDate, listIds[], fields (custom), parentTaskId (for subtasks).\n\n**Lists**: how tasks are organized (similar to ClickUp lists or Linear projects). A task can belong to multiple lists.\n\n**Custom fields**: defined at the workspace level. Reference via fields object {fieldId: value}.\n\n**Pagination**: cursor-based via `?cursor=...`.\n\n**Out of scope here**: chat, video huddles, integrations management.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "height",
+  "docsUrl": "https://height.app/api/docs",
+  "requiredEnvVars": ["HEIGHT_API_KEY"],
+  "connector": {
+    "name": "Height API",
+    "type": "REST",
+    "baseUrl": "https://api.height.app",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "api-key {{HEIGHT_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "height_get_workspace",
+      "description": "Return workspace info: id, model, url, name.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/workspace" }
+    },
+    {
+      "name": "height_list_lists",
+      "description": "List all lists in the workspace. Returns id, name, key, type (list/smartlist/section), appearance, archivedAt.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/lists" }
+    },
+    {
+      "name": "height_list_tasks",
+      "description": "List tasks with a filter query. Filter examples: '{\"listIds\":{\"values\":[\"L-1\"]}}' or '{\"status\":{\"values\":[\"backlog\",\"started\"]}}'. URL-encoded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": { "type": "string", "description": "URL-encoded JSON filter expression." },
+          "order": { "type": "string", "description": "JSON-encoded sort, e.g. '[{\"field\":\"createdAt\",\"direction\":\"desc\"}]'." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": { "filters": "$filters", "order": "$order" }
+      }
+    },
+    {
+      "name": "height_search_tasks",
+      "description": "Full-text search tasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Text query." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/search",
+        "queryParams": { "query": "$query" }
+      }
+    },
+    {
+      "name": "height_get_task",
+      "description": "Fetch a single task by ID OR index (e.g. 'T-42').",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskIdOrIndex": { "type": "string", "description": "Task ID (UUID) or display index (e.g. 'T-42')." }
+        },
+        "required": ["taskIdOrIndex"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/tasks/{taskIdOrIndex}" }
+    },
+    {
+      "name": "height_create_task",
+      "description": "Create a task. Required: listIds + name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listIds": { "type": "array", "description": "Array of list IDs the task belongs to (at least 1)." },
+          "name": { "type": "string", "description": "Task title." },
+          "description": { "type": "string", "description": "Description (rich text, Markdown supported)." },
+          "assigneesIds": { "type": "array", "description": "Array of user IDs." },
+          "status": { "type": "string", "description": "Status name (per workspace's status list: e.g. 'backlog', 'started', 'completed')." },
+          "dueDate": { "type": "string", "description": "ISO 8601 date." },
+          "parentTaskId": { "type": "string", "description": "If subtask, parent task ID." },
+          "fields": { "type": "object", "description": "Custom fields: {fieldId: value, ...}." }
+        },
+        "required": ["listIds", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMapping": {
+          "listIds": "$listIds",
+          "name": "$name",
+          "description": "$description",
+          "assigneesIds": "$assigneesIds",
+          "status": "$status",
+          "dueDate": "$dueDate",
+          "parentTaskId": "$parentTaskId",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "height_update_task",
+      "description": "Update a task (PATCH).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." },
+          "name": { "type": "string", "description": "New name." },
+          "description": { "type": "string", "description": "New description." },
+          "status": { "type": "string", "description": "Change status." },
+          "assigneesIds": { "type": "array", "description": "Replace assignees." },
+          "listIds": { "type": "array", "description": "Replace list memberships." },
+          "dueDate": { "type": "string", "description": "Change due date." },
+          "fields": { "type": "object", "description": "Update custom fields." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/tasks/{taskId}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "status": "$status",
+          "assigneesIds": "$assigneesIds",
+          "listIds": "$listIds",
+          "dueDate": "$dueDate",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "height_list_users",
+      "description": "List workspace users (members).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/users" }
+    },
+    {
+      "name": "height_list_fields",
+      "description": "List custom fields defined in the workspace.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/fields" }
+    }
+  ]
+}

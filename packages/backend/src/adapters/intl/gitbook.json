@@ -1,0 +1,162 @@
+{
+  "slug": "gitbook",
+  "name": "GitBook",
+  "description": "Drive GitBook (docs platform) from any AI agent: spaces, pages, content, search, collections. 9 tools, Bearer auth.",
+  "instructions": "This connector uses the GitBook API v1 (developer.gitbook.com).\n\n**Setup**:\n1. Sign in to https://app.gitbook.com → bottom-left avatar → **Settings → Developer → Personal access tokens → Create new token**.\n2. Copy the token. Set `GITBOOK_API_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${GITBOOK_API_TOKEN}`.\n\n**Hierarchy**: Organization → Collection → Space → Page (a tree of pages, sub-pages, content).\n\n**Space IDs**: each space has a UUID-like ID. Discover via `gitbook_list_spaces`.\n\n**Pages**: content lives in pages. Each page has id, slug, title, type (document, group, link), revision_id (every change creates a new revision).\n\n**Content format**: GitBook stores content as a JSON document tree (their own AST). Reading is straightforward; writing requires constructing the AST — out of scope for most agent use. For simple writes, use 'GitBook content imports' (markdown imports) — exposed as `gitbook_import_markdown_to_page`.\n\n**Search**: full-text across spaces.\n\n**Pagination**: `?page=N&limit=M` (max 100).\n\n**Out of scope here**: content editing via the AST, change requests, revisions diff, custom domains, integrations management.",
+  "region": "intl",
+  "category": "knowledge",
+  "icon": "gitbook",
+  "docsUrl": "https://developer.gitbook.com/",
+  "requiredEnvVars": ["GITBOOK_API_TOKEN"],
+  "connector": {
+    "name": "GitBook v1",
+    "type": "REST",
+    "baseUrl": "https://api.gitbook.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{GITBOOK_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "gitbook_get_me",
+      "description": "Return the user the token belongs to: id, displayName, email, photoURL.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/user" }
+    },
+    {
+      "name": "gitbook_list_organizations",
+      "description": "List organizations the user is a member of.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "page": { "type": "string", "description": "Page cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs",
+        "queryParams": { "limit": "$limit", "page": "$page" }
+      }
+    },
+    {
+      "name": "gitbook_list_spaces",
+      "description": "List spaces in an organization. Each space has id, title, visibility (public/private), urls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organizationId": { "type": "string", "description": "Organization ID." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "page": { "type": "string", "description": "Cursor." }
+        },
+        "required": ["organizationId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/{organizationId}/spaces",
+        "queryParams": { "limit": "$limit", "page": "$page" }
+      }
+    },
+    {
+      "name": "gitbook_get_space",
+      "description": "Fetch a single space with full metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spaceId": { "type": "string", "description": "Space ID." }
+        },
+        "required": ["spaceId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/spaces/{spaceId}" }
+    },
+    {
+      "name": "gitbook_get_space_content",
+      "description": "Get the table of contents / page tree for a space (latest revision).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spaceId": { "type": "string", "description": "Space ID." }
+        },
+        "required": ["spaceId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/spaces/{spaceId}/content" }
+    },
+    {
+      "name": "gitbook_get_page",
+      "description": "Fetch a page's content (the JSON AST). Use format=document (default) or format=markdown for source.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spaceId": { "type": "string", "description": "Space ID." },
+          "pageId": { "type": "string", "description": "Page ID." },
+          "format": { "type": "string", "description": "document (default JSON AST) or markdown." }
+        },
+        "required": ["spaceId", "pageId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/spaces/{spaceId}/content/page/{pageId}",
+        "queryParams": { "format": "$format" }
+      }
+    },
+    {
+      "name": "gitbook_search_content",
+      "description": "Full-text search across spaces. Returns pages with snippets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "page": { "type": "string", "description": "Cursor." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "gitbook_list_collections",
+      "description": "List collections in an organization.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organizationId": { "type": "string", "description": "Organization ID." }
+        },
+        "required": ["organizationId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/{organizationId}/collections"
+      }
+    },
+    {
+      "name": "gitbook_import_markdown_to_page",
+      "description": "Import Markdown content into a page (replaces the page's content). The agent can write a page in plain Markdown and push it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spaceId": { "type": "string", "description": "Space ID." },
+          "pageId": { "type": "string", "description": "Page ID." },
+          "content": { "type": "string", "description": "Markdown source." }
+        },
+        "required": ["spaceId", "pageId", "content"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/spaces/{spaceId}/content/page/{pageId}/import",
+        "bodyMapping": {
+          "format": "markdown",
+          "content": "$content"
+        }
+      }
+    }
+  ]
+}

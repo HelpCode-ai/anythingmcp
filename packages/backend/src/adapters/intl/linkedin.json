@@ -1,0 +1,135 @@
+{
+  "slug": "linkedin",
+  "name": "LinkedIn",
+  "description": "Drive LinkedIn (profile + shared posts) for the authenticated user from any AI agent. Limited scope: most LinkedIn features require Marketing Developer Platform approval. 5 tools, OAuth2 Bearer auth.",
+  "instructions": "This connector uses the LinkedIn Marketing/Profile API v2 (learn.microsoft.com/en-us/linkedin/).\n\n**HEAVY GATING**: LinkedIn's API is one of the most restricted public APIs. Most useful endpoints (read posts, search profiles, fetch connections, manage company pages) require **Marketing Developer Platform approval** from LinkedIn — a partnership program with significant requirements (existing app + revenue commitments).\n\nWhat WORKS without partnership:\n  - 'Sign in with LinkedIn using OpenID Connect' product scopes: `openid`, `profile`, `email`, `w_member_social` (post on behalf of user).\n\n**Setup**:\n1. Register an app at https://www.linkedin.com/developers/apps.\n2. Add the **Sign In with LinkedIn using OpenID Connect** product.\n3. (Optional) Add **Share on LinkedIn** product for posting.\n4. Run OAuth2 authorization-code flow with scopes `openid profile email w_member_social`.\n5. Set `LINKEDIN_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${LINKEDIN_ACCESS_TOKEN}`.\n\n**LinkedIn-Version header**: required on most v2 endpoints: `LinkedIn-Version: 202405` (use the YYYYMM of the API version you're targeting). Without it many endpoints return 426 Upgrade Required.\n\n**Person URN**: shares are posted as `urn:li:person:{your_person_id}`. Get your person_id from the userinfo endpoint.\n\n**Out of scope here** (require Marketing Developer Platform): read other users' posts, search profiles, manage company pages, ad campaigns, analytics, posts inbox.",
+  "region": "intl",
+  "category": "social",
+  "icon": "linkedin",
+  "docsUrl": "https://learn.microsoft.com/en-us/linkedin/",
+  "requiredEnvVars": ["LINKEDIN_ACCESS_TOKEN"],
+  "connector": {
+    "name": "LinkedIn v2",
+    "type": "REST",
+    "baseUrl": "https://api.linkedin.com/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{LINKEDIN_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "linkedin_userinfo",
+      "description": "Get the authenticated user's profile (OpenID Connect userinfo endpoint). Returns sub (person ID), name, given_name, family_name, picture, locale, email, email_verified.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/userinfo",
+        "headers": { "LinkedIn-Version": "202405" }
+      }
+    },
+    {
+      "name": "linkedin_create_post",
+      "description": "Share a text or article post on behalf of the user. Required: author (URN) + commentary (text). LinkedIn requires `LinkedIn-Version` and `X-Restli-Protocol-Version: 2.0.0` headers (pinned per-tool).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "author": { "type": "string", "description": "URN of the author, typically 'urn:li:person:YOUR_PERSON_ID' (get from userinfo's sub field)." },
+          "commentary": { "type": "string", "description": "Post body text. Max 3000 chars." },
+          "visibility": { "type": "string", "description": "PUBLIC (default) or CONNECTIONS." },
+          "lifecycleState": { "type": "string", "description": "PUBLISHED (default) or DRAFT." },
+          "distribution": {
+            "type": "object",
+            "description": "{feedDistribution:'MAIN_FEED'|'NONE', targetEntities:[], thirdPartyDistributionChannels:[]}."
+          },
+          "isReshareDisabledByAuthor": { "type": "boolean", "description": "Disable reshares." },
+          "content": {
+            "type": "object",
+            "description": "Optional content: {article:{source:'URL'}} for link post OR {media:{id:'urn:li:image:...'}} for image post (image upload requires a separate registerUpload call out of scope here)."
+          }
+        },
+        "required": ["author", "commentary"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/posts",
+        "headers": {
+          "LinkedIn-Version": "202405",
+          "X-Restli-Protocol-Version": "2.0.0"
+        },
+        "bodyMapping": {
+          "author": "$author",
+          "commentary": "$commentary",
+          "visibility": "$visibility",
+          "lifecycleState": "$lifecycleState",
+          "distribution": "$distribution",
+          "isReshareDisabledByAuthor": "$isReshareDisabledByAuthor",
+          "content": "$content"
+        }
+      }
+    },
+    {
+      "name": "linkedin_get_post",
+      "description": "Get a previously-created post by URN (you can only fetch posts you authored unless you have higher-tier scopes).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postUrn": { "type": "string", "description": "Post URN, URL-encoded. e.g. 'urn%3Ali%3Ashare%3A12345'." }
+        },
+        "required": ["postUrn"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/{postUrn}",
+        "headers": {
+          "LinkedIn-Version": "202405",
+          "X-Restli-Protocol-Version": "2.0.0"
+        }
+      }
+    },
+    {
+      "name": "linkedin_delete_post",
+      "description": "Delete a post you authored.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postUrn": { "type": "string", "description": "Post URN URL-encoded." }
+        },
+        "required": ["postUrn"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/posts/{postUrn}",
+        "headers": {
+          "LinkedIn-Version": "202405",
+          "X-Restli-Protocol-Version": "2.0.0"
+        }
+      }
+    },
+    {
+      "name": "linkedin_register_image_upload",
+      "description": "Step 1 of image upload: register an upload. Returns an uploadUrl + image URN. You then PUT the binary to the uploadUrl out-of-band, then use the image URN in linkedin_create_post's content.media.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "initializeUploadRequest": {
+            "type": "object",
+            "description": "{owner: 'urn:li:person:YOUR_PERSON_ID'}."
+          }
+        },
+        "required": ["initializeUploadRequest"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/images?action=initializeUpload",
+        "headers": {
+          "LinkedIn-Version": "202405",
+          "X-Restli-Protocol-Version": "2.0.0"
+        },
+        "bodyMapping": {
+          "initializeUploadRequest": "$initializeUploadRequest"
+        }
+      }
+    }
+  ]
+}

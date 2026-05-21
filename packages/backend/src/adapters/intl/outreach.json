@@ -1,0 +1,243 @@
+{
+  "slug": "outreach",
+  "name": "Outreach",
+  "description": "Drive Outreach (sales engagement platform) from any AI agent: prospects, accounts, sequences, sequence enrollment, tasks, users. 11 tools, OAuth2 Bearer auth, JSON:API spec.",
+  "instructions": "This connector uses the Outreach API v2 (developers.outreach.io).\n\n**Setup**:\n1. Outreach API access is OAuth2-only — no static API keys. Register an OAuth app at https://developers.outreach.io.\n2. Run the OAuth2 authorization-code flow to obtain an access_token (short-lived, ~7200 s) + refresh_token (long-lived). The access_token is what you pass to the connector.\n3. Set `OUTREACH_ACCESS_TOKEN`.\n4. Refresh logic: handle refresh-token rotation externally (the engine refreshes BEARER_TOKEN on 401 if `refreshToken` + `tokenUrl` are present in authConfig — but per-tenant OAuth2 setup is outside this connector's scope).\n\n**Authentication**: `Authorization: Bearer ${OUTREACH_ACCESS_TOKEN}`.\n\n**JSON:API spec**: every response wraps data in `{data:{id,type,attributes,relationships}, included?:[], meta, links}`. Use `?include=` (comma-separated) to side-load related resources. Use `?fields[TYPE]=...` for sparse fieldsets.\n\n**Outreach objects** (Outreach-specific naming):\n  - **Prospect** = a person at an account (like Salesloft 'person').\n  - **Account** = a company.\n  - **Sequence** = multi-step outreach cadence.\n  - **Sequence Step** = each touchpoint.\n  - **Sequence State** = a prospect's enrollment in a sequence (active/paused/finished/bounced).\n  - **Mailbox** = the email account used to send sequence emails.\n\n**Sequence enrollment**: POST `/sequenceStates` with relationships {prospect, sequence, mailbox}. The mailbox must belong to the API token's user OR a delegated user.\n\n**Filtering**: `filter[attribute]=value` query syntax. Multiple filters AND together. Example: `?filter[bounced]=true&filter[sequenceState.id]=N`.\n\n**Pagination**: `page[size]` (default 50, max 1000) + `page[after]` cursor.\n\n**Rate limits**: 10,000 req/hour per token (Enterprise). On 429 honor `Retry-After`.\n\n**Out of scope here**: sequence template editing, calling, conversational intelligence, opportunity sync (use the CRM directly), task templates.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "outreach",
+  "docsUrl": "https://developers.outreach.io/api/reference/",
+  "requiredEnvVars": ["OUTREACH_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Outreach v2",
+    "type": "REST",
+    "baseUrl": "https://api.outreach.io/api/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{OUTREACH_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "outreach_list_prospects",
+      "description": "List prospects with filters. Supports filter[emails], filter[accountId], filter[ownerId], filter[stage.id], filter[engagedAt][gte], etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_emails": { "type": "string", "description": "Comma-separated email exact-match." },
+          "filter_account_id": { "type": "string", "description": "Account ID filter." },
+          "filter_owner_id": { "type": "string", "description": "Owner user ID." },
+          "filter_stage_id": { "type": "string", "description": "Stage ID." },
+          "sort": { "type": "string", "description": "Sort attribute, prefix - for desc: -updatedAt." },
+          "page_size": { "type": "integer", "description": "Per page (default 50, max 1000)." },
+          "page_after": { "type": "string", "description": "Cursor for next page." },
+          "include": { "type": "string", "description": "Side-load: account, owner, currentlyActiveSequenceStates, etc." },
+          "fields_prospect": { "type": "string", "description": "Sparse fieldset for prospect attributes." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/prospects",
+        "queryParams": {
+          "filter[emails]": "$filter_emails",
+          "filter[accountId]": "$filter_account_id",
+          "filter[ownerId]": "$filter_owner_id",
+          "filter[stage.id]": "$filter_stage_id",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[after]": "$page_after",
+          "include": "$include",
+          "fields[prospect]": "$fields_prospect"
+        }
+      }
+    },
+    {
+      "name": "outreach_get_prospect",
+      "description": "Fetch a prospect by ID with full attributes and relationships.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prospectId": { "type": "string", "description": "Prospect ID." },
+          "include": { "type": "string", "description": "Side-load related resources." }
+        },
+        "required": ["prospectId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/prospects/{prospectId}",
+        "queryParams": { "include": "$include" }
+      }
+    },
+    {
+      "name": "outreach_create_prospect",
+      "description": "Create a prospect. JSON:API envelope: {data: {type:'prospect', attributes:{emails:['a@b.com'], firstName, lastName, ...}, relationships:{account:{data:{type:'account',id:'N'}}, owner:{data:{type:'user',id:'M'}}}}}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "JSON:API data envelope. {type:'prospect', attributes:{emails:['email1','email2'], firstName?, lastName?, title?, addressCity?, ...}, relationships?:{account, owner}}. Wrap inside {data:{...}}."
+          }
+        },
+        "required": ["data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/prospects",
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "outreach_update_prospect",
+      "description": "Update a prospect. JSON:API PATCH envelope: {data: {type:'prospect', id:PROSPECT_ID, attributes:{...}}}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prospectId": { "type": "string", "description": "Prospect ID." },
+          "data": {
+            "type": "object",
+            "description": "{type:'prospect', id:PROSPECT_ID, attributes:{...changed fields...}}. Wrap inside {data:{...}}."
+          }
+        },
+        "required": ["prospectId", "data"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/prospects/{prospectId}",
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "outreach_list_accounts",
+      "description": "List accounts with filters. Each account has name, domain, industry, numberOfEmployees, websiteUrl, addressCity, custom*.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_name": { "type": "string", "description": "Name filter." },
+          "filter_domain": { "type": "string", "description": "Domain filter." },
+          "filter_owner_id": { "type": "string", "description": "Owner user ID." },
+          "page_size": { "type": "integer", "description": "Per page." },
+          "page_after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "filter[name]": "$filter_name",
+          "filter[domain]": "$filter_domain",
+          "filter[ownerId]": "$filter_owner_id",
+          "page[size]": "$page_size",
+          "page[after]": "$page_after"
+        }
+      }
+    },
+    {
+      "name": "outreach_list_sequences",
+      "description": "List sequences (cadences). Each has name, shareType (private/shared), enabled, numActiveProspects, numSteps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_enabled": { "type": "boolean", "description": "Only enabled sequences." },
+          "filter_share_type": { "type": "string", "description": "private, shared." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sequences",
+        "queryParams": {
+          "filter[enabled]": "$filter_enabled",
+          "filter[shareType]": "$filter_share_type",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "outreach_enroll_in_sequence",
+      "description": "Enroll a prospect in a sequence (create sequenceState). The mailbox must belong to a user with permission to send through it. JSON:API envelope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "{type:'sequenceState', relationships:{prospect:{data:{type:'prospect',id:'N'}}, sequence:{data:{type:'sequence',id:'M'}}, mailbox:{data:{type:'mailbox',id:'K'}}}}. Wrap inside {data:{...}}."
+          }
+        },
+        "required": ["data"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sequenceStates",
+        "bodyMapping": { "data": "$data" }
+      }
+    },
+    {
+      "name": "outreach_list_mailboxes",
+      "description": "List mailboxes (email accounts connected to Outreach for sending). Returns id, email, sendType (sequenceSend / replyFromSequence), userId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_user_id": { "type": "string", "description": "Filter by owner user ID." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mailboxes",
+        "queryParams": {
+          "filter[userId]": "$filter_user_id",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "outreach_list_users",
+      "description": "List Outreach users. Returns id, name, email, role, locked, createdAt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_email": { "type": "string", "description": "Exact email filter." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "filter[email]": "$filter_email",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "outreach_list_tasks",
+      "description": "List tasks (manual steps in sequences that need agent action — calls, custom emails, LinkedIn DMs). Filter by state (pending/skipped/completed) and assignee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_state": { "type": "string", "description": "pending, skipped, completed, scheduled, expired." },
+          "filter_owner_id": { "type": "string", "description": "Assignee user ID." },
+          "filter_prospect_id": { "type": "string", "description": "Prospect ID." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "filter[state]": "$filter_state",
+          "filter[ownerId]": "$filter_owner_id",
+          "filter[prospectId]": "$filter_prospect_id",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "outreach_list_stages",
+      "description": "List prospect stages defined on the org (the funnel positions like Lead/MQL/SQL/Opportunity). Required to compose filter[stage.id] queries.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/stages" }
+    }
+  ]
+}

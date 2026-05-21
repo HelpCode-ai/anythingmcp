@@ -1,0 +1,151 @@
+{
+  "slug": "tidio",
+  "name": "Tidio",
+  "description": "Manage Tidio (live chat + AI chatbot) contacts, conversations, messages, tags via GraphQL from any AI agent. 7 tools, X-Tidio-Openapi-Token auth.",
+  "instructions": "This connector wraps the Tidio Public API (api.tidio.co/v1/graphql).\n\n**Setup**:\n1. Log into https://www.tidio.com → **Settings → Public API** (Tidio+ plan only).\n2. Generate an API token. Set `TIDIO_API_TOKEN`.\n\n**Authentication**: custom header `X-Tidio-Openapi-Token: ${TIDIO_API_TOKEN}` on every request.\n\n**GraphQL-only**: Tidio's Public API is GraphQL — the adapter exposes a few common queries/mutations as wrappers; for ad-hoc queries use the auto-injected `tidio_graphql_query` / `tidio_graphql_mutation` / `tidio_graphql_schema` builtins.\n\n**Visitor vs Contact**: Tidio tracks anonymous visitors (no email) and contacts (have email/identifier). Bind a visitor to a contact via `identify`.\n\n**Pagination**: cursor-based via Relay edges: `edges[].node`, `pageInfo {endCursor, hasNextPage}`.\n\n**Rate limits**: 10 req/sec per token + complexity budget. 429 with `Retry-After`.\n\n**Out of scope here**: chatbot flow editor, broadcast scheduling, A/B testing — these are UI-only.",
+  "region": "intl",
+  "category": "support",
+  "icon": "tidio",
+  "docsUrl": "https://docs.tidio.com/public-api/",
+  "requiredEnvVars": ["TIDIO_API_TOKEN"],
+  "connector": {
+    "name": "Tidio GraphQL API v1",
+    "type": "GRAPHQL",
+    "baseUrl": "https://api.tidio.co/v1/graphql",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Tidio-Openapi-Token",
+      "apiKey": "{{TIDIO_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "tidio_get_project",
+      "description": "Get info about the connected Tidio project (id, name, plan).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "query",
+        "path": "{ project { id name plan } }"
+      }
+    },
+    {
+      "name": "tidio_list_contacts",
+      "description": "List contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": { "type": "integer", "description": "Page size." },
+          "after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListContacts($first: Int, $after: String) { contacts(first: $first, after: $after) { edges { node { id name email phone tags { name } } } pageInfo { endCursor hasNextPage } } }",
+        "bodyMapping": { "variables": { "first": "$first", "after": "$after" } }
+      }
+    },
+    {
+      "name": "tidio_get_contact_by_email",
+      "description": "Look up a contact by email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetContact($email: String!) { contact(email: $email) { id name email phone tags { name } customAttributes { key value } } }",
+        "bodyMapping": { "variables": { "email": "$email" } }
+      }
+    },
+    {
+      "name": "tidio_update_contact",
+      "description": "Update / upsert a contact by email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email (identifier)." },
+          "name": { "type": "string", "description": "New name." },
+          "phone": { "type": "string", "description": "Phone." },
+          "tags": { "type": "array", "description": "Tag name strings." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation UpdateContact($input: UpdateContactInput!) { contactUpdate(input: $input) { contact { id email } } }",
+        "bodyMapping": {
+          "variables": {
+            "input": {
+              "email": "$email",
+              "name": "$name",
+              "phone": "$phone",
+              "tags": "$tags"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "tidio_list_conversations",
+      "description": "List recent conversations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": { "type": "integer", "description": "Page size." },
+          "after": { "type": "string", "description": "Cursor." },
+          "status": { "type": "string", "description": "OPEN, SOLVED, PENDING." }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListConvs($first: Int, $after: String, $status: ConversationStatus) { conversations(first: $first, after: $after, status: $status) { edges { node { id status contact { id email } assignee { id name } lastMessageAt } } pageInfo { endCursor hasNextPage } } }",
+        "bodyMapping": {
+          "variables": { "first": "$first", "after": "$after", "status": "$status" }
+        }
+      }
+    },
+    {
+      "name": "tidio_get_conversation",
+      "description": "Get a single conversation with messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Conversation ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetConv($id: ID!) { conversation(id: $id) { id status contact { id email } messages(first: 50) { edges { node { id content author { id name role } createdAt } } } } }",
+        "bodyMapping": { "variables": { "id": "$id" } }
+      }
+    },
+    {
+      "name": "tidio_send_message",
+      "description": "Send a message to a conversation as an operator.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": { "type": "string", "description": "Conversation ID." },
+          "content": { "type": "string", "description": "Message text." }
+        },
+        "required": ["conversation_id", "content"]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation Send($input: SendMessageInput!) { messageSend(input: $input) { message { id } } }",
+        "bodyMapping": {
+          "variables": {
+            "input": {
+              "conversationId": "$conversation_id",
+              "content": "$content"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,242 @@
+{
+  "slug": "basecamp",
+  "name": "Basecamp",
+  "description": "Drive Basecamp 4 (project & team collaboration) from any AI agent: projects, todo lists, todos, messages, comments, people. 12 tools, OAuth2 Bearer auth.",
+  "instructions": "This connector uses the Basecamp 4 API (37signals.com — github.com/basecamp/bc3-api).\n\n**Setup**:\n1. Register an integration at https://launchpad.37signals.com/integrations.\n2. Implement OAuth2 authorization-code flow with `https://launchpad.37signals.com/authorization` (response includes user's account_id).\n3. Set `BASECAMP_ACCESS_TOKEN` to the obtained access token.\n4. Set `BASECAMP_ACCOUNT_ID` to your Basecamp account ID (a 6-9 digit number — visible in any Basecamp URL or returned by the OAuth identity endpoint).\n\n**Authentication**: `Authorization: Bearer ${BASECAMP_ACCESS_TOKEN}`.\n\n**Account-scoped base URL**: every Basecamp account has its own subdomain. The API URL is `https://3.basecampapi.com/${BASECAMP_ACCOUNT_ID}/...`. The adapter substitutes the account ID via env var template.\n\n**User-Agent header**: Basecamp REQUIRES a meaningful User-Agent header on every request (their support staff need it to identify integrations). The adapter sets `User-Agent: AnythingMCP (https://anythingmcp.com)` automatically.\n\n**Resource model**:\n  - **Project** (called 'Basecamp' in the UI) — the top-level container.\n  - **Dock** — array of tools enabled on the project (todoset, message_board, schedule, vault, chat, etc.) each with its own URL.\n  - **Todoset** → multiple **Todolists** → multiple **Todos**.\n  - **Message Board** → multiple **Messages**.\n  - **Comments** can be attached to most recordings (todos, messages, etc.).\n\n**Recordings**: Basecamp's underlying primitive. A todo, message, comment, etc. is all a 'recording' with an `id` and a `type`. Many endpoints accept any recording_id and dispatch by type.\n\n**Person picker**: assignees are people IDs. List them via `basecamp_get_people` (account-wide) or per-project.\n\n**Status of completed todos**: completed=true sends a Boolean — not a separate endpoint. To 'reopen' a todo, send completed=false on the same todo.\n\n**Pagination**: 50 per page typical, Link header gives `next` URL. Some endpoints return all in one shot.\n\n**Rate limits**: 50 req per 10 sec per account. On 429 honor Retry-After.\n\n**Out of scope here**: Hill Charts, automatic check-ins, schedule entries, vault (file upload), Pings (DMs), Chat (Campfire) — all addressable via the API but each have idiosyncratic URLs returned by the Project dock; out of scope for this MVP connector.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "basecamp",
+  "docsUrl": "https://github.com/basecamp/bc3-api",
+  "requiredEnvVars": ["BASECAMP_ACCESS_TOKEN", "BASECAMP_ACCOUNT_ID"],
+  "connector": {
+    "name": "Basecamp 4",
+    "type": "REST",
+    "baseUrl": "https://3.basecampapi.com/{{BASECAMP_ACCOUNT_ID}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{BASECAMP_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "basecamp_get_my_profile",
+      "description": "Return the authenticated user's profile (id, name, email_address, time_zone, avatar_url, can_manage_projects, etc.).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/profile.json",
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_list_projects",
+      "description": "List active projects (Basecamps) the user has access to. Each project has id, name, description, dock[], purpose ('topic' or 'team').",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "active or archived or trashed." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects.json",
+        "queryParams": { "status": "$status" },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_get_project",
+      "description": "Fetch a single project with its dock — the array of tools (todoset, message_board, etc.) each with an `id` and `url`. You'll grab the todoset_id and message_board_id from here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." }
+        },
+        "required": ["projectId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{projectId}.json",
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_list_todolists",
+      "description": "List todolists within a project's todoset. Get the todoset_id from basecamp_get_project's dock[type=todoset].id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "todosetId": { "type": "string", "description": "Todoset ID (from project dock)." }
+        },
+        "required": ["projectId", "todosetId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buckets/{projectId}/todosets/{todosetId}/todolists.json",
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_list_todos",
+      "description": "List todos in a todolist. Pass status=completed to see done items, archived to see archived.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "todolistId": { "type": "string", "description": "Todolist ID." },
+          "status": { "type": "string", "description": "completed or archived. Omit for active." }
+        },
+        "required": ["projectId", "todolistId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buckets/{projectId}/todolists/{todolistId}/todos.json",
+        "queryParams": { "status": "$status" },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_create_todo",
+      "description": "Create a todo in a todolist. Required: content. Assignees + notify are arrays of person IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "todolistId": { "type": "string", "description": "Todolist ID." },
+          "content": { "type": "string", "description": "Todo content (title)." },
+          "description": { "type": "string", "description": "Longer description (HTML or rich-text)." },
+          "assignee_ids": { "type": "array", "description": "Array of person IDs to assign." },
+          "completion_subscriber_ids": { "type": "array", "description": "People to notify on completion." },
+          "notify": { "type": "boolean", "description": "If true, notify assignees on create." },
+          "due_on": { "type": "string", "description": "Due date YYYY-MM-DD." },
+          "starts_on": { "type": "string", "description": "Start date YYYY-MM-DD." }
+        },
+        "required": ["projectId", "todolistId", "content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/buckets/{projectId}/todolists/{todolistId}/todos.json",
+        "bodyMapping": {
+          "content": "$content",
+          "description": "$description",
+          "assignee_ids": "$assignee_ids",
+          "completion_subscriber_ids": "$completion_subscriber_ids",
+          "notify": "$notify",
+          "due_on": "$due_on",
+          "starts_on": "$starts_on"
+        },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_complete_todo",
+      "description": "Mark a todo as completed. Use basecamp_uncomplete_todo to reopen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "todoId": { "type": "string", "description": "Todo ID." }
+        },
+        "required": ["projectId", "todoId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/buckets/{projectId}/todos/{todoId}/completion.json",
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_uncomplete_todo",
+      "description": "Reopen a completed todo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "todoId": { "type": "string", "description": "Todo ID." }
+        },
+        "required": ["projectId", "todoId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/buckets/{projectId}/todos/{todoId}/completion.json",
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_list_messages",
+      "description": "List messages on the project's message board. Get the message_board_id from basecamp_get_project's dock[type=message_board].id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "messageBoardId": { "type": "string", "description": "Message Board ID." }
+        },
+        "required": ["projectId", "messageBoardId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buckets/{projectId}/message_boards/{messageBoardId}/messages.json",
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_post_message",
+      "description": "Post a new message on the project's message board.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "messageBoardId": { "type": "string", "description": "Message Board ID." },
+          "subject": { "type": "string", "description": "Message subject (title)." },
+          "content": { "type": "string", "description": "Message body (HTML/rich-text)." },
+          "status": { "type": "string", "description": "active (default) or draft." },
+          "category_id": { "type": "integer", "description": "Optional message category ID." },
+          "subscriptions": { "type": "array", "description": "Array of person IDs to subscribe to replies." }
+        },
+        "required": ["projectId", "messageBoardId", "subject", "content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/buckets/{projectId}/message_boards/{messageBoardId}/messages.json",
+        "bodyMapping": {
+          "subject": "$subject",
+          "content": "$content",
+          "status": "$status",
+          "category_id": "$category_id",
+          "subscriptions": "$subscriptions"
+        },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_add_comment",
+      "description": "Add a comment to a recording (todo, message, document, etc.). recordingId is the ID of whatever you're commenting on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "recordingId": { "type": "string", "description": "ID of the recording to comment on." },
+          "content": { "type": "string", "description": "Comment body (HTML/rich-text)." }
+        },
+        "required": ["projectId", "recordingId", "content"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/buckets/{projectId}/recordings/{recordingId}/comments.json",
+        "bodyMapping": { "content": "$content" },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "basecamp_get_people",
+      "description": "List all people in the Basecamp account. Returns id, name, email_address, time_zone, can_manage_projects, can_manage_people.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people.json",
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    }
+  ]
+}

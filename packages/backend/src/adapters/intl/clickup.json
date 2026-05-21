@@ -1,0 +1,321 @@
+{
+  "slug": "clickup",
+  "name": "ClickUp",
+  "description": "Drive ClickUp (project management) from any AI agent: spaces, folders, lists, tasks, comments, time tracking, custom fields, teams, members. 16 tools, API token auth.",
+  "instructions": "This connector uses the ClickUp API v2 (clickup.com/api).\n\n**Setup**:\n1. Sign in to ClickUp → top-right avatar → **Settings → Apps → API Token → Generate** (personal token).\n2. Copy the token (starts with `pk_`). Set `CLICKUP_API_TOKEN`.\n\n**Authentication**: header `Authorization: ${CLICKUP_API_TOKEN}` — no `Bearer ` or `Token ` prefix, just the raw key. The adapter sets this via API_KEY profile.\n\n**Hierarchy**: Workspace (=Team) → Space → Folder (optional) → List → Task → Subtask. Lists can also exist directly inside a Space without a Folder. Discover IDs top-down: `clickup_list_teams` (returns workspaces, oddly called 'teams' in the API) → `clickup_list_spaces(teamId)` → `clickup_list_folders(spaceId)` → `clickup_list_lists(folderId)` OR `clickup_list_folderless_lists(spaceId)`.\n\n**Task IDs**: every task has an `id` (e.g. `abc123`). The same task can also be addressed by `custom_id` (the human-readable like 'PROJ-42') if your workspace enabled custom task IDs — set `custom_task_ids=true` in calls that use custom IDs.\n\n**Statuses are per-list**: each list has its own status set ('Open', 'In Progress', 'Done'). To move a task, set `status` to a status name (case-insensitive) that exists on the task's current list.\n\n**Custom fields**: arrays of `{id, value}` on every task. Discover via `clickup_get_list_custom_fields(listId)`.\n\n**Assignees**: array of user IDs (NOT emails). Get user IDs from `clickup_list_team_members(teamId)`.\n\n**Date fields**: Unix timestamp in MILLISECONDS (not seconds), e.g. `1717200000000`.\n\n**Pagination**: most list endpoints return up to 100 by default. Some support `page` (0-indexed) + `order_by` + `reverse`.\n\n**Rate limits**: 100 req/min for Free Forever, scales up with plan. On 429 honor `X-RateLimit-Reset` (Unix timestamp).\n\n**Out of scope here**: webhooks, automations, dependencies, goals/targets, attachments upload (use external URL), chat, dashboards, sprints.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "clickup",
+  "docsUrl": "https://clickup.com/api",
+  "requiredEnvVars": ["CLICKUP_API_TOKEN"],
+  "connector": {
+    "name": "ClickUp v2",
+    "type": "REST",
+    "baseUrl": "https://api.clickup.com/api/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{CLICKUP_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "clickup_get_authorized_user",
+      "description": "Return the authenticated user: id, username, email, color, profilePicture, initials. Health check + whoami.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/user" }
+    },
+    {
+      "name": "clickup_list_teams",
+      "description": "List workspaces (called 'teams' in the API — confusingly different from per-workspace 'teams' which are user groups). Each returns id, name, color, avatar, members[].",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/team" }
+    },
+    {
+      "name": "clickup_list_spaces",
+      "description": "List spaces in a workspace. Each space has id, name, private flag, statuses[], features (multiple_assignees, due_dates, custom_fields, etc.).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Workspace ID." },
+          "archived": { "type": "boolean", "description": "Include archived. Default false." }
+        },
+        "required": ["teamId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/team/{teamId}/space",
+        "queryParams": { "archived": "$archived" }
+      }
+    },
+    {
+      "name": "clickup_list_folders",
+      "description": "List folders in a space. Each folder has id, name, override_statuses flag, hidden flag, lists[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spaceId": { "type": "string", "description": "Space ID." },
+          "archived": { "type": "boolean", "description": "Include archived." }
+        },
+        "required": ["spaceId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/space/{spaceId}/folder",
+        "queryParams": { "archived": "$archived" }
+      }
+    },
+    {
+      "name": "clickup_list_lists",
+      "description": "List lists in a folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folderId": { "type": "string", "description": "Folder ID." },
+          "archived": { "type": "boolean", "description": "Include archived." }
+        },
+        "required": ["folderId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folder/{folderId}/list",
+        "queryParams": { "archived": "$archived" }
+      }
+    },
+    {
+      "name": "clickup_list_folderless_lists",
+      "description": "List lists that live directly in a space (no parent folder).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spaceId": { "type": "string", "description": "Space ID." },
+          "archived": { "type": "boolean", "description": "Include archived." }
+        },
+        "required": ["spaceId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/space/{spaceId}/list",
+        "queryParams": { "archived": "$archived" }
+      }
+    },
+    {
+      "name": "clickup_list_tasks",
+      "description": "List tasks in a list with filtering. Supports filter by assignees, statuses, due_date_gt/lt, custom_fields, tags. Cursor pagination via page (0-indexed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": { "type": "string", "description": "List ID." },
+          "archived": { "type": "boolean", "description": "Include archived." },
+          "page": { "type": "integer", "description": "0-indexed page." },
+          "order_by": { "type": "string", "description": "id, created, updated, due_date." },
+          "reverse": { "type": "boolean", "description": "Sort desc." },
+          "subtasks": { "type": "boolean", "description": "Include subtasks." },
+          "statuses": { "type": "array", "description": "Filter by status names." },
+          "assignees": { "type": "array", "description": "Filter by assignee user IDs." },
+          "tags": { "type": "array", "description": "Filter by tag names." },
+          "due_date_gt": { "type": "integer", "description": "Due after this Unix ms." },
+          "due_date_lt": { "type": "integer", "description": "Due before this Unix ms." },
+          "include_closed": { "type": "boolean", "description": "Include closed tasks." }
+        },
+        "required": ["listId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/list/{listId}/task",
+        "queryParams": {
+          "archived": "$archived",
+          "page": "$page",
+          "order_by": "$order_by",
+          "reverse": "$reverse",
+          "subtasks": "$subtasks",
+          "statuses[]": "$statuses",
+          "assignees[]": "$assignees",
+          "tags[]": "$tags",
+          "due_date_gt": "$due_date_gt",
+          "due_date_lt": "$due_date_lt",
+          "include_closed": "$include_closed"
+        }
+      }
+    },
+    {
+      "name": "clickup_get_task",
+      "description": "Fetch a single task by ID with all fields including custom_fields, checklists, comments_count, dependencies, watchers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID (or custom_id if custom_task_ids=true)." },
+          "custom_task_ids": { "type": "boolean", "description": "If true, taskId is interpreted as a custom_id (like 'PROJ-42')." },
+          "team_id": { "type": "string", "description": "Required when custom_task_ids=true." },
+          "include_subtasks": { "type": "boolean", "description": "Include subtasks in response." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/task/{taskId}",
+        "queryParams": {
+          "custom_task_ids": "$custom_task_ids",
+          "team_id": "$team_id",
+          "include_subtasks": "$include_subtasks"
+        }
+      }
+    },
+    {
+      "name": "clickup_create_task",
+      "description": "Create a task in a list. Required: name. Date fields are Unix ms. Assignees are user IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": { "type": "string", "description": "List ID." },
+          "name": { "type": "string", "description": "Task title." },
+          "description": { "type": "string", "description": "Markdown description." },
+          "markdown_description": { "type": "string", "description": "Explicit Markdown description (ClickUp prefers this over `description`)." },
+          "assignees": { "type": "array", "description": "Array of user IDs." },
+          "tags": { "type": "array", "description": "Tag name strings." },
+          "status": { "type": "string", "description": "Status name (case-insensitive). Must exist on the list." },
+          "priority": { "type": "integer", "description": "1=Urgent, 2=High, 3=Normal, 4=Low." },
+          "due_date": { "type": "integer", "description": "Due date Unix ms." },
+          "due_date_time": { "type": "boolean", "description": "If true, due_date includes a time component." },
+          "start_date": { "type": "integer", "description": "Start date Unix ms." },
+          "time_estimate": { "type": "integer", "description": "Time estimate in ms." },
+          "parent": { "type": "string", "description": "Parent task ID — creates this as a subtask." },
+          "custom_fields": { "type": "array", "description": "[{id, value}] custom fields." },
+          "notify_all": { "type": "boolean", "description": "Notify assignees and watchers." }
+        },
+        "required": ["listId", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/list/{listId}/task",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "markdown_description": "$markdown_description",
+          "assignees": "$assignees",
+          "tags": "$tags",
+          "status": "$status",
+          "priority": "$priority",
+          "due_date": "$due_date",
+          "due_date_time": "$due_date_time",
+          "start_date": "$start_date",
+          "time_estimate": "$time_estimate",
+          "parent": "$parent",
+          "custom_fields": "$custom_fields",
+          "notify_all": "$notify_all"
+        }
+      }
+    },
+    {
+      "name": "clickup_update_task",
+      "description": "Update a task. Common: change status, reassign, change due_date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." },
+          "name": { "type": "string", "description": "New name." },
+          "description": { "type": "string", "description": "New description." },
+          "status": { "type": "string", "description": "New status (must exist on list)." },
+          "priority": { "type": "integer", "description": "1-4." },
+          "due_date": { "type": "integer", "description": "Unix ms." },
+          "start_date": { "type": "integer", "description": "Unix ms." },
+          "time_estimate": { "type": "integer", "description": "Ms." },
+          "assignees": { "type": "object", "description": "{add:[id1,id2], rem:[id3]} — incremental update of assignees (NOT a full replacement)." },
+          "archived": { "type": "boolean", "description": "Archive/unarchive." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/task/{taskId}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "status": "$status",
+          "priority": "$priority",
+          "due_date": "$due_date",
+          "start_date": "$start_date",
+          "time_estimate": "$time_estimate",
+          "assignees": "$assignees",
+          "archived": "$archived"
+        }
+      }
+    },
+    {
+      "name": "clickup_delete_task",
+      "description": "Delete a task. Moves to trash (recoverable for 30 days from UI).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/task/{taskId}" }
+    },
+    {
+      "name": "clickup_create_task_comment",
+      "description": "Add a comment to a task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." },
+          "comment_text": { "type": "string", "description": "Comment body (Markdown)." },
+          "assignee": { "type": "integer", "description": "Optional user ID to assign as a follow-up." },
+          "notify_all": { "type": "boolean", "description": "Notify watchers." }
+        },
+        "required": ["taskId", "comment_text"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/task/{taskId}/comment",
+        "bodyMapping": {
+          "comment_text": "$comment_text",
+          "assignee": "$assignee",
+          "notify_all": "$notify_all"
+        }
+      }
+    },
+    {
+      "name": "clickup_list_task_comments",
+      "description": "List comments on a task. Returns each comment's id, comment_text, assignee, resolved, date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." },
+          "start": { "type": "integer", "description": "Pagination cursor (Unix ms of comment to start from)." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/task/{taskId}/comment",
+        "queryParams": { "start": "$start" }
+      }
+    },
+    {
+      "name": "clickup_get_list_custom_fields",
+      "description": "List custom fields available on a list, with their IDs and types. Required to compose custom_fields arrays.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listId": { "type": "string", "description": "List ID." }
+        },
+        "required": ["listId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/list/{listId}/field" }
+    },
+    {
+      "name": "clickup_list_team_members",
+      "description": "List members of a workspace. Returns id (use as assignee), username, email, color, role.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Workspace ID." }
+        },
+        "required": ["teamId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/team/{teamId}/member" }
+    }
+  ]
+}

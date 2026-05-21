@@ -1,0 +1,125 @@
+{
+  "slug": "fillout",
+  "name": "Fillout",
+  "description": "Read Fillout (modern form/survey builder) form definitions and submissions from any AI agent. 6 tools, Bearer auth.",
+  "instructions": "This connector uses the Fillout API v1 (fillout.com/help/developers).\n\n**Setup**:\n1. Sign in to https://fillout.com → top-right avatar → **Settings → Developer → API → Create API key**.\n2. Set `FILLOUT_API_KEY`.\n\n**Authentication**: `Authorization: Bearer ${FILLOUT_API_KEY}`.\n\n**Form IDs**: each form has a 32-character ID (visible in form URL). Use `fillout_list_forms` to discover.\n\n**Submission shape**: each submission has questions[] array of {id, name, type, value}. Cross-reference with form questions for human-readable names.\n\n**Pagination**: `?limit=N&offset=M`. Submissions endpoint supports `?afterDate=ISO&beforeDate=ISO`.\n\n**Out of scope here**: form creation (UI), file uploads, webhook subscription management.",
+  "region": "intl",
+  "category": "forms",
+  "icon": "fillout",
+  "docsUrl": "https://fillout.com/help/developers",
+  "requiredEnvVars": ["FILLOUT_API_KEY"],
+  "connector": {
+    "name": "Fillout v1",
+    "type": "REST",
+    "baseUrl": "https://api.fillout.com/v1/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FILLOUT_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "fillout_list_forms",
+      "description": "List forms in the workspace.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/forms" }
+    },
+    {
+      "name": "fillout_get_form",
+      "description": "Fetch a form's full definition: questions[] (id, name, type, options), settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." }
+        },
+        "required": ["formId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/forms/{formId}" }
+    },
+    {
+      "name": "fillout_list_submissions",
+      "description": "List submissions for a form, with optional date range filter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." },
+          "limit": { "type": "integer", "description": "Per page (default 50, max 150)." },
+          "offset": { "type": "integer", "description": "Pagination offset." },
+          "afterDate": { "type": "string", "description": "ISO 8601 — submissions after this." },
+          "beforeDate": { "type": "string", "description": "ISO 8601 — submissions before this." },
+          "status": { "type": "string", "description": "finished, in_progress." },
+          "includeEditLink": { "type": "boolean", "description": "If true, include the edit link for each submission." },
+          "search": { "type": "string", "description": "Substring search across answer values." },
+          "sort": { "type": "string", "description": "asc or desc by submitted time." }
+        },
+        "required": ["formId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{formId}/submissions",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "afterDate": "$afterDate",
+          "beforeDate": "$beforeDate",
+          "status": "$status",
+          "includeEditLink": "$includeEditLink",
+          "search": "$search",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "fillout_get_submission",
+      "description": "Fetch one submission with full answers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." },
+          "submissionId": { "type": "string", "description": "Submission ID." },
+          "includeEditLink": { "type": "boolean", "description": "Include edit link." }
+        },
+        "required": ["formId", "submissionId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{formId}/submissions/{submissionId}",
+        "queryParams": { "includeEditLink": "$includeEditLink" }
+      }
+    },
+    {
+      "name": "fillout_delete_submissions",
+      "description": "Delete one or more submissions by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." },
+          "submissionIds": { "type": "array", "description": "Array of submission IDs." }
+        },
+        "required": ["formId", "submissionIds"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/forms/{formId}/submissions",
+        "bodyMapping": { "submissionIds": "$submissionIds" }
+      }
+    },
+    {
+      "name": "fillout_create_submission",
+      "description": "Programmatically create a submission. submissions array has {questions:[{id, value}], hiddenFields?, urlParameters?}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." },
+          "submissions": { "type": "array", "description": "Array of submissions: [{questions:[{id, value}], submissionTime?, hiddenFields?, urlParameters?}]." }
+        },
+        "required": ["formId", "submissions"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{formId}/submissions",
+        "bodyMapping": { "submissions": "$submissions" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,262 @@
+{
+  "slug": "freshservice",
+  "name": "Freshservice",
+  "description": "Manage Freshservice (ITSM: tickets, problems, changes, assets, agents, requesters, departments) from any AI agent. 10 tools, basic-auth with API key.",
+  "instructions": "This connector wraps the Freshservice API v2 (per-tenant — yourdomain.freshservice.com/api/v2).\n\n**Setup**:\n1. Log into your Freshservice instance → top-right avatar → **Profile Settings → View API Key** (you may need to log in again to reveal).\n2. Note your tenant subdomain (the part before `.freshservice.com`).\n3. Set `FRESHSERVICE_SUBDOMAIN` (just the subdomain) and `FRESHSERVICE_API_KEY`.\n\n**Authentication**: HTTP Basic, with the API key as username and the literal string `X` as the password:\n  `Authorization: Basic base64(API_KEY:X)`\nThe adapter sets this via BASIC_AUTH (username = api key, password = 'X'). Using your account password instead of the API key is allowed but discouraged.\n\n**Per-tenant baseUrl**: `https://${FRESHSERVICE_SUBDOMAIN}.freshservice.com/api/v2`. Substituted at import time.\n\n**Ticket statuses** (integer codes):\n- 2: Open\n- 3: Pending\n- 4: Resolved\n- 5: Closed\nPriorities: 1=Low, 2=Medium, 3=High, 4=Urgent. Sources: 1=Email, 2=Portal, 3=Phone, 4=Chat, 5=Feedback widget, 6=Yammer, 7=AWS Cloudwatch, 8=Pagerduty, 9=Walkup, 10=Slack.\n\n**ITIL records**: Freshservice exposes Tickets, Problems, Changes, Releases. They share much of the same shape but live at different endpoints.\n\n**Pagination**: `page` (1-based) + `per_page` (max 100). Header `Link` carries the next-page URL. Many list endpoints cap at 9 pages total — for full export use the dedicated archive APIs.\n\n**Rate limits**: 100 req/min per API key on Starter, up to 1k/min on Enterprise. 429 returns `Retry-After` in seconds.\n\n**Out of scope here**: workflow automation, project portfolio management, contract CRUD beyond list, asset relationships graph.",
+  "region": "intl",
+  "category": "support",
+  "icon": "freshservice",
+  "docsUrl": "https://api.freshservice.com/v2/",
+  "requiredEnvVars": ["FRESHSERVICE_SUBDOMAIN", "FRESHSERVICE_API_KEY"],
+  "connector": {
+    "name": "Freshservice API v2",
+    "type": "REST",
+    "baseUrl": "https://{{FRESHSERVICE_SUBDOMAIN}}.freshservice.com/api/v2",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{FRESHSERVICE_API_KEY}}",
+      "password": "X"
+    }
+  },
+  "tools": [
+    {
+      "name": "freshservice_list_tickets",
+      "description": "List tickets. Filter by predefined views (`new_and_my_open`, `watching`, `spam`, `deleted`, `unresolved`, ...) or by requester_id/email. Returns each ticket's id, subject, status, priority, source, group_id, responder_id, requester_id, created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "Predefined view name." },
+          "requester_id": { "type": "integer", "description": "Filter to one requester." },
+          "email": { "type": "string", "description": "Filter to one requester email." },
+          "updated_since": { "type": "string", "description": "ISO 8601 — only tickets updated after this." },
+          "include": { "type": "string", "description": "Comma-separated: 'stats', 'requester', 'requested_for', 'department'." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets",
+        "queryParams": {
+          "filter": "$filter",
+          "requester_id": "$requester_id",
+          "email": "$email",
+          "updated_since": "$updated_since",
+          "include": "$include",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshservice_get_ticket",
+      "description": "Get one ticket by ID with full description + custom fields. Pass `include` to expand stats/requester/conversations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": { "type": "integer", "description": "Ticket ID." },
+          "include": { "type": "string", "description": "Comma-separated: 'conversations', 'requester', 'requested_for', 'stats', 'problem', 'assets', 'change', 'related_tickets'." }
+        },
+        "required": ["ticket_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticket_id}",
+        "queryParams": { "include": "$include" }
+      }
+    },
+    {
+      "name": "freshservice_create_ticket",
+      "description": "Create a new ticket. Required: `subject` + `description` + `email` (requester) + `priority` + `status` + `source`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": { "type": "string", "description": "Ticket subject." },
+          "description": { "type": "string", "description": "HTML description." },
+          "email": { "type": "string", "description": "Requester email." },
+          "priority": { "type": "integer", "description": "1=Low, 2=Medium, 3=High, 4=Urgent." },
+          "status": { "type": "integer", "description": "2=Open, 3=Pending, 4=Resolved, 5=Closed." },
+          "source": { "type": "integer", "description": "1=Email, 2=Portal, 3=Phone, 4=Chat, ..." },
+          "category": { "type": "string", "description": "Top-level category name." },
+          "sub_category": { "type": "string", "description": "Second-level category." },
+          "item_category": { "type": "string", "description": "Third-level category." },
+          "group_id": { "type": "integer", "description": "Assign to a group." },
+          "responder_id": { "type": "integer", "description": "Assign to an agent." },
+          "department_id": { "type": "integer", "description": "Department." },
+          "tags": { "type": "array", "description": "Array of tag strings." },
+          "custom_fields": { "type": "object", "description": "Custom field map (key = field name)." }
+        },
+        "required": ["subject", "description", "email", "priority", "status", "source"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets",
+        "bodyMapping": {
+          "subject": "$subject",
+          "description": "$description",
+          "email": "$email",
+          "priority": "$priority",
+          "status": "$status",
+          "source": "$source",
+          "category": "$category",
+          "sub_category": "$sub_category",
+          "item_category": "$item_category",
+          "group_id": "$group_id",
+          "responder_id": "$responder_id",
+          "department_id": "$department_id",
+          "tags": "$tags",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "freshservice_update_ticket",
+      "description": "Update a ticket's status, priority, assignee, tags, custom fields, subject, or description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": { "type": "integer", "description": "Ticket ID." },
+          "subject": { "type": "string", "description": "New subject." },
+          "description": { "type": "string", "description": "New HTML description." },
+          "priority": { "type": "integer", "description": "1-4." },
+          "status": { "type": "integer", "description": "2-5." },
+          "group_id": { "type": "integer", "description": "Move to group." },
+          "responder_id": { "type": "integer", "description": "Move to agent." },
+          "tags": { "type": "array", "description": "Replace tags." },
+          "custom_fields": { "type": "object", "description": "Merge custom fields." }
+        },
+        "required": ["ticket_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tickets/{ticket_id}",
+        "bodyMapping": {
+          "subject": "$subject",
+          "description": "$description",
+          "priority": "$priority",
+          "status": "$status",
+          "group_id": "$group_id",
+          "responder_id": "$responder_id",
+          "tags": "$tags",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "freshservice_reply_to_ticket",
+      "description": "Add a public reply to a ticket — visible to the requester.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": { "type": "integer", "description": "Ticket ID." },
+          "body": { "type": "string", "description": "HTML body of the reply." },
+          "from_email": { "type": "string", "description": "Override sending email." },
+          "user_id": { "type": "integer", "description": "Agent user_id." }
+        },
+        "required": ["ticket_id", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{ticket_id}/reply",
+        "bodyMapping": { "body": "$body", "from_email": "$from_email", "user_id": "$user_id" }
+      }
+    },
+    {
+      "name": "freshservice_add_note",
+      "description": "Add an internal (private) note to a ticket — NOT visible to the requester. Pass `private=true` (default) for internal, `false` for public.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": { "type": "integer", "description": "Ticket ID." },
+          "body": { "type": "string", "description": "HTML body." },
+          "private": { "type": "boolean", "description": "Default true." },
+          "user_id": { "type": "integer", "description": "Author agent user_id." }
+        },
+        "required": ["ticket_id", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{ticket_id}/notes",
+        "bodyMapping": { "body": "$body", "private": "$private", "user_id": "$user_id" }
+      }
+    },
+    {
+      "name": "freshservice_list_problems",
+      "description": "List problem records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/problems",
+        "queryParams": { "page": "$page", "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "freshservice_list_changes",
+      "description": "List change requests.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/changes",
+        "queryParams": { "page": "$page", "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "freshservice_list_assets",
+      "description": "List CI assets in the Freshservice CMDB. Filter by include or asset_type_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": { "type": "string", "description": "'type_fields' to include CI-type custom fields." },
+          "filter": { "type": "string", "description": "Query like \"asset_type_id:7 AND impact:'high'\"." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assets",
+        "queryParams": {
+          "include": "$include",
+          "filter": "$filter",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshservice_list_agents",
+      "description": "List agents (your IT team members).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by email." },
+          "state": { "type": "string", "description": "'fulltime' or 'occasional'." },
+          "page": { "type": "integer", "description": "1-based." },
+          "per_page": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents",
+        "queryParams": {
+          "email": "$email",
+          "state": "$state",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    }
+  ]
+}

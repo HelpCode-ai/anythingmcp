@@ -1,0 +1,185 @@
+{
+  "slug": "agilecrm",
+  "name": "Agile CRM",
+  "description": "Manage Agile CRM (contacts, deals, tasks, notes, campaigns) from any AI agent. 9 tools, basic-auth with email + API key.",
+  "instructions": "This connector wraps the Agile CRM REST API (per-domain — yourdomain.agilecrm.com/dev/api).\n\n**Setup**:\n1. Sign in to your Agile CRM instance → top-right avatar → **Admin Settings → Developers & API → API key**. Copy.\n2. Note your subdomain (the part before `.agilecrm.com`).\n3. Set `AGILECRM_DOMAIN` (just subdomain), `AGILECRM_EMAIL` (your login email), `AGILECRM_API_KEY`.\n\n**Authentication**: HTTP Basic with `email:apikey` pair. The API also accepts a `key` query param; we use Basic for consistency.\n\n**Per-tenant baseUrl**: `https://${AGILECRM_DOMAIN}.agilecrm.com/dev/api` — substituted at import time.\n\n**Contact properties model**: contacts have a `properties[]` array of {name, value, type, subtype} pairs (NOT a flat field map). Standard names: `first_name`, `last_name`, `email`, `phone`, `company`, `title`. Custom fields appear in the same array.\n\n**Pagination**: cursor-based — pass `cursor` from previous response. Page size via `page_size` (max 100).\n\n**Rate limits**: 50 req/sec per account. 429 → back off 1s.\n\n**Out of scope here**: campaign workflow execution, web-form submission, ticket helpdesk, telephony.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "agilecrm",
+  "docsUrl": "https://github.com/agilecrm/rest-api",
+  "requiredEnvVars": ["AGILECRM_DOMAIN", "AGILECRM_EMAIL", "AGILECRM_API_KEY"],
+  "connector": {
+    "name": "Agile CRM REST API",
+    "type": "REST",
+    "baseUrl": "https://{{AGILECRM_DOMAIN}}.agilecrm.com/dev/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{AGILECRM_EMAIL}}",
+      "password": "{{AGILECRM_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "agilecrm_list_contacts",
+      "description": "List contacts. Cursor-paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": { "type": "integer", "description": "Max 100." },
+          "cursor": { "type": "string", "description": "Pagination cursor from previous response." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": { "page_size": "$page_size", "global_sort_key": "-created_time", "cursor": "$cursor" }
+      }
+    },
+    {
+      "name": "agilecrm_get_contact",
+      "description": "Get one contact by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Contact ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/{id}" }
+    },
+    {
+      "name": "agilecrm_get_contact_by_email",
+      "description": "Look up a contact by email — much faster than scanning the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email address." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/search/email/{email}" }
+    },
+    {
+      "name": "agilecrm_create_contact",
+      "description": "Create a contact. Pass `properties` as the Agile CRM array shape.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "properties": { "type": "array", "description": "Array of {name, value, type:'SYSTEM'|'CUSTOM', subtype?} entries." },
+          "tags": { "type": "array", "description": "Array of tag strings." },
+          "lead_score": { "type": "integer", "description": "Initial lead score." }
+        },
+        "required": ["properties"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "properties": "$properties",
+          "tags": "$tags",
+          "lead_score": "$lead_score"
+        }
+      }
+    },
+    {
+      "name": "agilecrm_update_contact",
+      "description": "Update a contact — supply `id` and the `properties` to merge.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Contact ID." },
+          "properties": { "type": "array", "description": "Properties array to merge." }
+        },
+        "required": ["id", "properties"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/edit-properties",
+        "bodyMapping": { "id": "$id", "properties": "$properties" }
+      }
+    },
+    {
+      "name": "agilecrm_delete_contact",
+      "description": "Delete a contact by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Contact ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/contacts/{id}" }
+    },
+    {
+      "name": "agilecrm_list_deals",
+      "description": "List deals/opportunities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": { "type": "integer", "description": "Max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunity",
+        "queryParams": { "page_size": "$page_size" }
+      }
+    },
+    {
+      "name": "agilecrm_create_deal",
+      "description": "Create a deal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Deal name." },
+          "expected_value": { "type": "number", "description": "Expected revenue." },
+          "probability": { "type": "integer", "description": "0-100 close probability." },
+          "milestone": { "type": "string", "description": "Pipeline stage name." },
+          "close_date": { "type": "integer", "description": "Expected close UNIX epoch (seconds)." },
+          "contact_ids": { "type": "array", "description": "Array of contact ID strings to link." }
+        },
+        "required": ["name", "expected_value", "milestone"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/opportunity",
+        "bodyMapping": {
+          "name": "$name",
+          "expected_value": "$expected_value",
+          "probability": "$probability",
+          "milestone": "$milestone",
+          "close_date": "$close_date",
+          "contact_ids": "$contact_ids"
+        }
+      }
+    },
+    {
+      "name": "agilecrm_create_task",
+      "description": "Create a task linked to one or more contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": { "type": "string", "description": "Task subject." },
+          "type": { "type": "string", "description": "CALL, EMAIL, FOLLOW_UP, MEETING, MILESTONE, SEND, TWEET, OTHER." },
+          "priority_type": { "type": "string", "description": "HIGH, NORMAL, LOW." },
+          "status": { "type": "string", "description": "YET_TO_START, IN_PROGRESS, COMPLETED." },
+          "due": { "type": "integer", "description": "Due UNIX epoch (seconds)." },
+          "contacts": { "type": "array", "description": "Array of contact ID strings." }
+        },
+        "required": ["subject", "type", "due"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMapping": {
+          "subject": "$subject",
+          "task_type": "$type",
+          "priority_type": "$priority_type",
+          "status": "$status",
+          "due": "$due",
+          "contacts": "$contacts"
+        }
+      }
+    }
+  ]
+}

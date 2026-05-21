@@ -1,0 +1,324 @@
+{
+  "slug": "copper",
+  "name": "Copper CRM",
+  "description": "Drive Copper (Google Workspace-native CRM) from any AI agent: people, companies, opportunities, leads, activities, tasks. 12 tools, API-token auth with email + token + appname headers.",
+  "instructions": "This connector uses the Copper REST API v1 (developer.copper.com).\n\n**Setup**:\n1. Sign in to Copper → top-right avatar → **Settings → Integrations → API Keys → Generate API Key**.\n2. Copy: the key + the email of the user it belongs to.\n3. Set:\n   - `COPPER_API_KEY` = generated key\n   - `COPPER_USER_EMAIL` = the email of the API key owner\n   - `COPPER_APP_NAME` = a label for your integration (e.g. `anythingmcp`)\n\n**Authentication**: three custom headers — `X-PW-AccessToken: ${COPPER_API_KEY}`, `X-PW-Application: developer_api`, `X-PW-UserEmail: ${COPPER_USER_EMAIL}`. Quirky but it's Copper's convention.\n\n**Pluralization quirk**: most endpoints use the PLURAL form (`/people`, `/companies`, `/opportunities`, `/leads`). Single-record GETs use `/people/{id}`. Search uses `POST /people/search` (yes, POST for read — Copper-specific).\n\n**People = contacts**, **Leads = unqualified prospects** (separate object before they become a person attached to a company). A 'company' is one record; a 'person' belongs to one company.\n\n**Pagination**: search endpoints use `page_number` (1-based) + `page_size` (max 200). The response is a flat array; total count is NOT returned by default.\n\n**Custom fields**: `custom_fields` on every record — array of `{custom_field_definition_id, value}`. Discover IDs via `copper_list_custom_field_definitions`.\n\n**Rate limits**: ~10 req/sec per account. On 429, back off.\n\n**Out of scope here**: webhooks, projects, automations, custom activity types beyond standard, file attachments.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "copper",
+  "docsUrl": "https://developer.copper.com/",
+  "requiredEnvVars": ["COPPER_API_KEY", "COPPER_USER_EMAIL", "COPPER_APP_NAME"],
+  "connector": {
+    "name": "Copper v1",
+    "type": "REST",
+    "baseUrl": "https://api.copper.com/developer_api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-PW-AccessToken",
+      "apiKey": "{{COPPER_API_KEY}}",
+      "extraHeaders": {
+        "X-PW-Application": "developer_api",
+        "X-PW-UserEmail": "{{COPPER_USER_EMAIL}}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "copper_search_people",
+      "description": "Search people (contacts). POST a filter body — accepts page_number/page_size/name/email_domains/contact_type_ids/tags/assignee_ids/age, etc. Returns list of person records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": { "type": "integer", "description": "1-based page." },
+          "page_size": { "type": "integer", "description": "Per page (max 200)." },
+          "sort_by": { "type": "string", "description": "name, date_modified, date_created." },
+          "sort_direction": { "type": "string", "description": "asc or desc." },
+          "name": { "type": "string", "description": "Filter by name substring." },
+          "emails": { "type": "array", "description": "Array of email substrings to match." },
+          "assignee_ids": { "type": "array", "description": "Filter by assignee user IDs." },
+          "tags": { "type": "array", "description": "Filter by tag names." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/people/search",
+        "bodyMapping": {
+          "page_number": "$page_number",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "name": "$name",
+          "emails": "$emails",
+          "assignee_ids": "$assignee_ids",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "copper_get_person",
+      "description": "Fetch a person by ID with full fields including emails, phone_numbers, address, custom_fields, websites, socials, company info, assignee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personId": { "type": "integer", "description": "Person numeric ID." }
+        },
+        "required": ["personId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/people/{personId}" }
+    },
+    {
+      "name": "copper_create_person",
+      "description": "Create a new person. Required: name. emails/phone_numbers are arrays of {email, category} / {number, category}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Full name." },
+          "emails": { "type": "array", "description": "[{email, category:'work'|'personal'|'other'}]." },
+          "phone_numbers": { "type": "array", "description": "[{number, category:'work'|'mobile'|'home'|'other'}]." },
+          "title": { "type": "string", "description": "Job title." },
+          "company_id": { "type": "integer", "description": "Linked company ID." },
+          "assignee_id": { "type": "integer", "description": "User ID of assignee." },
+          "tags": { "type": "array", "description": "Array of tag name strings." },
+          "custom_fields": { "type": "array", "description": "[{custom_field_definition_id, value}]." },
+          "address": { "type": "object", "description": "{street, city, state, postal_code, country}." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/people",
+        "bodyMapping": {
+          "name": "$name",
+          "emails": "$emails",
+          "phone_numbers": "$phone_numbers",
+          "title": "$title",
+          "company_id": "$company_id",
+          "assignee_id": "$assignee_id",
+          "tags": "$tags",
+          "custom_fields": "$custom_fields",
+          "address": "$address"
+        }
+      }
+    },
+    {
+      "name": "copper_update_person",
+      "description": "Update a person. Partial — only pass fields to change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personId": { "type": "integer", "description": "Person ID." },
+          "name": { "type": "string", "description": "New name." },
+          "emails": { "type": "array", "description": "Replace emails array." },
+          "phone_numbers": { "type": "array", "description": "Replace phones." },
+          "title": { "type": "string", "description": "New title." },
+          "company_id": { "type": "integer", "description": "Reassign company." },
+          "assignee_id": { "type": "integer", "description": "Reassign owner." },
+          "tags": { "type": "array", "description": "Replace tags." },
+          "custom_fields": { "type": "array", "description": "Custom fields." }
+        },
+        "required": ["personId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/people/{personId}",
+        "bodyMapping": {
+          "name": "$name",
+          "emails": "$emails",
+          "phone_numbers": "$phone_numbers",
+          "title": "$title",
+          "company_id": "$company_id",
+          "assignee_id": "$assignee_id",
+          "tags": "$tags",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "copper_search_companies",
+      "description": "Search companies (organizations). POST filter body — name, contact_type_ids, tags, assignee_ids, etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": { "type": "integer", "description": "1-based page." },
+          "page_size": { "type": "integer", "description": "Per page." },
+          "name": { "type": "string", "description": "Name substring." },
+          "tags": { "type": "array", "description": "Tag filter." },
+          "assignee_ids": { "type": "array", "description": "Owner filter." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies/search",
+        "bodyMapping": {
+          "page_number": "$page_number",
+          "page_size": "$page_size",
+          "name": "$name",
+          "tags": "$tags",
+          "assignee_ids": "$assignee_ids"
+        }
+      }
+    },
+    {
+      "name": "copper_create_company",
+      "description": "Create a company. Required: name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Company name." },
+          "assignee_id": { "type": "integer", "description": "Owner user ID." },
+          "tags": { "type": "array", "description": "Tag names." },
+          "address": { "type": "object", "description": "{street, city, state, postal_code, country}." },
+          "email_domain": { "type": "string", "description": "Primary domain (auto-link people by email)." },
+          "websites": { "type": "array", "description": "[{url, category:'work'|'personal'|'other'}]." },
+          "phone_numbers": { "type": "array", "description": "[{number, category}]." },
+          "custom_fields": { "type": "array", "description": "[{custom_field_definition_id, value}]." },
+          "details": { "type": "string", "description": "Free-text description." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies",
+        "bodyMapping": {
+          "name": "$name",
+          "assignee_id": "$assignee_id",
+          "tags": "$tags",
+          "address": "$address",
+          "email_domain": "$email_domain",
+          "websites": "$websites",
+          "phone_numbers": "$phone_numbers",
+          "custom_fields": "$custom_fields",
+          "details": "$details"
+        }
+      }
+    },
+    {
+      "name": "copper_search_opportunities",
+      "description": "Search opportunities (deals). Filter by name, status (open/won/lost/abandoned), pipeline_stage_ids, assignee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": { "type": "integer", "description": "1-based page." },
+          "page_size": { "type": "integer", "description": "Per page." },
+          "name": { "type": "string", "description": "Name substring." },
+          "status_ids": { "type": "array", "description": "Status IDs: 0=open, 1=won, 2=lost, 3=abandoned." },
+          "pipeline_stage_ids": { "type": "array", "description": "Stage ID filter." },
+          "assignee_ids": { "type": "array", "description": "Owner filter." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/opportunities/search",
+        "bodyMapping": {
+          "page_number": "$page_number",
+          "page_size": "$page_size",
+          "name": "$name",
+          "status_ids": "$status_ids",
+          "pipeline_stage_ids": "$pipeline_stage_ids",
+          "assignee_ids": "$assignee_ids"
+        }
+      }
+    },
+    {
+      "name": "copper_create_opportunity",
+      "description": "Create an opportunity (deal). Required: name + primary_contact_id + pipeline_id + pipeline_stage_id. Monetary value in `monetary_value` (cents).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Deal name." },
+          "primary_contact_id": { "type": "integer", "description": "Person ID of the main contact." },
+          "company_id": { "type": "integer", "description": "Linked company ID." },
+          "pipeline_id": { "type": "integer", "description": "Pipeline ID (use copper_list_pipelines)." },
+          "pipeline_stage_id": { "type": "integer", "description": "Stage ID within the pipeline." },
+          "assignee_id": { "type": "integer", "description": "Owner user ID." },
+          "monetary_value": { "type": "number", "description": "Deal value (uses account's currency)." },
+          "status": { "type": "string", "description": "Open, Won, Lost, Abandoned." },
+          "tags": { "type": "array", "description": "Tag names." },
+          "custom_fields": { "type": "array", "description": "[{custom_field_definition_id, value}]." },
+          "close_date": { "type": "string", "description": "Expected close date MM/DD/YYYY." }
+        },
+        "required": ["name", "primary_contact_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/opportunities",
+        "bodyMapping": {
+          "name": "$name",
+          "primary_contact_id": "$primary_contact_id",
+          "company_id": "$company_id",
+          "pipeline_id": "$pipeline_id",
+          "pipeline_stage_id": "$pipeline_stage_id",
+          "assignee_id": "$assignee_id",
+          "monetary_value": "$monetary_value",
+          "status": "$status",
+          "tags": "$tags",
+          "custom_fields": "$custom_fields",
+          "close_date": "$close_date"
+        }
+      }
+    },
+    {
+      "name": "copper_update_opportunity",
+      "description": "Update a deal — common: pipeline_stage_id (move stage), status (close as Won/Lost).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunityId": { "type": "integer", "description": "Opportunity ID." },
+          "name": { "type": "string", "description": "New name." },
+          "pipeline_stage_id": { "type": "integer", "description": "New stage." },
+          "status": { "type": "string", "description": "Open / Won / Lost / Abandoned." },
+          "monetary_value": { "type": "number", "description": "New value." },
+          "assignee_id": { "type": "integer", "description": "Reassign owner." }
+        },
+        "required": ["opportunityId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/opportunities/{opportunityId}",
+        "bodyMapping": {
+          "name": "$name",
+          "pipeline_stage_id": "$pipeline_stage_id",
+          "status": "$status",
+          "monetary_value": "$monetary_value",
+          "assignee_id": "$assignee_id"
+        }
+      }
+    },
+    {
+      "name": "copper_list_pipelines",
+      "description": "List pipelines with their stages. Returns id, name, stages[{id, name, win_probability}]. Required to compose create-opportunity calls.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/pipelines" }
+    },
+    {
+      "name": "copper_list_custom_field_definitions",
+      "description": "List custom-field definitions for all object types. Returns id, name, data_type, available_on (people/companies/opportunities/leads). Required for composing custom_fields arrays.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/custom_field_definitions" }
+    },
+    {
+      "name": "copper_create_activity",
+      "description": "Log an activity (note/call/meeting) on a record. Activity type IDs come from /activity_types. Most common: type=0 (user) for notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent": { "type": "object", "description": "{type:'person'|'company'|'opportunity'|'lead', id: ID}." },
+          "type": { "type": "object", "description": "{category:'user'|'system', id: ACTIVITY_TYPE_ID}. Discover via /activity_types." },
+          "details": { "type": "string", "description": "Activity body / note." },
+          "activity_date": { "type": "integer", "description": "Unix timestamp." }
+        },
+        "required": ["parent", "type", "details"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/activities",
+        "bodyMapping": {
+          "parent": "$parent",
+          "type": "$type",
+          "details": "$details",
+          "activity_date": "$activity_date"
+        }
+      }
+    }
+  ]
+}

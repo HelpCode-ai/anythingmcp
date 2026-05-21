@@ -6,6 +6,7 @@ import {
   Body,
   Req,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -62,6 +63,9 @@ export class AdaptersController {
     @Param('slug') slug: string,
     @Body() body: { credentials?: Record<string, string> },
   ) {
+    if (req.user.role === 'VIEWER') {
+      throw new ForbiddenException('Viewers cannot modify connectors');
+    }
     await this.licenseGuard.checkCanCreateConnector(req.user.sub, req.user.organizationId);
     const result = await this.adaptersService.importAdapter(
       slug,

@@ -1,0 +1,284 @@
+{
+  "slug": "gocardless",
+  "name": "GoCardless",
+  "description": "Manage GoCardless (direct-debit payment processing: customers, mandates, payments, subscriptions, payouts, refunds) from any AI agent. 10 tools, Bearer token.",
+  "instructions": "This connector wraps the GoCardless API (per-environment).\n\n**Setup**:\n1. Sign in at https://manage.gocardless.com → top-right avatar → **Developers → API access → Create**.\n2. Pick environment: `api.gocardless.com` (live) or `api-sandbox.gocardless.com` (sandbox).\n3. Set `GOCARDLESS_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${GOCARDLESS_ACCESS_TOKEN}` + `GoCardless-Version: 2015-07-06` (required).\n\n**Entity model**: `Customer → BankAccount → Mandate → Payment(s)` and/or `Subscription → recurring Payments`. Once a mandate is active you can charge it.\n\n**Idempotency keys**: write endpoints accept an `Idempotency-Key` header to safely retry. Best practice: pass a UUID per logical operation.\n\n**Pagination**: cursor-based via `before` / `after` query params. `limit` (max 500).\n\n**Rate limits**: 1000 req/min per token. 429 with `Retry-After`.\n\n**Out of scope here**: bank-account verification, mandate import via CSV, customer-notification webhooks setup, the Connect (partner OAuth) flow.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "gocardless",
+  "docsUrl": "https://developer.gocardless.com/api-reference/",
+  "requiredEnvVars": ["GOCARDLESS_ACCESS_TOKEN"],
+  "connector": {
+    "name": "GoCardless API",
+    "type": "REST",
+    "baseUrl": "https://api.gocardless.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{GOCARDLESS_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "GoCardless-Version": "2015-07-06"
+    }
+  },
+  "tools": [
+    {
+      "name": "gocardless_list_customers",
+      "description": "List customers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max 500." },
+          "after": { "type": "string", "description": "Cursor — next page." },
+          "before": { "type": "string", "description": "Cursor — prev page." },
+          "created_at_gt": { "type": "string", "description": "ISO 8601 — created after." },
+          "created_at_lt": { "type": "string", "description": "ISO 8601." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before",
+          "created_at[gt]": "$created_at_gt",
+          "created_at[lt]": "$created_at_lt"
+        }
+      }
+    },
+    {
+      "name": "gocardless_create_customer",
+      "description": "Create a customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Customer email." },
+          "given_name": { "type": "string", "description": "Given/first name." },
+          "family_name": { "type": "string", "description": "Family/last name." },
+          "company_name": { "type": "string", "description": "Company (instead of names)." },
+          "address_line1": { "type": "string", "description": "Address line 1." },
+          "city": { "type": "string", "description": "City." },
+          "postal_code": { "type": "string", "description": "Postcode." },
+          "country_code": { "type": "string", "description": "ISO 3166-1 alpha-2." },
+          "language": { "type": "string", "description": "ISO 639-1." }
+        },
+        "required": ["country_code"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "customers": {
+            "email": "$email",
+            "given_name": "$given_name",
+            "family_name": "$family_name",
+            "company_name": "$company_name",
+            "address_line1": "$address_line1",
+            "city": "$city",
+            "postal_code": "$postal_code",
+            "country_code": "$country_code",
+            "language": "$language"
+          }
+        }
+      }
+    },
+    {
+      "name": "gocardless_list_mandates",
+      "description": "List mandates (the recurring authorisation to debit a customer's bank).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": { "type": "string", "description": "Filter by customer ID." },
+          "status": { "type": "string", "description": "pending_customer_approval, pending_submission, submitted, active, failed, cancelled, expired, consumed." },
+          "limit": { "type": "integer", "description": "Max 500." },
+          "after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mandates",
+        "queryParams": {
+          "customer": "$customer",
+          "status": "$status",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "gocardless_get_mandate",
+      "description": "Get one mandate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mandate_id": { "type": "string", "description": "Mandate ID (e.g. MD0000…)." }
+        },
+        "required": ["mandate_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/mandates/{mandate_id}" }
+    },
+    {
+      "name": "gocardless_list_payments",
+      "description": "List payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": { "type": "string", "description": "Filter by customer." },
+          "mandate": { "type": "string", "description": "Filter by mandate." },
+          "subscription": { "type": "string", "description": "Filter by subscription." },
+          "status": { "type": "string", "description": "pending_customer_approval, pending_submission, submitted, confirmed, paid_out, cancelled, customer_approval_denied, failed, charged_back." },
+          "limit": { "type": "integer", "description": "Max 500." },
+          "after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "customer": "$customer",
+          "mandate": "$mandate",
+          "subscription": "$subscription",
+          "status": "$status",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "gocardless_create_payment",
+      "description": "Create a one-off payment against a mandate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "integer", "description": "Amount in minor units (cents/pence)." },
+          "currency": { "type": "string", "description": "ISO 4217 (GBP, EUR, USD, AUD, NZD, SEK, DKK, CAD)." },
+          "mandate_id": { "type": "string", "description": "Mandate ID to debit." },
+          "description": { "type": "string", "description": "Description shown on statement." },
+          "reference": { "type": "string", "description": "Reference for your records." },
+          "charge_date": { "type": "string", "description": "YYYY-MM-DD when to collect." }
+        },
+        "required": ["amount", "currency", "mandate_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments",
+        "bodyMapping": {
+          "payments": {
+            "amount": "$amount",
+            "currency": "$currency",
+            "links": { "mandate": "$mandate_id" },
+            "description": "$description",
+            "reference": "$reference",
+            "charge_date": "$charge_date"
+          }
+        }
+      }
+    },
+    {
+      "name": "gocardless_list_subscriptions",
+      "description": "List subscriptions (recurring payment schedules).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": { "type": "string", "description": "Filter by customer." },
+          "status": { "type": "string", "description": "active, paused, cancelled, finished." },
+          "limit": { "type": "integer", "description": "Max 500." },
+          "after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions",
+        "queryParams": {
+          "customer": "$customer",
+          "status": "$status",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "gocardless_create_subscription",
+      "description": "Create a subscription. `interval_unit` is weekly/monthly/yearly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "integer", "description": "Amount in minor units." },
+          "currency": { "type": "string", "description": "ISO 4217." },
+          "name": { "type": "string", "description": "Subscription name." },
+          "interval_unit": { "type": "string", "description": "weekly, monthly, yearly." },
+          "interval": { "type": "integer", "description": "Default 1." },
+          "day_of_month": { "type": "integer", "description": "1-28 or -1=last day. Monthly only." },
+          "mandate_id": { "type": "string", "description": "Mandate to charge." },
+          "start_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "count": { "type": "integer", "description": "Total number of payments (omit for indefinite)." }
+        },
+        "required": ["amount", "currency", "interval_unit", "mandate_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions",
+        "bodyMapping": {
+          "subscriptions": {
+            "amount": "$amount",
+            "currency": "$currency",
+            "name": "$name",
+            "interval_unit": "$interval_unit",
+            "interval": "$interval",
+            "day_of_month": "$day_of_month",
+            "links": { "mandate": "$mandate_id" },
+            "start_date": "$start_date",
+            "count": "$count"
+          }
+        }
+      }
+    },
+    {
+      "name": "gocardless_list_payouts",
+      "description": "List payouts (settlement to your bank account).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "pending, paid, bounced." },
+          "limit": { "type": "integer", "description": "Max 500." },
+          "after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payouts",
+        "queryParams": {
+          "status": "$status",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "gocardless_create_refund",
+      "description": "Refund a payment (full or partial).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "integer", "description": "Refund amount in minor units." },
+          "payment_id": { "type": "string", "description": "Payment ID to refund." },
+          "total_amount_confirmation": { "type": "integer", "description": "Total amount of the original payment — defensive guard." },
+          "reference": { "type": "string", "description": "Reference for your records." }
+        },
+        "required": ["amount", "payment_id", "total_amount_confirmation"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refunds",
+        "bodyMapping": {
+          "refunds": {
+            "amount": "$amount",
+            "links": { "payment": "$payment_id" },
+            "total_amount_confirmation": "$total_amount_confirmation",
+            "reference": "$reference"
+          }
+        }
+      }
+    }
+  ]
+}

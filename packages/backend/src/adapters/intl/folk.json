@@ -1,0 +1,202 @@
+{
+  "slug": "folk",
+  "name": "Folk",
+  "description": "Drive Folk (modern relationship CRM) from any AI agent: people, companies, groups, deals, custom fields. 9 tools, Bearer auth.",
+  "instructions": "This connector uses the Folk REST API v2 (developer.folk.app).\n\n**Setup**:\n1. Sign in to https://app.folk.app → bottom-left avatar → **API & Integrations → API → Generate API token**.\n2. Set `FOLK_API_TOKEN`.\n3. Note your workspace's groups — Folk's groups are loose collections (use them like tags).\n\n**Authentication**: `Authorization: Bearer ${FOLK_API_TOKEN}`.\n\n**People / Companies / Deals**: standard CRM objects, plus the relationship-graph idea — every person is linked to one or more companies, plus a free-form network of contacts.\n\n**Groups**: flexible — Folk's primary segmentation. Add a person to multiple groups; each group has its own custom fields visible only when the person is in that group.\n\n**Pagination**: cursor — `nextPageToken`.\n\n**Out of scope here**: messages composer, sequences, automations, integrations management.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "folk",
+  "docsUrl": "https://developer.folk.app/",
+  "requiredEnvVars": ["FOLK_API_TOKEN"],
+  "connector": {
+    "name": "Folk v2",
+    "type": "REST",
+    "baseUrl": "https://api.folk.app/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FOLK_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "folk_me",
+      "description": "Return the user the token belongs to.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/users/me" }
+    },
+    {
+      "name": "folk_list_people",
+      "description": "List people with cursor pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page (default 100)." },
+          "cursor": { "type": "string", "description": "nextPageToken from prior response." },
+          "groupId": { "type": "string", "description": "Filter to people in this group." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "groupId": "$groupId"
+        }
+      }
+    },
+    {
+      "name": "folk_get_person",
+      "description": "Fetch a person by ID with full contact details + groups + companies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personId": { "type": "string", "description": "Person ID." }
+        },
+        "required": ["personId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/people/{personId}" }
+    },
+    {
+      "name": "folk_create_person",
+      "description": "Create a person. Required: fullName OR firstName OR lastName.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fullName": { "type": "string", "description": "Full name." },
+          "firstName": { "type": "string", "description": "First name." },
+          "lastName": { "type": "string", "description": "Last name." },
+          "emails": { "type": "array", "description": "[{value:'a@b.com'}]." },
+          "phones": { "type": "array", "description": "[{value:'+1...'}]." },
+          "jobTitle": { "type": "string", "description": "Title." },
+          "companies": { "type": "array", "description": "[{id?:'companyId', name?:'Acme'}] — link to existing or create-by-name." },
+          "groupIds": { "type": "array", "description": "Array of group IDs to add this person to." },
+          "urls": { "type": "array", "description": "[{value:'https://...'}]." },
+          "addresses": { "type": "array", "description": "[{value:'free-text address'}]." },
+          "customFieldValues": { "type": "object", "description": "Map of {custom_field_id: value}." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/people",
+        "bodyMapping": {
+          "fullName": "$fullName",
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "emails": "$emails",
+          "phones": "$phones",
+          "jobTitle": "$jobTitle",
+          "companies": "$companies",
+          "groupIds": "$groupIds",
+          "urls": "$urls",
+          "addresses": "$addresses",
+          "customFieldValues": "$customFieldValues"
+        }
+      }
+    },
+    {
+      "name": "folk_update_person",
+      "description": "Update a person (PATCH).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personId": { "type": "string", "description": "Person ID." },
+          "fullName": { "type": "string", "description": "New full name." },
+          "emails": { "type": "array", "description": "Replace emails." },
+          "phones": { "type": "array", "description": "Replace phones." },
+          "jobTitle": { "type": "string", "description": "New title." },
+          "companies": { "type": "array", "description": "Replace companies." },
+          "groupIds": { "type": "array", "description": "Replace group memberships." },
+          "customFieldValues": { "type": "object", "description": "Update custom fields." }
+        },
+        "required": ["personId"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/people/{personId}",
+        "bodyMapping": {
+          "fullName": "$fullName",
+          "emails": "$emails",
+          "phones": "$phones",
+          "jobTitle": "$jobTitle",
+          "companies": "$companies",
+          "groupIds": "$groupIds",
+          "customFieldValues": "$customFieldValues"
+        }
+      }
+    },
+    {
+      "name": "folk_list_companies",
+      "description": "List companies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "cursor": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies",
+        "queryParams": { "limit": "$limit", "cursor": "$cursor" }
+      }
+    },
+    {
+      "name": "folk_create_company",
+      "description": "Create a company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Company name." },
+          "domains": { "type": "array", "description": "['acme.com']." },
+          "addresses": { "type": "array", "description": "[{value:'...'}]." },
+          "phones": { "type": "array", "description": "[{value:'...'}]." },
+          "customFieldValues": { "type": "object", "description": "Custom fields." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies",
+        "bodyMapping": {
+          "name": "$name",
+          "domains": "$domains",
+          "addresses": "$addresses",
+          "phones": "$phones",
+          "customFieldValues": "$customFieldValues"
+        }
+      }
+    },
+    {
+      "name": "folk_list_groups",
+      "description": "List groups (collections). Each group has id, name, type, peopleCount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "cursor": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups",
+        "queryParams": { "limit": "$limit", "cursor": "$cursor" }
+      }
+    },
+    {
+      "name": "folk_list_group_custom_fields",
+      "description": "List custom fields defined on a specific group. Folk fields are group-scoped.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "groupId": { "type": "string", "description": "Group ID." }
+        },
+        "required": ["groupId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{groupId}/customFields"
+      }
+    }
+  ]
+}

@@ -1,0 +1,259 @@
+{
+  "slug": "ghost",
+  "name": "Ghost",
+  "description": "Drive Ghost (open-source publishing platform) from any AI agent: posts, pages, tags, members, newsletters. 12 tools, Admin API JWT auth.",
+  "instructions": "This connector uses the Ghost Admin API v5 (ghost.org/docs/admin-api/).\n\n**Setup**:\n1. Sign in to Ghost Admin → **Settings → Advanced → Integrations → Add custom integration**.\n2. Copy the **Admin API Key** — format is `<id>:<secret>` (e.g. `5f3a...c4:b9d8...e2`).\n3. Set:\n   - `GHOST_ADMIN_API_URL` = your Ghost site's admin API base, e.g. `https://yoursite.com/ghost/api/admin`\n   - `GHOST_ADMIN_API_KEY` = the full `id:secret` key from step 2\n\n**Authentication — JWT generation required**: Ghost's Admin API does NOT accept the raw API key. Each request needs a JWT signed with the secret half. The JWT is short-lived (5 min) and has these claims:\n```\n  alg: 'HS256', kid: <id_part>, typ: 'JWT'\n  exp: now+5min, iat: now, aud: '/admin/'\n```\nThis connector currently expects the OPERATOR or external orchestrator to **generate the JWT and pass it as `GHOST_ADMIN_JWT`** — the engine then sends `Authorization: Ghost ${GHOST_ADMIN_JWT}`. For a proper LOGIN_TOKEN-style auto-rotation see the Sorare adapter as the reference pattern; that's a future enhancement.\n\n**Workaround for testing**: use the official `@tryghost/admin-api` JS SDK to generate a JWT and copy it as `GHOST_ADMIN_JWT`. Or use the Ghost CLI: `ghost generate-jwt`.\n\n**Content API alternative**: for read-only public-published content, the simpler **Content API** uses a single key as a query parameter — no JWT. Switch baseUrl to `/ghost/api/content` and use a Content API key.\n\n**Post status**: draft, published, scheduled, sent.\n\n**Mobiledoc vs Lexical**: Ghost stores post content in either format. Modern Ghost (v5+) defaults to Lexical (`lexical` field). Set `html` on writes — Ghost converts to its internal format.\n\n**Pagination**: `?page=N&limit=M` (max 100 for posts/pages, 15 for some). Response has `meta.pagination`.\n\n**Webhooks** out of scope.\n\n**Out of scope here**: themes, settings, redirects management, oEmbed.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "ghost",
+  "docsUrl": "https://ghost.org/docs/admin-api/",
+  "requiredEnvVars": ["GHOST_ADMIN_API_URL", "GHOST_ADMIN_JWT"],
+  "connector": {
+    "name": "Ghost Admin v5",
+    "type": "REST",
+    "baseUrl": "{{GHOST_ADMIN_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Ghost {{GHOST_ADMIN_JWT}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "ghost_list_posts",
+      "description": "List posts. Each post has id, uuid, title, slug, html, status, published_at, authors, tags, featured.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "NQL filter, e.g. 'status:published+tag:ai' or 'published_at:>=2025-01-01'." },
+          "page": { "type": "integer", "description": "Page." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "order": { "type": "string", "description": "field directives: 'published_at desc'." },
+          "include": { "type": "string", "description": "Side-load: authors, tags, count.posts." },
+          "fields": { "type": "string", "description": "Sparse fieldset, comma-separated." },
+          "formats": { "type": "string", "description": "html, mobiledoc, lexical, plaintext (comma-separated)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "limit": "$limit",
+          "order": "$order",
+          "include": "$include",
+          "fields": "$fields",
+          "formats": "$formats"
+        }
+      }
+    },
+    {
+      "name": "ghost_get_post",
+      "description": "Fetch a post by ID (or by slug with /slug/{slug}/).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "string", "description": "Post ID." },
+          "formats": { "type": "string", "description": "html, mobiledoc, lexical, plaintext." },
+          "include": { "type": "string", "description": "Side-load related." }
+        },
+        "required": ["postId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/{postId}/",
+        "queryParams": { "formats": "$formats", "include": "$include" }
+      }
+    },
+    {
+      "name": "ghost_create_post",
+      "description": "Create a post. Pass html for content. Set status='published' to publish immediately, 'scheduled' + published_at for future, 'draft' for draft.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "posts": {
+            "type": "array",
+            "description": "Wrap your post in {posts:[{title, html, status?, slug?, custom_excerpt?, feature_image?, featured?, tags?:[{name}], authors?:[{email}], visibility?:'public'|'members'|'paid', published_at?, email_recipient_filter?:'all'|'none'|'paid'|...}]}. Ghost requires this wrapper array."
+          },
+          "source": { "type": "string", "description": "If 'html', the engine accepts html field in posts[]." }
+        },
+        "required": ["posts"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/posts/",
+        "bodyMapping": {
+          "posts": "$posts"
+        },
+        "queryParams": { "source": "$source" }
+      }
+    },
+    {
+      "name": "ghost_update_post",
+      "description": "Update a post. MUST include updated_at field matching the current value (Ghost's optimistic concurrency check) — fetch with ghost_get_post first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "string", "description": "Post ID." },
+          "posts": {
+            "type": "array",
+            "description": "[{updated_at: <current>, title?, html?, status?, ...}]. updated_at is required."
+          },
+          "source": { "type": "string", "description": "html." }
+        },
+        "required": ["postId", "posts"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/posts/{postId}/",
+        "bodyMapping": { "posts": "$posts" },
+        "queryParams": { "source": "$source" }
+      }
+    },
+    {
+      "name": "ghost_delete_post",
+      "description": "Delete a post permanently.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": { "type": "string", "description": "Post ID." }
+        },
+        "required": ["postId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/posts/{postId}/" }
+    },
+    {
+      "name": "ghost_list_pages",
+      "description": "List static pages (separate from posts). Pages have similar shape to posts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "NQL filter." },
+          "page": { "type": "integer", "description": "Page." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "include": { "type": "string", "description": "Side-load." },
+          "formats": { "type": "string", "description": "html, mobiledoc, lexical." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "limit": "$limit",
+          "include": "$include",
+          "formats": "$formats"
+        }
+      }
+    },
+    {
+      "name": "ghost_list_tags",
+      "description": "List tags with member/post counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "NQL filter." },
+          "page": { "type": "integer", "description": "Page." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags/",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ghost_list_members",
+      "description": "List members (subscribers, both free and paid).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "NQL: 'status:paid', 'created_at:>=2025-01-01'." },
+          "search": { "type": "string", "description": "Substring search across name and email." },
+          "page": { "type": "integer", "description": "Page." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "order": { "type": "string", "description": "Sort, e.g. 'created_at desc'." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members/",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "page": "$page",
+          "limit": "$limit",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "ghost_create_member",
+      "description": "Create a member (subscribe email).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "members": {
+            "type": "array",
+            "description": "[{email, name?, note?, labels?:[{name}], subscribed?:true, send_email_series?:false}]."
+          }
+        },
+        "required": ["members"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/members/",
+        "bodyMapping": { "members": "$members" }
+      }
+    },
+    {
+      "name": "ghost_update_member",
+      "description": "Update a member.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "memberId": { "type": "string", "description": "Member ID." },
+          "members": {
+            "type": "array",
+            "description": "[{name?, note?, labels?, subscribed?, newsletters?:[{id}]}]."
+          }
+        },
+        "required": ["memberId", "members"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/members/{memberId}/",
+        "bodyMapping": { "members": "$members" }
+      }
+    },
+    {
+      "name": "ghost_list_newsletters",
+      "description": "List newsletters on the site (Ghost supports multiple newsletters per site since v5).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "NQL filter, e.g. 'status:active'." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/newsletters/",
+        "queryParams": { "filter": "$filter", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "ghost_site",
+      "description": "Return site info (title, description, version, url). Health check.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/site/" }
+    }
+  ]
+}

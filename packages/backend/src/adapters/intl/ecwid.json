@@ -1,0 +1,256 @@
+{
+  "slug": "ecwid",
+  "name": "Ecwid",
+  "description": "Drive Ecwid (Lightspeed-owned e-commerce platform) from any AI agent: products, categories, orders, customers. 10 tools, OAuth2 Bearer auth, store-scoped URL.",
+  "instructions": "This connector uses the Ecwid REST API v3 (api-docs.ecwid.com).\n\n**Setup**:\n1. Sign in to Ecwid → **My Profile → My Apps → Create App** (or use a personal Storefront API token from your Ecwid control panel).\n2. Note your **Store ID** (numeric) — visible in your Ecwid control panel URL.\n3. Set:\n   - `ECWID_STORE_ID` = numeric store ID\n   - `ECWID_TOKEN` = your access token (private personal token or OAuth2 access token)\n\n**Authentication**: `Authorization: Bearer ${ECWID_TOKEN}`.\n\n**Store-scoped URL**: `https://app.ecwid.com/api/v3/{{ECWID_STORE_ID}}`.\n\n**Product model**: products have id, sku, name, price, originalPrice, costPrice, weight, quantity, unlimited (track stock?), enabled, inStock, categoryIds[], options[], variants[].\n\n**Order statuses (paymentStatus)**: AWAITING_PAYMENT, PAID, CANCELLED, REFUNDED, PARTIALLY_REFUNDED, INCOMPLETE.\n**fulfillmentStatus**: AWAITING_PROCESSING, PROCESSING, SHIPPED, DELIVERED, WILL_NOT_DELIVER, RETURNED, READY_FOR_PICKUP, OUT_FOR_DELIVERY.\n\n**Pagination**: `?offset=N&limit=M` (max 100).\n\n**Out of scope here**: subscription billing, ApplePay/GooglePay setup, payment gateway management, themes/storefront customization.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "ecwid",
+  "docsUrl": "https://api-docs.ecwid.com/",
+  "requiredEnvVars": ["ECWID_STORE_ID", "ECWID_TOKEN"],
+  "connector": {
+    "name": "Ecwid v3",
+    "type": "REST",
+    "baseUrl": "https://app.ecwid.com/api/v3/{{ECWID_STORE_ID}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ECWID_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "ecwid_get_profile",
+      "description": "Get store profile (name, currency, formats, plan).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/profile" }
+    },
+    {
+      "name": "ecwid_search_products",
+      "description": "Search products with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": { "type": "string", "description": "Search keyword across name/SKU/description." },
+          "category": { "type": "integer", "description": "Filter by category ID." },
+          "enabled": { "type": "boolean", "description": "true = only enabled products." },
+          "inStock": { "type": "boolean", "description": "true = only in-stock." },
+          "priceFrom": { "type": "number", "description": "Min price." },
+          "priceTo": { "type": "number", "description": "Max price." },
+          "sortBy": { "type": "string", "description": "RELEVANCE, ADDED_TIME_DESC, NAME_ASC, PRICE_ASC, etc." },
+          "offset": { "type": "integer", "description": "Offset." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "keyword": "$keyword",
+          "category": "$category",
+          "enabled": "$enabled",
+          "inStock": "$inStock",
+          "priceFrom": "$priceFrom",
+          "priceTo": "$priceTo",
+          "sortBy": "$sortBy",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ecwid_get_product",
+      "description": "Get a product by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer", "description": "Product ID." }
+        },
+        "required": ["productId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/products/{productId}" }
+    },
+    {
+      "name": "ecwid_create_product",
+      "description": "Create a product. Required: name + price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Product name." },
+          "sku": { "type": "string", "description": "SKU (auto-generated if omitted)." },
+          "description": { "type": "string", "description": "HTML description." },
+          "price": { "type": "number", "description": "Price." },
+          "originalPrice": { "type": "number", "description": "Compare-at price." },
+          "costPrice": { "type": "number", "description": "Cost basis." },
+          "weight": { "type": "number", "description": "Weight." },
+          "quantity": { "type": "integer", "description": "Stock quantity." },
+          "unlimited": { "type": "boolean", "description": "If true, don't track stock." },
+          "enabled": { "type": "boolean", "description": "Visible on storefront." },
+          "categoryIds": { "type": "array", "description": "Array of category IDs." },
+          "tax": { "type": "object", "description": "{enabledManualTaxes:[ids]}." },
+          "media": { "type": "object", "description": "{images:[{url, alt?}], videos:[{providerId, videoUrl}]}." }
+        },
+        "required": ["name", "price"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "name": "$name",
+          "sku": "$sku",
+          "description": "$description",
+          "price": "$price",
+          "originalPrice": "$originalPrice",
+          "costPrice": "$costPrice",
+          "weight": "$weight",
+          "quantity": "$quantity",
+          "unlimited": "$unlimited",
+          "enabled": "$enabled",
+          "categoryIds": "$categoryIds",
+          "tax": "$tax",
+          "media": "$media"
+        }
+      }
+    },
+    {
+      "name": "ecwid_update_product",
+      "description": "Update a product (PUT — full replacement of passed fields).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer", "description": "Product ID." },
+          "name": { "type": "string", "description": "New name." },
+          "price": { "type": "number", "description": "New price." },
+          "quantity": { "type": "integer", "description": "New stock." },
+          "enabled": { "type": "boolean", "description": "Visibility." },
+          "description": { "type": "string", "description": "New description." },
+          "categoryIds": { "type": "array", "description": "Replace categories." }
+        },
+        "required": ["productId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{productId}",
+        "bodyMapping": {
+          "name": "$name",
+          "price": "$price",
+          "quantity": "$quantity",
+          "enabled": "$enabled",
+          "description": "$description",
+          "categoryIds": "$categoryIds"
+        }
+      }
+    },
+    {
+      "name": "ecwid_list_categories",
+      "description": "List categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent": { "type": "integer", "description": "Parent category ID (default 0 = root)." },
+          "offset": { "type": "integer", "description": "Offset." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "parent": "$parent",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ecwid_search_orders",
+      "description": "Search orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": { "type": "string", "description": "Full-text across customer name/email/order #." },
+          "paymentStatus": { "type": "string", "description": "AWAITING_PAYMENT, PAID, CANCELLED, REFUNDED, PARTIALLY_REFUNDED, INCOMPLETE." },
+          "fulfillmentStatus": { "type": "string", "description": "AWAITING_PROCESSING, PROCESSING, SHIPPED, DELIVERED, etc." },
+          "customer": { "type": "string", "description": "Customer email." },
+          "createdFrom": { "type": "string", "description": "ISO 8601 datetime." },
+          "createdTo": { "type": "string", "description": "ISO 8601 datetime." },
+          "offset": { "type": "integer", "description": "Offset." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "keywords": "$keywords",
+          "paymentStatus": "$paymentStatus",
+          "fulfillmentStatus": "$fulfillmentStatus",
+          "customer": "$customer",
+          "createdFrom": "$createdFrom",
+          "createdTo": "$createdTo",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ecwid_get_order",
+      "description": "Get an order by number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderNumber": { "type": "string", "description": "Order number (e.g. '12345')." }
+        },
+        "required": ["orderNumber"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/orders/{orderNumber}" }
+    },
+    {
+      "name": "ecwid_update_order",
+      "description": "Update order — common: change paymentStatus, fulfillmentStatus, set trackingNumber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderNumber": { "type": "string", "description": "Order number." },
+          "paymentStatus": { "type": "string", "description": "New payment status." },
+          "fulfillmentStatus": { "type": "string", "description": "New fulfillment status." },
+          "trackingNumber": { "type": "string", "description": "Tracking number." },
+          "shippingMethod": { "type": "string", "description": "Shipping method name." }
+        },
+        "required": ["orderNumber"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{orderNumber}",
+        "bodyMapping": {
+          "paymentStatus": "$paymentStatus",
+          "fulfillmentStatus": "$fulfillmentStatus",
+          "trackingNumber": "$trackingNumber",
+          "shippingMethod": "$shippingMethod"
+        }
+      }
+    },
+    {
+      "name": "ecwid_search_customers",
+      "description": "Search customers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": { "type": "string", "description": "Search across name/email." },
+          "email": { "type": "string", "description": "Exact email." },
+          "offset": { "type": "integer", "description": "Offset." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "keyword": "$keyword",
+          "email": "$email",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    }
+  ]
+}

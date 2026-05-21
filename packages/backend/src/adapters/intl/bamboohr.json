@@ -1,0 +1,186 @@
+{
+  "slug": "bamboohr",
+  "name": "BambooHR",
+  "description": "Manage BambooHR (employees, time-off, custom reports, fields, files) from any AI agent. 9 tools, basic-auth.",
+  "instructions": "This connector wraps the BambooHR REST API v1 (per-subdomain — api.bamboohr.com/api/gateway.php/<subdomain>/v1).\n\n**Setup**:\n1. Sign in to your BambooHR portal → top-right avatar → **API Keys → Add a new key**.\n2. Note your subdomain (the part before `.bamboohr.com`) and copy the key.\n3. Set `BAMBOOHR_SUBDOMAIN` and `BAMBOOHR_API_KEY`.\n\n**Authentication**: HTTP Basic — API key as username, literal `x` as password.\n\n**Path subdomain**: BambooHR's API embeds the subdomain in the URL path. The adapter substitutes via runtime envVar.\n\n**Custom fields**: pass `fields` as comma-separated field IDs (e.g. `firstName,lastName,workEmail,jobTitle,supervisor,customField4000010`). Without `fields`, only the basic employee profile is returned.\n\n**JSON response**: set `Accept: application/json` (the adapter does this) — otherwise BambooHR returns XML.\n\n**Rate limits**: not publicly documented; expect 60 req/min as a soft cap. 429 with `Retry-After`.\n\n**Out of scope here**: payroll, performance review CRUD, signed-document workflows, the Time Tracking add-on API.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "bamboohr",
+  "docsUrl": "https://documentation.bamboohr.com/reference/",
+  "requiredEnvVars": ["BAMBOOHR_SUBDOMAIN", "BAMBOOHR_API_KEY"],
+  "connector": {
+    "name": "BambooHR API v1",
+    "type": "REST",
+    "baseUrl": "https://api.bamboohr.com/api/gateway.php",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{BAMBOOHR_API_KEY}}",
+      "password": "x"
+    }
+  },
+  "tools": [
+    {
+      "name": "bamboohr_list_employees_directory",
+      "description": "Returns the company directory: every employee's id, displayName, jobTitle, workEmail, department, division, location, supervisor.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{BAMBOOHR_SUBDOMAIN}/v1/employees/directory",
+        "headers": { "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "bamboohr_get_employee",
+      "description": "Get one employee by ID. Pass `fields` (comma-separated) to control what's returned — by default only id+name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": { "type": "string", "description": "Employee ID." },
+          "fields": { "type": "string", "description": "Comma-separated field IDs." }
+        },
+        "required": ["employee_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{BAMBOOHR_SUBDOMAIN}/v1/employees/{employee_id}",
+        "queryParams": { "fields": "$fields" },
+        "headers": { "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "bamboohr_add_employee",
+      "description": "Create a new employee. Required: firstName + lastName. Returns the new employee URL in the Location header.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstName": { "type": "string", "description": "First name." },
+          "lastName": { "type": "string", "description": "Last name." },
+          "jobTitle": { "type": "string", "description": "Job title." },
+          "department": { "type": "string", "description": "Department." },
+          "workEmail": { "type": "string", "description": "Work email." },
+          "hireDate": { "type": "string", "description": "YYYY-MM-DD." },
+          "supervisorEmail": { "type": "string", "description": "Supervisor's work email." },
+          "employeeNumber": { "type": "string", "description": "Internal employee number." }
+        },
+        "required": ["firstName", "lastName"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{BAMBOOHR_SUBDOMAIN}/v1/employees/",
+        "bodyMapping": {
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "jobTitle": "$jobTitle",
+          "department": "$department",
+          "workEmail": "$workEmail",
+          "hireDate": "$hireDate",
+          "supervisorEmail": "$supervisorEmail",
+          "employeeNumber": "$employeeNumber"
+        },
+        "headers": { "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "bamboohr_update_employee",
+      "description": "Update employee fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": { "type": "string", "description": "Employee ID." },
+          "fields": { "type": "object", "description": "Field-id → value map (e.g. {jobTitle:'Sr Engineer', workEmail:'new@x.com'})." }
+        },
+        "required": ["employee_id", "fields"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{BAMBOOHR_SUBDOMAIN}/v1/employees/{employee_id}",
+        "bodyMapping": { "fields": "$fields" },
+        "headers": { "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "bamboohr_who_is_out",
+      "description": "Returns the company-wide who's-out list for a date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": { "type": "string", "description": "YYYY-MM-DD." },
+          "end": { "type": "string", "description": "YYYY-MM-DD." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{BAMBOOHR_SUBDOMAIN}/v1/time_off/whos_out",
+        "queryParams": { "start": "$start", "end": "$end" },
+        "headers": { "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "bamboohr_list_time_off_requests",
+      "description": "List time-off requests. Filter by employee, date range, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employeeId": { "type": "string", "description": "Filter by employee." },
+          "start": { "type": "string", "description": "YYYY-MM-DD." },
+          "end": { "type": "string", "description": "YYYY-MM-DD." },
+          "status": { "type": "string", "description": "approved, denied, superceded, requested, canceled." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{BAMBOOHR_SUBDOMAIN}/v1/time_off/requests/",
+        "queryParams": {
+          "employeeId": "$employeeId",
+          "start": "$start",
+          "end": "$end",
+          "status": "$status"
+        },
+        "headers": { "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "bamboohr_list_meta_fields",
+      "description": "List every field defined in this account (built-in + custom). Use to discover field IDs.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{BAMBOOHR_SUBDOMAIN}/v1/meta/fields",
+        "headers": { "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "bamboohr_run_custom_report",
+      "description": "Run a pre-defined custom report by its numeric ID. Returns the rows as JSON.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": { "type": "integer", "description": "Report ID." }
+        },
+        "required": ["report_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{BAMBOOHR_SUBDOMAIN}/v1/reports/{report_id}",
+        "queryParams": { "format": "JSON", "fd": "yes" },
+        "headers": { "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "bamboohr_get_employee_files",
+      "description": "List files in an employee's record categorized by section.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": { "type": "string", "description": "Employee ID." }
+        },
+        "required": ["employee_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{BAMBOOHR_SUBDOMAIN}/v1/employees/{employee_id}/files/view/",
+        "headers": { "Accept": "application/json" }
+      }
+    }
+  ]
+}

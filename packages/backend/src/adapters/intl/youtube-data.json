@@ -1,0 +1,256 @@
+{
+  "slug": "youtube-data",
+  "name": "YouTube Data API",
+  "description": "Read YouTube data — videos, channels, playlists, search, comments — and (with OAuth) manage your own uploads. 9 tools, API key + optional OAuth Bearer.",
+  "instructions": "This connector uses the YouTube Data API v3 (developers.google.com/youtube/v3).\n\n**Setup**:\n1. Create / pick a Google Cloud project at https://console.cloud.google.com.\n2. **APIs & Services → Library → enable YouTube Data API v3**.\n3. **Credentials → Create credentials → API key**. (For write operations, also do OAuth2 client + get a Bearer token with `youtube.upload`/`youtube` scopes — out of scope here.)\n4. Set `YOUTUBE_API_KEY` to the API key.\n\n**Authentication**: query-string `?key=...`. Read operations don't need OAuth.\n\n**Quota model**: every API call costs **units** against your daily quota (default 10,000/day for new projects — request more via Google's quota form). search.list costs 100 units per call (most expensive), videos.list ~1 unit. Watch quota in the Cloud Console.\n\n**part parameter**: most resources let you choose which 'parts' of the object to return — e.g. `?part=snippet,statistics,contentDetails`. Slimmer = cheaper.\n\n**Pagination**: `nextPageToken` cursor.\n\n**Out of scope here**: video uploads (multipart + OAuth + resumable upload), captions, comment moderation, live broadcasts, monetization, channel branding.",
+  "region": "intl",
+  "category": "social",
+  "icon": "youtube",
+  "docsUrl": "https://developers.google.com/youtube/v3/docs",
+  "requiredEnvVars": ["YOUTUBE_API_KEY"],
+  "connector": {
+    "name": "YouTube Data v3",
+    "type": "REST",
+    "baseUrl": "https://www.googleapis.com/youtube/v3",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "key": "{{YOUTUBE_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "youtube_search",
+      "description": "Search videos / channels / playlists. Costs 100 quota units. Filter by type, order, region, language, date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Search query." },
+          "type": { "type": "string", "description": "channel, playlist, video, or comma-separated." },
+          "order": { "type": "string", "description": "date, rating, relevance (default), title, viewCount, videoCount." },
+          "regionCode": { "type": "string", "description": "ISO 3166-1 alpha-2." },
+          "relevanceLanguage": { "type": "string", "description": "ISO 639-1." },
+          "publishedAfter": { "type": "string", "description": "ISO 8601 datetime." },
+          "publishedBefore": { "type": "string", "description": "ISO 8601 datetime." },
+          "channelId": { "type": "string", "description": "Restrict to videos by this channel." },
+          "videoDuration": { "type": "string", "description": "any, short (<4min), medium (4-20min), long (>20min)." },
+          "maxResults": { "type": "integer", "description": "1-50 (default 5)." },
+          "pageToken": { "type": "string", "description": "Cursor for next page." },
+          "part": { "type": "string", "description": "snippet (always for search). Other parts not available on search.list." }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q",
+          "type": "$type",
+          "order": "$order",
+          "regionCode": "$regionCode",
+          "relevanceLanguage": "$relevanceLanguage",
+          "publishedAfter": "$publishedAfter",
+          "publishedBefore": "$publishedBefore",
+          "channelId": "$channelId",
+          "videoDuration": "$videoDuration",
+          "maxResults": "$maxResults",
+          "pageToken": "$pageToken",
+          "part": "$part"
+        }
+      }
+    },
+    {
+      "name": "youtube_get_videos",
+      "description": "Fetch video details by ID(s). Cheap (1 unit) — prefer this over search when you already have IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Comma-separated video IDs (max 50)." },
+          "part": { "type": "string", "description": "Comma-separated: snippet, contentDetails, statistics, status, player, topicDetails, recordingDetails, fileDetails, liveStreamingDetails." }
+        },
+        "required": ["id", "part"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos",
+        "queryParams": {
+          "id": "$id",
+          "part": "$part"
+        }
+      }
+    },
+    {
+      "name": "youtube_get_videos_chart",
+      "description": "Get videos from a chart (currently only 'mostPopular'). Region-specific.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chart": { "type": "string", "description": "mostPopular." },
+          "regionCode": { "type": "string", "description": "ISO 3166-1 alpha-2 country." },
+          "videoCategoryId": { "type": "string", "description": "Restrict to a category." },
+          "maxResults": { "type": "integer", "description": "1-50." },
+          "part": { "type": "string", "description": "Parts." }
+        },
+        "required": ["chart", "part"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos",
+        "queryParams": {
+          "chart": "$chart",
+          "regionCode": "$regionCode",
+          "videoCategoryId": "$videoCategoryId",
+          "maxResults": "$maxResults",
+          "part": "$part"
+        }
+      }
+    },
+    {
+      "name": "youtube_get_channels",
+      "description": "Fetch channel details by ID, handle (@username), forUsername (legacy), or 'mine' (requires OAuth).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Comma-separated channel IDs." },
+          "forHandle": { "type": "string", "description": "Channel handle (with or without leading @)." },
+          "forUsername": { "type": "string", "description": "Legacy username (mostly defunct)." },
+          "mine": { "type": "boolean", "description": "true = the OAuth-authenticated user's channel (requires OAuth scope)." },
+          "part": { "type": "string", "description": "snippet, contentDetails, statistics, status, brandingSettings, topicDetails, localizations." }
+        },
+        "required": ["part"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels",
+        "queryParams": {
+          "id": "$id",
+          "forHandle": "$forHandle",
+          "forUsername": "$forUsername",
+          "mine": "$mine",
+          "part": "$part"
+        }
+      }
+    },
+    {
+      "name": "youtube_list_playlists",
+      "description": "List playlists, filtered by channelId or 'mine' (OAuth).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channelId": { "type": "string", "description": "Channel ID." },
+          "id": { "type": "string", "description": "Comma-separated playlist IDs." },
+          "mine": { "type": "boolean", "description": "OAuth user's playlists." },
+          "maxResults": { "type": "integer", "description": "1-50." },
+          "pageToken": { "type": "string", "description": "Cursor." },
+          "part": { "type": "string", "description": "snippet, contentDetails, player, status." }
+        },
+        "required": ["part"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/playlists",
+        "queryParams": {
+          "channelId": "$channelId",
+          "id": "$id",
+          "mine": "$mine",
+          "maxResults": "$maxResults",
+          "pageToken": "$pageToken",
+          "part": "$part"
+        }
+      }
+    },
+    {
+      "name": "youtube_list_playlist_items",
+      "description": "List items in a playlist (videos in playlist).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "playlistId": { "type": "string", "description": "Playlist ID." },
+          "videoId": { "type": "string", "description": "Filter to one specific video." },
+          "maxResults": { "type": "integer", "description": "1-50." },
+          "pageToken": { "type": "string", "description": "Cursor." },
+          "part": { "type": "string", "description": "snippet, contentDetails, status, id." }
+        },
+        "required": ["playlistId", "part"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/playlistItems",
+        "queryParams": {
+          "playlistId": "$playlistId",
+          "videoId": "$videoId",
+          "maxResults": "$maxResults",
+          "pageToken": "$pageToken",
+          "part": "$part"
+        }
+      }
+    },
+    {
+      "name": "youtube_list_video_comments",
+      "description": "List top-level comments on a video. Use commentThreads.list (not comments.list which is for child comments).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "videoId": { "type": "string", "description": "Video ID." },
+          "order": { "type": "string", "description": "time (default) or relevance." },
+          "maxResults": { "type": "integer", "description": "1-100." },
+          "pageToken": { "type": "string", "description": "Cursor." },
+          "searchTerms": { "type": "string", "description": "Filter to comments containing this text." },
+          "part": { "type": "string", "description": "snippet, replies, id." }
+        },
+        "required": ["videoId", "part"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/commentThreads",
+        "queryParams": {
+          "videoId": "$videoId",
+          "order": "$order",
+          "maxResults": "$maxResults",
+          "pageToken": "$pageToken",
+          "searchTerms": "$searchTerms",
+          "part": "$part"
+        }
+      }
+    },
+    {
+      "name": "youtube_list_categories",
+      "description": "List video categories for a region.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "regionCode": { "type": "string", "description": "ISO 3166-1 alpha-2." },
+          "part": { "type": "string", "description": "snippet." }
+        },
+        "required": ["part"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videoCategories",
+        "queryParams": {
+          "regionCode": "$regionCode",
+          "part": "$part"
+        }
+      }
+    },
+    {
+      "name": "youtube_get_captions",
+      "description": "List caption tracks available for a video.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "videoId": { "type": "string", "description": "Video ID." },
+          "part": { "type": "string", "description": "snippet, id." }
+        },
+        "required": ["videoId", "part"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/captions",
+        "queryParams": {
+          "videoId": "$videoId",
+          "part": "$part"
+        }
+      }
+    }
+  ]
+}

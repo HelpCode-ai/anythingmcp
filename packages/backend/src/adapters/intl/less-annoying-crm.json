@@ -1,0 +1,231 @@
+{
+  "slug": "less-annoying-crm",
+  "name": "Less Annoying CRM",
+  "description": "Manage Less Annoying CRM (contacts, companies, notes, tasks, pipelines) from any AI agent. 8 tools, dual-header API auth.",
+  "instructions": "This connector wraps the Less Annoying CRM API (api.lessannoyingcrm.com).\n\n**Setup**:\n1. Sign in to https://www.lessannoyingcrm.com → top-right avatar → **My Account → API → Create new API key**.\n2. Note both the `UserCode` (your LACRM user code) and the `API Token`.\n3. Set `LACRM_USER_CODE` and `LACRM_API_TOKEN`.\n\n**Authentication**: LACRM uses a POST-only API — every call is `POST /` with `UserCode`, `APIToken`, `Function` and `Parameters` (JSON-stringified) as form fields. The adapter wraps this so each tool exposes a normal interface and hides the unusual envelope.\n\n**Function dispatch**: every LACRM operation is a single `Function` name (`GetContact`, `CreateContact`, ...). Parameters go inside the `Parameters` form field as JSON.\n\n**Custom fields**: are returned/posted by their numeric `FieldId`. Use `GetCustomFields` to discover IDs first.\n\n**Pagination**: `Page` (1-based) on list functions; results are 25 per page (fixed).\n\n**Rate limits**: 300 req/min per API token. 429 with `Retry-After`.\n\n**Out of scope here**: workflow automation (LACRM is intentionally minimal), email tracking, calendar sync.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "less-annoying-crm",
+  "docsUrl": "https://www.lessannoyingcrm.com/help/category/63/14/api",
+  "requiredEnvVars": ["LACRM_USER_CODE", "LACRM_API_TOKEN"],
+  "connector": {
+    "name": "Less Annoying CRM API",
+    "type": "REST",
+    "baseUrl": "https://api.lessannoyingcrm.com",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "lacrm_search_contacts",
+      "description": "Search contacts by name, email, phone, etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_term": { "type": "string", "description": "Free-text search." },
+          "page": { "type": "integer", "description": "1-based page." }
+        },
+        "required": ["search_term"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "UserCode": "$LACRM_USER_CODE",
+          "APIToken": "$LACRM_API_TOKEN",
+          "Function": "SearchContacts",
+          "Parameters": { "SearchTerm": "$search_term", "Page": "$page" }
+        }
+      }
+    },
+    {
+      "name": "lacrm_get_contact",
+      "description": "Get a single contact by LACRM Contact ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": { "type": "string", "description": "Contact ID." }
+        },
+        "required": ["contact_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "UserCode": "$LACRM_USER_CODE",
+          "APIToken": "$LACRM_API_TOKEN",
+          "Function": "GetContact",
+          "Parameters": { "ContactId": "$contact_id" }
+        }
+      }
+    },
+    {
+      "name": "lacrm_create_contact",
+      "description": "Create a contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Full name." },
+          "company_name": { "type": "string", "description": "Company name." },
+          "email": { "type": "array", "description": "Array of {Text, Type:'Work'|'Personal'}." },
+          "phone": { "type": "array", "description": "Array of {Text, Type}." },
+          "address": { "type": "array", "description": "Array of {Street, City, State, Zip, Country, Type}." },
+          "background_info": { "type": "string", "description": "Free-text background." },
+          "custom_fields": { "type": "object", "description": "Map of CustomFieldId → value." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "UserCode": "$LACRM_USER_CODE",
+          "APIToken": "$LACRM_API_TOKEN",
+          "Function": "CreateContact",
+          "Parameters": {
+            "Name": "$name",
+            "CompanyName": "$company_name",
+            "Email": "$email",
+            "Phone": "$phone",
+            "Address": "$address",
+            "BackgroundInfo": "$background_info",
+            "CustomFields": "$custom_fields"
+          }
+        }
+      }
+    },
+    {
+      "name": "lacrm_update_contact",
+      "description": "Update a contact — pass ContactId + only the fields to change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": { "type": "string", "description": "Contact ID." },
+          "name": { "type": "string", "description": "New name." },
+          "company_name": { "type": "string", "description": "New company." },
+          "background_info": { "type": "string", "description": "New background." },
+          "custom_fields": { "type": "object", "description": "CustomFieldId → value." }
+        },
+        "required": ["contact_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "UserCode": "$LACRM_USER_CODE",
+          "APIToken": "$LACRM_API_TOKEN",
+          "Function": "EditContact",
+          "Parameters": {
+            "ContactId": "$contact_id",
+            "Name": "$name",
+            "CompanyName": "$company_name",
+            "BackgroundInfo": "$background_info",
+            "CustomFields": "$custom_fields"
+          }
+        }
+      }
+    },
+    {
+      "name": "lacrm_create_note",
+      "description": "Add a note to a contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": { "type": "string", "description": "Contact ID." },
+          "note": { "type": "string", "description": "Note body." }
+        },
+        "required": ["contact_id", "note"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "UserCode": "$LACRM_USER_CODE",
+          "APIToken": "$LACRM_API_TOKEN",
+          "Function": "CreateNote",
+          "Parameters": { "ContactId": "$contact_id", "Note": "$note" }
+        }
+      }
+    },
+    {
+      "name": "lacrm_create_task",
+      "description": "Create a task assigned to one or more users, optionally linked to a contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Task description." },
+          "due_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "assigned_to": { "type": "array", "description": "Array of LACRM user codes." },
+          "contact_id": { "type": "string", "description": "Linked contact." },
+          "priority": { "type": "string", "description": "High, Medium, Low." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "UserCode": "$LACRM_USER_CODE",
+          "APIToken": "$LACRM_API_TOKEN",
+          "Function": "CreateTask",
+          "Parameters": {
+            "Name": "$name",
+            "DueDate": "$due_date",
+            "AssignedTo": "$assigned_to",
+            "ContactId": "$contact_id",
+            "Priority": "$priority"
+          }
+        }
+      }
+    },
+    {
+      "name": "lacrm_get_pipeline_report",
+      "description": "Get the pipeline (opportunities) report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": { "type": "string", "description": "Pipeline ID (optional — defaults to all)." },
+          "sort_by": { "type": "string", "description": "Field name to sort by." },
+          "num_rows": { "type": "integer", "description": "Max rows (default 25)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "UserCode": "$LACRM_USER_CODE",
+          "APIToken": "$LACRM_API_TOKEN",
+          "Function": "GetPipelineReport",
+          "Parameters": {
+            "PipelineId": "$pipeline_id",
+            "SortBy": "$sort_by",
+            "NumRows": "$num_rows"
+          }
+        }
+      }
+    },
+    {
+      "name": "lacrm_get_custom_fields",
+      "description": "List all custom fields defined in the account — returns id, name, type. Call this first to discover CustomFieldId values you'll need for create/update.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "UserCode": "$LACRM_USER_CODE",
+          "APIToken": "$LACRM_API_TOKEN",
+          "Function": "GetCustomFields",
+          "Parameters": {}
+        }
+      }
+    }
+  ]
+}

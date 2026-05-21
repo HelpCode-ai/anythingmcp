@@ -1,0 +1,198 @@
+{
+  "slug": "instantly",
+  "name": "Instantly",
+  "description": "Drive Instantly (cold-email outreach platform) from any AI agent: leads, campaigns, lead lists, accounts (sending mailboxes). 8 tools, Bearer auth.",
+  "instructions": "This connector uses the Instantly v2 API (developer.instantly.ai).\n\n**Setup**:\n1. Sign in to https://app.instantly.ai → bottom-left avatar → **Settings → Integrations → API → Generate New API Key**.\n2. Set `INSTANTLY_API_KEY`.\n\n**Authentication**: `Authorization: Bearer ${INSTANTLY_API_KEY}`.\n\n**Lead state**: leads have status (Active, Paused, Completed, Unsubscribed, Bounced, Skipped, Replied). Adding a lead with `skip_if_in_workspace=true` deduplicates.\n\n**Campaigns**: sequence of email steps. Adding a lead to a campaign enrolls it in the sequence.\n\n**Accounts (sending mailboxes)**: each campaign sends from one or more connected mailboxes — managed in UI.\n\n**Pagination**: `?starting_after=lead_id` cursor.\n\n**Out of scope here**: campaign content editing (UI-only), unibox conversations API (separate), warmup management.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "instantly",
+  "docsUrl": "https://developer.instantly.ai/",
+  "requiredEnvVars": ["INSTANTLY_API_KEY"],
+  "connector": {
+    "name": "Instantly v2",
+    "type": "REST",
+    "baseUrl": "https://api.instantly.ai/api/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{INSTANTLY_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "instantly_list_campaigns",
+      "description": "List campaigns. Each has id, name, status, daily_limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page (default 100, max 100)." },
+          "starting_after": { "type": "string", "description": "Cursor — campaign ID to start after." },
+          "search": { "type": "string", "description": "Name substring." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "queryParams": {
+          "limit": "$limit",
+          "starting_after": "$starting_after",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "instantly_get_campaign",
+      "description": "Get a campaign by ID with full settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "string", "description": "Campaign ID." }
+        },
+        "required": ["campaignId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/campaigns/{campaignId}" }
+    },
+    {
+      "name": "instantly_get_campaign_analytics",
+      "description": "Get campaign aggregated stats (sent, opened, replied, bounced, unsubscribed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": { "type": "string", "description": "Campaign ID." },
+          "start_date": { "type": "string", "description": "ISO 8601." },
+          "end_date": { "type": "string", "description": "ISO 8601." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/analytics",
+        "queryParams": {
+          "campaign_id": "$campaign_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "instantly_list_leads",
+      "description": "List leads. Filter by campaign / status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": { "type": "string", "description": "Filter by campaign." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "starting_after": { "type": "string", "description": "Cursor." },
+          "status": { "type": "integer", "description": "1=Active, 2=Paused, 3=Completed, -1=Unsubscribed, -2=Bounced, -3=Skipped, 9=Replied." },
+          "email": { "type": "string", "description": "Exact email filter." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads/list",
+        "queryParams": {
+          "campaign_id": "$campaign_id",
+          "limit": "$limit",
+          "starting_after": "$starting_after",
+          "status": "$status",
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "instantly_add_lead",
+      "description": "Add a lead to a campaign (or to a lead list if no campaign).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign": { "type": "string", "description": "Campaign ID to add to." },
+          "list_id": { "type": "string", "description": "Lead list ID (alternative)." },
+          "email": { "type": "string", "description": "Lead email." },
+          "first_name": { "type": "string", "description": "First name." },
+          "last_name": { "type": "string", "description": "Last name." },
+          "company_name": { "type": "string", "description": "Company." },
+          "phone": { "type": "string", "description": "Phone." },
+          "website": { "type": "string", "description": "Website URL." },
+          "personalization": { "type": "string", "description": "AI/manual personalization snippet for {{personalization}} template variable." },
+          "custom_variables": { "type": "object", "description": "Map of custom variable names to values (used in {{var_name}} template tags)." },
+          "skip_if_in_workspace": { "type": "boolean", "description": "Skip if email exists anywhere in workspace (dedupe)." },
+          "skip_if_in_campaign": { "type": "boolean", "description": "Skip if already in THIS campaign." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/leads",
+        "bodyMapping": {
+          "campaign": "$campaign",
+          "list_id": "$list_id",
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "company_name": "$company_name",
+          "phone": "$phone",
+          "website": "$website",
+          "personalization": "$personalization",
+          "custom_variables": "$custom_variables",
+          "skip_if_in_workspace": "$skip_if_in_workspace",
+          "skip_if_in_campaign": "$skip_if_in_campaign"
+        }
+      }
+    },
+    {
+      "name": "instantly_update_lead_interest_status",
+      "description": "Update a lead's interest_status (a hot/warm/cold flag set during replies).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "leadId": { "type": "string", "description": "Lead ID." },
+          "interest_status": { "type": "integer", "description": "1=Interested, 2=Meeting Booked, 3=Meeting Completed, 4=Closed, 5=Not Interested, 6=Wrong Person, 7=Lost." }
+        },
+        "required": ["leadId", "interest_status"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/leads/{leadId}",
+        "bodyMapping": {
+          "interest_status": "$interest_status"
+        }
+      }
+    },
+    {
+      "name": "instantly_list_lead_lists",
+      "description": "List lead lists (standalone, not yet in a campaign).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "starting_after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lead-lists",
+        "queryParams": {
+          "limit": "$limit",
+          "starting_after": "$starting_after"
+        }
+      }
+    },
+    {
+      "name": "instantly_list_accounts",
+      "description": "List sending accounts (mailboxes). Each has email, status, daily_limit, warmup status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "starting_after": { "type": "string", "description": "Cursor." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "limit": "$limit",
+          "starting_after": "$starting_after"
+        }
+      }
+    }
+  ]
+}

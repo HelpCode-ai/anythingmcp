@@ -1,0 +1,236 @@
+{
+  "slug": "flutterwave",
+  "name": "Flutterwave",
+  "description": "Manage Flutterwave (Africa payments: payments, customers, subscriptions, transfers, refunds, payouts) from any AI agent. 10 tools, Bearer secret.",
+  "instructions": "This connector wraps the Flutterwave API v3 (api.flutterwave.com/v3).\n\n**Setup**:\n1. Sign in at https://app.flutterwave.com → **Settings → API**.\n2. Note your **Secret Key** (`FLWSECK_TEST-...` for test, `FLWSECK-...` for live) AND public key (used client-side).\n3. Set `FLUTTERWAVE_SECRET_KEY`.\n\n**Authentication**: `Authorization: Bearer ${FLUTTERWAVE_SECRET_KEY}`.\n\n**Test vs Live**: secret key prefix determines mode. Test transactions never touch real cards.\n\n**Amounts**: Flutterwave uses major-unit decimal floats (₦1.50 = `1.50`), unlike Paystack — pay attention.\n\n**Charge flow**: server creates a payment → returns a hosted checkout `link`. Customer pays → Flutterwave redirects back with `transaction_id`. Verify via `flutterwave_verify_transaction`.\n\n**Pagination**: `page` (1-based) + `per_page` (max 200).\n\n**Rate limits**: 100 req/sec per key. 429 → exponential.\n\n**Out of scope here**: virtual cards, BVN verification, settlements, dispute management.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "flutterwave",
+  "docsUrl": "https://developer.flutterwave.com/reference/",
+  "requiredEnvVars": ["FLUTTERWAVE_SECRET_KEY"],
+  "connector": {
+    "name": "Flutterwave API v3",
+    "type": "REST",
+    "baseUrl": "https://api.flutterwave.com/v3",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FLUTTERWAVE_SECRET_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "flutterwave_create_payment",
+      "description": "Create a payment — returns a hosted checkout URL (`data.link`) to redirect the customer to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tx_ref": { "type": "string", "description": "Your unique transaction reference." },
+          "amount": { "type": "number", "description": "Amount in major units (e.g. 1.50)." },
+          "currency": { "type": "string", "description": "NGN, USD, GHS, ZAR, KES, UGX, RWF, TZS, ..." },
+          "redirect_url": { "type": "string", "description": "Where to send the customer after payment." },
+          "customer": { "type": "object", "description": "{email, name, phonenumber}." },
+          "customizations": { "type": "object", "description": "{title, description, logo} for the hosted page." },
+          "payment_options": { "type": "string", "description": "Comma-separated methods: card, banktransfer, mobilemoneyghana, mpesa, ussd, ..." },
+          "meta": { "type": "object", "description": "Custom metadata." }
+        },
+        "required": ["tx_ref", "amount", "currency", "redirect_url", "customer"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments",
+        "bodyMapping": {
+          "tx_ref": "$tx_ref",
+          "amount": "$amount",
+          "currency": "$currency",
+          "redirect_url": "$redirect_url",
+          "customer": "$customer",
+          "customizations": "$customizations",
+          "payment_options": "$payment_options",
+          "meta": "$meta"
+        }
+      }
+    },
+    {
+      "name": "flutterwave_verify_transaction",
+      "description": "Verify a transaction by Flutterwave's `transaction_id` (NOT your tx_ref). Always run this after the customer returns from the hosted page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": { "type": "integer", "description": "Numeric transaction_id returned by Flutterwave." }
+        },
+        "required": ["transaction_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{transaction_id}/verify"
+      }
+    },
+    {
+      "name": "flutterwave_verify_by_reference",
+      "description": "Verify a transaction by your `tx_ref`. Use this when you don't have the Flutterwave transaction_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tx_ref": { "type": "string", "description": "Your transaction reference." }
+        },
+        "required": ["tx_ref"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/verify_by_reference",
+        "queryParams": { "tx_ref": "$tx_ref" }
+      }
+    },
+    {
+      "name": "flutterwave_list_transactions",
+      "description": "List transactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "YYYY-MM-DD." },
+          "to": { "type": "string", "description": "YYYY-MM-DD." },
+          "status": { "type": "string", "description": "successful, failed, pending." },
+          "customer_email": { "type": "string", "description": "Filter by email." },
+          "page": { "type": "integer", "description": "1-based." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "status": "$status",
+          "customer_email": "$customer_email",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "flutterwave_create_subscription_plan",
+      "description": "Create a recurring payment plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "number", "description": "Amount in major units." },
+          "name": { "type": "string", "description": "Plan name." },
+          "interval": { "type": "string", "description": "hourly, daily, weekly, monthly, quarterly, bi-annually, annually." },
+          "duration": { "type": "integer", "description": "Number of times to charge. Omit for indefinite." },
+          "currency": { "type": "string", "description": "ISO 4217." }
+        },
+        "required": ["amount", "name", "interval"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payment-plans",
+        "bodyMapping": {
+          "amount": "$amount",
+          "name": "$name",
+          "interval": "$interval",
+          "duration": "$duration",
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "flutterwave_list_subscriptions",
+      "description": "List subscriptions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by subscriber email." },
+          "from": { "type": "string", "description": "YYYY-MM-DD." },
+          "to": { "type": "string", "description": "YYYY-MM-DD." },
+          "page": { "type": "integer", "description": "1-based." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions",
+        "queryParams": {
+          "email": "$email",
+          "from": "$from",
+          "to": "$to",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "flutterwave_cancel_subscription",
+      "description": "Cancel a subscription.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": { "type": "integer", "description": "Subscription ID." }
+        },
+        "required": ["subscription_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/subscriptions/{subscription_id}/cancel"
+      }
+    },
+    {
+      "name": "flutterwave_initiate_transfer",
+      "description": "Initiate a transfer (payout to a bank account).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_bank": { "type": "string", "description": "Bank code (from /banks endpoint)." },
+          "account_number": { "type": "string", "description": "Account number." },
+          "amount": { "type": "number", "description": "Amount in major units." },
+          "currency": { "type": "string", "description": "ISO 4217." },
+          "narration": { "type": "string", "description": "Description shown on statement." },
+          "reference": { "type": "string", "description": "Your unique reference." },
+          "beneficiary_name": { "type": "string", "description": "Beneficiary's full name." }
+        },
+        "required": ["account_bank", "account_number", "amount", "currency"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transfers",
+        "bodyMapping": {
+          "account_bank": "$account_bank",
+          "account_number": "$account_number",
+          "amount": "$amount",
+          "currency": "$currency",
+          "narration": "$narration",
+          "reference": "$reference",
+          "beneficiary_name": "$beneficiary_name"
+        }
+      }
+    },
+    {
+      "name": "flutterwave_refund_transaction",
+      "description": "Refund a transaction.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": { "type": "integer", "description": "Transaction ID to refund." },
+          "amount": { "type": "number", "description": "Amount in major units (omit for full refund)." }
+        },
+        "required": ["transaction_id"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions/{transaction_id}/refund",
+        "bodyMapping": { "amount": "$amount" }
+      }
+    },
+    {
+      "name": "flutterwave_list_banks",
+      "description": "List supported banks for a country. Use to find bank codes for transfers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": { "type": "string", "description": "ISO 3166-1 alpha-2: NG, GH, KE, UG, ZA, ..." }
+        },
+        "required": ["country"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/banks/{country}"
+      }
+    }
+  ]
+}

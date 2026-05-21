@@ -1,0 +1,103 @@
+{
+  "slug": "vercel-analytics",
+  "name": "Vercel Analytics",
+  "description": "Read Vercel Analytics / Speed Insights / Audience data via the Vercel API. 4 tools, Bearer auth.",
+  "instructions": "This connector uses the Vercel Platform API (vercel.com/docs/rest-api).\n\n**Setup**:\n1. Sign in to https://vercel.com → top-right avatar → **Settings → Tokens → Create Token**.\n2. Pick scope (account-level or team-level). Set `VERCEL_ACCESS_TOKEN`.\n3. For team-scoped queries also set `VERCEL_TEAM_ID` (visible in Team Settings).\n\n**Authentication**: `Authorization: Bearer ${VERCEL_ACCESS_TOKEN}`.\n\n**Note**: Vercel's Web Analytics + Speed Insights data endpoints went through major changes in 2024-2025. Some endpoints are paywall/plan-gated. The adapter uses the stable public endpoints; some analytics queries require Pro+ plan.\n\n**Pagination**: cursor-based via `until` Unix ms (return items older than this).\n\n**Out of scope here**: deployments/builds CRUD (large surface, separate connector if needed), Edge Config, KV/Postgres data, Edge Functions logs.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "vercel",
+  "docsUrl": "https://vercel.com/docs/rest-api",
+  "requiredEnvVars": ["VERCEL_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Vercel API",
+    "type": "REST",
+    "baseUrl": "https://api.vercel.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{VERCEL_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "vercel_analytics_get_user",
+      "description": "Return the user the token belongs to.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/v2/user" }
+    },
+    {
+      "name": "vercel_analytics_list_projects",
+      "description": "List projects in the team / account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": { "type": "string", "description": "Team ID (omit for personal account)." },
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "from": { "type": "integer", "description": "Unix ms — projects created after." },
+          "search": { "type": "string", "description": "Substring filter on project name." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v9/projects",
+        "queryParams": {
+          "teamId": "$teamId",
+          "limit": "$limit",
+          "from": "$from",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "vercel_analytics_get_deployments",
+      "description": "List deployments for a project. Returns each deployment's url, state, source, created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID or name." },
+          "teamId": { "type": "string", "description": "Team ID if team-scoped." },
+          "limit": { "type": "integer", "description": "Per page (default 20, max 100)." },
+          "state": { "type": "string", "description": "BUILDING, ERROR, INITIALIZING, QUEUED, READY, CANCELED." },
+          "until": { "type": "integer", "description": "Unix ms — deployments before." },
+          "since": { "type": "integer", "description": "Unix ms — deployments after." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v6/deployments",
+        "queryParams": {
+          "projectId": "$projectId",
+          "teamId": "$teamId",
+          "limit": "$limit",
+          "state": "$state",
+          "until": "$until",
+          "since": "$since"
+        }
+      }
+    },
+    {
+      "name": "vercel_analytics_get_speed_insights",
+      "description": "Get Speed Insights (Core Web Vitals) data for a project — requires Vercel Speed Insights enabled on the project + Pro plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "teamId": { "type": "string", "description": "Team ID." },
+          "from": { "type": "integer", "description": "Unix ms range start." },
+          "to": { "type": "integer", "description": "Unix ms range end." },
+          "interval": { "type": "string", "description": "1h, 1d, 7d, 30d." }
+        },
+        "required": ["projectId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/web-analytics/v1/projects/{projectId}/speed-insights",
+        "queryParams": {
+          "teamId": "$teamId",
+          "from": "$from",
+          "to": "$to",
+          "interval": "$interval"
+        }
+      }
+    }
+  ]
+}

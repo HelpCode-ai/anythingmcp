@@ -1,0 +1,371 @@
+{
+  "slug": "freshdesk",
+  "name": "Freshdesk",
+  "description": "Drive Freshdesk (customer support helpdesk) from any AI agent: tickets, contacts, companies, agents, conversations. 16 tools, API-key Basic-auth, per-domain base URL.",
+  "instructions": "This connector uses the Freshdesk REST API v2 (developers.freshdesk.com).\n\n**Setup**:\n1. Sign in to Freshdesk → top-right avatar → **Profile Settings → Your API Key** (right sidebar).\n2. Copy the key. Set:\n   - `FRESHDESK_DOMAIN` = your account subdomain (e.g. `acme` if URL is `acme.freshdesk.com`)\n   - `FRESHDESK_API_KEY` = the API key\n\n**Authentication**: HTTP Basic with username=API_KEY, password='X' (any non-empty). The adapter handles this via BASIC_AUTH with username=`{{FRESHDESK_API_KEY}}` and password=`X`.\n\n**Subdomain in base URL**: `https://{{FRESHDESK_DOMAIN}}.freshdesk.com/api/v2`. Wrong subdomain → 404 with vendor's branded 'Page not found'.\n\n**Ticket status integer codes**: 2=Open, 3=Pending, 4=Resolved, 5=Closed. Custom statuses get integer IDs assigned in Admin UI.\n\n**Priority codes**: 1=Low, 2=Medium, 3=High, 4=Urgent.\n\n**Source codes**: 1=Email, 2=Portal, 3=Phone, 4=Forum, 5=Twitter, 6=Facebook, 7=Chat, 8=MobiHelp, 9=FeedbackWidget, 10=OutboundEmail, 11=Ecommerce.\n\n**Updating ticket reply vs note**: replies (visible to requester) go to `/tickets/{id}/reply` with body. Internal notes go to `/tickets/{id}/notes` with body and private=true. The adapter exposes both.\n\n**Pagination**: `?page=N&per_page=M` (max 100). Total count via `?include=stats` or via response Link header.\n\n**Rate limits**: ~1000 req/hour per plan baseline (varies). On 429 honor Retry-After.\n\n**Out of scope here**: automations/workflows, SLA policies, solution articles (Freshdesk Solutions has its own API), satisfaction surveys, Freshchat/Freshcaller integrations (separate Freshworks products).",
+  "region": "intl",
+  "category": "support",
+  "icon": "freshdesk",
+  "docsUrl": "https://developers.freshdesk.com/api/",
+  "requiredEnvVars": ["FRESHDESK_DOMAIN", "FRESHDESK_API_KEY"],
+  "connector": {
+    "name": "Freshdesk v2",
+    "type": "REST",
+    "baseUrl": "https://{{FRESHDESK_DOMAIN}}.freshdesk.com/api/v2",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{FRESHDESK_API_KEY}}",
+      "password": "X"
+    }
+  },
+  "tools": [
+    {
+      "name": "freshdesk_list_tickets",
+      "description": "List tickets. Use filter for new_and_my_open / watching / spam / deleted, or use freshdesk_search_tickets for query-based.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "description": "new_and_my_open, watching, spam, deleted." },
+          "requester_id": { "type": "integer", "description": "Filter by requester." },
+          "email": { "type": "string", "description": "Filter by requester email." },
+          "company_id": { "type": "integer", "description": "Filter by company." },
+          "updated_since": { "type": "string", "description": "ISO 8601 — tickets updated after." },
+          "order_by": { "type": "string", "description": "created_at, updated_at, due_by, status, priority." },
+          "order_type": { "type": "string", "description": "asc or desc." },
+          "include": { "type": "string", "description": "Side-load: requester, stats, description, company." },
+          "page": { "type": "integer", "description": "Page." },
+          "per_page": { "type": "integer", "description": "Per page (max 100)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets",
+        "queryParams": {
+          "filter": "$filter",
+          "requester_id": "$requester_id",
+          "email": "$email",
+          "company_id": "$company_id",
+          "updated_since": "$updated_since",
+          "order_by": "$order_by",
+          "order_type": "$order_type",
+          "include": "$include",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshdesk_search_tickets",
+      "description": "Search tickets with a query language. Example: 'status:2 AND priority:4'. Supports field operators like status, priority, agent_id, group_id, tag, type, source, created_at, due_by, fr_due_by.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query in Freshdesk syntax. Wrap whole query in single quotes." },
+          "page": { "type": "integer", "description": "Page (1-10 only — search is paginated to first 1000 results)." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/tickets",
+        "queryParams": { "query": "$query", "page": "$page" }
+      }
+    },
+    {
+      "name": "freshdesk_get_ticket",
+      "description": "Fetch a single ticket. Use include for conversations / requester / company / stats.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticketId": { "type": "integer", "description": "Ticket ID." },
+          "include": { "type": "string", "description": "Side-load: conversations, requester, company, stats." }
+        },
+        "required": ["ticketId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticketId}",
+        "queryParams": { "include": "$include" }
+      }
+    },
+    {
+      "name": "freshdesk_create_ticket",
+      "description": "Create a ticket. Required: subject + description + (email OR requester_id) + status + priority. Status/priority are integers (see instructions).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": { "type": "string", "description": "Ticket subject." },
+          "description": { "type": "string", "description": "HTML body." },
+          "email": { "type": "string", "description": "Requester email (auto-creates contact if missing)." },
+          "requester_id": { "type": "integer", "description": "Existing contact ID (alternative to email)." },
+          "status": { "type": "integer", "description": "2=Open, 3=Pending, 4=Resolved, 5=Closed." },
+          "priority": { "type": "integer", "description": "1=Low, 2=Medium, 3=High, 4=Urgent." },
+          "source": { "type": "integer", "description": "Source code (see instructions)." },
+          "type": { "type": "string", "description": "Ticket type (e.g. 'Question', 'Incident')." },
+          "responder_id": { "type": "integer", "description": "Assigned agent ID." },
+          "group_id": { "type": "integer", "description": "Assigned group ID." },
+          "tags": { "type": "array", "description": "Array of tag strings." },
+          "cc_emails": { "type": "array", "description": "CC email addresses." },
+          "custom_fields": { "type": "object", "description": "Custom fields keyed by field name." }
+        },
+        "required": ["subject", "description", "status", "priority"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets",
+        "bodyMapping": {
+          "subject": "$subject",
+          "description": "$description",
+          "email": "$email",
+          "requester_id": "$requester_id",
+          "status": "$status",
+          "priority": "$priority",
+          "source": "$source",
+          "type": "$type",
+          "responder_id": "$responder_id",
+          "group_id": "$group_id",
+          "tags": "$tags",
+          "cc_emails": "$cc_emails",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "freshdesk_update_ticket",
+      "description": "Update a ticket. Common: change status (close=5), reassign (responder_id), update priority.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticketId": { "type": "integer", "description": "Ticket ID." },
+          "subject": { "type": "string", "description": "New subject." },
+          "status": { "type": "integer", "description": "2/3/4/5." },
+          "priority": { "type": "integer", "description": "1-4." },
+          "responder_id": { "type": "integer", "description": "Reassign agent." },
+          "group_id": { "type": "integer", "description": "Reassign group." },
+          "tags": { "type": "array", "description": "Replace tag set." },
+          "custom_fields": { "type": "object", "description": "Custom field updates." }
+        },
+        "required": ["ticketId"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tickets/{ticketId}",
+        "bodyMapping": {
+          "subject": "$subject",
+          "status": "$status",
+          "priority": "$priority",
+          "responder_id": "$responder_id",
+          "group_id": "$group_id",
+          "tags": "$tags",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "freshdesk_delete_ticket",
+      "description": "Move ticket to trash (recoverable from UI within retention window).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticketId": { "type": "integer", "description": "Ticket ID." }
+        },
+        "required": ["ticketId"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/tickets/{ticketId}" }
+    },
+    {
+      "name": "freshdesk_reply_to_ticket",
+      "description": "Send a public reply to the requester on a ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticketId": { "type": "integer", "description": "Ticket ID." },
+          "body": { "type": "string", "description": "HTML reply body." },
+          "from_email": { "type": "string", "description": "Override From email (must be a verified product email)." },
+          "user_id": { "type": "integer", "description": "Agent ID sending the reply." },
+          "cc_emails": { "type": "array", "description": "CC list." },
+          "bcc_emails": { "type": "array", "description": "BCC list." }
+        },
+        "required": ["ticketId", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{ticketId}/reply",
+        "bodyMapping": {
+          "body": "$body",
+          "from_email": "$from_email",
+          "user_id": "$user_id",
+          "cc_emails": "$cc_emails",
+          "bcc_emails": "$bcc_emails"
+        }
+      }
+    },
+    {
+      "name": "freshdesk_add_note_to_ticket",
+      "description": "Add an internal note (private=true) or a public note to a ticket. Notes don't email the requester (unlike replies).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticketId": { "type": "integer", "description": "Ticket ID." },
+          "body": { "type": "string", "description": "HTML note body." },
+          "private": { "type": "boolean", "description": "true (default) = internal only, false = public." },
+          "user_id": { "type": "integer", "description": "Agent ID." },
+          "notify_emails": { "type": "array", "description": "Agent emails to notify." }
+        },
+        "required": ["ticketId", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{ticketId}/notes",
+        "bodyMapping": {
+          "body": "$body",
+          "private": "$private",
+          "user_id": "$user_id",
+          "notify_emails": "$notify_emails"
+        }
+      }
+    },
+    {
+      "name": "freshdesk_list_ticket_conversations",
+      "description": "List all conversations (replies + notes) on a ticket, in chronological order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticketId": { "type": "integer", "description": "Ticket ID." },
+          "page": { "type": "integer", "description": "Page." },
+          "per_page": { "type": "integer", "description": "Per page (max 30)." }
+        },
+        "required": ["ticketId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticketId}/conversations",
+        "queryParams": { "page": "$page", "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "freshdesk_list_contacts",
+      "description": "List contacts (requesters/end-users).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by email." },
+          "company_id": { "type": "integer", "description": "Filter by company." },
+          "updated_since": { "type": "string", "description": "ISO 8601." },
+          "page": { "type": "integer", "description": "Page." },
+          "per_page": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "email": "$email",
+          "company_id": "$company_id",
+          "_updated_since": "$updated_since",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshdesk_get_contact",
+      "description": "Fetch a single contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": { "type": "integer", "description": "Contact ID." }
+        },
+        "required": ["contactId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/{contactId}" }
+    },
+    {
+      "name": "freshdesk_create_contact",
+      "description": "Create a contact. Required: name + (email OR phone OR mobile OR twitter_id OR unique_external_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Full name." },
+          "email": { "type": "string", "description": "Email." },
+          "phone": { "type": "string", "description": "Phone." },
+          "mobile": { "type": "string", "description": "Mobile phone." },
+          "twitter_id": { "type": "string", "description": "Twitter handle." },
+          "company_id": { "type": "integer", "description": "Linked company." },
+          "job_title": { "type": "string", "description": "Title." },
+          "address": { "type": "string", "description": "Free-text address." },
+          "tags": { "type": "array", "description": "Tag strings." },
+          "custom_fields": { "type": "object", "description": "Custom fields." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "phone": "$phone",
+          "mobile": "$mobile",
+          "twitter_id": "$twitter_id",
+          "company_id": "$company_id",
+          "job_title": "$job_title",
+          "address": "$address",
+          "tags": "$tags",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "freshdesk_list_companies",
+      "description": "List companies (organizations of contacts).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page." },
+          "per_page": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies",
+        "queryParams": { "page": "$page", "per_page": "$per_page" }
+      }
+    },
+    {
+      "name": "freshdesk_list_agents",
+      "description": "List agents (support staff).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Filter by email." },
+          "mobile": { "type": "string", "description": "Filter by mobile." },
+          "page": { "type": "integer", "description": "Page." },
+          "per_page": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents",
+        "queryParams": {
+          "email": "$email",
+          "mobile": "$mobile",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshdesk_list_groups",
+      "description": "List agent groups (for group_id assignment).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/groups" }
+    },
+    {
+      "name": "freshdesk_list_ticket_fields",
+      "description": "List ticket fields including custom ones with their names and types. Required to compose custom_fields objects.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/ticket_fields" }
+    }
+  ]
+}

@@ -1,0 +1,195 @@
+{
+  "slug": "messagebird",
+  "name": "MessageBird (Bird)",
+  "description": "Drive MessageBird / Bird (multichannel CPaaS — SMS, voice, WhatsApp via Bird, RCS) from any AI agent. 8 tools, AccessKey header auth.",
+  "instructions": "This connector uses the MessageBird API v1 (developers.messagebird.com).\n\n**Note**: MessageBird rebranded to **Bird** in 2023 (bird.com). The API endpoints at rest.messagebird.com remain functional for existing customers as of 2025; new accounts may have different endpoint paths. Verify with your account dashboard.\n\n**Setup**:\n1. Sign in to https://dashboard.messagebird.com → **Developers → API access** → Live or Test → copy AccessKey.\n2. Set `MESSAGEBIRD_ACCESS_KEY`.\n\n**Authentication**: header `Authorization: AccessKey ${MESSAGEBIRD_ACCESS_KEY}` (literal 'AccessKey' prefix).\n\n**Recipients format**: international phone numbers WITHOUT the `+` sign. e.g. `31612345678` for the Netherlands.\n\n**Datacoding**: 'plain' (default GSM-7), 'unicode' (UCS-2, allows emoji but doubles cost), 'auto' (let MessageBird pick).\n\n**Originator**: your sender ID. Can be alphanumeric (max 11 chars, sender-name approach) or a phone number you own/lease.\n\n**Voice via API**: also possible (/calls endpoint) but call flows are complex — out of scope here for the MVP.\n\n**Rate limits**: ~100 SMS/sec on standard, much higher with dedicated routes. On 429 back off.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "messagebird",
+  "docsUrl": "https://developers.messagebird.com/api/",
+  "requiredEnvVars": ["MESSAGEBIRD_ACCESS_KEY"],
+  "connector": {
+    "name": "MessageBird v1",
+    "type": "REST",
+    "baseUrl": "https://rest.messagebird.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "AccessKey {{MESSAGEBIRD_ACCESS_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "messagebird_get_balance",
+      "description": "Return account balance (payment) and currency.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/balance" }
+    },
+    {
+      "name": "messagebird_send_sms",
+      "description": "Send an SMS. Required: originator + recipients + body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "originator": { "type": "string", "description": "Sender ID (≤11 alphanumeric chars) or your owned phone number." },
+          "recipients": { "type": "array", "description": "Array of phones in international format WITHOUT '+'. e.g. ['31612345678']." },
+          "body": { "type": "string", "description": "Message body. With plain datacoding ≤160 chars per part." },
+          "type": { "type": "string", "description": "sms (default), binary, flash, premium." },
+          "datacoding": { "type": "string", "description": "plain (default), unicode, auto." },
+          "reference": { "type": "string", "description": "Free-text reference for delivery report correlation." },
+          "scheduledDatetime": { "type": "string", "description": "ISO 8601 to schedule send up to 24h ahead." },
+          "validity": { "type": "integer", "description": "Validity period in seconds (default 1 day)." }
+        },
+        "required": ["originator", "recipients", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "bodyMapping": {
+          "originator": "$originator",
+          "recipients": "$recipients",
+          "body": "$body",
+          "type": "$type",
+          "datacoding": "$datacoding",
+          "reference": "$reference",
+          "scheduledDatetime": "$scheduledDatetime",
+          "validity": "$validity"
+        }
+      }
+    },
+    {
+      "name": "messagebird_get_message",
+      "description": "Get an SMS by ID with delivery status per recipient.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "messageId": { "type": "string", "description": "Message ID." }
+        },
+        "required": ["messageId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/messages/{messageId}" }
+    },
+    {
+      "name": "messagebird_list_messages",
+      "description": "List SMS messages with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "originator": { "type": "string", "description": "Filter by sender." },
+          "recipient": { "type": "string", "description": "Filter by recipient phone." },
+          "from": { "type": "string", "description": "From datetime (ISO 8601)." },
+          "until": { "type": "string", "description": "Until datetime." },
+          "status": { "type": "string", "description": "scheduled, sent, buffered, delivered, expired, delivery_failed, sent_failed." },
+          "limit": { "type": "integer", "description": "Per page (default 10, max 100)." },
+          "offset": { "type": "integer", "description": "Offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages",
+        "queryParams": {
+          "originator": "$originator",
+          "recipient": "$recipient",
+          "from": "$from",
+          "until": "$until",
+          "status": "$status",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "messagebird_send_voice_call",
+      "description": "Start an outbound voice call. The call follows the steps in callFlow (XML or JSON). Required: source + destination + callFlow.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string", "description": "Your number (international, no +). Must be MessageBird-issued or verified caller ID." },
+          "destination": { "type": "string", "description": "Recipient phone (no +)." },
+          "callFlow": {
+            "type": "object",
+            "description": "{steps: [{action:'say', options:{payload:'Hello', voice:'female', language:'en-US'}}, {action:'transfer', options:{destination:'31612345678'}}]}."
+          },
+          "webhook": { "type": "object", "description": "{url, token} — for event callbacks." }
+        },
+        "required": ["source", "destination", "callFlow"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/calls",
+        "bodyMapping": {
+          "source": "$source",
+          "destination": "$destination",
+          "callFlow": "$callFlow",
+          "webhook": "$webhook"
+        }
+      }
+    },
+    {
+      "name": "messagebird_lookup_phone",
+      "description": "Look up phone number details: country, type (mobile/landline), formats. Useful for validation + carrier detection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phoneNumber": { "type": "string", "description": "Phone number to look up (international, no +)." },
+          "countryCode": { "type": "string", "description": "ISO country code if you have a local number that needs disambiguation." }
+        },
+        "required": ["phoneNumber"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lookup/{phoneNumber}",
+        "queryParams": { "countryCode": "$countryCode" }
+      }
+    },
+    {
+      "name": "messagebird_verify_create",
+      "description": "Send a verification code (OTP) via SMS/voice. Default 6-digit code, 30 sec validity. Use messagebird_verify_check to validate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recipient": { "type": "string", "description": "Phone (international, no +)." },
+          "originator": { "type": "string", "description": "Sender ID." },
+          "type": { "type": "string", "description": "sms (default), tts (voice)." },
+          "template": { "type": "string", "description": "Message template. Default 'Your verification code is %token.'. Must include %token literal." },
+          "timeout": { "type": "integer", "description": "Seconds until code expires (default 30, max 3600)." },
+          "tokenLength": { "type": "integer", "description": "Code length 4-10 (default 6)." },
+          "voice": { "type": "string", "description": "For tts: male, female." },
+          "language": { "type": "string", "description": "For tts: en-us, en-gb, de-de, fr-fr, ..." }
+        },
+        "required": ["recipient"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/verify",
+        "bodyMapping": {
+          "recipient": "$recipient",
+          "originator": "$originator",
+          "type": "$type",
+          "template": "$template",
+          "timeout": "$timeout",
+          "tokenLength": "$tokenLength",
+          "voice": "$voice",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "messagebird_verify_check",
+      "description": "Verify a token (OTP) against a previously-created verification ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Verification ID from verify_create response." },
+          "token": { "type": "string", "description": "Code the user entered." }
+        },
+        "required": ["id", "token"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/verify/{id}",
+        "queryParams": { "token": "$token" }
+      }
+    }
+  ]
+}

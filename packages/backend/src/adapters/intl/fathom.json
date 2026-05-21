@@ -1,0 +1,149 @@
+{
+  "slug": "fathom",
+  "name": "Fathom Analytics",
+  "description": "Read Fathom Analytics (privacy-friendly web analytics) from any AI agent: aggregations, pageviews, events, sites, custom domains. 6 tools, Bearer auth.",
+  "instructions": "This connector uses the Fathom Analytics API v1 (usefathom.com/api).\n\n**Setup**:\n1. Sign in to https://app.usefathom.com → top-right avatar → **Account → API Keys → Generate a new API key**.\n2. Pick scopes: at minimum 'sites:read' + 'aggregations:read'.\n3. Set `FATHOM_API_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${FATHOM_API_TOKEN}`.\n\n**Aggregations API**: the most useful — flexible querying like Stripe Sigma. Pass `entity`, `entity_id`, `aggregates`, `date_grouping`, filters, etc. Returns rows of data.\n\n**Common queries**:\n  - Pageviews this week, by day: aggregates=`pageviews,visits,uniques` + date_from=`2025-01-01` + date_grouping=`day`\n  - Top pages: aggregates=`pageviews,uniques` + field_grouping=`pathname` + sort_by=`pageviews:desc`\n  - Top referrers: aggregates=`pageviews,uniques` + field_grouping=`referrer_hostname` + sort_by=`pageviews:desc`\n  - Events conversion: entity=`event` + entity_id=YOUR_EVENT_ID + aggregates=`conversions,uniques,value`\n\n**Rate limits**: 240 req/min per token. On 429 back off.\n\n**Out of scope here**: site CRUD (Fathom limits this), event CRUD beyond list, account billing.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "fathom",
+  "docsUrl": "https://usefathom.com/api",
+  "requiredEnvVars": ["FATHOM_API_TOKEN"],
+  "connector": {
+    "name": "Fathom Analytics v1",
+    "type": "REST",
+    "baseUrl": "https://api.usefathom.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FATHOM_API_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "fathom_current_user",
+      "description": "Return account info: id, name, email.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/account" }
+    },
+    {
+      "name": "fathom_list_sites",
+      "description": "List Fathom sites tracked. Each has id, name, sharing setting, created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page (max 100)." },
+          "starting_after": { "type": "string", "description": "Cursor — next page." },
+          "ending_before": { "type": "string", "description": "Cursor — prev page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites",
+        "queryParams": {
+          "limit": "$limit",
+          "starting_after": "$starting_after",
+          "ending_before": "$ending_before"
+        }
+      }
+    },
+    {
+      "name": "fathom_list_events",
+      "description": "List events (conversion goals) for a site. Each has id, object, name, currency, target_conversion_value, etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": { "type": "string", "description": "Site ID." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "starting_after": { "type": "string", "description": "Cursor." }
+        },
+        "required": ["site_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/events",
+        "queryParams": {
+          "limit": "$limit",
+          "starting_after": "$starting_after"
+        }
+      }
+    },
+    {
+      "name": "fathom_aggregations",
+      "description": "Run an aggregation query — Fathom's main analytics endpoint. See instructions for common query patterns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": { "type": "string", "description": "pageview, event." },
+          "entity_id": { "type": "string", "description": "Site ID (for pageview) OR event ID." },
+          "aggregates": { "type": "string", "description": "Comma-separated: pageviews, visits, uniques, avg_duration, bounce_rate, conversions, value, etc." },
+          "date_grouping": { "type": "string", "description": "hour, day, month, year." },
+          "field_grouping": { "type": "string", "description": "Group by field: pathname, referrer_hostname, country, browser, device_type, hostname, utm_source, utm_medium, utm_campaign, utm_term, utm_content." },
+          "filters": { "type": "string", "description": "JSON-stringified filter array: [{property:'pathname', operator:'is', value:'/blog'}]." },
+          "sort_by": { "type": "string", "description": "Field:asc|desc, e.g. 'pageviews:desc'." },
+          "limit": { "type": "integer", "description": "Max rows." },
+          "date_from": { "type": "string", "description": "ISO 8601 date." },
+          "date_to": { "type": "string", "description": "ISO 8601 date." },
+          "timezone": { "type": "string", "description": "TZ database name." }
+        },
+        "required": ["entity", "entity_id", "aggregates"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/aggregations",
+        "queryParams": {
+          "entity": "$entity",
+          "entity_id": "$entity_id",
+          "aggregates": "$aggregates",
+          "date_grouping": "$date_grouping",
+          "field_grouping": "$field_grouping",
+          "filters": "$filters",
+          "sort_by": "$sort_by",
+          "limit": "$limit",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "fathom_current_visitors",
+      "description": "Get the current number of visitors on a site (real-time).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": { "type": "string", "description": "Site ID." },
+          "detailed": { "type": "boolean", "description": "If true, also return arrays of currently-viewed pathnames + countries." }
+        },
+        "required": ["site_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/current_visitors",
+        "queryParams": {
+          "site_id": "$site_id",
+          "detailed": "$detailed"
+        }
+      }
+    },
+    {
+      "name": "fathom_create_event",
+      "description": "Create a new event (conversion goal) for a site.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": { "type": "string", "description": "Site ID." },
+          "name": { "type": "string", "description": "Event name." },
+          "currency": { "type": "string", "description": "ISO 4217 currency for event value tracking." }
+        },
+        "required": ["site_id", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sites/{site_id}/events",
+        "bodyMapping": {
+          "name": "$name",
+          "currency": "$currency"
+        }
+      }
+    }
+  ]
+}

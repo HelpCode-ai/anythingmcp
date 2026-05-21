@@ -1,0 +1,226 @@
+{
+  "slug": "dropbox-sign",
+  "name": "Dropbox Sign (HelloSign)",
+  "description": "Drive Dropbox Sign (e-signature, formerly HelloSign) from any AI agent: signature requests, templates, signature embeds, downloads. 10 tools, API-key Basic auth.",
+  "instructions": "This connector uses the Dropbox Sign API v3 (developers.hellosign.com).\n\n**Setup**:\n1. Sign in to https://app.hellosign.com → top-right avatar → **API → Test Mode + Live API → Generate API Key**.\n2. Use the test API key during development; switch to live when going to production.\n3. Set `DROPBOX_SIGN_API_KEY`.\n\n**Authentication**: HTTP Basic with username=API_KEY, password=empty.\n\n**test_mode**: every write endpoint accepts `test_mode=1` to NOT charge credits / NOT send real signature requests. Always test first.\n\n**Signature Request workflow**:\n  1. Create signature request from a template (`create_with_template`) OR from file URLs (`create`).\n  2. Recipients receive emails to sign.\n  3. Poll `get` to track status (status_code: awaiting_signature, signed, declined, expired).\n  4. Download the final PDF after status=signed.\n\n**Embedded signing**: alternative flow where you host the signature UI in your app (no Dropbox Sign emails sent). Requires `embedded_signing_enabled: true` in your account.\n\n**Pagination**: `?page=N&page_size=M` (default 20, max 100).\n\n**Out of scope here**: templates editing (UI), API app management, embedded request URL flows beyond basics, fax, signature accounts setup.",
+  "region": "intl",
+  "category": "e-signature",
+  "icon": "dropbox-sign",
+  "docsUrl": "https://developers.hellosign.com/api/reference/",
+  "requiredEnvVars": ["DROPBOX_SIGN_API_KEY"],
+  "connector": {
+    "name": "Dropbox Sign v3",
+    "type": "REST",
+    "baseUrl": "https://api.hellosign.com/v3",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{DROPBOX_SIGN_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "dropbox_sign_get_account",
+      "description": "Return account info: email, role, quotas, callback_url.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/account" }
+    },
+    {
+      "name": "dropbox_sign_list_signature_requests",
+      "description": "List signature requests, optionally filtered by account/query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": { "type": "string", "description": "Filter by account." },
+          "page": { "type": "integer", "description": "Page (1-based)." },
+          "page_size": { "type": "integer", "description": "Per page (max 100)." },
+          "query": { "type": "string", "description": "Full-text search query." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/signature_request/list",
+        "queryParams": {
+          "account_id": "$account_id",
+          "page": "$page",
+          "page_size": "$page_size",
+          "query": "$query"
+        }
+      }
+    },
+    {
+      "name": "dropbox_sign_get_signature_request",
+      "description": "Fetch a signature request by ID with full signer state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signature_request_id": { "type": "string", "description": "Signature request ID." }
+        },
+        "required": ["signature_request_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/signature_request/{signature_request_id}" }
+    },
+    {
+      "name": "dropbox_sign_create_signature_request_with_template",
+      "description": "Create a signature request from a template. Required: template_ids + signers (with role) + subject. Always set test_mode=1 for testing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_ids": { "type": "array", "description": "Array of template IDs." },
+          "subject": { "type": "string", "description": "Email subject." },
+          "message": { "type": "string", "description": "Email body." },
+          "signers": {
+            "type": "array",
+            "description": "[{role:'Client', name:'Jane Doe', email_address:'jane@acme.com'}]. Role must match template role names."
+          },
+          "ccs": { "type": "array", "description": "[{role:'Manager', email_address:'mgr@acme.com'}]." },
+          "custom_fields": { "type": "array", "description": "[{name:'company', value:'ACME', editor:'role-name', required:true}]." },
+          "test_mode": { "type": "integer", "description": "1 for test (no credits, no real emails). 0 for live." },
+          "client_id": { "type": "string", "description": "If using embedded signing." },
+          "signing_options": { "type": "object", "description": "{draw, type, upload, phone, default:'draw'}." },
+          "metadata": { "type": "object", "description": "Free-form metadata, max 10 keys." }
+        },
+        "required": ["template_ids", "signers"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/signature_request/send_with_template",
+        "bodyMapping": {
+          "template_ids": "$template_ids",
+          "subject": "$subject",
+          "message": "$message",
+          "signers": "$signers",
+          "ccs": "$ccs",
+          "custom_fields": "$custom_fields",
+          "test_mode": "$test_mode",
+          "client_id": "$client_id",
+          "signing_options": "$signing_options",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "dropbox_sign_send_signature_request",
+      "description": "Create a signature request from file URLs or uploaded files. Pass file_urls (publicly accessible PDF URLs) or file (multipart — NOT supported here, use file_urls).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Internal title." },
+          "subject": { "type": "string", "description": "Email subject." },
+          "message": { "type": "string", "description": "Email body." },
+          "signers": { "type": "array", "description": "[{name, email_address, order?}]." },
+          "ccs": { "type": "array", "description": "[{email_address}]." },
+          "file_urls": { "type": "array", "description": "Array of publicly-accessible PDF URLs." },
+          "test_mode": { "type": "integer", "description": "1 for test." },
+          "use_text_tags": { "type": "boolean", "description": "If true, parse [sig|...|...] text-tags in the PDF." },
+          "hide_text_tags": { "type": "boolean", "description": "Hide text tags in final PDF." },
+          "metadata": { "type": "object", "description": "Free metadata." }
+        },
+        "required": ["signers", "file_urls"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/signature_request/send",
+        "bodyMapping": {
+          "title": "$title",
+          "subject": "$subject",
+          "message": "$message",
+          "signers": "$signers",
+          "ccs": "$ccs",
+          "file_urls": "$file_urls",
+          "test_mode": "$test_mode",
+          "use_text_tags": "$use_text_tags",
+          "hide_text_tags": "$hide_text_tags",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "dropbox_sign_send_reminder",
+      "description": "Send a reminder email to a pending signer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signature_request_id": { "type": "string", "description": "Signature request ID." },
+          "email_address": { "type": "string", "description": "Signer email to remind." },
+          "name": { "type": "string", "description": "Signer name (if multiple signers share email)." }
+        },
+        "required": ["signature_request_id", "email_address"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/signature_request/remind/{signature_request_id}",
+        "bodyMapping": {
+          "email_address": "$email_address",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "dropbox_sign_cancel_signature_request",
+      "description": "Cancel an incomplete signature request. Irreversible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signature_request_id": { "type": "string", "description": "Signature request ID." }
+        },
+        "required": ["signature_request_id"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/signature_request/cancel/{signature_request_id}" }
+    },
+    {
+      "name": "dropbox_sign_download_files",
+      "description": "Download the final signed PDF (or zip of all docs). Returns binary.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signature_request_id": { "type": "string", "description": "Signature request ID." },
+          "file_type": { "type": "string", "description": "pdf (default) or zip." },
+          "get_url": { "type": "boolean", "description": "If true, return a temp URL instead of binary." }
+        },
+        "required": ["signature_request_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/signature_request/files/{signature_request_id}",
+        "queryParams": {
+          "file_type": "$file_type",
+          "get_url": "$get_url"
+        }
+      }
+    },
+    {
+      "name": "dropbox_sign_list_templates",
+      "description": "List templates available on the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page." },
+          "page_size": { "type": "integer", "description": "Per page (max 100)." },
+          "query": { "type": "string", "description": "Search query." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/template/list",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "query": "$query"
+        }
+      }
+    },
+    {
+      "name": "dropbox_sign_get_template",
+      "description": "Fetch a template's details — roles, custom fields, files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": { "type": "string", "description": "Template ID." }
+        },
+        "required": ["template_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/template/{template_id}" }
+    }
+  ]
+}

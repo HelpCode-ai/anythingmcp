@@ -165,13 +165,17 @@ describe('adapter catalog', () => {
           const strings: Array<{ path: string; value: string }> = [];
           collectStrings(em[field], field, strings);
           for (const { value } of strings) {
-            // Full-string reference: "$foo" → must be declared, unless it's an env placeholder
+            // Full-string reference: "$foo" → must be declared as a tool param,
+            // unless it's $$ (escape) or an env-var-style reference (UPPER_SNAKE_CASE,
+            // resolved at runtime from connector.envVars populated at import time).
             const full = /^\$([\w$]+)$/.exec(value);
-            if (full && !value.startsWith('$$')) {
+            if (full && !value.startsWith('$$') && !/^[A-Z][A-Z0-9_]*$/.test(full[1])) {
               expect(declaredParams.has(full[1])).toBe(true);
             }
             // Embedded references: "...${foo}..." — all names must be declared
+            // (same env-var exemption applies).
             for (const match of value.matchAll(/\$\{([\w$]+)\}/g)) {
+              if (/^[A-Z][A-Z0-9_]*$/.test(match[1])) continue;
               expect(declaredParams.has(match[1])).toBe(true);
             }
           }

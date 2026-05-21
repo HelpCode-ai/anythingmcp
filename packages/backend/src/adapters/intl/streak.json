@@ -1,0 +1,157 @@
+{
+  "slug": "streak",
+  "name": "Streak",
+  "description": "Manage Streak (CRM inside Gmail) pipelines, boxes, contacts, fields from any AI agent. 9 tools, basic-auth with API key.",
+  "instructions": "This connector wraps the Streak REST API v1/v2 (api.streak.com/api).\n\n**Setup**:\n1. Sign in to https://www.streak.com → top-right gear → **Settings → API keys → Generate API key**.\n2. Copy the key. Set `STREAK_API_KEY`.\n\n**Authentication**: HTTP Basic — API key is the username, password is empty:\n  `Authorization: Basic base64(API_KEY:)`\n\n**Streak vocabulary**:\n- **Pipeline** = a CRM workflow (e.g. 'Sales', 'Hiring').\n- **Box** = a record/deal/case inside a pipeline.\n- **Stage** = pipeline column (e.g. 'Lead', 'Qualified', 'Closed Won').\n- **Field** = custom field on a pipeline (definition) or box (value).\n\n**Two API versions**: v1 covers everything; v2 has a few newer write endpoints with cleaner shapes (see `pipelines/v2`).\n\n**IDs are URL-safe strings** (e.g. `agxzfm1haWxmb29nYWVyEAsSBE5vdGUYgIDA88-IpAoMogEFc3RyZWFr`).\n\n**Pagination**: `limit` + `sortDirection`; some endpoints use `lastId` cursor.\n\n**Rate limits**: 600 req/hour per API key; 10 burst. 429 → back off 6s.\n\n**Out of scope here**: snippets (email templates), team management, billing.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "streak",
+  "docsUrl": "https://streak.readme.io/reference/",
+  "requiredEnvVars": ["STREAK_API_KEY"],
+  "connector": {
+    "name": "Streak API v1",
+    "type": "REST",
+    "baseUrl": "https://api.streak.com/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{STREAK_API_KEY}}",
+      "password": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "streak_current_user",
+      "description": "Returns the authenticated user: userKey, displayName, email, isOauth, lastSeenTimestamp.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/v1/users/me" }
+    },
+    {
+      "name": "streak_list_pipelines",
+      "description": "List all pipelines the user has access to. Each has pipelineKey, name, description, stages[], fields[], creatorKey, teamKey.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/v1/pipelines" }
+    },
+    {
+      "name": "streak_get_pipeline",
+      "description": "Get one pipeline with stages and field definitions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_key": { "type": "string", "description": "Pipeline key." }
+        },
+        "required": ["pipeline_key"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/pipelines/{pipeline_key}" }
+    },
+    {
+      "name": "streak_list_boxes",
+      "description": "List boxes (records) in a pipeline. Each has boxKey, name, stageKey, fields (custom field values), notes count, files count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_key": { "type": "string", "description": "Pipeline key." },
+          "limit": { "type": "integer", "description": "Max per page." },
+          "sortBy": { "type": "string", "description": "creationTimestamp, lastUpdatedTimestamp." },
+          "sortDirection": { "type": "string", "description": "ASC or DESC." }
+        },
+        "required": ["pipeline_key"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/pipelines/{pipeline_key}/boxes",
+        "queryParams": {
+          "limit": "$limit",
+          "sortBy": "$sortBy",
+          "sortDirection": "$sortDirection"
+        }
+      }
+    },
+    {
+      "name": "streak_get_box",
+      "description": "Get one box with full custom-field values, assigned users, linked contacts, and Gmail thread refs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "box_key": { "type": "string", "description": "Box key." }
+        },
+        "required": ["box_key"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/boxes/{box_key}" }
+    },
+    {
+      "name": "streak_create_box",
+      "description": "Create a new box in a pipeline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_key": { "type": "string", "description": "Pipeline key." },
+          "name": { "type": "string", "description": "Box name (deal title)." },
+          "stageKey": { "type": "string", "description": "Initial stage key." },
+          "assignedToSharingEntries": { "type": "array", "description": "Array of {sharedEntity} user keys to assign." }
+        },
+        "required": ["pipeline_key", "name"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/pipelines/{pipeline_key}/boxes",
+        "bodyMapping": {
+          "name": "$name",
+          "stageKey": "$stageKey",
+          "assignedToSharingEntries": "$assignedToSharingEntries"
+        }
+      }
+    },
+    {
+      "name": "streak_update_box",
+      "description": "Update a box: rename, move stage, set custom field values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "box_key": { "type": "string", "description": "Box key." },
+          "name": { "type": "string", "description": "New name." },
+          "stageKey": { "type": "string", "description": "New stage." },
+          "fields": { "type": "object", "description": "Custom-field-key → value map." }
+        },
+        "required": ["box_key"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/boxes/{box_key}",
+        "bodyMapping": {
+          "name": "$name",
+          "stageKey": "$stageKey",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "streak_list_box_notes",
+      "description": "List notes attached to a box.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "box_key": { "type": "string", "description": "Box key." }
+        },
+        "required": ["box_key"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/boxes/{box_key}/notes" }
+    },
+    {
+      "name": "streak_add_box_note",
+      "description": "Add a text note to a box.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "box_key": { "type": "string", "description": "Box key." },
+          "message": { "type": "string", "description": "Note body." }
+        },
+        "required": ["box_key", "message"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/boxes/{box_key}/notes",
+        "bodyMapping": { "message": "$message" }
+      }
+    }
+  ]
+}

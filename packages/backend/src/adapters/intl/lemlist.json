@@ -1,0 +1,196 @@
+{
+  "slug": "lemlist",
+  "name": "Lemlist",
+  "description": "Drive Lemlist (cold email + multichannel outreach) from any AI agent: campaigns, leads (in-campaign prospects), team members, hooks. 11 tools, API-key Basic auth.",
+  "instructions": "This connector uses the Lemlist API v1 (developer.lemlist.com).\n\n**Setup**:\n1. Sign in to Lemlist → top-right avatar → **Settings → Integrations → API → Get my API key**.\n2. Copy the key. Set `LEMLIST_API_KEY`.\n\n**Authentication**: HTTP Basic Auth — `Authorization: Basic base64('':${LEMLIST_API_KEY})` — username is empty, password is the API key. (Yes, swapped from the usual: empty username, key as password.) The adapter handles this via BASIC_AUTH with username='' and password=key.\n\n**Campaign model**: Lemlist's central unit. A campaign has a sequence of steps (email + waits + LinkedIn touches). You add **leads** (prospects) to a campaign — the campaign then drips touchpoints to each lead.\n\n**Lead state**: a lead in a campaign has status (active/paused/replied/bounced/unsubscribed/completed). New leads default to active and start receiving the campaign's first step.\n\n**Custom variables**: leads support arbitrary key/value pairs (e.g. `{firstName:'Jane', icebreaker:'...'}`) — referenced as `{{firstName}}` in the campaign emails. Lemlist's selling point is dynamic-personalization with image overlays driven by these variables.\n\n**Email accounts**: each campaign sends from a connected email account (Gmail, Outlook, custom SMTP). Configured in UI; the API doesn't expose connection management.\n\n**Pagination**: `limit` (default 100, max 100) + `offset`. Some endpoints return arrays without paging metadata — assume more if you get exactly `limit` items back.\n\n**Out of scope here**: campaign creation (the step-builder is UI-only), team analytics, hook editing (configured via Lemlist's UI), Lemlist Chrome extension actions.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "lemlist",
+  "docsUrl": "https://developer.lemlist.com/",
+  "requiredEnvVars": ["LEMLIST_API_KEY"],
+  "connector": {
+    "name": "Lemlist v1",
+    "type": "REST",
+    "baseUrl": "https://api.lemlist.com/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "",
+      "password": "{{LEMLIST_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "lemlist_get_team",
+      "description": "Return the team the API key belongs to (id, name, plan, members). Health check + identifies the workspace.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/team" }
+    },
+    {
+      "name": "lemlist_list_campaigns",
+      "description": "List campaigns. Each campaign has _id, name, labels, createdBy, status, scheduleTimezone, multichannel?.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max per page (default 100, max 100)." },
+          "offset": { "type": "integer", "description": "Pagination offset." },
+          "version": { "type": "string", "description": "Use 'v2' for the multichannel campaign schema." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "queryParams": { "limit": "$limit", "offset": "$offset", "version": "$version" }
+      }
+    },
+    {
+      "name": "lemlist_get_campaign_stats",
+      "description": "Get aggregated stats for a campaign: leads counts by status, emails sent/opened/clicked/replied/bounced, deliverability score.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "string", "description": "Campaign ID." }
+        },
+        "required": ["campaignId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/campaigns/{campaignId}/stats" }
+    },
+    {
+      "name": "lemlist_list_campaign_leads",
+      "description": "List leads (prospects) in a campaign. Each lead has _id, email, firstName, lastName, companyName, status, isPaused, customVariables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "string", "description": "Campaign ID." },
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Pagination offset." },
+          "version": { "type": "string", "description": "Use 'v2' for multichannel." }
+        },
+        "required": ["campaignId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaignId}/leads",
+        "queryParams": { "limit": "$limit", "offset": "$offset", "version": "$version" }
+      }
+    },
+    {
+      "name": "lemlist_add_lead_to_campaign",
+      "description": "Add a new prospect to a campaign. Required: campaignId + email. customVariables fill template placeholders. deduplicate=true skips if email already in the campaign.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "string", "description": "Campaign ID." },
+          "email": { "type": "string", "description": "Prospect email." },
+          "firstName": { "type": "string", "description": "First name." },
+          "lastName": { "type": "string", "description": "Last name." },
+          "companyName": { "type": "string", "description": "Company name." },
+          "picture": { "type": "string", "description": "Picture URL (used in image-personalization templates)." },
+          "linkedinUrl": { "type": "string", "description": "LinkedIn URL." },
+          "phone": { "type": "string", "description": "Phone for LinkedIn voice/SMS steps." },
+          "customVariables": { "type": "object", "description": "Arbitrary {{key}} → value used in templates." },
+          "deduplicate": { "type": "boolean", "description": "Skip if email already exists in the campaign. Default false." }
+        },
+        "required": ["campaignId", "email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaignId}/leads/{email}",
+        "bodyMapping": {
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "companyName": "$companyName",
+          "picture": "$picture",
+          "linkedinUrl": "$linkedinUrl",
+          "phone": "$phone",
+          "customVariables": "$customVariables",
+          "deduplicate": "$deduplicate"
+        }
+      }
+    },
+    {
+      "name": "lemlist_pause_lead",
+      "description": "Pause a lead in a campaign (stops further touches without unsubscribing them).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "string", "description": "Campaign ID." },
+          "email": { "type": "string", "description": "Lead email." }
+        },
+        "required": ["campaignId", "email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaignId}/leads/{email}/pause"
+      }
+    },
+    {
+      "name": "lemlist_resume_lead",
+      "description": "Resume a previously-paused lead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "string", "description": "Campaign ID." },
+          "email": { "type": "string", "description": "Lead email." }
+        },
+        "required": ["campaignId", "email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/{campaignId}/leads/{email}/resume"
+      }
+    },
+    {
+      "name": "lemlist_delete_lead_from_campaign",
+      "description": "Remove a lead from a campaign. They stop receiving touches but stay in your database.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "string", "description": "Campaign ID." },
+          "email": { "type": "string", "description": "Lead email." }
+        },
+        "required": ["campaignId", "email"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/campaigns/{campaignId}/leads/{email}"
+      }
+    },
+    {
+      "name": "lemlist_unsubscribe_lead",
+      "description": "Mark a lead as unsubscribed globally — they will no longer receive any Lemlist email from your team across all campaigns. Compliance-friendly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Lead email." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/unsubscribes/{email}"
+      }
+    },
+    {
+      "name": "lemlist_list_unsubscribes",
+      "description": "List all unsubscribed emails on the team (compliance reporting).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Per page." },
+          "offset": { "type": "integer", "description": "Pagination offset." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/unsubscribes",
+        "queryParams": { "limit": "$limit", "offset": "$offset" }
+      }
+    },
+    {
+      "name": "lemlist_list_hooks",
+      "description": "List webhook subscriptions configured on the team (event delivery to your hosted endpoint).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/hooks" }
+    }
+  ]
+}

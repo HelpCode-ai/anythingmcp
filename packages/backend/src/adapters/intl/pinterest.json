@@ -1,0 +1,183 @@
+{
+  "slug": "pinterest",
+  "name": "Pinterest",
+  "description": "Manage Pinterest (boards, pins, search, ads, audiences) from any AI agent via Business API. 9 tools, OAuth2 token.",
+  "instructions": "This connector wraps the Pinterest Business API v5 (api.pinterest.com/v5).\n\n**Setup — OAuth2**:\n1. Register at https://developers.pinterest.com → **Create app**.\n2. Configure redirect URI, run the OAuth flow at `https://www.pinterest.com/oauth/?response_type=code&client_id=...&redirect_uri=...&scope=boards:read,boards:write,pins:read,pins:write,user_accounts:read`.\n3. Exchange the code at `https://api.pinterest.com/v5/oauth/token`.\n4. Set `PINTEREST_CLIENT_ID`, `PINTEREST_CLIENT_SECRET`, `PINTEREST_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 with refresh — engine handles. Sends `Authorization: Bearer ACCESS_TOKEN`.\n\n**Sandbox available**: change baseUrl to `api-sandbox.pinterest.com/v5` for testing.\n\n**Pin formats**: standard pins point at an external image URL (`media_source: {source_type:'image_url', url:'...'}`) or use the upload endpoint for direct upload (multipart, out of scope here). Video pins require a separate upload flow.\n\n**Pagination**: `bookmark` (cursor) + `page_size` (default 25, max 100).\n\n**Rate limits**: 1000 req / hour per token (varies by endpoint). 429 with `Retry-After`.\n\n**Out of scope here**: video upload multipart, catalog feeds, ad campaign creation, trends, conversion API.",
+  "region": "intl",
+  "category": "social",
+  "icon": "pinterest",
+  "docsUrl": "https://developers.pinterest.com/docs/api/v5/",
+  "requiredEnvVars": ["PINTEREST_CLIENT_ID", "PINTEREST_CLIENT_SECRET", "PINTEREST_REFRESH_TOKEN"],
+  "connector": {
+    "name": "Pinterest Business API v5",
+    "type": "REST",
+    "baseUrl": "https://api.pinterest.com/v5",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{PINTEREST_CLIENT_ID}}",
+      "clientSecret": "{{PINTEREST_CLIENT_SECRET}}",
+      "refreshToken": "{{PINTEREST_REFRESH_TOKEN}}",
+      "tokenUrl": "https://api.pinterest.com/v5/oauth/token"
+    }
+  },
+  "tools": [
+    {
+      "name": "pinterest_user_account",
+      "description": "Get the authenticated user's account (username, account_type, profile_image, board_count, follower_count).",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/user_account" }
+    },
+    {
+      "name": "pinterest_list_boards",
+      "description": "List the authenticated user's boards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": { "type": "integer", "description": "Max 100." },
+          "bookmark": { "type": "string", "description": "Cursor." },
+          "privacy": { "type": "string", "description": "PUBLIC, SECRET, PROTECTED." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards",
+        "queryParams": {
+          "page_size": "$page_size",
+          "bookmark": "$bookmark",
+          "privacy": "$privacy"
+        }
+      }
+    },
+    {
+      "name": "pinterest_get_board",
+      "description": "Get a single board with section + pin counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": { "type": "string", "description": "Board ID." }
+        },
+        "required": ["board_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/boards/{board_id}" }
+    },
+    {
+      "name": "pinterest_create_board",
+      "description": "Create a board.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Board name." },
+          "description": { "type": "string", "description": "Description." },
+          "privacy": { "type": "string", "description": "PUBLIC, SECRET, PROTECTED." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "privacy": "$privacy"
+        }
+      }
+    },
+    {
+      "name": "pinterest_list_board_pins",
+      "description": "List pins in a board.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": { "type": "string", "description": "Board ID." },
+          "page_size": { "type": "integer", "description": "Max 100." },
+          "bookmark": { "type": "string", "description": "Cursor." }
+        },
+        "required": ["board_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}/pins",
+        "queryParams": {
+          "page_size": "$page_size",
+          "bookmark": "$bookmark"
+        }
+      }
+    },
+    {
+      "name": "pinterest_get_pin",
+      "description": "Get a single pin with full media info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pin_id": { "type": "string", "description": "Pin ID." }
+        },
+        "required": ["pin_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/pins/{pin_id}" }
+    },
+    {
+      "name": "pinterest_create_pin",
+      "description": "Create a pin on a board from an external image URL. For uploading from a file, use the dedicated media upload endpoint (out of scope here).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": { "type": "string", "description": "Board ID." },
+          "title": { "type": "string", "description": "Pin title." },
+          "description": { "type": "string", "description": "Description." },
+          "link": { "type": "string", "description": "Destination URL when the pin is clicked." },
+          "alt_text": { "type": "string", "description": "Alt text for accessibility." },
+          "image_url": { "type": "string", "description": "Public URL of the image to pin." },
+          "board_section_id": { "type": "string", "description": "Section ID inside the board." }
+        },
+        "required": ["board_id", "image_url"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pins",
+        "bodyMapping": {
+          "board_id": "$board_id",
+          "title": "$title",
+          "description": "$description",
+          "link": "$link",
+          "alt_text": "$alt_text",
+          "media_source": { "source_type": "image_url", "url": "$image_url" },
+          "board_section_id": "$board_section_id"
+        }
+      }
+    },
+    {
+      "name": "pinterest_delete_pin",
+      "description": "Delete a pin.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pin_id": { "type": "string", "description": "Pin ID." }
+        },
+        "required": ["pin_id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/pins/{pin_id}" }
+    },
+    {
+      "name": "pinterest_search_pins",
+      "description": "Search the authenticated user's pins (across all their boards) by free-text query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query." },
+          "page_size": { "type": "integer", "description": "Max 100." },
+          "bookmark": { "type": "string", "description": "Cursor." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/pins",
+        "queryParams": {
+          "query": "$query",
+          "page_size": "$page_size",
+          "bookmark": "$bookmark"
+        }
+      }
+    }
+  ]
+}

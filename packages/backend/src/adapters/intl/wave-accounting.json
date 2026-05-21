@@ -1,0 +1,185 @@
+{
+  "slug": "wave-accounting",
+  "name": "Wave Accounting",
+  "description": "Query Wave Accounting (customers, products, invoices, accounts, transactions) via GraphQL from any AI agent. 8 tools, Bearer token auth.",
+  "instructions": "This connector wraps the Wave GraphQL API (gql.waveapps.com/graphql/public).\n\n**Setup**:\n1. Sign in to https://my.waveapps.com → bottom-left avatar → **Manage Applications → Create Application**.\n2. Use the OAuth flow to obtain an access token, OR (faster) generate a **Full Access Token** from the application settings (single-tenant).\n3. **Business ID**: Wave is multi-business — find your business ID via the `wave_get_businesses` query or in the URL of any Wave page.\n4. Set `WAVE_ACCESS_TOKEN` and `WAVE_BUSINESS_ID`.\n\n**Authentication**: `Authorization: Bearer ${WAVE_ACCESS_TOKEN}`.\n\n**GraphQL-only**: Wave has no REST. The auto-injected GraphQL builtins (`wave_accounting_graphql_query`, `wave_accounting_graphql_mutation`, `wave_accounting_graphql_schema`) are available for arbitrary queries. The typed wrappers below cover the most common cases.\n\n**Cursor pagination**: edges + pageInfo {endCursor, hasNextPage}. Pass `after: \"<cursor>\"` to paginate.\n\n**Money** is `{value, currency}` objects with `value` as a string in minor units (cents).\n\n**Rate limits**: 60 req/min per token + complexity budget. 429 with `Retry-After`.\n\n**Out of scope here**: payroll, payment-processing setup, bank-feed reconciliation UI.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "wave-accounting",
+  "docsUrl": "https://developer.waveapps.com/hc/en-us/articles/360019968212",
+  "requiredEnvVars": ["WAVE_ACCESS_TOKEN", "WAVE_BUSINESS_ID"],
+  "connector": {
+    "name": "Wave Accounting GraphQL",
+    "type": "GRAPHQL",
+    "baseUrl": "https://gql.waveapps.com/graphql/public",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WAVE_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "wave_get_businesses",
+      "description": "List all businesses the user can access — returns id, name, isClassicAccounting, currency.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "query",
+        "path": "{ user { id defaultEmail businesses(page: 1, pageSize: 50) { edges { node { id name isClassicAccounting currency { code } } } } } }"
+      }
+    },
+    {
+      "name": "wave_list_customers",
+      "description": "List customers in a business.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": { "type": "string", "description": "Wave business ID." },
+          "page": { "type": "integer", "description": "1-based." },
+          "page_size": { "type": "integer", "description": "Max 50." }
+        },
+        "required": ["business_id"]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListCustomers($bid: ID!, $page: Int, $size: Int) { business(id: $bid) { customers(page: $page, pageSize: $size) { edges { node { id name email firstName lastName currency { code } } } pageInfo { totalCount } } } }",
+        "bodyMapping": {
+          "variables": { "bid": "$business_id", "page": "$page", "size": "$page_size" }
+        }
+      }
+    },
+    {
+      "name": "wave_create_customer",
+      "description": "Create a customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": { "type": "string", "description": "Wave business ID." },
+          "name": { "type": "string", "description": "Customer name." },
+          "email": { "type": "string", "description": "Email." },
+          "currency": { "type": "string", "description": "ISO 4217." }
+        },
+        "required": ["business_id", "name", "currency"]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateCustomer($input: CustomerCreateInput!) { customerCreate(input: $input) { customer { id name } didSucceed inputErrors { path message } } }",
+        "bodyMapping": {
+          "variables": {
+            "input": {
+              "businessId": "$business_id",
+              "name": "$name",
+              "email": "$email",
+              "currency": "$currency"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "wave_list_invoices",
+      "description": "List invoices in a business. Filter by status (DRAFT, UNSENT, SAVED, SENT, VIEWED, PARTIAL, OVERDUE, PAID, OVERPAID).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": { "type": "string", "description": "Business ID." },
+          "status": { "type": "string", "description": "Invoice status." },
+          "page": { "type": "integer", "description": "1-based." },
+          "page_size": { "type": "integer", "description": "Max 50." }
+        },
+        "required": ["business_id"]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListInvoices($bid: ID!, $status: InvoiceStatus, $page: Int, $size: Int) { business(id: $bid) { invoices(status: $status, page: $page, pageSize: $size) { edges { node { id invoiceNumber status customer { id name } invoiceDate dueDate total { value currency { code } } } } pageInfo { totalCount } } } }",
+        "bodyMapping": {
+          "variables": {
+            "bid": "$business_id",
+            "status": "$status",
+            "page": "$page",
+            "size": "$page_size"
+          }
+        }
+      }
+    },
+    {
+      "name": "wave_get_invoice",
+      "description": "Get a single invoice with line items + memos.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": { "type": "string", "description": "Invoice ID." }
+        },
+        "required": ["invoice_id"]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetInvoice($id: ID!) { invoice(id: $id) { id invoiceNumber status customer { id name } total { value currency { code } } items { description quantity unitPrice subtotal { value } } memo footer dueDate invoiceDate } }",
+        "bodyMapping": { "variables": { "id": "$invoice_id" } }
+      }
+    },
+    {
+      "name": "wave_list_products",
+      "description": "List products & services in a business.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": { "type": "string", "description": "Business ID." },
+          "page": { "type": "integer", "description": "1-based." },
+          "page_size": { "type": "integer", "description": "Max 50." }
+        },
+        "required": ["business_id"]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListProducts($bid: ID!, $page: Int, $size: Int) { business(id: $bid) { products(page: $page, pageSize: $size) { edges { node { id name description unitPrice isSold isBought } } } } }",
+        "bodyMapping": {
+          "variables": { "bid": "$business_id", "page": "$page", "size": "$page_size" }
+        }
+      }
+    },
+    {
+      "name": "wave_list_accounts",
+      "description": "List chart-of-accounts entries (ledger accounts) for a business.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": { "type": "string", "description": "Business ID." }
+        },
+        "required": ["business_id"]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListAccounts($bid: ID!) { business(id: $bid) { accounts(page: 1, pageSize: 200) { edges { node { id name type { value name } currency { code } } } } } }",
+        "bodyMapping": { "variables": { "bid": "$business_id" } }
+      }
+    },
+    {
+      "name": "wave_send_invoice",
+      "description": "Send (email) an invoice to its customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": { "type": "string", "description": "Invoice ID." },
+          "to": { "type": "array", "description": "Array of email addresses." },
+          "subject": { "type": "string", "description": "Email subject." },
+          "message": { "type": "string", "description": "Email body." }
+        },
+        "required": ["invoice_id", "to"]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation SendInvoice($input: InvoiceSendInput!) { invoiceSend(input: $input) { didSucceed inputErrors { path message } } }",
+        "bodyMapping": {
+          "variables": {
+            "input": {
+              "invoiceId": "$invoice_id",
+              "to": "$to",
+              "subject": "$subject",
+              "message": "$message"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

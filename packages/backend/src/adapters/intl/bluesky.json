@@ -1,0 +1,202 @@
+{
+  "slug": "bluesky",
+  "name": "Bluesky",
+  "description": "Read & post on Bluesky (the AT Protocol social network) from any AI agent. 9 tools, app-password auth.",
+  "instructions": "This connector wraps the Bluesky AT Protocol XRPC API (bsky.social).\n\n**Setup**:\n1. In the Bluesky app or web client → **Settings → Privacy and Security → App Passwords → Add App Password**.\n2. Name it (e.g. 'mcp') and copy the generated `xxxx-xxxx-xxxx-xxxx` password. App passwords scope down what they can do — never use your account password.\n3. Set `BLUESKY_HANDLE` (e.g. `you.bsky.social`) and `BLUESKY_APP_PASSWORD`.\n\n**Two-step auth**: AT Protocol uses a session model. You can't just send the app password on every call — you must first POST to `/xrpc/com.atproto.server.createSession` with `{identifier, password}` and use the returned `accessJwt` as the Bearer token. The `bluesky_create_session` tool does step 1; subsequent tools use the JWT.\n\nFor production use the access JWT should be cached (it lasts ~2 hours) and refreshed with `refreshJwt` via `/xrpc/com.atproto.server.refreshSession`. This adapter exposes session create + refresh as tools so the caller can manage lifecycle.\n\n**DIDs vs handles**: Bluesky internally uses DIDs (`did:plc:abcd...`). Public APIs accept either DID or handle (`you.bsky.social`); use `bluesky_resolve_handle` to convert.\n\n**Post records**: posts are AT Protocol records of type `app.bsky.feed.post`. They have `text` (max 300 graphemes), `createdAt` (RFC3339), `langs[]`, and optional `embed` for images/links.\n\n**Rate limits**: 5k req / hour per JWT; create-session limited to 30/5min per IP. 429 with `Retry-After`.\n\n**Out of scope here**: image upload multipart (use the public URL embed pattern instead), labelers/moderation, custom feeds CRUD, DM (separate API), the firehose.",
+  "region": "intl",
+  "category": "social",
+  "icon": "bluesky",
+  "docsUrl": "https://docs.bsky.app/",
+  "requiredEnvVars": ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"],
+  "connector": {
+    "name": "Bluesky AT Protocol",
+    "type": "REST",
+    "baseUrl": "https://bsky.social",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "bluesky_create_session",
+      "description": "Exchange handle + app password for an access JWT (lasts ~2h) and refresh JWT. Returns `accessJwt`, `refreshJwt`, `handle`, `did`. Call this once at the start of a session, then pass `accessJwt` to other tools that need it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": { "type": "string", "description": "Handle (e.g. you.bsky.social) or email." },
+          "password": { "type": "string", "description": "App password." }
+        },
+        "required": ["identifier", "password"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xrpc/com.atproto.server.createSession",
+        "bodyMapping": { "identifier": "$identifier", "password": "$password" }
+      }
+    },
+    {
+      "name": "bluesky_refresh_session",
+      "description": "Refresh an access JWT using the refresh JWT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refresh_jwt": { "type": "string", "description": "refreshJwt from create_session." }
+        },
+        "required": ["refresh_jwt"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xrpc/com.atproto.server.refreshSession",
+        "headers": { "Authorization": "Bearer ${refresh_jwt}" }
+      }
+    },
+    {
+      "name": "bluesky_resolve_handle",
+      "description": "Resolve a Bluesky handle (e.g. `bsky.app`) to its DID. Public, no auth needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "handle": { "type": "string", "description": "Handle (no @)." }
+        },
+        "required": ["handle"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/xrpc/com.atproto.identity.resolveHandle",
+        "queryParams": { "handle": "$handle" }
+      }
+    },
+    {
+      "name": "bluesky_get_profile",
+      "description": "Get a user's public profile: handle, did, displayName, description, followers, follows, posts count, avatar URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "actor": { "type": "string", "description": "Handle or DID." },
+          "access_jwt": { "type": "string", "description": "Access JWT from create_session." }
+        },
+        "required": ["actor", "access_jwt"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/xrpc/app.bsky.actor.getProfile",
+        "queryParams": { "actor": "$actor" },
+        "headers": { "Authorization": "Bearer ${access_jwt}" }
+      }
+    },
+    {
+      "name": "bluesky_get_timeline",
+      "description": "Get the authenticated user's home timeline (chronological feed of follows). Paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_jwt": { "type": "string", "description": "Access JWT." },
+          "limit": { "type": "integer", "description": "Max posts (1-100)." },
+          "cursor": { "type": "string", "description": "Pagination cursor from previous response." }
+        },
+        "required": ["access_jwt"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/xrpc/app.bsky.feed.getTimeline",
+        "queryParams": { "limit": "$limit", "cursor": "$cursor" },
+        "headers": { "Authorization": "Bearer ${access_jwt}" }
+      }
+    },
+    {
+      "name": "bluesky_get_author_feed",
+      "description": "Get posts by a specific user (their public feed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "actor": { "type": "string", "description": "Handle or DID." },
+          "access_jwt": { "type": "string", "description": "Access JWT." },
+          "limit": { "type": "integer", "description": "Max posts (1-100)." },
+          "cursor": { "type": "string", "description": "Pagination cursor." },
+          "filter": { "type": "string", "description": "'posts_with_replies', 'posts_no_replies', 'posts_with_media', 'posts_and_author_threads'." }
+        },
+        "required": ["actor", "access_jwt"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/xrpc/app.bsky.feed.getAuthorFeed",
+        "queryParams": { "actor": "$actor", "limit": "$limit", "cursor": "$cursor", "filter": "$filter" },
+        "headers": { "Authorization": "Bearer ${access_jwt}" }
+      }
+    },
+    {
+      "name": "bluesky_search_posts",
+      "description": "Full-text search across public posts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Search query." },
+          "access_jwt": { "type": "string", "description": "Access JWT." },
+          "limit": { "type": "integer", "description": "Max results (1-100)." },
+          "cursor": { "type": "string", "description": "Pagination cursor." },
+          "lang": { "type": "string", "description": "ISO language filter." },
+          "sort": { "type": "string", "description": "'top' or 'latest'." }
+        },
+        "required": ["q", "access_jwt"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/xrpc/app.bsky.feed.searchPosts",
+        "queryParams": { "q": "$q", "limit": "$limit", "cursor": "$cursor", "lang": "$lang", "sort": "$sort" },
+        "headers": { "Authorization": "Bearer ${access_jwt}" }
+      }
+    },
+    {
+      "name": "bluesky_create_post",
+      "description": "Post a new skeet. `text` is required (max 300 graphemes). Returns the post's URI + CID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_jwt": { "type": "string", "description": "Access JWT." },
+          "repo": { "type": "string", "description": "Your DID (from create_session response)." },
+          "text": { "type": "string", "description": "Post text, max 300 graphemes." },
+          "created_at": { "type": "string", "description": "RFC3339 datetime (defaults to now if omitted)." },
+          "langs": { "type": "array", "description": "ISO 639-1 language codes, e.g. ['en']." }
+        },
+        "required": ["access_jwt", "repo", "text", "created_at"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xrpc/com.atproto.repo.createRecord",
+        "bodyMapping": {
+          "repo": "$repo",
+          "collection": "app.bsky.feed.post",
+          "record": {
+            "$type": "app.bsky.feed.post",
+            "text": "$text",
+            "createdAt": "$created_at",
+            "langs": "$langs"
+          }
+        },
+        "headers": { "Authorization": "Bearer ${access_jwt}" }
+      }
+    },
+    {
+      "name": "bluesky_delete_post",
+      "description": "Delete one of your own posts by its rkey (record key, the last segment of the at:// URI).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_jwt": { "type": "string", "description": "Access JWT." },
+          "repo": { "type": "string", "description": "Your DID." },
+          "rkey": { "type": "string", "description": "Record key — the last segment of the post's at:// URI." }
+        },
+        "required": ["access_jwt", "repo", "rkey"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xrpc/com.atproto.repo.deleteRecord",
+        "bodyMapping": {
+          "repo": "$repo",
+          "collection": "app.bsky.feed.post",
+          "rkey": "$rkey"
+        },
+        "headers": { "Authorization": "Bearer ${access_jwt}" }
+      }
+    }
+  ]
+}

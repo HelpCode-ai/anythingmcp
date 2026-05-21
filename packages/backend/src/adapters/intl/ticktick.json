@@ -1,0 +1,137 @@
+{
+  "slug": "ticktick",
+  "name": "TickTick",
+  "description": "Drive TickTick (cross-platform task manager) from any AI agent: projects, tasks, completed-tasks reporting. 6 tools, OAuth2 Bearer auth.",
+  "instructions": "This connector uses the TickTick Open API v1 (developer.ticktick.com).\n\n**Setup**:\n1. Register an app at https://developer.ticktick.com → **Manage Apps → New App**.\n2. Note **Client ID** and **Client Secret**, and configure a redirect URL.\n3. Run OAuth2 authorization-code flow with scopes `tasks:read tasks:write`.\n4. Set `TICKTICK_ACCESS_TOKEN` to the obtained token (lifetime varies; refresh externally).\n\n**Authentication**: `Authorization: Bearer ${TICKTICK_ACCESS_TOKEN}`.\n\n**Project hierarchy**: Inbox + user-created projects (lists) → tasks → subtasks (items).\n\n**Date format**: ISO 8601 with timezone (e.g. `2026-03-15T15:30:00+0000`).\n\n**Priority**: 0 (none), 1 (low), 3 (medium), 5 (high).\n\n**Recurring tasks**: use `repeatFlag` with iCalendar RRULE syntax.\n\n**Out of scope here**: pomodoro, habits, calendar import/export, tags management (TickTick doesn't expose full tag CRUD).",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "ticktick",
+  "docsUrl": "https://developer.ticktick.com/api",
+  "requiredEnvVars": ["TICKTICK_ACCESS_TOKEN"],
+  "connector": {
+    "name": "TickTick v1",
+    "type": "REST",
+    "baseUrl": "https://api.ticktick.com/open/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TICKTICK_ACCESS_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "ticktick_get_user_projects",
+      "description": "List the user's projects (lists). Each project has id, name, color, sortOrder, closed, groupId, viewMode, permission, kind.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": { "method": "GET", "path": "/project" }
+    },
+    {
+      "name": "ticktick_get_project_with_data",
+      "description": "Get a project with its tasks and columns. Returns {project, tasks[], columns[]}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." }
+        },
+        "required": ["projectId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/project/{projectId}/data" }
+    },
+    {
+      "name": "ticktick_get_task",
+      "description": "Get a single task by project + task ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "taskId": { "type": "string", "description": "Task ID." }
+        },
+        "required": ["projectId", "taskId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/project/{projectId}/task/{taskId}" }
+    },
+    {
+      "name": "ticktick_create_task",
+      "description": "Create a task. Required: title + projectId. Other common fields: content (description), startDate, dueDate, priority, items (subtasks).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Task title." },
+          "projectId": { "type": "string", "description": "Target project ID (use inbox project if free-floating)." },
+          "content": { "type": "string", "description": "Description / content." },
+          "desc": { "type": "string", "description": "Subtitle-style description." },
+          "isAllDay": { "type": "boolean", "description": "If true, all-day task." },
+          "startDate": { "type": "string", "description": "ISO 8601." },
+          "dueDate": { "type": "string", "description": "ISO 8601." },
+          "timeZone": { "type": "string", "description": "TZ name (e.g. 'America/New_York')." },
+          "reminders": { "type": "array", "description": "iCalendar TRIGGER strings like 'TRIGGER:-PT0S'." },
+          "repeatFlag": { "type": "string", "description": "RRULE for recurrence." },
+          "priority": { "type": "integer", "description": "0=none, 1=low, 3=medium, 5=high." },
+          "sortOrder": { "type": "integer", "description": "Display order." },
+          "items": { "type": "array", "description": "Subtasks: [{title, status?:0|2 for not_done/done, completedTime?, sortOrder?}]." }
+        },
+        "required": ["title", "projectId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/task",
+        "bodyMapping": {
+          "title": "$title",
+          "projectId": "$projectId",
+          "content": "$content",
+          "desc": "$desc",
+          "isAllDay": "$isAllDay",
+          "startDate": "$startDate",
+          "dueDate": "$dueDate",
+          "timeZone": "$timeZone",
+          "reminders": "$reminders",
+          "repeatFlag": "$repeatFlag",
+          "priority": "$priority",
+          "sortOrder": "$sortOrder",
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "ticktick_update_task",
+      "description": "Update a task. POST to /task/{id}. Pass full task object (TickTick replaces rather than patches).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "description": "Task ID." },
+          "title": { "type": "string", "description": "Title." },
+          "projectId": { "type": "string", "description": "Required for update — current project." },
+          "content": { "type": "string", "description": "Content." },
+          "dueDate": { "type": "string", "description": "ISO 8601 due." },
+          "priority": { "type": "integer", "description": "Priority." },
+          "items": { "type": "array", "description": "Subtasks." }
+        },
+        "required": ["taskId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/task/{taskId}",
+        "bodyMapping": {
+          "title": "$title",
+          "projectId": "$projectId",
+          "content": "$content",
+          "dueDate": "$dueDate",
+          "priority": "$priority",
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "ticktick_complete_task",
+      "description": "Mark a task complete.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string", "description": "Project ID." },
+          "taskId": { "type": "string", "description": "Task ID." }
+        },
+        "required": ["projectId", "taskId"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/project/{projectId}/task/{taskId}/complete" }
+    }
+  ]
+}

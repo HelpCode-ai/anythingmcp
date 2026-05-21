@@ -1,0 +1,117 @@
+{
+  "slug": "tally",
+  "name": "Tally",
+  "description": "Read Tally form submissions and manage forms/workspaces from any AI agent. 6 tools, Bearer-token auth. The modern free-tier-friendly alternative to Typeform.",
+  "instructions": "This connector uses the Tally API (developers.tally.so).\n\n**Setup**:\n1. Sign in to https://tally.so → top-right avatar → **Settings → API → Create API key**.\n2. Copy the key (starts with `tly-`). Set `TALLY_API_KEY`.\n\n**Authentication**: `Authorization: Bearer ${TALLY_API_KEY}`.\n\n**Forms and responses**: each form has an alphanumeric ID (e.g. `wbN0Wd`). Responses to a form are returned as an array of `{questionId, answer, type}` per submission.\n\n**Pagination**: cursor-based with `?page=N&limit=M` for submissions. Default 50 per page, max 100.\n\n**Webhooks** out of scope (configure in Tally UI to point at your hosted endpoint).\n\n**Out of scope here**: creating/editing forms (Tally's editor is GUI-only and rich), file uploads, custom integrations.",
+  "region": "intl",
+  "category": "forms",
+  "icon": "tally",
+  "docsUrl": "https://developers.tally.so/api-reference/",
+  "requiredEnvVars": ["TALLY_API_KEY"],
+  "connector": {
+    "name": "Tally API",
+    "type": "REST",
+    "baseUrl": "https://api.tally.so",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TALLY_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "tally_list_workspaces",
+      "description": "List workspaces (teams). Returns id, name, slug, isOwner, isLeader.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "description": "Page number." },
+          "limit": { "type": "integer", "description": "Per page (default 50, max 100)." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces",
+        "queryParams": { "page": "$page", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "tally_list_forms",
+      "description": "List forms in a workspace. Each form has id, name, isClosed, numberOfSubmissions, createdAt, updatedAt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspaceId": { "type": "string", "description": "Workspace ID to filter (optional — defaults to all)." },
+          "page": { "type": "integer", "description": "Page." },
+          "limit": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms",
+        "queryParams": {
+          "workspaceId": "$workspaceId",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "tally_get_form",
+      "description": "Fetch a form's full definition: questions[], theme, settings, redirectUrl, isClosed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." }
+        },
+        "required": ["formId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/forms/{formId}" }
+    },
+    {
+      "name": "tally_list_form_submissions",
+      "description": "List submissions to a form. Each submission has id, formId, respondentId, submittedAt, isCompleted, responses[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." },
+          "page": { "type": "integer", "description": "Page." },
+          "limit": { "type": "integer", "description": "Per page." }
+        },
+        "required": ["formId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{formId}/submissions",
+        "queryParams": { "page": "$page", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "tally_get_form_submission",
+      "description": "Fetch a single submission with its full responses[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." },
+          "submissionId": { "type": "string", "description": "Submission ID." }
+        },
+        "required": ["formId", "submissionId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{formId}/submissions/{submissionId}"
+      }
+    },
+    {
+      "name": "tally_get_form_questions",
+      "description": "List the questions defined on a form, with id, type, title, isRequired, options. Required to map answer questionIds to human-readable titles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": { "type": "string", "description": "Form ID." }
+        },
+        "required": ["formId"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/forms/{formId}/questions" }
+    }
+  ]
+}

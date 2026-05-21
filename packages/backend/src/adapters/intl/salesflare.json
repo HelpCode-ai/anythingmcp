@@ -1,0 +1,241 @@
+{
+  "slug": "salesflare",
+  "name": "Salesflare",
+  "description": "Manage Salesflare CRM (contacts, accounts, opportunities, tasks, custom fields, tags) from any AI agent. 9 tools, API key header auth.",
+  "instructions": "This connector wraps the Salesflare REST API v1 (api.salesflare.com).\n\n**Setup**:\n1. Log into https://app.salesflare.com → **Settings → Personal API key → Generate**.\n2. Set `SALESFLARE_API_KEY`.\n\n**Authentication**: `Authorization: ${SALESFLARE_API_KEY}` (the API key is sent RAW as the Authorization header value — NOT `Bearer X`, not `Basic X`). The adapter wires this as a custom-name API_KEY auth.\n\n**Entity model**: `Account` (company) → `Contact` (person at the account) → `Opportunity` (deal). Tasks + interactions hang off any of these.\n\n**Pagination**: `limit` (max 200) + `offset` (0-based).\n\n**Rate limits**: 60 req/min per key. 429 with `Retry-After`.\n\n**Out of scope here**: email/calendar sync settings, workflow editor, the Magic Bar Chrome extension hooks.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "salesflare",
+  "docsUrl": "https://api.salesflare.com/docs",
+  "requiredEnvVars": ["SALESFLARE_API_KEY"],
+  "connector": {
+    "name": "Salesflare API v1",
+    "type": "REST",
+    "baseUrl": "https://api.salesflare.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{SALESFLARE_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "salesflare_list_contacts",
+      "description": "List contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max 200." },
+          "offset": { "type": "integer", "description": "0-based." },
+          "search": { "type": "string", "description": "Free-text search." },
+          "account_id": { "type": "integer", "description": "Filter by account." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "search": "$search",
+          "account_id": "$account_id"
+        }
+      }
+    },
+    {
+      "name": "salesflare_get_contact",
+      "description": "Get one contact with full custom fields + accounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": { "type": "integer", "description": "Contact ID." }
+        },
+        "required": ["contact_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/{contact_id}" }
+    },
+    {
+      "name": "salesflare_create_contact",
+      "description": "Create a contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstname": { "type": "string", "description": "First name." },
+          "lastname": { "type": "string", "description": "Last name." },
+          "email": { "type": "string", "description": "Primary email." },
+          "phone_numbers": { "type": "array", "description": "Array of {type, number} objects." },
+          "accounts": { "type": "array", "description": "Array of {id} account refs to link." },
+          "tags": { "type": "array", "description": "Array of tag name strings." },
+          "custom": { "type": "object", "description": "Custom field map." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "firstname": "$firstname",
+          "lastname": "$lastname",
+          "email": "$email",
+          "phone_numbers": "$phone_numbers",
+          "accounts": "$accounts",
+          "tags": "$tags",
+          "custom": "$custom"
+        }
+      }
+    },
+    {
+      "name": "salesflare_list_accounts",
+      "description": "List accounts (companies).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max 200." },
+          "offset": { "type": "integer", "description": "0-based." },
+          "search": { "type": "string", "description": "Name search." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": { "limit": "$limit", "offset": "$offset", "search": "$search" }
+      }
+    },
+    {
+      "name": "salesflare_create_account",
+      "description": "Create an account (company).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Company name." },
+          "website": { "type": "string", "description": "Website." },
+          "phone_number": { "type": "string", "description": "Phone." },
+          "addresses": { "type": "array", "description": "Array of address objects." },
+          "tags": { "type": "array", "description": "Array of tag names." },
+          "industry_id": { "type": "integer", "description": "Industry ID." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounts",
+        "bodyMapping": {
+          "name": "$name",
+          "website": "$website",
+          "phone_number": "$phone_number",
+          "addresses": "$addresses",
+          "tags": "$tags",
+          "industry_id": "$industry_id"
+        }
+      }
+    },
+    {
+      "name": "salesflare_list_opportunities",
+      "description": "List opportunities (deals).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max 200." },
+          "offset": { "type": "integer", "description": "0-based." },
+          "stage_id": { "type": "integer", "description": "Filter by stage." },
+          "account_id": { "type": "integer", "description": "Filter by account." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "stage_id": "$stage_id",
+          "account_id": "$account_id"
+        }
+      }
+    },
+    {
+      "name": "salesflare_create_opportunity",
+      "description": "Create a deal/opportunity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Deal name." },
+          "account": { "type": "object", "description": "{id} account ref." },
+          "value": { "type": "number", "description": "Deal value." },
+          "currency": { "type": "string", "description": "ISO 4217." },
+          "probability": { "type": "integer", "description": "0-100." },
+          "expected_close_date": { "type": "string", "description": "ISO 8601." },
+          "stage_id": { "type": "integer", "description": "Pipeline stage ID." },
+          "owner_id": { "type": "integer", "description": "Salesflare user ID." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/opportunities",
+        "bodyMapping": {
+          "name": "$name",
+          "account": "$account",
+          "value": "$value",
+          "currency": "$currency",
+          "probability": "$probability",
+          "expected_close_date": "$expected_close_date",
+          "stage_id": "$stage_id",
+          "owner_id": "$owner_id"
+        }
+      }
+    },
+    {
+      "name": "salesflare_list_tasks",
+      "description": "List tasks. Filter by status, owner, due date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Max 200." },
+          "offset": { "type": "integer", "description": "0-based." },
+          "status": { "type": "string", "description": "open, done." },
+          "owner_id": { "type": "integer", "description": "Filter by owner." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "status": "$status",
+          "owner_id": "$owner_id"
+        }
+      }
+    },
+    {
+      "name": "salesflare_create_task",
+      "description": "Create a task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Task title." },
+          "description": { "type": "string", "description": "Description." },
+          "remind_date": { "type": "string", "description": "ISO 8601 due date." },
+          "owner_id": { "type": "integer", "description": "Assignee user ID." },
+          "contact_id": { "type": "integer", "description": "Linked contact." },
+          "account_id": { "type": "integer", "description": "Linked account." },
+          "opportunity_id": { "type": "integer", "description": "Linked opportunity." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "remind_date": "$remind_date",
+          "owner_id": "$owner_id",
+          "contact_id": "$contact_id",
+          "account_id": "$account_id",
+          "opportunity_id": "$opportunity_id"
+        }
+      }
+    }
+  ]
+}

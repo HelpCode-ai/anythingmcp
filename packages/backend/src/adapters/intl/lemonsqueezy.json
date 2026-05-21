@@ -1,0 +1,323 @@
+{
+  "slug": "lemonsqueezy",
+  "name": "Lemon Squeezy",
+  "description": "Read and act on Lemon Squeezy commerce data — orders, subscriptions, customers, products, variants, license keys, discounts, payouts — from any AI agent. 14 tools, Bearer auth. JSON:API spec compliant.",
+  "instructions": "This connector uses the Lemon Squeezy API v1.\n\n**Setup**:\n1. Sign in to https://app.lemonsqueezy.com → **Settings → API → + Create API key**.\n2. Name it ('AnythingMCP'), select the store this key acts on (or 'All stores' if you have multiple).\n3. Copy the key. It's prefixed with `eyJ...` (it's a JWT, but treat as opaque). Set `LEMONSQUEEZY_API_KEY`.\n\n**Authentication**: `Authorization: Bearer ${LEMONSQUEEZY_API_KEY}` + `Accept: application/vnd.api+json` (the adapter sets the Accept header automatically per endpoint).\n\n**JSON:API conventions**: every response wraps data in `{data: ..., meta: {page: {...}}, links: {...}}`. Each resource has `id`, `type`, `attributes`, `relationships`. **Use `?include=` to side-load related resources** in one call — e.g. `?include=order-items,customer` on an order. Without `include`, the relationships only return IDs and require N+1 lookups.\n\n**Filtering**: `?filter[store_id]=NNN`, `?filter[status]=paid`, etc. The adapter exposes the most common filters per endpoint.\n\n**Pagination**: `?page[number]=N` and `?page[size]=M` (max 100). `meta.page.lastPage` tells you the total. \n\n**Mode (test vs live)**: every object has a `test_mode` boolean attribute. The same API key can act on either; mode is determined by the resource you reference (test resources are created when your store is in test mode).\n\n**Store IDs**: most resources scope to a store. Find your store_id via `lemonsqueezy_list_stores` once. If you only have one store, every list call defaults to it.\n\n**License keys** are a Lemon Squeezy first-class product type — useful for SaaS apps. The adapter exposes list + retrieve. Activation/deactivation lives at the public license-keys endpoint (different auth) and is intentionally out of scope here.\n\n**Webhooks** out of scope (configured in the UI and delivered to your hosted endpoint).\n\n**Rate limits**: 300 req/min per API key. On 429, back off. `Retry-After` header is set.\n\n**Out of scope here**: writes to products/variants/files (Lemon Squeezy is a curated marketplace and asks you to manage catalog via UI), checkout link creation (use the simpler hosted-checkout URL), affiliates, store theme.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "lemonsqueezy",
+  "docsUrl": "https://docs.lemonsqueezy.com/api",
+  "requiredEnvVars": ["LEMONSQUEEZY_API_KEY"],
+  "connector": {
+    "name": "Lemon Squeezy v1",
+    "type": "REST",
+    "baseUrl": "https://api.lemonsqueezy.com/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{LEMONSQUEEZY_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "lemonsqueezy_get_current_user",
+      "description": "Return the user the API key belongs to (whoami). Also confirms the key is valid.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me",
+        "headers": { "Accept": "application/vnd.api+json" }
+      }
+    },
+    {
+      "name": "lemonsqueezy_list_stores",
+      "description": "List stores the API key has access to. Returns each store's id, name, slug, domain, url, currency, plan, payment_processors[], default_currency, total_sales, total_revenue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": { "type": "integer", "description": "Page number, default 1." },
+          "page_size": { "type": "integer", "description": "Per page, max 100." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stores",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": { "page[number]": "$page_number", "page[size]": "$page_size" }
+      }
+    },
+    {
+      "name": "lemonsqueezy_list_products",
+      "description": "List products for a store. Each product has name, slug, description, price (cents), thumb_url, status (published/draft), variants_count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": { "type": "integer", "description": "Filter by store ID." },
+          "include": { "type": "string", "description": "Side-load related resources: 'variants', 'store'." },
+          "page_number": { "type": "integer", "description": "Page number." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter[store_id]": "$store_id",
+          "include": "$include",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lemonsqueezy_list_variants",
+      "description": "List variants — the SKUs of a product (e.g. monthly vs annual plan, or different licensing tiers). Each variant has price, interval, interval_count, is_subscription, has_license_keys.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": { "type": "integer", "description": "Filter by product ID." },
+          "include": { "type": "string", "description": "Side-load: 'product', 'price-model'." },
+          "page_number": { "type": "integer", "description": "Page number." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/variants",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter[product_id]": "$product_id",
+          "include": "$include",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lemonsqueezy_list_customers",
+      "description": "List customers for a store. Each customer has email, name, status, country, total_spent, total_revenue_currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": { "type": "integer", "description": "Filter by store." },
+          "email": { "type": "string", "description": "Exact-match filter by email." },
+          "page_number": { "type": "integer", "description": "Page number." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter[store_id]": "$store_id",
+          "filter[email]": "$email",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lemonsqueezy_get_customer",
+      "description": "Fetch one customer with their full purchase history (use include=orders,subscriptions).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "integer", "description": "Customer ID." },
+          "include": { "type": "string", "description": "Side-load: 'orders', 'subscriptions', 'license-keys'." }
+        },
+        "required": ["customerId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customerId}",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": { "include": "$include" }
+      }
+    },
+    {
+      "name": "lemonsqueezy_list_orders",
+      "description": "List orders for a store with optional filters. Each order has identifier, order_number, user_email, currency, subtotal, tax, total (cents), status (paid/refunded/pending/failed), refunded, refunded_at, created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": { "type": "integer", "description": "Store filter." },
+          "user_email": { "type": "string", "description": "Filter by customer email." },
+          "status": { "type": "string", "description": "paid, refunded, pending, failed." },
+          "include": { "type": "string", "description": "Side-load: 'order-items', 'customer', 'subscription'." },
+          "page_number": { "type": "integer", "description": "Page number." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter[store_id]": "$store_id",
+          "filter[user_email]": "$user_email",
+          "filter[status]": "$status",
+          "include": "$include",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lemonsqueezy_get_order",
+      "description": "Fetch one order with full details. Include order-items to see line items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer", "description": "Order ID." },
+          "include": { "type": "string", "description": "Side-load order-items, store, customer." }
+        },
+        "required": ["orderId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{orderId}",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": { "include": "$include" }
+      }
+    },
+    {
+      "name": "lemonsqueezy_list_subscriptions",
+      "description": "List subscriptions with status filters. Each subscription has status (on_trial/active/past_due/unpaid/cancelled/expired), renews_at, ends_at, trial_ends_at, billing_anchor, urls (update_payment_method, customer_portal).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": { "type": "integer", "description": "Store filter." },
+          "status": { "type": "string", "description": "on_trial, active, past_due, unpaid, cancelled, expired." },
+          "user_email": { "type": "string", "description": "Filter by customer email." },
+          "product_id": { "type": "integer", "description": "Filter by product." },
+          "include": { "type": "string", "description": "Side-load: 'customer', 'order', 'variant', 'subscription-invoices'." },
+          "page_number": { "type": "integer", "description": "Page number." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter[store_id]": "$store_id",
+          "filter[status]": "$status",
+          "filter[user_email]": "$user_email",
+          "filter[product_id]": "$product_id",
+          "include": "$include",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lemonsqueezy_get_subscription",
+      "description": "Fetch one subscription with detailed billing state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "integer", "description": "Subscription ID." },
+          "include": { "type": "string", "description": "Side-load order, customer, variant, product, subscription-invoices." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions/{subscriptionId}",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": { "include": "$include" }
+      }
+    },
+    {
+      "name": "lemonsqueezy_cancel_subscription",
+      "description": "Cancel a subscription. By default cancels at period end (renews_at). The customer keeps access until renews_at. Use this for self-service cancellation flows; for immediate termination + refund, refund via lemonsqueezy_get_order's refund link instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": { "type": "integer", "description": "Subscription ID." }
+        },
+        "required": ["subscriptionId"]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/subscriptions/{subscriptionId}",
+        "headers": { "Accept": "application/vnd.api+json" }
+      }
+    },
+    {
+      "name": "lemonsqueezy_list_license_keys",
+      "description": "List license keys (relevant for products with has_license_keys=true). Each key has key (the actual license string), status (inactive/active/expired/disabled), activation_limit, instances_count, expires_at, customer_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": { "type": "integer", "description": "Store filter." },
+          "product_id": { "type": "integer", "description": "Product filter." },
+          "order_id": { "type": "integer", "description": "Filter by issuing order." },
+          "order_item_id": { "type": "integer", "description": "Filter by issuing order-item." },
+          "include": { "type": "string", "description": "Side-load: 'customer', 'product', 'order', 'license-key-instances'." },
+          "page_number": { "type": "integer", "description": "Page number." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/license-keys",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter[store_id]": "$store_id",
+          "filter[product_id]": "$product_id",
+          "filter[order_id]": "$order_id",
+          "filter[order_item_id]": "$order_item_id",
+          "include": "$include",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lemonsqueezy_list_discounts",
+      "description": "List discount codes for a store. Each discount has name, code, amount, amount_type (percent/fixed), starts_at, expires_at, status, uses, max_uses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": { "type": "integer", "description": "Store filter." },
+          "page_number": { "type": "integer", "description": "Page number." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/discounts",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter[store_id]": "$store_id",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lemonsqueezy_list_payouts",
+      "description": "List payouts to your bank account (Lemon Squeezy as Merchant of Record handles tax + remits net to you). Each payout has amount, status, date_paid, currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": { "type": "integer", "description": "Store filter." },
+          "page_number": { "type": "integer", "description": "Page number." },
+          "page_size": { "type": "integer", "description": "Per page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payouts",
+        "headers": { "Accept": "application/vnd.api+json" },
+        "queryParams": {
+          "filter[store_id]": "$store_id",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    }
+  ]
+}
