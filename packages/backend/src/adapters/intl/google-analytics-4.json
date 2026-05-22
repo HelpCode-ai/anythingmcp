@@ -1,0 +1,227 @@
+{
+  "slug": "google-analytics-4",
+  "name": "Google Analytics 4",
+  "description": "Query Google Analytics 4 (account/property metadata, custom dimensions/metrics, core reports, realtime reports, funnel reports) from any AI agent. 8 tools, OAuth2 user auth.",
+  "instructions": "This connector wraps the Google Analytics Data API v1beta (analyticsdata.googleapis.com) and Admin API v1beta (analyticsadmin.googleapis.com) — the same two APIs the official googleanalytics/google-analytics-mcp server uses.\n\n**Setup — OAuth2 user flow (one-time per account)**:\n1. Go to https://console.cloud.google.com → pick or create a project.\n2. **APIs & Services → Library** → enable both:\n   - **Google Analytics Admin API** (https://console.cloud.google.com/apis/library/analyticsadmin.googleapis.com)\n   - **Google Analytics Data API** (https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com)\n3. **APIs & Services → Credentials → Create Credentials → OAuth client ID** → application type 'Desktop app' (simplest for one-off auth). Add `https://developers.google.com/oauthplayground` as redirect URI if you'll mint the token there.\n4. Download the client JSON (or copy the `client_id` + `client_secret`).\n5. **Mint a refresh_token** — three options, pick what suits you:\n   - **Easiest**: https://developers.google.com/oauthplayground → ⚙️ → 'Use your own OAuth credentials' → paste client_id/secret → scope `https://www.googleapis.com/auth/analytics.readonly` → 'Authorize APIs' → log in with the Google account that owns the GA property → 'Exchange authorization code for tokens' → copy the **Refresh token**.\n   - **gcloud**: `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/analytics.readonly --client-id-file=YOUR_CLIENT_JSON_FILE` → then grep `refresh_token` from `~/.config/gcloud/application_default_credentials.json`.\n   - **Custom flow**: bake the standard OAuth2 dance into your app's UI.\n6. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 with refresh — the engine exchanges `refresh_token → access_token` against `https://oauth2.googleapis.com/token` automatically and sends `Authorization: Bearer ACCESS_TOKEN` on every call. Tokens are cached and refreshed on 401.\n\n**Service accounts are NOT supported yet** — they require JWT RS256 signing which our engine doesn't do. Workaround: create a dedicated 'automation' Google account, grant it Viewer access to the GA properties you care about, and mint the refresh_token from that account. The token never expires unless the account password changes or the OAuth grant is revoked.\n\n**Two hosts in one adapter**: tools transparently call either Admin (admin endpoints) or Data (report endpoints) — paths are absolute URLs so the engine routes correctly. No extra config needed.\n\n**Property IDs**: GA4 properties are 9-12 digit numeric IDs (NOT the measurement ID `G-XXXXXXXX`, NOT the Universal Analytics view ID). Find them via `ga4_get_account_summaries` (the first call you should make) or in the GA admin UI under Property Settings → Property details.\n\n**Reports — `runReport` body shape**:\n- `dimensions`: array of `{name: 'pagePath'}` — see https://ga.dev/api/data/v1/dimensions for the full list (~190 built-in).\n- `metrics`: array of `{name: 'sessions'}` — see https://ga.dev/api/data/v1/metrics (~80 built-in).\n- `dateRanges`: array of `{startDate: '2025-01-01', endDate: 'today'}`. `startDate` accepts `YYYY-MM-DD`, `today`, `yesterday`, or `NdaysAgo`.\n- `dimensionFilter` / `metricFilter`: optional Filter expressions.\n- `limit` (default 10k, max 250k), `offset`, `orderBys`.\n\n**Realtime**: `runRealtimeReport` looks at the last 30 minutes. Only a subset of dimensions/metrics work here (those with `realtime` in their docs).\n\n**Funnel reports**: `runFunnelReport` is in v1alpha — uses a multi-step funnel definition. See instructions in tool description.\n\n**Quotas**:\n- Data API: 200k requests/day per project, 5k tokens/hour, 25k tokens/day. Token cost depends on report complexity — see https://ga.dev/api/data/v1/quotas.\n- Admin API: 1500 requests/hour per project, 100k/day.\n- 429 → exponential backoff (engine handles retry on quota errors).\n\n**Out of scope here**: BigQuery export, GTM (Tag Manager) — separate APIs, would be a sibling adapter.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "google-analytics-4",
+  "docsUrl": "https://developers.google.com/analytics",
+  "requiredEnvVars": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"],
+  "connector": {
+    "name": "Google Analytics 4 (Admin + Data API)",
+    "type": "REST",
+    "baseUrl": "https://analyticsadmin.googleapis.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "refreshToken": "{{GOOGLE_REFRESH_TOKEN}}",
+      "tokenUrl": "https://oauth2.googleapis.com/token"
+    }
+  },
+  "tools": [
+    {
+      "name": "ga4_get_account_summaries",
+      "description": "List the user's GA4 accounts and their properties (account ID, account name, property IDs, display names). Always call this first — every other tool needs a property ID (the 9-12 digit numeric value, NOT the G-XXX measurement ID). Paginated via pageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageSize": { "type": "integer", "description": "Max accounts per page (default 50, max 200)." },
+          "pageToken": { "type": "string", "description": "Cursor from previous response." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "pageToken": "$pageToken"
+        }
+      }
+    },
+    {
+      "name": "ga4_get_property_details",
+      "description": "Get detailed info about one GA4 property: display name, create time, time zone, currency, parent account, industry category, service level, account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": { "type": "string", "description": "GA4 property ID (numeric, e.g. '123456789')." }
+        },
+        "required": ["property_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://analyticsadmin.googleapis.com/v1beta/properties/{property_id}"
+      }
+    },
+    {
+      "name": "ga4_list_google_ads_links",
+      "description": "List Google Ads accounts linked to a GA4 property (useful to confirm conversion attribution wiring).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": { "type": "string", "description": "GA4 property ID." },
+          "pageSize": { "type": "integer", "description": "Max per page." },
+          "pageToken": { "type": "string", "description": "Pagination cursor." }
+        },
+        "required": ["property_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://analyticsadmin.googleapis.com/v1beta/properties/{property_id}/googleAdsLinks",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "pageToken": "$pageToken"
+        }
+      }
+    },
+    {
+      "name": "ga4_list_custom_dimensions",
+      "description": "List custom dimensions defined on a property — use these `parameterName` values in `dimensions` of ga4_run_report. Useful before authoring a report to discover what's available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": { "type": "string", "description": "GA4 property ID." },
+          "pageSize": { "type": "integer", "description": "Max per page." },
+          "pageToken": { "type": "string", "description": "Pagination cursor." }
+        },
+        "required": ["property_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://analyticsadmin.googleapis.com/v1beta/properties/{property_id}/customDimensions",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "pageToken": "$pageToken"
+        }
+      }
+    },
+    {
+      "name": "ga4_list_custom_metrics",
+      "description": "List custom metrics defined on a property — use these `parameterName` values in `metrics` of ga4_run_report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": { "type": "string", "description": "GA4 property ID." },
+          "pageSize": { "type": "integer", "description": "Max per page." },
+          "pageToken": { "type": "string", "description": "Pagination cursor." }
+        },
+        "required": ["property_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://analyticsadmin.googleapis.com/v1beta/properties/{property_id}/customMetrics",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "pageToken": "$pageToken"
+        }
+      }
+    },
+    {
+      "name": "ga4_run_report",
+      "description": "Run a core analytics report. The most common tool you'll use. Returns rows with one column per dimension + one per metric. Example bodies in instructions. Use dimensions/metrics names from https://ga.dev/api/data/v1/dimensions and https://ga.dev/api/data/v1/metrics, plus any custom ones from ga4_list_custom_dimensions/metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": { "type": "string", "description": "GA4 property ID." },
+          "dimensions": { "type": "array", "description": "Array of {name: '<dimensionName>'} — e.g. [{name:'country'}, {name:'deviceCategory'}]." },
+          "metrics": { "type": "array", "description": "Array of {name: '<metricName>'} — e.g. [{name:'activeUsers'}, {name:'sessions'}]." },
+          "dateRanges": { "type": "array", "description": "Array of {startDate, endDate, name?} — dates as YYYY-MM-DD / 'today' / 'yesterday' / 'NdaysAgo'." },
+          "dimensionFilter": { "type": "object", "description": "Filter expression. e.g. {filter:{fieldName:'country', stringFilter:{value:'Italy'}}}." },
+          "metricFilter": { "type": "object", "description": "Filter expression on metrics. e.g. {filter:{fieldName:'sessions', numericFilter:{operation:'GREATER_THAN', value:{int64Value:100}}}}." },
+          "orderBys": { "type": "array", "description": "Sort. e.g. [{metric:{metricName:'sessions'}, desc:true}]." },
+          "limit": { "type": "string", "description": "Max rows (default 10000, max 250000). String because GA accepts int64." },
+          "offset": { "type": "string", "description": "Pagination offset (string int64)." },
+          "keepEmptyRows": { "type": "boolean", "description": "Include zero-value rows." },
+          "currencyCode": { "type": "string", "description": "ISO 4217 to override property default." },
+          "returnPropertyQuota": { "type": "boolean", "description": "If true include `propertyQuota` block in response for cost diagnostics." }
+        },
+        "required": ["property_id", "dimensions", "metrics", "dateRanges"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://analyticsdata.googleapis.com/v1beta/properties/{property_id}:runReport",
+        "bodyMapping": {
+          "dimensions": "$dimensions",
+          "metrics": "$metrics",
+          "dateRanges": "$dateRanges",
+          "dimensionFilter": "$dimensionFilter",
+          "metricFilter": "$metricFilter",
+          "orderBys": "$orderBys",
+          "limit": "$limit",
+          "offset": "$offset",
+          "keepEmptyRows": "$keepEmptyRows",
+          "currencyCode": "$currencyCode",
+          "returnPropertyQuota": "$returnPropertyQuota"
+        }
+      }
+    },
+    {
+      "name": "ga4_run_realtime_report",
+      "description": "Run a realtime report (last 30 minutes of activity). Only a subset of dimensions/metrics work here — see https://ga.dev/api/data/v1/realtime-dimensions and https://ga.dev/api/data/v1/realtime-metrics. Use for 'how many users are on the site right now', 'which pages are hot in the last minute', etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": { "type": "string", "description": "GA4 property ID." },
+          "dimensions": { "type": "array", "description": "Realtime dimensions only — e.g. [{name:'country'}, {name:'unifiedScreenName'}]." },
+          "metrics": { "type": "array", "description": "Realtime metrics — e.g. [{name:'activeUsers'}]." },
+          "dimensionFilter": { "type": "object", "description": "Optional dimension filter expression." },
+          "metricFilter": { "type": "object", "description": "Optional metric filter." },
+          "orderBys": { "type": "array", "description": "Sort." },
+          "limit": { "type": "string", "description": "Max rows (default 10000)." },
+          "minuteRanges": { "type": "array", "description": "Restrict to specific minute windows (default last 30 min). [{startMinutesAgo:30, endMinutesAgo:0}]." }
+        },
+        "required": ["property_id", "metrics"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://analyticsdata.googleapis.com/v1beta/properties/{property_id}:runRealtimeReport",
+        "bodyMapping": {
+          "dimensions": "$dimensions",
+          "metrics": "$metrics",
+          "dimensionFilter": "$dimensionFilter",
+          "metricFilter": "$metricFilter",
+          "orderBys": "$orderBys",
+          "limit": "$limit",
+          "minuteRanges": "$minuteRanges"
+        }
+      }
+    },
+    {
+      "name": "ga4_run_funnel_report",
+      "description": "Run a funnel report — measures conversion at each step of a user journey (e.g. landed → viewed product → added to cart → purchased). Uses v1alpha endpoint. `funnel` defines the steps; each step is a filter on events/dimensions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": { "type": "string", "description": "GA4 property ID." },
+          "dateRanges": { "type": "array", "description": "Array of {startDate, endDate}." },
+          "funnel": { "type": "object", "description": "Funnel definition: {steps:[{name:'Landed', filterExpression:{...}}, {name:'Added to cart', filterExpression:{...}}], isOpenFunnel: false}." },
+          "funnelBreakdown": { "type": "object", "description": "Optional breakdown by a dimension at each step: {breakdownDimension:{name:'deviceCategory'}, limit:5}." },
+          "funnelNextAction": { "type": "object", "description": "Optional 'next action' analysis: shows what users did at each step." },
+          "funnelVisualizationType": { "type": "string", "description": "STANDARD_FUNNEL or TRENDED_FUNNEL." },
+          "segments": { "type": "array", "description": "Optional user/session segments to compare." },
+          "limit": { "type": "string", "description": "Max rows." },
+          "dimensionFilter": { "type": "object", "description": "Global filter applied across all steps." },
+          "returnPropertyQuota": { "type": "boolean", "description": "Include quota info in response." }
+        },
+        "required": ["property_id", "dateRanges", "funnel"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://analyticsdata.googleapis.com/v1alpha/properties/{property_id}:runFunnelReport",
+        "bodyMapping": {
+          "dateRanges": "$dateRanges",
+          "funnel": "$funnel",
+          "funnelBreakdown": "$funnelBreakdown",
+          "funnelNextAction": "$funnelNextAction",
+          "funnelVisualizationType": "$funnelVisualizationType",
+          "segments": "$segments",
+          "limit": "$limit",
+          "dimensionFilter": "$dimensionFilter",
+          "returnPropertyQuota": "$returnPropertyQuota"
+        }
+      }
+    }
+  ]
+}

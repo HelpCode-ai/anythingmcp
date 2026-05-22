@@ -79,6 +79,7 @@ import * as front from './intl/front.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
 import * as gocardless from './intl/gocardless.json';
+import * as googleAnalytics4 from './intl/google-analytics-4.json';
 import * as gorgias from './intl/gorgias.json';
 import * as greenhouse from './intl/greenhouse.json';
 import * as hackernews from './intl/hackernews.json';
@@ -321,6 +322,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
   gocardless as unknown as AdapterDefinition,
+  googleAnalytics4 as unknown as AdapterDefinition,
   gorgias as unknown as AdapterDefinition,
   greenhouse as unknown as AdapterDefinition,
   hackernews as unknown as AdapterDefinition,
