@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { Suspense, useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useAuth } from '@/lib/auth-context';
 import { adapters } from '@/lib/api';
 import { NavBar } from '@/components/nav-bar';
@@ -146,6 +148,10 @@ interface AdapterItem {
 }
 
 interface AdapterDetail extends AdapterItem {
+  // Long-form, Markdown-formatted help authored on the adapter JSON.
+  // Rendered inside the install modal so users see "where to find your
+  // refresh_token", auth-flow gotchas, etc. without leaving the page.
+  instructions?: string;
   connector: {
     name: string;
     type: string;
@@ -177,6 +183,10 @@ function AdapterStoreContent() {
   // Credential modal state
   const [configAdapter, setConfigAdapter] = useState<AdapterDetail | null>(null);
   const [credentialValues, setCredentialValues] = useState<Record<string, string>>({});
+  // Per-field reveal toggle for password-masked credential inputs in the
+  // install modal. Keyed by env var name so each "Show/Hide" button
+  // toggles only its own field. Reset together with credentialValues.
+  const [revealedCredentials, setRevealedCredentials] = useState<Record<string, boolean>>({});
   const [configLoading, setConfigLoading] = useState(false);
 
   // MCP assignment modal state
@@ -227,6 +237,7 @@ function AdapterStoreContent() {
       const detail = await adapters.get(adapter.slug, token);
       setConfigAdapter(detail);
       setCredentialValues({});
+      setRevealedCredentials({});
     } catch {
       // Fallback: use list data
       setConfigAdapter({
@@ -234,6 +245,7 @@ function AdapterStoreContent() {
         connector: { name: adapter.name, type: 'REST', baseUrl: '', authType: 'API_KEY' },
       } as AdapterDetail);
       setCredentialValues({});
+      setRevealedCredentials({});
     } finally {
       setConfigLoading(false);
     }
@@ -506,30 +518,75 @@ function AdapterStoreContent() {
               <span>Auth type: {AUTH_LABELS[configAdapter.connector?.authType] || configAdapter.connector?.authType}</span>
             </div>
 
-            <div className="space-y-3 mb-6">
-              {configAdapter.requiredEnvVars.map((envVar) => (
-                <div key={envVar}>
-                  <label
-                    htmlFor={`cred-${envVar}`}
-                    className="block text-sm font-medium mb-1"
-                  >
-                    {formatEnvVarLabel(envVar)}
-                  </label>
-                  <input
-                    id={`cred-${envVar}`}
-                    type={envVar.toLowerCase().includes('secret') || envVar.toLowerCase().includes('password') || envVar.toLowerCase().includes('token') || envVar.toLowerCase().includes('key') ? 'password' : 'text'}
-                    value={credentialValues[envVar] || ''}
-                    onChange={(e) =>
-                      setCredentialValues((prev) => ({
-                        ...prev,
-                        [envVar]: e.target.value,
-                      }))
-                    }
-                    placeholder={envVar}
-                    className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-                  />
+            {/* Setup instructions — collapsible details block, default open
+                so first-time users see how to obtain each credential. The
+                content is the same Markdown stored on the adapter JSON's
+                `instructions` field. */}
+            {configAdapter.instructions && (
+              <details className="mb-4 rounded-md border border-[var(--border)] bg-[var(--muted)]/30" open>
+                <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium hover:bg-[var(--muted)]/60 rounded-md">
+                  📖 How to get these credentials
+                </summary>
+                <div className="prose prose-sm max-w-none px-3 pb-3 pt-1 text-[13px] leading-relaxed dark:prose-invert max-h-[40vh] overflow-y-auto">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {configAdapter.instructions}
+                  </ReactMarkdown>
                 </div>
-              ))}
+              </details>
+            )}
+
+            <div className="space-y-3 mb-6">
+              {configAdapter.requiredEnvVars.map((envVar) => {
+                const isSecret =
+                  envVar.toLowerCase().includes('secret') ||
+                  envVar.toLowerCase().includes('password') ||
+                  envVar.toLowerCase().includes('token') ||
+                  envVar.toLowerCase().includes('key');
+                const visible = revealedCredentials[envVar] === true;
+                return (
+                  <div key={envVar}>
+                    <label
+                      htmlFor={`cred-${envVar}`}
+                      className="block text-sm font-medium mb-1"
+                    >
+                      {formatEnvVarLabel(envVar)}
+                    </label>
+                    <div className="relative">
+                      <input
+                        id={`cred-${envVar}`}
+                        type={isSecret && !visible ? 'password' : 'text'}
+                        value={credentialValues[envVar] || ''}
+                        onChange={(e) =>
+                          setCredentialValues((prev) => ({
+                            ...prev,
+                            [envVar]: e.target.value,
+                          }))
+                        }
+                        placeholder={envVar}
+                        className={
+                          'w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] ' +
+                          (isSecret ? 'pr-16' : '')
+                        }
+                      />
+                      {isSecret && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setRevealedCredentials((prev) => ({
+                              ...prev,
+                              [envVar]: !visible,
+                            }))
+                          }
+                          className="absolute inset-y-0 right-0 px-2 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                          aria-label={visible ? 'Hide value' : 'Show value'}
+                        >
+                          {visible ? 'Hide' : 'Show'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="flex gap-3 justify-end">
