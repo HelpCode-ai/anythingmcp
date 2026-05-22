@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 const SwaggerParser = require('swagger-parser');
 import axios from 'axios';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+ 
 const yaml = require('js-yaml') as { load: (s: string) => unknown };
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { normalizeOpenApi31 } from './openapi-3.1-normalizer';

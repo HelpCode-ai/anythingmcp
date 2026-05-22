@@ -352,4 +352,59 @@ describe('OAuth2TokenService', () => {
       expect(mockPrisma.connector.update).toHaveBeenCalled();
     });
   });
+
+  describe('client_credentials grant', () => {
+    it('posts grant_type=client_credentials with HTTP Basic auth header', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 's4-at', expires_in: 3600 },
+      });
+
+      const token = await service.refreshToken({
+        grant: 'client_credentials',
+        tokenUrl:
+          'https://my300000.authentication.eu10.hana.ondemand.com/oauth/token',
+        clientId: 'my-client-id',
+        clientSecret: 'my-client-secret',
+        scope: 'API_BUSINESS_PARTNER_0001',
+      });
+
+      expect(token).toBe('s4-at');
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+      const [url, body, opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(url).toContain('hana.ondemand.com');
+      expect(body).toContain('grant_type=client_credentials');
+      expect(body).toContain('scope=API_BUSINESS_PARTNER_0001');
+      // Critical: client creds in Basic header, NOT in body.
+      const expectedBasic =
+        'Basic ' +
+        Buffer.from('my-client-id:my-client-secret').toString('base64');
+      expect(opts.headers.Authorization).toBe(expectedBasic);
+      expect(body).not.toContain('client_id=');
+      expect(body).not.toContain('client_secret=');
+    });
+
+    it('returns null when client_credentials grant lacks clientId/Secret', async () => {
+      const token = await service.refreshToken({
+        grant: 'client_credentials',
+        tokenUrl: 'https://example.com/oauth/token',
+      });
+      expect(token).toBeNull();
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('client_credentials path is reachable from getAccessToken without a refreshToken', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'fresh', expires_in: 3600 },
+      });
+
+      const token = await service.getAccessToken({
+        grant: 'client_credentials',
+        tokenUrl: 'https://example.com/oauth/token',
+        clientId: 'id',
+        clientSecret: 'secret',
+      });
+
+      expect(token).toBe('fresh');
+    });
+  });
 });

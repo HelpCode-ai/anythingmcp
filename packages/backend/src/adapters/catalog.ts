@@ -21,6 +21,7 @@ import * as oxomi from './de/oxomi.json';
 import * as payone from './de/payone.json';
 import * as personio from './de/personio.json';
 import * as planradar from './de/planradar.json';
+import * as sapBusinessOne from './de/sap-business-one.json';
 import * as scopevisio from './de/scopevisio.json';
 import * as sendcloud from './de/sendcloud.json';
 import * as shipcloud from './de/shipcloud.json';
@@ -131,6 +132,8 @@ import * as reddit from './intl/reddit.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
 import * as salesloft from './intl/salesloft.json';
+import * as sapConcur from './intl/sap-concur.json';
+import * as sapS4hanaCloud from './intl/sap-s4hana-cloud.json';
 import * as savvycal from './intl/savvycal.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as signwell from './intl/signwell.json';
@@ -264,6 +267,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   payone as unknown as AdapterDefinition,
   personio as unknown as AdapterDefinition,
   planradar as unknown as AdapterDefinition,
+  sapBusinessOne as unknown as AdapterDefinition,
   scopevisio as unknown as AdapterDefinition,
   sendcloud as unknown as AdapterDefinition,
   shipcloud as unknown as AdapterDefinition,
@@ -374,6 +378,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
+  sapConcur as unknown as AdapterDefinition,
+  sapS4hanaCloud as unknown as AdapterDefinition,
   savvycal as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   signwell as unknown as AdapterDefinition,

@@ -52,6 +52,7 @@ export class OAuth2TokenService {
     connectorId?: string,
   ): Promise<string> {
     const cacheKey = connectorId || String(authConfig.tokenUrl || '');
+    const grant = String(authConfig.grant || 'refresh_token');
 
     // 1. Check cache — return immediately if well within validity
     if (cacheKey) {
@@ -61,12 +62,17 @@ export class OAuth2TokenService {
       }
     }
 
-    // 2. Determine if proactive refresh is possible and needed
-    const hasRefreshCapability = !!(authConfig.refreshToken && authConfig.tokenUrl);
+    // 2. Determine if proactive refresh is possible and needed.
+    // client_credentials needs only tokenUrl + clientId/Secret; refresh_token
+    // also needs a stored refreshToken.
+    const hasRefreshCapability =
+      grant === 'client_credentials'
+        ? !!(authConfig.tokenUrl && authConfig.clientId && authConfig.clientSecret)
+        : !!(authConfig.refreshToken && authConfig.tokenUrl);
     const tokenNearExpiry = this.isTokenNearExpiry(authConfig, cacheKey);
 
     if (hasRefreshCapability && tokenNearExpiry) {
-      this.logger.debug('OAuth2: token near expiry, proactive refresh...');
+      this.logger.debug(`OAuth2 (${grant}): token near expiry, proactive refresh...`);
       const refreshed = await this.refreshTokenWithMutex(authConfig, connectorId);
       if (refreshed) {
         return refreshed;
@@ -95,34 +101,65 @@ export class OAuth2TokenService {
     connectorId?: string,
   ): Promise<string | null> {
     const tokenUrl = String(authConfig.tokenUrl || '');
+    const grant = String(authConfig.grant || 'refresh_token');
     const refreshToken = String(authConfig.refreshToken || '');
-
-    if (!tokenUrl || !refreshToken) {
-      this.logger.warn('OAuth2 refresh: missing tokenUrl or refreshToken');
-      return null;
-    }
-
     const clientId = authConfig.clientId
       ? String(authConfig.clientId)
       : undefined;
     const clientSecret = authConfig.clientSecret
       ? String(authConfig.clientSecret)
       : undefined;
+    const scope = authConfig.scope ? String(authConfig.scope) : undefined;
+
+    if (!tokenUrl) {
+      this.logger.warn('OAuth2 refresh: missing tokenUrl');
+      return null;
+    }
+
+    if (grant === 'client_credentials') {
+      // SAP S/4HANA Cloud Public Edition and most service-to-service OAuth2
+      // servers reject client_id/client_secret in the body — they MUST be
+      // sent via HTTP Basic Authorization header (RFC 6749 §2.3.1). We rely
+      // on the Basic header path and keep the body to grant_type + scope.
+      if (!clientId || !clientSecret) {
+        this.logger.warn(
+          'OAuth2 client_credentials: missing clientId/clientSecret',
+        );
+        return null;
+      }
+    } else if (!refreshToken) {
+      this.logger.warn('OAuth2 refresh: missing refreshToken');
+      return null;
+    }
 
     try {
-      const body: Record<string, string> = {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
+      let body: Record<string, string>;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/x-www-form-urlencoded',
       };
-      if (clientId) body.client_id = clientId;
-      if (clientSecret) body.client_secret = clientSecret;
+
+      if (grant === 'client_credentials') {
+        body = { grant_type: 'client_credentials' };
+        if (scope) body.scope = scope;
+        const basic = Buffer.from(`${clientId}:${clientSecret}`).toString(
+          'base64',
+        );
+        headers.Authorization = `Basic ${basic}`;
+      } else {
+        body = {
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+        };
+        if (clientId) body.client_id = clientId;
+        if (clientSecret) body.client_secret = clientSecret;
+      }
 
       await assertSafeOutboundUrl(tokenUrl);
       const response = await axios.post(
         tokenUrl,
         new URLSearchParams(body).toString(),
         {
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers,
           timeout: 10000,
         },
       );
@@ -139,20 +176,22 @@ export class OAuth2TokenService {
         expiresAt: Date.now() + expiresInMs,
       });
 
-      // Persist to DB if connectorId is available
+      // Persist to DB if connectorId is available. For client_credentials
+      // there's no refresh_token to store — we just record the latest
+      // access_token + its expiry so a cold-start can reuse it briefly.
       if (connectorId) {
         await this.persistRefreshedToken(
           connectorId,
           access_token,
-          newRefreshToken || refreshToken,
+          newRefreshToken || refreshToken || '',
           Date.now() + expiresInMs,
         );
       }
 
-      this.logger.debug('OAuth2: token refreshed successfully');
+      this.logger.debug(`OAuth2 (${grant}): token refreshed successfully`);
       return access_token;
     } catch (err: any) {
-      this.logger.warn(`OAuth2 token refresh failed: ${err.message}`);
+      this.logger.warn(`OAuth2 (${grant}) token refresh failed: ${err.message}`);
       return null;
     }
   }

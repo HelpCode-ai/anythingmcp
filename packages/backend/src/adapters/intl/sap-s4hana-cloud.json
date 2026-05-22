@@ -1,0 +1,262 @@
+{
+  "slug": "sap-s4hana-cloud",
+  "name": "SAP S/4HANA Cloud",
+  "description": "Drive SAP S/4HANA Cloud Public Edition from any AI agent: business partners, customers, suppliers, sales orders, purchase orders, billing documents, products, journal entries. OAuth 2.0 client_credentials via BTP Communication Arrangement.",
+  "region": "intl",
+  "category": "erp",
+  "icon": "sap-s4hana-cloud",
+  "docsUrl": "https://api.sap.com/package/SAPS4HANACloud",
+  "instructions": "**Setup (one-off, done by the S/4 admin)**:\n1. In your S/4HANA Cloud tenant open **Communication Arrangements** and create one for *SAP_COM_0008 — Business Partner Integration* (and others as needed: 0109 Sales Order, 0026 Purchase Order, 0186 Billing).\n2. Create a **Communication User** + **Communication System**. Pick **OAuth 2.0** as the authentication method, grant type **Client Credentials**.\n3. S/4 generates a `Client ID`, `Client Secret`, and a per-tenant **Token URL** like `https://my300000.authentication.eu10.hana.ondemand.com/oauth/token`.\n4. The tenant **Base URL** is `https://my300000.s4hana.cloud.sap` (your tenant ID replaces 300000).\n5. Set the four env vars below.\n\n**Auth header method**: Public Edition strictly requires Client ID/Secret sent via **HTTP Basic Authorization header** (not form fields). This adapter does that automatically.\n\n**Token lifetime**: typically 1 hour. The connector engine refreshes proactively 5 min before expiry, single-shot client_credentials grant (no refresh_token needed).",
+  "requiredEnvVars": ["S4_BASE_URL", "S4_TOKEN_URL", "S4_CLIENT_ID", "S4_CLIENT_SECRET"],
+  "connector": {
+    "name": "SAP S/4HANA Cloud",
+    "type": "REST",
+    "baseUrl": "{{S4_BASE_URL}}/sap/opu/odata",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "tokenUrl": "{{S4_TOKEN_URL}}",
+      "clientId": "{{S4_CLIENT_ID}}",
+      "clientSecret": "{{S4_CLIENT_SECRET}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "s4_list_business_partners",
+      "description": "List business partners (combined customers + suppliers) from API_BUSINESS_PARTNER.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": { "type": "number", "description": "Max rows" },
+          "filter": { "type": "string", "description": "OData $filter, e.g. BusinessPartnerCategory eq '1'" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_BUSINESS_PARTNER/A_BusinessPartner",
+        "queryParams": { "$top": "$top", "$filter": "$filter", "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_get_business_partner",
+      "description": "Get one business partner by its 10-character ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "businessPartner": { "type": "string", "description": "10-char Business Partner ID, e.g. 1000050" }
+        },
+        "required": ["businessPartner"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_BUSINESS_PARTNER/A_BusinessPartner('{businessPartner}')",
+        "queryParams": { "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_list_customers",
+      "description": "List customer master records (subset of business partners).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": { "type": "number", "description": "Max rows" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_BUSINESS_PARTNER/A_Customer",
+        "queryParams": { "$top": "$top", "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_list_suppliers",
+      "description": "List supplier master records (subset of business partners).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": { "type": "number", "description": "Max rows" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_BUSINESS_PARTNER/A_Supplier",
+        "queryParams": { "$top": "$top", "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_list_sales_orders",
+      "description": "List sales orders (headers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": { "type": "number", "description": "Max rows" },
+          "filter": { "type": "string", "description": "OData $filter, e.g. SalesOrganization eq '1710'" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_SALES_ORDER_SRV/A_SalesOrder",
+        "queryParams": { "$top": "$top", "$filter": "$filter", "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_get_sales_order",
+      "description": "Get one sales order by its 10-char number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "salesOrder": { "type": "string", "description": "Sales Order number, e.g. 0000000001" }
+        },
+        "required": ["salesOrder"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_SALES_ORDER_SRV/A_SalesOrder('{salesOrder}')",
+        "queryParams": { "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_list_sales_order_items",
+      "description": "List the items (line entries) of a given sales order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "salesOrder": { "type": "string", "description": "Parent Sales Order number" }
+        },
+        "required": ["salesOrder"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_SALES_ORDER_SRV/A_SalesOrderItem",
+        "queryParams": {
+          "$filter": "SalesOrder eq '${salesOrder}'",
+          "$format": "json"
+        }
+      }
+    },
+    {
+      "name": "s4_list_purchase_orders",
+      "description": "List purchase orders (headers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": { "type": "number", "description": "Max rows" },
+          "filter": { "type": "string", "description": "OData $filter expression" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_PURCHASEORDER_PROCESS_SRV/A_PurchaseOrder",
+        "queryParams": { "$top": "$top", "$filter": "$filter", "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_get_purchase_order",
+      "description": "Get one purchase order by its 10-char number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchaseOrder": { "type": "string", "description": "Purchase Order number" }
+        },
+        "required": ["purchaseOrder"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_PURCHASEORDER_PROCESS_SRV/A_PurchaseOrder('{purchaseOrder}')",
+        "queryParams": { "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_list_billing_documents",
+      "description": "List billing documents (customer invoices, credit memos).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": { "type": "number", "description": "Max rows" },
+          "filter": { "type": "string", "description": "OData $filter expression" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_BILLING_DOCUMENT_SRV/A_BillingDocument",
+        "queryParams": { "$top": "$top", "$filter": "$filter", "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_list_outbound_deliveries",
+      "description": "List outbound delivery headers (goods leaving the warehouse).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": { "type": "number", "description": "Max rows" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_OUTBOUND_DELIVERY_SRV/A_OutbDeliveryHeader",
+        "queryParams": { "$top": "$top", "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_list_journal_entries",
+      "description": "List journal entry items (general ledger postings).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": { "type": "number", "description": "Max rows" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_JOURNALENTRYITEMBASIC/JournalEntryItemBasic",
+        "queryParams": { "$top": "$top", "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_list_products",
+      "description": "List materials / products (item master).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": { "type": "number", "description": "Max rows" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_PRODUCT_SRV/A_Product",
+        "queryParams": { "$top": "$top", "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_get_product",
+      "description": "Get one product/material by its ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product": { "type": "string", "description": "Product ID" }
+        },
+        "required": ["product"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_PRODUCT_SRV/A_Product('{product}')",
+        "queryParams": { "$format": "json" }
+      }
+    },
+    {
+      "name": "s4_list_purchase_requisitions",
+      "description": "List purchase requisition items (pre-PO demand requests).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": { "type": "number", "description": "Max rows" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/API_PURCHASEREQ_PROCESS_SRV/A_PurchaseRequisitionItem",
+        "queryParams": { "$top": "$top", "$format": "json" }
+      }
+    }
+  ]
+}

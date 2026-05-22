@@ -43,6 +43,14 @@ export interface LoginTokenAuthConfig {
   expiryFormat?: 'iso8601' | 'unix' | 'ttl_seconds';
   tokenTTLSeconds?: number;
 
+  // Where to extract the token from the login response.
+  // 'body' (default) → jsonPath(response.data, tokenJsonPath) — JWT pattern.
+  // 'cookie'         → parse Set-Cookie header for the cookie named
+  //                    {cookieName}, return its value. SAP B1 Service Layer
+  //                    uses this with cookieName="B1SESSION".
+  tokenSource?: 'body' | 'cookie';
+  cookieName?: string;
+
   refreshOn401?: boolean;
   proactiveRefreshSeconds?: number;
 
@@ -148,7 +156,9 @@ export class LoginTokenService {
     this.requireString(authConfig.loginUrl, 'loginUrl');
     this.requireString(authConfig.username, 'username');
     this.requireString(authConfig.password, 'password');
-    this.requireString(authConfig.tokenJsonPath, 'tokenJsonPath');
+    if (authConfig.tokenSource !== 'cookie') {
+      this.requireString(authConfig.tokenJsonPath, 'tokenJsonPath');
+    }
 
     const passwordToSend = await this.preparePassword(authConfig);
 
@@ -199,11 +209,27 @@ export class LoginTokenService {
       timeout: 15000,
     });
 
-    const token = jsonPath(response.data, authConfig.tokenJsonPath);
-    if (!token || typeof token !== 'string') {
-      throw new Error(
-        `LOGIN_TOKEN: token not found at "${authConfig.tokenJsonPath}" in login response`,
-      );
+    let token: unknown;
+    if (authConfig.tokenSource === 'cookie') {
+      const cookieName = authConfig.cookieName;
+      if (!cookieName) {
+        throw new Error(
+          'LOGIN_TOKEN: tokenSource=cookie requires "cookieName" to be set',
+        );
+      }
+      token = extractSetCookieValue(response.headers, cookieName);
+      if (!token) {
+        throw new Error(
+          `LOGIN_TOKEN: cookie "${cookieName}" not found in Set-Cookie response headers`,
+        );
+      }
+    } else {
+      token = jsonPath(response.data, authConfig.tokenJsonPath);
+      if (!token || typeof token !== 'string') {
+        throw new Error(
+          `LOGIN_TOKEN: token not found at "${authConfig.tokenJsonPath}" in login response`,
+        );
+      }
     }
 
     const expiresAt = this.computeExpiresAt(authConfig, response.data);
@@ -214,7 +240,7 @@ export class LoginTokenService {
       : authConfig.aud;
 
     const bundle: LoginTokenBundle = {
-      token,
+      token: String(token),
       aud: aud || undefined,
       expiresAt,
       metadata: aud ? { aud } : undefined,
@@ -432,6 +458,41 @@ export function renderTemplate(
  * - Embedded "...${name}..." → string interpolation, missing → ''
  * - Non-strings → returned unchanged
  */
+/**
+ * Pull the value of a named cookie from a response's Set-Cookie header(s).
+ * Axios exposes the header as either a single string or an array of strings
+ * depending on whether the upstream sent multiple Set-Cookie headers.
+ *
+ * Example: extractSetCookieValue(headers, "B1SESSION") with
+ *   Set-Cookie: B1SESSION=ABC123; Path=/; HttpOnly
+ * returns "ABC123".
+ */
+export function extractSetCookieValue(
+  headers: Record<string, unknown> | undefined,
+  cookieName: string,
+): string | null {
+  if (!headers) return null;
+  const raw = (headers['set-cookie'] ?? headers['Set-Cookie']) as
+    | string
+    | string[]
+    | undefined;
+  if (!raw) return null;
+  const entries = Array.isArray(raw) ? raw : [raw];
+  const prefix = `${cookieName}=`;
+  for (const entry of entries) {
+    const trimmed = entry.trimStart();
+    if (trimmed.startsWith(prefix)) {
+      const valueEnd = trimmed.indexOf(';', prefix.length);
+      const value = trimmed.slice(
+        prefix.length,
+        valueEnd === -1 ? undefined : valueEnd,
+      );
+      return value;
+    }
+  }
+  return null;
+}
+
 export function interpolateDeep(
   value: unknown,
   params: Record<string, string>,

@@ -5,6 +5,7 @@ import {
   LoginTokenService,
   jsonPath,
   interpolateDeep,
+  extractSetCookieValue,
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { encrypt } from '../../common/crypto/encryption.util';
@@ -268,6 +269,103 @@ describe('LoginTokenService', () => {
 
     await expect(service.getToken(baseAuth, 'conn-8')).rejects.toThrow(
       /token not found/,
+    );
+  });
+});
+
+describe('extractSetCookieValue helper', () => {
+  it('reads single Set-Cookie string', () => {
+    const headers = {
+      'set-cookie': 'B1SESSION=ABC123; Path=/; HttpOnly',
+    };
+    expect(extractSetCookieValue(headers, 'B1SESSION')).toBe('ABC123');
+  });
+
+  it('reads from an array of Set-Cookie headers and skips non-matching', () => {
+    const headers = {
+      'set-cookie': [
+        'route=node1; Path=/',
+        'B1SESSION=XYZ789; Path=/; Secure; HttpOnly',
+      ],
+    };
+    expect(extractSetCookieValue(headers, 'B1SESSION')).toBe('XYZ789');
+  });
+
+  it('returns null when the named cookie is absent', () => {
+    expect(
+      extractSetCookieValue({ 'set-cookie': 'other=1' }, 'B1SESSION'),
+    ).toBeNull();
+  });
+
+  it('handles missing headers safely', () => {
+    expect(extractSetCookieValue(undefined, 'B1SESSION')).toBeNull();
+    expect(extractSetCookieValue({}, 'B1SESSION')).toBeNull();
+  });
+});
+
+describe('LoginTokenService — tokenSource=cookie (SAP B1 pattern)', () => {
+  let service: LoginTokenService;
+  let mockPrisma: any;
+  let mockConfigService: jest.Mocked<ConfigService>;
+  const encryptionKey = 'test-encryption-key-32-chars!!!!';
+
+  beforeEach(() => {
+    mockPrisma = { connector: { findUnique: jest.fn(), update: jest.fn() } } as any;
+    mockConfigService = { get: jest.fn().mockReturnValue(encryptionKey) } as any;
+    service = new LoginTokenService(mockPrisma, mockConfigService);
+    jest.clearAllMocks();
+  });
+
+  const cookieAuth: LoginTokenAuthConfig = {
+    loginUrl: 'https://b1.example.com:50000/b1s/v2/Login',
+    loginMethod: 'POST',
+    loginBody: {
+      UserName: '${username}',
+      Password: '${password}',
+      CompanyDB: 'SBODEMO',
+    },
+    username: 'manager',
+    password: 'secret',
+    tokenSource: 'cookie',
+    cookieName: 'B1SESSION',
+    tokenJsonPath: 'SessionId',
+    tokenTTLSeconds: 1500,
+    proactiveRefreshSeconds: 120,
+    headerName: 'Cookie',
+    headerTemplate: 'B1SESSION=${token}',
+  };
+
+  it('extracts B1SESSION from the Set-Cookie header on login', async () => {
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({
+      data: { SessionId: 'SID-IGNORED' },
+      headers: {
+        'set-cookie': 'B1SESSION=cookie-abc-123; Path=/; HttpOnly',
+      },
+    });
+
+    const bundle = await service.getToken(cookieAuth, 'conn-b1');
+    expect(bundle.token).toBe('cookie-abc-123');
+    expect(bundle.expiresAt).toBeGreaterThan(Date.now() + 1_400_000);
+  });
+
+  it('throws when cookieName is missing', async () => {
+    const broken = { ...cookieAuth, cookieName: undefined };
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({
+      data: {},
+      headers: { 'set-cookie': 'whatever=1' },
+    });
+    await expect(service.getToken(broken, 'conn-bad')).rejects.toThrow(
+      /cookieName/,
+    );
+  });
+
+  it('throws when the named cookie is absent from the response', async () => {
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({
+      data: {},
+      headers: { 'set-cookie': 'OTHER=1; Path=/' },
+    });
+    await expect(service.getToken(cookieAuth, 'conn-x')).rejects.toThrow(
+      /B1SESSION/,
     );
   });
 });

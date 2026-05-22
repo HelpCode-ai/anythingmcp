@@ -1,0 +1,193 @@
+{
+  "slug": "sap-concur",
+  "name": "SAP Concur",
+  "description": "Manage Concur expense reports, approvals, attendees, locations, users and travel itineraries from any AI agent. OAuth 2.0 refresh-token flow. Free developer sandbox on developer.concur.com.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "sap-concur",
+  "docsUrl": "https://developer.concur.com/api-reference/",
+  "instructions": "**Setup**:\n1. Sign up on https://developer.concur.com and create a Company Sandbox.\n2. Register a new app in the **My Apps** page → request scopes `EXPRPT`, `USER`, `LIST` (and optionally `TRVPRO` for travel).\n3. Concur emails you a `Client ID` + `Client Secret`. Generate a `Refresh Token` via the Password Grant — needed once.\n4. Decide your region: `us` (https://us.api.concursolutions.com) or `eu` (https://eu.api.concursolutions.com).\n5. Set the four env vars below.\n\n**Authentication**: OAuth2 refresh-token grant. The adapter auto-refreshes the access token before expiry.\n\n**Rate limits**: 25 requests/sec per refresh token (defaults). Bulk export endpoints have stricter quotas.",
+  "requiredEnvVars": ["CONCUR_REGION", "CONCUR_CLIENT_ID", "CONCUR_CLIENT_SECRET", "CONCUR_REFRESH_TOKEN"],
+  "connector": {
+    "name": "SAP Concur",
+    "type": "REST",
+    "baseUrl": "https://{{CONCUR_REGION}}.api.concursolutions.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{CONCUR_CLIENT_ID}}",
+      "clientSecret": "{{CONCUR_CLIENT_SECRET}}",
+      "refreshToken": "{{CONCUR_REFRESH_TOKEN}}",
+      "tokenUrl": "https://{{CONCUR_REGION}}.api.concursolutions.com/oauth2/v0/token",
+      "scope": "EXPRPT USER LIST"
+    }
+  },
+  "tools": [
+    {
+      "name": "concur_list_reports",
+      "description": "List expense reports for the connected company. Use `user=ALL` (default) for org-wide view or a specific login ID for a single user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "number", "description": "Page size (default 25, max 100)" },
+          "user": { "type": "string", "description": "Login ID of the user to filter, or `ALL` for all users (default)" },
+          "approvalStatusCode": { "type": "string", "description": "Approval status filter, e.g. A_PEND, A_APPR, A_REJC" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3.0/expense/reports",
+        "queryParams": {
+          "limit": "$limit",
+          "user": "$user",
+          "approvalStatusCode": "$approvalStatusCode"
+        }
+      }
+    },
+    {
+      "name": "concur_get_report",
+      "description": "Get the full detail of one expense report by its ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reportId": { "type": "string", "description": "The Concur Report ID" }
+        },
+        "required": ["reportId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3.0/expense/reports/{reportId}"
+      }
+    },
+    {
+      "name": "concur_list_report_entries",
+      "description": "List the individual expense entries (line items) inside a given report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reportId": { "type": "string", "description": "The Concur Report ID" },
+          "limit": { "type": "number", "description": "Page size" }
+        },
+        "required": ["reportId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3.0/expense/entries",
+        "queryParams": {
+          "reportID": "$reportId",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "concur_submit_report",
+      "description": "Submit an expense report for approval. The report must be in a non-submitted state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reportId": { "type": "string", "description": "The Concur Report ID" }
+        },
+        "required": ["reportId"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v3.0/expense/reports/{reportId}/submit"
+      }
+    },
+    {
+      "name": "concur_workflow_action",
+      "description": "Approve, send-back or reject a submitted expense report. Action ∈ Approve, Send Back, Reject.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reportId": { "type": "string", "description": "The Concur Report ID" },
+          "action": { "type": "string", "description": "Approve | Send Back | Reject" },
+          "comment": { "type": "string", "description": "Optional comment shown in the workflow" }
+        },
+        "required": ["reportId", "action"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v3.0/expense/reports/{reportId}/workflowaction",
+        "bodyMapping": {
+          "Action": "$action",
+          "Comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "concur_list_attendees",
+      "description": "List meeting/expense attendees registered in the company directory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "number", "description": "Page size" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3.0/common/attendees",
+        "queryParams": { "limit": "$limit" }
+      }
+    },
+    {
+      "name": "concur_list_locations",
+      "description": "List travel/expense locations (cities, regions) available to your tenant.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "number", "description": "Page size" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3.0/common/locations",
+        "queryParams": { "limit": "$limit" }
+      }
+    },
+    {
+      "name": "concur_list_users",
+      "description": "List user accounts in the connected Concur tenant.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "number", "description": "Page size" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3.0/common/users",
+        "queryParams": { "limit": "$limit" }
+      }
+    },
+    {
+      "name": "concur_get_user",
+      "description": "Get one user profile by its Concur user ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "description": "Concur user ID" }
+        },
+        "required": ["userId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3.0/common/users/{userId}"
+      }
+    },
+    {
+      "name": "concur_list_itineraries",
+      "description": "List travel itineraries (Concur Travel). Requires TRVPRO scope on the OAuth client.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "number", "description": "Page size" }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3.0/travel/itineraries",
+        "queryParams": { "limit": "$limit" }
+      }
+    }
+  ]
+}
