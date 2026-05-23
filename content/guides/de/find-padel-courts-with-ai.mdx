@@ -1,0 +1,104 @@
+---
+title: "Padelplätze mit KI finden — Playtomic + Claude, ChatGPT, Copilot, OpenClaw"
+description: "Schluss mit dem Scrollen in der Playtomic-App. Lass Claude, ChatGPT, Copilot oder OpenClaw verfügbare Padelplätze auf Playtomic suchen, Preise vergleichen und offene Matches auf deinem Level finden. Ein MCP-Connector, vier Clients."
+category: "connectors"
+keyword: "Padelplatz mit KI finden, Padelplatz Playtomic KI suchen, Padel-Verfügbarkeit KI, Padel-Assistent, Padel Claude ChatGPT, Playtomic MCP"
+publishedAt: "2026-05-23"
+adapterSlug: "playtomic"
+lang: "de"
+---
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/content/guides/assets/playtomic.svg" alt="Playtomic" width="220" />
+</p>
+
+## Padelplätze mit KI finden — die Kurzversion
+
+Padel boomt in ganz Europa. Einen freien Platz zur richtigen Zeit, am richtigen Ort, indoor oder outdoor, zum richtigen Preis zu finden, bedeutet immer noch: durch die Playtomic-App scrollen — Vereinsliste, einen öffnen, zum Datum wischen, Kalender prüfen, zurück, nächster Verein. Genau die falsche Form für einen Handy-Screen, und genau die richtige Form für ein Sprachmodell.
+
+Diese Seite ist die Cross-Client-Übersicht. Wähl deinen KI-Assistenten und leg los:
+
+- 🟣 **[Padelplätze mit Claude suchen](./connect-playtomic-to-claude)** — Claude Desktop, Claude Code, claude.ai web.
+- 🟢 **[Padelplätze mit ChatGPT suchen](./connect-playtomic-to-chatgpt)** — ChatGPT Plus / Team / Enterprise.
+- 🔵 **[Padelplätze mit GitHub Copilot suchen](./connect-playtomic-to-copilot)** — Copilot Chat in VS Code.
+- 🦫 **[Padelplätze mit OpenClaw suchen](./connect-playtomic-to-openclaw)** — Open-Source-Desktop-Client, jedes lokale oder Cloud-LLM.
+
+Alle vier nutzen dasselbe Backend: den Playtomic-Connector für [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp). Eine Installation, alle Clients.
+
+## So funktioniert es
+
+[AnythingMCP](https://anythingmcp.com) ist ein Open-Source-Server, der jede API als MCP-Tools (Model Context Protocol) verfügbar macht. Der Playtomic-Connector kapselt Playtomics interne API — dieselbe, die die Mobile App nutzt — und verwandelt sie in 4 bis 13 Tools, die deine KI direkt aufruft:
+
+```
+Du → "Padelplätze um Berlin Samstag abends unter 40€ für 90 Minuten"
+   ↓
+KI-Client (Claude / ChatGPT / Copilot / OpenClaw)
+   ↓ MCP
+AnythingMCP-Server
+   ↓ HTTP
+Playtomic /api/v1/tenants  +  /api/v1/availability
+   ↓
+Gefilterte Auswahl freier, bezahlbarer Plätze
+```
+
+## Zwei Connectors, wähl dein Level
+
+| | **Playtomic Public** | **Playtomic (full)** |
+|---|---|---|
+| Setup | Null — installieren und los | Playtomic-E-Mail + -Passwort |
+| Tools | 4 (Vereine, Verfügbarkeit, Configuration) | 13 (alles + Profil, Level, Statistik, offene Matches, Empfehlungen) |
+| Preise | Generisch | Mit Mitgliedsrabatten |
+| Ideal für | Geteilte Prompts, öffentliche Bots, schnelle Demos | Tägliche Nutzung, Match-Finder |
+
+Der **public**-Connector ist unter den AnythingMCP-Integrationen einzigartig: Er funktioniert **ohne Credentials**, weil Playtomics Verein- und Verfügbarkeits-Endpunkte by design offen sind. Wenn du nur freie Plätze finden willst, reicht der Public-Adapter — und du kannst Padel-aware-Prompts mit anderen teilen, ohne Setup je Nutzer.
+
+## Was du fragen kannst
+
+Generische, modell-unabhängige Prompts (mit **public** + ein paar, die den Full brauchen):
+
+| Bedürfnis | Beispiel-Prompt | Connector |
+|---|---|---|
+| Platz heute Abend | *"Padel-Slots im Umkreis von 15 km heute Abend ab 19 Uhr, 60–90 min."* | public |
+| Preise vergleichen | *"Günstigste 90-Minuten-Crystal-Plätze in München Sonntagmorgen."* | public |
+| Nur Indoor | *"Indoor-Padelplätze frei morgen Abend in Hamburg."* | public |
+| Aktuelles Level | *"Was ist mein aktuelles Padel-Level?"* | full |
+| Offenes Match auf meinem Level | *"Offene Matches auf meinem Level am Wochenende in der Nähe."* | full |
+| Statistik | *"Wie viele Matches habe ich dieses Jahr gespielt?"* | full |
+| Top-Vereine | *"In welchen Vereinen war ich in den letzten 3 Monaten am häufigsten?"* | full |
+| Kommende Turniere | *"Padel-Turniere in Deutschland in den nächsten 60 Tagen."* | full |
+
+## Die Suche automatisieren
+
+Derselbe Connector funktioniert für Einmal-Fragen und für wiederkehrende Automatisierung. Kombinier deine KI mit ihrem Scheduler (Claude-Code-Session, ChatGPT scheduled prompts, cron + Copilot CLI, OpenClaw + System-cron) und du hast einen permanenten Padel-Wachhund:
+
+- *"Jeden Freitag um 17 Uhr: günstigste Samstag-Vormittag-Slots im Umkreis von 20 km."*
+- *"Sonntagabends: offene Matches auf meinem Level für die kommende Woche."*
+- *"Am Ersten jedes Monats: Monats-Statistik + Top-Verein."*
+
+Da AnythingMCP den Playtomic-JWT serverseitig cached und transparent erneuert, melden sich geplante Läufe nie neu an.
+
+## Warum das die Playtomic-App schlägt
+
+- **Eine Anfrage, mehrere Vereine** — die App lässt dich Vereine einzeln öffnen; die KI fächert in einem Rutsch über alle Vereine im Radius auf.
+- **Constraints in Klartext** — "indoor, Crystal, unter 40 €, 90 Minuten, zwischen 18 und 21" ist ein Satz für die KI vs. fünf Filter in der App.
+- **Joins** — die KI verknüpft Verfügbarkeit mit Platzeigenschaften (indoor/outdoor, single/double, Crystal/Panoramic), so dass du nicht erst spät merkst, dass der freie Slot der unbeliebte Platz am Straßenrand ist.
+- **Wiederkehrend** — Schedules sind erstklassig, kein Workaround.
+
+## Stabilität und Ethik
+
+Die hier genutzte Playtomic-API ist **undokumentiert und aus der iOS-App rekonstruiert**. In der Praxis stabil (muss sie sein, die App hängt davon ab), aber Playtomic bietet keinen SLA. AnythingMCP hält das Anfragevolumen niedrig (≤1 req/s im stabilen Betrieb je Nutzer) und identifiziert sich ehrlich — kein User-Agent-Spoofing.
+
+Wenn dir ein freier-Plätze-Bot nützt: Bitte buche die Plätze tatsächlich über Playtomic, wenn du sie findest. So bleibt die API für Playtomic wirtschaftlich interessant.
+
+## Loslegen
+
+Der schnellste Weg ist der **public**-Connector. Kein Konto, keine Credentials, ~3 Minuten Setup:
+
+1. Wähl deinen KI-Client unten.
+2. Folge der entsprechenden Anleitung — je 3 Schritte.
+3. Erster Prompt: *"Finde Padelplätze im Umkreis von 25 km um [deine Stadt] am Samstag zwischen 18 und 21 Uhr."*
+
+- [Padelplätze mit Claude suchen](./connect-playtomic-to-claude)
+- [Padelplätze mit ChatGPT suchen](./connect-playtomic-to-chatgpt)
+- [Padelplätze mit Copilot suchen](./connect-playtomic-to-copilot)
+- [Padelplätze mit OpenClaw suchen](./connect-playtomic-to-openclaw)

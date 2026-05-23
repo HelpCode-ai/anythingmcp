@@ -1,0 +1,171 @@
+---
+title: "Verfügbare Padelplätze auf Playtomic mit Claude AI suchen"
+description: "Verbinde Playtomic mit Claude Desktop oder Claude Code über AnythingMCP. Suche verfügbare Padelplätze auf Playtomic mit Claude, vergleiche Preise, finde offene Matches auf deinem Level — alles in Klartext, ohne durch die Buchungs-App zu scrollen."
+category: "connectors"
+keyword: "Padelplatz auf Playtomic mit Claude suchen, Padel Claude AI, Padel buchen Claude, Playtomic Claude, Padel-Verfügbarkeit KI, Playtomic MCP Claude"
+publishedAt: "2026-05-23"
+adapterSlug: "playtomic"
+lang: "de"
+---
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/content/guides/assets/playtomic.svg" alt="Playtomic" width="220" />
+</p>
+
+> 💡 **Keine Installation? Nutze [cloud.anythingmcp.com](https://cloud.anythingmcp.com) direkt.** Einloggen, **Connectors → Playtomic** klicken, Playtomic-E-Mail + -Passwort einfügen (oder **Playtomic Public** für Zero-Setup wählen), MCP-API-Key erzeugen — fertig. Kein Docker, kein `git clone`, kein lokaler Server. Spring direkt zum Abschnitt *Connector in Claude einrichten*.
+
+## Verfügbare Padelplätze auf Playtomic mit Claude suchen — Schluss mit App-Scrollen
+
+Padel ist die am schnellsten wachsende Rückschlagsportart Europas, aber einen freien Platz auf Playtomic zu finden bedeutet immer noch: App öffnen, Vereine durchschalten, Preise vergleichen, raten welche Plätze indoor sind. Verbinde Playtomic mit **Claude** über AnythingMCP und du fragst einmal, in Klartext:
+
+- *"Finde einen Padelplatz im Umkreis von 20 km um Freiburg am Samstag zwischen 18 und 20 Uhr."*
+- *"Vergleiche die Preise für 90-Minuten-Slots bei allen Padel-Vereinen in München für morgen Vormittag."*
+- *"Zeig mir freie Indoor-Crystal-Plätze am Donnerstagabend in Berlin."*
+- *"Gibt es offene Padel-Matches auf meinem Level dieses Wochenende?"*
+
+Claude fragt die Playtomic-API direkt ab, verknüpft Plätze mit Verfügbarkeit und liefert eine knappe Auswahl — oft schneller als die offizielle App.
+
+### Zwei Connectors, wähl dein Level
+
+| | **Playtomic Public** | **Playtomic (full)** |
+|---|---|---|
+| Setup | Null — installieren und los | E-Mail + Passwort |
+| Tools | 4 (Vereine, Verfügbarkeit, Configuration) | 13 (alles + Profil, Level, Statistik, offene Matches) |
+| Preise | Generisch | Mit Mitgliedsrabatten |
+| Ideal für | Ausprobieren, öffentliche Bots, Embedded-Suche | Tägliche persönliche Nutzung, Match-Finder |
+
+Du kannst beide gleichzeitig installieren — sie kommen sich nicht in die Quere. Die meisten Nutzer wählen **full**; **public** ist perfekt fürs Onboarding oder geteilte Bots.
+
+### Voraussetzungen
+
+- Ein Playtomic-Konto (nur für den Full-Connector). Der kostenlose Tarif reicht.
+- AnythingMCP lokal oder auf [cloud.anythingmcp.com](https://cloud.anythingmcp.com).
+- Claude Desktop, Claude Code oder [claude.ai](https://claude.ai) mit einem Plan, der Custom Connectors unterstützt.
+
+### Schritt 1 — Playtomic-Zugang besorgen (nur Full-Connector)
+
+Wenn du nur den **public** Read-only-Adapter willst, spring zu Schritt 2 — kein Konto nötig.
+
+Für den **full** Adapter:
+
+1. Bei https://playtomic.io einloggen (oder registrieren).
+2. E-Mail und Passwort notieren. AnythingMCP verschlüsselt das Passwort at-rest (AES-256-GCM) und sendet es nur per TLS an Playtomics Login-Endpunkt.
+
+Es gibt keinen API-Key zu erzeugen. Playtomic hat keine öffentliche Developer-Konsole; dieser Connector nutzt denselben `/api/v3/auth/login`-Endpunkt wie die Mobile App.
+
+### Schritt 2 — Playtomic-Adapter installieren
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Öffne `http://localhost:3000/connectors/store`, suche **Playtomic** und wähle:
+
+- **Playtomic (Public)** → **Install** klicken. Fertig. Keine Credentials.
+- **Playtomic** → `PLAYTOMIC_EMAIL` und `PLAYTOMIC_PASSWORD` eintragen, dann **Install**.
+
+Die 4 Public-Tools bzw. 13 Full-Tools stehen jetzt im Katalog.
+
+### Schritt 3 — Connector in Claude einrichten (no code, 4 Klicks)
+
+Empfohlener Weg — funktioniert auf **claude.ai web** ohne lokale Config-Datei.
+
+1. Öffne **[claude.ai/customize/connectors](https://claude.ai/customize/connectors)**.
+2. Klicke **"Add custom connector"**.
+3. Trag ein:
+   - **Name:** `Playtomic`
+   - **URL:** `https://cloud.anythingmcp.com/mcp`
+   - **Authentication:** Bearer token → MCP-API-Key einfügen (aus AnythingMCP → **Profile → MCP API Keys → New Key**)
+4. **Connect** klicken.
+
+Alle Playtomic-Tools erscheinen im Chat. Token-Caching, JWT-Refresh (~1 h) und `401`-Retries laufen serverseitig.
+
+<details>
+<summary><strong>Fortgeschritten: Claude Desktop / Claude Code (JSON / CLI)</strong></summary>
+
+Bei den **Desktop-Apps** gilt die Web-UI nicht — du bearbeitest eine lokale Config.
+
+**Claude Desktop** — editiere `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) bzw. `%AppData%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "playtomic": {
+      "url": "https://cloud.anythingmcp.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Claude Desktop neu starten. Playtomic-Tools erscheinen im 🔧-Menü.
+
+**Claude Code** — ein CLI-Befehl:
+
+```bash
+claude mcp add playtomic \
+  --transport http \
+  --url https://cloud.anythingmcp.com/mcp \
+  --header "Authorization: Bearer YOUR_MCP_API_KEY"
+```
+
+Mit `claude mcp list` prüfen.
+
+</details>
+
+### Verfügbare Tools
+
+#### Playtomic Public (4 Tools, keine Auth)
+
+| Tool | Was es macht |
+|---|---|
+| `playtomic_search_tenants` | Vereine im Umkreis einer Koordinate finden |
+| `playtomic_get_tenant` | Vollständiges Detail eines Vereins (Plätze, Öffnungszeiten, Galerie) |
+| `playtomic_get_availability` | Freie Slots eines Tages mit Preisen |
+| `playtomic_get_sport_configuration` | Kanonische Sport-Enums |
+
+#### Playtomic full (13 Tools, Login)
+
+| Gruppe | Tools |
+|---|---|
+| **Discovery** | `playtomic_search_tenants`, `playtomic_get_tenant`, `playtomic_get_availability`, `playtomic_get_sport_configuration` |
+| **Dein Konto** | `playtomic_get_my_profile`, `playtomic_get_my_level`, `playtomic_get_my_stats`, `playtomic_get_top_clubs` |
+| **Matches** | `playtomic_find_open_matches`, `playtomic_get_match`, `playtomic_match_recommendations` |
+| **Events** | `playtomic_list_tournaments`, `playtomic_list_leagues` |
+
+### Automatisieren — wiederkehrende Padelsuche
+
+Kombiniere Claude mit einem Scheduler (cron, Apple Kurzbefehle, n8n, eine wiederkehrende Claude-Code-Session) und mach aus einer Einmal-Frage eine Gewohnheit:
+
+- *"Jeden Freitag um 17 Uhr: die günstigsten 90-Minuten-Padel-Slots in meiner Nähe für Samstagvormittag."*
+- *"Sonntagabends: offene Padel-Matches auf meinem Level in der Stadt für die kommende Woche."*
+- *"Einmal im Monat: Zusammenfassung wie viele Matches ich gespielt habe und in welchem Verein am häufigsten."*
+
+Der Token-Cache von AnythingMCP ist serverseitig, also benutzen geplante Läufe denselben JWT — keine Login-Welle.
+
+### FAQ
+
+**Speichert AnythingMCP mein Klartext-Passwort?**
+Nur im verschlüsselten `authConfig`-Blob (AES-256-GCM). Das Passwort fließt über TLS zum Playtomic-Login-Endpunkt — wird nie geloggt.
+
+**Ist die Playtomic-API offiziell?**
+Nein. Es handelt sich um eine undokumentierte interne API der Playtomic-Mobile-App, rekonstruiert für Read-only-Zwecke. Endpunkte können sich ohne Vorwarnung ändern — bei Problemen im AnythingMCP-Repo nach Updates schauen.
+
+**Kann ich über Claude buchen?**
+Nein. Playtomic hat keine dokumentierte öffentliche Buchungs-API; der Zahlungsfluss ist außerhalb des Scopes. Nutze Claude zum Finden des Slots, buche dann in der Playtomic-App.
+
+**Liefert der Public-Connector falsche Preise?**
+Er liefert *generische* Preise. Wenn du Mitgliedschaften mit Rabatten hast, installiere den **full** Connector — er sendet `user_id=me` und du siehst die Mitgliedstarife.
+
+**Welche Sportarten werden unterstützt?**
+Hauptsächlich `PADEL`. `TENNIS` und `FUTSAL` funktionieren ebenfalls, wo Vereine sie auf Playtomic veröffentlichen.
+
+### Nächste Schritte
+
+- [Playtomic mit ChatGPT verbinden](./connect-playtomic-to-chatgpt)
+- [Playtomic mit Copilot verbinden](./connect-playtomic-to-copilot)
+- [Playtomic mit OpenClaw verbinden](./connect-playtomic-to-openclaw)
+- [Padelplätze mit KI finden — die Cross-Client-Anleitung](./find-padel-courts-with-ai)

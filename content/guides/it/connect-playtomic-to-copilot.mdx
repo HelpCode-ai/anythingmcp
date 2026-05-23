@@ -1,0 +1,113 @@
+---
+title: "Cercare campi da padel disponibili su Playtomic con GitHub Copilot"
+description: "Aggiungi Playtomic a GitHub Copilot Chat dentro VS Code grazie al connettore MCP di AnythingMCP. Cerca campi da padel disponibili su Playtomic con Copilot mentre programmi e costruisci workflow padel-aware."
+category: "connectors"
+keyword: "cercare campi da padel su Playtomic con Copilot, Playtomic Copilot, padel VS Code, GitHub Copilot Playtomic, padel MCP Copilot"
+publishedAt: "2026-05-23"
+adapterSlug: "playtomic"
+lang: "it"
+---
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/content/guides/assets/playtomic.svg" alt="Playtomic" width="220" />
+</p>
+
+> 💡 **Niente installazione? Usa [cloud.anythingmcp.com](https://cloud.anythingmcp.com).** Crea una chiave API MCP, punta Copilot a `https://cloud.anythingmcp.com/mcp`, fatto.
+
+## Cercare campi da padel disponibili su Playtomic con GitHub Copilot
+
+GitHub Copilot Chat in VS Code supporta il **Model Context Protocol**. Con AnythingMCP che espone Playtomic come tool MCP, puoi cercare campi da padel disponibili su Playtomic con Copilot dentro l'editor — comodo se stai sviluppando un side-project legato al padel, o vuoi infilare uno slot del sabato tra un commit e l'altro:
+
+- *"Mostrami i campi da padel liberi entro 20 km stasera dopo le 19."*
+- *"Esporta la mia storia partite padel di quest'anno come JSON da incollare in una fixture di test."*
+- *"Genera un'espressione CRON che parte il venerdì alle 17 e interroga Playtomic per gli slot di sabato mattina."*
+
+Copilot chiama Playtomic via MCP e ti restituisce risultati strutturati, da incollare direttamente nel codice o in una risposta in chat.
+
+### Due connettori, scegli il tuo livello
+
+| | **Playtomic Public** | **Playtomic (full)** |
+|---|---|---|
+| Setup | Zero | Email + password |
+| Tool | 4 (sola lettura) | 13 (sola lettura) |
+| Prezzi | Generici | Sconti soci applicati |
+| Ideale per | Bot pubblici, demo, ricerca embedded | Uso personale, partite al tuo livello |
+
+### Prerequisiti
+
+- VS Code con l'estensione GitHub Copilot Chat (supporto MCP).
+- Un account Playtomic (solo per il connettore full).
+- AnythingMCP in locale o su cloud.anythingmcp.com.
+
+### Passo 1 — Installa il connettore Playtomic
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Apri `http://localhost:3000/connectors/store` → cerca **Playtomic** → installa **Playtomic (Public)** (no creds) oppure **Playtomic** (inserisci `PLAYTOMIC_EMAIL` + `PLAYTOMIC_PASSWORD`).
+
+Crea una chiave API MCP in **Profile → MCP API Keys → New Key**.
+
+### Passo 2 — Aggiungi il server MCP a Copilot in VS Code
+
+Aggiungi/aggiorna `.vscode/mcp.json` nel workspace (o quello a livello utente `~/.config/Code/User/mcp.json`):
+
+```json
+{
+  "servers": {
+    "playtomic": {
+      "type": "http",
+      "url": "https://cloud.anythingmcp.com/mcp",
+      "headers": { "Authorization": "Bearer YOUR_MCP_API_KEY" }
+    }
+  }
+}
+```
+
+Ricarica la finestra di VS Code. Apri Copilot Chat → clicca il selettore 🔧 **Tools** → abilita Playtomic. Inizia a chiedere.
+
+### Tool disponibili
+
+#### Playtomic Public (4 tool)
+
+| Tool | Cosa fa |
+|---|---|
+| `playtomic_search_tenants` | Geo search circoli padel |
+| `playtomic_get_tenant` | Dettaglio singolo circolo |
+| `playtomic_get_availability` | Slot liberi + prezzi |
+| `playtomic_get_sport_configuration` | Enum sport (durate, tipi di campo) |
+
+#### Playtomic full (13 tool)
+
+Discovery + account + partite aperte + recommendations + tornei + leghe. Tabella completa nella [guida Claude](./connect-playtomic-to-claude).
+
+### Workflow "padel + codice" che funzionano
+
+Copilot rende Playtomic davvero utile per chi sviluppa qualcosa di adiacente al padel:
+
+- *"Sto scrivendo un'app trova-campi. Chiama `playtomic_search_tenants` per 5 città europee e scrivimi un seed Postgres."*
+- *"Genera un tipo TypeScript per la risposta di `playtomic_get_availability` — usa il JSON che ottengo davvero."*
+- *"Plotta gli ultimi 12 mesi di `playtomic_get_my_stats` in una config chartjs."*
+
+### FAQ
+
+**Funziona senza GitHub Copilot Pro?**
+L'integrazione MCP di Copilot Chat è inclusa nei piani Pro e Business. Anche il tier personale ha supporto MCP nelle release recenti di VS Code.
+
+**La chiave API MCP la metto in `mcp.json` o in un `.env`?**
+Entrambi vanno bene. Per un workspace condiviso, usa l'interpolazione `${env:ANYTHINGMCP_KEY}` in `mcp.json` e tieni la chiave in `.env` (gitignored).
+
+**Posso girare AnythingMCP localmente e saltare cloud.anythingmcp.com?**
+Sì — punta Copilot a `http://localhost:4000/mcp` e usa una chiave API locale.
+
+**Perché `playtomic_get_my_profile` fallisce?**
+Probabilmente hai installato la variante **public**, che è senza auth. Installa **Playtomic (full)** se ti servono i tool sui dati personali.
+
+### Prossimi passi
+
+- [Collegare Playtomic a Claude](./connect-playtomic-to-claude)
+- [Collegare Playtomic a ChatGPT](./connect-playtomic-to-chatgpt)
+- [Collegare Playtomic a OpenClaw](./connect-playtomic-to-openclaw)
+- [Cercare campi da padel con l'AI — guida cross-client](./find-padel-courts-with-ai)

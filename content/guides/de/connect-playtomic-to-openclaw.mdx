@@ -1,0 +1,105 @@
+---
+title: "Verfügbare Padelplätze auf Playtomic mit OpenClaw suchen"
+description: "Verbinde Playtomic mit OpenClaw über AnythingMCP. Suche Padelplätze auf Playtomic mit OpenClaw und lokalen LLM-Clients, automatisiere Platz-Alerts, halte Padel-Workflows komplett auf deiner Maschine."
+category: "connectors"
+keyword: "Padelplatz auf Playtomic mit OpenClaw suchen, Playtomic OpenClaw, Playtomic lokales LLM, Padel self-hosted, Padel MCP OpenClaw"
+publishedAt: "2026-05-23"
+adapterSlug: "playtomic"
+lang: "de"
+---
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/content/guides/assets/playtomic.svg" alt="Playtomic" width="220" />
+</p>
+
+> 💡 **Keine Installation? Nutze [cloud.anythingmcp.com](https://cloud.anythingmcp.com).** MCP-API-Key erzeugen, OpenClaw auf `https://cloud.anythingmcp.com/mcp` zeigen. Fertig.
+
+## Verfügbare Padelplätze auf Playtomic mit OpenClaw suchen
+
+OpenClaw ist der Open-Source-Desktop-Client für self-hosted und Frontier-LLMs mit nativer **Model-Context-Protocol**-Unterstützung. Kombinier OpenClaw mit dem Playtomic-Connector aus AnythingMCP und du kannst verfügbare Padelplätze auf Playtomic mit OpenClaw suchen — lokal, mit dem Modell deiner Wahl (Llama, Mistral, Qwen, GPT-4o, Claude…), ohne SaaS-Bindung:
+
+- *"Finde Indoor-Crystal-Padelplätze frei morgen im Umkreis von 20 km."*
+- *"Zeig mir die günstigsten 90-Minuten-Slots diese Woche."*
+- *"Liste offene Matches auf meinem Padel-Level am Wochenende."*
+- *"Fass meine letzten 30 Tage Playtomic-Aktivität zusammen."*
+
+OpenClaw routet die Tool-Aufrufe per MCP, dein Modell übernimmt das natürlichsprachige Reasoning.
+
+### Zwei Connectors, wähl dein Level
+
+| | **Playtomic Public** | **Playtomic (full)** |
+|---|---|---|
+| Setup | Null | E-Mail + Passwort |
+| Tools | 4 (read-only) | 13 (read-only) |
+| Preise | Generisch | Mit Mitgliedsrabatten |
+| Ideal für | Geteilte Presets, Demos, Embedded-Bots | Tägliche Nutzung |
+
+### Voraussetzungen
+
+- OpenClaw auf macOS, Windows oder Linux.
+- Playtomic-Konto (nur Full).
+- AnythingMCP lokal oder auf cloud.anythingmcp.com.
+
+### Schritt 1 — Playtomic-Adapter installieren
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+`http://localhost:3000/connectors/store` öffnen → **Playtomic** suchen → **Playtomic (Public)** (zero config) und/oder **Playtomic** (mit `PLAYTOMIC_EMAIL` + `PLAYTOMIC_PASSWORD`) installieren.
+
+MCP-API-Key in **Profile → MCP API Keys → New Key** erzeugen.
+
+### Schritt 2 — MCP-Server in OpenClaw hinzufügen
+
+OpenClaw verwaltet MCP-Server unter **Settings → Model Context Protocol**. Server hinzufügen:
+
+- **Name:** `Playtomic`
+- **Transport:** HTTP
+- **URL:** `https://cloud.anythingmcp.com/mcp`
+- **Headers:** `Authorization: Bearer YOUR_MCP_API_KEY`
+
+Speichern. OpenClaw verbindet, listet die Playtomic-Tools, die nun in jedem Chat verfügbar sind — unabhängig vom Modell.
+
+### Verfügbare Tools
+
+#### Playtomic Public (4 Tools)
+
+| Tool | Was es macht |
+|---|---|
+| `playtomic_search_tenants` | Geo-Suche nach Padel-Vereinen |
+| `playtomic_get_tenant` | Vereinsdetail mit Plätzen |
+| `playtomic_get_availability` | Freie Slots + Preise für ein Datum |
+| `playtomic_get_sport_configuration` | Sport-Enums |
+
+#### Playtomic full (13 Tools)
+
+Discovery + Konto + offene Matches + Empfehlungen + Turniere + Ligen. Volle Tabelle in der [Claude-Anleitung](./connect-playtomic-to-claude).
+
+### Warum OpenClaw + Playtomic ein starkes Paar ist
+
+- **Datenschutz** — Padelplatzsuche, ohne die Anfrage an ein US-gehostetes Commercial-LLM zu senden. Lokales Modell laufen lassen — nur Playtomic sieht deine IP.
+- **Kosten** — keine Token-Rechnung für tägliche Verfügbarkeits-Checks.
+- **Modell-Freiheit** — Llama 3 → Mixtral → GPT-4o → Claude Sonnet, alle mit denselben Playtomic-Tools.
+
+### FAQ
+
+**Funktioniert das offline?**
+Die LLM-Hälfte schon (lokales Modell). Die Playtomic-Hälfte braucht Internet — sie ruft `app.playtomic.io`.
+
+**Welche lokalen Modelle handeln MCP-Tool-Aufrufe am besten?**
+Modelle mit gutem Function-Calling: Llama 3.1 70B, Mixtral 8×22B, Qwen 2.5 Coder, Hermes 3. 8-B-Modelle reichen für die 4 Tools des Public-Connectors; für die 13 Tools des Full lieber größer.
+
+**Wo lebt der Bearer-Token auf meiner Maschine?**
+Im System-Keychain (macOS) bzw. Credential Manager (Windows) bzw. Secret Service (Linux). Nie im Klartext-Config.
+
+**Kann ich den Full deaktivieren und nur den Public behalten?**
+Ja — nur **Playtomic (Public)** installieren, oder den Full in AnythingMCPs Katalog deaktivieren.
+
+### Nächste Schritte
+
+- [Playtomic mit Claude verbinden](./connect-playtomic-to-claude)
+- [Playtomic mit ChatGPT verbinden](./connect-playtomic-to-chatgpt)
+- [Playtomic mit Copilot verbinden](./connect-playtomic-to-copilot)
+- [Padelplätze mit KI finden — Cross-Client-Anleitung](./find-padel-courts-with-ai)

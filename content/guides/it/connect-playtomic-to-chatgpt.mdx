@@ -1,0 +1,122 @@
+---
+title: "Cercare campi da padel disponibili su Playtomic con ChatGPT"
+description: "Porta Playtomic dentro ChatGPT con il connettore MCP di AnythingMCP. Cerca campi da padel disponibili su Playtomic con ChatGPT, confronta i prezzi, trova partite aperte al tuo livello — senza uscire dalla chat."
+category: "connectors"
+keyword: "cercare campi da padel su Playtomic con ChatGPT, Playtomic ChatGPT, padel ChatGPT, prenotare padel GPT, automatizzare padel ChatGPT, padel MCP ChatGPT"
+publishedAt: "2026-05-23"
+adapterSlug: "playtomic"
+lang: "it"
+---
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/content/guides/assets/playtomic.svg" alt="Playtomic" width="220" />
+</p>
+
+> 💡 **Niente installazione? Usa [cloud.anythingmcp.com](https://cloud.anythingmcp.com).** Accedi, vai su **Connectors → Playtomic**, incolla email e password (oppure scegli **Playtomic Public** per zero setup), crea una chiave API MCP. Niente Docker, niente clone. Salta alla sezione *Aggiungi il connettore in ChatGPT*.
+
+## Cercare campi da padel disponibili su Playtomic con ChatGPT
+
+ChatGPT supporta il **Model Context Protocol** nei connettori personalizzati sui piani Plus, Team ed Enterprise. Con AnythingMCP che espone Playtomic come tool MCP, puoi cercare campi da padel disponibili su Playtomic con ChatGPT in italiano:
+
+- *"Mostrami slot da 90 minuti liberi sabato tra le 18 e le 20 entro 25 km da Milano."*
+- *"Trova i campi indoor in cristallo più economici a Madrid per domani."*
+- *"Quali circoli a Barcellona hanno campi liberi la sera nei giorni feriali?"*
+- *"Ci sono partite aperte al mio livello questo weekend?"*
+
+ChatGPT chiama l'API Playtomic via MCP e ti restituisce una shortlist con circoli, orari e prezzi.
+
+### Due connettori, scegli il tuo livello
+
+| | **Playtomic Public** | **Playtomic (full)** |
+|---|---|---|
+| Setup | Zero | Email + password |
+| Tool | 4 (circoli, disponibilità, configurazione) | 13 (tutto + profilo, livello, statistiche, partite) |
+| Prezzi | Generici | Sconti soci applicati |
+| Ideale per | Bot pubblici, ricerca embedded, prova | Uso quotidiano, partite al tuo livello |
+
+Puoi installarli entrambi — non si pestano i piedi.
+
+### Prerequisiti
+
+- Un account Playtomic (solo per il connettore full).
+- AnythingMCP in locale o su [cloud.anythingmcp.com](https://cloud.anythingmcp.com).
+- ChatGPT Plus / Team / Enterprise (i connettori personalizzati richiedono un piano a pagamento).
+
+### Passo 1 — Recupera l'accesso Playtomic (solo full)
+
+Per il **public** salta al Passo 2 — niente account. Per il **full** accedi su https://playtomic.io e tieni a portata email + password.
+
+### Passo 2 — Installa il connettore Playtomic su cloud.anythingmcp.com (no code)
+
+1. Accedi su **[cloud.anythingmcp.com](https://cloud.anythingmcp.com)**.
+2. Apri **Connectors → Playtomic → Install** (oppure **Playtomic (Public)** per la variante zero-setup).
+3. Per l'adapter full, incolla:
+   - `PLAYTOMIC_EMAIL` — la tua email Playtomic
+   - `PLAYTOMIC_PASSWORD` — la tua password (cifrata a riposo, inviata solo in TLS)
+4. Crea una chiave API MCP in **Profile → MCP API Keys → New Key**. Copiala.
+
+### Passo 3 — Aggiungi il connettore in ChatGPT (no code, 4 click)
+
+1. Apri **ChatGPT → Settings → Connectors → Add custom connector** (solo piani a pagamento).
+2. Compila:
+   - **Name:** `Playtomic`
+   - **URL:** `https://cloud.anythingmcp.com/mcp`
+   - **Authentication:** Bearer → incolla la tua chiave API MCP
+3. Clicca **Save** e approva la lista dei tool.
+4. Apri una nuova chat → l'icona 🔧 mostra tutti i tool Playtomic. Fai la tua domanda padel.
+
+Il refresh del JWT (~1 h), i retry sui `401` e il caching del token sono gestiti server-side. Non vedi mai il layer auth di Playtomic.
+
+### Tool disponibili
+
+#### Playtomic Public (4 tool, niente auth)
+
+| Tool | Cosa fa |
+|---|---|
+| `playtomic_search_tenants` | Cerca circoli vicino a una coordinata |
+| `playtomic_get_tenant` | Dettaglio completo di un circolo |
+| `playtomic_get_availability` | Slot liberi per un giorno, con prezzi |
+| `playtomic_get_sport_configuration` | Enum canonici |
+
+#### Playtomic full (13 tool, login)
+
+| Gruppo | Tool |
+|---|---|
+| **Discovery** | `playtomic_search_tenants`, `playtomic_get_tenant`, `playtomic_get_availability`, `playtomic_get_sport_configuration` |
+| **Il tuo account** | `playtomic_get_my_profile`, `playtomic_get_my_level`, `playtomic_get_my_stats`, `playtomic_get_top_clubs` |
+| **Partite** | `playtomic_find_open_matches`, `playtomic_get_match`, `playtomic_match_recommendations` |
+| **Eventi** | `playtomic_list_tournaments`, `playtomic_list_leagues` |
+
+### Automatizza con i prompt schedulati di ChatGPT
+
+ChatGPT Plus / Team include i **prompt schedulati**. Esempi pronti:
+
+- *"Ogni venerdì alle 17, elenca gli slot da 90 minuti più economici per padel sabato mattina vicino casa."*
+- *"La domenica sera, mostrami le partite di padel aperte al mio livello per la settimana che inizia."*
+- *"Il primo di ogni mese, riassumi quante partite ho giocato e dove sono andato di più."*
+
+Il JWT Playtomic viene riusato fra esecuzioni — niente login ripetuti.
+
+### FAQ
+
+**L'API Playtomic è ufficiale?**
+No. È un'API interna non documentata usata dall'app Playtomic; può cambiare senza preavviso.
+
+**Posso prenotare via ChatGPT?**
+No, questo connettore è in sola lettura. Usa ChatGPT per trovare lo slot, poi prenota dall'app.
+
+**Il connettore pubblico restituisce prezzi sbagliati?**
+Restituisce prezzi *generici*. Se hai sconti soci, installa il connettore **full** — passa `user_id=me` e vedi i prezzi da socio.
+
+**Perché non vedo "Add connector" in ChatGPT?**
+I connettori personalizzati richiedono Plus, Team o Enterprise. Sui piani gratuiti non si possono aggiungere server MCP — fai upgrade oppure usa Claude o Copilot.
+
+**Quali sport sono supportati?**
+Soprattutto `PADEL`, ma anche `TENNIS` e `FUTSAL` dove disponibili.
+
+### Prossimi passi
+
+- [Collegare Playtomic a Claude](./connect-playtomic-to-claude)
+- [Collegare Playtomic a Copilot](./connect-playtomic-to-copilot)
+- [Collegare Playtomic a OpenClaw](./connect-playtomic-to-openclaw)
+- [Cercare campi da padel con l'AI — guida cross-client](./find-padel-courts-with-ai)
