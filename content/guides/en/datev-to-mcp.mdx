@@ -1,6 +1,6 @@
 ---
 title: "How to Connect DATEV to MCP for AI-Powered Accounting"
-description: "Connect DATEV accounting to MCP. Access clients, documents, payroll data, and HR reporting with AI agents. The first DATEV MCP integration."
+description: "Connect DATEV's Online APIs (accounting-clients + accounting-documents) to any MCP-compatible AI agent. OIDC Authorization Code + PKCE against login.datev.de, bound to a real DATEV-Konto."
 category: "connectors"
 keyword: "DATEV MCP Server, DATEV API AI, DATEV mit Claude, DATEV ChatGPT, DATEV Schnittstelle KI"
 publishedAt: "2026-03-15"
@@ -9,36 +9,130 @@ adapterSlug: "datev"
 
 ## DATEV with AI Agents via MCP
 
-DATEV is the dominant accounting and tax software platform in Germany, used by nearly every tax consultant (Steuerberater) and thousands of businesses. Despite its market dominance, there has been no MCP server for DATEV — until now.
+DATEV is the dominant accounting and tax software platform in Germany, used by virtually every tax consultant (Steuerberater). This connector wraps DATEV's official **Online APIs** so an MCP-compatible AI agent (Claude, ChatGPT, Gemini, Copilot, Cursor) can read your Mandanten and DATEV Unternehmen online (DUO) metadata.
 
-With AnythingMCP, you can connect DATEV's official Online APIs to any MCP-compatible AI agent (Claude, ChatGPT, Gemini, etc.).
+> **Read this first.** DATEV's Online APIs are **not plug-and-play** like a public REST API. They require (a) a DATEV-Entwicklerportal app, (b) a subscription per API product, (c) a real DATEV-Konto user who logs in via SmartLogin / SmartCard, and (d) a DATEV production-approval review before you can leave sandbox.
 
-## Quick Setup
+## What this connector covers today
+
+All values below were extracted from the official OpenAPI specs at `https://developer.datev.de/mediator/apis/<id>/document`.
+
+| Tool | API product | Endpoint | Scope |
+|------|-------------|----------|-------|
+| `datev_list_clients` | accounting-clients v2 | `GET /clients` | `datev:accounting:clients` |
+| `datev_get_client` | accounting-clients v2 | `GET /clients/{id}` | `datev:accounting:clients` |
+| `datev_documents_list_clients` | accounting-documents v2 | `GET /clients` | `accounting:clients:read` |
+| `datev_get_documents_client` | accounting-documents v2 | `GET /clients/{id}` | `accounting:clients:read` |
+| `datev_list_document_types` | accounting-documents v2 | `GET /clients/{id}/document-types` | `accounting:documents` |
+| `datev_get_duo_version` | accounting-documents v2 | `GET /clients/{id}/duo-version` | `accounting:clients:read` |
+
+### What is *not* covered (yet)
+
+Three upload endpoints exist on `accounting-documents v2` but require `multipart/form-data` with a binary file part. The REST engine currently serializes form-data field values via `String(v)`, which corrupts binary PDFs/images. They land once the engine accepts `Buffer`/base64 in form-data values.
+
+- `POST /clients/{id}/documents` — auto-assigned document ID
+- `PUT /clients/{id}/documents/{guid}` — caller-assigned RFC4122 GUID
+- `PUT /clients/{id}/documents/stapled` — multiple documents in one request
+
+Out of scope for this iteration: `accounting:dataexchange`, `accounting:dxso-jobs`, `accounting:extf-files`, HR/Lohn (`hr-documents`, `hr-imports`, `hr-payrollreports`, `eau-api`), DMS, addressee, cashregister, and the next-gen `datev_idp_next` IdP (`signin.datev.de/datevam/...`).
+
+## Prerequisites — DATEV portal checklist
+
+1. Register at the [DATEV-Entwicklerportal](https://developer.datev.de). Join or create an organization.
+2. Create an app:
+   - **Authorization Flow**: *OpenID Connect Authorization Code Flow* (not Hybrid)
+   - **Client Type**: *Confidential* (gives 2-year rolling refresh tokens; required for unattended operation)
+   - **Redirect URLs**: `https://<your-server>/api/mcp-oauth/callback` (path must match exactly — `http://localhost` is only allowed on sandbox)
+3. Subscribe to *accounting-clients v2* **and** *accounting-documents v2* on the [DATEV program page](https://developer.datev.de/en/products/988700e4-e0c5-40bf-814b-cd7327dad67a). Both ride on the same OAuth subscription.
+4. Note the `Client ID` and `Client Secret`. Apps start on **sandbox**; to call `*.api.datev.de` (production) you must go through DATEV's production-approval review.
+5. Have a DATEV-Konto user with SmartLogin or SmartCard/mIDentity. `client_credentials` is **not** supported.
+
+## Install
 
 ```bash
 git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp && docker compose up -d
 ```
 
-Open `http://localhost:3000/connectors/store`, import the DATEV adapter, and configure your OAuth 2.0 credentials from the [DATEV Developer Portal](https://developer.datev.de).
+Open `http://localhost:3000/connectors/store`, install the DATEV adapter, and supply:
 
-## Available Tools
+| Env var | Value |
+|---------|-------|
+| `DATEV_CLIENT_ID` | from the DATEV portal |
+| `DATEV_CLIENT_SECRET` | from the DATEV portal |
 
-| Tool | Description |
-|------|-------------|
-| `datev_list_clients` | List accounting clients |
-| `datev_list_documents` | List accounting documents for a client |
-| `datev_get_document` | Get document details by GUID |
-| `datev_upload_document` | Upload invoices/receipts to DATEV Belege online |
+The connector ships **production URLs by default**:
+- Authorization: `https://login.datev.de/openid/authorize`
+- Token: `https://api.datev.de/token`
+- API bases: `https://accounting-clients.api.datev.de/platform/v2` + `https://accounting-documents.api.datev.de/platform/v2`
 
-## Prerequisites
+It also auto-injects `X-DATEV-Client-Id: <DATEV_CLIENT_ID>` on every call (the `client_id` apiKey scheme is **required** by every DATEV endpoint alongside the Bearer token).
 
-1. Register at the [DATEV Developer Portal](https://developer.datev.de)
-2. Create an application to get OAuth 2.0 credentials
-3. Your clients must be on DATEV Unternehmen online
+## Switching to sandbox
 
-## Use Cases
+New DATEV apps default to sandbox until production approval. To point the connector at the sandbox, **after install** edit the connector's stored `authConfig`:
 
-- **"List all accounting clients"**
-- **"Show documents uploaded this month for client 12345"**
-- **"Upload this invoice to DATEV Belege online"**
+| Field | Sandbox value |
+|-------|---------------|
+| `authorizationUrl` | `https://login.datev.de/openidsandbox/authorize` |
+| `tokenUrl` | `https://sandbox-api.datev.de/token` |
+
+And in each tool's `endpointMapping.path`, replace `platform` with `platform-sandbox`:
+- `https://accounting-clients.api.datev.de/platform-sandbox/v2/...`
+- `https://accounting-documents.api.datev.de/platform-sandbox/v2/...`
+
+A future iteration may surface this via a `DATEV_ENV=sandbox` env var switch.
+
+## One-time OAuth dance
+
+After install, trigger Authorization Code + PKCE:
+
+```bash
+curl -X POST http://localhost:4000/api/connectors/<connectorId>/oauth/authorize \
+  -H "Authorization: Bearer <your-platform-jwt>"
+```
+
+The response contains an `authorizationUrl`. Open it in a browser, log in with your DATEV-Konto, approve the scopes:
+
+```
+datev:accounting:clients
+accounting:clients:read
+accounting:documents
+```
+
+(Note: `openid` is the issuer name on the current `datev_openid` flow, **not** a scope. The OpenAPI security scheme does not include it.)
+
+DATEV redirects back to `/api/mcp-oauth/callback`; the platform stores an encrypted refresh token in `authConfig`. From here on the engine refreshes the access token silently 5 minutes before expiry. Confidential clients get a 2-year rolling refresh token.
+
+## Using the tools
+
+Every per-client tool takes a `clientId` parameter — this is the **Mandant UUID** (RFC4122 `8-4-4-4-12`), **distinct from your OAuth `DATEV_CLIENT_ID`**. Call `datev_list_clients` first to find the UUIDs your DATEV-Konto user can access.
+
+```text
+agent: List my DATEV Mandanten
+→ datev_list_clients
+← [{ id: "a0b1c2d3-…", consultant_number: 12345, client_number: 1, name: "Müller GmbH" }, …]
+
+agent: What document types are configured for Müller GmbH on DUO?
+→ datev_list_document_types(clientId: "a0b1c2d3-…")
+
+agent: What file formats does DUO accept for Müller GmbH?
+→ datev_get_duo_version(clientId: "a0b1c2d3-…")
+```
+
+## Note on two "list_clients" tools
+
+`datev_list_clients` calls accounting-clients v2 — the canonical master list of every Mandant your user is provisioned for.
+
+`datev_documents_list_clients` calls accounting-documents v2 — only the subset of those Mandanten that have an **active DATEV Unternehmen online** subscription (i.e. can receive document uploads). Use this one when preparing an upload to know which Mandanten will accept it.
+
+## CSV / EXTF — the pragmatic alternative for SMBs
+
+If you don't have a DATEV partner contract / production approval, the Online API isn't an option. The standard SMB integration target is to **generate a DATEV-ASCII / EXTF Buchungsstapel CSV** (`EXTF_Buchungsstapel.csv`, format spec 700/810) and have the Steuerberater import it into *Rechnungswesen pro*. No OAuth, no portal subscription, no production approval. A dedicated EXTF-generator adapter is on the roadmap; in the meantime the [ledermann/datev](https://github.com/ledermann/datev) Ruby gem is the reference format implementation.
+
+## Use cases
+
+- **"List all my DATEV Mandanten"**
+- **"Which of my Mandanten have DUO subscriptions?"**
+- **"What document types are configured for Mandant Müller?"**
+- **"What file formats does DUO accept for client a0b1c2d3-…?"**
