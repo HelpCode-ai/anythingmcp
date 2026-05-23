@@ -121,6 +121,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   maps: 'Maps & Geo',
   travel: 'Travel',
   cms: 'CMS',
+  sports: 'Sports',
 };
 
 const AUTH_LABELS: Record<string, string> = {

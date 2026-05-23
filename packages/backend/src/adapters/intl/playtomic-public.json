@@ -1,0 +1,138 @@
+{
+  "slug": "playtomic-public",
+  "name": "Playtomic (Public)",
+  "description": "Find padel, tennis, and futsal courts worldwide — read-only, no account needed. Search clubs near you, check court availability and pricing, browse Playtomic's tenant catalog. 4 tools, zero setup.",
+  "instructions": "This connector wraps Playtomic's **public** read endpoints — no login, no API key, no setup. It's the fastest way to give an AI agent the ability to find padel/tennis courts and check availability.\n\n**What you can do without an account**:\n- Search clubs (tenants) by geo coordinate + radius, optionally filtered by sport.\n- Fetch a single club's full details (resources/courts, opening info, address, timezone, images).\n- Read free time slots for a given day across one or more clubs, with prices.\n- Read Playtomic's sport configuration (allowed durations, resource types, sport list).\n\n**What requires the full Playtomic connector instead**:\n- Your own profile, level, match history, social graph.\n- Open matches you can join.\n- Member/club-specific discounted pricing (this connector returns generic pricing).\n- Booking a court (write operations are not exposed — Playtomic has no official public booking API).\n\n**Pricing notes**:\n- `price` is a string like `\"48 EUR\"` — parse amount + currency separately.\n- Same `start_time` may appear multiple times with different `duration` values (60/90/120 min). These are alternative bookings of the same slot, not separate free slots.\n- `duration` is in **minutes**.\n\n**Time handling**:\n- `local_start_min` / `local_start_max` are naive ISO-8601 in the tenant's local timezone — find the timezone in `tenant.address.timezone` (e.g. `Europe/Berlin`).\n- For a full-day window use `2026-05-23T00:00:00` → `2026-05-23T23:59:59`.\n\n**Joining availability back to courts**: every availability row has a `resource_id`; map it back to `tenant.resources[].name` from `get_tenant` to know which court (indoor/outdoor, single/double, etc.).\n\n**Rate limits**: Playtomic has no published public-API SLA. Be gentle — under 1 req/s is safe. The connector identifies itself honestly as AnythingMCP (no UA spoofing).\n\n**Stability**: this is an undocumented/internal API reverse-engineered from the iOS app. Endpoints can change without notice. If a tool breaks, check the docs URL for updates.\n\n**Suggested starter prompts**:\n- \"Find padel clubs within 30 km of Milan that are open today.\"\n- \"What time slots are free on Saturday afternoon at FREIBURG PADEL?\"\n- \"Compare prices across all padel clubs in Madrid for Sunday morning, 90-minute sessions.\"\n- \"Which courts in Barcelona offer indoor crystal padel?\"",
+  "region": "intl",
+  "category": "sports",
+  "icon": "playtomic",
+  "docsUrl": "https://playtomic.io",
+  "featured": true,
+  "priority": 80,
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "Playtomic Public API",
+    "type": "REST",
+    "baseUrl": "https://app.playtomic.io",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "playtomic_search_tenants",
+      "description": "Search Playtomic clubs (tenants) — typically by geo coordinate + radius. Returns active clubs with their courts (`resources[]`), address, timezone, and images. Use this first to find clubs near a city, then pass the `tenant_id` values into `playtomic_get_availability` to check free slots.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "coordinate": {
+            "type": "string",
+            "description": "Geo center as `lat,lon` (e.g. `48.0708,7.9006` for Freiburg, `41.3851,2.1734` for Barcelona). Required for geo search."
+          },
+          "radius": {
+            "type": "integer",
+            "description": "Search radius in meters. Default 50000 (50 km). Max practical ~100000.",
+            "default": 50000
+          },
+          "sport_id": {
+            "type": "string",
+            "enum": ["PADEL", "TENNIS", "FUTSAL"],
+            "description": "Sport filter. Most clubs are PADEL."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Max clubs to return (default 20).",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page": {
+            "type": "integer",
+            "description": "0-based page index for pagination.",
+            "default": 0
+          }
+        },
+        "required": ["coordinate"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/tenants",
+        "queryParams": {
+          "coordinate": "$coordinate",
+          "radius": "$radius",
+          "sport_id": "$sport_id",
+          "size": "$size",
+          "page": "$page",
+          "playtomic_status": "ACTIVE"
+        }
+      }
+    },
+    {
+      "name": "playtomic_get_tenant",
+      "description": "Get full detail of a single Playtomic club by `tenant_id` — including all courts (`resources[]` with indoor/outdoor, single/double, surface), opening info, contact, gallery. Use this after `playtomic_search_tenants` to drill into a specific club, or to enrich availability results (join `availability.resource_id` → `tenant.resources[].name`).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "description": "Tenant UUID from `playtomic_search_tenants` (e.g. `7176a7b5-757e-46c0-8f04-e42ff7219563`)."
+          }
+        },
+        "required": ["tenant_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/tenants/{tenant_id}"
+      }
+    },
+    {
+      "name": "playtomic_get_availability",
+      "description": "Read free court slots for a given day at one or more clubs. Returns an array, one entry per court (`resource_id`), each with `slots[]` of `{ start_time, duration (min), price (string like \"48 EUR\") }`. The same `start_time` may appear with multiple durations (60/90/120) — those are alternative bookings, not separate slots.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport_id": {
+            "type": "string",
+            "enum": ["PADEL", "TENNIS", "FUTSAL"],
+            "description": "Sport.",
+            "default": "PADEL"
+          },
+          "tenant_id": {
+            "type": "string",
+            "description": "One tenant UUID, or several comma-separated (e.g. `id1,id2,id3`). Use IDs returned by `playtomic_search_tenants`."
+          },
+          "local_start_min": {
+            "type": "string",
+            "description": "Naive ISO-8601 lower bound in the tenant's local timezone, e.g. `2026-05-23T00:00:00`. For a full day, pair with `local_start_max` = `T23:59:59` on the same date."
+          },
+          "local_start_max": {
+            "type": "string",
+            "description": "Naive ISO-8601 upper bound, same-day end e.g. `2026-05-23T23:59:59`."
+          }
+        },
+        "required": ["tenant_id", "local_start_min", "local_start_max"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/availability",
+        "queryParams": {
+          "sport_id": "$sport_id",
+          "tenant_id": "$tenant_id",
+          "local_start_min": "$local_start_min",
+          "local_start_max": "$local_start_max"
+        }
+      }
+    },
+    {
+      "name": "playtomic_get_sport_configuration",
+      "description": "Read Playtomic's canonical sport configuration — enums for allowed durations, court properties (indoor/outdoor/roofed, single/double, wall/crystal/panoramic), and supported sports. Useful to validate filters before calling other tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/configuration"
+      }
+    }
+  ]
+}

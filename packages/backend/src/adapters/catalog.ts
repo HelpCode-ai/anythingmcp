@@ -127,6 +127,8 @@ import * as pinterest from './intl/pinterest.json';
 import * as pipedrive from './intl/pipedrive.json';
 import * as plaid from './intl/plaid.json';
 import * as planeSo from './intl/plane-so.json';
+import * as playtomic from './intl/playtomic.json';
+import * as playtomicPublic from './intl/playtomic-public.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
@@ -373,6 +375,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   pipedrive as unknown as AdapterDefinition,
   plaid as unknown as AdapterDefinition,
   planeSo as unknown as AdapterDefinition,
+  playtomic as unknown as AdapterDefinition,
+  playtomicPublic as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
