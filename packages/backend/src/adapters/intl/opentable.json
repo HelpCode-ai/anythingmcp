@@ -1,0 +1,113 @@
+{
+  "slug": "opentable",
+  "name": "OpenTable",
+  "description": "Search restaurants on OpenTable from any AI assistant. Find restaurants near a coordinate, read full restaurant detail (menu, hours, photos, reviews), check live table availability for a given party size and time window. 4 tools, no auth — reverse-engineered from the OpenTable mobile app.",
+  "instructions": "This connector wraps the OpenTable mobile app's internal API (mobile-api.opentable.co.uk).\n\n**Setup**: nothing. The endpoints exposed here are the same the OpenTable iOS app uses for restaurant discovery; they do not require an API key or user login.\n\n**What it does NOT do**: complete reservations. OpenTable's reservation-completion flow requires a logged-in session + payment-method-on-file + bot-detection checks that we deliberately don't automate. Use this connector to *find* the right restaurant and slot; book in the OpenTable app or web site.\n\n**Geo coordinate**: `latitude` and `longitude` as floats. Use 48.0707,7.8674 for Freiburg, 41.3851,2.1734 for Barcelona, 40.7128,-74.0060 for NYC.\n\n**Date/time**: ISO-8601 local format `2026-05-24T19:30`. The API interprets in the restaurant's local timezone.\n\n**Party size**: integer `covers` field, 1–12.\n\n**Stability**: this is the OpenTable mobile app's internal API, not the partner OpenTable affiliate API. Endpoints can change without notice; if a tool starts failing, check the AnythingMCP repo for updates.\n\n**Rate limits**: OpenTable does not publish public-API limits for the mobile endpoints. Be gentle — under 1 req/s steady state is safe.\n\n**Suggested starter prompts**:\n- \"Find restaurants near Milan central for tomorrow at 8 PM, party of 4, Italian cuisine under €40/person.\"\n- \"Show me top-rated French restaurants in NYC available Friday night.\"\n- \"Check availability for restaurant 12213 next Saturday at 19:00 for 2 people.\"",
+  "region": "intl",
+  "category": "food",
+  "icon": "opentable",
+  "docsUrl": "https://www.opentable.com",
+  "featured": true,
+  "priority": 85,
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "OpenTable Mobile API",
+    "type": "REST",
+    "baseUrl": "https://mobile-api.opentable.co.uk",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "opentable_search_restaurants",
+      "description": "Search OpenTable restaurants near a coordinate, with optional filters for party size, date/time, cuisine, and price. Returns a ranked list of restaurants with id, name, cuisine, neighborhood, price band, and ratings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": { "type": "number", "description": "Center latitude (e.g. 48.0707)" },
+          "longitude": { "type": "number", "description": "Center longitude (e.g. 7.8674)" },
+          "covers": { "type": "integer", "description": "Party size (1-12).", "default": 2, "minimum": 1, "maximum": 12 },
+          "dateTime": { "type": "string", "description": "Naive ISO-8601 local time, e.g. '2026-05-24T19:30'. If omitted, uses 'now'." },
+          "leadTime": { "type": "integer", "description": "Days ahead to allow (default 14).", "default": 14 },
+          "size": { "type": "integer", "description": "Max restaurants to return (default 30).", "default": 30, "minimum": 1, "maximum": 100 },
+          "cuisine": { "type": "string", "description": "Optional cuisine filter (e.g. 'Italian', 'French', 'Japanese')." }
+        },
+        "required": ["latitude", "longitude"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v5/personalize/search/1",
+        "bodyMapping": {
+          "location": { "latitude": "$latitude", "longitude": "$longitude" },
+          "covers": "$covers",
+          "dateTime": "$dateTime",
+          "leadTime": "$leadTime",
+          "size": "$size",
+          "cuisine": "$cuisine",
+          "now": true,
+          "requestMatchRelevance": true,
+          "requestOffer": true,
+          "stats": "numBooked"
+        }
+      }
+    },
+    {
+      "name": "opentable_get_restaurant",
+      "description": "Full detail of one OpenTable restaurant — name, address, cuisine, hours, menu URL, photos, reviews summary, price band, dress code, parking, neighborhood.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "restaurant_id": { "type": "integer", "description": "OpenTable restaurant ID (numeric, e.g. 12213). Get it from `opentable_search_restaurants`." }
+        },
+        "required": ["restaurant_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/restaurant/{restaurant_id}"
+      }
+    },
+    {
+      "name": "opentable_check_availability",
+      "description": "Check live table availability at one or more OpenTable restaurants for a given party size and date/time. Returns time slots available with their booking URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "restaurant_id": { "type": "integer", "description": "Restaurant ID." },
+          "covers": { "type": "integer", "description": "Party size.", "default": 2 },
+          "dateTime": { "type": "string", "description": "Naive ISO-8601, e.g. '2026-05-24T19:30'." }
+        },
+        "required": ["restaurant_id", "dateTime"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/v3/restaurant/availability",
+        "bodyMapping": {
+          "restaurantId": "$restaurant_id",
+          "covers": "$covers",
+          "dateTime": "$dateTime"
+        }
+      }
+    },
+    {
+      "name": "opentable_autocomplete",
+      "description": "Autocomplete restaurant or location names. Useful before search — when the user says 'find me a sushi place in Mayfair', resolve 'Mayfair' to a coordinate first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Partial restaurant or location name." },
+          "latitude": { "type": "number", "description": "User location latitude for ranking." },
+          "longitude": { "type": "number", "description": "User location longitude for ranking." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/v4/personalize/autocompleteInterspersed",
+        "bodyMapping": {
+          "query": "$query",
+          "location": { "latitude": "$latitude", "longitude": "$longitude" }
+        }
+      }
+    }
+  ]
+}

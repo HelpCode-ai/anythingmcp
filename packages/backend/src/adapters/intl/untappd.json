@@ -1,0 +1,106 @@
+{
+  "slug": "untappd",
+  "name": "Untappd",
+  "description": "Search Untappd's beer database from any AI assistant. Find beers by name, brewery, or style; read beer detail with ratings; look up venues and check-ins. 4 tools, requires free Untappd API client_id + client_secret.",
+  "instructions": "This connector wraps Untappd's REST API (api.untappd.com/v4).\n\n**Setup**: Untappd requires a free API client_id + client_secret. Apply for them at https://untappd.com/api/register. Approval is usually fast.\n\nProvide:\n- `UNTAPPD_CLIENT_ID` — your app's client ID\n- `UNTAPPD_CLIENT_SECRET` — your app's client secret\n\n**What's exposed**: public, unauthenticated endpoints (no user OAuth needed for basic search + lookup). For per-user data (your check-ins, your wishlist), you'd need OAuth — not included in this connector.\n\n**Rate limits**: Untappd publishes 100 req/hour per client. The connector does not auto-retry on 429; respect the limit.\n\n**Suggested starter prompts**:\n- \"Search Untappd for a Hazy IPA with 4.0+ stars.\"\n- \"Look up beer ID 12345 on Untappd.\"\n- \"Find breweries near coordinate 48.07, 7.87.\"",
+  "region": "intl",
+  "category": "food",
+  "icon": "untappd",
+  "docsUrl": "https://untappd.com/api/docs",
+  "requiredEnvVars": ["UNTAPPD_CLIENT_ID", "UNTAPPD_CLIENT_SECRET"],
+  "connector": {
+    "name": "Untappd API v4",
+    "type": "REST",
+    "baseUrl": "https://api.untappd.com/v4",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "untappd_search_beer",
+      "description": "Search Untappd for beers by free-text query (name, brewery, style). Returns a paginated list with beer id, name, brewery, style, ABV, IBU, rating, label image.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Search query (e.g. 'Hazy IPA', 'Westvleteren 12')." },
+          "limit": { "type": "integer", "default": 25, "minimum": 1, "maximum": 50 },
+          "offset": { "type": "integer", "default": 0 },
+          "sort": { "type": "string", "enum": ["checkin", "name", "count", "all"], "default": "checkin" }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/beer",
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort": "$sort",
+          "client_id": "{{UNTAPPD_CLIENT_ID}}",
+          "client_secret": "{{UNTAPPD_CLIENT_SECRET}}"
+        }
+      }
+    },
+    {
+      "name": "untappd_get_beer",
+      "description": "Full detail of one beer by ID — brewery, style, ABV, IBU, ratings, recent check-ins, label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bid": { "type": "integer", "description": "Untappd beer ID." }
+        },
+        "required": ["bid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/beer/info/{bid}",
+        "queryParams": {
+          "client_id": "{{UNTAPPD_CLIENT_ID}}",
+          "client_secret": "{{UNTAPPD_CLIENT_SECRET}}"
+        }
+      }
+    },
+    {
+      "name": "untappd_search_brewery",
+      "description": "Search Untappd for breweries by free-text query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string" },
+          "offset": { "type": "integer", "default": 0 }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/brewery",
+        "queryParams": {
+          "q": "$q",
+          "offset": "$offset",
+          "client_id": "{{UNTAPPD_CLIENT_ID}}",
+          "client_secret": "{{UNTAPPD_CLIENT_SECRET}}"
+        }
+      }
+    },
+    {
+      "name": "untappd_get_brewery",
+      "description": "Full detail of one brewery by ID — location, beer list, social stats.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brewery_id": { "type": "integer" }
+        },
+        "required": ["brewery_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brewery/info/{brewery_id}",
+        "queryParams": {
+          "client_id": "{{UNTAPPD_CLIENT_ID}}",
+          "client_secret": "{{UNTAPPD_CLIENT_SECRET}}"
+        }
+      }
+    }
+  ]
+}

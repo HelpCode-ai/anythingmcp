@@ -1,0 +1,142 @@
+{
+  "slug": "resy",
+  "name": "Resy",
+  "description": "Search Resy restaurants from any AI assistant. Find restaurants by city, geo coordinate, or curated list (top-rated, new, etc.), read venue detail, check live availability calendar. 6 tools, no auth — reverse-engineered from the Resy mobile app.",
+  "instructions": "This connector wraps the Resy mobile app's internal API (api.resy.com).\n\n**Setup**: nothing. The endpoints exposed here are the same the Resy iOS app uses for restaurant discovery and are accessible without a user login.\n\n**What it does NOT do**: complete reservations. Resy's notify/book flow requires a logged-in session and triggers bot-detection. Use this connector to *find* slots; book in the Resy app.\n\n**City codes**: Resy uses short codes like `ny` (NYC), `la` (LA), `lon` (London), `mia` (Miami), `dc` (Washington DC), `ath` (Athens). Use `resy_get_location_config` to discover available cities.\n\n**Curated lists**: Resy publishes editorial lists per city — `top-rated`, `new-on-resy`, `most-bookmarked`, etc. Use `resy_get_city_list` with the list slug to fetch them.\n\n**Date format**: `YYYY-MM-DD` (e.g. `2026-05-24`).\n\n**Suggested starter prompts**:\n- \"Find the top-rated Italian restaurants in NYC this Saturday at 7 PM for 4 people.\"\n- \"What's new on Resy in London this week?\"\n- \"Check Carbone's calendar for the next 30 days, party of 2.\"",
+  "region": "intl",
+  "category": "food",
+  "icon": "resy",
+  "docsUrl": "https://resy.com",
+  "featured": true,
+  "priority": 84,
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "Resy Mobile API",
+    "type": "REST",
+    "baseUrl": "https://api.resy.com",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "resy_search_venues",
+      "description": "Geo search Resy venues near a coordinate, with optional party size and date filters. Returns venues with id, name, neighborhood, cuisine, price band, and available time slots.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": { "type": "number", "description": "Search center latitude." },
+          "longitude": { "type": "number", "description": "Search center longitude." },
+          "party_size": { "type": "integer", "description": "Party size.", "default": 2, "minimum": 1, "maximum": 20 },
+          "day": { "type": "string", "description": "Date in YYYY-MM-DD, e.g. '2026-05-24'." }
+        },
+        "required": ["latitude", "longitude"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/3/venuesearch/search",
+        "bodyMapping": {
+          "venue_filter": { "venue_id": [] },
+          "availability": true,
+          "slot_filter": { "party_size": "$party_size", "day": "$day" },
+          "geo": { "user": { "latitude": "$latitude", "longitude": "$longitude" } }
+        }
+      }
+    },
+    {
+      "name": "resy_find_availability",
+      "description": "Find available slots at one or more venues on a given day for a party size, optionally near a coordinate. Returns slots with start time, table type, and configuration token for booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "day": { "type": "string", "description": "Date in YYYY-MM-DD." },
+          "party_size": { "type": "integer", "default": 2, "minimum": 1, "maximum": 20 },
+          "location": { "type": "string", "description": "City code (e.g. 'ny', 'la', 'lon', 'mia', 'ath')." },
+          "venue_id": { "type": "integer", "description": "Optional: limit to one venue." },
+          "lat": { "type": "number", "description": "Search center latitude." },
+          "long": { "type": "number", "description": "Search center longitude." }
+        },
+        "required": ["day", "party_size"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/4/find",
+        "queryParams": {
+          "day": "$day",
+          "party_size": "$party_size",
+          "location": "$location",
+          "venue_id": "$venue_id",
+          "lat": "$lat",
+          "long": "$long"
+        }
+      }
+    },
+    {
+      "name": "resy_get_venue",
+      "description": "Full venue detail — name, address, cuisine, photos, menu, hours, descriptions. Pass venue_id from search or find.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Venue ID." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/venue",
+        "queryParams": { "id": "$id" }
+      }
+    },
+    {
+      "name": "resy_get_venue_calendar",
+      "description": "Get the booking calendar for one venue across a date range — which days have availability for a given party size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "venue_id": { "type": "integer" },
+          "num_seats": { "type": "integer", "description": "Party size.", "default": 2 },
+          "start_date": { "type": "string", "description": "YYYY-MM-DD." },
+          "end_date": { "type": "string", "description": "YYYY-MM-DD." }
+        },
+        "required": ["venue_id", "start_date", "end_date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/4/venue/calendar",
+        "queryParams": {
+          "venue_id": "$venue_id",
+          "num_seats": "$num_seats",
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "resy_get_city_list",
+      "description": "Get a Resy editorial list for a city — e.g. 'top-rated', 'new-on-resy', 'most-bookmarked'. Returns the curated venues.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": { "type": "string", "description": "City code, e.g. 'ny', 'la', 'lon', 'ath'." },
+          "list": { "type": "string", "description": "List slug, e.g. 'top-rated', 'new-on-resy', 'climbing' (city-specific lists vary)." }
+        },
+        "required": ["city", "list"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/cities/{city}/list/{list}"
+      }
+    },
+    {
+      "name": "resy_get_location_config",
+      "description": "Get Resy's configuration for available cities, neighborhoods, and cuisines. Use first to discover what's queryable.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/location/config"
+      }
+    }
+  ]
+}

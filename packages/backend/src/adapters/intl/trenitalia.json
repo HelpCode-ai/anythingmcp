@@ -1,0 +1,76 @@
+{
+  "slug": "trenitalia",
+  "name": "Trenitalia",
+  "description": "Search Italian high-speed and regional trains via Trenitalia's Le Frecce mobile API. Find trips by origin/destination/date, read offers and prices, see live home alerts and mobility info. 3 tools, no auth — reverse-engineered from the Le Frecce iOS app.",
+  "instructions": "This connector wraps the Trenitalia Le Frecce mobile app's internal API (app.lefrecce.it, channel `Channels.Mobile.BFF`).\n\n**Setup**: nothing. The endpoints exposed here are the same the Le Frecce iOS app uses for trip discovery.\n\n**What it does NOT do**: complete bookings. The booking flow requires a logged-in session and the Trenitalia payment hub. Use this connector to *find* trains and prices; book in the Le Frecce app or trenitalia.com.\n\n**Station codes**: Trenitalia uses internal station codes (e.g. `S08409` for Milano Centrale, `S08400` for Roma Termini). Use `trenitalia_search_stations` to discover them, or pass `from_name` / `to_name` as free-text — the search endpoint usually resolves names internally.\n\n**Date/time**: ISO-8601 local, e.g. `2026-05-24T08:00:00`.\n\n**Suggested starter prompts**:\n- \"Find Milano-Roma Frecciarossa trains for Saturday morning, 2 adults.\"\n- \"What's the cheapest train from Bologna to Firenze tomorrow afternoon?\"\n- \"Show me Trenitalia alerts on the Milano-Napoli line today.\"",
+  "region": "intl",
+  "category": "travel",
+  "icon": "trenitalia",
+  "docsUrl": "https://www.trenitalia.com",
+  "featured": true,
+  "priority": 78,
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "Trenitalia Le Frecce Mobile BFF",
+    "type": "REST",
+    "baseUrl": "https://app.lefrecce.it",
+    "authType": "NONE",
+    "authConfig": {}
+  },
+  "tools": [
+    {
+      "name": "trenitalia_search_trips",
+      "description": "Search Trenitalia trains between two stations on a date. Returns trips with departure/arrival time, train type (Frecciarossa, Frecciargento, Intercity, regional), duration, transfers, available fares and prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_name": { "type": "string", "description": "Origin station name (e.g. 'Milano Centrale', 'Roma Termini')." },
+          "to_name": { "type": "string", "description": "Destination station name." },
+          "departure_date": { "type": "string", "description": "Departure date/time, naive ISO-8601 (e.g. '2026-05-24T08:00:00')." },
+          "return_date": { "type": "string", "description": "Optional return date/time for round-trip." },
+          "adults": { "type": "integer", "default": 1, "minimum": 1, "maximum": 9 },
+          "children": { "type": "integer", "default": 0 },
+          "page": { "type": "integer", "default": 1 }
+        },
+        "required": ["from_name", "to_name", "departure_date"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Channels.Mobile.BFF/api/search/page",
+        "bodyMapping": {
+          "from": "$from_name",
+          "to": "$to_name",
+          "departureDate": "$departure_date",
+          "returnDate": "$return_date",
+          "adults": "$adults",
+          "children": "$children",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "trenitalia_get_home_alerts",
+      "description": "Get current service alerts and mobility info from Trenitalia's home feed — strikes, delays, line-wide notices.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Channels.Mobile.BFF/api/home/alerts"
+      }
+    },
+    {
+      "name": "trenitalia_get_mobility_info",
+      "description": "Get general mobility info — strikes (`scioperi`), planned outages, network status — from Trenitalia's home info feed.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Channels.Mobile.BFF/api/home/info/mobility"
+      }
+    }
+  ]
+}

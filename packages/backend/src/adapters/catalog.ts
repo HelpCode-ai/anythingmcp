@@ -89,6 +89,7 @@ import * as heap from './intl/heap.json';
 import * as height from './intl/height.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hunter from './intl/hunter.json';
+import * as idealista from './intl/idealista.json';
 import * as insightly from './intl/insightly.json';
 import * as instantly from './intl/instantly.json';
 import * as invoiced from './intl/invoiced.json';
@@ -120,6 +121,7 @@ import * as nimble from './intl/nimble.json';
 import * as nominatim from './intl/nominatim.json';
 import * as nutshellCrm from './intl/nutshell-crm.json';
 import * as omnisend from './intl/omnisend.json';
+import * as opentable from './intl/opentable.json';
 import * as openweather from './intl/openweather.json';
 import * as outreach from './intl/outreach.json';
 import * as pandadoc from './intl/pandadoc.json';
@@ -131,6 +133,7 @@ import * as playtomic from './intl/playtomic.json';
 import * as playtomicPublic from './intl/playtomic-public.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
+import * as resy from './intl/resy.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
 import * as salesloft from './intl/salesloft.json';
@@ -154,10 +157,14 @@ import * as tidio from './intl/tidio.json';
 import * as timetastic from './intl/timetastic.json';
 import * as todoist from './intl/todoist.json';
 import * as togglTrack from './intl/toggl-track.json';
+import * as trainline from './intl/trainline.json';
 import * as trello from './intl/trello.json';
+import * as trenitalia from './intl/trenitalia.json';
 import * as typeform from './intl/typeform.json';
+import * as untappd from './intl/untappd.json';
 import * as uptimeRobot from './intl/uptime-robot.json';
 import * as vercelAnalytics from './intl/vercel-analytics.json';
+import * as vinted from './intl/vinted.json';
 import * as waveAccounting from './intl/wave-accounting.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
 import * as woocommerce from './intl/woocommerce.json';
@@ -337,6 +344,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   height as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
+  idealista as unknown as AdapterDefinition,
   insightly as unknown as AdapterDefinition,
   instantly as unknown as AdapterDefinition,
   invoiced as unknown as AdapterDefinition,
@@ -368,6 +376,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   nominatim as unknown as AdapterDefinition,
   nutshellCrm as unknown as AdapterDefinition,
   omnisend as unknown as AdapterDefinition,
+  opentable as unknown as AdapterDefinition,
   openweather as unknown as AdapterDefinition,
   outreach as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
@@ -379,6 +388,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   playtomicPublic as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
+  resy as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
@@ -402,10 +412,14 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   timetastic as unknown as AdapterDefinition,
   todoist as unknown as AdapterDefinition,
   togglTrack as unknown as AdapterDefinition,
+  trainline as unknown as AdapterDefinition,
   trello as unknown as AdapterDefinition,
+  trenitalia as unknown as AdapterDefinition,
   typeform as unknown as AdapterDefinition,
+  untappd as unknown as AdapterDefinition,
   uptimeRobot as unknown as AdapterDefinition,
   vercelAnalytics as unknown as AdapterDefinition,
+  vinted as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
   woocommerce as unknown as AdapterDefinition,
