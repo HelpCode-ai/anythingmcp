@@ -157,7 +157,6 @@ import * as tidio from './intl/tidio.json';
 import * as timetastic from './intl/timetastic.json';
 import * as todoist from './intl/todoist.json';
 import * as togglTrack from './intl/toggl-track.json';
-import * as trainline from './intl/trainline.json';
 import * as trello from './intl/trello.json';
 import * as trenitalia from './intl/trenitalia.json';
 import * as typeform from './intl/typeform.json';
@@ -412,7 +411,6 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   timetastic as unknown as AdapterDefinition,
   todoist as unknown as AdapterDefinition,
   togglTrack as unknown as AdapterDefinition,
-  trainline as unknown as AdapterDefinition,
   trello as unknown as AdapterDefinition,
   trenitalia as unknown as AdapterDefinition,
   typeform as unknown as AdapterDefinition,
