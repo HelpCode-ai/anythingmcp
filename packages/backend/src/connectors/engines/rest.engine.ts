@@ -245,6 +245,18 @@ export class RestEngine {
           ...axiosConfig.headers,
           Authorization: `${prefix} ${accessToken}`,
         };
+        // Some vendors require additional static headers alongside the
+        // Bearer token (e.g. Etsy v3 requires both `Authorization: Bearer
+        // <oauth-token>` AND `x-api-key: <app-key>`). Opt-in via
+        // authConfig.extraHeaders — same shape as API_KEY auth.
+        const extraOAuth = config.authConfig?.extraHeaders as
+          | Record<string, string>
+          | undefined;
+        if (extraOAuth && typeof extraOAuth === 'object') {
+          for (const [k, v] of Object.entries(extraOAuth)) {
+            axiosConfig.headers[k] = String(v);
+          }
+        }
         break;
       }
       case 'QUERY_AUTH':

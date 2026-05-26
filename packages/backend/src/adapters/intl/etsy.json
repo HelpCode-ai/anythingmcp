@@ -1,23 +1,26 @@
 {
   "slug": "etsy",
   "name": "Etsy",
-  "description": "Read Etsy shop data (listings, transactions, receipts, reviews) from any AI agent. 9 tools, OAuth2 + x-api-key dual auth.",
-  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com).\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/your-apps → **Create New App**.\n2. Note the **Keystring** (this is your x-api-key) and **Shared secret**.\n3. Run OAuth2 PKCE flow with scopes `transactions_r listings_r email_r shops_r` (or write-scopes if needed).\n4. Get the access token (1 hour expiry) + refresh token (long-lived).\n5. Set:\n   - `ETSY_API_KEY` = the Keystring (a.k.a. x-api-key)\n   - `ETSY_ACCESS_TOKEN` = the OAuth2 access token\n\n**Authentication**: BOTH headers needed simultaneously:\n  - `x-api-key: ${ETSY_API_KEY}`\n  - `Authorization: Bearer ${ETSY_ACCESS_TOKEN}`\nThe adapter sets the api-key via API_KEY profile and adds Authorization via extraHeaders (uses the engine's extraHeaders support).\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Out of scope here**: listing image uploads, write-scope listing creation (Etsy's listing publish flow is multi-step), payment account, billing, taxonomy edits.",
+  "description": "Read and update Etsy shop data (listings, transactions, receipts, reviews) from any AI agent. OAuth2 with automatic refresh-token rotation + x-api-key dual auth.",
+  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com) with **automatic OAuth2 refresh-token rotation**. You set it up once with a long-lived refresh token; AnythingMCP keeps the short-lived access token (1 hour TTL) refreshed in the background, so you never see expired-token errors.\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/your-apps → **Create New App**.\n2. Note the **Keystring** (= `x-api-key` = `client_id`) and **Shared secret** (= `client_secret`).\n3. Run the Etsy OAuth2 PKCE flow once (locally or via `https://www.etsy.com/oauth/connect?...`) with scopes such as `transactions_r listings_r listings_w shops_r email_r`. You'll receive an access token and a refresh token.\n4. Set the three env vars:\n   - `ETSY_CLIENT_ID` = the Keystring (also used as `x-api-key`)\n   - `ETSY_CLIENT_SECRET` = the Shared secret\n   - `ETSY_REFRESH_TOKEN` = the OAuth2 refresh token from step 3\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}`\nThe access token is refreshed in-memory and persisted to the encrypted `connector_auth_cache` DB table — survives restarts. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP captures the new refresh token from each refresh response and re-uses it automatically.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Out of scope here**: listing image uploads, payment account, billing, taxonomy edits.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "etsy",
   "docsUrl": "https://developers.etsy.com/documentation/",
-  "requiredEnvVars": ["ETSY_API_KEY", "ETSY_ACCESS_TOKEN"],
+  "requiredEnvVars": ["ETSY_CLIENT_ID", "ETSY_CLIENT_SECRET", "ETSY_REFRESH_TOKEN"],
   "connector": {
     "name": "Etsy Open API v3",
     "type": "REST",
     "baseUrl": "https://openapi.etsy.com/v3/application",
-    "authType": "API_KEY",
+    "authType": "OAUTH2",
     "authConfig": {
-      "headerName": "x-api-key",
-      "apiKey": "{{ETSY_API_KEY}}",
+      "grant": "refresh_token",
+      "tokenUrl": "https://api.etsy.com/v3/public/oauth/token",
+      "clientId": "{{ETSY_CLIENT_ID}}",
+      "clientSecret": "{{ETSY_CLIENT_SECRET}}",
+      "refreshToken": "{{ETSY_REFRESH_TOKEN}}",
       "extraHeaders": {
-        "Authorization": "Bearer {{ETSY_ACCESS_TOKEN}}"
+        "x-api-key": "{{ETSY_CLIENT_ID}}"
       }
     }
   },
