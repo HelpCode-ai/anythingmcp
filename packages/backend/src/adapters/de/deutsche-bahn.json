@@ -1,187 +1,199 @@
 {
   "slug": "deutsche-bahn",
   "name": "Deutsche Bahn Fahrplan",
-  "description": "Query the Deutsche Bahn (DB) timetable via the community-maintained v6.db.transport.rest proxy over the official HAFAS API. Search stations, look up departures/arrivals in real time, and plan journeys between any two DB stops.",
-  "instructions": "This connector uses https://v6.db.transport.rest — a free, no-auth wrapper around Deutsche Bahn's HAFAS endpoints maintained by the public-transport community.\n\n**No authentication required**, but the service is hosted best-effort — for production use you may want to self-host (see https://github.com/derhuerst/db-rest).\n\n**Typical workflow**:\n1. Resolve a station name to a stop `id` with `db_search_locations`\n2. Call `db_get_departures` or `db_get_arrivals` with that id\n3. For trip planning, use `db_get_journeys` with `from` and `to` stop ids\n\n**Time format**: All times are ISO 8601 with timezone (e.g. `2026-04-21T08:30+02:00`). If omitted, `when` defaults to now.\n\n**Delay tracking**: departure/arrival entries include `delay` in seconds, `cancelled`, and `platform` vs `plannedPlatform` for live monitoring.\n\n**Multi-modal**: results can include S-Bahn, U-Bahn, bus, tram where operated by DB or partner agencies.",
+  "description": "Query the Deutsche Bahn (DB) timetable directly via bahn.de's own JSON API. Search stations, look up real-time departures/arrivals, and plan journeys between any two DB stops — same backend that powers the bahn.de website.",
+  "instructions": "This connector talks directly to **int.bahn.de/web/api**, the JSON API that powers the bahn.de website. No authentication required — same SLA as bahn.de itself.\n\n**Typical workflow**:\n1. Resolve a station name to an `extId` (IBNR, e.g. `8000107` = Freiburg Hbf) with `db_search_locations`.\n2. Pass that `extId` to `db_get_departures` / `db_get_arrivals` / `db_get_stop`.\n3. For trip planning, pass `from` and `to` (both IBNR) to `db_get_journeys`.\n\n**Field naming**: responses use German enterprise-style keys:\n- `extId` — the stable IBNR id (use this as `id` in other tools).\n- `zeit` — planned time. `ezZeit` — real/estimated time (if present; otherwise on time). `delay seconds` = `ezZeit - zeit`.\n- `gleis` — platform.\n- `terminus` — direction (final destination of the line).\n- `verkehrmittel` — line/product info (`name`, `linienNummer`, `produktGattung` ∈ {ICE, EC_IC, IR, REGIONAL, SBAHN, BUS, TRAM, UBAHN, SCHIFF}).\n- `meldungen` — service messages / disruptions.\n\n**Times** are ISO 8601 in Europe/Berlin **without timezone offset** (e.g. `2026-05-27T08:55:00`). All input times must be in the same format.\n\n**Departures/arrivals**: `zeit` (HH:mm) and `datum` (YYYY-MM-DD) are optional — omit both for live boards starting now.\n\n**Journeys**: `when` is required (the LLM should pass the current local Berlin time for 'now' queries). Set `direction=ABFAHRT` for 'depart at' or `ANKUNFT` for 'arrive by'.",
   "region": "de",
   "category": "transport",
   "icon": "db",
-  "docsUrl": "https://v6.db.transport.rest/",
+  "docsUrl": "https://www.bahn.de/",
   "requiredEnvVars": [],
   "connector": {
     "name": "Deutsche Bahn Fahrplan",
     "type": "REST",
-    "baseUrl": "https://v6.db.transport.rest",
-    "authType": "NONE"
+    "baseUrl": "https://int.bahn.de/web/api",
+    "authType": "NONE",
+    "headers": {
+      "Accept-Language": "de-DE",
+      "User-Agent": "anythingmcp/1.0 (+https://anythingmcp.com)"
+    }
   },
   "tools": [
     {
       "name": "db_search_locations",
-      "description": "Search for DB stops/stations, addresses, or points of interest by name. Returns a list of matches with id, name, type, and geo coordinates. Use the returned id with other tools.",
+      "description": "Search Deutsche Bahn stops/stations by name. Returns an array of matches, each with `extId` (the stable IBNR id used everywhere else), `name`, `lat`, `lon`, and `products` (list of services that call at this stop: ICE, EC_IC, IR, REGIONAL, SBAHN, BUS, TRAM, …). Use the returned `extId` as the `id` parameter for db_get_departures, db_get_arrivals, db_get_stop, and as `from`/`to` for db_get_journeys.",
       "parameters": {
         "type": "object",
         "properties": {
           "query": {
             "type": "string",
-            "description": "Search term (e.g. 'Freiburg Hbf', 'Berlin Ostbahnhof', 'München Hauptbahnhof')."
+            "description": "Search term — station name, city, abbreviation. Examples: 'Freiburg Hbf', 'Berlin Ostbahnhof', 'München Hauptbahnhof', 'Köln'."
           },
-          "results": {
+          "limit": {
             "type": "number",
-            "description": "Max results to return (default: 10)."
-          },
-          "stops": {
-            "type": "boolean",
-            "description": "Include train stops (default: true)."
-          },
-          "addresses": {
-            "type": "boolean",
-            "description": "Include street addresses (default: true)."
+            "description": "Max results to return (default: 10).",
+            "default": 10
           }
         },
         "required": ["query"]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/locations",
+        "path": "/reiseloesung/orte",
         "queryParams": {
-          "query": "$query",
-          "results": "$results",
-          "stops": "$stops",
-          "addresses": "$addresses"
+          "suchbegriff": "$query",
+          "typ": "ALL",
+          "limit": "$limit"
         }
       }
     },
     {
       "name": "db_get_stop",
-      "description": "Retrieve details for a specific stop/station by its DB id, including name, location, station category, and products served (ICE, IC, RE, S, etc.).",
+      "description": "Retrieve a single Deutsche Bahn stop by its `extId` (IBNR), returning `name`, `lat`, `lon`, and the list of `products` that call there (ICE, EC_IC, IR, REGIONAL, SBAHN, BUS, TRAM, …). Useful when you already have the id but need the station metadata.",
       "parameters": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "The stop id from db_search_locations (e.g. '8000105' for Frankfurt(Main)Hbf)."
+            "description": "The stop's IBNR / extId from db_search_locations (e.g. '8000105' = Frankfurt(Main)Hbf, '8000107' = Freiburg(Breisgau) Hbf, '8011160' = Berlin Hbf)."
           }
         },
         "required": ["id"]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/stops/{id}"
+        "path": "/reiseloesung/orte",
+        "queryParams": {
+          "suchbegriff": "$id",
+          "limit": "1"
+        }
       }
     },
     {
       "name": "db_get_departures",
-      "description": "List upcoming departures from a stop. Returns each departure with line, destination (direction), planned and actual time, platform, delay in seconds, and cancellation status.",
+      "description": "List upcoming departures from a DB stop with live delays. Returns `entries[]` — each entry has `journeyId` (use with `db_get_journey_detail`-equivalent), `zeit` (planned ISO time), `ezZeit` (real/estimated time if delayed), `gleis` (platform), `terminus` (direction = where the train is heading), `verkehrmittel` (line info: name, product type, line number), and `meldungen` (disruption messages, if any). If `ezZeit` is absent the train is on time. Delay in seconds = `(ezZeit - zeit)`.",
       "parameters": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "The stop id."
+            "description": "The stop's IBNR / extId (e.g. '8000107' for Freiburg Hbf)."
           },
-          "when": {
+          "datum": {
             "type": "string",
-            "description": "ISO 8601 timestamp for the reference time (default: now). Example: '2026-04-21T08:30+02:00'."
+            "description": "Optional reference date in YYYY-MM-DD format. Omit for 'now'. Example: '2026-05-27'."
           },
-          "duration": {
-            "type": "number",
-            "description": "Look-ahead window in minutes (default: 10, max: 120)."
-          },
-          "results": {
-            "type": "number",
-            "description": "Max number of departures (default: 10)."
+          "zeit": {
+            "type": "string",
+            "description": "Optional reference time in HH:mm format (local Berlin time, 24h). Omit for 'now'. Example: '08:30'."
           }
         },
         "required": ["id"]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/stops/{id}/departures",
+        "path": "/reiseloesung/abfahrten",
         "queryParams": {
-          "when": "$when",
-          "duration": "$duration",
-          "results": "$results"
+          "ortExtId": "$id",
+          "datum": "$datum",
+          "zeit": "$zeit"
         }
       }
     },
     {
       "name": "db_get_arrivals",
-      "description": "List upcoming arrivals at a stop with origin, planned and actual time, platform, delay, and cancellation status.",
+      "description": "List upcoming arrivals at a DB stop with live delays. Same response shape as db_get_departures (`entries[]`), but each entry's `terminus` is the train's *origin* and `zeit`/`ezZeit` are arrival times.",
       "parameters": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "The stop id."
+            "description": "The stop's IBNR / extId (e.g. '8011160' for Berlin Hbf)."
           },
-          "when": {
+          "datum": {
             "type": "string",
-            "description": "ISO 8601 timestamp (default: now)."
+            "description": "Optional reference date in YYYY-MM-DD format. Omit for 'now'."
           },
-          "duration": {
-            "type": "number",
-            "description": "Look-ahead window in minutes (default: 10)."
-          },
-          "results": {
-            "type": "number",
-            "description": "Max number of arrivals (default: 10)."
+          "zeit": {
+            "type": "string",
+            "description": "Optional reference time in HH:mm format (local Berlin time, 24h). Omit for 'now'."
           }
         },
         "required": ["id"]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/stops/{id}/arrivals",
+        "path": "/reiseloesung/ankuenfte",
         "queryParams": {
-          "when": "$when",
-          "duration": "$duration",
-          "results": "$results"
+          "ortExtId": "$id",
+          "datum": "$datum",
+          "zeit": "$zeit"
         }
       }
     },
     {
       "name": "db_get_journeys",
-      "description": "Plan a journey between two stops. Returns one or more itinerary options with legs (train/bus/S-Bahn), departure and arrival times per leg, transfers, duration, and any delays. Use stop ids from db_search_locations.",
+      "description": "Plan one or more itineraries between two DB stops. Returns `verbindungen[]` — each itinerary has `verbindungsAbschnitte[]` (the legs), `tripId`, and `ctxRecon` (opaque continuation token). Each leg includes `startHalt`/`zielHalt` (`extId`, `name`, `abfahrt.sollzeit`/`istzeit`, `ankunft.sollzeit`/`istzeit`, `gleis`), `verkehrsmittel` (line name, product, kategorie), `risNotizen`/`himMeldungen` (alerts), and `halte[]` (intermediate stops, when available). Use `extId` (IBNR) for `from` and `to`. The `when` parameter is the departure or arrival time depending on `direction`.",
       "parameters": {
         "type": "object",
         "properties": {
           "from": {
             "type": "string",
-            "description": "Origin stop id."
+            "description": "Origin stop's IBNR / extId (e.g. '8000107' for Freiburg Hbf)."
           },
           "to": {
             "type": "string",
-            "description": "Destination stop id."
+            "description": "Destination stop's IBNR / extId (e.g. '8011160' for Berlin Hbf)."
           },
-          "departure": {
+          "when": {
             "type": "string",
-            "description": "Desired departure time (ISO 8601). Defaults to now. Use either 'departure' or 'arrival', not both."
+            "description": "Reference time as a local Berlin ISO 8601 string WITHOUT timezone offset, e.g. '2026-05-27T08:00:00'. For 'now' queries, pass the current local time in Europe/Berlin in this format. Required."
           },
-          "arrival": {
+          "direction": {
             "type": "string",
-            "description": "Desired latest arrival time (ISO 8601). Use for 'arrive by' queries."
+            "enum": ["ABFAHRT", "ANKUNFT"],
+            "description": "ABFAHRT = depart-at (default) — when is the departure time. ANKUNFT = arrive-by — when is the latest acceptable arrival time.",
+            "default": "ABFAHRT"
           },
-          "results": {
-            "type": "number",
-            "description": "Number of itinerary options to return (default: 3)."
+          "fastOnly": {
+            "type": "boolean",
+            "description": "If true, prefer fast (ICE/IC) connections. Default: true.",
+            "default": true
           },
-          "transfers": {
-            "type": "number",
-            "description": "Max number of transfers (-1 = unlimited)."
+          "bike": {
+            "type": "boolean",
+            "description": "If true, only return legs that allow bicycle carriage. Default: false.",
+            "default": false
           }
         },
-        "required": ["from", "to"]
+        "required": ["from", "to", "when"]
       },
       "endpointMapping": {
-        "method": "GET",
-        "path": "/journeys",
-        "queryParams": {
-          "from": "$from",
-          "to": "$to",
-          "departure": "$departure",
-          "arrival": "$arrival",
-          "results": "$results",
-          "transfers": "$transfers"
+        "method": "POST",
+        "path": "/angebote/fahrplan",
+        "bodyMapping": {
+          "abfahrtsHalt": "A=1@L=${from}@",
+          "ankunftsHalt": "A=1@L=${to}@",
+          "anfrageZeitpunkt": "$when",
+          "ankunftSuche": "$direction",
+          "schnelleVerbindungen": "$fastOnly",
+          "bikeCarriage": "$bike",
+          "reservierungsKontingenteVorhanden": false,
+          "sitzplatzOnly": false,
+          "deutschlandTicketVorhanden": false,
+          "nurDeutschlandTicketVerbindungen": false,
+          "produktgattungen": ["ICE", "EC_IC", "IR", "REGIONAL", "SBAHN", "BUS", "SCHIFF", "UBAHN", "TRAM", "ANRUFPFLICHTIG"],
+          "klasse": "KLASSE_2",
+          "reisende": [
+            {
+              "typ": "ERWACHSENER",
+              "anzahl": 1,
+              "alter": [],
+              "ermaessigungen": [
+                { "art": "KEINE_ERMAESSIGUNG", "klasse": "KLASSENLOS" }
+              ]
+            }
+          ]
         }
       }
     }
