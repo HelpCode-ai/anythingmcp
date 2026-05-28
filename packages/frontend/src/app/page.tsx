@@ -85,6 +85,28 @@ export default function DashboardPage() {
           <p className="text-[var(--muted-foreground)] mt-1 text-sm">Here&apos;s an overview of your MCP server.</p>
         </div>
 
+        {/* First-run nudge: user has zero connectors → softly point them
+            back to the welcome wizard. Disappears as soon as they have
+            one. Non-blocking; safe to dismiss by clicking the CTA. */}
+        {!dataLoading && stats.connectors === 0 && (
+          <div className="mb-8 rounded-xl border border-[var(--brand)]/30 bg-[var(--brand-light)] px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <div className="font-medium text-sm">
+                You&apos;re 60 seconds from your first AI superpower
+              </div>
+              <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                Pick a pre-built connector from the marketplace or paste your own OpenAPI spec.
+              </div>
+            </div>
+            <Link
+              href="/welcome"
+              className="shrink-0 inline-flex items-center justify-center bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"
+            >
+              Connect your first tool →
+            </Link>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <StatCard
             title="Active Connectors"
