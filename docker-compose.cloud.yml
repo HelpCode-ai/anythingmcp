@@ -49,6 +49,9 @@ services:
       - MCP_AUTH_MODE=${MCP_AUTH_MODE:-oauth2}
       - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-true}
       - LICENSE_API_URL=${LICENSE_API_URL:-https://anythingmcp.com}
+      # Operator analytics — cloud build only. Leave unset on self-hosted.
+      - GTM_ID=${GTM_ID:-}
+      - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
     depends_on:
       postgres:
         condition: service_healthy

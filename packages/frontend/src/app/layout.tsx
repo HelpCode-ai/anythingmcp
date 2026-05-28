@@ -4,6 +4,8 @@ import { Providers } from './providers';
 import { TrialBanner } from '@/components/trial-banner';
 import { UsageBanner } from '@/components/usage-banner';
 import { LicenseWall } from '@/components/license-wall';
+import { GoogleTagManager, GoogleTagManagerNoscript } from '@/components/google-tag-manager';
+import { CookieConsentBanner } from '@/components/cookie-consent';
 
 export const metadata: Metadata = {
   title: 'Anything MCP',
@@ -19,18 +21,24 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const gtmEnabled = Boolean(process.env.GTM_ID);
+  const cookieDomain = process.env.COOKIE_DOMAIN;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <GoogleTagManager />
       </head>
       <body>
+        <GoogleTagManagerNoscript />
         <Providers>
           <TrialBanner />
           <UsageBanner />
           <LicenseWall />
           {children}
         </Providers>
+        {gtmEnabled && <CookieConsentBanner cookieDomain={cookieDomain} />}
       </body>
     </html>
   );
