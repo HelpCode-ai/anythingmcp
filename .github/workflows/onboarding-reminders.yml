@@ -1,0 +1,51 @@
+name: Onboarding reminders cron
+
+# Pings the cloud backend every 6 hours to send drip emails to users
+# who registered 24h+ ago but never created a connector. The endpoint
+# (`/api/cron/onboarding-reminders`) is idempotent — re-running within
+# a window won't double-send because per-user counters and timing
+# checks are persisted in the users table.
+#
+# Schedule: */6 means 00:00, 06:00, 12:00, 18:00 UTC. We don't tie this
+# to local business hours because the email itself isn't time-sensitive
+# (users register globally and the drip lands ~ a day later anyway).
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Override the onboarding-reminders URL (used for staging / dry-run)"
+        required: false
+        default: "https://cloud.anythingmcp.com/api/cron/onboarding-reminders"
+
+jobs:
+  trigger:
+    name: Trigger onboarding drip
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call cron endpoint
+        env:
+          CRON_SECRET: ${{ secrets.ONBOARDING_CRON_SECRET }}
+          TARGET_URL: ${{ inputs.target_url || 'https://cloud.anythingmcp.com/api/cron/onboarding-reminders' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::ONBOARDING_CRON_SECRET secret is not set on this repository."
+            exit 1
+          fi
+          response_file="$(mktemp)"
+          http_code=$(curl -sS -o "${response_file}" -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            "${TARGET_URL}")
+          echo "HTTP ${http_code}"
+          cat "${response_file}"
+          echo
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Onboarding cron endpoint returned ${http_code}"
+            exit 1
+          fi

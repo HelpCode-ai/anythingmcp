@@ -280,6 +280,77 @@ export class EmailService {
     });
   }
 
+  // ── Onboarding Reminder (SMTP only) ───────────────────────────────────
+  // Cloud-only drip. Self-hosted instances generally don't have SMTP set
+  // up and the external website API has no template for it, so we skip
+  // rather than throw.
+
+  async sendOnboardingReminderEmail(
+    to: string,
+    name: string,
+    dayNumber: 1 | 2,
+  ): Promise<boolean> {
+    const transport = await this.createTransporter();
+    if (!transport) {
+      this.logger.warn(
+        `Skipping onboarding-reminder email to ${to}: no SMTP configured`,
+      );
+      return false;
+    }
+
+    const cloudUrl =
+      process.env.CLOUD_PUBLIC_URL || 'https://cloud.anythingmcp.com';
+    const welcomeUrl = `${cloudUrl}/welcome`;
+    const unsubUrl = `${cloudUrl}/settings/profile`;
+
+    const subject =
+      dayNumber === 1
+        ? 'Connect your first tool in 60 seconds — AnythingMCP'
+        : 'Still here? Pick a tool to try — AnythingMCP';
+
+    const body =
+      dayNumber === 1
+        ? `<p>Hi ${name},</p>
+           <p>You signed up for AnythingMCP yesterday but haven't connected anything yet. The fastest path to your first AI superpower is picking a ready-made connector from the marketplace — Sendcloud, Stripe, GitHub, Slack, Help Scout… 180+ are pre-wired.</p>
+           <p><a href="${welcomeUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Open the welcome wizard →</a></p>
+           <p style="font-size:13px;color:#666;">Should take about a minute.</p>`
+        : `<p>Hi ${name},</p>
+           <p>Just checking in — your AnythingMCP account is still waiting for its first connector. If anything got in your way, hit reply and tell us what; we read every reply.</p>
+           <p><a href="${welcomeUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Pick a connector →</a></p>`;
+
+    try {
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        subject,
+        html: `
+          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+            ${body}
+            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+            <p style="color: #a3a3a3; font-size: 11px;">
+              You're receiving this because you signed up at cloud.anythingmcp.com.
+              <a href="${unsubUrl}" style="color: #a3a3a3;">Unsubscribe from these nudges</a>.
+            </p>
+          </div>
+        `,
+        text: `Hi ${name},\n\n${
+          dayNumber === 1
+            ? "You signed up for AnythingMCP yesterday but haven't connected anything yet."
+            : 'Your AnythingMCP account is still waiting for its first connector.'
+        }\n\nOpen the wizard: ${welcomeUrl}\n\nUnsubscribe: ${unsubUrl}`,
+      });
+      this.logger.log(
+        `Onboarding-reminder email (day ${dayNumber}) sent to ${to}`,
+      );
+      return true;
+    } catch (err) {
+      this.logger.error(
+        `Failed to send onboarding-reminder email to ${to}: ${err}`,
+      );
+      return false;
+    }
+  }
+
   // ── External API Fallback ─────────────────────────────────────────────────
 
   private async sendViaExternalApi(
