@@ -11,6 +11,12 @@ describe('AuditService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
+      // resolveUserId consults users to satisfy the FK before insert.
+      // Default: the test user exists. Individual tests override
+      // findUnique to simulate missing-row or email-fallback paths.
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'user-1' }),
+      },
     };
     service = new AuditService(mockPrisma);
   });
