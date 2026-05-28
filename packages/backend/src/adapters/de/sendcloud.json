@@ -21,23 +21,24 @@
   "tools": [
     {
       "name": "sendcloud_list_shipping_methods",
-      "description": "List all shipping methods available for the account, with carrier, service (e.g. 'DHL Express Domestic'), min/max weight, and price per destination country.",
+      "description": "List shipping methods (carrier, service, weight bracket, price) for a destination country. ALWAYS pass `to_country` — without it, the Sendcloud API returns every method for every country worldwide (10+ seconds, thousands of rows, no caching). If the user hasn't specified a destination yet, ask them or default to their account's primary destination before calling.",
       "parameters": {
         "type": "object",
         "properties": {
           "to_country": {
             "type": "string",
-            "description": "Destination country ISO 2-letter code (e.g. 'DE', 'FR') — filters methods available for that country."
+            "description": "REQUIRED in practice. Destination country ISO 3166-1 alpha-2 code (e.g. 'DE', 'FR', 'NL'). Omitting this returns the global catalog and times out for most accounts — always pass a value."
           },
           "from_country": {
             "type": "string",
-            "description": "Origin country ISO 2-letter code."
+            "description": "Origin country ISO 3166-1 alpha-2 code (defaults to the account's warehouse country)."
           },
           "is_return": {
             "type": "boolean",
             "description": "If true, return only return-shipment methods."
           }
-        }
+        },
+        "required": ["to_country"]
       },
       "endpointMapping": {
         "method": "GET",
