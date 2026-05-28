@@ -85,6 +85,16 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // Onboarding state — drives the welcome wizard and the email drip.
+  // null `onboardingCompletedAt` = wizard still pending or never seen.
+  // `onboardingReminderCount` is terminal at 2 (24h + 72h emails sent).
+  // `emailMarketingOptOut` hard-blocks drip emails; transactional emails
+  // (password reset, email verification) ignore it.
+  onboardingCompletedAt    DateTime? @map("onboarding_completed_at")
+  onboardingLastReminderAt DateTime? @map("onboarding_last_reminder_at")
+  onboardingReminderCount  Int       @default(0) @map("onboarding_reminder_count")
+  emailMarketingOptOut     Boolean   @default(false) @map("email_marketing_opt_out")
+
   // MCP tool governance — optional custom role for tool access control
   mcpRoleId String? @map("mcp_role_id")
   mcpRole   Role?   @relation(fields: [mcpRoleId], references: [id], onDelete: SetNull)

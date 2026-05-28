@@ -55,6 +55,57 @@ export class UsersService {
   }
 
   /**
+   * Read the fields the welcome wizard + drip cron care about.
+   * Lightweight — picks only the relevant columns, no joins.
+   */
+  async getOnboardingState(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        emailVerified: true,
+        createdAt: true,
+        onboardingCompletedAt: true,
+        onboardingLastReminderAt: true,
+        onboardingReminderCount: true,
+        emailMarketingOptOut: true,
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  /**
+   * Mark the wizard finished/skipped or toggle the marketing opt-out flag.
+   * Both fields are idempotent: setting completed=true twice keeps the
+   * earliest timestamp (we don't overwrite a non-null value), so re-opening
+   * the wizard later won't reset analytics.
+   */
+  async updateOnboardingState(
+    userId: string,
+    patch: { completed?: boolean; emailMarketingOptOut?: boolean },
+  ) {
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { onboardingCompletedAt: true },
+    });
+    if (!current) throw new NotFoundException('User not found');
+
+    const data: Partial<User> = {};
+    if (patch.completed === true && current.onboardingCompletedAt === null) {
+      data.onboardingCompletedAt = new Date();
+    }
+    if (patch.emailMarketingOptOut !== undefined) {
+      data.emailMarketingOptOut = patch.emailMarketingOptOut;
+    }
+
+    if (Object.keys(data).length === 0) return this.getOnboardingState(userId);
+
+    await this.prisma.user.update({ where: { id: userId }, data });
+    return this.getOnboardingState(userId);
+  }
+
+  /**
    * Update a user only if they belong to the given organization.
    * Returns null if no row matched. Use this from any admin endpoint
    * that takes a user id from the request URL.

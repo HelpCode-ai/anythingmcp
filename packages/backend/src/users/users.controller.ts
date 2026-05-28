@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -11,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsString, IsOptional, IsEmail, IsEnum, MinLength, Matches, Equals } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsEnum, IsBoolean, MinLength, Matches, Equals } from 'class-validator';
 import { UserRole } from '../generated/prisma/client';
 import { UsersService } from './users.service';
 import { AuthService } from '../auth/auth.service';
@@ -44,6 +45,24 @@ class ChangePasswordDto {
   @MinLength(8)
   @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
   newPassword: string;
+}
+
+class UpdateOnboardingStateDto {
+  @ApiPropertyOptional({
+    description:
+      'Mark onboarding as completed (sets onboardingCompletedAt = now). ' +
+      'Frontend calls this when the user finishes or explicitly skips the welcome wizard.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  completed?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Hard unsubscribe from drip emails. Transactional mail keeps flowing.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  emailMarketingOptOut?: boolean;
 }
 
 class UpdateUserRoleDto {
@@ -84,6 +103,29 @@ export class UsersController {
     if (!user) return { error: 'User not found' };
     const { passwordHash, ...profile } = user;
     return profile;
+  }
+
+  @Get('me/onboarding-state')
+  @ApiOperation({
+    summary: 'Get onboarding/wizard state for the current user',
+    description:
+      'Returns the fields used by the welcome wizard and the drip cron. ' +
+      'The frontend combines this with /api/license/status and /api/connectors ' +
+      'to decide whether to redirect to /welcome.',
+  })
+  async getOnboardingState(@Req() req: any) {
+    return this.usersService.getOnboardingState(req.user.sub);
+  }
+
+  @Patch('me/onboarding-state')
+  @ApiOperation({
+    summary: 'Update onboarding state (skip/finish the wizard, opt out of marketing emails)',
+  })
+  async updateOnboardingState(
+    @Req() req: any,
+    @Body() dto: UpdateOnboardingStateDto,
+  ) {
+    return this.usersService.updateOnboardingState(req.user.sub, dto);
   }
 
   @Put('me')
