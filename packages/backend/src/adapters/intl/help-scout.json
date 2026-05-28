@@ -1,20 +1,23 @@
 {
   "slug": "help-scout",
   "name": "Help Scout",
-  "description": "Drive Help Scout (shared inbox + helpdesk) from any AI agent: conversations, customers, mailboxes, tags, threads. 13 tools, OAuth2 Bearer auth.",
-  "instructions": "This connector uses the Help Scout Mailbox API v2 (developer.helpscout.com/mailbox-api).\n\n**Setup**:\n1. Sign in to Help Scout → **Manage → Apps → My Apps → Create My App**.\n2. Pick app type:\n   - **Personal Access Token** (single-user): get a token from your profile → API Keys → Personal Access Token. Token expires after 2 days — refresh needed.\n   - **OAuth2 App** (multi-user / longer-lived): standard OAuth2 client-credentials or auth-code flow.\n3. Set `HELPSCOUT_ACCESS_TOKEN` to the access token.\n\n**Authentication**: `Authorization: Bearer ${HELPSCOUT_ACCESS_TOKEN}`. Tokens expire — your orchestrator handles refresh.\n\n**Conversations are central**: Help Scout calls tickets 'conversations'. They live in mailboxes. Each has customer (the requester), assignee, status (active/pending/closed/spam), threads (replies/notes).\n\n**Thread types**: customer (inbound from customer), reply (outbound public), note (internal), forward (forwarded by agent), phone (logged call), chat (live-chat).\n\n**Status values**: active, pending (snoozed), closed, spam, open (legacy). Use 'closed' to resolve.\n\n**HAL+JSON**: responses follow the HAL spec — `_embedded` contains nested collections, `_links` for navigation. Pagination via `?page=N&size=M` (max 50).\n\n**Custom fields**: each mailbox has its own custom fields. Set them via `customFields` array in conversation create/update.\n\n**Rate limits**: 400 req/min per API key. On 429 back off.\n\n**Out of scope here**: Docs (separate Help Scout Docs API), Beacon, Reports analytics endpoints, webhooks management.",
+  "description": "Drive Help Scout (shared inbox + helpdesk) from any AI agent: conversations, customers, mailboxes, tags, threads. 13 tools, OAuth2 client_credentials auth (auto-refreshed).",
+  "instructions": "This connector uses the Help Scout Mailbox API v2 (developer.helpscout.com/mailbox-api). The Mailbox API is OAuth2-only — there are no Personal Access Tokens (those belong to the separate Docs API).\n\n**Setup (one-off)**:\n1. Sign in to Help Scout. Click your **avatar (top-right)** → **Your Profile** → **My Apps** → **Create App**.\n2. Pick any App Name (e.g. \"AnythingMCP\") and a Redirection URL (placeholder is fine for client_credentials — e.g. `https://anythingmcp.com/oauth/callback`). Copy the generated **App ID** and **App Secret**.\n3. Set the two env vars below to those values.\n\n**Token lifecycle**: the engine performs the OAuth2 `client_credentials` grant against `https://api.helpscout.net/v2/oauth2/token` and caches the access token. Help Scout tokens expire after 48h; the engine refreshes proactively 5 min before expiry — no manual rotation needed.\n\n**Authentication**: every API call sends `Authorization: Bearer <auto-issued access_token>`.\n\n**Conversations are central**: Help Scout calls tickets 'conversations'. They live in mailboxes. Each has customer (the requester), assignee, status (active/pending/closed/spam), threads (replies/notes).\n\n**Thread types**: customer (inbound from customer), reply (outbound public), note (internal), forward (forwarded by agent), phone (logged call), chat (live-chat).\n\n**Status values**: active, pending (snoozed), closed, spam, open (legacy). Use 'closed' to resolve.\n\n**HAL+JSON**: responses follow the HAL spec — `_embedded` contains nested collections, `_links` for navigation. Pagination via `?page=N&size=M` (max 50).\n\n**Custom fields**: each mailbox has its own custom fields. Set them via `customFields` array in conversation create/update.\n\n**Rate limits**: 400 req/min per app. On 429 back off.\n\n**Out of scope here**: Docs (separate Help Scout Docs API, uses API key + HTTP Basic), Beacon, Reports analytics endpoints, webhooks management.",
   "region": "intl",
   "category": "support",
   "icon": "helpscout",
   "docsUrl": "https://developer.helpscout.com/mailbox-api/",
-  "requiredEnvVars": ["HELPSCOUT_ACCESS_TOKEN"],
+  "requiredEnvVars": ["HELPSCOUT_CLIENT_ID", "HELPSCOUT_CLIENT_SECRET"],
   "connector": {
     "name": "Help Scout Mailbox v2",
     "type": "REST",
     "baseUrl": "https://api.helpscout.net/v2",
-    "authType": "BEARER_TOKEN",
+    "authType": "OAUTH2",
     "authConfig": {
-      "token": "{{HELPSCOUT_ACCESS_TOKEN}}"
+      "grant": "client_credentials",
+      "tokenUrl": "https://api.helpscout.net/v2/oauth2/token",
+      "clientId": "{{HELPSCOUT_CLIENT_ID}}",
+      "clientSecret": "{{HELPSCOUT_CLIENT_SECRET}}"
     }
   },
   "tools": [
