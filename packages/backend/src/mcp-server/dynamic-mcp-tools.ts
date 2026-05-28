@@ -155,6 +155,7 @@ export class DynamicMcpTools {
       await this.auditService.logInvocation({
         toolId: tool.id,
         userId: context?.userId,
+        userEmail: context?.userEmail,
         mcpServerId: context?.mcpServerId,
         input: params,
         output: result as Record<string, unknown>,
@@ -189,6 +190,7 @@ export class DynamicMcpTools {
       await this.auditService.logInvocation({
         toolId: tool.id,
         userId: context?.userId,
+        userEmail: context?.userEmail,
         mcpServerId: context?.mcpServerId,
         input: params,
         status: 'ERROR',

@@ -11,6 +11,16 @@ export class AuditService {
   async logInvocation(data: {
     toolId: string;
     userId?: string;
+    /**
+     * Email from the JWT (OAuth or app-token). When `userId` doesn't
+     * resolve to a real users row — common for MCP OAuth JWTs whose
+     * `sub` is an external subject like `claude:user:xxx` rather than
+     * our cuid — we look the user up by email and stamp `userId`
+     * before persisting. Until this was added, 90% of cloud
+     * tool_invocations were saved with `user_id = NULL` even though
+     * the user was clearly authenticated.
+     */
+    userEmail?: string;
     mcpServerId?: string;
     input: Record<string, unknown>;
     output?: Record<string, unknown>;
@@ -19,11 +29,13 @@ export class AuditService {
     error?: string;
     clientInfo?: string;
   }): Promise<void> {
+    const resolvedUserId = await this.resolveUserId(data.userId, data.userEmail);
+
     try {
       await this.prisma.toolInvocation.create({
         data: {
           toolId: data.toolId,
-          userId: data.userId,
+          userId: resolvedUserId,
           mcpServerId: data.mcpServerId,
           input: data.input as any,
           output: data.output as any,
@@ -34,8 +46,10 @@ export class AuditService {
         },
       });
     } catch (error: any) {
-      // FK violation on userId — retry without userId (user info is still in clientInfo)
-      if (error.message?.includes('user_id_fkey') && data.userId) {
+      // FK violation should be impossible after resolveUserId, but
+      // keep the safety net: if it still trips, retry without user_id
+      // so we at least keep the row for aggregate metrics.
+      if (error.message?.includes('user_id_fkey') && resolvedUserId) {
         try {
           await this.prisma.toolInvocation.create({
             data: {
@@ -64,6 +78,45 @@ export class AuditService {
     this.logger.debug(
       `Tool invocation: ${data.toolId} [${data.status}] ${data.durationMs ?? 0}ms`,
     );
+  }
+
+  /**
+   * Return a `user_id` that is guaranteed to satisfy the FK constraint,
+   * or `undefined`. Order of preference:
+   *   1. The `userId` we were given, IF it exists in users.
+   *   2. A user matched by `userEmail` (case-insensitive, single row).
+   *   3. undefined (genuinely anonymous — e.g. static bearer token).
+   *
+   * Small in-memory cache on email so the hot MCP path doesn't issue
+   * a SELECT on every single tool invocation.
+   */
+  private emailToIdCache = new Map<string, string>();
+
+  private async resolveUserId(
+    userId: string | undefined,
+    userEmail: string | undefined,
+  ): Promise<string | undefined> {
+    if (userId) {
+      const exists = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+      if (exists) return userId;
+    }
+
+    if (!userEmail) return undefined;
+    const key = userEmail.toLowerCase();
+    const cached = this.emailToIdCache.get(key);
+    if (cached) return cached;
+
+    const byEmail = await this.prisma.user.findUnique({
+      where: { email: key },
+      select: { id: true },
+    });
+    if (!byEmail) return undefined;
+
+    this.emailToIdCache.set(key, byEmail.id);
+    return byEmail.id;
   }
 
   private orgScope(organizationId?: string): any {
