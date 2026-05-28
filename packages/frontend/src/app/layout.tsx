@@ -13,6 +13,15 @@ export const metadata: Metadata = {
   icons: { icon: '/icon.svg', apple: '/apple-icon.svg' },
 };
 
+// process.env.GTM_ID is read by GoogleTagManager() during the layout
+// render. Without `force-dynamic`, Next.js prerenders the layout at
+// build time and bakes in whatever the env was during `next build` —
+// which is empty in CI, so cloud builds would never get GTM. Forcing
+// dynamic keeps a single Docker image working for both flavors:
+// the runtime env on the cloud droplet enables GTM, and self-hosted
+// containers leave it empty and ship nothing.
+export const dynamic = 'force-dynamic';
+
 // Inline script to prevent FOUC — runs before React hydrates
 const themeScript = `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches);if(d)document.documentElement.classList.add('dark')}catch(e){}})()`;
 
