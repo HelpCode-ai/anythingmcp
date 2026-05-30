@@ -103,9 +103,30 @@ export const auth = {
 };
 
 // Users
+export interface OnboardingState {
+  id: string;
+  emailVerified: boolean;
+  createdAt: string;
+  onboardingCompletedAt: string | null;
+  onboardingLastReminderAt: string | null;
+  onboardingReminderCount: number;
+  emailMarketingOptOut: boolean;
+}
+
 export const users = {
   me: (token: string) =>
     request<any>('/api/users/me', { token }),
+  onboardingState: (token: string) =>
+    request<OnboardingState>('/api/users/me/onboarding-state', { token }),
+  updateOnboardingState: (
+    data: { completed?: boolean; emailMarketingOptOut?: boolean },
+    token: string,
+  ) =>
+    request<OnboardingState>('/api/users/me/onboarding-state', {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
   updateProfile: (data: { name?: string; email?: string }, token: string) =>
     request('/api/users/me', { method: 'PUT', body: data, token }),
   changePassword: (data: { currentPassword: string; newPassword: string }, token: string) =>
