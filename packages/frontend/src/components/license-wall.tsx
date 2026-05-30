@@ -17,7 +17,14 @@ export function LicenseWall() {
   const isCloud = deploymentMode === 'cloud';
 
   useEffect(() => {
-    if (!token) return;
+    // Logged out (or logging out) — clear any stale block so the wall
+    // doesn't keep covering the login page. Without this reset the modal
+    // stays mounted after Logout because we'd only ever *set* `reason`,
+    // never unset it.
+    if (!token) {
+      setReason(null);
+      return;
+    }
 
     license.getStatus(token).then((status) => {
       // Cloud: no license at all means the org is not allowed to use the
@@ -25,6 +32,7 @@ export function LicenseWall() {
       // community tier", which is permitted.
       if (!status.plan) {
         if (isCloud) setReason('no-license');
+        else setReason(null);
         return;
       }
       // Block when trial is expired
@@ -35,12 +43,29 @@ export function LicenseWall() {
       // Block when any license is expired/revoked
       if (status.status === 'expired' || status.status === 'revoked') {
         setReason('expired');
+        return;
       }
+      // Active/valid license — make sure no stale block lingers.
+      setReason(null);
     }).catch(() => {});
   }, [token, isCloud]);
 
-  // Don't block the license settings page so users can enter a license key
-  if (!reason || pathname === '/settings/license' || pathname?.startsWith('/settings/license/')) return null;
+  // Routes where the wall must never appear: unauthenticated/auth flows
+  // (you can't fix a license problem while logged out) and the license
+  // settings page itself (so users can enter a key / start a trial).
+  const isExemptRoute =
+    !pathname ||
+    pathname === '/login' ||
+    pathname === '/verify-email' ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password' ||
+    pathname.startsWith('/accept-invite') ||
+    pathname === '/settings/license' ||
+    pathname.startsWith('/settings/license/');
+
+  // Don't block when logged out, when there's no active block, or on an
+  // exempt route.
+  if (!token || !reason || isExemptRoute) return null;
 
   const title =
     reason === 'no-license'
