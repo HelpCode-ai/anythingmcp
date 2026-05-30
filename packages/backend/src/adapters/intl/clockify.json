@@ -1,8 +1,8 @@
 {
   "slug": "clockify",
   "name": "Clockify",
-  "description": "Manage Clockify (time tracking, projects, clients, tags, reports) from any AI agent. 10 tools, X-Api-Key auth.",
-  "instructions": "This connector wraps the Clockify REST API v1 (api.clockify.me/api/v1).\n\n**Setup**:\n1. Sign in to https://clockify.me → bottom-left avatar → **Preferences → Advanced → API → Generate API key**.\n2. Set `CLOCKIFY_API_KEY`.\n\n**Authentication**: `X-Api-Key: ${CLOCKIFY_API_KEY}` on every request.\n\n**Workspace IDs**: Clockify is workspace-scoped. Use `clockify_get_user` first — its response contains `defaultWorkspace` and `activeWorkspace`. List workspaces with `clockify_list_workspaces`.\n\n**Time entry shape**: `start` + `end` are ISO 8601 UTC with the literal `Z` suffix (e.g. `2026-05-20T14:30:00Z`). For a running entry, OMIT `end` — the entry will be live until you call `clockify_stop_current_entry`.\n\n**Project / Task / Tag IDs**: every entity ID is a 24-char hex Mongo-style ID (e.g. `5b1e7b7b7e8d8e3a4c5d6f78`). Always look them up first via the list endpoints; user-facing names are not accepted.\n\n**Pagination**: `page` (1-based) + `page-size` (max 5000 but default 50). Some endpoints also support cursor pagination via `cursor`.\n\n**Rate limits**: 50 req/s per workspace; bursts tolerated. 429 with no Retry-After — back off 1s.\n\n**Out of scope here**: Reports endpoints (different base host `reports.api.clockify.me`, would be a sibling adapter), approval workflows, Pumble integration.",
+  "description": "Manage Clockify (time tracking, projects, tasks, clients, tags, workspace users, reports) from any AI agent. 18 tools, X-Api-Key auth.",
+  "instructions": "This connector wraps the Clockify REST API v1 (api.clockify.me/api/v1).\n\n**Setup**:\n1. Sign in to https://clockify.me → bottom-left avatar → **Preferences → Advanced → API → Generate API key**.\n2. Set `CLOCKIFY_API_KEY`.\n\n**Authentication**: `X-Api-Key: ${CLOCKIFY_API_KEY}` on every request.\n\n**Workspace IDs**: Clockify is workspace-scoped. Use `clockify_get_user` first — its response contains `defaultWorkspace` and `activeWorkspace`. List workspaces with `clockify_list_workspaces`.\n\n**Time entry shape**: `start` + `end` are ISO 8601 UTC with the literal `Z` suffix (e.g. `2026-05-20T14:30:00Z`). For a running entry, OMIT `end` — the entry will be live until you call `clockify_stop_current_entry`.\n\n**Project / Task / Tag IDs**: every entity ID is a 24-char hex Mongo-style ID (e.g. `5b1e7b7b7e8d8e3a4c5d6f78`). Always look them up first via the list endpoints; user-facing names are not accepted.\n\n**Deleting clients/tasks/projects**: Clockify forbids deleting an active client or project — archive it first (PUT with `archived:true`), then DELETE. Tasks must be set to `status:DONE` before deletion.\n\n**Reports**: the report tools (`clockify_detailed_report`, `clockify_summary_report`) hit a SEPARATE host — `reports.api.clockify.me/v1` — handled transparently here via absolute URLs. POST body needs `dateRangeStart`/`dateRangeEnd` (ISO 8601 with millis, e.g. `2026-05-01T00:00:00.000`). Detailed reports paginate via `detailedFilter.page`/`pageSize`; summary groups via `summaryFilter.groups` (e.g. `[\"PROJECT\",\"USER\"]`).\n\n**Regional workspaces**: workspaces hosted in EU/US regions use prefixed hosts (e.g. `euc1.clockify.me`, `reports.euc1.clockify.me`). This adapter targets the global host; regional accounts need a forked baseUrl.\n\n**Pagination**: `page` (1-based) + `page-size` (max 5000 but default 50). Some endpoints also support cursor pagination via `cursor`.\n\n**Rate limits**: ~10 req/s per API key. 429 with no Retry-After — back off 1s.\n\n**Out of scope here**: approval workflows, expenses, invoicing, webhooks, Pumble integration.",
   "region": "intl",
   "category": "time-tracking",
   "icon": "clockify",
@@ -30,6 +30,156 @@
       "description": "List workspaces the user belongs to.",
       "parameters": { "type": "object", "properties": {} },
       "endpointMapping": { "method": "GET", "path": "/workspaces" }
+    },
+    {
+      "name": "clockify_list_workspace_users",
+      "description": "List all users (members) of a workspace. Returns each user's id, email, name, status (ACTIVE/INACTIVE), and memberships. Filter by name/email/status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "name": { "type": "string", "description": "Substring filter by name." },
+          "email": { "type": "string", "description": "Filter by email." },
+          "status": { "type": "string", "description": "ACTIVE, INACTIVE, PENDING, DECLINED, or ALL." },
+          "page": { "type": "integer", "description": "1-based." },
+          "page_size": { "type": "integer", "description": "Default 50, max 5000." }
+        },
+        "required": ["workspace_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/users",
+        "queryParams": {
+          "name": "$name",
+          "email": "$email",
+          "status": "$status",
+          "page": "$page",
+          "page-size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "clockify_find_tasks",
+      "description": "List tasks within a project. Returns id, name, status (ACTIVE/DONE), assigneeIds, estimate, billable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "project_id": { "type": "string", "description": "Project ID." },
+          "name": { "type": "string", "description": "Substring filter." },
+          "is_active": { "type": "boolean", "description": "true = only ACTIVE tasks." },
+          "page": { "type": "integer", "description": "1-based." },
+          "page_size": { "type": "integer", "description": "Default 50." }
+        },
+        "required": ["workspace_id", "project_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspace_id}/projects/{project_id}/tasks",
+        "queryParams": {
+          "name": "$name",
+          "is-active": "$is_active",
+          "page": "$page",
+          "page-size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "clockify_add_task",
+      "description": "Add a task to a project. Required: name. Optionally assign users, set an estimate, or mark billable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "project_id": { "type": "string", "description": "Project ID." },
+          "name": { "type": "string", "description": "Task name." },
+          "assignee_ids": { "type": "array", "description": "Array of user ID strings to assign." },
+          "estimate": { "type": "string", "description": "ISO 8601 duration, e.g. PT2H30M." },
+          "billable": { "type": "boolean", "description": "Billable flag." }
+        },
+        "required": ["workspace_id", "project_id", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workspaces/{workspace_id}/projects/{project_id}/tasks",
+        "bodyMapping": {
+          "name": "$name",
+          "assigneeIds": "$assignee_ids",
+          "estimate": "$estimate",
+          "billable": "$billable"
+        }
+      }
+    },
+    {
+      "name": "clockify_add_project",
+      "description": "Create a project in a workspace. Required: name. Optionally link a client, set color, billable, public, hourly rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "name": { "type": "string", "description": "Project name." },
+          "client_id": { "type": "string", "description": "Client ID to attach." },
+          "color": { "type": "string", "description": "Hex color, e.g. #03A9F4." },
+          "billable": { "type": "boolean", "description": "Billable by default." },
+          "is_public": { "type": "boolean", "description": "Visible to all workspace members." },
+          "note": { "type": "string", "description": "Free-text note." }
+        },
+        "required": ["workspace_id", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workspaces/{workspace_id}/projects",
+        "bodyMapping": {
+          "name": "$name",
+          "clientId": "$client_id",
+          "color": "$color",
+          "billable": "$billable",
+          "isPublic": "$is_public",
+          "note": "$note"
+        }
+      }
+    },
+    {
+      "name": "clockify_add_client",
+      "description": "Create a client in a workspace. Required: name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "name": { "type": "string", "description": "Client name." },
+          "email": { "type": "string", "description": "Client email." },
+          "address": { "type": "string", "description": "Client address." },
+          "note": { "type": "string", "description": "Free-text note." }
+        },
+        "required": ["workspace_id", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workspaces/{workspace_id}/clients",
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "address": "$address",
+          "note": "$note"
+        }
+      }
+    },
+    {
+      "name": "clockify_add_tag",
+      "description": "Create a tag in a workspace. Required: name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "name": { "type": "string", "description": "Tag name." }
+        },
+        "required": ["workspace_id", "name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workspaces/{workspace_id}/tags",
+        "bodyMapping": { "name": "$name" }
+      }
     },
     {
       "name": "clockify_list_clients",
@@ -232,6 +382,60 @@
       "endpointMapping": {
         "method": "DELETE",
         "path": "/workspaces/{workspace_id}/time-entries/{time_entry_id}"
+      }
+    },
+    {
+      "name": "clockify_detailed_report",
+      "description": "Detailed report: line-by-line time entries for a workspace over a date range, with totals (time, billable time, earned amount). Served by the Reports API host. Filter/paginate via detailed_filter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "date_range_start": { "type": "string", "description": "ISO 8601 with millis, e.g. 2026-05-01T00:00:00.000." },
+          "date_range_end": { "type": "string", "description": "ISO 8601 with millis, e.g. 2026-05-31T23:59:59.999." },
+          "detailed_filter": { "type": "object", "description": "{page:1, pageSize:50, sortColumn:'DATE'}. pageSize max 1000." },
+          "users": { "type": "object", "description": "User filter: {ids:[...], contains:'CONTAINS'}." },
+          "projects": { "type": "object", "description": "Project filter: {ids:[...], contains:'CONTAINS'}." }
+        },
+        "required": ["workspace_id", "date_range_start", "date_range_end"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://reports.api.clockify.me/v1/workspaces/{workspace_id}/reports/detailed",
+        "bodyMapping": {
+          "dateRangeStart": "$date_range_start",
+          "dateRangeEnd": "$date_range_end",
+          "detailedFilter": "$detailed_filter",
+          "users": "$users",
+          "projects": "$projects"
+        }
+      }
+    },
+    {
+      "name": "clockify_summary_report",
+      "description": "Summary report: aggregated time/earnings grouped by one or more dimensions (PROJECT, USER, CLIENT, TASK, TAG, DATE) for a workspace over a date range. Served by the Reports API host.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "description": "Workspace ID." },
+          "date_range_start": { "type": "string", "description": "ISO 8601 with millis." },
+          "date_range_end": { "type": "string", "description": "ISO 8601 with millis." },
+          "summary_filter": { "type": "object", "description": "{groups:['PROJECT','USER'], sortColumn:'GROUP'}. groups required for grouping." },
+          "users": { "type": "object", "description": "User filter: {ids:[...], contains:'CONTAINS'}." },
+          "projects": { "type": "object", "description": "Project filter: {ids:[...], contains:'CONTAINS'}." }
+        },
+        "required": ["workspace_id", "date_range_start", "date_range_end", "summary_filter"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://reports.api.clockify.me/v1/workspaces/{workspace_id}/reports/summary",
+        "bodyMapping": {
+          "dateRangeStart": "$date_range_start",
+          "dateRangeEnd": "$date_range_end",
+          "summaryFilter": "$summary_filter",
+          "users": "$users",
+          "projects": "$projects"
+        }
       }
     }
   ]
