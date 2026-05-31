@@ -39,7 +39,7 @@
     "@eslint/eslintrc": "^3.3.5",
     "@playwright/test": "^1.59.1",
     "@types/node": "^22.19.19",
-    "@types/react": "^19.0.0",
+    "@types/react": "^19.2.15",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.5.0",
     "eslint": "^9.39.4",

@@ -14,7 +14,7 @@ jobs:
     if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
     steps:
       - name: Post comment on the Roadmap discussion
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           # The pinned Roadmap discussion. Update DISCUSSION_NUMBER if it changes.
           DISCUSSION_NUMBER: "147"
