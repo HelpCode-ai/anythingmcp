@@ -21,41 +21,94 @@
     {
       "name": "resy_search_venues",
       "description": "Geo search Resy venues near a coordinate, with optional party size and date filters. Returns venues with id, name, neighborhood, cuisine, price band, and available time slots.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "latitude": { "type": "number", "description": "Search center latitude." },
-          "longitude": { "type": "number", "description": "Search center longitude." },
-          "party_size": { "type": "integer", "description": "Party size.", "default": 2, "minimum": 1, "maximum": 20 },
-          "day": { "type": "string", "description": "Date in YYYY-MM-DD, e.g. '2026-05-24'." }
+          "latitude": {
+            "type": "number",
+            "description": "Search center latitude."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Search center longitude."
+          },
+          "party_size": {
+            "type": "integer",
+            "description": "Party size.",
+            "default": 2,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "day": {
+            "type": "string",
+            "description": "Date in YYYY-MM-DD, e.g. '2026-05-24'."
+          }
         },
-        "required": ["latitude", "longitude"]
+        "required": [
+          "latitude",
+          "longitude"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/3/venuesearch/search",
         "bodyMapping": {
-          "venue_filter": { "venue_id": [] },
+          "venue_filter": {
+            "venue_id": []
+          },
           "availability": true,
-          "slot_filter": { "party_size": "$party_size", "day": "$day" },
-          "geo": { "user": { "latitude": "$latitude", "longitude": "$longitude" } }
+          "slot_filter": {
+            "party_size": "$party_size",
+            "day": "$day"
+          },
+          "geo": {
+            "user": {
+              "latitude": "$latitude",
+              "longitude": "$longitude"
+            }
+          }
         }
       }
     },
     {
       "name": "resy_find_availability",
       "description": "Find available slots at one or more venues on a given day for a party size, optionally near a coordinate. Returns slots with start time, table type, and configuration token for booking.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "day": { "type": "string", "description": "Date in YYYY-MM-DD." },
-          "party_size": { "type": "integer", "default": 2, "minimum": 1, "maximum": 20 },
-          "location": { "type": "string", "description": "City code (e.g. 'ny', 'la', 'lon', 'mia', 'ath')." },
-          "venue_id": { "type": "integer", "description": "Optional: limit to one venue." },
-          "lat": { "type": "number", "description": "Search center latitude." },
-          "long": { "type": "number", "description": "Search center longitude." }
+          "day": {
+            "type": "string",
+            "description": "Date in YYYY-MM-DD."
+          },
+          "party_size": {
+            "type": "integer",
+            "default": 2,
+            "minimum": 1,
+            "maximum": 20
+          },
+          "location": {
+            "type": "string",
+            "description": "City code (e.g. 'ny', 'la', 'lon', 'mia', 'ath')."
+          },
+          "venue_id": {
+            "type": "integer",
+            "description": "Optional: limit to one venue."
+          },
+          "lat": {
+            "type": "number",
+            "description": "Search center latitude."
+          },
+          "long": {
+            "type": "number",
+            "description": "Search center longitude."
+          }
         },
-        "required": ["day", "party_size"]
+        "required": [
+          "day",
+          "party_size"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -73,31 +126,56 @@
     {
       "name": "resy_get_venue",
       "description": "Full venue detail — name, address, cuisine, photos, menu, hours, descriptions. Pass venue_id from search or find.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer", "description": "Venue ID." }
+          "id": {
+            "type": "integer",
+            "description": "Venue ID."
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/3/venue",
-        "queryParams": { "id": "$id" }
+        "queryParams": {
+          "id": "$id"
+        }
       }
     },
     {
       "name": "resy_get_venue_calendar",
       "description": "Get the booking calendar for one venue across a date range — which days have availability for a given party size.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "venue_id": { "type": "integer" },
-          "num_seats": { "type": "integer", "description": "Party size.", "default": 2 },
-          "start_date": { "type": "string", "description": "YYYY-MM-DD." },
-          "end_date": { "type": "string", "description": "YYYY-MM-DD." }
+          "venue_id": {
+            "type": "integer"
+          },
+          "num_seats": {
+            "type": "integer",
+            "description": "Party size.",
+            "default": 2
+          },
+          "start_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD."
+          }
         },
-        "required": ["venue_id", "start_date", "end_date"]
+        "required": [
+          "venue_id",
+          "start_date",
+          "end_date"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -113,13 +191,23 @@
     {
       "name": "resy_get_city_list",
       "description": "Get a Resy editorial list for a city — e.g. 'top-rated', 'new-on-resy', 'most-bookmarked'. Returns the curated venues.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "city": { "type": "string", "description": "City code, e.g. 'ny', 'la', 'lon', 'ath'." },
-          "list": { "type": "string", "description": "List slug, e.g. 'top-rated', 'new-on-resy', 'climbing' (city-specific lists vary)." }
+          "city": {
+            "type": "string",
+            "description": "City code, e.g. 'ny', 'la', 'lon', 'ath'."
+          },
+          "list": {
+            "type": "string",
+            "description": "List slug, e.g. 'top-rated', 'new-on-resy', 'climbing' (city-specific lists vary)."
+          }
         },
-        "required": ["city", "list"]
+        "required": [
+          "city",
+          "list"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -129,6 +217,7 @@
     {
       "name": "resy_get_location_config",
       "description": "Get Resy's configuration for available cities, neighborhoods, and cuisines. Use first to discover what's queryable.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {}

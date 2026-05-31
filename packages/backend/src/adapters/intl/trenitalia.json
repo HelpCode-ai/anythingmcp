@@ -21,18 +21,46 @@
     {
       "name": "trenitalia_search_trips",
       "description": "Search Trenitalia trains between two stations on a date. Returns trips with departure/arrival time, train type (Frecciarossa, Frecciargento, Intercity, regional), duration, transfers, available fares and prices.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "from_name": { "type": "string", "description": "Origin station name (e.g. 'Milano Centrale', 'Roma Termini')." },
-          "to_name": { "type": "string", "description": "Destination station name." },
-          "departure_date": { "type": "string", "description": "Departure date/time, naive ISO-8601 (e.g. '2026-05-24T08:00:00')." },
-          "return_date": { "type": "string", "description": "Optional return date/time for round-trip." },
-          "adults": { "type": "integer", "default": 1, "minimum": 1, "maximum": 9 },
-          "children": { "type": "integer", "default": 0 },
-          "page": { "type": "integer", "default": 1 }
+          "from_name": {
+            "type": "string",
+            "description": "Origin station name (e.g. 'Milano Centrale', 'Roma Termini')."
+          },
+          "to_name": {
+            "type": "string",
+            "description": "Destination station name."
+          },
+          "departure_date": {
+            "type": "string",
+            "description": "Departure date/time, naive ISO-8601 (e.g. '2026-05-24T08:00:00')."
+          },
+          "return_date": {
+            "type": "string",
+            "description": "Optional return date/time for round-trip."
+          },
+          "adults": {
+            "type": "integer",
+            "default": 1,
+            "minimum": 1,
+            "maximum": 9
+          },
+          "children": {
+            "type": "integer",
+            "default": 0
+          },
+          "page": {
+            "type": "integer",
+            "default": 1
+          }
         },
-        "required": ["from_name", "to_name", "departure_date"]
+        "required": [
+          "from_name",
+          "to_name",
+          "departure_date"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -51,6 +79,7 @@
     {
       "name": "trenitalia_get_home_alerts",
       "description": "Get current service alerts and mobility info from Trenitalia's home feed — strikes, delays, line-wide notices.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {}
@@ -63,6 +92,7 @@
     {
       "name": "trenitalia_get_mobility_info",
       "description": "Get general mobility info — strikes (`scioperi`), planned outages, network status — from Trenitalia's home info feed.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {}

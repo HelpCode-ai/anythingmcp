@@ -62,6 +62,7 @@ export class McpServerService implements OnModuleInit {
           description: tool.description,
           parameters: tool.parameters as Record<string, unknown>,
           connectorType: connector.type,
+          useProxy: tool.useProxy,
           connectorConfig: {
             baseUrl: connector.baseUrl,
             authType: connector.authType,
@@ -131,6 +132,7 @@ export class McpServerService implements OnModuleInit {
           description: tool.description,
           parameters: tool.parameters as Record<string, unknown>,
           connectorType: connector.type,
+          useProxy: tool.useProxy,
           connectorConfig: {
             baseUrl: connector.baseUrl,
             authType: connector.authType,

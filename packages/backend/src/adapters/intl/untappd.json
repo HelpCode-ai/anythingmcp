@@ -7,7 +7,10 @@
   "category": "food",
   "icon": "untappd",
   "docsUrl": "https://untappd.com/api/docs",
-  "requiredEnvVars": ["UNTAPPD_CLIENT_ID", "UNTAPPD_CLIENT_SECRET"],
+  "requiredEnvVars": [
+    "UNTAPPD_CLIENT_ID",
+    "UNTAPPD_CLIENT_SECRET"
+  ],
   "connector": {
     "name": "Untappd API v4",
     "type": "REST",
@@ -19,15 +22,38 @@
     {
       "name": "untappd_search_beer",
       "description": "Search Untappd for beers by free-text query (name, brewery, style). Returns a paginated list with beer id, name, brewery, style, ABV, IBU, rating, label image.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "q": { "type": "string", "description": "Search query (e.g. 'Hazy IPA', 'Westvleteren 12')." },
-          "limit": { "type": "integer", "default": 25, "minimum": 1, "maximum": 50 },
-          "offset": { "type": "integer", "default": 0 },
-          "sort": { "type": "string", "enum": ["checkin", "name", "count", "all"], "default": "checkin" }
+          "q": {
+            "type": "string",
+            "description": "Search query (e.g. 'Hazy IPA', 'Westvleteren 12')."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 50
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "checkin",
+              "name",
+              "count",
+              "all"
+            ],
+            "default": "checkin"
+          }
         },
-        "required": ["q"]
+        "required": [
+          "q"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -45,12 +71,18 @@
     {
       "name": "untappd_get_beer",
       "description": "Full detail of one beer by ID — brewery, style, ABV, IBU, ratings, recent check-ins, label.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "bid": { "type": "integer", "description": "Untappd beer ID." }
+          "bid": {
+            "type": "integer",
+            "description": "Untappd beer ID."
+          }
         },
-        "required": ["bid"]
+        "required": [
+          "bid"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -64,13 +96,21 @@
     {
       "name": "untappd_search_brewery",
       "description": "Search Untappd for breweries by free-text query.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "q": { "type": "string" },
-          "offset": { "type": "integer", "default": 0 }
+          "q": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0
+          }
         },
-        "required": ["q"]
+        "required": [
+          "q"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -86,12 +126,17 @@
     {
       "name": "untappd_get_brewery",
       "description": "Full detail of one brewery by ID — location, beer list, social stats.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "brewery_id": { "type": "integer" }
+          "brewery_id": {
+            "type": "integer"
+          }
         },
-        "required": ["brewery_id"]
+        "required": [
+          "brewery_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",

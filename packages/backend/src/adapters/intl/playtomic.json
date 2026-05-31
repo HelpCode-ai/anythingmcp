@@ -9,7 +9,10 @@
   "docsUrl": "https://playtomic.io",
   "featured": true,
   "priority": 90,
-  "requiredEnvVars": ["PLAYTOMIC_EMAIL", "PLAYTOMIC_PASSWORD"],
+  "requiredEnvVars": [
+    "PLAYTOMIC_EMAIL",
+    "PLAYTOMIC_PASSWORD"
+  ],
   "connector": {
     "name": "Playtomic",
     "type": "REST",
@@ -19,7 +22,9 @@
       "loginUrl": "https://app.playtomic.io/api/v3/auth/login",
       "loginMethod": "POST",
       "loginBody": {
-        "requested_user_roles": ["ROLE_CUSTOMER"],
+        "requested_user_roles": [
+          "ROLE_CUSTOMER"
+        ],
         "email": "${username}",
         "password": "${password}"
       },
@@ -38,6 +43,7 @@
     {
       "name": "playtomic_search_tenants",
       "description": "Search Playtomic clubs (tenants) — typically by geo coordinate + radius. Returns active clubs with their courts (`resources[]`), address, timezone, images. Use this first to find clubs near a city; pass `tenant_id` values into `playtomic_get_availability` to check free slots.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -52,7 +58,11 @@
           },
           "sport_id": {
             "type": "string",
-            "enum": ["PADEL", "TENNIS", "FUTSAL"],
+            "enum": [
+              "PADEL",
+              "TENNIS",
+              "FUTSAL"
+            ],
             "description": "Sport filter."
           },
           "size": {
@@ -68,7 +78,9 @@
             "default": 0
           }
         },
-        "required": ["coordinate"]
+        "required": [
+          "coordinate"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -86,12 +98,18 @@
     {
       "name": "playtomic_get_tenant",
       "description": "Get full detail of a single Playtomic club by `tenant_id` (UUID) — including all courts, opening info, contact, gallery. Use after `playtomic_search_tenants` or to join availability rows to court metadata.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "tenant_id": { "type": "string", "description": "Tenant UUID." }
+          "tenant_id": {
+            "type": "string",
+            "description": "Tenant UUID."
+          }
         },
-        "required": ["tenant_id"]
+        "required": [
+          "tenant_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -101,12 +119,17 @@
     {
       "name": "playtomic_get_availability",
       "description": "Read free court slots for a given day at one or more clubs. With this connector pricing reflects your account (member discounts if any). Returns an array, one entry per court, each with `slots[]` of `{ start_time, duration (min), price (string e.g. \"48 EUR\") }`.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
           "sport_id": {
             "type": "string",
-            "enum": ["PADEL", "TENNIS", "FUTSAL"],
+            "enum": [
+              "PADEL",
+              "TENNIS",
+              "FUTSAL"
+            ],
             "default": "PADEL"
           },
           "tenant_id": {
@@ -122,7 +145,11 @@
             "description": "Naive ISO-8601 upper bound, e.g. `2026-05-23T23:59:59`."
           }
         },
-        "required": ["tenant_id", "local_start_min", "local_start_max"]
+        "required": [
+          "tenant_id",
+          "local_start_min",
+          "local_start_max"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -139,18 +166,33 @@
     {
       "name": "playtomic_get_sport_configuration",
       "description": "Read Playtomic's canonical sport configuration — enums for allowed durations, court properties (indoor/outdoor/roofed, single/double, wall/crystal/panoramic), supported sports. Reference data; rarely changes.",
-      "parameters": { "type": "object", "properties": {} },
-      "endpointMapping": { "method": "GET", "path": "/api/v2/configuration" }
+      "useProxy": true,
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/configuration"
+      }
     },
     {
       "name": "playtomic_get_my_profile",
       "description": "Full profile of the authenticated user — name, email, phone, communications language, `linked_accounts` per club, accepted commercial/privacy flags. Useful as a health check.",
-      "parameters": { "type": "object", "properties": {} },
-      "endpointMapping": { "method": "GET", "path": "/api/v2/users/me" }
+      "useProxy": true,
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/users/me"
+      }
     },
     {
       "name": "playtomic_get_my_level",
       "description": "Your Playtomic skill level per sport — `level_value` (typically 0–7), `level_confidence` (matches-based confidence), `status`. Pass `with_history=true` to include historical level changes.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -173,12 +215,17 @@
     {
       "name": "playtomic_get_my_stats",
       "description": "Lifetime match results for the authenticated user in a given sport — `played`, `won`, `lost`, `drawn`, `validating`, `rejected`.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
           "sport_id": {
             "type": "string",
-            "enum": ["PADEL", "TENNIS", "FUTSAL"],
+            "enum": [
+              "PADEL",
+              "TENNIS",
+              "FUTSAL"
+            ],
             "default": "PADEL"
           }
         }
@@ -195,12 +242,17 @@
     {
       "name": "playtomic_get_top_clubs",
       "description": "Clubs where the authenticated user plays most often (all-time or last 3 months). Returns `[{ tenant_id, count }]` ordered by frequency. Enrich with `playtomic_get_tenant` to get names.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
           "sport_id": {
             "type": "string",
-            "enum": ["PADEL", "TENNIS", "FUTSAL"],
+            "enum": [
+              "PADEL",
+              "TENNIS",
+              "FUTSAL"
+            ],
             "default": "PADEL"
           },
           "size": {
@@ -228,6 +280,7 @@
     {
       "name": "playtomic_find_open_matches",
       "description": "Search open matches in a date window (people looking for partners). Filter by `match_status` and `join_request_status`. Useful with phrases like 'show me open padel matches this weekend at my level'.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -252,7 +305,10 @@
             "maximum": 100
           }
         },
-        "required": ["after_end_date", "before_end_date"]
+        "required": [
+          "after_end_date",
+          "before_end_date"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -270,12 +326,18 @@
     {
       "name": "playtomic_get_match",
       "description": "Full detail of a single match by `match_id` — teams, players, location/tenant, lock_id, status.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "match_id": { "type": "string", "description": "Match UUID." }
+          "match_id": {
+            "type": "string",
+            "description": "Match UUID."
+          }
         },
-        "required": ["match_id"]
+        "required": [
+          "match_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -285,6 +347,7 @@
     {
       "name": "playtomic_match_recommendations",
       "description": "Playtomic's algorithmic match recommendations for the authenticated user, given a geo center. Returns open matches at the user's level near the coordinate. Empty array = no recommendations right now.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -299,9 +362,14 @@
             "minimum": 1,
             "maximum": 50
           },
-          "page": { "type": "integer", "default": 0 }
+          "page": {
+            "type": "integer",
+            "default": 0
+          }
         },
-        "required": ["coordinate"]
+        "required": [
+          "coordinate"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -318,6 +386,7 @@
     {
       "name": "playtomic_list_tournaments",
       "description": "List tournaments visible to the authenticated user, filtered by start date and status.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -330,9 +399,14 @@
             "description": "Comma-separated statuses.",
             "default": "PENDING,IN_PROGRESS"
           },
-          "size": { "type": "integer", "default": 20 }
+          "size": {
+            "type": "integer",
+            "default": 20
+          }
         },
-        "required": ["to_start_date"]
+        "required": [
+          "to_start_date"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -349,23 +423,39 @@
     {
       "name": "playtomic_list_leagues",
       "description": "List open leagues near a coordinate, optionally for a sport and skill level.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "coordinate": { "type": "string", "description": "`lat,lon`." },
-          "radius": { "type": "integer", "default": 50000 },
+          "coordinate": {
+            "type": "string",
+            "description": "`lat,lon`."
+          },
+          "radius": {
+            "type": "integer",
+            "default": 50000
+          },
           "sport_id": {
             "type": "string",
-            "enum": ["PADEL", "TENNIS", "FUTSAL"],
+            "enum": [
+              "PADEL",
+              "TENNIS",
+              "FUTSAL"
+            ],
             "default": "PADEL"
           },
           "for_level": {
             "type": "number",
             "description": "Your level (e.g. 3.5) — Playtomic filters leagues you're eligible for."
           },
-          "size": { "type": "integer", "default": 10 }
+          "size": {
+            "type": "integer",
+            "default": 10
+          }
         },
-        "required": ["coordinate"]
+        "required": [
+          "coordinate"
+        ]
       },
       "endpointMapping": {
         "method": "GET",

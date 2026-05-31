@@ -22,6 +22,7 @@
     {
       "name": "db_search_locations",
       "description": "Search Deutsche Bahn stops/stations by name. Returns an array of matches, each with `extId` (the stable IBNR id used everywhere else), `name`, `lat`, `lon`, and `products` (list of services that call at this stop: ICE, EC_IC, IR, REGIONAL, SBAHN, BUS, TRAM, …). Use the returned `extId` as the `id` parameter for db_get_departures, db_get_arrivals, db_get_stop, and as `from`/`to` for db_get_journeys.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -35,7 +36,9 @@
             "default": 10
           }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -50,6 +53,7 @@
     {
       "name": "db_get_stop",
       "description": "Retrieve a single Deutsche Bahn stop by its `extId` (IBNR), returning `name`, `lat`, `lon`, and the list of `products` that call there (ICE, EC_IC, IR, REGIONAL, SBAHN, BUS, TRAM, …). Useful when you already have the id but need the station metadata.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -58,7 +62,9 @@
             "description": "The stop's IBNR / extId from db_search_locations (e.g. '8000105' = Frankfurt(Main)Hbf, '8000107' = Freiburg(Breisgau) Hbf, '8011160' = Berlin Hbf)."
           }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -72,6 +78,7 @@
     {
       "name": "db_get_departures",
       "description": "List upcoming departures from a DB stop with live delays. Returns `entries[]` — each entry has `journeyId` (use with `db_get_journey_detail`-equivalent), `zeit` (planned ISO time), `ezZeit` (real/estimated time if delayed), `gleis` (platform), `terminus` (direction = where the train is heading), `verkehrmittel` (line info: name, product type, line number), and `meldungen` (disruption messages, if any). If `ezZeit` is absent the train is on time. Delay in seconds = `(ezZeit - zeit)`.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -88,7 +95,9 @@
             "description": "Optional reference time in HH:mm format (local Berlin time, 24h). Omit for 'now'. Example: '08:30'."
           }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -103,6 +112,7 @@
     {
       "name": "db_get_arrivals",
       "description": "List upcoming arrivals at a DB stop with live delays. Same response shape as db_get_departures (`entries[]`), but each entry's `terminus` is the train's *origin* and `zeit`/`ezZeit` are arrival times.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -119,7 +129,9 @@
             "description": "Optional reference time in HH:mm format (local Berlin time, 24h). Omit for 'now'."
           }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -134,6 +146,7 @@
     {
       "name": "db_get_journeys",
       "description": "Plan one or more itineraries between two DB stops. Returns `verbindungen[]` — each itinerary has `verbindungsAbschnitte[]` (the legs), `tripId`, and `ctxRecon` (opaque continuation token). Each leg includes `startHalt`/`zielHalt` (`extId`, `name`, `abfahrt.sollzeit`/`istzeit`, `ankunft.sollzeit`/`istzeit`, `gleis`), `verkehrsmittel` (line name, product, kategorie), `risNotizen`/`himMeldungen` (alerts), and `halte[]` (intermediate stops, when available). Use `extId` (IBNR) for `from` and `to`. The `when` parameter is the departure or arrival time depending on `direction`.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -151,7 +164,10 @@
           },
           "direction": {
             "type": "string",
-            "enum": ["ABFAHRT", "ANKUNFT"],
+            "enum": [
+              "ABFAHRT",
+              "ANKUNFT"
+            ],
             "description": "ABFAHRT = depart-at (default) — when is the departure time. ANKUNFT = arrive-by — when is the latest acceptable arrival time.",
             "default": "ABFAHRT"
           },
@@ -166,7 +182,11 @@
             "default": false
           }
         },
-        "required": ["from", "to", "when"]
+        "required": [
+          "from",
+          "to",
+          "when"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -182,7 +202,18 @@
           "sitzplatzOnly": false,
           "deutschlandTicketVorhanden": false,
           "nurDeutschlandTicketVerbindungen": false,
-          "produktgattungen": ["ICE", "EC_IC", "IR", "REGIONAL", "SBAHN", "BUS", "SCHIFF", "UBAHN", "TRAM", "ANRUFPFLICHTIG"],
+          "produktgattungen": [
+            "ICE",
+            "EC_IC",
+            "IR",
+            "REGIONAL",
+            "SBAHN",
+            "BUS",
+            "SCHIFF",
+            "UBAHN",
+            "TRAM",
+            "ANRUFPFLICHTIG"
+          ],
           "klasse": "KLASSE_2",
           "reisende": [
             {
@@ -190,7 +221,10 @@
               "anzahl": 1,
               "alter": [],
               "ermaessigungen": [
-                { "art": "KEINE_ERMAESSIGUNG", "klasse": "KLASSENLOS" }
+                {
+                  "art": "KEINE_ERMAESSIGUNG",
+                  "klasse": "KLASSENLOS"
+                }
               ]
             }
           ]

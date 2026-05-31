@@ -20,6 +20,10 @@ export interface RegisteredTool {
   description: string;
   parameters: Record<string, unknown>;
   connectorType: string;
+  // Per-tool preference to route the outbound request through the
+  // proxy / web-unblocker. Mirrors mcp_tools.use_proxy. The actual
+  // decision (env present, license, rate-limit) is made at call time.
+  useProxy?: boolean;
   connectorConfig: {
     baseUrl: string;
     authType: string;

@@ -19,6 +19,7 @@ export interface GraphqlBuiltinTool {
   description: string;
   parameters: Record<string, unknown>;
   endpointMapping: Record<string, unknown>;
+  useProxy?: boolean;
 }
 
 export interface GraphqlBuiltinOptions {
@@ -30,6 +31,13 @@ export interface GraphqlBuiltinOptions {
   baseUrl: string;
   /** Optional override for the SDL URL. Defaults to `${baseUrl}/schema`. */
   schemaUrl?: string;
+  /**
+   * When true, the generated query/mutation/subscription helpers route
+   * through the proxy/unblocker by default (the static/schema helpers
+   * never make a normal HTTP call so they're left off). Set by the
+   * catalog when the adapter's own tools opt into proxy.
+   */
+  useProxy?: boolean;
 }
 
 /**
@@ -89,6 +97,7 @@ export function buildGraphqlBuiltinTools(
       path: `$${op}`,
       variablesFromParam: 'variables',
     },
+    useProxy: !!opts.useProxy,
   });
 
   return [

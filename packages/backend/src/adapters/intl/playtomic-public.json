@@ -21,6 +21,7 @@
     {
       "name": "playtomic_search_tenants",
       "description": "Search Playtomic clubs (tenants) — typically by geo coordinate + radius. Returns active clubs with their courts (`resources[]`), address, timezone, and images. Use this first to find clubs near a city, then pass the `tenant_id` values into `playtomic_get_availability` to check free slots.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -35,7 +36,11 @@
           },
           "sport_id": {
             "type": "string",
-            "enum": ["PADEL", "TENNIS", "FUTSAL"],
+            "enum": [
+              "PADEL",
+              "TENNIS",
+              "FUTSAL"
+            ],
             "description": "Sport filter. Most clubs are PADEL."
           },
           "size": {
@@ -51,7 +56,9 @@
             "default": 0
           }
         },
-        "required": ["coordinate"]
+        "required": [
+          "coordinate"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -69,6 +76,7 @@
     {
       "name": "playtomic_get_tenant",
       "description": "Get full detail of a single Playtomic club by `tenant_id` — including all courts (`resources[]` with indoor/outdoor, single/double, surface), opening info, contact, gallery. Use this after `playtomic_search_tenants` to drill into a specific club, or to enrich availability results (join `availability.resource_id` → `tenant.resources[].name`).",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -77,7 +85,9 @@
             "description": "Tenant UUID from `playtomic_search_tenants` (e.g. `7176a7b5-757e-46c0-8f04-e42ff7219563`)."
           }
         },
-        "required": ["tenant_id"]
+        "required": [
+          "tenant_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -87,12 +97,17 @@
     {
       "name": "playtomic_get_availability",
       "description": "Read free court slots for a given day at one or more clubs. Returns an array, one entry per court (`resource_id`), each with `slots[]` of `{ start_time, duration (min), price (string like \"48 EUR\") }`. The same `start_time` may appear with multiple durations (60/90/120) — those are alternative bookings, not separate slots.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
           "sport_id": {
             "type": "string",
-            "enum": ["PADEL", "TENNIS", "FUTSAL"],
+            "enum": [
+              "PADEL",
+              "TENNIS",
+              "FUTSAL"
+            ],
             "description": "Sport.",
             "default": "PADEL"
           },
@@ -109,7 +124,11 @@
             "description": "Naive ISO-8601 upper bound, same-day end e.g. `2026-05-23T23:59:59`."
           }
         },
-        "required": ["tenant_id", "local_start_min", "local_start_max"]
+        "required": [
+          "tenant_id",
+          "local_start_min",
+          "local_start_max"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -125,6 +144,7 @@
     {
       "name": "playtomic_get_sport_configuration",
       "description": "Read Playtomic's canonical sport configuration — enums for allowed durations, court properties (indoor/outdoor/roofed, single/double, wall/crystal/panoramic), and supported sports. Useful to validate filters before calling other tools.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {}

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { OAuth2TokenService } from './oauth2-token.service';
 import {
   LoginTokenService,
@@ -29,6 +30,7 @@ export class GraphqlEngine {
       authConfig?: Record<string, unknown>;
       headers?: Record<string, string>;
       connectorId?: string;
+      proxyUrl?: string;
     },
     endpointMapping: {
       method: string; // "query" | "mutation" | "subscription" | "static"
@@ -164,11 +166,22 @@ export class GraphqlEngine {
       variables,
     };
 
-    try {
-      const response = await axios.post(config.baseUrl, requestConfig, {
-        headers,
-        timeout: 30000,
+    // Shared axios options. When the caller passes a proxyUrl, route every
+    // request (incl. the 401-refresh retries below) through the
+    // proxy / web-unblocker. rejectUnauthorized:false supports unblockers
+    // (e.g. Zyte) that intercept TLS.
+    const axiosOpts: Record<string, unknown> = { headers, timeout: 30000 };
+    if (config.proxyUrl) {
+      const agent = new HttpsProxyAgent(config.proxyUrl, {
+        rejectUnauthorized: false,
       });
+      axiosOpts.httpsAgent = agent;
+      axiosOpts.httpAgent = agent;
+      axiosOpts.proxy = false;
+    }
+
+    try {
+      const response = await axios.post(config.baseUrl, requestConfig, axiosOpts);
 
       if (response.data.errors) {
         throw new Error(
@@ -198,7 +211,7 @@ export class GraphqlEngine {
           const retryResponse = await axios.post(
             config.baseUrl,
             requestConfig,
-            { headers, timeout: 30000 },
+            { ...axiosOpts, headers },
           );
 
           if (retryResponse.data.errors) {
@@ -226,8 +239,8 @@ export class GraphqlEngine {
         );
         applyLoginTokenHeaders(headers, auth, bundle.token, bundle.aud);
         const retry = await axios.post(config.baseUrl, requestConfig, {
+          ...axiosOpts,
           headers,
-          timeout: 30000,
         });
         if (retry.data.errors) {
           throw new Error(

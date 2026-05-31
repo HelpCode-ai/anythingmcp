@@ -30,6 +30,9 @@ export default function ConnectorDetailPage() {
   const [connector, setConnector] = useState<any>(null);
   const [toolList, setToolList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // Whether CONNECTOR_PROXY_URL is configured on this instance — drives
+  // visibility of the per-tool "Use proxy" checkbox.
+  const [proxyAvailable, setProxyAvailable] = useState(false);
 
   // OAuth + MCP discovery
   const [authorizing, setAuthorizing] = useState(false);
@@ -82,6 +85,11 @@ export default function ConnectorDetailPage() {
   const fetchConnector = async () => {
     if (!token) return;
     try {
+      // Cheap, instance-wide flag — drives the per-tool proxy checkbox.
+      connectors
+        .proxyAvailability(token)
+        .then((r) => setProxyAvailable(!!r.available))
+        .catch(() => setProxyAvailable(false));
       const c = await connectors.get(id, token);
       setConnector(c);
       setEditName(c.name);
@@ -266,6 +274,22 @@ export default function ConnectorDetailPage() {
         prev.map((t) => (t.id === toolId ? { ...t, isEnabled: !isEnabled } : t)),
       );
     } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const handleToggleProxy = async (toolId: string, useProxy: boolean) => {
+    if (!token) return;
+    // Optimistic flip; revert on error.
+    setToolList((prev) =>
+      prev.map((t) => (t.id === toolId ? { ...t, useProxy: !useProxy } : t)),
+    );
+    try {
+      await tools.setProxy(id, toolId, !useProxy, token);
+    } catch (err: any) {
+      setToolList((prev) =>
+        prev.map((t) => (t.id === toolId ? { ...t, useProxy } : t)),
+      );
       setMsg(`Error: ${err.message}`);
     }
   };
@@ -1039,6 +1063,20 @@ export default function ConnectorDetailPage() {
                           >
                             {tool.isEnabled ? 'Disable' : 'Enable'}
                           </button>
+                          {proxyAvailable && (
+                            <label
+                              className="flex items-center gap-1 border border-[var(--border)] px-2 py-1 rounded text-xs cursor-pointer hover:bg-[var(--accent)]"
+                              title="Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs."
+                            >
+                              <input
+                                type="checkbox"
+                                checked={!!tool.useProxy}
+                                onChange={() => handleToggleProxy(tool.id, !!tool.useProxy)}
+                                className="accent-[var(--brand)]"
+                              />
+                              Proxy
+                            </label>
+                          )}
                           <button
                             onClick={() => handleDeleteTool(tool.id)}
                             className="border border-[var(--destructive)] text-[var(--destructive)] px-2 py-1 rounded text-xs hover:bg-[var(--destructive-bg)]"

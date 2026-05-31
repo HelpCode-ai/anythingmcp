@@ -21,22 +21,66 @@
     {
       "name": "vinted_search_items",
       "description": "Free-text search across Vinted's catalog. Returns a paginated list of items with id, title, price, currency, brand, size, condition, photos, seller info.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "search_text": { "type": "string", "description": "Free-text query (e.g. 'Stone Island jacket', 'Carhartt WIP trousers')." },
-          "currency": { "type": "string", "description": "Currency code: EUR, GBP, PLN, CZK, USD.", "default": "EUR" },
-          "order": { "type": "string", "enum": ["relevance", "newest_first", "price_low_to_high", "price_high_to_low"], "default": "relevance" },
-          "page": { "type": "integer", "default": 1, "minimum": 1 },
-          "per_page": { "type": "integer", "default": 24, "minimum": 1, "maximum": 96 },
-          "catalog_ids": { "type": "string", "description": "Optional comma-separated Vinted catalog (category) IDs." },
-          "brand_ids": { "type": "string", "description": "Optional comma-separated brand IDs." },
-          "size_ids": { "type": "string", "description": "Optional comma-separated size IDs." },
-          "status_ids": { "type": "string", "description": "Optional condition filter: '6' new with tags, '1' new without tags, '2' very good, '3' good, '4' satisfactory." },
-          "price_from": { "type": "number" },
-          "price_to": { "type": "number" }
+          "search_text": {
+            "type": "string",
+            "description": "Free-text query (e.g. 'Stone Island jacket', 'Carhartt WIP trousers')."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency code: EUR, GBP, PLN, CZK, USD.",
+            "default": "EUR"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "newest_first",
+              "price_low_to_high",
+              "price_high_to_low"
+            ],
+            "default": "relevance"
+          },
+          "page": {
+            "type": "integer",
+            "default": 1,
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "default": 24,
+            "minimum": 1,
+            "maximum": 96
+          },
+          "catalog_ids": {
+            "type": "string",
+            "description": "Optional comma-separated Vinted catalog (category) IDs."
+          },
+          "brand_ids": {
+            "type": "string",
+            "description": "Optional comma-separated brand IDs."
+          },
+          "size_ids": {
+            "type": "string",
+            "description": "Optional comma-separated size IDs."
+          },
+          "status_ids": {
+            "type": "string",
+            "description": "Optional condition filter: '6' new with tags, '1' new without tags, '2' very good, '3' good, '4' satisfactory."
+          },
+          "price_from": {
+            "type": "number"
+          },
+          "price_to": {
+            "type": "number"
+          }
         },
-        "required": ["search_text"]
+        "required": [
+          "search_text"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -59,21 +103,28 @@
     {
       "name": "vinted_get_filters",
       "description": "Get the available filter options for Vinted catalog search — categories, brands, sizes, colors, conditions. Useful before search to know what filter IDs are queryable.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "catalog_ids": { "type": "string", "description": "Optional: limit filter discovery to a specific catalog (e.g. one category)." }
+          "catalog_ids": {
+            "type": "string",
+            "description": "Optional: limit filter discovery to a specific catalog (e.g. one category)."
+          }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/api/v2/catalog/filters",
-        "queryParams": { "catalog_ids": "$catalog_ids" }
+        "queryParams": {
+          "catalog_ids": "$catalog_ids"
+        }
       }
     },
     {
       "name": "vinted_homepage",
       "description": "Get Vinted's curated homepage feed — featured items, promoted closets, banners. Useful for editorial discovery.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {}

@@ -20,6 +20,12 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // Hourly cap on proxy/unblocker-routed tool calls for this workspace
+  // (cloud only). null = fall back to the PROXY_RATE_LIMIT_DEFAULT env
+  // (which itself defaults to 100). Editable ONLY by a service admin
+  // directly in the DB — there is intentionally no API to change it.
+  proxyRateLimit Int? @map("proxy_rate_limit")
+
   users            User[]
   members          OrganizationMember[]
   connectors       Connector[]
@@ -344,6 +350,13 @@ model McpTool {
   name        String
   description String    @db.Text
   isEnabled   Boolean   @default(true) @map("is_enabled")
+
+  // Route this tool's outbound HTTP request through the configured
+  // proxy / web-unblocker (CONNECTOR_PROXY_URL). Seeded from the
+  // adapter spec's per-tool `useProxy` (default false); the user can
+  // toggle it per tool in the UI. Has no effect when CONNECTOR_PROXY_URL
+  // is unset — the request then goes out directly.
+  useProxy    Boolean   @default(false) @map("use_proxy")
 
   // OpenAPI operationId, when the tool was generated from an OpenAPI spec.
   // Used as the primary key for re-imports so that responseMapping and role

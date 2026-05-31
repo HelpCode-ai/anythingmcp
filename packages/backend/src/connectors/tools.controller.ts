@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -128,6 +129,15 @@ class BulkCreateToolsDto {
   @ValidateNested({ each: true })
   @Type(() => CreateToolDto)
   tools: CreateToolDto[];
+}
+
+class SetToolProxyDto {
+  @ApiProperty({
+    description:
+      'Whether this tool should route its request through the configured proxy / web-unblocker.',
+  })
+  @IsBoolean()
+  useProxy: boolean;
 }
 
 class TestToolDto {
@@ -289,6 +299,32 @@ export class ToolsController {
       throw new ForbiddenException('Tool not found');
     }
 
+    await this.mcpServer.reloadConnectorTools(connectorId);
+    return this.prisma.mcpTool.findUnique({ where: { id: toolId } });
+  }
+
+  @Patch(':toolId/proxy')
+  @ApiOperation({
+    summary: 'Toggle proxy / web-unblocker routing for a single tool',
+    description:
+      'Sets mcp_tools.use_proxy. Takes effect only when CONNECTOR_PROXY_URL ' +
+      'is configured on the instance; otherwise the request still goes out ' +
+      'directly. Does not change the workspace rate limit (DB/admin only).',
+  })
+  async setProxy(
+    @Req() req: any,
+    @Param('toolId') toolId: string,
+    @Param('connectorId') connectorId: string,
+    @Body() dto: SetToolProxyDto,
+  ) {
+    await this.assertCanWriteConnector(connectorId, req);
+    const result = await this.prisma.mcpTool.updateMany({
+      where: { id: toolId, connectorId },
+      data: { useProxy: dto.useProxy },
+    });
+    if (result.count === 0) {
+      throw new ForbiddenException('Tool not found');
+    }
     await this.mcpServer.reloadConnectorTools(connectorId);
     return this.prisma.mcpTool.findUnique({ where: { id: toolId } });
   }

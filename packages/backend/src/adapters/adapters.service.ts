@@ -98,6 +98,8 @@ export class AdaptersService {
             name: tool.name,
             description: tool.description,
             isEnabled: true,
+            // Seed the proxy preference from the adapter spec (default off).
+            useProxy: tool.useProxy === true,
             parameters: tool.parameters as any,
             endpointMapping: tool.endpointMapping as any,
             responseMapping: tool.responseMapping as any,

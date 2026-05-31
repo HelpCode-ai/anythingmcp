@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosRequestConfig, AxiosError, Method } from 'axios';
 import FormData from 'form-data';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { OAuth2TokenService } from './oauth2-token.service';
 import {
   LoginTokenService,
@@ -30,6 +31,11 @@ export class RestEngine {
       authConfig?: Record<string, unknown>;
       headers?: Record<string, string>;
       connectorId?: string;
+      // When set, route this request through the proxy / web-unblocker.
+      // The caller (DynamicMcpTools) decides whether a proxy applies
+      // (env present, tool opted in, license + rate-limit ok) and passes
+      // the URL here, or omits it for a direct request.
+      proxyUrl?: string;
     },
     endpointMapping: {
       method: string;
@@ -143,7 +149,21 @@ export class RestEngine {
       }
     }
 
-    this.logger.debug(`REST call: ${axiosConfig.method} ${url}`);
+    // Route through the proxy / web-unblocker when the caller asked for it.
+    // `rejectUnauthorized: false` is required for unblockers like Zyte that
+    // intercept the TLS connection (equivalent to curl's --proxy-insecure).
+    // We disable axios' native proxy handling so the agent owns the tunnel.
+    if (config.proxyUrl) {
+      const agent = new HttpsProxyAgent(config.proxyUrl, {
+        rejectUnauthorized: false,
+      });
+      axiosConfig.httpsAgent = agent;
+      axiosConfig.httpAgent = agent;
+      axiosConfig.proxy = false;
+      this.logger.debug(`REST call via proxy: ${axiosConfig.method} ${url}`);
+    } else {
+      this.logger.debug(`REST call: ${axiosConfig.method} ${url}`);
+    }
 
     try {
       const response = await axios(axiosConfig);

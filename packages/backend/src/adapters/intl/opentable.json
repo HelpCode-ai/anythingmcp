@@ -21,24 +21,59 @@
     {
       "name": "opentable_search_restaurants",
       "description": "Search OpenTable restaurants near a coordinate, with optional filters for party size, date/time, cuisine, and price. Returns a ranked list of restaurants with id, name, cuisine, neighborhood, price band, and ratings.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "latitude": { "type": "number", "description": "Center latitude (e.g. 48.0707)" },
-          "longitude": { "type": "number", "description": "Center longitude (e.g. 7.8674)" },
-          "covers": { "type": "integer", "description": "Party size (1-12).", "default": 2, "minimum": 1, "maximum": 12 },
-          "dateTime": { "type": "string", "description": "Naive ISO-8601 local time, e.g. '2026-05-24T19:30'. If omitted, uses 'now'." },
-          "leadTime": { "type": "integer", "description": "Days ahead to allow (default 14).", "default": 14 },
-          "size": { "type": "integer", "description": "Max restaurants to return (default 30).", "default": 30, "minimum": 1, "maximum": 100 },
-          "cuisine": { "type": "string", "description": "Optional cuisine filter (e.g. 'Italian', 'French', 'Japanese')." }
+          "latitude": {
+            "type": "number",
+            "description": "Center latitude (e.g. 48.0707)"
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Center longitude (e.g. 7.8674)"
+          },
+          "covers": {
+            "type": "integer",
+            "description": "Party size (1-12).",
+            "default": 2,
+            "minimum": 1,
+            "maximum": 12
+          },
+          "dateTime": {
+            "type": "string",
+            "description": "Naive ISO-8601 local time, e.g. '2026-05-24T19:30'. If omitted, uses 'now'."
+          },
+          "leadTime": {
+            "type": "integer",
+            "description": "Days ahead to allow (default 14).",
+            "default": 14
+          },
+          "size": {
+            "type": "integer",
+            "description": "Max restaurants to return (default 30).",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cuisine": {
+            "type": "string",
+            "description": "Optional cuisine filter (e.g. 'Italian', 'French', 'Japanese')."
+          }
         },
-        "required": ["latitude", "longitude"]
+        "required": [
+          "latitude",
+          "longitude"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/api/v5/personalize/search/1",
         "bodyMapping": {
-          "location": { "latitude": "$latitude", "longitude": "$longitude" },
+          "location": {
+            "latitude": "$latitude",
+            "longitude": "$longitude"
+          },
           "covers": "$covers",
           "dateTime": "$dateTime",
           "leadTime": "$leadTime",
@@ -54,12 +89,18 @@
     {
       "name": "opentable_get_restaurant",
       "description": "Full detail of one OpenTable restaurant — name, address, cuisine, hours, menu URL, photos, reviews summary, price band, dress code, parking, neighborhood.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "restaurant_id": { "type": "integer", "description": "OpenTable restaurant ID (numeric, e.g. 12213). Get it from `opentable_search_restaurants`." }
+          "restaurant_id": {
+            "type": "integer",
+            "description": "OpenTable restaurant ID (numeric, e.g. 12213). Get it from `opentable_search_restaurants`."
+          }
         },
-        "required": ["restaurant_id"]
+        "required": [
+          "restaurant_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -69,14 +110,28 @@
     {
       "name": "opentable_check_availability",
       "description": "Check live table availability at one or more OpenTable restaurants for a given party size and date/time. Returns time slots available with their booking URL.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "restaurant_id": { "type": "integer", "description": "Restaurant ID." },
-          "covers": { "type": "integer", "description": "Party size.", "default": 2 },
-          "dateTime": { "type": "string", "description": "Naive ISO-8601, e.g. '2026-05-24T19:30'." }
+          "restaurant_id": {
+            "type": "integer",
+            "description": "Restaurant ID."
+          },
+          "covers": {
+            "type": "integer",
+            "description": "Party size.",
+            "default": 2
+          },
+          "dateTime": {
+            "type": "string",
+            "description": "Naive ISO-8601, e.g. '2026-05-24T19:30'."
+          }
         },
-        "required": ["restaurant_id", "dateTime"]
+        "required": [
+          "restaurant_id",
+          "dateTime"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
@@ -91,21 +146,36 @@
     {
       "name": "opentable_autocomplete",
       "description": "Autocomplete restaurant or location names. Useful before search — when the user says 'find me a sushi place in Mayfair', resolve 'Mayfair' to a coordinate first.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "query": { "type": "string", "description": "Partial restaurant or location name." },
-          "latitude": { "type": "number", "description": "User location latitude for ranking." },
-          "longitude": { "type": "number", "description": "User location longitude for ranking." }
+          "query": {
+            "type": "string",
+            "description": "Partial restaurant or location name."
+          },
+          "latitude": {
+            "type": "number",
+            "description": "User location latitude for ranking."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "User location longitude for ranking."
+          }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       },
       "endpointMapping": {
         "method": "PUT",
         "path": "/api/v4/personalize/autocompleteInterspersed",
         "bodyMapping": {
           "query": "$query",
-          "location": { "latitude": "$latitude", "longitude": "$longitude" }
+          "location": {
+            "latitude": "$latitude",
+            "longitude": "$longitude"
+          }
         }
       }
     }

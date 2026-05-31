@@ -179,6 +179,8 @@ export const organizations = {
 export const connectors = {
   list: (token: string) =>
     request<any[]>('/api/connectors', { token }),
+  proxyAvailability: (token: string) =>
+    request<{ available: boolean }>('/api/connectors/proxy-availability', { token }),
   create: (data: unknown, token: string) =>
     request<any>('/api/connectors', { method: 'POST', body: data, token }),
   get: (id: string, token: string) =>
@@ -251,6 +253,12 @@ export const tools = {
     ),
   update: (connectorId: string, toolId: string, data: unknown, token: string) =>
     request(`/api/connectors/${connectorId}/tools/${toolId}`, { method: 'PUT', body: data, token }),
+  setProxy: (connectorId: string, toolId: string, useProxy: boolean, token: string) =>
+    request<any>(`/api/connectors/${connectorId}/tools/${toolId}/proxy`, {
+      method: 'PATCH',
+      body: { useProxy },
+      token,
+    }),
   delete: (connectorId: string, toolId: string, token: string) =>
     request(`/api/connectors/${connectorId}/tools/${toolId}`, { method: 'DELETE', token }),
   test: (connectorId: string, toolId: string, params: Record<string, unknown>, token: string) =>

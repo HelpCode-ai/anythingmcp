@@ -21,21 +21,61 @@
     {
       "name": "idealista_search",
       "description": "Search Idealista listings with filters. Returns paginated results with listing id, price, m², rooms, address, photos, energy class.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "locale": { "type": "string", "enum": ["it", "es", "pt"], "default": "it", "description": "Market locale." },
-          "operation": { "type": "string", "enum": ["sale", "rent"], "default": "sale" },
-          "propertyType": { "type": "string", "description": "homes, garages, premises, offices, lands, storages." },
-          "locationId": { "type": "string", "description": "Idealista location code (use `idealista_search_locations` to discover)." },
-          "minPrice": { "type": "number" },
-          "maxPrice": { "type": "number" },
-          "minSize": { "type": "number", "description": "Minimum square meters." },
-          "maxSize": { "type": "number" },
-          "rooms": { "type": "integer", "description": "Minimum number of rooms." },
-          "page": { "type": "integer", "default": 1 }
+          "locale": {
+            "type": "string",
+            "enum": [
+              "it",
+              "es",
+              "pt"
+            ],
+            "default": "it",
+            "description": "Market locale."
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "sale",
+              "rent"
+            ],
+            "default": "sale"
+          },
+          "propertyType": {
+            "type": "string",
+            "description": "homes, garages, premises, offices, lands, storages."
+          },
+          "locationId": {
+            "type": "string",
+            "description": "Idealista location code (use `idealista_search_locations` to discover)."
+          },
+          "minPrice": {
+            "type": "number"
+          },
+          "maxPrice": {
+            "type": "number"
+          },
+          "minSize": {
+            "type": "number",
+            "description": "Minimum square meters."
+          },
+          "maxSize": {
+            "type": "number"
+          },
+          "rooms": {
+            "type": "integer",
+            "description": "Minimum number of rooms."
+          },
+          "page": {
+            "type": "integer",
+            "default": 1
+          }
         },
-        "required": ["locale"]
+        "required": [
+          "locale"
+        ]
       },
       "endpointMapping": {
         "method": "POST",
@@ -56,13 +96,28 @@
     {
       "name": "idealista_get_listing",
       "description": "Full detail of one Idealista listing by ID — full description, all photos, agency, contact, geocoordinate, energy class, characteristics.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "locale": { "type": "string", "enum": ["it", "es", "pt"], "default": "it" },
-          "listing_id": { "type": "integer", "description": "Idealista listing ID." }
+          "locale": {
+            "type": "string",
+            "enum": [
+              "it",
+              "es",
+              "pt"
+            ],
+            "default": "it"
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Idealista listing ID."
+          }
         },
-        "required": ["locale", "listing_id"]
+        "required": [
+          "locale",
+          "listing_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -72,35 +127,86 @@
     {
       "name": "idealista_search_locations",
       "description": "Search for Idealista location IDs (cities, neighborhoods, districts). Required to filter by area in `idealista_search`.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "locale": { "type": "string", "enum": ["it", "es", "pt"], "default": "it" },
-          "query": { "type": "string", "description": "Location text (e.g. 'Navigli', 'Salamanca', 'Lisboa Centro')." }
+          "locale": {
+            "type": "string",
+            "enum": [
+              "it",
+              "es",
+              "pt"
+            ],
+            "default": "it"
+          },
+          "query": {
+            "type": "string",
+            "description": "Location text (e.g. 'Navigli', 'Salamanca', 'Lisboa Centro')."
+          }
         },
-        "required": ["locale", "query"]
+        "required": [
+          "locale",
+          "query"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/api/3/{locale}/locations",
-        "queryParams": { "q": "$query" }
+        "queryParams": {
+          "q": "$query"
+        }
       }
     },
     {
       "name": "idealista_map_search",
       "description": "Search Idealista listings within a geo bounding box (map-driven search). Returns clusters and individual listings.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
-          "locale": { "type": "string", "enum": ["it", "es", "pt"], "default": "it" },
-          "north": { "type": "number", "description": "Northern latitude of bounding box." },
-          "south": { "type": "number" },
-          "east": { "type": "number" },
-          "west": { "type": "number" },
-          "operation": { "type": "string", "enum": ["sale", "rent"], "default": "sale" },
-          "propertyType": { "type": "string", "default": "homes" }
+          "locale": {
+            "type": "string",
+            "enum": [
+              "it",
+              "es",
+              "pt"
+            ],
+            "default": "it"
+          },
+          "north": {
+            "type": "number",
+            "description": "Northern latitude of bounding box."
+          },
+          "south": {
+            "type": "number"
+          },
+          "east": {
+            "type": "number"
+          },
+          "west": {
+            "type": "number"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "sale",
+              "rent"
+            ],
+            "default": "sale"
+          },
+          "propertyType": {
+            "type": "string",
+            "default": "homes"
+          }
         },
-        "required": ["locale", "north", "south", "east", "west"]
+        "required": [
+          "locale",
+          "north",
+          "south",
+          "east",
+          "west"
+        ]
       },
       "endpointMapping": {
         "method": "POST",

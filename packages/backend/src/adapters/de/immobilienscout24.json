@@ -26,6 +26,7 @@
     {
       "name": "is24_search_properties",
       "description": "Search for real estate listings on ImmobilienScout24 by location and filters. Returns property titles, prices, sizes, and listing IDs.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -84,6 +85,7 @@
     {
       "name": "is24_search_locations",
       "description": "Search for ImmobilienScout24 GeoCode IDs by location name. Use this to find the geocode parameter needed for property searches.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -110,6 +112,7 @@
     {
       "name": "is24_get_property",
       "description": "Get detailed information about a specific real estate listing by its expose ID. Returns full property details including description, equipment, energy certificate, and contact info.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {

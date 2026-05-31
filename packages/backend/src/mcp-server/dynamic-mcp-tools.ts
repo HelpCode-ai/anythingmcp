@@ -10,7 +10,10 @@ import { DatabaseEngine } from '../connectors/engines/database.engine';
 import { AuditService } from '../audit/audit.service';
 import { RedisService } from '../common/redis.service';
 import { LicenseGuardService } from '../license/license-guard.service';
+import { DeploymentService } from '../common/deployment.service';
+import { PrismaService } from '../common/prisma.service';
 import { interpolateConnectorConfig } from '../common/env-interpolation.util';
+import type { RegisteredTool } from './tool-registry';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -27,12 +30,77 @@ export class DynamicMcpTools {
     private readonly auditService: AuditService,
     private readonly redisService: RedisService,
     private readonly licenseGuard: LicenseGuardService,
+    private readonly deployment: DeploymentService,
+    private readonly prisma: PrismaService,
     private readonly restEngine: RestEngine,
     private readonly graphqlEngine: GraphqlEngine,
     private readonly soapEngine: SoapEngine,
     private readonly mcpClientEngine: McpClientEngine,
     private readonly databaseEngine: DatabaseEngine,
   ) {}
+
+  /**
+   * Decide whether this tool call should be routed through the
+   * proxy / web-unblocker, and return the proxy URL when it should.
+   *
+   * Rules:
+   *  - No CONNECTOR_PROXY_URL env  → never proxy (request goes direct,
+   *    even if the tool opted in — graceful degradation).
+   *  - Tool must opt in (mcp_tools.use_proxy = true).
+   *  - Cloud only: the workspace must be under its hourly proxy cap.
+   *    The license/trial gate is already enforced at the top of
+   *    executeTool (checkLicenseActive throws), so reaching here in
+   *    cloud means the workspace is licensed/trialing.
+   *  - Over the cap → throw (choice B: explicit error to the caller).
+   *
+   * Self-hosted installs get no rate limit and no license gate.
+   */
+  private async resolveProxy(
+    tool: RegisteredTool,
+    organizationId?: string,
+  ): Promise<string | null> {
+    const proxyUrl = process.env.CONNECTOR_PROXY_URL;
+    if (!proxyUrl) return null; // env absent → direct request
+    if (tool.useProxy !== true) return null; // tool didn't opt in
+
+    if (this.deployment.isCloud() && organizationId) {
+      const limit = await this.getProxyLimit(organizationId);
+      const key = `proxy_rl:${organizationId}`;
+      const count = await this.redisService.incr(key);
+      if (count === 1) {
+        await this.redisService.expire(key, 3600);
+      }
+      if (count > limit) {
+        const ttl = await this.redisService.ttl(key);
+        const mins = ttl > 0 ? Math.ceil(ttl / 60) : 60;
+        throw new Error(
+          `Proxy quota exceeded: this workspace is limited to ${limit} ` +
+            `proxy/unblocker tool calls per hour. Try again in ~${mins} minute(s), ` +
+            `or run this tool without the proxy.`,
+        );
+      }
+    }
+
+    return proxyUrl;
+  }
+
+  /**
+   * Effective hourly proxy cap for a workspace:
+   * organizations.proxy_rate_limit (DB, admin-only) ?? PROXY_RATE_LIMIT_DEFAULT
+   * env ?? 100. There is intentionally no API to change the per-workspace
+   * value — only a service admin via the database.
+   */
+  private async getProxyLimit(organizationId: string): Promise<number> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { proxyRateLimit: true },
+    });
+    if (org?.proxyRateLimit != null && org.proxyRateLimit >= 0) {
+      return org.proxyRateLimit;
+    }
+    const envDefault = parseInt(process.env.PROXY_RATE_LIMIT_DEFAULT || '', 10);
+    return Number.isFinite(envDefault) && envDefault >= 0 ? envDefault : 100;
+  }
 
   /**
    * Execute a tool by name with the given parameters.
@@ -125,6 +193,10 @@ export class DynamicMcpTools {
         envVars,
       );
 
+      // Decide proxy routing (env present + tool opted in + cloud rate-limit).
+      // Throws on over-quota (choice B). Returns null → direct request.
+      const proxyUrl = await this.resolveProxy(tool, context?.organizationId);
+
       const engineConfig = {
         baseUrl: interpolatedConfig.baseUrl,
         authType: tool.connectorConfig.authType,
@@ -133,6 +205,7 @@ export class DynamicMcpTools {
           : undefined,
         headers: interpolatedConfig.headers,
         specUrl: (tool.connectorConfig as any).specUrl,
+        ...(proxyUrl ? { proxyUrl } : {}),
       };
 
       // Inject env vars as parameter defaults (env var values fill in params

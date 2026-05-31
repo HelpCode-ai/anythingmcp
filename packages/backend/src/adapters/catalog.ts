@@ -216,6 +216,11 @@ export interface AdapterDefinition extends AdapterMeta {
     parameters: Record<string, unknown>;
     endpointMapping: Record<string, unknown>;
     responseMapping?: Record<string, unknown>;
+    // Adapter author's recommendation to route this tool through the
+    // proxy / web-unblocker by default (anti-bot, geo, or rate-limited
+    // APIs). Default false. Seeds mcp_tools.use_proxy on import; the user
+    // can still toggle it per tool afterwards.
+    useProxy?: boolean;
   }>;
 }
 
@@ -237,11 +242,17 @@ export interface AdapterDefinition extends AdapterMeta {
  */
 function withGraphqlBuiltins(adapter: AdapterDefinition): AdapterDefinition {
   if (adapter.connector.type !== 'GRAPHQL') return adapter;
+  // If the adapter's own tools opt into the proxy, the generic
+  // query/mutation helpers should too (same upstream host, same anti-bot).
+  const adapterUsesProxy = adapter.tools.some(
+    (t) => (t as { useProxy?: boolean }).useProxy === true,
+  );
   const builtins = buildGraphqlBuiltinTools({
     prefix: adapter.slug,
     displayName: adapter.name,
     baseUrl: adapter.connector.baseUrl,
     schemaUrl: (adapter.connector as { schemaUrl?: string }).schemaUrl,
+    useProxy: adapterUsesProxy,
   }) as unknown as AdapterDefinition['tools'];
 
   return { ...adapter, tools: [...builtins, ...adapter.tools] };

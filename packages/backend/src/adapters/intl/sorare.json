@@ -8,7 +8,10 @@
   "docsUrl": "https://github.com/sorare/api",
   "featured": true,
   "priority": 100,
-  "requiredEnvVars": ["SORARE_EMAIL", "SORARE_PASSWORD"],
+  "requiredEnvVars": [
+    "SORARE_EMAIL",
+    "SORARE_PASSWORD"
+  ],
   "instructions": "## Authentication (handled automatically)\n\nSorare uses a custom two-step login the AnythingMCP `LOGIN_TOKEN` engine performs for you:\n\n1. `GET https://api.sorare.com/api/v1/users/{email}` returns the account's bcrypt salt.\n2. Your plain password is hashed locally with `bcrypt.hashSync(password, salt)`.\n3. The hash is sent through Sorare's `signIn` GraphQL mutation; Sorare returns a JWT valid for ~30 days, tagged with the audience claim `anythingmcp` (managed for you).\n4. Every subsequent call adds `Authorization: Bearer <jwt>` and `JWT-AUD: anythingmcp` headers.\n\nThe token is cached in-memory and in the encrypted `connector_auth_cache` table, then proactively re-issued ~24 h before expiry and on any 401. You never need to refresh manually.\n\n## Credentials\n\n- `SORARE_EMAIL` — your Sorare account email.\n- `SORARE_PASSWORD` — your plain account password (never stored or transmitted in plain text after the first login; only the bcrypt hash leaves your server).\n\n## 2FA\n\nIf your account has 2FA enabled, the `signIn` mutation will fail until you provide a fresh `otpAttempt`. For headless/server use we recommend creating a dedicated read-only Sorare account without 2FA. Set `SORARE_PASSWORD` to that account's password.\n\n## Money & pricing conventions — READ THIS FIRST\n\nSorare exposes amounts in **four parallel scales** on every `MonetaryAmount`:\n- `wei` → raw on-chain unit (1 ETH = 10^18 wei). String to avoid precision loss.\n- `eurCents`, `usdCents`, `gbpCents` → **integers in cents, divide by 100 for the currency unit.** Example: `eurCents: 354` means **€3.54**, not €354.\n- These can be `null` when the card is listed only in crypto (no fiat conversion exposed). When you see `eurCents: null`, fall back to `wei` (roughly: `wei * 1e-18 * <ETH/EUR>` for an EUR estimate; the live ETH/EUR rate is not provided by the API).\n\n### TokenOffer sides — easy to get wrong\n\nFor a **single-sale offer** (someone selling a card):\n- `senderSide.anyCards` = the cards being sold (sender = seller, sending the card).\n- `receiverSide.amounts` = the price the buyer pays (receiver = buyer, receiving the card).\n\nIf you query `senderSide.amounts` on a sale offer you'll get **zeros** because the seller isn't sending money. Always read prices from `receiverSide.amounts`.\n\n## When dedicated tools are not enough\n\nThe purpose-built tools below cover the most common workflows. For anything else use the generic helpers:\n- `sorare_graphql_schema` (no args) → compact summary of Query/Mutation + a flat index of every type.\n- `sorare_graphql_schema(type: \"TypeName\")` → just one type's definition.\n- `sorare_graphql_schema(search: \"keyword\")` → every type whose name or a field name matches.\n- `sorare_graphql_query` / `_mutation` / `_subscription` → execute arbitrary documents.\n\n**GraphQL introspection (`__schema` / `__type`) is disabled on Sorare's production endpoint.** Use `sorare_graphql_schema(type: \"…\")` instead.\n\n## Useful field paths the schema search won't surface obviously\n\n- `Player.lowestPriceAnyCard(rarity, inSeason)` → floor card for a player at a rarity. (Wrapped by `sorare_player_floor_price`.)\n- `Player.so5Scores(last, position?)` → recent So5 scores for form analysis. (Wrapped by `sorare_player_recent_scores`.)\n- `tokens.tokenPrices(playerSlug, rarity, first, season?)` → recent sale history for a player+rarity, in fiat + wei. (Wrapped by `sorare_token_prices`.)\n- `tokens.liveSingleSaleOffers(playerSlug?, sport?, first)` → current secondary market. (Wrapped by `sorare_live_sale_offers`.)\n- `currentUser.cards(first, rarities, sport)` → your inventory. NOT `currentUser.football.myCards` (that path doesn't exist).\n- `currentUser.availableBalances` → wallet in wei + EUR + USD + GBP. (Wrapped by `sorare_wallet_balance`.)\n- For free-text player search use the root `searchPlayers(query, pageSize)` then drill via `commonPlayerHits { anyPlayer { ... on Player { ... } } }`. There is no `football.players(search:…)` — that path doesn't exist.\n\n## Sport / season / rarity enum quirks\n\n- `Sport` is upper-snake: `FOOTBALL`, `BASEBALL`, `NBA`.\n- `Rarity` is lowercase: `common`, `limited`, `rare`, `super_rare`, `unique`, `custom_series` (not the upper-snake form).\n- `season` arguments are season **start years**: 2024 means the 2024-25 season.\n- Older-vintage cards (pre-current-season) still score normally in So5 Classic competitions; the vintage mainly matters for the Captain Bonus and for season-eligibility tournaments.\n\n## Rate limits\n\nSorare enforces per-IP and per-token rate limits (`429`). Heavy bulk-export workflows should batch and back-off. Very large GraphQL responses (hundreds of items × deep selection) may also time out — split the request.\n\n## Useful starter prompts\n\n- \"What's my Sorare wallet balance?\" → `sorare_wallet_balance`\n- \"What's the floor price for a Limited Calafiori right now?\" → `sorare_player_floor_price(playerSlug, rarity:\"limited\")`\n- \"What did Messi rare cards sell for in the last month?\" → `sorare_token_prices(playerSlug, rarity:\"rare\", first:30)`\n- \"Show me my Limited cards for Top-5-league players.\" → `sorare_list_my_cards(rarities:[\"limited\"])`\n- \"Is this player in form?\" → `sorare_player_recent_scores(playerSlug, last:10)`\n- \"How am I doing in So5 overall?\" → `sorare_my_trophies_summary(sport:\"FOOTBALL\")`",
   "connector": {
     "name": "Sorare",
@@ -57,6 +60,7 @@
     {
       "name": "sorare_current_user",
       "description": "Get the authenticated Sorare user's profile (slug, email, nickname). Use this first to confirm the connection is healthy.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {},
@@ -70,6 +74,7 @@
     {
       "name": "sorare_get_card_by_slug",
       "description": "Fetch a single Sorare football card by slug (e.g. 'lionel-messi-2023-rare-1'). Returns player, rarity, season, current owner, and the live single-sale offer if any. For richer data use sorare_graphql_query with the relevant slice from sorare_graphql_schema.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -78,7 +83,9 @@
             "description": "The card's unique slug from a card URL."
           }
         },
-        "required": ["slug"],
+        "required": [
+          "slug"
+        ],
         "additionalProperties": false
       },
       "endpointMapping": {
@@ -92,6 +99,7 @@
     {
       "name": "sorare_search_player",
       "description": "Search football players by name (full-text). Returns up to `pageSize` matches with slug, display name, country, and current club. Use the returned slug with sorare_list_player_cards or sorare_get_card_by_slug.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -107,7 +115,9 @@
             "description": "Max hits to return (1–20)."
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "additionalProperties": false
       },
       "endpointMapping": {
@@ -122,6 +132,7 @@
     {
       "name": "sorare_list_player_cards",
       "description": "List cards minted for a given football player slug, with their rarity, season, and current owner.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -137,7 +148,9 @@
             "description": "Max cards to return (1–50)."
           }
         },
-        "required": ["playerSlug"],
+        "required": [
+          "playerSlug"
+        ],
         "additionalProperties": false
       },
       "endpointMapping": {
@@ -152,6 +165,7 @@
     {
       "name": "sorare_list_my_cards",
       "description": "List football cards owned by the authenticated user with rarity, player, and season. Pass `rarities` to filter (e.g. ['rare']).",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -166,7 +180,14 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": ["common", "limited", "rare", "super_rare", "unique", "custom_series"]
+              "enum": [
+                "common",
+                "limited",
+                "rare",
+                "super_rare",
+                "unique",
+                "custom_series"
+              ]
             },
             "description": "Optional list of rarity tiers to keep."
           }
@@ -185,6 +206,7 @@
     {
       "name": "sorare_get_lineup",
       "description": "Fetch a Sorare So5 lineup by id. Returns lineup metadata (name, draft/confirmable flags) and owning user. For appearance scores and bonuses use sorare_graphql_query with a fragment on So5Appearance.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -193,7 +215,9 @@
             "description": "The So5 lineup id."
           }
         },
-        "required": ["lineupId"],
+        "required": [
+          "lineupId"
+        ],
         "additionalProperties": false
       },
       "endpointMapping": {
@@ -207,6 +231,7 @@
     {
       "name": "sorare_wallet_balance",
       "description": "Get the authenticated user's wallet balances in ETH (wei) and the three fiat reference currencies (EUR, USD, GBP). Useful before recommending a purchase.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {},
@@ -220,6 +245,7 @@
     {
       "name": "sorare_user_by_slug",
       "description": "Fetch another Sorare user's public profile by slug — nickname, status, and So5 lineup count. Use sorare_graphql_query with currentUser/cards for richer data.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -228,7 +254,9 @@
             "description": "The user's slug (from the URL, e.g. 'harrypottah')."
           }
         },
-        "required": ["slug"],
+        "required": [
+          "slug"
+        ],
         "additionalProperties": false
       },
       "endpointMapping": {
@@ -242,6 +270,7 @@
     {
       "name": "sorare_player_recent_scores",
       "description": "Return the most recent So5 scores for a football player slug, with position and game date. Use this to assess current form before composing a lineup or evaluating a card purchase.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -257,7 +286,9 @@
             "description": "Number of most-recent scores to return (1–20)."
           }
         },
-        "required": ["playerSlug"],
+        "required": [
+          "playerSlug"
+        ],
         "additionalProperties": false
       },
       "endpointMapping": {
@@ -272,6 +303,7 @@
     {
       "name": "sorare_token_prices",
       "description": "Recent sale history for cards of a specific player + rarity. Returns an array of completed sales with date and amounts in wei / EUR / USD / GBP. Use to gauge fair market value.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -281,7 +313,14 @@
           },
           "rarity": {
             "type": "string",
-            "enum": ["common", "limited", "rare", "super_rare", "unique", "custom_series"],
+            "enum": [
+              "common",
+              "limited",
+              "rare",
+              "super_rare",
+              "unique",
+              "custom_series"
+            ],
             "description": "Card rarity (lowercase per Sorare's enum)."
           },
           "first": {
@@ -296,7 +335,10 @@
             "description": "Optional: filter by season start year (e.g. 2024 for the 2024-25 season)."
           }
         },
-        "required": ["playerSlug", "rarity"],
+        "required": [
+          "playerSlug",
+          "rarity"
+        ],
         "additionalProperties": false
       },
       "endpointMapping": {
@@ -313,6 +355,7 @@
     {
       "name": "sorare_get_auction",
       "description": "Get a specific Sorare auction by id, including cards on auction, current price, best bid, and end date.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -321,7 +364,9 @@
             "description": "The auction id."
           }
         },
-        "required": ["auctionId"],
+        "required": [
+          "auctionId"
+        ],
         "additionalProperties": false
       },
       "endpointMapping": {
@@ -335,12 +380,17 @@
     {
       "name": "sorare_my_trophies_summary",
       "description": "Summary of the authenticated user's So5 results: total final rankings, podium finishes, and lifetime card / monetary rewards. Optionally filter by sport.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
           "sport": {
             "type": "string",
-            "enum": ["FOOTBALL", "BASEBALL", "NBA"],
+            "enum": [
+              "FOOTBALL",
+              "BASEBALL",
+              "NBA"
+            ],
             "description": "Optional sport filter (default: all sports)."
           }
         },
@@ -357,6 +407,7 @@
     {
       "name": "sorare_player_floor_price",
       "description": "Get the cheapest currently-listed card for a player at a given rarity. Returns the card slug + the live single-sale offer price in wei + EUR/USD/GBP cents. Optionally restrict to in-season cards only. Far cheaper (1 round-trip) than scanning live_sale_offers when you just want 'what does this player's rarity X cost right now?'.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -366,7 +417,14 @@
           },
           "rarity": {
             "type": "string",
-            "enum": ["common", "limited", "rare", "super_rare", "unique", "custom_series"],
+            "enum": [
+              "common",
+              "limited",
+              "rare",
+              "super_rare",
+              "unique",
+              "custom_series"
+            ],
             "description": "Card rarity (lowercase per Sorare's enum)."
           },
           "inSeasonOnly": {
@@ -375,7 +433,10 @@
             "description": "If true, only consider cards eligible for in-season tournaments."
           }
         },
-        "required": ["playerSlug", "rarity"],
+        "required": [
+          "playerSlug",
+          "rarity"
+        ],
         "additionalProperties": false
       },
       "endpointMapping": {
@@ -391,6 +452,7 @@
     {
       "name": "sorare_live_sale_offers",
       "description": "List currently-live single-sale offers on the secondary market (Sorare's 'transfer market'). Optionally filter by player slug or sport. For rarity / max-price filters use sorare_graphql_query.",
+      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -400,7 +462,11 @@
           },
           "sport": {
             "type": "string",
-            "enum": ["FOOTBALL", "BASEBALL", "NBA"],
+            "enum": [
+              "FOOTBALL",
+              "BASEBALL",
+              "NBA"
+            ],
             "description": "Optional: filter by sport."
           },
           "limit": {

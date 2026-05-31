@@ -487,6 +487,17 @@ export class ConnectorsController {
     return connector;
   }
 
+  @Get('proxy-availability')
+  @ApiOperation({
+    summary: 'Whether the proxy / web-unblocker is configured on this instance',
+    description:
+      'Returns { available: true } only when CONNECTOR_PROXY_URL is set. ' +
+      'The UI uses this to show or hide the per-tool "Use proxy" checkbox.',
+  })
+  async proxyAvailability() {
+    return { available: !!process.env.CONNECTOR_PROXY_URL };
+  }
+
   @Get('health-check')
   @ApiOperation({
     summary: 'Test connectivity of all active connectors',
