@@ -29,7 +29,8 @@
   },
   "dependencies": {
     "class-transformer": "^0.5.1",
-    "class-validator": "^0.15.1"
+    "class-validator": "^0.15.1",
+    "https-proxy-agent": "^7.0.6"
   },
   "overrides": {
     "rxjs": "7.8.1"
