@@ -29,10 +29,13 @@ jobs:
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          CRON_SECRET: ${{ secrets.ONBOARDING_CRON_SECRET }}
         with:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
+          envs: CRON_SECRET
           script: |
             set -e
             cd /opt/anythingmcp-cloud
@@ -47,6 +50,16 @@ jobs:
             cp /tmp/anythingmcp-deploy/docker-compose.cloud.yml ./docker-compose.cloud.yml
             cp /tmp/anythingmcp-deploy/deploy/cloud/Caddyfile ./Caddyfile
             rm -rf /tmp/anythingmcp-deploy
+
+            # Keep CRON_SECRET in the server .env in sync with the repo
+            # secret so the onboarding-reminders cron can authenticate.
+            # Upsert (replace-or-append) without disturbing other vars.
+            touch .env
+            if grep -q '^CRON_SECRET=' .env; then
+              sed -i "s#^CRON_SECRET=.*#CRON_SECRET=${CRON_SECRET}#" .env
+            else
+              echo "CRON_SECRET=${CRON_SECRET}" >> .env
+            fi
 
             # Restart services (force-recreate to pick up new image and config)
             docker compose -f docker-compose.cloud.yml up -d --force-recreate --remove-orphans
