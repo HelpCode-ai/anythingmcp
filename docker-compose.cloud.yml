@@ -52,6 +52,10 @@ services:
       # Operator analytics — cloud build only. Leave unset on self-hosted.
       - GTM_ID=${GTM_ID:-}
       - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
+      # Proxy / web-unblocker (e.g. Zyte API proxy mode). Tools with
+      # use_proxy=true route through this; unset = feature off everywhere.
+      - CONNECTOR_PROXY_URL=${CONNECTOR_PROXY_URL:-}
+      - PROXY_RATE_LIMIT_DEFAULT=${PROXY_RATE_LIMIT_DEFAULT:-100}
     depends_on:
       postgres:
         condition: service_healthy
