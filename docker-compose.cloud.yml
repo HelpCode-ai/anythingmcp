@@ -43,6 +43,10 @@ services:
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      # Shared secret for the onboarding-reminders GitHub Actions cron.
+      # Must match the repo secret ONBOARDING_CRON_SECRET. Unset = cron
+      # endpoint refuses all calls (self-host default).
+      - CRON_SECRET=${CRON_SECRET:-}
       - CORS_ORIGIN=https://${DOMAIN}
       - SERVER_URL=https://${DOMAIN}
       - FRONTEND_URL=https://${DOMAIN}
