@@ -1,6 +1,6 @@
 {
   "name": "anythingmcp",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "description": "Self-hosted MCP gateway for REST, SOAP/WSDL, GraphQL and SQL — turn any API into MCP tools for Claude, ChatGPT, Gemini, Copilot and Cursor. 30+ pre-built adapters, on-prem audit log, OAuth2/RBAC. Source-available (BSL-1.1 → Apache 2030).",
   "private": true,
   "license": "BUSL-1.1",
