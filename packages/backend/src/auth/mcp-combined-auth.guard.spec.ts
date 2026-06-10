@@ -26,7 +26,7 @@ describe('McpCombinedAuthGuard', () => {
     mockConfig = { get: jest.fn() };
     mockAuth = { verifyToken: jest.fn() };
     mockApiKeys = { resolveUserByKey: jest.fn() };
-    mockPrisma = { user: { findUnique: jest.fn() } };
+    mockPrisma = { user: { findUnique: jest.fn(), findFirst: jest.fn() } };
     guard = new McpCombinedAuthGuard(
       mockConfig,
       mockAuth,
@@ -53,7 +53,7 @@ describe('McpCombinedAuthGuard', () => {
       expect(ctx.switchToHttp().getRequest().user.organizationId).toBe('org-A');
     });
 
-    it('resolves organizationId from the user record for an OAuth token that lacks it', async () => {
+    it('resolves organizationId from the user record for an OAuth token whose sub is a cuid', async () => {
       mockConfig.get.mockReturnValue(undefined);
       // OAuth access token shape: sub + user_data, NO organizationId claim.
       mockAuth.verifyToken.mockReturnValue({
@@ -61,7 +61,8 @@ describe('McpCombinedAuthGuard', () => {
         type: 'access',
         user_data: { id: 'u-finance', email: 'finance@helpcode.ai' },
       });
-      mockPrisma.user.findUnique.mockResolvedValue({
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'u-finance',
         organizationId: 'org-B',
         email: 'finance@helpcode.ai',
         role: 'ADMIN',
@@ -71,19 +72,52 @@ describe('McpCombinedAuthGuard', () => {
       const result = await guard.canActivate(ctx);
 
       expect(result).toBe(true);
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
-        where: { id: 'u-finance' },
-        select: { organizationId: true, email: true, role: true },
+      // Resolves by id OR email — the user_data.email is also a candidate.
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          OR: [{ id: 'u-finance' }, { email: 'finance@helpcode.ai' }],
+        },
+        select: { id: true, organizationId: true, email: true, role: true },
       });
-      // Without this resolution the org check downstream would be skipped,
-      // allowing cross-tenant access to /mcp/:serverId.
       expect(ctx.switchToHttp().getRequest().user.organizationId).toBe('org-B');
+    });
+
+    it('resolves organizationId when the OAuth token sub IS the email (rekog/mcp-nest)', async () => {
+      // Regression test for the production 403 incident: rekog signs `sub`
+      // with the email, not the users.id cuid. The guard must still resolve
+      // the org (by email) so legitimate owners are not locked out.
+      mockConfig.get.mockReturnValue(undefined);
+      mockAuth.verifyToken.mockReturnValue({
+        sub: 'jjstrick9@gmail.com',
+        type: 'access',
+        user_data: {},
+      });
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'cmpzj8mm9007j1ymn5mo2y3eq',
+        organizationId: 'cmpzj8mds007i1ymntpyjngdp',
+        email: 'jjstrick9@gmail.com',
+        role: 'ADMIN',
+      });
+
+      const ctx = mockContext({ authorization: 'Bearer oauth-token' });
+      const result = await guard.canActivate(ctx);
+
+      expect(result).toBe(true);
+      // sub is an email → matched via the email branch, not id.
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { OR: [{ email: 'jjstrick9@gmail.com' }] },
+        select: { id: true, organizationId: true, email: true, role: true },
+      });
+      const u = ctx.switchToHttp().getRequest().user;
+      expect(u.organizationId).toBe('cmpzj8mds007i1ymntpyjngdp');
+      // sub is normalised back to the real cuid for downstream ownership checks.
+      expect(u.sub).toBe('cmpzj8mm9007j1ymn5mo2y3eq');
     });
 
     it('leaves organizationId undefined when the user cannot be resolved (fail closed downstream)', async () => {
       mockConfig.get.mockReturnValue(undefined);
       mockAuth.verifyToken.mockReturnValue({ sub: 'ghost', user_data: {} });
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
 
       const ctx = mockContext({ authorization: 'Bearer oauth-token' });
       await guard.canActivate(ctx);
