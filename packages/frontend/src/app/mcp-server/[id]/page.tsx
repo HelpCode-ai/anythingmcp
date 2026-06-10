@@ -210,10 +210,15 @@ export default function McpServerDetailPage() {
 
   const slug = server.slug || 'my-server';
 
+  // Claude Desktop's config schema accepts "stdio" (local command) or "http"
+  // (remote streamable HTTP). "url" is NOT a valid type — Claude Desktop
+  // silently skips entries with it ("not valid MCP server configurations").
+  // For remote OAuth servers use "http"; Claude triggers the OAuth flow off
+  // the WWW-Authenticate header our endpoint returns on 401.
   const claudeConfigOAuth = `{
   "mcpServers": {
     "${slug}": {
-      "type": "url",
+      "type": "http",
       "url": "${endpointUrl}"
     }
   }
@@ -222,7 +227,7 @@ export default function McpServerDetailPage() {
   const claudeConfigApiKey = `{
   "mcpServers": {
     "${slug}": {
-      "type": "url",
+      "type": "http",
       "url": "${endpointUrl}",
       "headers": {
         "X-API-Key": "YOUR_MCP_API_KEY"
