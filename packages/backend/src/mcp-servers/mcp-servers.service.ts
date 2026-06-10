@@ -32,6 +32,26 @@ export class McpServersService {
     });
   }
 
+  /**
+   * Tenant-isolation primitive: is the user a member of the organization?
+   *
+   * Authoritative membership check used by the per-server MCP endpoint. Unlike
+   * comparing the single `users.organizationId` column, this honours
+   * organization_members — so a user who belongs to multiple workspaces can
+   * reach servers in any org they're actually a member of, while a non-member
+   * is still denied (fail closed).
+   */
+  async isUserInOrganization(
+    userId: string,
+    organizationId: string,
+  ): Promise<boolean> {
+    if (!userId || !organizationId) return false;
+    const count = await this.prisma.organizationMember.count({
+      where: { userId, organizationId },
+    });
+    return count > 0;
+  }
+
   async findById(id: string) {
     return this.prisma.mcpServerConfig.findUnique({
       where: { id },

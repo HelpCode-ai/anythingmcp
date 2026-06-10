@@ -33,6 +33,7 @@ describe('McpEndpointController — tenant isolation', () => {
       findById: jest.fn().mockResolvedValue(SERVER),
       getConnectorIds: jest.fn().mockResolvedValue([]),
       getComposedInstructions: jest.fn().mockResolvedValue(''),
+      isUserInOrganization: jest.fn().mockResolvedValue(false),
     };
     toolRegistry = { getAllTools: jest.fn().mockReturnValue([]) };
     toolExecutor = { executeTool: jest.fn() };
@@ -45,15 +46,42 @@ describe('McpEndpointController — tenant isolation', () => {
     );
   });
 
-  it('denies a user whose organization differs from the server (cross-tenant)', async () => {
-    const req: any = { user: { organizationId: 'org-B', authMethod: 'jwt' } };
+  it('denies a non-member whose org differs and has no membership (cross-tenant)', async () => {
+    // org-B user, NOT a member of org-A → isUserInOrganization returns false.
+    const req: any = {
+      user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt' },
+    };
     const res = makeRes();
 
     await controller.handlePost('srv-A', req, res, {});
 
+    expect(mcpServersService.isUserInOrganization).toHaveBeenCalledWith(
+      'u-b',
+      'org-A',
+    );
     expect(res.status).toHaveBeenCalledWith(403);
     // Must short-circuit before touching the server's connectors/tools.
     expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+  });
+
+  it('allows a multi-org user who is a MEMBER of the server org via membership', async () => {
+    // Primary org is org-B, but the user is also a member of org-A (the
+    // server's org) — must be allowed.
+    mcpServersService.isUserInOrganization.mockResolvedValue(true);
+    const req: any = {
+      user: { sub: 'u-multi', organizationId: 'org-B', authMethod: 'jwt' },
+      headers: {},
+    };
+    const res = makeRes();
+
+    await controller.handlePost('srv-A', req, res, {});
+
+    expect(mcpServersService.isUserInOrganization).toHaveBeenCalledWith(
+      'u-multi',
+      'org-A',
+    );
+    expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
+    expect(res.status).not.toHaveBeenCalledWith(403);
   });
 
   it('denies when the caller organization cannot be determined (fail closed)', async () => {
@@ -66,16 +94,17 @@ describe('McpEndpointController — tenant isolation', () => {
     expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
   });
 
-  it('allows a user from the same organization as the server', async () => {
+  it('allows a user whose primary org matches the server (zero-query fast path)', async () => {
     const req: any = {
-      user: { organizationId: 'org-A', authMethod: 'jwt' },
+      user: { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' },
       headers: {},
     };
     const res = makeRes();
 
     await controller.handlePost('srv-A', req, res, {});
 
-    // Passed isolation → proceeded to assemble the server's tools.
+    // Primary org matches → no membership query needed.
+    expect(mcpServersService.isUserInOrganization).not.toHaveBeenCalled();
     expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
