@@ -106,9 +106,19 @@ export class McpEndpointController {
       });
     }
 
-    // Verify the authenticated user belongs to the same organization as the MCP server
+    // Tenant isolation: a request scoped to a specific server must come from a
+    // principal in that server's organization. Fail closed — deny when the
+    // caller's organization is unknown or does not match. Instance-level static
+    // credentials (self-host, not organization-scoped) are exempt.
     const user = (req as any).user;
-    if (user?.organizationId && mcpServerConfig.organizationId !== user.organizationId) {
+    const isInstanceLevel =
+      user?.authMethod === 'static_api_key' ||
+      user?.authMethod === 'static_bearer' ||
+      user?.authMethod === 'none';
+    if (
+      !isInstanceLevel &&
+      mcpServerConfig.organizationId !== user?.organizationId
+    ) {
       return res.status(403).json({
         jsonrpc: '2.0',
         error: { code: -32001, message: 'Access denied' },

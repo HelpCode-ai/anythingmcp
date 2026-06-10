@@ -48,10 +48,28 @@ export class McpAuthMiddleware implements NestMiddleware {
       // Invalid per-user key — fall through to 401
     }
 
-    // If no auth is configured, allow all (dev mode)
+    // If no MCP credentials are configured, refuse by default (fail closed).
+    // Anonymous access is allowed only when explicitly opted in via
+    // MCP_ALLOW_ANONYMOUS=true, for trusted local/dev use. This prevents a
+    // default deployment from silently exposing configured MCP tools to
+    // unauthenticated network clients.
     if (!configuredApiKey && !mcpBearerToken) {
-      (req as any).user = { authMethod: 'none' };
-      return next();
+      const allowAnonymous =
+        this.configService.get<string>('MCP_ALLOW_ANONYMOUS') === 'true';
+      if (allowAnonymous) {
+        (req as any).user = { authMethod: 'none' };
+        return next();
+      }
+      this.logger.warn(
+        'MCP request refused: no MCP_API_KEY/MCP_BEARER_TOKEN configured and MCP_ALLOW_ANONYMOUS is not enabled.',
+      );
+      res.setHeader('WWW-Authenticate', 'Bearer realm="AnythingMCP MCP Server"');
+      res.status(401).json({
+        statusCode: 401,
+        message:
+          'MCP authentication is not configured. Set MCP_API_KEY or MCP_BEARER_TOKEN, or set MCP_ALLOW_ANONYMOUS=true for trusted local use.',
+      });
+      return;
     }
 
     // Check static API key

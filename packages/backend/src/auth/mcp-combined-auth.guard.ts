@@ -2,6 +2,7 @@ import { Injectable, CanActivate, ExecutionContext, Logger } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { McpApiKeysService } from '../roles/mcp-api-keys.service';
+import { PrismaService } from '../common/prisma.service';
 
 /**
  * Combined auth guard for per-server MCP endpoints (/mcp/:serverId).
@@ -22,6 +23,7 @@ export class McpCombinedAuthGuard implements CanActivate {
     private readonly configService: ConfigService,
     private readonly authService: AuthService,
     private readonly mcpApiKeysService: McpApiKeysService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -72,8 +74,33 @@ export class McpCombinedAuthGuard implements CanActivate {
 
       // JWT token (OAuth or legacy JWT)
       try {
-        const payload = this.authService.verifyToken(token);
-        req.user = { ...payload, authMethod: 'jwt' };
+        const payload = this.authService.verifyToken(token) as any;
+        // App JWTs carry `organizationId` in their claims. OAuth access tokens
+        // issued by the MCP OAuth flow only carry `sub` + `user_data` (no org).
+        // Resolve the organization from the user record so the per-server
+        // tenant-isolation check can be enforced — without this, OAuth clients
+        // would have `organizationId === undefined` and bypass isolation,
+        // allowing cross-organization access to any /mcp/:serverId endpoint.
+        let organizationId: string | undefined =
+          payload.organizationId ?? undefined;
+        const userId: string | undefined = payload.sub || payload.user_data?.id;
+        if (!organizationId && userId) {
+          const dbUser = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { organizationId: true, email: true, role: true },
+          });
+          organizationId = dbUser?.organizationId ?? undefined;
+          req.user = {
+            ...payload,
+            sub: userId,
+            organizationId,
+            email: payload.email ?? payload.user_data?.email ?? dbUser?.email,
+            role: payload.role ?? dbUser?.role,
+            authMethod: 'jwt',
+          };
+        } else {
+          req.user = { ...payload, organizationId, authMethod: 'jwt' };
+        }
         return true;
       } catch {
         // Invalid JWT — continue
@@ -86,8 +113,15 @@ export class McpCombinedAuthGuard implements CanActivate {
       return true;
     }
 
-    // 5. If legacy mode but no credentials configured (dev mode), allow
-    if (!configuredApiKey && !mcpBearerToken && mode === 'legacy') {
+    // 5. Legacy mode with no credentials configured: refuse by default (fail
+    // closed). Allow anonymous access only when explicitly opted in via
+    // MCP_ALLOW_ANONYMOUS=true, for trusted local/dev use.
+    if (
+      mode === 'legacy' &&
+      !configuredApiKey &&
+      !mcpBearerToken &&
+      this.configService.get<string>('MCP_ALLOW_ANONYMOUS') === 'true'
+    ) {
       req.user = { authMethod: 'none' };
       return true;
     }
