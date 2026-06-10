@@ -50,6 +50,50 @@ describe('RestEngine', () => {
     );
   });
 
+  it('expands __rawquery into flat query params with dynamic keys (weclapp filter)', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+
+    await engine.execute(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' },
+      {
+        method: 'GET',
+        path: '/article',
+        queryParams: { pageSize: '$pageSize', __rawquery: '$filter' },
+      },
+      {
+        pageSize: 100,
+        filter: 'articleNumber-eq=A5101&productionArticle-eq=true',
+      },
+    );
+
+    const sent = mockedAxios.mock.calls[0][0] as unknown as { params: Record<string, unknown> };
+    expect(sent.params).toEqual({
+      pageSize: 100,
+      'articleNumber-eq': 'A5101',
+      'productionArticle-eq': 'true',
+    });
+    // The marker key itself must never reach the wire.
+    expect(sent.params).not.toHaveProperty('__rawquery');
+  });
+
+  it('omits __rawquery entirely when the source param is absent', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+
+    await engine.execute(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' },
+      {
+        method: 'GET',
+        path: '/article',
+        queryParams: { pageSize: '$pageSize', __rawquery: '$filter' },
+      },
+      { pageSize: 1 },
+    );
+
+    const sent = mockedAxios.mock.calls[0][0] as unknown as { params: Record<string, unknown> };
+    expect(sent.params).toEqual({ pageSize: 1 });
+    expect(sent.params).not.toHaveProperty('__rawquery');
+  });
+
   it('should inject API key auth', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
 

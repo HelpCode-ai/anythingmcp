@@ -56,7 +56,7 @@
           "page": "$page",
           "pageSize": "$pageSize",
           "properties": "$properties",
-          "filter": "$filter",
+          "__rawquery": "$filter",
           "sort": "$sort"
         }
       }
@@ -116,7 +116,7 @@
           "page": "$page",
           "pageSize": "$pageSize",
           "properties": "$properties",
-          "filter": "$filter",
+          "__rawquery": "$filter",
           "sort": "$sort"
         }
       }
@@ -141,7 +141,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "weclapp v2 filter expression"
+            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull. Examples: 'articleNumber-eq=A5101', 'productionArticle-eq=true', 'name-ilike=%hammer%'. Combine with '&'."
           },
           "sort": {
             "type": "string",
@@ -156,7 +156,7 @@
           "page": "$page",
           "pageSize": "$pageSize",
           "properties": "$properties",
-          "filter": "$filter",
+          "__rawquery": "$filter",
           "sort": "$sort"
         }
       }
@@ -181,7 +181,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "weclapp v2 filter expression"
+            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull. Examples: 'articleNumber-eq=A5101', 'productionArticle-eq=true', 'name-ilike=%hammer%'. Combine with '&'."
           },
           "sort": {
             "type": "string",
@@ -196,7 +196,7 @@
           "page": "$page",
           "pageSize": "$pageSize",
           "properties": "$properties",
-          "filter": "$filter",
+          "__rawquery": "$filter",
           "sort": "$sort"
         }
       }

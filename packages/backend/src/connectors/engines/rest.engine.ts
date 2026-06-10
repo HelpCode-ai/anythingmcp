@@ -92,9 +92,23 @@ export class RestEngine {
 
     // Query parameters (merged on top of any params already set by auth injection)
     if (endpointMapping.queryParams) {
+      const mappedQuery = this.mapParams(endpointMapping.queryParams, params);
+      // `__rawquery` escape hatch (mirrors `__raw` for bodies): some APIs use
+      // dynamic query-param KEYS rather than a fixed `filter=` param — e.g.
+      // weclapp's `?articleNumber-eq=A5101&productionArticle-eq=true`, where the
+      // property+operator IS the param name. A tool maps such input to the
+      // `__rawquery` key; its string value is parsed as a query-string fragment
+      // and each pair is merged verbatim into the request params.
+      if (typeof mappedQuery['__rawquery'] === 'string') {
+        const raw = String(mappedQuery['__rawquery']);
+        delete mappedQuery['__rawquery'];
+        for (const [k, v] of new URLSearchParams(raw)) {
+          mappedQuery[k] = v;
+        }
+      }
       axiosConfig.params = {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
-        ...this.mapParams(endpointMapping.queryParams, params),
+        ...mappedQuery,
       };
     }
 
