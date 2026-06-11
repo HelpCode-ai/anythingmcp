@@ -8,9 +8,9 @@
 
 ## What license does AnythingMCP use?
 
-AnythingMCP uses the **Business Source License 1.1** (BSL-1.1), created by MariaDB. It is a **source-available** license — the source code is publicly available, but it is _not_ an OSI-approved "open source" license.
+AnythingMCP is licensed under the **GNU Affero General Public License v3** (AGPL-3.0-only), an OSI-approved **open-source** license. It is the same license used by Twenty, Cal.com, Grafana, Plausible and Mastodon.
 
-On the **Change Date** (2030-03-04), the license automatically converts to the **Apache License 2.0**, which is a permissive, OSI-approved open-source license.
+The only exception is code under `ee/` directories (e.g. `packages/backend/src/ee/`), which contains operator-only functionality for the AnythingMCP Cloud offering and is licensed under the [AnythingMCP Commercial License](../packages/backend/src/ee/LICENSE). EE code is inert in self-hosted deployments — you don't need it.
 
 ---
 
@@ -22,64 +22,70 @@ On the **Change Date** (2030-03-04), the license automatically converts to the *
 | Use it for personal projects | **Yes** |
 | Use it for development and testing | **Yes** |
 | Use it for academic research or teaching | **Yes** |
-| Evaluate it before purchasing | **Yes** |
-| Modify the source code for internal use | **Yes** |
-| Contribute back to the project | **Yes** |
+| Modify the source code | **Yes** |
 | Self-host for my own team or organization | **Yes** |
 | Build internal tools on top of it | **Yes** |
+| Offer it (even modified) as a hosted service | **Yes** — but see the copyleft condition below |
+| Contribute back to the project | **Yes** — after signing the [CLA](../CLA.md) |
 
 ---
 
-## What can I NOT do?
+## What does the AGPL require from me?
 
-| Use Case | Allowed? |
-|----------|----------|
-| Offer AnythingMCP as a hosted/managed service to third parties (SaaS) | **No** — requires a commercial license |
-| Resell AnythingMCP as part of a commercial platform | **No** — requires a commercial license |
-| White-label and sell as your own product | **No** — requires a commercial license |
+The AGPL is a **copyleft** license. In short:
 
-**In short:** You cannot use AnythingMCP to build a commercial hosted service where AnythingMCP provides the primary value to your customers. If you want to do this, contact us for a commercial license.
+1. **Internal/personal use:** no obligations. Use and modify freely.
+2. **Distributing AnythingMCP** (modified or not): you must provide the source code under the AGPL.
+3. **Running a modified AnythingMCP as a network service** for other people: you must offer those users the source code of your modified version. This is the "Affero" clause — it closes the SaaS loophole of the ordinary GPL.
 
----
-
-## What is the "Change Date"?
-
-On **2030-03-04**, the BSL-1.1 license automatically converts to the **Apache License 2.0**. From that date forward, all the restrictions above are removed and AnythingMCP becomes fully open-source under Apache 2.0.
-
-This applies to the specific version released under BSL-1.1. Each new version may have its own Change Date (typically 4 years from release).
+If you don't modify the code, simply pointing users at this repository satisfies the source-offer requirement.
 
 ---
 
-## Why not a traditional open-source license?
+## Can I build a proprietary product on top of AnythingMCP?
 
-The BSL-1.1 allows us to:
-
-1. **Keep the source code public** — anyone can read, audit, learn from, and contribute to the code
-2. **Allow free self-hosting** — organizations can deploy and use AnythingMCP internally at no cost
-3. **Protect against commercial free-riding** — large cloud providers cannot simply repackage and sell the software as a service without contributing back
-4. **Guarantee future open source** — the automatic conversion to Apache 2.0 ensures the code will eventually be fully open-source
-
-This model is used by projects like MariaDB, CockroachDB, Sentry, and HashiCorp.
+You can *use* AnythingMCP from a proprietary product over its API (your product is a separate work). But if you *incorporate or modify* AnythingMCP code, the combined work must be AGPL. If that doesn't fit your business, we offer **commercial licenses without copyleft obligations** — contact [licensing@helpcode.ai](mailto:licensing@helpcode.ai).
 
 ---
 
-## Is BSL-1.1 "open source"?
+## What is the `ee/` directory?
 
-No. The Open Source Initiative (OSI) does not consider BSL-1.1 an open-source license because it includes usage restrictions. The correct term is **"source-available"**.
+Code under `ee/` directories powers the AnythingMCP Cloud operation (e.g. onboarding lifecycle emails). It is:
 
-We are transparent about this distinction and do not claim to be "open source" in the OSI sense.
+- **Visible** — you can read and audit it like the rest of the repo
+- **Not AGPL** — it's under the AnythingMCP Commercial License
+- **Not needed for self-hosting** — EE modules only load when `DEPLOYMENT_MODE=cloud`
+
+This split (AGPL core + commercial `ee/`) is the same model used by Cal.com and GitLab.
+
+---
+
+## What about old releases?
+
+Versions of AnythingMCP released **before** the AGPL adoption remain under the **Business Source License 1.1** they were published with. Those releases convert automatically to Apache 2.0 on their Change Date (2030-03-04). Everything from the AGPL adoption onward is AGPL-3.0-only.
+
+---
+
+## Why the AGPL and not MIT/Apache?
+
+The AGPL lets us:
+
+1. **Be genuinely open source** — OSI-approved, with all the freedoms that implies
+2. **Allow free self-hosting** — organizations can deploy AnythingMCP internally at no cost, forever
+3. **Keep improvements open** — anyone who offers a modified AnythingMCP as a service must share their changes
+4. **Build sustainably** — the copyleft, our commercial licenses, and the `ee/` features fund continued development
+
+---
+
+## Why do contributors sign a CLA?
+
+The [Contributor License Agreement](../CLA.md) lets helpcode.ai GmbH re-license contributions — which is what makes the dual model (AGPL + commercial licenses) possible with a single codebase. **You keep the copyright** on your contribution; the CLA is a license, not an assignment. Signing happens automatically on your first pull request and takes one click.
 
 ---
 
 ## How do I get a commercial license?
 
-Contact [info@helpcode.ai](mailto:info@helpcode.ai) or visit [anythingmcp.com/pricing](https://anythingmcp.com/pricing) for commercial licensing options.
-
----
-
-## Can I contribute under BSL-1.1?
-
-Yes. See our [Contributing Guide](../CONTRIBUTING.md). By contributing, you agree that your contributions are licensed under the same BSL-1.1 terms and will automatically convert to Apache 2.0 on the Change Date.
+Contact [licensing@helpcode.ai](mailto:licensing@helpcode.ai) or visit [anythingmcp.com/pricing](https://anythingmcp.com/pricing) for commercial licensing options.
 
 ---
 

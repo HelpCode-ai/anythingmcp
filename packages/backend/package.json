@@ -3,7 +3,7 @@
   "version": "0.1.33",
   "description": "AnythingMCP — NestJS Backend + Dynamic MCP Server",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "prebuild": "node ../../scripts/regenerate-catalog.mjs",
     "build": "prisma generate && nest build",

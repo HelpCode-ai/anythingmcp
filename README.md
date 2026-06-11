@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=flat&logo=github&logoColor=white&color=2563eb&labelColor=0b1220" alt="GitHub Stars"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
-  <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSL--1.1-2563eb?labelColor=0b1220" alt="License"></a>
+  <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2563eb?labelColor=0b1220" alt="License"></a>
   <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/badge/docker-ready-2563eb?logo=docker&logoColor=white&labelColor=0b1220" alt="Docker Ready"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/commits/main"><img src="https://img.shields.io/github/last-commit/HelpCode-ai/anythingmcp?color=2563eb&labelColor=0b1220" alt="Last Commit"></a>
 </p>
@@ -62,7 +62,7 @@
 
 ## What is AnythingMCP?
 
-**AnythingMCP** is a self-hosted, source-available **MCP server** and **API gateway** that turns your existing APIs into [Model Context Protocol](https://modelcontextprotocol.io/) tools. Connect **any** API — REST, SOAP, GraphQL, databases, or other MCP servers — and expose them to **Claude**, **ChatGPT**, **Gemini**, **Copilot**, **Cursor**, and any other MCP-compatible client.
+**AnythingMCP** is a self-hosted, open-source **MCP server** and **API gateway** that turns your existing APIs into [Model Context Protocol](https://modelcontextprotocol.io/) tools. Connect **any** API — REST, SOAP, GraphQL, databases, or other MCP servers — and expose them to **Claude**, **ChatGPT**, **Gemini**, **Copilot**, **Cursor**, and any other MCP-compatible client.
 
 No SDK. No code changes. Point, configure, connect.
 
@@ -356,15 +356,15 @@ Yes. Any client that speaks MCP works. See [Connect your AI client](#connect-you
 </details>
 
 <details>
-<summary><strong>Why source-available and not "open source"?</strong></summary>
+<summary><strong>Is AnythingMCP really open source?</strong></summary>
 
-We use the [Business Source License 1.1](LICENSE) (BSL-1.1), the same model as Sentry, MariaDB, CockroachDB and HashiCorp Terraform. The source is fully public — you can read, fork, modify and self-host — but you can't resell it as a managed SaaS without a commercial license. On **2030-03-04** the license **automatically converts to Apache 2.0**, so the code is guaranteed to become OSI-approved open-source. We chose this over MIT/Apache up-front to keep building AnythingMCP sustainably while avoiding the AWS-strip-mining trap. See the [License FAQ](docs/license-faq.md).
+Yes. AnythingMCP is licensed under the [GNU AGPL v3](LICENSE), an OSI-approved open-source license — the same model as Twenty, Cal.com, Grafana and Plausible. You can read, fork, modify, self-host and even offer it as a service; the AGPL's network copyleft simply requires that modifications to the software stay open. The only exception is code under `ee/` directories (cloud-operator features like onboarding emails), which is commercially licensed and not needed for self-hosting. See the [License FAQ](docs/license-faq.md).
 </details>
 
 <details>
 <summary><strong>Is AnythingMCP free?</strong></summary>
 
-Yes, for everyone except SaaS resellers. Free for internal company use, personal use, development, testing, evaluation and academic use. The only restriction is offering it as a hosted commercial service to third parties without a commercial license — and even that lifts on 2030-03-04 when BSL converts to Apache 2.0.
+Yes. AnythingMCP is free software under the AGPL v3 — free for internal company use, personal use, development, testing, evaluation and academic use. If you modify it and run it as a network service for others, the AGPL requires you to make your modified source available to those users. For commercial licensing without copyleft obligations: [licensing@helpcode.ai](mailto:licensing@helpcode.ai).
 </details>
 
 <details>
@@ -474,13 +474,13 @@ We welcome contributions! Please read our [Contributing guide](CONTRIBUTING.md) 
 
 ## License
 
-AnythingMCP is **source-available** under the [Business Source License 1.1](LICENSE) (BSL-1.1). This is _not_ an OSI-approved open-source license — see the [License FAQ](docs/license-faq.md) for a plain-language explanation.
+AnythingMCP is **open source** under the [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only) — see the [License FAQ](docs/license-faq.md) for a plain-language explanation.
 
-- ✅ **Free for** — internal use, personal use, development, testing, evaluation, academic use
-- ❌ **Not permitted** — offering as a commercial hosted service (SaaS) without a separate license
-- 📅 **Change date** — 2030-03-04 — on this date the license automatically converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)
+- ✅ **Free for** — internal use, personal use, development, testing, evaluation, academic use, self-hosting
+- 🔄 **Copyleft** — if you modify AnythingMCP and offer it over a network, you must share your modified source with those users
+- 🏢 **`ee/` directories** — cloud-operator code under `ee/` is licensed under the [AnythingMCP Commercial License](packages/backend/src/ee/LICENSE) and is not required for self-hosting
 
-For commercial licensing: [info@helpcode.ai](mailto:info@helpcode.ai)
+Releases published before the AGPL adoption remain under the Business Source License 1.1 (converting to Apache 2.0 on 2030-03-04). For commercial licensing: [licensing@helpcode.ai](mailto:licensing@helpcode.ai)
 
 > **Transparency note** — AnythingMCP makes optional network calls to `anythingmcp.com` for license verification and email delivery when SMTP is not configured. No API credentials or tool invocation data is ever sent. See [External services](docs/deployment.md#external-services) for full details.
 

@@ -3,5 +3,5 @@
   "maintainers": [
     "keysersoft"
   ],
-  "description": "Self-hosted MCP gateway and API-to-MCP bridge for REST, SOAP/WSDL, GraphQL and SQL. 30+ pre-built adapters for SaaS and public APIs (DHL, DATEV, Personio, Companies House, Razorpay, Mercado Libre …), on-prem audit log, OAuth2/RBAC. Source-available under BSL-1.1, converts to Apache 2.0 in 2030."
+  "description": "Self-hosted MCP gateway and API-to-MCP bridge for REST, SOAP/WSDL, GraphQL and SQL. 30+ pre-built adapters for SaaS and public APIs (DHL, DATEV, Personio, Companies House, Razorpay, Mercado Libre …), on-prem audit log, OAuth2/RBAC. Open source under AGPL-3.0."
 }

@@ -1,0 +1,34 @@
+AnythingMCP Commercial License
+
+Copyright (c) 2026 helpcode.ai GmbH. All rights reserved.
+
+The contents of this directory and all sub-directories ("EE Code") are
+NOT licensed under the GNU Affero General Public License that governs
+the rest of this repository.
+
+Use of the EE Code, in source or binary form, requires a valid
+commercial agreement with helpcode.ai GmbH ("Commercial Agreement").
+Without a Commercial Agreement you may:
+
+  1. View and audit the EE Code.
+  2. Modify the EE Code solely for the purpose of contributing changes
+     back to helpcode.ai GmbH.
+  3. Build and run the software with the EE Code disabled (the default
+     for self-hosted deployments — EE modules are only loaded when
+     DEPLOYMENT_MODE=cloud or an equivalent operator flag is set).
+
+Without a Commercial Agreement you may NOT:
+
+  1. Run the EE Code in production.
+  2. Redistribute the EE Code, modified or unmodified, as part of any
+     product or service.
+  3. Remove, bypass, or alter any license-checking or feature-gating
+     mechanism in the EE Code.
+
+THE EE CODE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL HELPCODE.AI GMBH BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY ARISING FROM THE USE OF THE EE CODE.
+
+For commercial licensing inquiries: licensing@helpcode.ai
