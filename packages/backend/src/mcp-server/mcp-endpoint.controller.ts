@@ -179,11 +179,26 @@ export class McpEndpointController {
       connectorIds,
     };
 
+    // Dedupe by tool name. A server can have two connectors that expose the
+    // same tool name (e.g. the same connector assigned twice, or two configs
+    // of one provider). The MCP SDK throws "Tool X is already registered" on
+    // the second registration, which previously 500'd the ENTIRE request and
+    // took down every tool on the server. Register the first occurrence of
+    // each name and skip the rest, so one duplicate can't break the endpoint.
+    const registeredNames = new Set<string>();
     for (const tool of serverTools) {
       // Skip tools not allowed by role
       if (allowedToolIds !== null && !allowedToolIds.includes(tool.id)) {
         continue;
       }
+
+      if (registeredNames.has(tool.name)) {
+        this.logger.warn(
+          `Duplicate tool name "${tool.name}" on server ${serverId} — skipping the extra copy (check for duplicate connector assignments).`,
+        );
+        continue;
+      }
+      registeredNames.add(tool.name);
 
       const schema = this.stripEnvVarParams(tool.parameters, tool.connectorConfig.envVars);
       const zodShape = this.jsonSchemaToZodShape(schema);

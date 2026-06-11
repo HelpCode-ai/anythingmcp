@@ -94,6 +94,41 @@ describe('McpEndpointController — tenant isolation', () => {
     expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
   });
 
+  it('does not crash when two connectors expose the same tool name (dedup, no 500)', async () => {
+    // Regression: a server with two connectors that both expose
+    // "etsy_get_authenticated_user" made the MCP SDK throw
+    // "Tool ... is already registered", which 500'd every request.
+    const dupTool = (connectorId: string) => ({
+      id: `${connectorId}:etsy_get_authenticated_user`,
+      connectorId,
+      name: 'etsy_get_authenticated_user',
+      description: 'whoami',
+      parameters: { type: 'object', properties: {} },
+      connectorConfig: { envVars: {} },
+    });
+    mcpServersService.getConnectorIds.mockResolvedValue(['c1', 'c2']);
+    toolRegistry.getAllTools.mockReturnValue([dupTool('c1'), dupTool('c2')]);
+    const warnSpy = jest
+      .spyOn((controller as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    const req: any = {
+      user: { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' },
+      headers: {},
+    };
+    const res = makeRes();
+
+    // Must resolve — the duplicate registration used to throw out of the
+    // handler (it runs before the transport try/catch).
+    await expect(
+      controller.handlePost('srv-A', req, res, {}),
+    ).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Duplicate tool name "etsy_get_authenticated_user"'),
+    );
+  });
+
   it('allows a user whose primary org matches the server (zero-query fast path)', async () => {
     const req: any = {
       user: { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' },
