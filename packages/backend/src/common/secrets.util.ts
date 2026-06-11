@@ -8,8 +8,8 @@ const MIN_SECRET_LENGTH = 32;
  * Returns a required secret from the environment.
  * Throws on startup if the value is missing or shorter than the minimum length.
  *
- * Never falls back to a hardcoded default: a known default key on a
- * source-available product is equivalent to having no encryption at all.
+ * Never falls back to a hardcoded default: a known default key on an
+ * open-source product is equivalent to having no encryption at all.
  */
 export function getRequiredSecret(
   name: string,

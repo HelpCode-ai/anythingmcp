@@ -7,7 +7,10 @@
 # MCP:    http://localhost:4000/mcp
 # =============================================================================
 
-name: amcp
+# Project name — also the prefix for the auto-created network and volumes.
+# Override COMPOSE_PROJECT_NAME (in .env or the environment) to run more than
+# one AnythingMCP stack on the same host without name collisions.
+name: ${COMPOSE_PROJECT_NAME:-amcp}
 
 services:
 
@@ -16,7 +19,7 @@ services:
   caddy:
     image: caddy:2-alpine
     profiles: ["proxy"]
-    container_name: amcp-caddy
+    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-caddy
     ports:
       - "80:80"
       - "443:443"
@@ -35,7 +38,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: amcp-app
+    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-app
     # Bind published ports to loopback by default so the API/MCP endpoint is
     # not exposed on every network interface out of the box. To reach it from
     # the LAN or the public internet, set APP_BIND_IP=0.0.0.0 in .env (and put
@@ -47,7 +50,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=4000
-      - NEXT_PUBLIC_API_URL=http://localhost:4000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000}
       - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD:-amcp}@postgres:5432/anythingmcp
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production-min-32-chars}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-in-production-exactly-32}
@@ -84,7 +87,7 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:17-alpine
-    container_name: amcp-postgres
+    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
@@ -101,7 +104,7 @@ services:
   # Redis Cache (optional — uncomment to enable response caching and rate limiting)
   # redis:
   #   image: redis:7-alpine
-  #   container_name: amcp-redis
+  #   container_name: ${COMPOSE_PROJECT_NAME:-amcp}-redis
   #   volumes:
   #     - redis_data:/data
   #   healthcheck:

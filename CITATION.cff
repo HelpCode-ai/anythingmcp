@@ -9,7 +9,7 @@ authors:
 url: "https://github.com/HelpCode-ai/anythingmcp"
 repository-code: "https://github.com/HelpCode-ai/anythingmcp"
 abstract: >
-  AnythingMCP is a source-available self-hosted Model Context Protocol (MCP)
+  AnythingMCP is an open-source self-hosted Model Context Protocol (MCP)
   server and API gateway. It converts REST, SOAP, GraphQL endpoints, databases,
   and other MCP servers into MCP tools consumable by AI clients such as
   Claude, ChatGPT, Google Gemini, GitHub Copilot, and Cursor. It ships with

@@ -10,8 +10,14 @@
 # Container Registry, and other registries to display image metadata.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Node runtime version, declared once and reused by every stage below so the
+# image always builds on a single, consistent Node major. The supported minimum
+# for local development is Node 22 (see "engines" in package.json); the shipped
+# image tracks a newer release. Override with --build-arg NODE_VERSION=24-alpine.
+ARG NODE_VERSION=26-alpine
+
 # ── Stage 1: Install ALL dependencies ───────────────────────────────────────
-FROM node:26-alpine AS deps
+FROM node:${NODE_VERSION} AS deps
 RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
@@ -25,7 +31,7 @@ COPY packages/frontend/package.json ./packages/frontend/
 RUN npm ci --network-timeout 600000
 
 # ── Stage 1b: Backend production deps only ────────────────────────────────
-FROM node:26-alpine AS backend-prod-deps
+FROM node:${NODE_VERSION} AS backend-prod-deps
 RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
@@ -41,7 +47,7 @@ RUN npm install --omit=dev --network-timeout=600000 && \
     rm -rf node_modules/typescript node_modules/react-dom node_modules/react
 
 # ── Stage 2: Build Backend ──────────────────────────────────────────────────
-FROM node:26-alpine AS backend-builder
+FROM node:${NODE_VERSION} AS backend-builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -61,7 +67,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # ── Stage 3: Build Frontend ─────────────────────────────────────────────────
-FROM node:26-alpine AS frontend-builder
+FROM node:${NODE_VERSION} AS frontend-builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -75,7 +81,7 @@ WORKDIR /app/packages/frontend
 RUN npm run build
 
 # ── Stage 4: Production ─────────────────────────────────────────────────────
-FROM node:26-alpine AS runner
+FROM node:${NODE_VERSION} AS runner
 RUN apk add --no-cache wget
 WORKDIR /app
 
@@ -112,7 +118,7 @@ LABEL org.opencontainers.image.title="AnythingMCP" \
       org.opencontainers.image.source="https://github.com/HelpCode-ai/anythingmcp" \
       org.opencontainers.image.documentation="https://github.com/HelpCode-ai/anythingmcp#readme" \
       org.opencontainers.image.vendor="helpcode.ai GmbH" \
-      org.opencontainers.image.licenses="BSL-1.1"
+      org.opencontainers.image.licenses="AGPL-3.0-only"
 
 USER appuser
 EXPOSE 3000 4000
