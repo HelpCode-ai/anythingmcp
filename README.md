@@ -480,7 +480,7 @@ AnythingMCP is **open source** under the [GNU Affero General Public License v3](
 - 🔄 **Copyleft** — if you modify AnythingMCP and offer it over a network, you must share your modified source with those users
 - 🏢 **`ee/` directories** — cloud-operator code under `ee/` is licensed under the [AnythingMCP Commercial License](packages/backend/src/ee/LICENSE) and is not required for self-hosting
 
-Releases published before the AGPL adoption remain under the Business Source License 1.1 (converting to Apache 2.0 on 2030-03-04). For commercial licensing: [licensing@helpcode.ai](mailto:licensing@helpcode.ai)
+See [LICENSING.md](LICENSING.md) for the full breakdown (including earlier BUSL releases). For commercial licensing: [licensing@helpcode.ai](mailto:licensing@helpcode.ai)
 
 > **Transparency note** — AnythingMCP makes optional network calls to `anythingmcp.com` for license verification and email delivery when SMTP is not configured. No API credentials or tool invocation data is ever sent. See [External services](docs/deployment.md#external-services) for full details.
 

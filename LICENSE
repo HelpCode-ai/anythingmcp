@@ -1,24 +1,3 @@
-AnythingMCP
-Copyright (c) 2026 helpcode.ai GmbH
-
-This software is licensed under the GNU Affero General Public License
-version 3 ("AGPL-3.0-only"), reproduced in full below — with the
-following exception:
-
-  All content that resides under any directory named "ee" (e.g.
-  packages/backend/src/ee/) is NOT licensed under the AGPL. It is
-  licensed under the AnythingMCP Commercial License — see the LICENSE
-  file inside that directory.
-
-Versions of AnythingMCP released before the adoption of this license
-remain governed by the Business Source License 1.1 under which they
-were published (converting to Apache 2.0 on their respective Change
-Dates).
-
-For commercial licensing inquiries: licensing@helpcode.ai
-
------------------------------------------------------------------------------
-
                     GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 
