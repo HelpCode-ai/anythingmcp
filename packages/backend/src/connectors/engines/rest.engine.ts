@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosRequestConfig, AxiosError, Method } from 'axios';
 import FormData from 'form-data';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { OAuth2TokenService } from './oauth2-token.service';
 import {
   LoginTokenService,
@@ -164,13 +164,12 @@ export class RestEngine {
     }
 
     // Route through the proxy / web-unblocker when the caller asked for it.
-    // `rejectUnauthorized: false` is required for unblockers like Zyte that
-    // intercept the TLS connection (equivalent to curl's --proxy-insecure).
-    // We disable axios' native proxy handling so the agent owns the tunnel.
+    // The unblocker agent disables upstream TLS verification (Zyte and friends
+    // MITM the connection) — see createUnblockerProxyAgent. Equivalent to
+    // curl's --proxy-insecure. We disable axios' native proxy handling so the
+    // agent owns the tunnel.
     if (config.proxyUrl) {
-      const agent = new HttpsProxyAgent(config.proxyUrl, {
-        rejectUnauthorized: false,
-      });
+      const agent = createUnblockerProxyAgent(config.proxyUrl);
       axiosConfig.httpsAgent = agent;
       axiosConfig.httpAgent = agent;
       axiosConfig.proxy = false;
