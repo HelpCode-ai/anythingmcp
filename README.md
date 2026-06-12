@@ -236,7 +236,7 @@ Yes. AnythingMCP is licensed under the [GNU AGPL v3](LICENSE), an OSI-approved o
 <details>
 <summary><strong>Is AnythingMCP free?</strong></summary>
 
-Yes. AnythingMCP is free software under the AGPL v3 — free for internal company use, personal use, development, testing, evaluation and academic use. If you modify it and run it as a network service for others, the AGPL requires you to make your modified source available to those users. For commercial licensing without copyleft obligations: [licensing@helpcode.ai](mailto:licensing@helpcode.ai).
+Yes. AnythingMCP is free software under the AGPL v3 — free for internal company use, personal use, development, testing, evaluation and academic use. If you modify it and run it as a network service for others, the AGPL requires you to make your modified source available to those users. For commercial licensing without copyleft obligations: [info@helpcode.ai](mailto:info@helpcode.ai).
 </details>
 
 <details>
