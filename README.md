@@ -25,13 +25,10 @@
 
 **AnythingMCP** is a self-hosted, open-source **MCP server** and **API gateway** that turns your existing APIs into [Model Context Protocol](https://modelcontextprotocol.io/) tools. Connect **any** API — REST, SOAP, GraphQL, databases, or other MCP servers — and expose it as a **custom connector** to **Claude**, **ChatGPT**, **Gemini**, **Copilot**, **Cursor**, and any other MCP-compatible client. No SDK. No code changes. Point, configure, connect.
 
+https://github.com/user-attachments/assets/2ae92f90-7012-4c00-8836-bae5a6422ca6
+
 <p align="center">
-  <a href="https://anythingmcp.com/demo.mp4">
-    <img src="docs/assets/demo-poster.jpg" alt="AnythingMCP 90-second demo — connect Claude, ChatGPT, Cursor and Copilot to any API with no code" width="100%" />
-  </a>
-</p>
-<p align="center">
-  <a href="https://anythingmcp.com/demo.mp4"><strong>▶ Watch the 90-second demo</strong></a>
+  <em>90-second demo — <a href="https://anythingmcp.com/demo.mp4">direct link</a> if the player doesn't load.</em>
 </p>
 
 <details>
