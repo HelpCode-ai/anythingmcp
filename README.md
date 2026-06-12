@@ -43,7 +43,6 @@ https://github.com/user-attachments/assets/2ae92f90-7012-4c00-8836-bae5a6422ca6
 - [Pre-configured MCP connectors](#pre-configured-mcp-connectors)
 - [Connect your AI client](#connect-your-ai-client)
 - [Connector guides](#connector-guides)
-- [Architecture](#architecture)
 - [FAQ](#faq)
 - [Documentation](#documentation)
 - [Tech stack](#tech-stack)
@@ -165,10 +164,8 @@ AnythingMCP ships with **175+ ready-to-use adapters** — provide your API crede
 | 🏛️ Government &amp; public data | VIES VAT, Handelsregister, UK Companies House 🇬🇧, DESTATIS, Bundesbank, OpenPLZ, NINA |
 | 🏦 Banking &amp; payments | N26, Wise 🇬🇧, PAYONE, Razorpay 🇮🇳, Paystack 🇳🇬 |
 | 💬 Messaging &amp; communication | WhatsApp, LINE 🇯🇵, TeamViewer |
-| 🎮 Gaming &amp; Web3 | Sorare (18 tools — also the reference for [LOGIN_TOKEN auth](docs/connectors/login-token-auth.md)) |
+| 🎮 Gaming &amp; Web3 | Sorare |
 | 🏗️ Construction &amp; mapping | PlanRadar, HERE Geocoding |
-
-> 📍 The catalog leans DACH (it was born in German production environments) with growing coverage across 🇬🇧 🇮🇳 🇧🇷 🇳🇬 🇯🇵. **Add your own in ~30 minutes**: one JSON file in `packages/backend/src/adapters/`, validated automatically at build time — [good-first-issue walkthrough](https://github.com/HelpCode-ai/anythingmcp/issues/150). Don't see your favourite SaaS? [Open a discussion](https://github.com/HelpCode-ai/anythingmcp/discussions/categories/ideas) — we prioritise by community demand.
 
 ---
 
@@ -195,19 +192,6 @@ AnythingMCP ships with **175+ ready-to-use adapters** — provide your API crede
 | **Database** | PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite | [Guide →](docs/connectors/database.md) |
 | **MCP Bridge** | Aggregate multiple MCP servers into one | [Guide →](docs/connectors/mcp-bridge.md) |
 | **LOGIN_TOKEN auth** | APIs that POST credentials → return long-lived bearer | [Guide →](docs/connectors/login-token-auth.md) |
-
----
-
-## Architecture
-
-<p align="center">
-  <img src="docs/assets/architecture.png" alt="AnythingMCP architecture — your systems on the left connect through the AnythingMCP gateway to your AI clients on the right" width="100%" />
-</p>
-
-1. **Create a connector** — point to your API (REST base URL, WSDL endpoint, GraphQL URL, DB connection string) or pick a pre-built adapter
-2. **Import or define tools** — auto-import from OpenAPI / Postman / WSDL / GraphQL or define manually
-3. **Connect AI clients** — point your MCP client to `http://your-server:4000/mcp`
-4. **AI calls tools** — AnythingMCP translates MCP tool calls into actual API requests and returns results
 
 ---
 
@@ -335,9 +319,3 @@ AnythingMCP is **open source** under the [GNU Affero General Public License v3](
 - ✅ **Free for** — internal use, personal use, development, testing, evaluation, academic use, self-hosting
 - 🔄 **Copyleft** — if you modify AnythingMCP and offer it over a network, you must share your modified source with those users
 - 🏢 **`ee/` directories** — cloud-operator code under `ee/` is licensed under the [AnythingMCP Commercial License](packages/backend/src/ee/LICENSE) and is not required for self-hosting
-
-See [LICENSING.md](LICENSING.md) for the full breakdown (including earlier BUSL releases). For commercial licensing: [licensing@helpcode.ai](mailto:licensing@helpcode.ai)
-
-> **Transparency note** — AnythingMCP makes optional network calls to `anythingmcp.com` for license verification and email delivery when SMTP is not configured. No API credentials or tool invocation data is ever sent. See [External services](docs/deployment.md#external-services) for full details.
-
-Copyright © 2026 helpcode.ai GmbH
