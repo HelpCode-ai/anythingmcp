@@ -73,4 +73,4 @@ kind.
 
 ---
 
-Questions? Contact licensing@helpcode.ai.
+Questions? Contact info@helpcode.ai.

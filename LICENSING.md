@@ -32,4 +32,4 @@ Dates).
 Contributions are accepted under the [Contributor License
 Agreement](CLA.md) — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-For commercial licensing inquiries: licensing@helpcode.ai
+For commercial licensing inquiries: info@helpcode.ai

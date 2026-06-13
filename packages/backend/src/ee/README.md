@@ -11,4 +11,4 @@ self-hosted deployments: EE modules are only loaded when
 without them.
 
 If you are self-hosting, you don't need anything in here. If you want
-to use EE features commercially, contact licensing@helpcode.ai.
+to use EE features commercially, contact info@helpcode.ai.

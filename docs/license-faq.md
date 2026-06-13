@@ -44,7 +44,7 @@ If you don't modify the code, simply pointing users at this repository satisfies
 
 ## Can I build a proprietary product on top of AnythingMCP?
 
-You can *use* AnythingMCP from a proprietary product over its API (your product is a separate work). But if you *incorporate or modify* AnythingMCP code, the combined work must be AGPL. If that doesn't fit your business, we offer **commercial licenses without copyleft obligations** — contact [licensing@helpcode.ai](mailto:licensing@helpcode.ai).
+You can *use* AnythingMCP from a proprietary product over its API (your product is a separate work). But if you *incorporate or modify* AnythingMCP code, the combined work must be AGPL. If that doesn't fit your business, we offer **commercial licenses without copyleft obligations** — contact [info@helpcode.ai](mailto:info@helpcode.ai).
 
 ---
 
@@ -85,7 +85,7 @@ The [Contributor License Agreement](../CLA.md) lets helpcode.ai GmbH re-license 
 
 ## How do I get a commercial license?
 
-Contact [licensing@helpcode.ai](mailto:licensing@helpcode.ai) or visit [anythingmcp.com/pricing](https://anythingmcp.com/pricing) for commercial licensing options.
+Contact [info@helpcode.ai](mailto:info@helpcode.ai) or visit [anythingmcp.com/pricing](https://anythingmcp.com/pricing) for commercial licensing options.
 
 ---
 
