@@ -1,11 +1,12 @@
 {
   "slug": "immobilienscout24",
   "name": "ImmobilienScout24 API",
-  "description": "Search and manage real estate listings on ImmobilienScout24, Germany's largest property portal. Browse apartments, houses, and commercial properties.",
+  "description": "Search real estate listings on ImmobilienScout24, Germany's largest property portal, from any AI assistant. Find apartments and houses for sale or rent, resolve location GeoCodes, and read full listing detail. 3 tools, requires ImmobilienScout24 API credentials (OAuth 1.0a).",
+  "instructions": "This connector wraps the official ImmobilienScout24 REST API (`rest.immobilienscout24.de`).\n\n**Authentication — OAuth 1.0a (handled for you)**: unlike most APIs, ImmobilienScout24 never moved to OAuth 2.0. It requires every request to be **signed** with HMAC-SHA1 per the OAuth 1.0a protocol. AnythingMCP performs this signing automatically (two-legged / app-only) using your consumer key + secret — you do not exchange or refresh any token. Just provide the two credentials below.\n\n**Where to get the credentials** (`IS24_CLIENT_ID` = consumer key, `IS24_CLIENT_SECRET` = consumer secret):\n1. Go to the self-service portal: https://selfservice.immobilienscout24.de\n2. Log in with — or create — an ImmobilienScout24 account. ⚠️ A **business account is mandatory**; non-business accounts cannot be granted API access.\n3. Generate an API key set. You can issue keys for **sandbox** (free, for testing) and/or **production**.\n4. Production keys require accepting the API Terms of Use and are subject to ImmobilienScout24's published price list (paid). Some use cases require partner approval/vetting before production access is granted — this is not instant.\n5. Copy the generated **API key** into `IS24_CLIENT_ID` and the **secret** into `IS24_CLIENT_SECRET`.\n\nDocs: https://api.immobilienscout24.de/api-docs/get-started/get-your-client-credentials/\n\n**Scope**: this connector uses two-legged (app-only) signing, which covers public listing search and lookup. Acting on *your own* objects/leads (three-legged, user context) is not exposed here.\n\n**Workflow**:\n1. Resolve a location to a GeoCode with `is24_search_locations` (e.g. 'München Schwabing').\n2. Pass that geocode + a `realestatetype` to `is24_search_properties`.\n3. Read a single listing with `is24_get_property` using its expose ID.\n\n**Suggested starter prompts**:\n- \"Find apartments to rent in Berlin Mitte under €1500/month on ImmobilienScout24.\"\n- \"Look up the GeoCode for Hamburg Altona.\"\n- \"Show me ImmobilienScout24 expose 123456789 in detail.\"",
   "region": "de",
   "category": "real-estate",
   "icon": "immobilienscout24",
-  "docsUrl": "https://api.immobilienscout24.de/our-apis.html",
+  "docsUrl": "https://api.immobilienscout24.de/api-docs/get-started/get-your-client-credentials/",
   "requiredEnvVars": [
     "IS24_CLIENT_ID",
     "IS24_CLIENT_SECRET"
@@ -14,12 +15,10 @@
     "name": "ImmobilienScout24",
     "type": "REST",
     "baseUrl": "https://rest.immobilienscout24.de/restapi/api",
-    "authType": "OAUTH2",
+    "authType": "OAUTH1",
     "authConfig": {
-      "clientId": "{{IS24_CLIENT_ID}}",
-      "clientSecret": "{{IS24_CLIENT_SECRET}}",
-      "authorizationUrl": "https://rest.immobilienscout24.de/restapi/security/oauth/confirm_access",
-      "tokenUrl": "https://rest.immobilienscout24.de/restapi/security/oauth/access_token"
+      "consumerKey": "{{IS24_CLIENT_ID}}",
+      "consumerSecret": "{{IS24_CLIENT_SECRET}}"
     }
   },
   "tools": [

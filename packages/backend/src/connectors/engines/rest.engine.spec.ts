@@ -94,6 +94,41 @@ describe('RestEngine', () => {
     expect(sent.params).not.toHaveProperty('__rawquery');
   });
 
+  it('signs OAUTH1 requests with an Authorization: OAuth header over the query params', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+
+    await engine.execute(
+      {
+        baseUrl: 'https://rest.immobilienscout24.de/restapi/api',
+        authType: 'OAUTH1',
+        authConfig: { consumerKey: 'CK', consumerSecret: 'CS' },
+      },
+      {
+        method: 'GET',
+        path: '/search/v1.0/search/region',
+        queryParams: { geocodes: '$geocode', realestatetype: '$type' },
+      },
+      { geocode: '1276003001', type: 'apartmentrent' },
+    );
+
+    const sent = mockedAxios.mock.calls[0][0] as unknown as {
+      headers: Record<string, string>;
+      params: Record<string, unknown>;
+    };
+    const auth = sent.headers.Authorization;
+    expect(auth).toMatch(/^OAuth /);
+    expect(auth).toContain('oauth_consumer_key="CK"');
+    expect(auth).toContain('oauth_signature_method="HMAC-SHA1"');
+    expect(auth).toContain('oauth_signature=');
+    // Two-legged: no user token in the header.
+    expect(auth).not.toContain('oauth_token=');
+    // Query params still go on the wire alongside the signature.
+    expect(sent.params).toEqual({
+      geocodes: '1276003001',
+      realestatetype: 'apartmentrent',
+    });
+  });
+
   it('should inject API key auth', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
 
