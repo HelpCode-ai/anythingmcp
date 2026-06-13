@@ -49,7 +49,7 @@
     "class-validator": "^0.15.0",
     "cookie-parser": "^1.4.7",
     "fast-xml-parser": "^5.8.0",
-    "graphql": "^16.14.0",
+    "graphql": "^16.14.2",
     "graphql-request": "^7.1.2",
     "helmet": "^8.2.0",
     "https-proxy-agent": "^7.0.6",
