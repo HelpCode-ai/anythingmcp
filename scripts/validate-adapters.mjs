@@ -53,6 +53,7 @@ const ALLOWED_AUTH_TYPES = new Set([
   'BASIC',
   'BASIC_AUTH',
   'OAUTH2',
+  'OAUTH1', // OAuth 1.0a HMAC-SHA1 request signing (e.g. ImmobilienScout24)
   'LOGIN_TOKEN',
   'QUERY_AUTH', // existing adapters (destatis, here-geocoding, oxomi) pass the API key as a query string parameter
 ]);
