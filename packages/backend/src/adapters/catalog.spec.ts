@@ -6,6 +6,7 @@ const VALID_AUTH_TYPES = new Set([
   'BEARER_TOKEN',
   'BASIC_AUTH',
   'OAUTH2',
+  'OAUTH1',
   'QUERY_AUTH',
   'LOGIN_TOKEN',
 ]);
