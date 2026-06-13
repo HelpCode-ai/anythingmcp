@@ -65,13 +65,20 @@ jobs:
           echo "auto=$AUTO" >> "$GITHUB_OUTPUT"
           echo "reason=$REASON" >> "$GITHUB_OUTPUT"
 
-      - name: Approve and enable auto-merge
+      - name: Enable auto-merge
         if: steps.decide.outputs.auto == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr review --approve "$PR_URL" --body "Auto-approved: ${{ steps.decide.outputs.reason }}"
+          # No review step: `main` requires 0 approving reviews, so approval is
+          # unnecessary — and GitHub forbids GITHUB_TOKEN-backed Actions from
+          # approving PRs ("GitHub Actions is not permitted to approve pull
+          # requests"), which previously failed this step under `set -e` and
+          # stopped the merge command from ever running.
+          # `gh pr merge --auto` enables auto-merge; GitHub completes it once
+          # the required Backend/Frontend checks pass and the branch is
+          # up to date (Dependabot keeps its PRs rebased).
           gh pr merge --auto --squash "$PR_URL"
 
       - name: Label as needs-review
