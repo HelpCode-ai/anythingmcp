@@ -220,6 +220,166 @@
         "method": "GET",
         "path": "/article/id/{articleId}"
       }
+    },
+    {
+      "name": "weclapp_list_quotations",
+      "description": "List sales quotations (Angebote) from weclapp ERP. Returns quotation numbers, amounts, status and the record address. NOTE: a quotation has NO 'customerName' field — the customer's name is in `recordAddress`, the link is `customerId`; do not request 'customerName' in `properties`. Date fields are Unix epoch milliseconds (e.g. 'quotationDate-gt=1767225600000' for 2026-01-01).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (1-based)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 100, max: 1000)"
+          },
+          "properties": {
+            "type": "string",
+            "description": "Comma-separated weclapp field names to limit the response (omit to return all fields). Use real field names only — requesting a non-existent property returns a 400."
+          },
+          "filter": {
+            "type": "string",
+            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull (the -null/-notnull operators take an EMPTY value, e.g. 'quotationNumber-notnull='). Examples: 'status-eq=ORDER_CONFIRMATION_PRINTED', 'quotationNumber-eq=AN-1042'. Combine with '&'."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, prefix with '-' for descending"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quotation",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize",
+          "properties": "$properties",
+          "__rawquery": "$filter",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "weclapp_get_quotation",
+      "description": "Get a single sales quotation (Angebot) by ID, including positions, amounts and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quotationId": {
+            "type": "string",
+            "description": "The weclapp quotation ID (numeric string)"
+          }
+        },
+        "required": [
+          "quotationId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quotation/id/{quotationId}"
+      }
+    },
+    {
+      "name": "weclapp_list_recurring_invoices",
+      "description": "List recurring invoices (wiederkehrende Rechnungen / Abo-Rechnungen) from weclapp ERP — the templates that periodically generate sales invoices. Returns interval, next run, amounts and status. NOTE: no 'customerName' field — the name is in `recordAddress`, the link is `customerId`. Date fields are Unix epoch milliseconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (1-based)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 100, max: 1000)"
+          },
+          "properties": {
+            "type": "string",
+            "description": "Comma-separated weclapp field names to limit the response (omit to return all fields). Use real field names only — requesting a non-existent property returns a 400."
+          },
+          "filter": {
+            "type": "string",
+            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull (the -null/-notnull operators take an EMPTY value, e.g. 'customerId-notnull='). Combine with '&'."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, prefix with '-' for descending"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recurringInvoice",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize",
+          "properties": "$properties",
+          "__rawquery": "$filter",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "weclapp_get_recurring_invoice",
+      "description": "Get a single recurring invoice (wiederkehrende Rechnung) by ID, including its interval, next execution date and template positions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recurringInvoiceId": {
+            "type": "string",
+            "description": "The weclapp recurring invoice ID (numeric string)"
+          }
+        },
+        "required": [
+          "recurringInvoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recurringInvoice/id/{recurringInvoiceId}"
+      }
+    },
+    {
+      "name": "weclapp_list_opportunities",
+      "description": "List sales opportunities (Verkaufschancen) from weclapp CRM. Returns name, stage/status, expected value and the linked customer. NOTE: the linked party is referenced by `customerId` / `contactId`, not a name field. Date fields are Unix epoch milliseconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number (1-based)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default: 100, max: 1000)"
+          },
+          "properties": {
+            "type": "string",
+            "description": "Comma-separated weclapp field names to limit the response (omit to return all fields). Use real field names only — requesting a non-existent property returns a 400."
+          },
+          "filter": {
+            "type": "string",
+            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull (the -null/-notnull operators take an EMPTY value, e.g. 'customerId-notnull='). Combine with '&'."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, prefix with '-' for descending"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunity",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize",
+          "properties": "$properties",
+          "__rawquery": "$filter",
+          "sort": "$sort"
+        }
+      }
     }
   ]
 }
