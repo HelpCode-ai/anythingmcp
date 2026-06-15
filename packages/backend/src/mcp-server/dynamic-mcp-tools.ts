@@ -85,6 +85,23 @@ export class DynamicMcpTools {
   }
 
   /**
+   * Cloud-only: route the public db-rest base URL to our internal self-hosted
+   * instance. The shipped connector stays identical for everyone — self-hosted
+   * installs (env unset, or not cloud) keep talking to the public API, while
+   * Cloud transparently swaps the host to the internal db-rest for reliability
+   * and to avoid the public instance's rate limits / 503s. Pure host swap:
+   * same db-rest schema on both sides, so paths/params/responses are unchanged.
+   */
+  private resolveInternalBaseUrl(baseUrl: string): string {
+    const PUBLIC_DB_REST = 'https://v6.db.transport.rest';
+    const internal = process.env.DB_REST_INTERNAL_URL;
+    if (internal && this.deployment.isCloud() && baseUrl.startsWith(PUBLIC_DB_REST)) {
+      return internal.replace(/\/$/, '') + baseUrl.slice(PUBLIC_DB_REST.length);
+    }
+    return baseUrl;
+  }
+
+  /**
    * Effective hourly proxy cap for a workspace:
    * organizations.proxy_rate_limit (DB, admin-only) ?? PROXY_RATE_LIMIT_DEFAULT
    * env ?? 100. There is intentionally no API to change the per-workspace
@@ -198,7 +215,7 @@ export class DynamicMcpTools {
       const proxyUrl = await this.resolveProxy(tool, context?.organizationId);
 
       const engineConfig = {
-        baseUrl: interpolatedConfig.baseUrl,
+        baseUrl: this.resolveInternalBaseUrl(interpolatedConfig.baseUrl),
         authType: tool.connectorConfig.authType,
         authConfig: tool.connectorConfig.authConfig
           ? JSON.parse(tool.connectorConfig.authConfig)

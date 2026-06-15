@@ -1,9 +1,18 @@
 import { RestEngine } from './rest.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { LoginTokenService } from './login-token.service';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
-jest.mock('axios');
+// Mock the callable default export but keep the real AxiosError class so the
+// engine's `instanceof AxiosError` checks (used by the retry logic) work.
+jest.mock('axios', () => {
+  const actual = jest.requireActual('axios');
+  return {
+    __esModule: true,
+    default: jest.fn(),
+    AxiosError: actual.AxiosError,
+  };
+});
 const mockedAxios = axios as jest.MockedFunction<typeof axios>;
 
 describe('RestEngine', () => {
@@ -285,5 +294,94 @@ describe('RestEngine', () => {
         params: { q: 'hello' },
       }),
     );
+  });
+
+  describe('proxy routing', () => {
+    it('wires a proxy agent and disables axios native proxy when proxyUrl is set', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        {
+          baseUrl: 'https://api.example.com',
+          authType: 'NONE',
+          proxyUrl: 'http://user:@proxy.example.com:8011',
+        },
+        { method: 'GET', path: '/' },
+        {},
+      );
+
+      const call = mockedAxios.mock.calls[0][0] as any;
+      expect(call.proxy).toBe(false);
+      expect(call.httpsAgent).toBeDefined();
+      expect(call.httpAgent).toBeDefined();
+    });
+  });
+
+  describe('transient-error retry', () => {
+    const err = (status?: number, code?: string) =>
+      new AxiosError(
+        'boom',
+        code,
+        undefined,
+        {},
+        status ? ({ status, data: {} } as any) : undefined,
+      );
+
+    it('retries on 503 and returns the eventual success', async () => {
+      mockedAxios
+        .mockRejectedValueOnce(err(503))
+        .mockResolvedValueOnce({ data: { ok: true } });
+
+      const result = await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'GET', path: '/' },
+        {},
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(mockedAxios).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries on a connection-level error (ECONNRESET)', async () => {
+      mockedAxios
+        .mockRejectedValueOnce(err(undefined, 'ECONNRESET'))
+        .mockResolvedValueOnce({ data: { ok: true } });
+
+      const result = await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'GET', path: '/' },
+        {},
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(mockedAxios).toHaveBeenCalledTimes(2);
+    });
+
+    it('does NOT retry on a 400 client error', async () => {
+      mockedAxios.mockRejectedValue(err(400));
+
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          { method: 'GET', path: '/' },
+          {},
+        ),
+      ).rejects.toBeInstanceOf(AxiosError);
+      expect(mockedAxios).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives up after exhausting retries on persistent 503', async () => {
+      mockedAxios.mockRejectedValue(err(503));
+
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          { method: 'GET', path: '/' },
+          {},
+        ),
+      ).rejects.toBeInstanceOf(AxiosError);
+      // 1 initial + 2 retries
+      expect(mockedAxios).toHaveBeenCalledTimes(3);
+    });
   });
 });

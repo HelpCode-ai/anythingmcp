@@ -60,6 +60,10 @@ services:
       # use_proxy=true route through this; unset = feature off everywhere.
       - CONNECTOR_PROXY_URL=${CONNECTOR_PROXY_URL:-}
       - PROXY_RATE_LIMIT_DEFAULT=${PROXY_RATE_LIMIT_DEFAULT:-100}
+      # Internal self-hosted db-rest. When set (cloud), the Deutsche Bahn
+      # connector's public base URL (v6.db.transport.rest) is transparently
+      # routed here. Unset on self-host → connector uses the public API.
+      - DB_REST_INTERNAL_URL=${DB_REST_INTERNAL_URL:-http://db-rest:3000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,6 +105,32 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+
+  # db-rest — self-hosted Deutsche Bahn REST wrapper (derhuerst/db-rest).
+  # INTERNAL ONLY: deliberately NO `ports:` mapping → reachable solely as
+  # http://db-rest:3000 from the app over the amcp-cloud_default network, never
+  # from the internet. The deutsche-bahn connector ships pointing at the public
+  # v6.db.transport.rest; in cloud the app rewrites the host to this service via
+  # DB_REST_INTERNAL_URL. Do NOT add a `ports:` entry or a Caddy route.
+  db-rest:
+    image: docker.io/derhuerst/db-rest:6
+    container_name: amcp-cloud-db-rest
+    expose:
+      - "3000"
+    environment:
+      - PORT=3000
+      # Reuse the shared Redis for db-rest's response cache (separate DB index).
+      - REDIS_URL=redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
 volumes:

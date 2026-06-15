@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import axios, { AxiosRequestConfig, AxiosError, Method } from 'axios';
+import axios, {
+  AxiosRequestConfig,
+  AxiosResponse,
+  AxiosError,
+  Method,
+} from 'axios';
 import FormData from 'form-data';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { OAuth2TokenService } from './oauth2-token.service';
@@ -8,6 +13,33 @@ import {
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+
+/**
+ * Proxy agent that disables TLS verification on the *inner* tunnel connection
+ * to the destination — required for web-unblockers like Zyte that intercept
+ * (MITM) the TLS handshake and present their own untrusted certificate.
+ *
+ * NOTE: passing `{ rejectUnauthorized: false }` to the `HttpsProxyAgent`
+ * constructor is NOT enough: in https-proxy-agent v7 the constructor options
+ * only configure the hop to the proxy, while the inner `tls.connect()` to the
+ * target uses the per-request options. We therefore inject the flag in
+ * `connect()` so it reaches the target handshake. Scoped to proxied requests
+ * only — direct requests keep full certificate verification.
+ */
+class TlsBypassProxyAgent extends HttpsProxyAgent<string> {
+  connect(
+    req: Parameters<HttpsProxyAgent<string>['connect']>[0],
+    opts: Parameters<HttpsProxyAgent<string>['connect']>[1],
+  ) {
+    // `rejectUnauthorized` lives on the HTTPS branch of the AgentConnectOpts
+    // union; cast so it reaches the inner tls.connect to the target.
+    const tlsOpts = {
+      ...opts,
+      rejectUnauthorized: false,
+    } as Parameters<HttpsProxyAgent<string>['connect']>[1];
+    return super.connect(req, tlsOpts);
+  }
+}
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -150,13 +182,11 @@ export class RestEngine {
     }
 
     // Route through the proxy / web-unblocker when the caller asked for it.
-    // `rejectUnauthorized: false` is required for unblockers like Zyte that
-    // intercept the TLS connection (equivalent to curl's --proxy-insecure).
+    // Use TlsBypassProxyAgent so cert verification is disabled on the inner
+    // tunnel to the target (unblockers like Zyte MITM the TLS handshake).
     // We disable axios' native proxy handling so the agent owns the tunnel.
     if (config.proxyUrl) {
-      const agent = new HttpsProxyAgent(config.proxyUrl, {
-        rejectUnauthorized: false,
-      });
+      const agent = new TlsBypassProxyAgent(config.proxyUrl);
       axiosConfig.httpsAgent = agent;
       axiosConfig.httpAgent = agent;
       axiosConfig.proxy = false;
@@ -166,7 +196,7 @@ export class RestEngine {
     }
 
     try {
-      const response = await axios(axiosConfig);
+      const response = await this.requestWithRetry(axiosConfig);
       return response.data;
     } catch (error) {
       // OAuth2 auto-refresh: retry once on 401
@@ -209,6 +239,41 @@ export class RestEngine {
         return retryResponse.data;
       }
       throw error;
+    }
+  }
+
+  /**
+   * Whether an error is a transient failure worth retrying. We only retry on
+   * signals that strongly imply the origin did NOT process the request:
+   * 429/502/503/504 responses, or connection-level failures with no response.
+   * This keeps non-idempotent writes safe (a 500 is never retried).
+   */
+  private isTransientError(error: unknown): boolean {
+    if (!(error instanceof AxiosError)) return false;
+    const status = error.response?.status;
+    if (status) return [429, 502, 503, 504].includes(status);
+    return ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNABORTED'].includes(
+      error.code ?? '',
+    );
+  }
+
+  /** Execute the request with a small bounded backoff on transient errors. */
+  private async requestWithRetry(
+    axiosConfig: AxiosRequestConfig,
+  ): Promise<AxiosResponse> {
+    const delaysMs = [300, 900];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await axios(axiosConfig);
+      } catch (error) {
+        if (attempt >= delaysMs.length || !this.isTransientError(error)) {
+          throw error;
+        }
+        this.logger.debug(
+          `Transient error (attempt ${attempt + 1}), retrying in ${delaysMs[attempt]}ms`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delaysMs[attempt]));
+      }
     }
   }
 
