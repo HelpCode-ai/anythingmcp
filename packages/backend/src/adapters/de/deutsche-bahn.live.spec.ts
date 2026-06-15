@@ -53,6 +53,12 @@ describe('deutsche-bahn adapter — static spec conformance', () => {
     expect(a.tools.some((t) => t.useProxy === true)).toBe(false);
   });
 
+  it('pins the dbnav profile on every tool (the only db-vendo-client profile whose host resolves and serves all endpoints; default "db" / "dbweb" 500/403)', () => {
+    for (const t of a.tools) {
+      expect(t.endpointMapping.queryParams?.profile).toBe('dbnav');
+    }
+  });
+
   it('exposes the five timetable tools', () => {
     expect(a.tools).toHaveLength(5);
     const names = a.tools.map((t) => t.name);

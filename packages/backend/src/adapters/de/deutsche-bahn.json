@@ -46,7 +46,8 @@
           "query": "$query",
           "results": "$limit",
           "addresses": "false",
-          "poi": "false"
+          "poi": "false",
+          "profile": "dbnav"
         }
       }
     },
@@ -67,7 +68,10 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/stops/{id}"
+        "path": "/stops/{id}",
+        "queryParams": {
+          "profile": "dbnav"
+        }
       }
     },
     {
@@ -99,7 +103,8 @@
         "path": "/stops/{id}/departures",
         "queryParams": {
           "when": "$when",
-          "duration": "$duration"
+          "duration": "$duration",
+          "profile": "dbnav"
         }
       }
     },
@@ -132,7 +137,8 @@
         "path": "/stops/{id}/arrivals",
         "queryParams": {
           "when": "$when",
-          "duration": "$duration"
+          "duration": "$duration",
+          "profile": "dbnav"
         }
       }
     },
@@ -182,7 +188,8 @@
           "departure": "$departure",
           "arrival": "$arrival",
           "results": "$results",
-          "bike": "$bike"
+          "bike": "$bike",
+          "profile": "dbnav"
         }
       }
     }
