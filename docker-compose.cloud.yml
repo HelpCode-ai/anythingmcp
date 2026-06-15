@@ -64,6 +64,10 @@ services:
       # connector's public base URL (v6.db.transport.rest) is transparently
       # routed here. Unset on self-host → connector uses the public API.
       - DB_REST_INTERNAL_URL=${DB_REST_INTERNAL_URL:-http://db-rest:3000}
+      # Allow the SSRF guard to reach the internal db-rest host (it resolves to
+      # a private docker IP, which the guard blocks by default). Harmless on
+      # self-host (no such host on their network).
+      - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-db-rest}
     depends_on:
       postgres:
         condition: service_healthy
