@@ -9,6 +9,7 @@ import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
+import { resolveInternalDbRestUrl } from '../common/db-rest.util';
 import { resolveAdapterIcon } from './connector-icon.util';
 
 @Injectable()
@@ -198,7 +199,10 @@ export class ConnectorsService {
           const path = connector.healthcheckPath || '/';
           await this.restEngine.execute(
             {
-              baseUrl: connector.baseUrl,
+              // Apply the same cloud db-rest host swap as tool execution, so
+              // "Test connection" exercises the real (internal) endpoint
+              // instead of the public base URL stored on the connector.
+              baseUrl: resolveInternalDbRestUrl(connector.baseUrl),
               authType: connector.authType,
               authConfig,
               headers: connector.headers as Record<string, string>,

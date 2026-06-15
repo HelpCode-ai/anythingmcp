@@ -13,6 +13,7 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { DeploymentService } from '../common/deployment.service';
 import { PrismaService } from '../common/prisma.service';
 import { interpolateConnectorConfig } from '../common/env-interpolation.util';
+import { resolveInternalDbRestUrl } from '../common/db-rest.util';
 import type { RegisteredTool } from './tool-registry';
 
 /**
@@ -85,20 +86,12 @@ export class DynamicMcpTools {
   }
 
   /**
-   * Cloud-only: route the public db-rest base URL to our internal self-hosted
-   * instance. The shipped connector stays identical for everyone — self-hosted
-   * installs (env unset, or not cloud) keep talking to the public API, while
-   * Cloud transparently swaps the host to the internal db-rest for reliability
-   * and to avoid the public instance's rate limits / 503s. Pure host swap:
-   * same db-rest schema on both sides, so paths/params/responses are unchanged.
+   * Cloud-only db-rest host swap — see resolveInternalDbRestUrl. Kept as a thin
+   * method so the host swap stays consistent with the connector "Test
+   * connection" path, which uses the same shared util.
    */
   private resolveInternalBaseUrl(baseUrl: string): string {
-    const PUBLIC_DB_REST = 'https://v6.db.transport.rest';
-    const internal = process.env.DB_REST_INTERNAL_URL;
-    if (internal && this.deployment.isCloud() && baseUrl.startsWith(PUBLIC_DB_REST)) {
-      return internal.replace(/\/$/, '') + baseUrl.slice(PUBLIC_DB_REST.length);
-    }
-    return baseUrl;
+    return resolveInternalDbRestUrl(baseUrl);
   }
 
   /**
