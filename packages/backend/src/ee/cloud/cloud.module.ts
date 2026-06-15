@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { SettingsModule } from '../settings/settings.module';
+import { SettingsModule } from '../../settings/settings.module';
 import { OnboardingCronController } from './onboarding-cron.controller';
 import { OnboardingCronService } from './onboarding-cron.service';
 

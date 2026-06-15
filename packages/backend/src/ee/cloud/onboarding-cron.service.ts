@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../common/prisma.service';
-import { EmailService } from '../settings/email.service';
+import { PrismaService } from '../../common/prisma.service';
+import { EmailService } from '../../settings/email.service';
 
 const HOURS = (n: number) => n * 60 * 60 * 1000;
 

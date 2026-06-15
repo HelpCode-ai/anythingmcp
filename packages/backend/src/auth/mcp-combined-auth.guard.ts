@@ -83,18 +83,41 @@ export class McpCombinedAuthGuard implements CanActivate {
         // allowing cross-organization access to any /mcp/:serverId endpoint.
         let organizationId: string | undefined =
           payload.organizationId ?? undefined;
-        const userId: string | undefined = payload.sub || payload.user_data?.id;
-        if (!organizationId && userId) {
-          const dbUser = await this.prisma.user.findUnique({
-            where: { id: userId },
-            select: { organizationId: true, email: true, role: true },
+        // The MCP OAuth flow (rekog/mcp-nest) signs `sub` with whatever
+        // identifier the auth code carried — in our integration that's the
+        // user's EMAIL, not the `users.id` cuid. App JWTs, by contrast, put
+        // the cuid in `sub`. So we can't assume `sub` is a primary key:
+        // resolve the user by id OR email, trying every identifier the token
+        // exposes. Without this, OAuth callers resolve to `organizationId ===
+        // undefined` and the downstream per-server tenant check fails closed
+        // with 403 — locking legitimate owners out of their own servers.
+        const subId: string | undefined = payload.sub || payload.user_data?.id;
+        const email: string | undefined =
+          payload.email ?? payload.user_data?.email ?? undefined;
+        if (!organizationId && (subId || email)) {
+          // `sub` may itself be an email; collect every candidate and match
+          // on id OR email in a single query.
+          const ids = [subId].filter(
+            (v): v is string => !!v && !v.includes('@'),
+          );
+          const emails = [email, subId].filter(
+            (v): v is string => !!v && v.includes('@'),
+          );
+          const dbUser = await this.prisma.user.findFirst({
+            where: {
+              OR: [
+                ...ids.map((id) => ({ id })),
+                ...emails.map((e) => ({ email: e })),
+              ],
+            },
+            select: { id: true, organizationId: true, email: true, role: true },
           });
           organizationId = dbUser?.organizationId ?? undefined;
           req.user = {
             ...payload,
-            sub: userId,
+            sub: dbUser?.id ?? subId,
             organizationId,
-            email: payload.email ?? payload.user_data?.email ?? dbUser?.email,
+            email: dbUser?.email ?? email,
             role: payload.role ?? dbUser?.role,
             authMethod: 'jwt',
           };

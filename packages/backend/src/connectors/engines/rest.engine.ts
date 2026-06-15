@@ -6,40 +6,14 @@ import axios, {
   Method,
 } from 'axios';
 import FormData from 'form-data';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
+import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
 import {
   LoginTokenService,
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
-
-/**
- * Proxy agent that disables TLS verification on the *inner* tunnel connection
- * to the destination — required for web-unblockers like Zyte that intercept
- * (MITM) the TLS handshake and present their own untrusted certificate.
- *
- * NOTE: passing `{ rejectUnauthorized: false }` to the `HttpsProxyAgent`
- * constructor is NOT enough: in https-proxy-agent v7 the constructor options
- * only configure the hop to the proxy, while the inner `tls.connect()` to the
- * target uses the per-request options. We therefore inject the flag in
- * `connect()` so it reaches the target handshake. Scoped to proxied requests
- * only — direct requests keep full certificate verification.
- */
-class TlsBypassProxyAgent extends HttpsProxyAgent<string> {
-  connect(
-    req: Parameters<HttpsProxyAgent<string>['connect']>[0],
-    opts: Parameters<HttpsProxyAgent<string>['connect']>[1],
-  ) {
-    // `rejectUnauthorized` lives on the HTTPS branch of the AgentConnectOpts
-    // union; cast so it reaches the inner tls.connect to the target.
-    const tlsOpts = {
-      ...opts,
-      rejectUnauthorized: false,
-    } as Parameters<HttpsProxyAgent<string>['connect']>[1];
-    return super.connect(req, tlsOpts);
-  }
-}
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -124,9 +98,23 @@ export class RestEngine {
 
     // Query parameters (merged on top of any params already set by auth injection)
     if (endpointMapping.queryParams) {
+      const mappedQuery = this.mapParams(endpointMapping.queryParams, params);
+      // `__rawquery` escape hatch (mirrors `__raw` for bodies): some APIs use
+      // dynamic query-param KEYS rather than a fixed `filter=` param — e.g.
+      // weclapp's `?articleNumber-eq=A5101&productionArticle-eq=true`, where the
+      // property+operator IS the param name. A tool maps such input to the
+      // `__rawquery` key; its string value is parsed as a query-string fragment
+      // and each pair is merged verbatim into the request params.
+      if (typeof mappedQuery['__rawquery'] === 'string') {
+        const raw = String(mappedQuery['__rawquery']);
+        delete mappedQuery['__rawquery'];
+        for (const [k, v] of new URLSearchParams(raw)) {
+          mappedQuery[k] = v;
+        }
+      }
       axiosConfig.params = {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
-        ...this.mapParams(endpointMapping.queryParams, params),
+        ...mappedQuery,
       };
     }
 
@@ -181,12 +169,19 @@ export class RestEngine {
       }
     }
 
+    // OAuth 1.0a signing must happen here — AFTER query params and the body are
+    // built, because the signature base string folds in the request's query and
+    // form-urlencoded body params (unlike Bearer/API-key auth, which is set in
+    // injectAuth before those exist).
+    this.applyOAuth1Signature(axiosConfig, config);
+
     // Route through the proxy / web-unblocker when the caller asked for it.
-    // Use TlsBypassProxyAgent so cert verification is disabled on the inner
-    // tunnel to the target (unblockers like Zyte MITM the TLS handshake).
-    // We disable axios' native proxy handling so the agent owns the tunnel.
+    // The unblocker agent disables upstream TLS verification (Zyte and friends
+    // MITM the connection) — see createUnblockerProxyAgent. Equivalent to
+    // curl's --proxy-insecure. We disable axios' native proxy handling so the
+    // agent owns the tunnel.
     if (config.proxyUrl) {
-      const agent = new TlsBypassProxyAgent(config.proxyUrl);
+      const agent = createUnblockerProxyAgent(config.proxyUrl);
       axiosConfig.httpsAgent = agent;
       axiosConfig.httpAgent = agent;
       axiosConfig.proxy = false;
@@ -364,7 +359,63 @@ export class RestEngine {
         );
         break;
       }
+      case 'OAUTH1':
+        // Deferred: OAuth 1.0a signs over the query/body params, which aren't
+        // built yet. Handled by applyOAuth1Signature() after they are.
+        break;
     }
+  }
+
+  /**
+   * Apply an OAuth 1.0a (HMAC-SHA1) `Authorization` header. Called after query
+   * params and the body have been built, since the signature covers them.
+   *
+   * authConfig fields:
+   * - `consumerKey`, `consumerSecret` — required (two-legged/app-only).
+   * - `token`, `tokenSecret` — optional (three-legged/user context).
+   * - `realm` — optional Authorization-header realm (not signed).
+   */
+  private applyOAuth1Signature(
+    axiosConfig: AxiosRequestConfig,
+    config: { authType: string; authConfig?: Record<string, unknown> },
+  ): void {
+    if (config.authType !== 'OAUTH1' || !config.authConfig) return;
+    const ac = config.authConfig;
+
+    // Only fold a form-urlencoded body into the signature; JSON bodies are not
+    // part of the OAuth 1.0a base string.
+    let bodyParams: Record<string, unknown> | undefined;
+    const contentType = String(
+      (axiosConfig.headers as Record<string, unknown> | undefined)?.[
+        'Content-Type'
+      ] ?? '',
+    );
+    if (
+      contentType.includes('application/x-www-form-urlencoded') &&
+      typeof axiosConfig.data === 'string'
+    ) {
+      bodyParams = {};
+      for (const [k, v] of new URLSearchParams(axiosConfig.data)) {
+        bodyParams[k] = v;
+      }
+    }
+
+    const header = buildOAuth1Header({
+      method: String(axiosConfig.method || 'GET'),
+      url: String(axiosConfig.url),
+      consumerKey: String(ac.consumerKey),
+      consumerSecret: String(ac.consumerSecret),
+      token: ac.token ? String(ac.token) : undefined,
+      tokenSecret: ac.tokenSecret ? String(ac.tokenSecret) : undefined,
+      realm: ac.realm ? String(ac.realm) : undefined,
+      queryParams: axiosConfig.params as Record<string, unknown> | undefined,
+      bodyParams,
+    });
+
+    axiosConfig.headers = {
+      ...axiosConfig.headers,
+      Authorization: header,
+    };
   }
 
   private mapParams(

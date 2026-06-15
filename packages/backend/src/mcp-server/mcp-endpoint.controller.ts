@@ -107,23 +107,39 @@ export class McpEndpointController {
     }
 
     // Tenant isolation: a request scoped to a specific server must come from a
-    // principal in that server's organization. Fail closed — deny when the
-    // caller's organization is unknown or does not match. Instance-level static
+    // principal who is a MEMBER of that server's organization. Fail closed —
+    // deny when membership can't be established. Instance-level static
     // credentials (self-host, not organization-scoped) are exempt.
+    //
+    // Membership is checked against organization_members, not just the user's
+    // primary `organizationId` column: a user who belongs to several
+    // workspaces must reach servers in any org they're a member of, while a
+    // non-member is still denied. The primary-org match is kept as a
+    // zero-query fast path for the common single-org case.
     const user = (req as any).user;
     const isInstanceLevel =
       user?.authMethod === 'static_api_key' ||
       user?.authMethod === 'static_bearer' ||
       user?.authMethod === 'none';
-    if (
-      !isInstanceLevel &&
-      mcpServerConfig.organizationId !== user?.organizationId
-    ) {
-      return res.status(403).json({
-        jsonrpc: '2.0',
-        error: { code: -32001, message: 'Access denied' },
-        id: null,
-      });
+    if (!isInstanceLevel) {
+      const serverOrg = mcpServerConfig.organizationId;
+      const primaryOrgMatches =
+        !!user?.organizationId && user.organizationId === serverOrg;
+      const isMember =
+        primaryOrgMatches ||
+        (!!user?.sub &&
+          !!serverOrg &&
+          (await this.mcpServersService.isUserInOrganization(
+            user.sub,
+            serverOrg,
+          )));
+      if (!isMember) {
+        return res.status(403).json({
+          jsonrpc: '2.0',
+          error: { code: -32001, message: 'Access denied' },
+          id: null,
+        });
+      }
     }
 
     // 2. Get connector IDs and composed instructions for this server
@@ -163,11 +179,26 @@ export class McpEndpointController {
       connectorIds,
     };
 
+    // Dedupe by tool name. A server can have two connectors that expose the
+    // same tool name (e.g. the same connector assigned twice, or two configs
+    // of one provider). The MCP SDK throws "Tool X is already registered" on
+    // the second registration, which previously 500'd the ENTIRE request and
+    // took down every tool on the server. Register the first occurrence of
+    // each name and skip the rest, so one duplicate can't break the endpoint.
+    const registeredNames = new Set<string>();
     for (const tool of serverTools) {
       // Skip tools not allowed by role
       if (allowedToolIds !== null && !allowedToolIds.includes(tool.id)) {
         continue;
       }
+
+      if (registeredNames.has(tool.name)) {
+        this.logger.warn(
+          `Duplicate tool name "${tool.name}" on server ${serverId} — skipping the extra copy (check for duplicate connector assignments).`,
+        );
+        continue;
+      }
+      registeredNames.add(tool.name);
 
       const schema = this.stripEnvVarParams(tool.parameters, tool.connectorConfig.envVars);
       const zodShape = this.jsonSchemaToZodShape(schema);

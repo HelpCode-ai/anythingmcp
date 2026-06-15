@@ -20,13 +20,19 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 ## License
 
-AnythingMCP is licensed under the [Business Source License 1.1](LICENSE) (BSL-1.1). By contributing, you agree that your contributions will be licensed under the same terms. See the [License FAQ](docs/license-faq.md) for details.
+AnythingMCP is open source under the [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Code under `ee/` directories is licensed separately under the [AnythingMCP Commercial License](packages/backend/src/ee/LICENSE). See the [License FAQ](docs/license-faq.md) for a plain-language explanation.
 
-**Important:** You retain copyright over your contributions. By submitting a pull request, you certify that:
+### Contributor License Agreement (CLA)
 
-1. Your contribution is your original work, or you have the right to submit it.
-2. You grant helpcode.ai GmbH a perpetual, irrevocable license to use, modify, and distribute your contribution under the project's license terms.
-3. You understand that your contribution may be re-licensed under Apache 2.0 on the Change Date (2030-03-04).
+Before we can merge your first pull request, you must sign our
+[Contributor License Agreement](CLA.md). An automated check on your PR
+will ask you to sign by posting a comment — it takes one click and
+only needs to be done once.
+
+**You retain copyright over your contributions.** The CLA grants
+helpcode.ai GmbH a license to use and re-license your contribution;
+this is what allows us to offer AnythingMCP under both the AGPL and a
+commercial license while keeping a single codebase.
 
 ## AI-assisted contributions
 

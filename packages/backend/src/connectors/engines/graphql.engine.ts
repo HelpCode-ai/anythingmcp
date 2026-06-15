@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { OAuth2TokenService } from './oauth2-token.service';
 import {
   LoginTokenService,
@@ -168,13 +168,11 @@ export class GraphqlEngine {
 
     // Shared axios options. When the caller passes a proxyUrl, route every
     // request (incl. the 401-refresh retries below) through the
-    // proxy / web-unblocker. rejectUnauthorized:false supports unblockers
-    // (e.g. Zyte) that intercept TLS.
+    // proxy / web-unblocker. The unblocker agent disables upstream TLS
+    // verification (e.g. Zyte intercepts TLS) — see createUnblockerProxyAgent.
     const axiosOpts: Record<string, unknown> = { headers, timeout: 30000 };
     if (config.proxyUrl) {
-      const agent = new HttpsProxyAgent(config.proxyUrl, {
-        rejectUnauthorized: false,
-      });
+      const agent = createUnblockerProxyAgent(config.proxyUrl);
       axiosOpts.httpsAgent = agent;
       axiosOpts.httpAgent = agent;
       axiosOpts.proxy = false;
