@@ -23,7 +23,7 @@
   "tools": [
     {
       "name": "weclapp_list_customers",
-      "description": "List parties (customers/suppliers/contacts) from weclapp ERP. In API v2 customers and suppliers are unified under /party — pass filter='customerNumber-notnull=true' to restrict to customers, or filter='supplierNumber-notnull=true' for suppliers. Use `properties` to limit returned fields (e.g. 'id,customerNumber,company,firstName,lastName,email') to reduce payload size.",
+      "description": "List parties (customers/suppliers/contacts) from weclapp ERP. In API v2 customers and suppliers are unified under /party — pass filter='customerNumber-notnull=' to restrict to customers, or filter='supplierNumber-notnull=' for suppliers (the -null/-notnull operators take an EMPTY value — NOT '=true'). Use `properties` to limit returned fields (e.g. 'id,customerNumber,company,firstName,lastName,email') to reduce payload size.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -41,7 +41,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "weclapp v2 filter expression, e.g. 'customerNumber-notnull=true' or 'partyType-eq=ORGANIZATION'"
+            "description": "weclapp v2 filter expression. The property+operator IS the param name (no 'filter=' wrapper). Examples: 'partyType-eq=ORGANIZATION', 'customerNumber-notnull=' — note the -null/-notnull operators take an EMPTY value, not '=true'."
           },
           "sort": {
             "type": "string",
@@ -83,7 +83,7 @@
     },
     {
       "name": "weclapp_list_sales_orders",
-      "description": "List sales orders from weclapp ERP. Returns order numbers, customer info, amounts, and status. Use `properties` to limit fields and `filter` to narrow results (e.g. 'orderNumber-eq=SO-1042').",
+      "description": "List sales orders from weclapp ERP. Returns order numbers, amounts, status and the record address. NOTE: salesOrder has NO 'customerName' field — do not request it in `properties` (weclapp returns 400). The customer's name is in `recordAddress`; the customer link is `customerId`. Use `properties` to limit fields and `filter` to narrow results (e.g. 'orderNumber-eq=SO-1042'). Date fields are Unix epoch milliseconds (e.g. 'orderDate-gt=1767225600000').",
       "parameters": {
         "type": "object",
         "properties": {
@@ -123,7 +123,7 @@
     },
     {
       "name": "weclapp_list_invoices",
-      "description": "List sales invoices from weclapp ERP. Returns invoice numbers, amounts, due dates, and payment status. Use `filter` for queries like 'paid-eq=false' or 'invoiceDate-gt=2026-01-01'.",
+      "description": "List sales invoices from weclapp ERP. Returns invoice numbers, amounts, due dates, and payment status. NOTE: invoice has NO 'customerName' field — do not request it in `properties` (weclapp returns 400); the name is in `recordAddress`, the link is `customerId`. Use `filter` for queries like 'paid-eq=false'. Date fields are Unix epoch milliseconds (e.g. 'invoiceDate-gt=1767225600000' for 2026-01-01).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -141,7 +141,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull. Examples: 'articleNumber-eq=A5101', 'productionArticle-eq=true', 'name-ilike=%hammer%'. Combine with '&'."
+            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull (the -null/-notnull operators take an EMPTY value, e.g. 'articleNumber-notnull='). Examples: 'articleNumber-eq=A5101', 'productionArticle-eq=true', 'name-ilike=%hammer%'. Combine with '&'."
           },
           "sort": {
             "type": "string",
@@ -181,7 +181,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull. Examples: 'articleNumber-eq=A5101', 'productionArticle-eq=true', 'name-ilike=%hammer%'. Combine with '&'."
+            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull (the -null/-notnull operators take an EMPTY value, e.g. 'articleNumber-notnull='). Examples: 'articleNumber-eq=A5101', 'productionArticle-eq=true', 'name-ilike=%hammer%'. Combine with '&'."
           },
           "sort": {
             "type": "string",
