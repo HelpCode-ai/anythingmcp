@@ -180,6 +180,7 @@ import * as lineMessaging from './jp/line-messaging.json';
 import * as paystack from './ng/paystack.json';
 // === AUTOGEN-IMPORTS-END ===
 import { buildGraphqlBuiltinTools } from '../connectors/graphql-builtins';
+import { computeAdapterVersion } from './catalog-fingerprint';
 
 export interface AdapterMeta {
   slug: string;
@@ -192,6 +193,11 @@ export interface AdapterMeta {
   docsUrl: string;
   requiredEnvVars: string[];
   toolCount: number;
+  /** Content-addressed version of the adapter's installable content (tools +
+   *  connector meta + instructions). Stamped onto a connector at install
+   *  (config.adapterVersion) so the catalog re-sync feature can detect when
+   *  the catalog has moved on. Computed at load — never hand-bumped. */
+  version: string;
   /** Surfaced on cards so the UI can render an auth-type chip without an
    *  extra round-trip to /api/adapters/:slug. */
   authType?: string;
@@ -446,7 +452,14 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
 ];
 // === AUTOGEN-ARRAY-END ===
 
-const ALL_ADAPTERS: AdapterDefinition[] = RAW_ADAPTERS.map(withGraphqlBuiltins);
+const ALL_ADAPTERS: AdapterDefinition[] = RAW_ADAPTERS.map(
+  withGraphqlBuiltins,
+).map((adapter) => ({
+  ...adapter,
+  // Computed after withGraphqlBuiltins so generated GraphQL helper tools are
+  // included in the fingerprint.
+  version: computeAdapterVersion(adapter),
+}));
 
 export function listAdapters(): AdapterMeta[] {
   return ALL_ADAPTERS.map((adapter) => ({
@@ -460,6 +473,7 @@ export function listAdapters(): AdapterMeta[] {
     docsUrl: adapter.docsUrl,
     requiredEnvVars: adapter.requiredEnvVars,
     toolCount: adapter.tools.length,
+    version: adapter.version,
     authType: adapter.connector.authType,
     featured: adapter.featured,
     priority: adapter.priority,

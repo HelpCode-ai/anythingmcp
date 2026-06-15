@@ -37,6 +37,7 @@ import { PostmanParser } from './parsers/postman.parser';
 import { CurlParser } from './parsers/curl.parser';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { McpOAuthService } from './mcp-oauth.service';
+import { CatalogResyncService } from './catalog-resync.service';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
@@ -375,6 +376,7 @@ export class ConnectorsController {
     private readonly curlParser: CurlParser,
     private readonly mcpClientEngine: McpClientEngine,
     private readonly mcpOAuthService: McpOAuthService,
+    private readonly catalogResync: CatalogResyncService,
     private readonly prisma: PrismaService,
     private readonly mcpServer: McpServerService,
     private readonly configService: ConfigService,
@@ -1040,6 +1042,40 @@ export class ConnectorsController {
     });
     await this.mcpServer.reloadConnectorTools(id);
     return updated;
+  }
+
+  @Get(':id/catalog-diff')
+  @ApiOperation({
+    summary:
+      'Preview catalog updates for a connector installed from the catalog. ' +
+      'Returns the tool diff (safe vs structural) without applying anything.',
+  })
+  async catalogDiff(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+    const diff = await this.catalogResync.computeDiff(id);
+    if (!diff) {
+      return { catalogManaged: false };
+    }
+    return { catalogManaged: true, ...diff };
+  }
+
+  @Post(':id/resync-catalog')
+  @ApiOperation({
+    summary:
+      'Re-sync a catalog-installed connector with the current catalog. ' +
+      'Updates tool descriptions/parameters/endpoints from the catalog while ' +
+      'preserving response customisations, role access and manual disables. ' +
+      'Never touches credentials, base URL or env vars.',
+  })
+  async resyncCatalog(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+    const { applied, diff } = await this.catalogResync.resync(id, 'full');
+    if (applied) {
+      await this.mcpServer.reloadConnectorTools(id);
+    }
+    return { applied, ...diff };
   }
 
   /**

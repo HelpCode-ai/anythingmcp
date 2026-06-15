@@ -18,6 +18,8 @@ import { PostmanParser } from './parsers/postman.parser';
 import { CurlParser } from './parsers/curl.parser';
 import { McpOAuthService } from './mcp-oauth.service';
 import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
+import { CatalogResyncService } from './catalog-resync.service';
+import { CatalogReconciler } from './catalog-reconciler.service';
 import { LicenseModule } from '../license/license.module';
 
 const ENGINES = [
@@ -36,6 +38,8 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
   providers: [
     ConnectorsService,
     McpOAuthService,
+    CatalogResyncService,
+    CatalogReconciler,
     OAuth2TokenService,
     LoginTokenService,
     GraphqlSchemaService,
@@ -45,6 +49,7 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
   exports: [
     ConnectorsService,
     McpOAuthService,
+    CatalogResyncService,
     OAuth2TokenService,
     LoginTokenService,
     GraphqlSchemaService,

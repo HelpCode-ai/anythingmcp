@@ -33,6 +33,7 @@ function buildController(overrides: {
     {} as any, // curlParser
     {} as any, // mcpClientEngine
     {} as any, // mcpOAuthService
+    {} as any, // catalogResync
     prisma as any,
     mcpServer as any,
     configService as any,

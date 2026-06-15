@@ -4,6 +4,7 @@ import { McpServerService } from '../mcp-server/mcp-server.service';
 import { encrypt } from '../common/crypto/encryption.util';
 import { ConfigService } from '@nestjs/config';
 import { listAdapters, getAdapter, AdapterMeta, AdapterDefinition } from './catalog';
+import { hashInstructions } from './catalog-fingerprint';
 import { getRequiredSecret } from '../common/secrets.util';
 
 @Injectable()
@@ -82,9 +83,15 @@ export class AdaptersService {
         headers: resolvedHeaders as any,
         envVars: envVarsToPersist as any,
         instructions: adapter.instructions || null,
-        // Persist the source adapter slug so the UI can resolve the brand
-        // logo (via resolveAdapterIcon) even after the connector is renamed.
-        config: { adapterSlug: slug },
+        // Persist the source adapter slug (brand-logo resolution survives a
+        // rename) plus the catalog version + instructions baseline at install
+        // time, so the catalog re-sync feature can later detect that the
+        // catalog has moved on and whether the user has edited instructions.
+        config: {
+          adapterSlug: slug,
+          adapterVersion: adapter.version,
+          instructionsBaseline: hashInstructions(adapter.instructions),
+        },
       },
     });
 
