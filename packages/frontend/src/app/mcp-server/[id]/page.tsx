@@ -210,11 +210,14 @@ export default function McpServerDetailPage() {
 
   const slug = server.slug || 'my-server';
 
-  // Claude Desktop's config schema accepts "stdio" (local command) or "http"
-  // (remote streamable HTTP). "url" is NOT a valid type — Claude Desktop
-  // silently skips entries with it ("not valid MCP server configurations").
-  // For remote OAuth servers use "http"; Claude triggers the OAuth flow off
-  // the WWW-Authenticate header our endpoint returns on 401.
+  // Streamable-HTTP MCP config consumed by clients that accept a remote
+  // "type": "http" entry in their mcpServers JSON — Cursor, VS Code and
+  // Claude Code.
+  // IMPORTANT: Claude *Desktop* does NOT accept this — its
+  // claude_desktop_config.json only spawns local stdio commands, so a remote
+  // http/url entry is silently skipped ("not a valid MCP server
+  // configuration"). For Claude Desktop use the Settings → Connectors UI, or
+  // the mcp-remote bridge (claudeDesktopBridge* below).
   const claudeConfigOAuth = `{
   "mcpServers": {
     "${slug}": {
@@ -232,6 +235,27 @@ export default function McpServerDetailPage() {
       "headers": {
         "X-API-Key": "YOUR_MCP_API_KEY"
       }
+    }
+  }
+}`;
+
+  // Claude Desktop runs only local stdio servers from its config file, so a
+  // remote server is bridged through the `mcp-remote` npm package (it proxies
+  // stdio ↔ streamable HTTP and drives the OAuth flow in the browser).
+  const claudeDesktopBridgeOAuth = `{
+  "mcpServers": {
+    "${slug}": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "${endpointUrl}"]
+    }
+  }
+}`;
+
+  const claudeDesktopBridgeApiKey = `{
+  "mcpServers": {
+    "${slug}": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "${endpointUrl}", "--header", "X-API-Key:YOUR_MCP_API_KEY"]
     }
   }
 }`;
@@ -329,32 +353,74 @@ export default function McpServerDetailPage() {
         return (
           <div className="space-y-4">
             <p className="text-sm text-[var(--muted-foreground)]">
-              Add this to your <code className="font-mono text-xs bg-[var(--muted)] px-1 rounded">claude_desktop_config.json</code>:
+              <strong>Recommended:</strong> add this server from Claude Desktop&apos;s
+              built-in connector settings — it runs the OAuth login for you, with
+              no file editing. Editing <code className="font-mono text-xs bg-[var(--muted)] px-1 rounded">claude_desktop_config.json</code> with
+              a remote URL does <em>not</em> work: that file only launches local
+              commands, so Claude skips it as &ldquo;not a valid MCP server configuration&rdquo;.
             </p>
+            <p className="text-sm text-[var(--muted-foreground)]">
+              1. Open <strong>Settings → Connectors</strong> (button below).<br />
+              2. Click <strong>Add custom connector</strong>.<br />
+              3. Paste the MCP endpoint URL below.
+            </p>
+            <a
+              href="https://claude.ai/customize/connectors"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
+            >
+              Open Claude Settings
+            </a>
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-[var(--muted-foreground)]">Config (OAuth)</label>
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">MCP Endpoint URL</label>
+              <div className="flex gap-2">
+                <code className="flex-1 bg-[var(--muted)] px-3 py-2 rounded text-xs font-mono break-all">{endpointUrl}</code>
                 <button
-                  onClick={() => handleCopy(claudeConfigOAuth, 'modal-claude-oauth')}
-                  className="text-xs text-[var(--brand)] hover:underline"
+                  onClick={() => handleCopy(endpointUrl, 'modal-claude-desktop-url')}
+                  className="border border-[var(--border)] px-3 py-2 rounded text-xs hover:bg-[var(--accent)] flex-shrink-0"
                 >
-                  {copied === 'modal-claude-oauth' ? 'Copied!' : 'Copy'}
+                  {copied === 'modal-claude-desktop-url' ? 'Copied!' : 'Copy'}
                 </button>
               </div>
-              <pre className="bg-[var(--muted)] p-3 rounded text-xs overflow-x-auto font-mono">{claudeConfigOAuth}</pre>
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-[var(--muted-foreground)]">Config (API Key)</label>
-                <button
-                  onClick={() => handleCopy(claudeConfigApiKey, 'modal-claude-apikey')}
-                  className="text-xs text-[var(--brand)] hover:underline"
-                >
-                  {copied === 'modal-claude-apikey' ? 'Copied!' : 'Copy'}
-                </button>
+
+            <details className="group pt-1">
+              <summary className="text-xs font-medium cursor-pointer text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
+                Prefer the config file? Use the mcp-remote bridge
+              </summary>
+              <div className="mt-3 space-y-4">
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Requires Node.js. The <code className="font-mono bg-[var(--muted)] px-1 rounded">mcp-remote</code> package
+                  wraps the remote server as a local command. Add to <code className="font-mono bg-[var(--muted)] px-1 rounded">claude_desktop_config.json</code> and
+                  restart Claude Desktop.
+                </p>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-[var(--muted-foreground)]">Config (OAuth)</label>
+                    <button
+                      onClick={() => handleCopy(claudeDesktopBridgeOAuth, 'modal-claude-bridge-oauth')}
+                      className="text-xs text-[var(--brand)] hover:underline"
+                    >
+                      {copied === 'modal-claude-bridge-oauth' ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <pre className="bg-[var(--muted)] p-3 rounded text-xs overflow-x-auto font-mono">{claudeDesktopBridgeOAuth}</pre>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-[var(--muted-foreground)]">Config (API Key)</label>
+                    <button
+                      onClick={() => handleCopy(claudeDesktopBridgeApiKey, 'modal-claude-bridge-apikey')}
+                      className="text-xs text-[var(--brand)] hover:underline"
+                    >
+                      {copied === 'modal-claude-bridge-apikey' ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <pre className="bg-[var(--muted)] p-3 rounded text-xs overflow-x-auto font-mono">{claudeDesktopBridgeApiKey}</pre>
+                </div>
               </div>
-              <pre className="bg-[var(--muted)] p-3 rounded text-xs overflow-x-auto font-mono">{claudeConfigApiKey}</pre>
-            </div>
+            </details>
           </div>
         );
       case 'claude-code': {
@@ -592,7 +658,7 @@ export default function McpServerDetailPage() {
                 {/* OAuth config */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-medium">OAuth (Claude Desktop, ChatGPT, Cursor)</h4>
+                    <h4 className="text-sm font-medium">OAuth (Cursor, VS Code, Claude Code)</h4>
                     <button
                       onClick={() => handleCopy(claudeConfigOAuth, 'claude-oauth')}
                       className="text-xs text-[var(--brand)] hover:underline"
