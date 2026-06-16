@@ -349,7 +349,10 @@ export class ConnectorsService {
       : undefined;
 
     const config = {
-      baseUrl: connector.baseUrl,
+      // Apply the cloud db-rest host swap so the in-app "Run Test" hits the
+      // real (internal) endpoint, same as MCP tool execution — otherwise it
+      // calls the public base URL and hangs/times out.
+      baseUrl: resolveInternalDbRestUrl(connector.baseUrl),
       authType: connector.authType,
       authConfig,
       headers: connector.headers as Record<string, string>,
