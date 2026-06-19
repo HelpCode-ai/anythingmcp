@@ -15,6 +15,7 @@
   <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2563eb?labelColor=0b1220" alt="License"></a>
   <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/badge/docker-ready-2563eb?logo=docker&logoColor=white&labelColor=0b1220" alt="Docker Ready"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/commits/main"><img src="https://img.shields.io/github/last-commit/HelpCode-ai/anythingmcp?color=2563eb&labelColor=0b1220" alt="Last Commit"></a>
+  <a href="https://glama.ai/mcp/servers/HelpCode-ai/anythingmcp"><img src="https://glama.ai/mcp/servers/HelpCode-ai/anythingmcp/badges/score.svg" alt="anythingmcp MCP server"></a>
 </p>
 
 <p align="center">
