@@ -10,7 +10,7 @@ import { LoginTokenService } from '../../connectors/engines/login-token.service'
  *      Graph API version, that send-tool bodies carry the mandatory
  *      `messaging_product: "whatsapp"` discriminator, and that paths follow the
  *      Meta Cloud API routing convention (`/{phoneNumberId}/messages`,
- *      `/{businessAccountId}/message_templates`, etc.). Catches the most common
+ *      `/{{WHATSAPP_BUSINESS_ACCOUNT_ID}}/message_templates`, etc.). Catches the most common
  *      failure modes: pinning back to a deprecated API version, omitting the
  *      messaging_product field, or accidentally pointing at the old On-Premises
  *      API base path.
@@ -133,14 +133,22 @@ describe('whatsapp-business adapter — static spec conformance', () => {
     expect(audioObj['caption']).toBeUndefined();
   });
 
-  it('WABA-scoped tools target /{businessAccountId}/...', () => {
+  it('WABA-scoped tools inject the WABA id from {{WHATSAPP_BUSINESS_ACCOUNT_ID}}', () => {
     const listPhones = a.tools.find((t) => t.name === 'whatsapp_list_phone_numbers')!;
-    expect(listPhones.endpointMapping.path).toBe('/{businessAccountId}/phone_numbers');
+    expect(listPhones.endpointMapping.path).toBe(
+      '/{{WHATSAPP_BUSINESS_ACCOUNT_ID}}/phone_numbers',
+    );
     expect(listPhones.endpointMapping.method).toBe('GET');
+    // The model must NOT be asked for the WABA id — it comes from env.
+    expect(listPhones.parameters.properties).not.toHaveProperty('businessAccountId');
+    expect(listPhones.parameters.required ?? []).not.toContain('businessAccountId');
 
     const listTemplates = a.tools.find((t) => t.name === 'whatsapp_list_message_templates')!;
-    expect(listTemplates.endpointMapping.path).toBe('/{businessAccountId}/message_templates');
+    expect(listTemplates.endpointMapping.path).toBe(
+      '/{{WHATSAPP_BUSINESS_ACCOUNT_ID}}/message_templates',
+    );
     expect(listTemplates.endpointMapping.method).toBe('GET');
+    expect(listTemplates.parameters.properties).not.toHaveProperty('businessAccountId');
   });
 
   it('business profile tools target /{phoneNumberId}/whatsapp_business_profile', () => {
