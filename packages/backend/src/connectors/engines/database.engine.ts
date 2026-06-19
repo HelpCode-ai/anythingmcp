@@ -610,12 +610,58 @@ export class DatabaseEngine {
    * Remove string literals and comments so the read-only lexical checks below
    * can't be fooled (e.g. `WHERE note = 'a;b'`) nor trip over harmless keyword
    * substrings inside literals (e.g. `WHERE action = 'DELETE'`).
+   *
+   * Done as a single linear character scan rather than regex: a regex for
+   * unterminated block comments backtracks in polynomial time on hostile input
+   * (`/*a/*a/*…`), and the query string is fully untrusted.
    */
   private stripLiteralsAndComments(sql: string): string {
-    return sql
-      .replace(/\/\*[\s\S]*?\*\//g, ' ') // block comments
-      .replace(/--[^\n]*/g, ' ') // line comments
-      .replace(/'(?:[^']|'')*'/g, "''"); // single-quoted strings → empty literal
+    let out = '';
+    let i = 0;
+    const n = sql.length;
+    while (i < n) {
+      const c = sql[i];
+      const next = sql[i + 1];
+
+      // Line comment: -- … end of line
+      if (c === '-' && next === '-') {
+        i += 2;
+        while (i < n && sql[i] !== '\n') i++;
+        out += ' ';
+        continue;
+      }
+
+      // Block comment: /* … */ (an unterminated one runs to end of input)
+      if (c === '/' && next === '*') {
+        i += 2;
+        while (i < n && !(sql[i] === '*' && sql[i + 1] === '/')) i++;
+        i += 2;
+        out += ' ';
+        continue;
+      }
+
+      // Single-quoted string with '' escape → collapse to an empty literal
+      if (c === "'") {
+        i++;
+        while (i < n) {
+          if (sql[i] === "'") {
+            if (sql[i + 1] === "'") {
+              i += 2;
+              continue;
+            }
+            i++;
+            break;
+          }
+          i++;
+        }
+        out += "''";
+        continue;
+      }
+
+      out += c;
+      i++;
+    }
+    return out;
   }
 
   private validateQuery(sql: string): void {

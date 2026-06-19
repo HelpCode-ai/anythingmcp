@@ -185,6 +185,30 @@ describe('DatabaseEngine', () => {
       );
       expect(mockQuery).toHaveBeenCalledWith(q);
     });
+
+    it('should ignore keywords inside comments', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      const q = 'SELECT id /* DROP TABLE x */ FROM t -- ; DELETE FROM t\n';
+      await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        { method: 'query', path: q },
+        {},
+      );
+      expect(mockQuery).toHaveBeenCalledWith(q);
+    });
+
+    it('rejects an unterminated block comment quickly (no ReDoS)', async () => {
+      const hostile = `/*${'a/*'.repeat(50000)}`;
+      const start = Date.now();
+      await expect(
+        engine.execute(
+          { baseUrl: 'postgres://host/db', authType: 'NONE' },
+          { method: 'query', path: hostile },
+          {},
+        ),
+      ).rejects.toThrow('Only SELECT queries are allowed');
+      expect(Date.now() - start).toBeLessThan(1000);
+    });
   });
 
   describe('SQL parameter binding (prepared statements)', () => {
