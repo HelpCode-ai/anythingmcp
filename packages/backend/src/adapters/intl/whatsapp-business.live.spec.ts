@@ -27,6 +27,10 @@ import { LoginTokenService } from '../../connectors/engines/login-token.service'
 
 interface Tool {
   name: string;
+  parameters: {
+    properties?: Record<string, unknown>;
+    required?: string[];
+  };
   endpointMapping: {
     method: string;
     path: string;
