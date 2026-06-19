@@ -10,6 +10,10 @@ import Database from 'better-sqlite3';
 export class DatabaseEngine {
   private readonly logger = new Logger(DatabaseEngine.name);
   private readonly MAX_ROWS = 1000;
+  // Upper bound on an incoming SQL string. The query is untrusted; capping its
+  // length bounds the read-only lexical scan below (no unbounded work on a
+  // hostile, oversized payload). 100k chars is far beyond any real analytics query.
+  private readonly MAX_QUERY_LENGTH = 100_000;
 
   async execute(
     config: {
@@ -616,9 +620,14 @@ export class DatabaseEngine {
    * (`/*a/*a/*…`), and the query string is fully untrusted.
    */
   private stripLiteralsAndComments(sql: string): string {
+    if (sql.length > this.MAX_QUERY_LENGTH) {
+      throw new Error(
+        `Query too long (${sql.length} chars; max ${this.MAX_QUERY_LENGTH}).`,
+      );
+    }
     let out = '';
     let i = 0;
-    const n = sql.length;
+    const n = Math.min(sql.length, this.MAX_QUERY_LENGTH);
     while (i < n) {
       const c = sql[i];
       const next = sql[i + 1];

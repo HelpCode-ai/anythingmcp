@@ -198,7 +198,7 @@ describe('DatabaseEngine', () => {
     });
 
     it('rejects an unterminated block comment quickly (no ReDoS)', async () => {
-      const hostile = `/*${'a/*'.repeat(50000)}`;
+      const hostile = `/*${'a/*'.repeat(30000)}`; // ~90k chars, under MAX_QUERY_LENGTH
       const start = Date.now();
       await expect(
         engine.execute(
@@ -208,6 +208,17 @@ describe('DatabaseEngine', () => {
         ),
       ).rejects.toThrow('Only SELECT queries are allowed');
       expect(Date.now() - start).toBeLessThan(1000);
+    });
+
+    it('rejects an oversized query', async () => {
+      const huge = `SELECT '${'a'.repeat(100_001)}'`;
+      await expect(
+        engine.execute(
+          { baseUrl: 'postgres://host/db', authType: 'NONE' },
+          { method: 'query', path: huge },
+          {},
+        ),
+      ).rejects.toThrow('Query too long');
     });
   });
 
