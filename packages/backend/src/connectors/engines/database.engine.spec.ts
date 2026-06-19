@@ -112,6 +112,79 @@ describe('DatabaseEngine', () => {
         ),
       ).rejects.toThrow('Only SELECT queries are allowed');
     });
+
+    it('should allow read-only WITH … SELECT CTE queries', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      const cte =
+        'WITH q AS (SELECT id, amount FROM sales WHERE amount > 0) ' +
+        'SELECT COUNT(*) AS n, SUM(amount) AS total FROM q';
+      await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        { method: 'query', path: cte },
+        {},
+      );
+      expect(mockQuery).toHaveBeenCalledWith(cte);
+    });
+
+    it('should allow a multi-CTE read-only query', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      const cte =
+        'WITH a AS (SELECT 1 AS x), b AS (SELECT 2 AS y) ' +
+        'SELECT * FROM a JOIN b ON true';
+      await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        { method: 'query', path: cte },
+        {},
+      );
+      expect(mockQuery).toHaveBeenCalledWith(cte);
+    });
+
+    it('should block data-modifying CTEs (WITH … AS (INSERT …))', async () => {
+      await expect(
+        engine.execute(
+          { baseUrl: 'postgres://host/db', authType: 'NONE' },
+          {
+            method: 'query',
+            path: 'WITH x AS (INSERT INTO users VALUES (1) RETURNING id) SELECT * FROM x',
+          },
+          {},
+        ),
+      ).rejects.toThrow('Blocked SQL keyword in CTE: INSERT');
+    });
+
+    it('should block data-modifying CTEs (WITH … AS (DELETE …))', async () => {
+      await expect(
+        engine.execute(
+          { baseUrl: 'postgres://host/db', authType: 'NONE' },
+          {
+            method: 'query',
+            path: 'WITH d AS (DELETE FROM users RETURNING id) SELECT * FROM d',
+          },
+          {},
+        ),
+      ).rejects.toThrow('Blocked SQL keyword in CTE: DELETE');
+    });
+
+    it('should block stacked statements after a SELECT', async () => {
+      await expect(
+        engine.execute(
+          { baseUrl: 'postgres://host/db', authType: 'NONE' },
+          { method: 'query', path: 'SELECT 1; DROP TABLE users' },
+          {},
+        ),
+      ).rejects.toThrow('single SQL statement');
+    });
+
+    it('should not be fooled by keyword-looking string literals', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      const q = "SELECT * FROM audit WHERE action = 'DELETE' AND note = 'a;b'";
+      await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        { method: 'query', path: q },
+        {},
+      );
+      expect(mockQuery).toHaveBeenCalledWith(q);
+    });
   });
 
   describe('SQL parameter binding (prepared statements)', () => {

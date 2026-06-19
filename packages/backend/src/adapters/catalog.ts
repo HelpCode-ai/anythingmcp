@@ -120,6 +120,7 @@ import * as newsapi from './intl/newsapi.json';
 import * as nimble from './intl/nimble.json';
 import * as nominatim from './intl/nominatim.json';
 import * as nutshellCrm from './intl/nutshell-crm.json';
+import * as oddsApi from './intl/odds-api.json';
 import * as omnisend from './intl/omnisend.json';
 import * as opentable from './intl/opentable.json';
 import * as openweather from './intl/openweather.json';
@@ -391,6 +392,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   nimble as unknown as AdapterDefinition,
   nominatim as unknown as AdapterDefinition,
   nutshellCrm as unknown as AdapterDefinition,
+  oddsApi as unknown as AdapterDefinition,
   omnisend as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
   openweather as unknown as AdapterDefinition,

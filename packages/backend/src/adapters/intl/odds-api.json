@@ -1,0 +1,130 @@
+{
+  "slug": "odds-api",
+  "name": "Odds API",
+  "description": "Live and pre-match sports betting odds (football, basketball, tennis, baseball, American football, ice hockey, MMA, boxing and more) from dozens of bookmakers via odds-api.io. Look up sports, leagues and events, then read odds for a specific event from your selected bookmakers.",
+  "instructions": "This connector wraps the **odds-api.io v3** REST API. Get a free API key at https://odds-api.io and paste it as `ODDS_API_KEY` — it is injected automatically into every call, you never pass it as a parameter.\n\n**Mandatory workflow** — `odds_get_event_odds` needs a concrete `eventId` and at least one valid `bookmakers` name; you cannot call it blind:\n1. `odds_list_sports` → the valid sport **slug** (e.g. `football`, `basketball`, `tennis`). NOTE: there is no `soccer_world_cup` slug — football competitions are plain `football`, narrow them with the league slug from step 2.\n2. `odds_list_leagues` (pass the sport slug) → the league `slug` (e.g. `england-premier-league`).\n3. `odds_list_events` (pass the sport slug, optionally the league) → each event's numeric **`id`**. This is the `eventId` you pass to odds.\n4. `odds_list_bookmakers` → the exact bookmaker **names** you may query (e.g. `Bet365`, `Betano PE`). Pass them as a comma-separated `bookmakers` value. `all` is NOT accepted, and free plans are limited to a small number of selected bookmakers (the API returns a 403 listing your allowed bookmakers if you exceed it).\n5. `odds_get_event_odds` with `eventId` + `bookmakers` (+ optional `markets`).\n\n**Common errors** (the API returns a JSON `error` field):\n- `Missing eventId` / `Missing bookmakers` → required parameter omitted.\n- `<x> is not a valid bookmaker` → use a name from `odds_list_bookmakers`, not `all`.\n- `Access denied. You're allowed max N bookmakers` → your plan limits selected bookmakers; pick from the listed allowed set or upgrade.\n\n**Times** are ISO-8601 UTC (e.g. `2026-06-18T09:00:00Z`). Event `status` is one of `notstarted` / `inprogress` / `settled`.",
+  "region": "intl",
+  "category": "sports",
+  "icon": "odds-api",
+  "docsUrl": "https://docs.odds-api.io",
+  "requiredEnvVars": ["ODDS_API_KEY"],
+  "connector": {
+    "name": "Odds API",
+    "type": "REST",
+    "baseUrl": "https://api.odds-api.io/v3",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "odds_list_sports",
+      "description": "List the sports supported by odds-api.io. Returns each sport's display `name` and `slug`. Use the slug for odds_list_leagues / odds_list_events (e.g. `football`, `basketball`, `tennis`, `baseball`, `american-football`, `ice-hockey`, `mixed-martial-arts`, `boxing`). There is no `soccer_world_cup` slug — use `football` plus a league slug.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sports",
+        "queryParams": {
+          "apiKey": "{{ODDS_API_KEY}}"
+        }
+      }
+    },
+    {
+      "name": "odds_list_bookmakers",
+      "description": "List the bookmakers known to odds-api.io. Returns each bookmaker's `name` and whether it is `active`. The exact `name` value (e.g. `Bet365`, `1xbet`) is what you pass in the `bookmakers` parameter of odds_get_event_odds. Free plans only allow a limited number of selected bookmakers.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bookmakers",
+        "queryParams": {
+          "apiKey": "{{ODDS_API_KEY}}"
+        }
+      }
+    },
+    {
+      "name": "odds_list_leagues",
+      "description": "List the leagues/competitions available for a sport. Returns each league's `name`, `slug` and `eventsCount`. Use the `slug` to narrow odds_list_events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "description": "Sport slug from odds_list_sports, e.g. `football`."
+          }
+        },
+        "required": ["sport"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leagues",
+        "queryParams": {
+          "apiKey": "{{ODDS_API_KEY}}",
+          "sport": "$sport"
+        }
+      }
+    },
+    {
+      "name": "odds_list_events",
+      "description": "List events (matches/fixtures) for a sport, optionally filtered by league. Each event has a numeric `id` (the `eventId` for odds_get_event_odds), `home`/`away` team names, `date` (ISO-8601 UTC), `league` and `status` (`notstarted` / `inprogress` / `settled`).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sport": {
+            "type": "string",
+            "description": "Sport slug from odds_list_sports, e.g. `football`."
+          },
+          "league": {
+            "type": "string",
+            "description": "Optional league slug from odds_list_leagues to narrow the list."
+          }
+        },
+        "required": ["sport"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events",
+        "queryParams": {
+          "apiKey": "{{ODDS_API_KEY}}",
+          "sport": "$sport",
+          "league": "$league"
+        }
+      }
+    },
+    {
+      "name": "odds_get_event_odds",
+      "description": "Get betting odds for a single event from one or more bookmakers. BOTH `eventId` and `bookmakers` are required — get `eventId` from odds_list_events and valid bookmaker names from odds_list_bookmakers (the literal `all` is rejected, and your plan caps how many you may select). Returns the event plus a `bookmakers` map of odds by market.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "description": "Numeric event id from odds_list_events. Required."
+          },
+          "bookmakers": {
+            "type": "string",
+            "description": "Comma-separated bookmaker names from odds_list_bookmakers, e.g. `Bet365` or `Bet365,Betano PE`. Required. Do NOT pass `all`."
+          },
+          "markets": {
+            "type": "string",
+            "description": "Optional comma-separated markets to return, e.g. `h2h` (match winner), `totals`, `spreads`. Omit to return all available markets."
+          }
+        },
+        "required": ["eventId", "bookmakers"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/odds",
+        "queryParams": {
+          "apiKey": "{{ODDS_API_KEY}}",
+          "eventId": "$eventId",
+          "bookmakers": "$bookmakers",
+          "markets": "$markets"
+        }
+      }
+    }
+  ]
+}

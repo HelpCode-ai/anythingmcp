@@ -278,9 +278,7 @@ export class DynamicMcpTools {
         input: params,
         status: 'ERROR',
         durationMs,
-        error: errorDetail.status
-          ? `${errorDetail.status} ${errorDetail.statusText || ''}: ${errorDetail.error}`
-          : String(errorDetail.error),
+        error: this.formatStoredError(errorDetail),
         clientInfo: context ? JSON.stringify({
           authMethod: context.authMethod,
           apiKeyName: context.apiKeyName,
@@ -345,6 +343,36 @@ export class DynamicMcpTools {
       }
     }
     return result;
+  }
+
+  /**
+   * Build the string persisted in the tool_invocations.error column. Beyond the
+   * HTTP status line, it folds in the upstream API response body — that body
+   * carries the actual cause (e.g. weclapp "unknown property: customerName",
+   * Odds API "Missing eventId", Graph API "code 190 invalid token") which the
+   * bare axios message ("Request failed with status code 400") hides. Keeping it
+   * in the audit log makes failures diagnosable without re-running the call.
+   */
+  private formatStoredError(detail: Record<string, unknown>): string {
+    const parts: string[] = [];
+    const head = detail.status
+      ? `${detail.status} ${detail.statusText || ''}`.trim()
+      : '';
+    if (head) parts.push(head);
+    if (detail.error) parts.push(String(detail.error));
+
+    if (detail.responseBody !== undefined && detail.responseBody !== null) {
+      let body =
+        typeof detail.responseBody === 'string'
+          ? detail.responseBody
+          : JSON.stringify(detail.responseBody);
+      if (body.length > 600) body = `${body.slice(0, 600)}…`;
+      if (body && body !== '{}' && body !== '""' && body !== '[]') {
+        parts.push(`body=${body}`);
+      }
+    }
+
+    return parts.length > 0 ? parts.join(': ') : String(detail.error ?? 'Unknown error');
   }
 
   /**

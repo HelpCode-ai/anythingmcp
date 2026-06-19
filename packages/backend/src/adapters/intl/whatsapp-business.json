@@ -20,24 +20,19 @@
   "tools": [
     {
       "name": "whatsapp_list_phone_numbers",
-      "description": "List all phone numbers registered on the WhatsApp Business Account. Returns each number's `id` (the phoneNumberId you pass to send tools), `display_phone_number`, `verified_name` and `quality_rating`. Call this once after setup to discover which phoneNumberId to use.",
+      "description": "List all phone numbers registered on the WhatsApp Business Account. Returns each number's `id` (the phoneNumberId you pass to send tools), `display_phone_number`, `verified_name` and `quality_rating`. Call this once after setup to discover which phoneNumberId to use. The WABA ID is taken automatically from the WHATSAPP_BUSINESS_ACCOUNT_ID configured on this connector — you do NOT pass it.",
       "parameters": {
         "type": "object",
         "properties": {
-          "businessAccountId": {
-            "type": "string",
-            "description": "WhatsApp Business Account ID (WABA ID). Use the value of WHATSAPP_BUSINESS_ACCOUNT_ID configured on this connector — pass it explicitly here on each call (path parameter)."
-          },
           "limit": {
             "type": "integer",
             "description": "Max phone numbers to return per page (default 20, max 100)."
           }
-        },
-        "required": ["businessAccountId"]
+        }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/{businessAccountId}/phone_numbers",
+        "path": "/{{WHATSAPP_BUSINESS_ACCOUNT_ID}}/phone_numbers",
         "queryParams": {
           "limit": "$limit"
         }
@@ -45,14 +40,10 @@
     },
     {
       "name": "whatsapp_list_message_templates",
-      "description": "List the message templates approved on the WhatsApp Business Account. Returns each template's `id`, `name`, `language`, `status` (APPROVED / PENDING / REJECTED) and `components` (header/body/footer/buttons structure). Use this to discover which templates you can send via whatsapp_send_template_message.",
+      "description": "List the message templates approved on the WhatsApp Business Account. Returns each template's `id`, `name`, `language`, `status` (APPROVED / PENDING / REJECTED) and `components` (header/body/footer/buttons structure). Use this to discover which templates you can send via whatsapp_send_template_message. The WABA ID is taken automatically from the WHATSAPP_BUSINESS_ACCOUNT_ID configured on this connector — you do NOT pass it.",
       "parameters": {
         "type": "object",
         "properties": {
-          "businessAccountId": {
-            "type": "string",
-            "description": "WhatsApp Business Account ID (WABA ID)."
-          },
           "limit": {
             "type": "integer",
             "description": "Max templates per page (default 20, max 100)."
@@ -61,12 +52,11 @@
             "type": "string",
             "description": "Comma-separated list of fields to return. Default: 'name,language,status,category,components,id'."
           }
-        },
-        "required": ["businessAccountId"]
+        }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/{businessAccountId}/message_templates",
+        "path": "/{{WHATSAPP_BUSINESS_ACCOUNT_ID}}/message_templates",
         "queryParams": {
           "limit": "$limit",
           "fields": "$fields"
