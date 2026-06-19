@@ -77,26 +77,30 @@ const server = new McpServer(
 
 server.tool(
   'anythingmcp_overview',
-  'What AnythingMCP is and where to learn more.',
+  'Read-only, no side effects. Returns a concise plain-text overview of AnythingMCP (a self-hosted, no-code MCP gateway) with links to the website, GitHub repo and cloud. Call this FIRST to understand the product; then use anythingmcp_get_started to install it, anythingmcp_connect_client to wire up an AI client, or anythingmcp_list_connectors to browse integrations.',
   {},
+  { title: 'AnythingMCP overview', readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async () => ({ content: [{ type: 'text', text: OVERVIEW }] }),
 );
 server.tool(
   'anythingmcp_get_started',
-  'How to install and run your own AnythingMCP gateway in ~60 seconds.',
+  'Read-only, no side effects. Returns copy-pasteable plain-text steps to install and run your own AnythingMCP gateway in ~60 seconds (self-host with Docker, or the managed cloud). Use this when you want to DEPLOY AnythingMCP; to connect an already-running instance to an AI client, use anythingmcp_connect_client instead.',
   {},
+  { title: 'Get started with AnythingMCP', readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async () => ({ content: [{ type: 'text', text: GET_STARTED }] }),
 );
 server.tool(
   'anythingmcp_connect_client',
-  'Setup instructions to connect an AI client (Claude, ChatGPT, Gemini, Copilot, Cursor) to AnythingMCP.',
-  { client: z.enum(['claude', 'chatgpt', 'gemini', 'copilot', 'cursor']).describe('Which AI client to connect.') },
+  'Read-only, no side effects. Returns plain-text setup instructions for connecting ONE AI client to an AnythingMCP server; pass the required `client`. Use this once you already have an AnythingMCP instance running; to install one first, use anythingmcp_get_started.',
+  { client: z.enum(['claude', 'chatgpt', 'gemini', 'copilot', 'cursor']).describe('Which AI client to get connection instructions for.') },
+  { title: 'Connect an AI client', readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async ({ client }) => ({ content: [{ type: 'text', text: CONNECT[client] ?? CONNECT.claude }] }),
 );
 server.tool(
   'anythingmcp_list_connectors',
-  'Overview of the 175+ pre-built connectors and the connector types you can build.',
+  'Read-only, no side effects. Returns a plain-text catalog of AnythingMCP\'s 175+ pre-built connectors grouped by category (logistics, ERP, e-commerce, HR, public data, banking, messaging, sports), plus the 5 connector types you can build with no code (REST, SOAP/WSDL, GraphQL, Database, MCP-bridge), with a link to the full list. Use this to discover available integrations before connecting a client.',
   {},
+  { title: 'List AnythingMCP connectors', readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async () => ({ content: [{ type: 'text', text: CONNECTORS }] }),
 );
 
