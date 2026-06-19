@@ -152,4 +152,54 @@ describe('McpCombinedAuthGuard', () => {
       expect(ctx.switchToHttp().getRequest().user.authMethod).toBe('none');
     });
   });
+
+  describe('public demo endpoint exemption (/mcp/demo)', () => {
+    const ctxWithPath = (path: string) => {
+      const request = { headers: {}, path, user: undefined as any };
+      const response = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+      return {
+        switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
+      } as any;
+    };
+
+    // Strictest fail-closed config: legacy mode, no creds, anon NOT allowed.
+    const strict = () =>
+      mockConfig.get.mockImplementation((key: string) =>
+        key === 'MCP_AUTH_MODE' ? 'legacy' : undefined,
+      );
+
+    it('allows anonymous access to the EXACT /mcp/demo path, with no DB lookup', async () => {
+      strict();
+      const ctx = ctxWithPath('/mcp/demo');
+      const result = await guard.canActivate(ctx);
+      expect(result).toBe(true);
+      expect(ctx.switchToHttp().getRequest().user.authMethod).toBe('none');
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('ignores trailing slash and query string but stays exact', async () => {
+      strict();
+      const ok = await guard.canActivate(ctxWithPath('/mcp/demo/'));
+      expect(ok).toBe(true);
+    });
+
+    it('does NOT exempt a real server id — /mcp/:serverId stays fail-closed', async () => {
+      strict();
+      const ctx = ctxWithPath('/mcp/cmpzj8mm9007j1ymn5mo2y3eq');
+      const result = await guard.canActivate(ctx);
+      expect(result).toBe(false);
+      expect(ctx.switchToHttp().getResponse().status).toHaveBeenCalledWith(401);
+    });
+
+    it('does NOT exempt a look-alike path containing demo', async () => {
+      strict();
+      const result = await guard.canActivate(ctxWithPath('/mcp/demo-evil'));
+      expect(result).toBe(false);
+    });
+  });
 });

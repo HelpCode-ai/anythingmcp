@@ -30,6 +30,17 @@ export class McpCombinedAuthGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     const res = context.switchToHttp().getResponse();
 
+    // Public demo MCP server: a static, tenant-less, anonymous endpoint at the
+    // EXACT path /mcp/demo. Its handler exposes only self-describing info tools
+    // and never resolves a serverId or touches the database, so allowing
+    // anonymous access here cannot expose any tenant data. Match the exact path
+    // only — every other /mcp/:serverId stays fail-closed below.
+    const reqPath = (req.path || req.url || '').split('?')[0].replace(/\/+$/, '');
+    if (reqPath === '/mcp/demo') {
+      req.user = { authMethod: 'none' };
+      return true;
+    }
+
     const mode = this.configService.get<string>('MCP_AUTH_MODE') || 'none';
     const configuredApiKey = this.configService.get<string>('MCP_API_KEY');
     const mcpBearerToken = this.configService.get<string>('MCP_BEARER_TOKEN');

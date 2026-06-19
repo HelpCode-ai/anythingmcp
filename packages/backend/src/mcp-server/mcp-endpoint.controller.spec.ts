@@ -129,6 +129,26 @@ describe('McpEndpointController — tenant isolation', () => {
     );
   });
 
+  it('demo endpoint serves static tools without touching tenant data', async () => {
+    // /mcp/demo must NEVER resolve a server or read connectors — it has no
+    // tenant data to leak. Verify the per-server services are never called.
+    const req: any = { headers: {}, user: { authMethod: 'none' } };
+    const res = makeRes();
+
+    await expect(
+      controller.handleDemoPost(req, res, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {},
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(mcpServersService.findById).not.toHaveBeenCalled();
+    expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+    expect(mcpServersService.isUserInOrganization).not.toHaveBeenCalled();
+  });
+
   it('allows a user whose primary org matches the server (zero-query fast path)', async () => {
     const req: any = {
       user: { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' },
