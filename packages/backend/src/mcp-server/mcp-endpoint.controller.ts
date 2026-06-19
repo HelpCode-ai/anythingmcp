@@ -10,7 +10,7 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -20,6 +20,7 @@ import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { ToolRegistry } from './tool-registry';
 import { DynamicMcpTools } from './dynamic-mcp-tools';
 import { RolesService } from '../roles/roles.service';
+import { registerDemoTools } from './mcp-demo.tools';
 
 /**
  * Per-server MCP endpoint controller.
@@ -43,6 +44,35 @@ export class McpEndpointController {
     private readonly toolExecutor: DynamicMcpTools,
     private readonly rolesService: RolesService,
   ) {}
+
+  // ─── Public, anonymous, static demo MCP server ──────────────────────────
+  // A self-describing MCP endpoint at the EXACT path /mcp/demo. It exposes only
+  // static "how to use AnythingMCP" tools and NEVER resolves a serverId, queries
+  // the database, or touches connectors / tenant data — so it has nothing to
+  // leak. Exists so directory crawlers (Glama, Smithery, mcp.so) and agents can
+  // introspect a working MCP server without auth. The auth guard exempts ONLY
+  // this exact path; every /mcp/:serverId stays fail-closed.
+  //
+  // MUST be declared BEFORE the ':serverId' routes so the static "demo" segment
+  // wins route matching (otherwise it'd resolve as serverId="demo").
+  @Post('demo')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async handleDemoPost(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
+    await this.handleDemoRequest(req, res, body);
+  }
+
+  @Get('demo')
+  handleDemoGet(@Req() _req: Request, @Res() res: Response) {
+    res.status(405).json({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Method not allowed in stateless mode' },
+      id: null,
+    });
+  }
 
   @Post(':serverId')
   async handlePost(
@@ -80,6 +110,53 @@ export class McpEndpointController {
       error: { code: -32000, message: 'Method not allowed in stateless mode' },
       id: null,
     });
+  }
+
+  /**
+   * Handle the public demo MCP server. Builds a per-request McpServer with only
+   * the static info tools (see registerDemoTools) — no DB, no connectors, no
+   * tenant resolution. Never reaches any of the per-server logic below.
+   */
+  private async handleDemoRequest(
+    req: Request,
+    res: Response,
+    body: unknown,
+  ) {
+    const mcpServer = new McpServer(
+      { name: 'AnythingMCP Demo', version: '1.0.0' },
+      {
+        instructions:
+          'Public, read-only demo of AnythingMCP. These tools describe the ' +
+          'product and how to use it; they expose no customer data. Start with ' +
+          'anythingmcp_overview.',
+      },
+    );
+    registerDemoTools(mcpServer);
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+    try {
+      await mcpServer.connect(transport);
+      await transport.handleRequest(req, res, body);
+    } catch (error: any) {
+      this.logger.error(`Error handling demo MCP request: ${error.message}`);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: { code: -32603, message: 'Internal server error' },
+          id: null,
+        });
+      }
+    } finally {
+      try {
+        await transport.close();
+        await mcpServer.close();
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
   }
 
   private async handleMcpRequest(
