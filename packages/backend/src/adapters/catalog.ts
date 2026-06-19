@@ -1,4 +1,5 @@
 // === AUTOGEN-IMPORTS-BEGIN === run scripts/regenerate-catalog.mjs ===
+import * as billbee from './de/billbee.json';
 import * as billomat from './de/billomat.json';
 import * as bundesbank from './de/bundesbank.json';
 import * as datev from './de/datev.json';
@@ -6,7 +7,9 @@ import * as destatisGenesis from './de/destatis-genesis.json';
 import * as deutscheBahn from './de/deutsche-bahn.json';
 import * as dhlTracking from './de/dhl-tracking.json';
 import * as dpdGermany from './de/dpd-germany.json';
+import * as easybill from './de/easybill.json';
 import * as fastbill from './de/fastbill.json';
+import * as getmyinvoices from './de/getmyinvoices.json';
 import * as glsTracking from './de/gls-tracking.json';
 import * as handelsregister from './de/handelsregister.json';
 import * as hereGeocoding from './de/here-geocoding.json';
@@ -271,6 +274,7 @@ function withGraphqlBuiltins(adapter: AdapterDefinition): AdapterDefinition {
 // The imports and RAW_ADAPTERS array below are auto-generated.
 // === AUTOGEN-ARRAY-BEGIN === run scripts/regenerate-catalog.mjs ===
 const RAW_ADAPTERS: AdapterDefinition[] = [
+  billbee as unknown as AdapterDefinition,
   billomat as unknown as AdapterDefinition,
   bundesbank as unknown as AdapterDefinition,
   datev as unknown as AdapterDefinition,
@@ -278,7 +282,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   deutscheBahn as unknown as AdapterDefinition,
   dhlTracking as unknown as AdapterDefinition,
   dpdGermany as unknown as AdapterDefinition,
+  easybill as unknown as AdapterDefinition,
   fastbill as unknown as AdapterDefinition,
+  getmyinvoices as unknown as AdapterDefinition,
   glsTracking as unknown as AdapterDefinition,
   handelsregister as unknown as AdapterDefinition,
   hereGeocoding as unknown as AdapterDefinition,

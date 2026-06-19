@@ -1,0 +1,272 @@
+{
+  "slug": "easybill",
+  "name": "easybill Invoicing",
+  "description": "Manage customers, invoices, offers, credit notes and products in easybill. Popular 100% Made-in-Germany invoicing and e-commerce accounting SaaS used by 20,000+ businesses.",
+  "region": "de",
+  "category": "finance",
+  "icon": "easybill",
+  "docsUrl": "https://www.easybill.de/api/",
+  "requiredEnvVars": [
+    "EASYBILL_API_KEY"
+  ],
+  "connector": {
+    "name": "easybill REST API",
+    "type": "REST",
+    "baseUrl": "https://api.easybill.de/rest/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{EASYBILL_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "instructions": "easybill is a German cloud invoicing / accounting tool (100% Made in Germany, 20,000+ customers) with a clean REST API at https://api.easybill.de/rest/v1.\n\n## Authentication\nGenerate an API key in easybill under Settings → App-Center / API (if you can't find it, contact easybill support to enable API access). Set it as `EASYBILL_API_KEY`. The connector sends it as `Authorization: Bearer <key>`. (easybill also accepts HTTP Basic Auth with email:apikey, but Bearer is simpler and is what this connector uses.)\n\n## Core concepts\n- **Customers** (`/customers`) — your clients. Identified by numeric `id` and a human `number`.\n- **Documents** (`/documents`) — the single resource for every document kind, discriminated by `type`: `INVOICE`, `CREDIT`, `OFFER`, `REMINDER`, `DELIVERY`, etc. Filter a list with `type=INVOICE` (comma-separated for several types). Each document carries an `items` array of line items.\n- **Positions** (`/positions`) — your reusable product/article catalog (article number, description, unit price, VAT).\n\n## Pagination\nList endpoints are page-based: `page` (default 1) and `limit` (default 100, max 1000). List responses wrap the rows in a `documents`/`page`/`pages`/`total` envelope.\n\n## Dates & filters\nDate filters accept a single `YYYY-MM-DD` or a `from,to` range (e.g. `document_date=2026-01-01,2026-03-31`). `paid_at=null` returns unpaid invoices. Most ID filters accept comma-separated lists.\n\n## Tips\n- To list only open invoices: `easybill_list_documents` with `type=INVOICE` and `paid_at=null`.\n- Fetch a finished invoice as a PDF with `easybill_get_document_pdf` (returns the PDF base64-encoded in the `pdf` field).\n- Amounts are in the document currency; VAT is per line item (`vat_percent`).",
+  "tools": [
+    {
+      "name": "easybill_list_customers",
+      "description": "List customers (clients) from easybill with optional search and pagination. Returns id, customer number, name/company, address, emails and VAT id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based (default 1)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Results per page (default 100, max 1000)"
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Filter by company name (comma-separated for several values)"
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Filter by contact last name"
+          },
+          "emails": {
+            "type": "string",
+            "description": "Filter by email address"
+          },
+          "number": {
+            "type": "string",
+            "description": "Filter by easybill customer number"
+          },
+          "country": {
+            "type": "string",
+            "description": "Filter by ISO country code, e.g. DE"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "company_name": "$company_name",
+          "last_name": "$last_name",
+          "emails": "$emails",
+          "number": "$number",
+          "country": "$country"
+        }
+      }
+    },
+    {
+      "name": "easybill_get_customer",
+      "description": "Get a single easybill customer by its numeric id, returning the full record (addresses, contact details, payment terms, VAT id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The easybill customer id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{id}"
+      }
+    },
+    {
+      "name": "easybill_create_customer",
+      "description": "Create a new customer (client) in easybill. Provide at least a company name or a last name plus any address and contact fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_name": {
+            "type": "string",
+            "description": "Company name (use this or last_name)"
+          },
+          "first_name": {
+            "type": "string",
+            "description": "Contact first name"
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Contact last name (use this or company_name)"
+          },
+          "street": {
+            "type": "string",
+            "description": "Street and house number"
+          },
+          "zip_code": {
+            "type": "string",
+            "description": "Postal code"
+          },
+          "city": {
+            "type": "string",
+            "description": "City"
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO country code, e.g. DE"
+          },
+          "emails": {
+            "type": "string",
+            "description": "Primary email address"
+          },
+          "vat_identifier": {
+            "type": "string",
+            "description": "VAT identification number (USt-IdNr.)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "company_name": "$company_name",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "street": "$street",
+          "zip_code": "$zip_code",
+          "city": "$city",
+          "country": "$country",
+          "emails": "$emails",
+          "vat_identifier": "$vat_identifier"
+        }
+      }
+    },
+    {
+      "name": "easybill_list_documents",
+      "description": "List documents (invoices, credits, offers, reminders, etc.) from easybill. Filter by type, customer, date range and payment status. Returns numbers, dates, amounts and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based (default 1)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Results per page (default 100, max 1000)"
+          },
+          "type": {
+            "type": "string",
+            "description": "Document type filter, comma-separated. One or more of INVOICE, CREDIT, OFFER, REMINDER, DELIVERY"
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Filter by customer id (comma-separated for several)"
+          },
+          "document_date": {
+            "type": "string",
+            "description": "Document date filter: a single YYYY-MM-DD or a 'from,to' range e.g. 2026-01-01,2026-03-31"
+          },
+          "paid_at": {
+            "type": "string",
+            "description": "Payment filter: a date/range, or the literal 'null' to return only unpaid documents"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "type": "$type",
+          "customer_id": "$customer_id",
+          "document_date": "$document_date",
+          "paid_at": "$paid_at"
+        }
+      }
+    },
+    {
+      "name": "easybill_get_document",
+      "description": "Get a single easybill document (invoice/offer/credit) by id with full details including line items, taxes, totals and payment status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The easybill document id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/{id}"
+      }
+    },
+    {
+      "name": "easybill_get_document_pdf",
+      "description": "Fetch the rendered PDF of an easybill document by id. The PDF is returned base64-encoded in the response 'pdf' field, ready to save or forward.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The easybill document id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/{id}/pdf"
+      }
+    },
+    {
+      "name": "easybill_list_positions",
+      "description": "List products/articles (positions) from the easybill catalog with pagination. Returns article number, description, unit price and VAT percentage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based (default 1)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Results per page (default 100, max 1000)"
+          },
+          "number": {
+            "type": "string",
+            "description": "Filter by article number"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/positions",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "number": "$number"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,225 @@
+{
+  "slug": "getmyinvoices",
+  "name": "GetMyInvoices",
+  "description": "Retrieve invoices, documents, attachments and suppliers from GetMyInvoices, the German invoice & document management platform by fino data services GmbH (Kassel).",
+  "region": "de",
+  "category": "finance",
+  "icon": "getmyinvoices",
+  "docsUrl": "https://api.getmyinvoices.com/accounts/v3/doc/",
+  "requiredEnvVars": [
+    "GETMYINVOICES_API_KEY"
+  ],
+  "connector": {
+    "name": "GetMyInvoices Accounts API v3",
+    "type": "REST",
+    "baseUrl": "https://api.getmyinvoices.com/accounts/v3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{GETMYINVOICES_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "instructions": "GetMyInvoices (operated by fino data services GmbH, Kassel) automatically collects invoices and documents from thousands of online portals and mailboxes. This connector wraps the v3 Accounts API at https://api.getmyinvoices.com/accounts/v3.\n\n## Authentication\nGenerate an API key in the GetMyInvoices web app via the top-right menu → 'API access'. Set it as `GETMYINVOICES_API_KEY`. The connector sends it in the `X-API-KEY` header on every request. (Note: the older v1/v2 Go/PHP SDKs use a POST body `api_key` — that is NOT v3; v3 uses the header.)\n\n## Core concepts\n- **Documents** (`/documents`) — the single resource for every document, including invoices, discriminated by `documentType` (e.g. `INCOMING_INVOICE`, `SALES_INVOICE`, `RECEIPT`, `CREDIT_NOTE`, `PAYROLL`). Use `documentTypeFilter` to narrow.\n- **Companies** (`/companies`) — in GetMyInvoices terminology these are suppliers / online portals the documents come from.\n- **Attachments** — extra files linked to a document under `/documents/{documentUid}/attachments`.\n\n## Pagination (documents only)\n`GET /documents` is paginated with `perPage` (default 500) and `pageNumber` (default 1). The response envelope carries `totalCount`, `maxPages`, `offset` and the `records` array. Iterate `pageNumber` up to `maxPages`. `GET /companies` returns a plain array with no pagination.\n\n## Incremental sync & file content\n- Use `updatedOrNewSinceFilter=YYYY-MM-DD` to fetch only documents created or modified since a date — ideal for syncing.\n- To get the actual file bytes, call `getmyinvoices_get_document` (it returns `fileContent` as base64, plus `meta_data` and OCR `readableContent`). Set `includeDocument=false` when you only need metadata.\n\n## Rate limits\nThe API enforces per-minute and per-hour limits and returns `X-RateLimit-Remaining-*` headers plus `Retry-After` on HTTP 429 — respect those values and back off.",
+  "tools": [
+    {
+      "name": "getmyinvoices_list_documents",
+      "description": "List documents (invoices, receipts, credit notes, etc.) from GetMyInvoices with filters for type, date range, payment status and incremental sync. Returns paginated metadata records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageNumber": {
+            "type": "number",
+            "description": "Page number, 1-based (default 1)"
+          },
+          "perPage": {
+            "type": "number",
+            "description": "Results per page (default 500)"
+          },
+          "searchQuery": {
+            "type": "string",
+            "description": "Free-text search across documents, like the web UI"
+          },
+          "documentTypeFilter": {
+            "type": "string",
+            "description": "Document type, e.g. INCOMING_INVOICE, SALES_INVOICE, RECEIPT, CREDIT_NOTE, PAYROLL"
+          },
+          "companyFilter": {
+            "type": "number",
+            "description": "Filter by company/supplier: 0=any, -1=unassigned, or a specific companyUid"
+          },
+          "startDateFilter": {
+            "type": "string",
+            "description": "Earliest document date, YYYY-MM-DD"
+          },
+          "endDateFilter": {
+            "type": "string",
+            "description": "Latest document date, YYYY-MM-DD"
+          },
+          "updatedOrNewSinceFilter": {
+            "type": "string",
+            "description": "Return only documents created or modified since this timestamp — use for incremental sync. MUST be a full date-time in 'YYYY-MM-DD HH:MM:SS' format, e.g. '2026-01-01 00:00:00' (a plain date is rejected with HTTP 422)"
+          },
+          "paymentStatusFilter": {
+            "type": "string",
+            "description": "Payment status filter: paid, not_paid, unknown or all"
+          },
+          "loadLineItems": {
+            "type": "boolean",
+            "description": "Include parsed line items in each record"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents",
+        "queryParams": {
+          "pageNumber": "$pageNumber",
+          "perPage": "$perPage",
+          "searchQuery": "$searchQuery",
+          "documentTypeFilter": "$documentTypeFilter",
+          "companyFilter": "$companyFilter",
+          "startDateFilter": "$startDateFilter",
+          "endDateFilter": "$endDateFilter",
+          "updatedOrNewSinceFilter": "$updatedOrNewSinceFilter",
+          "paymentStatusFilter": "$paymentStatusFilter",
+          "loadLineItems": "$loadLineItems"
+        }
+      }
+    },
+    {
+      "name": "getmyinvoices_get_document",
+      "description": "Get a single GetMyInvoices document by its documentUid, including metadata, parsed line items, OCR text and optionally the base64 file content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentUid": {
+            "type": "string",
+            "description": "The document unique id"
+          },
+          "loadLineItems": {
+            "type": "boolean",
+            "description": "Include parsed line items"
+          },
+          "includeDocument": {
+            "type": "boolean",
+            "description": "Include the file content (base64) in the response; set false for metadata only"
+          },
+          "readableText": {
+            "type": "boolean",
+            "description": "Include the OCR/readable text content"
+          }
+        },
+        "required": [
+          "documentUid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/{documentUid}",
+        "queryParams": {
+          "loadLineItems": "$loadLineItems",
+          "includeDocument": "$includeDocument",
+          "readableText": "$readableText"
+        }
+      }
+    },
+    {
+      "name": "getmyinvoices_list_document_attachments",
+      "description": "List all attachments linked to a specific GetMyInvoices document, returning each attachment's uid, filename and metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentUid": {
+            "type": "string",
+            "description": "The parent document unique id"
+          }
+        },
+        "required": [
+          "documentUid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/{documentUid}/attachments"
+      }
+    },
+    {
+      "name": "getmyinvoices_get_document_attachment",
+      "description": "Get a single attachment of a GetMyInvoices document by document and attachment uid, including its file content and metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentUid": {
+            "type": "string",
+            "description": "The parent document unique id"
+          },
+          "attachmentUid": {
+            "type": "string",
+            "description": "The attachment unique id"
+          }
+        },
+        "required": [
+          "documentUid",
+          "attachmentUid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/{documentUid}/attachments/{attachmentUid}"
+      }
+    },
+    {
+      "name": "getmyinvoices_list_companies",
+      "description": "List companies (suppliers and online portals) configured in GetMyInvoices, filterable by status and type. Returns companyUid, name, type and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statusFilter": {
+            "type": "number",
+            "description": "Status: 0=any, 1=active, -1=inactive, -2=pending"
+          },
+          "companyTypeFilter": {
+            "type": "string",
+            "description": "Company type: 0 for any, or ONLINE_PORTAL / CUSTOM_COMPANY"
+          },
+          "returnPortalRecords": {
+            "type": "number",
+            "description": "0 to hide portal records, 1 to include them"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies",
+        "queryParams": {
+          "statusFilter": "$statusFilter",
+          "companyTypeFilter": "$companyTypeFilter",
+          "returnPortalRecords": "$returnPortalRecords"
+        }
+      }
+    },
+    {
+      "name": "getmyinvoices_get_company",
+      "description": "Get a single company (supplier/portal) from GetMyInvoices by its companyUid, returning full details and linked portal records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyUid": {
+            "type": "string",
+            "description": "The company unique id"
+          }
+        },
+        "required": [
+          "companyUid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{companyUid}"
+      }
+    }
+  ]
+}
