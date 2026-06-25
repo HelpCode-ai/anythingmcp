@@ -1,0 +1,242 @@
+{
+  "slug": "billbee",
+  "name": "Billbee Order Management",
+  "description": "Manage orders, products, customers, stock and shipments in Billbee, the leading German/DACH multichannel order-management (Warenwirtschaft) platform used by 20,000+ online retailers.",
+  "region": "de",
+  "category": "ecommerce",
+  "icon": "billbee",
+  "docsUrl": "https://app.billbee.io/swagger/ui/index",
+  "requiredEnvVars": [
+    "BILLBEE_API_KEY",
+    "BILLBEE_LOGIN_EMAIL",
+    "BILLBEE_API_PASSWORD"
+  ],
+  "connector": {
+    "name": "Billbee REST API",
+    "type": "REST",
+    "baseUrl": "https://api.billbee.io/api/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{BILLBEE_LOGIN_EMAIL}}",
+      "password": "{{BILLBEE_API_PASSWORD}}"
+    },
+    "headers": {
+      "X-Billbee-Api-Key": "{{BILLBEE_API_KEY}}",
+      "Accept": "application/json"
+    }
+  },
+  "instructions": "Billbee is the leading German/DACH multichannel order-management tool (20,000+ retailers) connecting marketplaces and shops (Amazon, eBay, Otto, Kaufland, Shopify, WooCommerce, etc.). This connector wraps the REST API at https://api.billbee.io/api/v1.\n\n## Authentication (THREE credentials, all required)\nBillbee requires both an application API key AND HTTP Basic Auth at the same time:\n1. `BILLBEE_API_KEY` — sent in the `X-Billbee-Api-Key` header. Request it from Billbee (via their API request form / support@billbee.io, describing what you build).\n2. `BILLBEE_LOGIN_EMAIL` — your Billbee account login email (Basic Auth username).\n3. `BILLBEE_API_PASSWORD` — a dedicated API password (NOT your normal login password). Enable the API and set this password in the Billbee web app under Settings → Billbee API → General Settings.\nAll three are mandatory; the API key alone or Basic Auth alone will be rejected.\n\n## Pagination\nList endpoints use `page` (1-based) and `pageSize` (max 250). Responses wrap rows in a paged envelope: a `Data` array plus a `Paging` object with `Page`, `TotalPages`, `TotalRows`. Iterate `page` until `Page == TotalPages`.\n\n## Orders\n`billbee_list_orders` filters by `minOrderDate`/`maxOrderDate` and `modifiedAtMin`/`modifiedAtMax` (incremental sync). Order states are numeric; use `billbee_get_order` for full detail, or `billbee_get_order_by_extref` to look up by the marketplace's external order number.\n\n## Rate limit\nHard limit of 2 requests per second per (API key + user); exceeding it returns HTTP 429 — back off and retry. The API has usage-based pricing above a free allotment, so avoid tight polling loops; prefer `modifiedAtMin`/`updatedOrNewSince`-style incremental queries.",
+  "tools": [
+    {
+      "name": "billbee_list_orders",
+      "description": "List orders from Billbee with filtering by order date range, modification date (incremental sync) and pagination. Returns a paged envelope of order summaries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based (default 1)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (max 250)"
+          },
+          "minOrderDate": {
+            "type": "string",
+            "description": "Only orders created on/after this date-time (ISO 8601, e.g. 2026-01-01)"
+          },
+          "maxOrderDate": {
+            "type": "string",
+            "description": "Only orders created on/before this date-time (ISO 8601)"
+          },
+          "modifiedAtMin": {
+            "type": "string",
+            "description": "Only orders modified on/after this date-time (ISO 8601) — use for incremental sync"
+          },
+          "modifiedAtMax": {
+            "type": "string",
+            "description": "Only orders modified on/before this date-time (ISO 8601)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize",
+          "minOrderDate": "$minOrderDate",
+          "maxOrderDate": "$maxOrderDate",
+          "modifiedAtMin": "$modifiedAtMin",
+          "modifiedAtMax": "$modifiedAtMax"
+        }
+      }
+    },
+    {
+      "name": "billbee_get_order",
+      "description": "Get a single Billbee order by its internal Billbee order id, returning full detail including line items, addresses, payment and shipping info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The internal Billbee order id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{id}"
+      }
+    },
+    {
+      "name": "billbee_get_order_by_extref",
+      "description": "Look up a Billbee order by its external reference (the marketplace/shop order number), returning the full order detail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "extRef": {
+            "type": "string",
+            "description": "The external order number / reference from the marketplace or shop"
+          }
+        },
+        "required": [
+          "extRef"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/findbyextref/{extRef}"
+      }
+    },
+    {
+      "name": "billbee_list_products",
+      "description": "List products/articles from Billbee with pagination. Returns article ids, SKUs, titles, prices and stock fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based (default 1)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (max 250)"
+          },
+          "minCreatedAt": {
+            "type": "string",
+            "description": "Only products created on/after this date-time (ISO 8601)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize",
+          "minCreatedAt": "$minCreatedAt"
+        }
+      }
+    },
+    {
+      "name": "billbee_get_product",
+      "description": "Get a single Billbee product by id (or by SKU/EAN via lookupBy), returning full article detail including pricing and stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The product identifier (Billbee article id by default)"
+          },
+          "lookupBy": {
+            "type": "string",
+            "description": "How to interpret id: 'id' (default), 'sku' or 'ean'"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{id}",
+        "queryParams": {
+          "lookupBy": "$lookupBy"
+        }
+      }
+    },
+    {
+      "name": "billbee_list_customers",
+      "description": "List customers from Billbee with pagination. Returns customer ids, names, contact details and addresses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based (default 1)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (max 250)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "billbee_get_customer_orders",
+      "description": "List all orders belonging to a specific Billbee customer by customer id, with pagination. Useful for customer history and support lookups.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Billbee customer id"
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based (default 1)"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (max 250)"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{id}/orders",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "billbee_list_shipping_providers",
+      "description": "List the shipping providers configured in the Billbee account, returning provider names and their available shipping products.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipment/shippingproviders"
+      }
+    }
+  ]
+}
