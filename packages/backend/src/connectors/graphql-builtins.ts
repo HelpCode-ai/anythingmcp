@@ -76,6 +76,8 @@ export function buildGraphqlBuiltinTools(
     description:
       `Execute an arbitrary GraphQL ${op} against ${displayName}. ` +
       `Use only when no purpose-built tool covers the operation. ` +
+      `Do not guess field or type names: if you are unsure, or hit a "Field '…' doesn't exist on type" error, ` +
+      `call ${prefix}_graphql_schema first to confirm the exact fields before retrying. ` +
       `Authentication is injected automatically.` +
       (op === 'subscription'
         ? ' Note: subscriptions over the default HTTP transport may not be supported by the upstream API.'

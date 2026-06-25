@@ -38,19 +38,20 @@
     },
     {
       "name": "substack_search_posts",
-      "description": "Search posts in the publication.",
+      "description": "Full-text search the publication's post archive. Returns an array of matching posts (same shape as substack_list_posts: id, title, slug, post_date, audience, type). Empty array when nothing matches.",
       "parameters": {
         "type": "object",
         "properties": {
-          "query": { "type": "string", "description": "Search query." },
-          "limit": { "type": "integer", "description": "Max results." }
+          "query": { "type": "string", "description": "Search query (matches title/body across the publication archive)." },
+          "limit": { "type": "integer", "description": "Max results (default 12)." },
+          "offset": { "type": "integer", "description": "Pagination offset." }
         },
         "required": ["query"]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/posts/search",
-        "queryParams": { "query": "$query", "limit": "$limit" }
+        "path": "/api/v1/archive",
+        "queryParams": { "sort": "new", "search": "$query", "limit": "$limit", "offset": "$offset" }
       }
     },
     {
