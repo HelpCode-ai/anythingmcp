@@ -146,7 +146,7 @@ export class RestEngine {
 
           if (encoding === 'form-urlencoded') {
             const urlParams = new URLSearchParams();
-            for (const [k, v] of Object.entries(mapped)) {
+            for (const [k, v] of spreadFormEntries(mapped)) {
               appendFormParam((key, val) => urlParams.append(key, val), k, v);
             }
             axiosConfig.data = urlParams.toString();
@@ -156,7 +156,7 @@ export class RestEngine {
             };
           } else if (encoding === 'form-data') {
             const form = new FormData();
-            for (const [k, v] of Object.entries(mapped)) {
+            for (const [k, v] of spreadFormEntries(mapped)) {
               appendFormParam((key, val) => form.append(key, val), k, v);
             }
             axiosConfig.data = form;
@@ -512,6 +512,35 @@ function joinBaseAndPath(baseUrl: string, path: string): string {
  * "value does not match parameter" error. Primitives are emitted as-is;
  * null/undefined are skipped so absent optional fields don't send empty keys.
  */
+/**
+ * Yield top-level (key, value) entries for a form body, expanding a special
+ * `__spread` key: its object value's own entries are hoisted to the top level
+ * instead of being nested under the literal `__spread` key.
+ *
+ * This lets a generic, method-agnostic tool (e.g. Bitrix24's `bitrix24_call`)
+ * forward an arbitrary caller-supplied params object as the request body's
+ * top-level fields — `{filter:{...}, taskId:1}` becomes `filter[...]=` and
+ * `taskId=1`, NOT `params[filter][...]` / `params[taskId]` which the previous
+ * `{params:$params}` mapping produced and the upstream API rejected
+ * ("Could not find value for parameter {fields}", "Param #0 (taskId)").
+ */
+function* spreadFormEntries(
+  mapped: Record<string, unknown>,
+): Generator<[string, unknown]> {
+  for (const [k, v] of Object.entries(mapped)) {
+    if (
+      k === '__spread' &&
+      v !== null &&
+      typeof v === 'object' &&
+      !Array.isArray(v)
+    ) {
+      yield* Object.entries(v as Record<string, unknown>);
+    } else {
+      yield [k, v];
+    }
+  }
+}
+
 function appendFormParam(
   sink: (key: string, value: string) => void,
   key: string,

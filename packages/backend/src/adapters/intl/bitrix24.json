@@ -18,12 +18,12 @@
   "tools": [
     {
       "name": "bitrix24_call",
-      "description": "Generic Bitrix24 method invoker — pass any `method` name and `params` object. Use this for any method not covered by the typed wrappers below.",
+      "description": "Generic Bitrix24 method invoker. Pass the `method` name and a `params` object holding the method's NATIVE top-level arguments (they are sent at the body root, NOT wrapped under a `params` key). Examples: tasks.task.get → {taskId: 123}; tasks.task.add → {fields: {TITLE: '...', RESPONSIBLE_ID: 1}}; crm.deal.list → {select: ['*'], filter: {STAGE_ID: 'NEW'}, start: 0}; crm.timeline.comment.add → {fields: {ENTITY_ID: 42, ENTITY_TYPE: 'deal', COMMENT: '...'}}. Use the method's exact argument names from the Bitrix REST docs.",
       "parameters": {
         "type": "object",
         "properties": {
           "method": { "type": "string", "description": "Bitrix method name, e.g. 'crm.deal.list', 'tasks.task.get'." },
-          "params": { "type": "object", "description": "Free-form parameters object — engine form-encodes nested keys as Bitrix expects (e.g. {select:[...], filter:{...}})." }
+          "params": { "type": "object", "description": "The method's native arguments, keyed exactly as Bitrix expects them at the top level (e.g. {taskId: 1} or {fields: {...}, filter: {...}}). The engine bracket-encodes nested objects/arrays as Bitrix's PHP-style form body requires." }
         },
         "required": ["method"]
       },
@@ -31,7 +31,7 @@
         "method": "POST",
         "path": "/{method}",
         "bodyEncoding": "form-urlencoded",
-        "bodyMapping": { "params": "$params" }
+        "bodyMapping": { "__spread": "$params" }
       }
     },
     {

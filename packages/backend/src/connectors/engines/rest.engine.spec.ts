@@ -514,6 +514,70 @@ describe('RestEngine', () => {
       expect(decoded).toContain('select[0]=ID');
       expect(decoded).toContain('select[1]=TITLE');
     });
+
+    it('hoists a __spread object to top-level form params (no params[] wrapper)', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        { baseUrl: 'https://example.bitrix24.com/rest/1/token', authType: 'NONE' },
+        {
+          method: 'POST',
+          path: '/tasks.task.add',
+          bodyEncoding: 'form-urlencoded',
+          bodyMapping: { __spread: '$params' },
+        },
+        { params: { fields: { TITLE: 'Call', RESPONSIBLE_ID: 1 } } },
+      );
+
+      const decoded = decodeURIComponent(
+        (mockedAxios.mock.calls[0][0] as unknown as { data: string }).data,
+      );
+      // Native arg names land at the body root, NOT under params[...].
+      expect(decoded).toContain('fields[TITLE]=Call');
+      expect(decoded).toContain('fields[RESPONSIBLE_ID]=1');
+      expect(decoded).not.toContain('params[fields]');
+      expect(decoded).not.toContain('__spread');
+    });
+
+    it('hoists a scalar __spread arg (e.g. taskId) to the top level', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        { baseUrl: 'https://example.bitrix24.com/rest/1/token', authType: 'NONE' },
+        {
+          method: 'POST',
+          path: '/tasks.task.get',
+          bodyEncoding: 'form-urlencoded',
+          bodyMapping: { __spread: '$params' },
+        },
+        { params: { taskId: 123 } },
+      );
+
+      const decoded = decodeURIComponent(
+        (mockedAxios.mock.calls[0][0] as unknown as { data: string }).data,
+      );
+      expect(decoded).toContain('taskId=123');
+      expect(decoded).not.toContain('params[taskId]');
+    });
+
+    it('omits __spread entirely when no params object is supplied', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        { baseUrl: 'https://example.bitrix24.com/rest/1/token', authType: 'NONE' },
+        {
+          method: 'POST',
+          path: '/profile',
+          bodyEncoding: 'form-urlencoded',
+          bodyMapping: { __spread: '$params' },
+        },
+        {},
+      );
+
+      const sent = (mockedAxios.mock.calls[0][0] as unknown as { data: string })
+        .data;
+      expect(sent).not.toContain('__spread');
+    });
   });
 
   describe('baseUrl / path joining', () => {
