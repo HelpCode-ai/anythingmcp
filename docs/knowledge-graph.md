@@ -14,6 +14,7 @@ Everything is **per-workspace**, **PII-safe** (the graph stores entity and field
 default**. The AI parts are opt-in twice (a global env flag *and* a
 per-workspace switch) so a self-hosted instance ships them inert.
 
+- [Feature toggles (Settings → Features)](#feature-toggles-settings--features)
 - [How the graph is built](#how-the-graph-is-built)
 - [Editing the graph by hand](#editing-the-graph-by-hand)
 - [Serving the graph to your AI client (MCP)](#serving-the-graph-to-your-ai-client-mcp)
@@ -21,6 +22,47 @@ per-workspace switch) so a self-hosted instance ships them inert.
 - [Optional AI enrichment & scheduled extension](#optional-ai-enrichment--scheduled-extension)
 - [Privacy & cost controls](#privacy--cost-controls)
 - [Settings & environment variables](#settings--environment-variables)
+
+---
+
+## Feature toggles (Settings → Features)
+
+Each capability is an independent switch under **Settings → Features**. They build
+on each other (later ones require the earlier ones) and everything is **off by
+default**.
+
+### Knowledge Graph
+
+Auto-discovers relationships between your connectors' entities (from tool
+definitions and real usage) and exposes them to agents. Disabling it stops graph
+building, hides the page, and removes the MCP helper tool (`kg_how_to_obtain`).
+
+### AI enrichment
+
+Let an LLM suggest extra relationships the heuristics miss (e.g. that a CRM
+person, a billing customer and a support user are the same person). **Only entity
+and field names are sent — never your data.** Suggestions await your
+confirmation. May incur model costs.
+
+### Capture user intent
+
+Adds an optional parameter to every MCP tool asking the agent for the user's
+original request. Captures the context behind each call so the graph can be
+optimized and skills suggested over time.
+
+### Scheduled AI extension
+
+On a schedule (roughly daily), let the AI extend the graph and generate skills
+from the captured user intents — so your network and skills keep improving on
+their own. Cost-careful: it only runs every so often, skips when nothing changed,
+and stays off until you enable it. **Requires AI enrichment + Capture user
+intent.**
+
+### Auto-apply high-confidence skills
+
+When AI generates a skill it is confident about (**≥ 0.90**), apply it
+automatically instead of leaving it as a suggestion to review. Lower-confidence
+skills still wait for manual approval.
 
 ---
 
