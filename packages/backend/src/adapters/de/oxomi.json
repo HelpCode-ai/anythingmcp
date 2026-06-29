@@ -1,240 +1,381 @@
 {
   "slug": "oxomi",
-  "name": "Oxomi Catalog & Media Portal",
-  "description": "Search digital catalogs (Kataloge), product datasheets, technical drawings, safety data sheets, and media assets via Oxomi — the dominant catalog/media portal for the German Baustoff (building materials) trade. Use for product lookup, document download, and cross-selling research across thousands of supplier catalogs.",
-  "instructions": "This connector talks to the Oxomi Portal JSON API.\n\n**Credentials**: every request needs three values, automatically injected from the credentials you enter when creating the connector:\n- `OXOMI_PORTAL_ID` — your portal numeric id (find it in Oxomi → Portal-Einstellungen → ID)\n- `OXOMI_USER` — your portal user name (often an email)\n- `OXOMI_ACCESS_TOKEN` — long-lived API token generated under Portal-Einstellungen → API\n\n**Workflow patterns**:\n- Catalog browse: `oxomi_search_catalogs` → `oxomi_get_catalog_pages` → `oxomi_get_catalog_attachments`\n- Product lookup: `oxomi_search_products` (by SKU or text) → returns supplier, catalog reference, datasheet URLs\n- Document hunting: `oxomi_search_documents` for safety data sheets (Sicherheitsdatenblätter), installation guides (Verarbeitungsanleitungen), CAD drawings\n\n**Suppliers**: results are scoped to the portal — you only see suppliers your Oxomi subscription includes (portals typically include hundreds of Baustoff manufacturers like Knauf, Saint-Gobain, Bosch, Würth, etc.).\n\n**Pagination**: list endpoints accept `page` (1-based) and `pageSize` (default 25, max 100).\n\n**Languages**: most descriptions are German; pass `lang=en` for English where the supplier provides translations.",
+  "name": "Oxomi Product & Media Portal",
+  "description": "Look up product data, datasheets, documents, brands, media and availability via the official Oxomi Public API. Oxomi is the dominant catalog/media portal for the German Baustoff (building materials) and PVH trade, covering thousands of supplier catalogs.",
+  "instructions": "This connector uses the **official Oxomi Public API** (`/portals/api/...`) — JSON, documented, and not the deprecated `/service/json` frontend API (which Oxomi sunsets on 2026-12-31).\n\n## Credentials\nEnter these when importing the connector; they are injected as query parameters on every call:\n- `OXOMI_PORTAL_ID` — your numeric portal id (e.g. 3001049)\n- `OXOMI_USER` — your Oxomi portal user (set a non-empty value; used for profile-scoped access)\n- `OXOMI_ACCESS_TOKEN` — the portal API access token (Portal-Einstellungen → API)\n- `OXOMI_API_TOKEN` — the API-Token **ID**, required ONLY by the product-sync tools (`oxomi_sync_products_changed`, `oxomi_get_product_spx`, `oxomi_update_sync_date`). Leave unset if you don't use sync.\n\n## Permissions matter\nEach Oxomi access token is granted a specific set of API permissions and product **query blocks** on the portal side. If a call returns `403 Missing permission: <x>` or resolves a product but returns empty `queries`, ask your Oxomi admin to enable that permission/block for the token. `product/data` resolution, `resolve-gtin`, `brand/info` and `documents` are commonly enabled; `product-search` and individual data blocks (prices, attachments, …) often must be granted explicitly.\n\n## Typical workflows\n- **Product lookup**: `oxomi_search_products` (text/code/GTIN) → take itemNumber + supplierNumber → `oxomi_get_product_data` with the `queries` you need (e.g. attachments, product-images, prices, pages).\n- **Barcode**: `oxomi_resolve_gtin` → supplierNumber + itemNumber → `oxomi_get_product_data`.\n- **Documents/brand**: `oxomi_list_documents`, `oxomi_get_brand_info`.\n- **Bulk/ETL**: `oxomi_sync_products_changed` (incremental, continuationToken pagination) + `oxomi_get_product_spx`.\n\nProducts are identified by `itemNumber` + `supplierNumber`. Most content is German; pass a language code (e.g. `en`) where the supplier provides translations.",
   "region": "de",
   "category": "wholesale",
   "icon": "oxomi",
-  "docsUrl": "https://oxomi.com/portal/",
+  "docsUrl": "https://www.oxomi.com/system/api",
   "requiredEnvVars": [
     "OXOMI_PORTAL_ID",
     "OXOMI_USER",
-    "OXOMI_ACCESS_TOKEN"
+    "OXOMI_ACCESS_TOKEN",
+    "OXOMI_API_TOKEN"
   ],
   "connector": {
-    "name": "Oxomi",
+    "name": "Oxomi Public API",
     "type": "REST",
-    "baseUrl": "https://oxomi.com/service/json",
+    "baseUrl": "https://oxomi.com",
     "authType": "QUERY_AUTH",
     "authConfig": {
-      "portalId": "{{OXOMI_PORTAL_ID}}",
+      "portal": "{{OXOMI_PORTAL_ID}}",
       "user": "{{OXOMI_USER}}",
       "accessToken": "{{OXOMI_ACCESS_TOKEN}}"
     }
   },
   "tools": [
     {
-      "name": "oxomi_search_catalogs",
-      "description": "Search digital catalogs available in the portal. Returns each catalog with id, title, supplier name, language, page count, and cover image URL. Use the returned catalog id with oxomi_get_catalog_pages or oxomi_get_catalog_attachments.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "q": {
-            "type": "string",
-            "description": "Free-text search across catalog titles and supplier names (e.g. 'Trockenbau', 'Knauf', 'Dämmstoffe')."
-          },
-          "supplier": {
-            "type": "string",
-            "description": "Optional supplier name filter."
-          },
-          "page": {
-            "type": "number",
-            "description": "Page number, 1-based (default: 1)."
-          },
-          "pageSize": {
-            "type": "number",
-            "description": "Results per page (default: 25, max: 100)."
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/catalog/search",
-        "queryParams": {
-          "q": "$q",
-          "supplier": "$supplier",
-          "page": "$page",
-          "pageSize": "$pageSize"
-        }
-      }
-    },
-    {
-      "name": "oxomi_get_catalog_pages",
-      "description": "Retrieve the page list (with thumbnails and section/category names) for a specific catalog. Use to browse a catalog's structure or to surface a specific page reference for the user.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "catalogId": {
-            "type": "string",
-            "description": "The numeric catalog id from oxomi_search_catalogs."
-          }
-        },
-        "required": ["catalogId"]
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/catalog/pages",
-        "queryParams": {
-          "catalogId": "$catalogId"
-        }
-      }
-    },
-    {
-      "name": "oxomi_get_catalog_attachments",
-      "description": "List all attachments (datasheets, certificates, CAD files, videos) linked to a catalog or a specific catalog page. Each attachment has a downloadable URL plus type, filename, and language metadata.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "catalogId": {
-            "type": "string",
-            "description": "The catalog id."
-          },
-          "pageNumber": {
-            "type": "number",
-            "description": "Optional — restrict to a specific catalog page."
-          }
-        },
-        "required": ["catalogId"]
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/catalog/attachments",
-        "queryParams": {
-          "catalogId": "$catalogId",
-          "pageNumber": "$pageNumber"
-        }
-      }
-    },
-    {
       "name": "oxomi_search_products",
-      "description": "Search products across all suppliers in the portal by SKU, EAN, or description. Returns supplier name, supplier SKU, manufacturer SKU, EAN, short description, catalog reference, and image URL. Includes is_diverse flag for custom-priced articles.",
+      "description": "Search products in the portal by free text, item code or GTIN (Navigator Pro logic). Returns matched products with itemNumber, supplierNumber, GTIN, model, brand, series and images. Requires the 'product-search' permission on the access token.",
       "parameters": {
         "type": "object",
         "properties": {
-          "q": {
+          "query": {
             "type": "string",
-            "description": "Search term (description, brand, SKU). Searches across all suppliers."
+            "description": "Search string: description, brand, item number or GTIN."
           },
-          "sku": {
-            "type": "string",
-            "description": "Exact SKU lookup (manufacturer or supplier SKU)."
-          },
-          "ean": {
-            "type": "string",
-            "description": "EAN/GTIN-13 lookup."
-          },
-          "supplier": {
-            "type": "string",
-            "description": "Optional supplier name filter."
-          },
-          "page": {
+          "limit": {
             "type": "number",
-            "description": "Page number (default: 1)."
-          },
-          "pageSize": {
-            "type": "number",
-            "description": "Results per page (default: 25, max: 100)."
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/product/search",
-        "queryParams": {
-          "q": "$q",
-          "sku": "$sku",
-          "ean": "$ean",
-          "supplier": "$supplier",
-          "page": "$page",
-          "pageSize": "$pageSize"
-        }
-      }
-    },
-    {
-      "name": "oxomi_get_product_attachments",
-      "description": "Retrieve all documents attached to a single product: safety data sheet (SDB), installation guide (Verarbeitungsanleitung), declaration of performance (DoP), CAD drawings, photos, videos.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "productId": {
-            "type": "string",
-            "description": "The Oxomi product id from oxomi_search_products."
+            "description": "Maximum number of results to return (default applied by Oxomi)."
           }
         },
-        "required": ["productId"]
+        "required": ["query"]
       },
       "endpointMapping": {
-        "method": "GET",
-        "path": "/product/attachments",
-        "queryParams": {
-          "productId": "$productId"
+        "method": "POST",
+        "path": "/portals/api/v2/products/search",
+        "bodyMapping": {
+          "limit": "$limit",
+          "queries": ["$query"]
         }
       }
     },
     {
-      "name": "oxomi_search_documents",
-      "description": "Search standalone documents (not bound to a single product) across the portal: catalog supplements, price lists, marketing materials, legal documents, training videos.",
+      "name": "oxomi_get_product_data",
+      "description": "Fetch rich product information for a product (by itemNumber + supplierNumber): images, attachments/documents, prices, catalog pages, cover, availability and more. Choose which data blocks via the 'queries' array. Up to 30 products per call (this tool sends one).",
       "parameters": {
         "type": "object",
         "properties": {
-          "q": {
+          "itemNumber": {
             "type": "string",
-            "description": "Free-text search across document titles and tags."
+            "description": "The product item/article number."
           },
-          "documentType": {
+          "supplierNumber": {
             "type": "string",
-            "description": "Optional filter: 'catalog', 'pricelist', 'datasheet', 'safetydatasheet', 'installation', 'video', 'image', 'cad'."
+            "description": "The supplier number for the item (use '-' if unknown)."
           },
-          "supplier": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "base-info",
+                "product-images",
+                "images",
+                "cover",
+                "icons",
+                "galleries",
+                "attachments",
+                "pages",
+                "prices",
+                "availability",
+                "videos",
+                "spare-parts",
+                "relationships",
+                "variants",
+                "features",
+                "properties",
+                "measurements",
+                "energy-label",
+                "html-description",
+                "tender-text",
+                "texts",
+                "commercial",
+                "card"
+              ]
+            },
+            "description": "Which data blocks to return, e.g. [\"base-info\",\"attachments\",\"product-images\",\"prices\"]. Each block may require its own permission on the token."
+          }
+        },
+        "required": ["itemNumber", "supplierNumber", "queries"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/portals/api/v2/product/data",
+        "bodyMapping": {
+          "outputMode": "BY_PRODUCT",
+          "queries": "$queries",
+          "products": [
+            {
+              "itemNumber": "$itemNumber",
+              "supplierNumber": "$supplierNumber"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "oxomi_resolve_gtin",
+      "description": "Resolve a GTIN-13 or GTIN-14 barcode to its product, returning the supplierNumber and supplierItemNumber. Use before oxomi_get_product_data when you only have a barcode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gtin": {
+            "type": "string",
+            "description": "The GTIN-13 or GTIN-14 / EAN barcode to resolve."
+          },
+          "filterCountry": {
+            "type": "string",
+            "description": "Optional ISO country filter for resolution (e.g. DE)."
+          },
+          "filterLanguage": {
+            "type": "string",
+            "description": "Optional ISO language filter for resolution (e.g. de)."
+          }
+        },
+        "required": ["gtin"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/portals/api/v1/products/resolve-gtin",
+        "queryParams": {
+          "gtin": "$gtin",
+          "filterCountry": "$filterCountry",
+          "filterLanguage": "$filterLanguage"
+        }
+      }
+    },
+    {
+      "name": "oxomi_product_availability",
+      "description": "Obtain manufacturer stock/availability for a product (stock status, indicator, availability dates, manufacturing time). The 'mode' value is portal-specific — consult your Oxomi documentation/admin for the valid value. Auth and endpoint are otherwise standard.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemNumber1": {
+            "type": "string",
+            "description": "The item/article number to check."
+          },
+          "supplierNumber1": {
+            "type": "string",
+            "description": "The supplier number for the item."
+          },
+          "mode": {
+            "type": "string",
+            "description": "Availability mode (portal-specific enum, required by Oxomi)."
+          },
+          "quantity1": {
+            "type": "number",
+            "description": "Optional requested quantity."
+          },
+          "unit1": {
+            "type": "string",
+            "description": "Optional unit for the quantity."
+          }
+        },
+        "required": ["itemNumber1", "mode"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/portals/api/v1/products/availability",
+        "queryParams": {
+          "itemNumber1": "$itemNumber1",
+          "supplierNumber1": "$supplierNumber1",
+          "mode": "$mode",
+          "quantity1": "$quantity1",
+          "unit1": "$unit1"
+        }
+      }
+    },
+    {
+      "name": "oxomi_get_brand_info",
+      "description": "Get information about a brand by id, name or supplier number: official name, supplier number(s), logo image URL, manufacturer and distributor contact details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand": {
+            "type": "string",
+            "description": "Brand identifier: brand id, brand name, or supplier number."
+          },
+          "language": {
+            "type": "string",
+            "description": "Optional ISO language code for human-readable content (e.g. de, en)."
+          }
+        },
+        "required": ["brand"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/portals/api/v1/brand/info",
+        "queryParams": {
+          "brand": "$brand",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "oxomi_list_documents",
+      "description": "List documents (catalogs, price lists, brochures, promotions, etc.) in the portal with filtering and pagination. Returns id, code, type, name, previewUrl, page count, supplier, brand, tags, categories and languages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum items to return (default 50, max 1000)."
+          },
+          "start": {
+            "type": "number",
+            "description": "Number of items to skip, for pagination."
+          },
+          "sortBy": {
+            "type": "string",
+            "description": "Sort order: 'priority' (default), 'name', 'date' or 'random'."
+          },
+          "includeOutdated": {
+            "type": "boolean",
+            "description": "Include outdated documents."
+          },
+          "language": {
+            "type": "string",
+            "description": "Optional ISO language code filter."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/portals/api/v1/documents",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start",
+          "sortBy": "$sortBy",
+          "includeOutdated": "$includeOutdated",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "oxomi_render_datasheet",
+      "description": "Render the technical datasheet of a product and return the generated HTML in a JSON response. Identify the product by itemNumber + supplierNumber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemNumber": {
+            "type": "string",
+            "description": "The product item/article number."
+          },
+          "supplierNumber": {
+            "type": "string",
+            "description": "The supplier number for the item."
+          },
+          "language": {
+            "type": "string",
+            "description": "Optional ISO language code for the rendered datasheet."
+          }
+        },
+        "required": ["itemNumber", "supplierNumber"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/portals/api/v1/product/datasheet/render",
+        "bodyMapping": {
+          "itemNumber": "$itemNumber",
+          "supplierNumber": "$supplierNumber",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "oxomi_sync_products_changed",
+      "description": "Incrementally sync products changed since a given date from the product information graph (for ETL/bulk export). Returns a products array plus a continuationToken for pagination ('-' when finished). Requires OXOMI_API_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "syncStart": {
+            "type": "string",
+            "description": "Sync start date/time (ISO 8601). Return products changed since this moment."
+          },
+          "blocks": {
+            "type": "string",
+            "description": "Comma-separated data blocks: DETAILS, CLASSIFICATIONS, FEATURES, PROPERTIES, TEXTS, IMAGES, ATTACHMENTS, PRICES, RELATIONSHIPS, MEASUREMENTS, PACKAGES."
+          },
+          "continuationToken": {
+            "type": "string",
+            "description": "Pagination token returned by a previous call; omit on the first page."
+          },
+          "supplierNumber": {
             "type": "string",
             "description": "Optional supplier filter."
-          },
-          "lang": {
-            "type": "string",
-            "description": "Language filter (e.g. 'de', 'en')."
-          },
-          "page": {
-            "type": "number",
-            "description": "Page number (default: 1)."
-          },
-          "pageSize": {
-            "type": "number",
-            "description": "Page size (default: 25)."
           }
-        }
+        },
+        "required": ["syncStart"]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/document/search",
+        "path": "/portals/api/v3/products/changed",
         "queryParams": {
-          "q": "$q",
-          "documentType": "$documentType",
-          "supplier": "$supplier",
-          "lang": "$lang",
-          "page": "$page",
-          "pageSize": "$pageSize"
+          "apiToken": "$OXOMI_API_TOKEN",
+          "syncStart": "$syncStart",
+          "blocks": "$blocks",
+          "continuationToken": "$continuationToken",
+          "supplierNumber": "$supplierNumber"
         }
       }
     },
     {
-      "name": "oxomi_get_cross_selling",
-      "description": "Find related/cross-sell products for a given product (e.g. accessories, replacements, compatible items). Returns linked products with relation type (alternative, accessory, mounting, complement).",
+      "name": "oxomi_get_product_spx",
+      "description": "Fetch a single product in full SPX format by itemNumber or GTIN, with selectable data blocks. Returns the complete product detail structure. Requires OXOMI_API_TOKEN.",
       "parameters": {
         "type": "object",
         "properties": {
-          "productId": {
+          "itemNumber": {
             "type": "string",
-            "description": "The base product id."
+            "description": "The product item/article number (provide this or gtin)."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "The product GTIN (provide this or itemNumber)."
+          },
+          "supplierNumber": {
+            "type": "string",
+            "description": "Optional supplier number for disambiguation."
+          },
+          "blocks": {
+            "type": "string",
+            "description": "Comma-separated data blocks (e.g. DETAILS, IMAGES, ATTACHMENTS, PRICES)."
           }
-        },
-        "required": ["productId"]
+        }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/product/cross-selling",
+        "path": "/portals/api/v3/products/spx",
         "queryParams": {
-          "productId": "$productId"
+          "apiToken": "$OXOMI_API_TOKEN",
+          "itemNumber": "$itemNumber",
+          "gtin": "$gtin",
+          "supplierNumber": "$supplierNumber",
+          "blocks": "$blocks"
+        }
+      }
+    },
+    {
+      "name": "oxomi_update_sync_date",
+      "description": "Update the stored sync date for the portal API token (call after a successful incremental sync so the next run starts from the right point). Requires OXOMI_API_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "The new sync date/time to store (ISO 8601)."
+          }
+        },
+        "required": ["date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/portals/api/v1/core/update-sync-date",
+        "queryParams": {
+          "apiToken": "$OXOMI_API_TOKEN",
+          "date": "$date"
         }
       }
     }
