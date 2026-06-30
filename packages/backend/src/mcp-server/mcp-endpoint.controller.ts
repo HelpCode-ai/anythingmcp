@@ -90,9 +90,14 @@ export class McpEndpointController {
   ) {}
 
   // Streamable-HTTP response framing. Default: SSE-framed responses
-  // (`text/event-stream`), which is the spec-standard and what some clients
-  // (e.g. Microsoft Copilot Studio) require. Set MCP_STREAMABLE_JSON_RESPONSE=true
-  // to force the older single-shot `application/json` responses instead.
+  // (`text/event-stream`), the spec-standard envelope that also carries
+  // streaming and server-initiated notifications. Set
+  // MCP_STREAMABLE_JSON_RESPONSE=true for single-shot `application/json`
+  // responses instead — required by Microsoft Copilot Studio, whose MCP
+  // client cannot deserialize SSE-framed responses ("response could not be
+  // deserialized as JSON"). JSON is spec-compliant and handled by every
+  // compliant client (incl. Claude); the cloud deployment enables it by
+  // default (see docker-compose.cloud.yml).
   private jsonResponseEnabled(): boolean {
     return process.env.MCP_STREAMABLE_JSON_RESPONSE === 'true';
   }
