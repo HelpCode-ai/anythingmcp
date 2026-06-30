@@ -51,6 +51,15 @@ services:
       - SERVER_URL=https://${DOMAIN}
       - FRONTEND_URL=https://${DOMAIN}
       - MCP_AUTH_MODE=${MCP_AUTH_MODE:-oauth2}
+      # MCP Streamable HTTP response framing. `true` = single-shot
+      # `application/json` responses; `false` = SSE-framed `text/event-stream`.
+      # Microsoft Copilot Studio's MCP client cannot deserialize SSE-framed
+      # responses ("response could not be deserialized as JSON") and requires
+      # plain JSON, so the cloud defaults to JSON. This is spec-compliant and
+      # every compliant client (incl. Claude) handles it; combined with the
+      # default stateless mode (MCP_STATEFUL_SESSIONS unset) it also avoids the
+      # `-32001 Session not found` errors Copilot hits against stateful servers.
+      - MCP_STREAMABLE_JSON_RESPONSE=${MCP_STREAMABLE_JSON_RESPONSE:-true}
       - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-true}
       - LICENSE_API_URL=${LICENSE_API_URL:-https://anythingmcp.com}
       # Operator analytics — cloud build only. Leave unset on self-hosted.
