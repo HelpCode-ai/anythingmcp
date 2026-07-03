@@ -49,6 +49,9 @@ export class AdaptersService {
     // invisible in the UI because the displayed env var looks correct).
     if (credentials) {
       for (const [k, v] of Object.entries(credentials)) {
+        if (k === '__proto__' || k === 'constructor' || k === 'prototype') {
+          continue;
+        }
         if (typeof v === 'string') credentials[k] = v.trim();
       }
     }

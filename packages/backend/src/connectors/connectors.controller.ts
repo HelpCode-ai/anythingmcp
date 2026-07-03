@@ -1061,8 +1061,12 @@ export class ConnectorsController {
     // (and encrypted into authConfig below) verbatim and break auth with an
     // error the UI can't explain, since the displayed value looks correct.
     const envVars: Record<string, string> = {};
-    for (const [k, v] of Object.entries(body.envVars || {})) {
-      envVars[k.trim()] = typeof v === 'string' ? v.trim() : v;
+    for (const [rawKey, v] of Object.entries(body.envVars || {})) {
+      const k = rawKey.trim();
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') {
+        continue;
+      }
+      envVars[k] = typeof v === 'string' ? v.trim() : v;
     }
 
     const updateData: {
