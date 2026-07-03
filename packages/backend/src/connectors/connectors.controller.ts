@@ -1060,13 +1060,11 @@ export class ConnectorsController {
     // Trim pasted values — a stray leading/trailing space would be stored
     // (and encrypted into authConfig below) verbatim and break auth with an
     // error the UI can't explain, since the displayed value looks correct.
-    const envVars: Record<string, string> = {};
+    // Null-prototype target so user-controlled keys can't pollute
+    // Object.prototype.
+    const envVars: Record<string, string> = Object.create(null);
     for (const [rawKey, v] of Object.entries(body.envVars || {})) {
-      const k = rawKey.trim();
-      if (k === '__proto__' || k === 'constructor' || k === 'prototype') {
-        continue;
-      }
-      envVars[k] = typeof v === 'string' ? v.trim() : v;
+      envVars[rawKey.trim()] = typeof v === 'string' ? v.trim() : v;
     }
 
     const updateData: {
