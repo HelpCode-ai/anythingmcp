@@ -1,0 +1,162 @@
+{
+  "slug": "gtin-lookup",
+  "name": "GTIN / Barcode Lookup",
+  "description": "Resolve a GTIN / EAN / UPC / ISBN barcode to product information using free public product databases (Open Food Facts, UPCitemdb, Open Beauty Facts, Google Books). No API key required. Covers food & CPG, general retail, cosmetics, and books.",
+  "instructions": "Turn a barcode (GTIN-13 / EAN / UPC-A / ISBN-13) into product details using several free, public, no-auth product databases. Pick the tool that matches the product domain — or try a few, since coverage differs per database.\n\n## Tools by domain\n- **Food, drinks & packaged consumer goods** → `gtin_lookup_food` (by barcode) and `gtin_lookup_search_food` (by name/brand). Backed by Open Food Facts: millions of products, multilingual (incl. German), rich fields (brands, categories, quantity, labels, Nutri-Score, image).\n- **General retail** (electronics, household, toys, tools…) → `gtin_lookup_retail` (by UPC/EAN) and `gtin_lookup_search_retail` (by keyword). Backed by UPCitemdb.\n- **Cosmetics / personal care** → `gtin_lookup_beauty` (by barcode). Backed by Open Beauty Facts.\n- **Books** → `gtin_lookup_book` (by ISBN-13; a book's GTIN is its ISBN). Backed by Google Books.\n\n## No credentials\nAll sources are public and require no API key, so this connector needs no setup.\n\n## Proxy & rate limits\nEvery tool routes through the instance proxy / web-unblocker (when configured) because these free databases rate-limit per client IP — UPCitemdb's trial tier allows only ~100 requests/day per IP, Google Books has a shared anonymous quota, and Open Food Facts asks callers to be gentle and identify themselves. Routing through the proxy spreads load and avoids IP bans. Look up one barcode at a time; cache results you reuse.\n\n## Tips\n- Barcodes are strings — keep leading zeros (UPC-A is 12 digits, EAN/GTIN-13 is 13). A UPC-A can be looked up as its GTIN-13 by prefixing a 0.\n- A `status` / `found` of 0 (Open Food/Beauty Facts) or an empty `items` array (UPCitemdb) means the product is not in that database — try another tool.\n- The food and beauty lookups already request a curated `fields` set to keep responses lean.",
+  "region": "intl",
+  "category": "data",
+  "icon": "barcode",
+  "docsUrl": "https://openfoodfacts.github.io/openfoodfacts-server/api/",
+  "requiredEnvVars": [],
+  "connector": {
+    "name": "GTIN / Barcode Lookup",
+    "type": "REST",
+    "baseUrl": "https://world.openfoodfacts.org",
+    "authType": "NONE",
+    "headers": {
+      "User-Agent": "AnythingMCP-GTIN-Lookup/1.0 (https://anythingmcp.com)",
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "gtin_lookup_food",
+      "description": "Look up a food, drink or packaged consumer product by its barcode (GTIN-13 / EAN / UPC) in Open Food Facts. Returns name, brands, categories, quantity, labels, Nutri-Score and image URL. status=0 means not found.",
+      "useProxy": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "description": "The product barcode (GTIN-13 / EAN-13 / UPC-A digits, keep leading zeros)."
+          }
+        },
+        "required": ["barcode"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/product/{barcode}.json",
+        "queryParams": {
+          "fields": "code,product_name,brands,quantity,categories,labels,nutriscore_grade,countries,image_url,ingredients_text"
+        }
+      }
+    },
+    {
+      "name": "gtin_lookup_search_food",
+      "description": "Search Open Food Facts by product name or brand (no barcode needed). Returns matching products with their barcode (code), name and brands — useful to find a GTIN from a description.",
+      "useProxy": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search terms, e.g. a product name or brand ('nutella', 'coca cola zero')."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Number of results to return (default 10, max 50)."
+          }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cgi/search.pl",
+        "queryParams": {
+          "search_terms": "$query",
+          "json": "1",
+          "page_size": "$pageSize",
+          "fields": "code,product_name,brands,quantity,categories,image_url"
+        }
+      }
+    },
+    {
+      "name": "gtin_lookup_retail",
+      "description": "Look up a general retail product (electronics, household, toys, tools, etc.) by UPC/EAN barcode in UPCitemdb. Returns title, description, brand, model, images and known marketplace offers. Empty items array means not found.",
+      "useProxy": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "description": "The product UPC-A (12 digits) or EAN/GTIN-13 (13 digits) barcode."
+          }
+        },
+        "required": ["barcode"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.upcitemdb.com/prod/trial/lookup",
+        "queryParams": {
+          "upc": "$barcode"
+        }
+      }
+    },
+    {
+      "name": "gtin_lookup_search_retail",
+      "description": "Search UPCitemdb by keyword to find general retail products and their UPC/EAN barcodes. Returns matching items with title, brand, barcode and images — useful to find a GTIN from a product name.",
+      "useProxy": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Keyword search, e.g. 'logitech mouse m100'."
+          }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.upcitemdb.com/prod/trial/search",
+        "queryParams": {
+          "s": "$query"
+        }
+      }
+    },
+    {
+      "name": "gtin_lookup_beauty",
+      "description": "Look up a cosmetics or personal-care product by its barcode (GTIN-13 / EAN) in Open Beauty Facts. Returns name, brands, ingredients and image URL. status=0 means not found.",
+      "useProxy": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "description": "The product barcode (GTIN-13 / EAN-13, keep leading zeros)."
+          }
+        },
+        "required": ["barcode"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://world.openbeautyfacts.org/api/v2/product/{barcode}.json",
+        "queryParams": {
+          "fields": "code,product_name,brands,image_url,ingredients_text,periods_after_opening"
+        }
+      }
+    },
+    {
+      "name": "gtin_lookup_book",
+      "description": "Look up a book by its ISBN-13 (which is the book's GTIN) via Google Books. Returns title, authors, publisher, published date, description and cover image.",
+      "useProxy": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "isbn": {
+            "type": "string",
+            "description": "The book's ISBN-13 (13 digits, the EAN/GTIN printed on the back cover)."
+          }
+        },
+        "required": ["isbn"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://www.googleapis.com/books/v1/volumes",
+        "queryParams": {
+          "q": "isbn:${isbn}"
+        }
+      }
+    }
+  ]
+}
