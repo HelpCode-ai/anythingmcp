@@ -48,13 +48,15 @@ export class AdaptersService {
     // authConfig and break auth downstream (e.g. Basic Auth 401s that are
     // invisible in the UI because the displayed env var looks correct).
     if (credentials) {
-      // Build onto a null-prototype object so user-controlled keys can't
-      // reach Object.prototype (prototype pollution).
-      const trimmed: Record<string, string> = Object.create(null);
-      for (const [k, v] of Object.entries(credentials)) {
-        trimmed[k] = typeof v === 'string' ? v.trim() : v;
-      }
-      credentials = trimmed;
+      // Rebuild via Object.fromEntries (no dynamic user-keyed property write)
+      // so a pasted leading/trailing space in a credential can't survive into
+      // the encrypted authConfig and break auth.
+      credentials = Object.fromEntries(
+        Object.entries(credentials).map(([k, v]) => [
+          k,
+          typeof v === 'string' ? v.trim() : v,
+        ]),
+      ) as Record<string, string>;
     }
 
     // Resolve {{VAR}} placeholders in authConfig with provided credentials
