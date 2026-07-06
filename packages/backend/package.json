@@ -56,7 +56,7 @@
     "ioredis": "^5.11.1",
     "js-yaml": "^4.3.0",
     "mongodb": "^7.3.0",
-    "mssql": "^12.5.5",
+    "mssql": "^12.7.0",
     "mysql2": "^3.22.5",
     "nestjs-pino": "^4.6.1",
     "nodemailer": "^8.0.11",
