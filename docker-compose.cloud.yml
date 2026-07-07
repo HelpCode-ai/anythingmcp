@@ -104,7 +104,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      # The app needs ~100s on first boot (migrations + Next.js warmup); with
+      # 30s the v0.3.3 deploy hit "unhealthy" moments before the app came up.
+      start_period: 120s
     restart: unless-stopped
 
   # PostgreSQL Database
