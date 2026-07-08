@@ -53,7 +53,13 @@ describe('deutsche-bahn adapter — static spec conformance', () => {
     expect(a.tools.some((t) => t.useProxy === true)).toBe(false);
   });
 
-  it('pins the dbnav profile on every tool (the only db-vendo-client profile whose host resolves and serves all endpoints; default "db" / "dbweb" 500/403)', () => {
+  // The shipped adapter pins `dbnav` — the profile that resolves from a normal
+  // (residential) self-host IP. AnythingMCP Cloud overrides it to `dbweb` at
+  // runtime (see resolveDbRestProfile), because over the cloud's Zyte egress
+  // Deutsche Bahn blocks the `dbnav` mobile endpoints (Method Not Allowed /
+  // OPS_BLOCKED) while the `dbweb` web-API endpoints work. Self-host must stay
+  // on `dbnav`, so this contract is locked here.
+  it('pins the dbnav profile on every tool (self-host default; cloud overrides to dbweb at runtime)', () => {
     for (const t of a.tools) {
       expect(t.endpointMapping.queryParams?.profile).toBe('dbnav');
     }

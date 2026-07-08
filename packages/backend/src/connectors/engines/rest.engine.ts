@@ -7,6 +7,7 @@ import axios, {
 } from 'axios';
 import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
+import { resolveDbRestProfile } from '../../common/db-rest.util';
 import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
 import {
@@ -114,9 +115,13 @@ export class RestEngine {
           mappedQuery[k] = v;
         }
       }
+      // Cloud-only Deutsche Bahn profile override (see resolveDbRestProfile):
+      // in cloud the internal db-rest egresses via the Zyte unblocker where DB's
+      // `dbnav` endpoints reject the request, so swap to `dbweb`. Strict no-op
+      // off-cloud and for every non-db-rest target.
       axiosConfig.params = {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
-        ...mappedQuery,
+        ...resolveDbRestProfile(url, mappedQuery),
       };
     }
 

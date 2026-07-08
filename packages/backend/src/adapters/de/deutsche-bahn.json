@@ -47,7 +47,7 @@
           "results": "$limit",
           "addresses": "false",
           "poi": "false",
-          "profile": "dbweb"
+          "profile": "dbnav"
         }
       }
     },
@@ -70,7 +70,7 @@
         "method": "GET",
         "path": "/stops/{id}",
         "queryParams": {
-          "profile": "dbweb"
+          "profile": "dbnav"
         }
       }
     },
@@ -104,7 +104,7 @@
         "queryParams": {
           "when": "$when",
           "duration": "$duration",
-          "profile": "dbweb"
+          "profile": "dbnav"
         }
       }
     },
@@ -138,7 +138,7 @@
         "queryParams": {
           "when": "$when",
           "duration": "$duration",
-          "profile": "dbweb"
+          "profile": "dbnav"
         }
       }
     },
@@ -189,7 +189,7 @@
           "arrival": "$arrival",
           "results": "$results",
           "bike": "$bike",
-          "profile": "dbweb"
+          "profile": "dbnav"
         }
       }
     }
