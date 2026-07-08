@@ -6,6 +6,12 @@ import { chatJson, resolveLlmConfig } from './llm-client';
 
 const MAX_ENTITIES = 120; // cost cap: never send more than this to the model
 
+// Minimum confidence for an AI-suggested edge to be auto-applied (status 'active')
+// when the workspace opts in. Mirrors the skill auto-apply bar (0.9). The LLM
+// confidence is itself capped at 0.9, so only edges the model rates top-confidence
+// qualify; everything else stays a suggestion for manual review.
+export const EDGE_AUTO_APPLY_MIN = 0.9;
+
 const SYSTEM_PROMPT = `You analyze a software workspace's data entities (drawn from connected SaaS/ERP systems) and infer relationships a naive name-matching heuristic misses.
 
 You receive a JSON list of entities, each with a stable "ref", its connector, its name, its input field names ("fields") and the field names its tools RETURN ("outputs").
@@ -139,6 +145,9 @@ export class KgLlmService {
     ctx: { idByRef: Record<string, string>; hash: string },
   ): Promise<number> {
     const rels: any[] = Array.isArray(json?.relationships) ? json.relationships : [];
+    // Read the per-workspace auto-apply switch once (no AI cost): when on,
+    // high-confidence edges land as 'active' instead of 'suggested'.
+    const autoApply = await this.kgStatic.getFlag(organizationId, 'kg_edge_auto_apply', false);
     let suggested = 0;
     for (const r of rels) {
       let src = ctx.idByRef[r?.from];
@@ -149,7 +158,7 @@ export class KgLlmService {
       const confidence = Math.max(0, Math.min(0.9, Number(r?.confidence) || 0.5));
       const note = typeof r?.reason === 'string' ? r.reason.slice(0, 200) : null;
       try {
-        if (await this.upsertLlmEdge(organizationId, src, tgt, kind, confidence, note)) {
+        if (await this.upsertLlmEdge(organizationId, src, tgt, kind, confidence, note, autoApply)) {
           suggested++;
         }
       } catch (e: any) {
@@ -173,7 +182,10 @@ export class KgLlmService {
     kind: string,
     confidence: number,
     note: string | null,
+    autoApply = false,
   ): Promise<boolean> {
+    // High-confidence + opted in → apply directly; otherwise leave for review.
+    const applied = autoApply && confidence >= EDGE_AUTO_APPLY_MIN;
     const existing = await this.prisma.kgEdge.findUnique({
       where: {
         organizationId_sourceNodeId_targetNodeId_kind: {
@@ -193,7 +205,7 @@ export class KgLlmService {
           targetNodeId,
           kind,
           source: 'LLM',
-          status: 'suggested',
+          status: applied ? 'active' : 'suggested',
           confidence,
           note,
         },
@@ -202,10 +214,16 @@ export class KgLlmService {
     }
     // Don't touch a human-curated or rejected edge; just attach the rationale.
     if (existing.isManual || existing.status === 'rejected') return false;
+    // Promote a still-pending suggestion to active when auto-apply qualifies.
+    const promote = applied && existing.status === 'suggested';
     await this.prisma.kgEdge.update({
       where: { id: existing.id },
-      data: { note: note ?? undefined, lastSeenAt: new Date() },
+      data: {
+        note: note ?? undefined,
+        lastSeenAt: new Date(),
+        ...(promote ? { status: 'active' } : {}),
+      },
     });
-    return false;
+    return promote;
   }
 }

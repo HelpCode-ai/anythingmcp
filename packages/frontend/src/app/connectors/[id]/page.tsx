@@ -5,11 +5,14 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors, tools } from '@/lib/api';
 import { findDemoByTool } from '@/lib/demo-connectors';
-import { NavBar } from '@/components/nav-bar';
-import { Footer } from '@/components/footer';
 import { ToolEditor } from '@/components/tool-editor';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
 import { AppSelect } from '@/components/ui/select';
+import { AppShell } from '@/components/app-shell';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge, StatusPill } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 const IMPORT_SOURCES = [
   { id: 'openapi', label: 'OpenAPI / Swagger', placeholder: 'Paste OpenAPI JSON/YAML or enter URL...' },
@@ -436,52 +439,93 @@ export default function ConnectorDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block w-6 h-6 border-2 border-[var(--brand)] border-t-transparent rounded-full animate-spin mb-3"></div>
-          <p className="text-[var(--muted-foreground)]">Loading...</p>
+      <AppShell backTo={{ label: 'Connectors', href: '/connectors' }} title="Connector">
+        <div className="flex items-center justify-center py-24">
+          <div className="text-center">
+            <div className="inline-block w-6 h-6 border-2 border-[var(--brand)] border-t-transparent rounded-full animate-spin mb-3"></div>
+            <p className="text-[var(--text-3)]">Loading...</p>
+          </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
   if (!connector) return null;
 
-  return (
-    <div className="min-h-screen bg-[var(--background)] flex flex-col">
-      <NavBar
-        breadcrumbs={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Connectors', href: '/connectors' },
-        ]}
-        title={connector.name}
-        actions={
-          <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={handleTest}
-              className="border border-[var(--border)] px-3 py-1.5 rounded text-sm hover:bg-[var(--accent)]"
-            >
-              Test
-            </button>
-            <button
-              onClick={() => setEditing(!editing)}
-              className="border border-[var(--border)] px-3 py-1.5 rounded text-sm hover:bg-[var(--accent)]"
-            >
-              {editing ? 'Cancel' : 'Edit'}
-            </button>
-            <button
-              onClick={handleDelete}
-              className="border border-[var(--destructive)] text-[var(--destructive)] px-3 py-1.5 rounded text-sm hover:bg-[var(--destructive-bg)]"
-            >
-              Delete
-            </button>
-          </div>
-        }
-      />
+  const monoMethodTone = (method?: string): string => {
+    switch ((method || '').toUpperCase()) {
+      case 'GET':
+        return 'bg-[var(--t-info-bg)] text-[var(--t-info-fg)]';
+      case 'POST':
+        return 'bg-[var(--t-success-bg)] text-[var(--t-success-fg)]';
+      case 'PUT':
+      case 'PATCH':
+        return 'bg-[var(--t-warn-bg)] text-[var(--t-warn-fg)]';
+      case 'DELETE':
+        return 'bg-[var(--t-danger-bg)] text-[var(--t-danger-fg)]';
+      default:
+        return 'bg-[var(--t-neutral-bg)] text-[var(--t-neutral-fg)]';
+    }
+  };
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6 flex-1 w-full">
+  const connectorInitials = (connector.name || '?')
+    .split(/\s+/)
+    .map((w: string) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  return (
+    <AppShell
+      backTo={{ label: 'Connectors', href: '/connectors' }}
+      title={connector.name}
+      maxWidth={880}
+      actions={
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="secondary" size="md" onClick={handleTest}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
+            Test
+          </Button>
+          <Button variant="secondary" size="md" onClick={() => setEditing(!editing)}>
+            {editing ? 'Cancel' : 'Edit'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={handleDelete}
+            className="border-[var(--danger)] text-[var(--danger)] hover:border-[var(--danger)] hover:bg-[var(--t-danger-bg)] hover:text-[var(--danger)]"
+          >
+            Delete
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-6">
+        {/* Connector identity header */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3.5">
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-[12px] bg-[var(--surface-2)] text-[15px] font-semibold text-[var(--text-2)]">
+            {connectorInitials}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="text-lg font-semibold tracking-[-0.02em]">{connector.name}</span>
+              <Badge tone="info">{connector.type}</Badge>
+              <StatusPill
+                tone={connector.isActive ? 'success' : 'neutral'}
+                dot={connector.isActive ? 'var(--ok)' : 'var(--text-3)'}
+              >
+                {connector.isActive ? 'Active' : 'Inactive'}
+              </StatusPill>
+            </div>
+            <div className="mt-0.5 break-all font-mono text-[12.5px] text-[var(--text-3)]">
+              {connector.baseUrl}
+            </div>
+          </div>
+        </div>
+
         {msg && (
-          <div className="p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)]">
+          <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
             {msg}
             <button onClick={() => setMsg('')} className="ml-2 underline">
               dismiss
@@ -490,13 +534,14 @@ export default function ConnectorDetailPage() {
         )}
         {testResult && (
           <div
-            className={`p-3 rounded-md text-sm border ${
+            className="rounded-[10px] border p-3 text-sm"
+            style={
               testResult.ok
-                ? 'bg-[var(--success-bg)] text-[var(--success-text)] border-[var(--success-border)]'
+                ? { background: 'var(--t-success-bg)', color: 'var(--t-success-fg)', borderColor: 'var(--t-success-bg)' }
                 : testResult.kind === 'auth_failed'
-                  ? 'bg-[var(--warning-bg)] text-[var(--warning-text)] border-[var(--warning-border)]'
-                  : 'bg-[var(--destructive-bg)] text-[var(--destructive-text)] border-[var(--destructive-border)]'
-            }`}
+                  ? { background: 'var(--t-warn-bg)', color: 'var(--t-warn-fg)', borderColor: 'var(--t-warn-bg)' }
+                  : { background: 'var(--t-danger-bg)', color: 'var(--t-danger-fg)', borderColor: 'var(--t-danger-bg)' }
+            }
           >
             {testResult.kind && testResult.kind !== 'ok' && (
               <span className="font-semibold mr-1">
@@ -523,8 +568,8 @@ export default function ConnectorDetailPage() {
         )}
 
         {/* Connector Details */}
-        <div className="border border-[var(--border)] rounded-lg p-6">
-          <h3 className="text-lg font-medium mb-4">Connector Details</h3>
+        <Card className="p-[22px]">
+          <h3 className="text-sm font-semibold mb-4">Connector Details</h3>
           {editing ? (
             <div className="space-y-4 max-w-md">
               <div>
@@ -533,7 +578,7 @@ export default function ConnectorDetailPage() {
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
               <div>
@@ -542,14 +587,14 @@ export default function ConnectorDetailPage() {
                   type="text"
                   value={editBaseUrl}
                   onChange={(e) => setEditBaseUrl(e.target.value)}
-                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
               {connector.type === 'REST' && (
                 <div>
                   <label className="block text-sm font-medium mb-1">
                     Healthcheck path
-                    <span className="ml-2 text-xs text-[var(--muted-foreground)] font-normal">
+                    <span className="ml-2 text-xs text-[var(--text-3)] font-normal">
                       optional — defaults to /
                     </span>
                   </label>
@@ -558,9 +603,9 @@ export default function ConnectorDetailPage() {
                     value={editHealthcheckPath}
                     onChange={(e) => setEditHealthcheckPath(e.target.value)}
                     placeholder="/health"
-                    className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+                    className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
                   />
-                  <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                  <p className="text-xs text-[var(--text-3)] mt-1">
                     Path used by "Test connection". Set to an endpoint that
                     returns 2xx without auth (e.g. <code>/health</code>) if the
                     API has no root handler.
@@ -583,10 +628,10 @@ export default function ConnectorDetailPage() {
                     <button
                       type="button"
                       onClick={() => setEditDbReadOnly(true)}
-                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
+                      className={`px-3 py-1.5 rounded-[9px] text-sm font-medium border transition-all ${
                         editDbReadOnly
                           ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
-                          : 'border-[var(--border)] hover:bg-[var(--accent)]'
+                          : 'border-[var(--border)] hover:bg-[var(--surface-2)]'
                       }`}
                     >
                       Read-only
@@ -594,16 +639,16 @@ export default function ConnectorDetailPage() {
                     <button
                       type="button"
                       onClick={() => setEditDbReadOnly(false)}
-                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
+                      className={`px-3 py-1.5 rounded-[9px] text-sm font-medium border transition-all ${
                         !editDbReadOnly
                           ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
-                          : 'border-[var(--border)] hover:bg-[var(--accent)]'
+                          : 'border-[var(--border)] hover:bg-[var(--surface-2)]'
                       }`}
                     >
                       Read &amp; Write
                     </button>
                   </div>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-1.5">
+                  <p className="text-xs text-[var(--text-3)] mt-1.5">
                     {editDbReadOnly
                       ? 'Only SELECT queries are allowed. Safe for analytics and reporting.'
                       : 'All SQL operations (SELECT, INSERT, UPDATE, DELETE) are allowed. Use with caution.'}
@@ -615,7 +660,7 @@ export default function ConnectorDetailPage() {
                 <AppSelect
                   value={editAuthType}
                   onValueChange={(v) => { setEditAuthType(v); setEditAuthKey(''); setEditAuthValue(''); }}
-                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                   options={[
                     { value: 'NONE', label: 'None' },
                     { value: 'API_KEY', label: 'API Key' },
@@ -629,29 +674,29 @@ export default function ConnectorDetailPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Header Name</label>
-                    <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">API Key</label>
-                    <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                 </div>
               )}
               {editAuthType === 'BEARER_TOKEN' && (
                 <div>
                   <label className="block text-sm font-medium mb-1">Bearer Token</label>
-                  <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                 </div>
               )}
               {editAuthType === 'BASIC_AUTH' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Username</label>
-                    <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Password</label>
-                    <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                 </div>
               )}
@@ -660,20 +705,20 @@ export default function ConnectorDetailPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-1">Client ID</label>
-                      <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                      <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">Client Secret</label>
-                      <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                      <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
-                  <p className="text-xs text-[var(--muted-foreground)]">
+                  <p className="text-xs text-[var(--text-3)]">
                     Leave credential fields empty to keep the current values. Authorization URL, Token URL, and Scopes are preserved from initial setup.
                   </p>
                 </div>
               )}
               {editAuthType !== 'NONE' && editAuthType !== 'OAUTH2' && (
-                <p className="text-xs text-[var(--muted-foreground)]">
+                <p className="text-xs text-[var(--text-3)]">
                   Leave credential fields empty to keep the current values.
                 </p>
               )}
@@ -684,44 +729,41 @@ export default function ConnectorDetailPage() {
                   onChange={(e) => setEditInstructions(e.target.value)}
                   placeholder="Instructions sent to AI clients when using this connector's tools (e.g. date formats, field values, API conventions)."
                   rows={4}
-                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] resize-y"
+                  className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] resize-y focus:outline-none focus:border-[var(--border-strong)]"
                 />
-                <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                <p className="text-xs text-[var(--text-3)] mt-1">
                   Sent via MCP protocol to help AI understand how to use this connector.
                 </p>
               </div>
-              <button
-                onClick={handleSave}
-                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"
-              >
+              <Button variant="primary" size="lg" onClick={handleSave}>
                 Save Changes
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-[var(--muted-foreground)]">Name</p>
+                <p className="text-[var(--text-3)]">Name</p>
                 <p className="font-medium">{connector.name}</p>
               </div>
               <div>
-                <p className="text-[var(--muted-foreground)]">Type</p>
+                <p className="text-[var(--text-3)]">Type</p>
                 <p className="font-medium">{connector.type}</p>
               </div>
               <div>
-                <p className="text-[var(--muted-foreground)]">Base URL</p>
+                <p className="text-[var(--text-3)]">Base URL</p>
                 <p className="font-medium font-mono text-xs break-all">{connector.baseUrl}</p>
               </div>
               <div>
-                <p className="text-[var(--muted-foreground)]">Auth Type</p>
+                <p className="text-[var(--text-3)]">Auth Type</p>
                 <p className="font-medium">{connector.authType}</p>
               </div>
               <div>
-                <p className="text-[var(--muted-foreground)]">Status</p>
+                <p className="text-[var(--text-3)]">Status</p>
                 <p className="font-medium">{connector.isActive ? 'Active' : 'Inactive'}</p>
               </div>
               {connector.type === 'DATABASE' && (
                 <div>
-                  <p className="text-[var(--muted-foreground)]">Access Mode</p>
+                  <p className="text-[var(--text-3)]">Access Mode</p>
                   <p className="font-medium">
                     {(connector.config as any)?.readOnly === false ? (
                       <span className="inline-flex items-center gap-1.5">
@@ -738,71 +780,60 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
               <div>
-                <p className="text-[var(--muted-foreground)]">Created</p>
+                <p className="text-[var(--text-3)]">Created</p>
                 <p className="font-medium">{new Date(connector.createdAt).toLocaleDateString()}</p>
               </div>
               {connector.specUrl && (
                 <div className="col-span-2">
-                  <p className="text-[var(--muted-foreground)]">Spec URL</p>
+                  <p className="text-[var(--text-3)]">Spec URL</p>
                   <p className="font-medium font-mono text-xs break-all">{connector.specUrl}</p>
                 </div>
               )}
               {connector.instructions && (
                 <div className="col-span-2">
-                  <p className="text-[var(--muted-foreground)]">Instructions</p>
+                  <p className="text-[var(--text-3)]">Instructions</p>
                   <p className="font-medium text-xs whitespace-pre-wrap">{connector.instructions}</p>
                 </div>
               )}
             </div>
           )}
-        </div>
+        </Card>
 
         {/* OAuth2 Authorization */}
         {connector.authType === 'OAUTH2' && (
-          <div className="border border-[var(--border)] rounded-lg p-6">
-            <h3 className="text-lg font-medium mb-2">OAuth2 Authorization</h3>
-            <p className="text-sm text-[var(--muted-foreground)] mb-4">
+          <Card className="p-[22px]">
+            <h3 className="text-sm font-semibold mb-2">OAuth2 Authorization</h3>
+            <p className="text-sm text-[var(--text-3)] mb-4">
               {connector.type === 'MCP'
                 ? 'Authorize this connector to access the remote MCP server. After authorization, tools will be automatically discovered.'
                 : 'Authorize this connector with the OAuth2 provider. After authorization, tokens will be stored securely for API calls.'}
             </p>
             <div className="flex gap-3 flex-wrap">
-              <button
-                onClick={handleOAuthAuthorize}
-                disabled={authorizing}
-                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
-              >
+              <Button variant="primary" size="lg" onClick={handleOAuthAuthorize} disabled={authorizing}>
                 {authorizing ? 'Redirecting...' : connector.type === 'MCP' ? 'Authorize with Remote Server' : 'Authorize with Provider'}
-              </button>
+              </Button>
               {connector.type === 'MCP' && (
-                <button
-                  onClick={handleDiscoverTools}
-                  disabled={discovering}
-                  className="border border-[var(--border)] px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--accent)] disabled:opacity-50"
-                >
+                <Button variant="secondary" size="lg" onClick={handleDiscoverTools} disabled={discovering}>
                   {discovering ? 'Discovering...' : 'Re-discover Tools'}
-                </button>
+                </Button>
               )}
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Environment Variables */}
-        <div className="border border-[var(--border)] rounded-lg p-6">
+        <Card className="p-[22px]">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-medium">Environment Variables</h3>
-              <p className="text-xs text-[var(--muted-foreground)] mt-1">
+              <h3 className="text-sm font-semibold">Environment Variables</h3>
+              <p className="text-xs text-[var(--text-3)] mt-1">
                 Use {'{{VAR_NAME}}'} in URLs, paths, headers, and body fields. Variables are interpolated at runtime.
-                <strong className="block mt-1">Parameter override:</strong> If a variable name matches a tool parameter (e.g. <code className="bg-[var(--muted)] px-1 rounded">sContextTokenP</code>), the value is injected automatically and the parameter is hidden from the AI.
+                <strong className="block mt-1">Parameter override:</strong> If a variable name matches a tool parameter (e.g. <code className="bg-[var(--surface-2)] px-1 rounded">sContextTokenP</code>), the value is injected automatically and the parameter is hidden from the AI.
               </p>
             </div>
-            <button
-              onClick={() => setShowEnvVars(!showEnvVars)}
-              className="border border-[var(--border)] px-3 py-1.5 rounded text-sm hover:bg-[var(--accent)]"
-            >
+            <Button variant="secondary" size="md" onClick={() => setShowEnvVars(!showEnvVars)}>
               {showEnvVars ? 'Hide' : `Edit (${envVarEntries.length})`}
-            </button>
+            </Button>
           </div>
 
           {showEnvVars && (
@@ -818,7 +849,7 @@ export default function ConnectorDetailPage() {
                       setEnvVarEntries(updated);
                     }}
                     placeholder="VAR_NAME"
-                    className="w-1/3 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+                    className="w-1/3 border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
                   />
                   <input
                     type="text"
@@ -829,87 +860,77 @@ export default function ConnectorDetailPage() {
                       setEnvVarEntries(updated);
                     }}
                     placeholder="value"
-                    className="flex-1 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+                    className="flex-1 border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
                   />
                   <button
                     onClick={() => setEnvVarEntries(envVarEntries.filter((_, j) => j !== i))}
-                    className="text-[var(--destructive)] px-2 py-1 text-sm hover:underline"
+                    className="text-[var(--danger)] px-2 py-1 text-sm hover:underline"
                   >
                     Remove
                   </button>
                 </div>
               ))}
               <div className="flex gap-2">
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
                   onClick={() => setEnvVarEntries([...envVarEntries, { key: '', value: '' }])}
-                  className="border border-[var(--border)] px-3 py-1.5 rounded text-sm hover:bg-[var(--accent)]"
                 >
                   + Add Variable
-                </button>
-                <button
-                  onClick={handleSaveEnvVars}
-                  disabled={savingEnvVars}
-                  className="bg-[var(--brand)] text-white px-4 py-1.5 rounded text-sm font-medium hover:brightness-90 disabled:opacity-50"
-                >
+                </Button>
+                <Button variant="primary" size="md" onClick={handleSaveEnvVars} disabled={savingEnvVars}>
                   {savingEnvVars ? 'Saving...' : 'Save Variables'}
-                </button>
+                </Button>
               </div>
             </div>
           )}
-        </div>
+        </Card>
 
         {/* Tools Section */}
-        <div className="border border-[var(--border)] rounded-lg p-6">
+        <Card className="p-[22px]">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            <h3 className="text-lg font-medium">
+            <h3 className="text-sm font-semibold">
               MCP Tools ({toolList.length})
             </h3>
             <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => setShowImport(!showImport)}
-                className="border border-[var(--border)] px-3 py-1.5 rounded text-sm hover:bg-[var(--accent)]"
-              >
+              <Button variant="secondary" size="md" onClick={() => setShowImport(!showImport)}>
                 {showImport ? 'Cancel Import' : 'Import Tools'}
-              </button>
+              </Button>
               {(connector.type === 'REST' || connector.type === 'GRAPHQL' || connector.type === 'SOAP') && (
-                <button
-                  onClick={handleImportSpec}
-                  className="border border-[var(--border)] px-3 py-1.5 rounded text-sm hover:bg-[var(--accent)]"
-                >
+                <Button variant="secondary" size="md" onClick={handleImportSpec}>
                   Auto-Import from Spec
-                </button>
+                </Button>
               )}
               {connector.type === 'MCP' && (
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
                   onClick={handleDiscoverTools}
                   disabled={discovering}
-                  className="border border-purple-300 text-purple-700 dark:border-purple-500/30 dark:text-purple-400 px-3 py-1.5 rounded text-sm hover:bg-purple-50 dark:hover:bg-purple-500/10 disabled:opacity-50"
+                  className="border-[var(--t-purple-fg)] text-[var(--t-purple-fg)] hover:bg-[var(--t-purple-bg)] hover:text-[var(--t-purple-fg)]"
                 >
                   {discovering ? 'Discovering...' : 'Discover from MCP Server'}
-                </button>
+                </Button>
               )}
-              <button
-                onClick={() => setShowNewTool(!showNewTool)}
-                className="bg-[var(--brand)] text-white px-3 py-1.5 rounded text-sm font-medium hover:brightness-90"
-              >
+              <Button variant="primary" size="md" onClick={() => setShowNewTool(!showNewTool)}>
                 {showNewTool ? 'Cancel' : 'Add Tool'}
-              </button>
+              </Button>
             </div>
           </div>
 
           {/* Import Panel */}
           {showImport && (
-            <div className="border border-[var(--border)] rounded-lg p-4 mb-4 space-y-3">
-              <h4 className="text-sm font-medium">Import Tools From</h4>
+            <div className="border border-[var(--border)] rounded-[14px] bg-[var(--surface-2)] p-4 mb-4 space-y-3">
+              <h4 className="text-sm font-semibold">Import Tools From</h4>
               <div className="flex gap-2 flex-wrap">
                 {IMPORT_SOURCES.map((src) => (
                   <button
                     key={src.id}
                     onClick={() => { setImportSource(src.id); setImportContent(''); setImportUrl(''); }}
-                    className={`px-3 py-1.5 rounded text-xs border transition-colors ${
+                    className={`px-3 py-1.5 rounded-[8px] text-xs border transition-colors ${
                       importSource === src.id
-                        ? 'border-[var(--ring)] bg-[var(--accent)] font-medium'
-                        : 'border-[var(--border)] hover:border-[var(--ring)]'
+                        ? 'border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)] font-semibold'
+                        : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] hover:border-[var(--brand)]'
                     }`}
                   >
                     {src.label}
@@ -925,7 +946,7 @@ export default function ConnectorDetailPage() {
                     value={importUrl}
                     onChange={(e) => setImportUrl(e.target.value)}
                     placeholder="https://..."
-                    className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                    className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                   />
                 </div>
               )}
@@ -939,17 +960,18 @@ export default function ConnectorDetailPage() {
                   onChange={(e) => setImportContent(e.target.value)}
                   rows={6}
                   placeholder={IMPORT_SOURCES.find((s) => s.id === importSource)?.placeholder}
-                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+                  className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
 
-              <button
+              <Button
+                variant="primary"
+                size="lg"
                 onClick={handleImportTools}
                 disabled={importing || (!importContent && !importUrl)}
-                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
               >
                 {importing ? 'Importing...' : 'Import'}
-              </button>
+              </Button>
             </div>
           )}
 
@@ -967,7 +989,7 @@ export default function ConnectorDetailPage() {
           )}
 
           {toolList.length === 0 ? (
-            <p className="text-sm text-[var(--muted-foreground)] py-4 text-center">
+            <p className="text-sm text-[var(--text-3)] py-4 text-center">
               No tools configured. Import from a spec, Postman collection, or cURL command, or add tools manually.
             </p>
           ) : (
@@ -989,35 +1011,34 @@ export default function ConnectorDetailPage() {
                       saving={savingTool}
                     />
                   ) : (
-                    <div className="border border-[var(--border)] rounded-md p-3 hover:border-[var(--ring)] transition-colors">
+                    <div className="border border-[var(--border)] bg-[var(--surface-2)] rounded-[12px] p-3 hover:border-[var(--border-strong)] transition-colors">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm font-mono break-all">{tool.name}</span>
+                            <span className="font-semibold text-sm font-mono break-all">{tool.name}</span>
                             {tool.endpointMapping?.method && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--info-bg)] text-[var(--info-text)] font-mono flex-shrink-0">
+                              <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold flex-shrink-0', monoMethodTone(tool.endpointMapping.method))}>
                                 {tool.endpointMapping.method}
                               </span>
                             )}
-                            <span
-                              className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${tool.isEnabled ? 'bg-[var(--success-bg)] text-[var(--success-text)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}
-                            >
+                            <Badge tone={tool.isEnabled ? 'success' : 'neutral'} className="flex-shrink-0">
                               {tool.isEnabled ? 'enabled' : 'disabled'}
-                            </span>
+                            </Badge>
                             {tool.deprecatedAt && (
-                              <span
-                                className="text-xs px-1.5 py-0.5 rounded flex-shrink-0 bg-[var(--warning-bg)] text-[var(--warning-text)]"
+                              <Badge
+                                tone="warn"
+                                className="flex-shrink-0"
                                 title={`Removed from the source spec on ${new Date(tool.deprecatedAt).toLocaleString()}. Role assignments and history are preserved.`}
                               >
                                 deprecated
-                              </span>
+                              </Badge>
                             )}
                           </div>
-                          <p className="text-xs text-[var(--muted-foreground)] mt-0.5 line-clamp-2 sm:truncate">
+                          <p className="text-xs text-[var(--text-3)] mt-0.5 line-clamp-2 sm:truncate">
                             {tool.description}
                           </p>
                           {/* Show mapping summary */}
-                          <div className="flex gap-3 mt-1.5 text-[10px] text-[var(--muted-foreground)] flex-wrap">
+                          <div className="flex gap-3 mt-1.5 text-[10px] text-[var(--text-3)] flex-wrap">
                             {tool.endpointMapping?.path && (
                               <span className="font-mono break-all">{tool.endpointMapping.path}</span>
                             )}
@@ -1067,7 +1088,7 @@ export default function ConnectorDetailPage() {
                                 setTestParams(JSON.stringify(example, null, 2));
                               }
                             }}
-                            className="border border-[var(--brand)] text-[var(--brand)] px-2 py-1 rounded text-xs hover:bg-[var(--brand-light)]"
+                            className="inline-flex items-center justify-center rounded-[7px] border border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)] px-2.5 py-1 text-xs font-semibold transition-colors hover:bg-[var(--brand)] hover:text-white"
                           >
                             {testingToolId === tool.id ? 'Close' : 'Test'}
                           </button>
@@ -1076,19 +1097,19 @@ export default function ConnectorDetailPage() {
                               setEditingToolId(tool.id);
                               setShowNewTool(false);
                             }}
-                            className="border border-[var(--border)] px-2 py-1 rounded text-xs hover:bg-[var(--accent)]"
+                            className="inline-flex items-center justify-center rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs font-medium transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)]"
                           >
                             Edit
                           </button>
                           <button
                             onClick={() => handleToggleTool(tool.id, tool.isEnabled)}
-                            className="border border-[var(--border)] px-2 py-1 rounded text-xs hover:bg-[var(--accent)]"
+                            className="inline-flex items-center justify-center rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs font-medium transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)]"
                           >
                             {tool.isEnabled ? 'Disable' : 'Enable'}
                           </button>
                           {proxyAvailable && (
                             <label
-                              className="flex items-center gap-1 border border-[var(--border)] px-2 py-1 rounded text-xs cursor-pointer hover:bg-[var(--accent)]"
+                              className="flex items-center gap-1 rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs cursor-pointer transition-colors hover:border-[var(--border-strong)]"
                               title="Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs."
                             >
                               <input
@@ -1102,7 +1123,7 @@ export default function ConnectorDetailPage() {
                           )}
                           <button
                             onClick={() => handleDeleteTool(tool.id)}
-                            className="border border-[var(--destructive)] text-[var(--destructive)] px-2 py-1 rounded text-xs hover:bg-[var(--destructive-bg)]"
+                            className="inline-flex items-center justify-center rounded-[7px] border border-[var(--danger)] bg-transparent text-[var(--danger)] px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--t-danger-bg)]"
                           >
                             Delete
                           </button>
@@ -1117,14 +1138,14 @@ export default function ConnectorDetailPage() {
                         return (
                         <div className="mt-3 pt-3 border-t border-[var(--border)]">
                           {envCoveredParams.length > 0 && (
-                            <div className="flex items-start gap-2 px-3 py-2 mb-3 rounded-md bg-[var(--brand-light,var(--info-bg))] border border-[var(--brand,var(--info-text))] border-opacity-30 text-xs">
+                            <div className="flex items-start gap-2 px-3 py-2 mb-3 rounded-[9px] bg-[var(--brand-tint)] border border-[var(--brand)] text-xs text-[var(--text-2)]">
                               <span className="text-sm leading-none mt-0.5">&#9889;</span>
                               <span>
                                 <strong>Auto-filled from env:</strong>{' '}
                                 {envCoveredParams.map((p) => (
-                                  <code key={p} className="mx-0.5 px-1 py-0.5 rounded bg-[var(--muted)] font-mono text-[11px]">{p}</code>
+                                  <code key={p} className="mx-0.5 px-1 py-0.5 rounded bg-[var(--surface-2)] font-mono text-[11px]">{p}</code>
                                 ))}
-                                <span className="text-[var(--muted-foreground)]"> — injected at runtime, no need to include in test params</span>
+                                <span className="text-[var(--text-3)]"> — injected at runtime, no need to include in test params</span>
                               </span>
                             </div>
                           )}
@@ -1135,33 +1156,30 @@ export default function ConnectorDetailPage() {
                                 value={testParams}
                                 onChange={(e) => setTestParams(e.target.value)}
                                 rows={5}
-                                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-xs bg-[var(--background)] font-mono"
+                                className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-xs bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
                                 placeholder='{ "param": "value" }'
                               />
-                              <button
-                                onClick={() => handleTestTool(tool.id)}
-                                disabled={testRunning}
-                                className="mt-2 bg-[var(--brand)] text-white px-4 py-1.5 rounded text-xs font-medium hover:brightness-90 disabled:opacity-50"
-                              >
+                              <Button variant="primary" size="sm" className="mt-2" onClick={() => handleTestTool(tool.id)} disabled={testRunning}>
                                 {testRunning ? 'Running...' : 'Run Test'}
-                              </button>
+                              </Button>
                             </div>
                             <div>
                               <label className="block text-xs font-medium mb-1">
                                 Response
                                 {toolTestResult && (
-                                  <span className={`ml-2 ${toolTestResult.ok ? 'text-[var(--success)]' : 'text-[var(--destructive)]'}`}>
+                                  <span className={`ml-2 ${toolTestResult.ok ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
                                     {toolTestResult.ok ? 'Success' : 'Error'} ({toolTestResult.durationMs}ms)
                                   </span>
                                 )}
                               </label>
                               {toolTestResult && !toolTestResult.ok && typeof toolTestResult.hint === 'string' && (
                                 <div
-                                  className={`mb-2 p-2 rounded-md text-xs border ${
+                                  className="mb-2 p-2 rounded-[9px] text-xs border"
+                                  style={
                                     toolTestResult.kind === 'auth_failed'
-                                      ? 'bg-[var(--warning-bg)] text-[var(--warning-text)] border-[var(--warning-border)]'
-                                      : 'bg-[var(--destructive-bg)] text-[var(--destructive-text)] border-[var(--destructive-border)]'
-                                  }`}
+                                      ? { background: 'var(--t-warn-bg)', color: 'var(--t-warn-fg)', borderColor: 'var(--t-warn-bg)' }
+                                      : { background: 'var(--t-danger-bg)', color: 'var(--t-danger-fg)', borderColor: 'var(--t-danger-bg)' }
+                                  }
                                 >
                                   <span className="font-semibold mr-1">
                                     {toolTestResult.kind === 'auth_failed' && 'Credentials rejected:'}
@@ -1175,7 +1193,7 @@ export default function ConnectorDetailPage() {
                                   {String(toolTestResult.hint)}
                                 </div>
                               )}
-                              <pre className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-xs bg-[var(--muted)] font-mono overflow-auto max-h-40 min-h-[8rem]">
+                              <pre className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-xs bg-[var(--surface-2)] font-mono overflow-auto max-h-40 min-h-[8rem]">
                                 {toolTestResult
                                   ? toolTestResult.ok
                                     ? JSON.stringify(toolTestResult.result, null, 2)
@@ -1193,8 +1211,27 @@ export default function ConnectorDetailPage() {
               ))}
             </div>
           )}
+        </Card>
+
+        {/* Danger zone */}
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border p-[18px]"
+          style={{ borderColor: 'var(--t-danger-bg)', background: 'color-mix(in srgb, var(--danger) 5%, transparent)' }}
+        >
+          <div>
+            <div className="text-[13.5px] font-semibold text-[var(--danger)]">Delete connector</div>
+            <div className="text-[12.5px] text-[var(--text-3)]">
+              Removes this connector and unassigns it from all MCP servers.
+            </div>
+          </div>
+          <button
+            onClick={handleDelete}
+            className="inline-flex h-9 items-center rounded-[9px] border border-[var(--danger)] bg-transparent px-3.5 text-[13px] font-semibold text-[var(--danger)] transition-colors hover:bg-[var(--t-danger-bg)]"
+          >
+            Delete
+          </button>
         </div>
-      </main>
+      </div>
 
       {/* MCP Server Assignment Modal — shown after tools are added and connector is unassigned */}
       {showMcpAssign && connector && token && (
@@ -1206,8 +1243,6 @@ export default function ConnectorDetailPage() {
           onClose={() => setShowMcpAssign(false)}
         />
       )}
-
-      <Footer />
-    </div>
+    </AppShell>
   );
 }

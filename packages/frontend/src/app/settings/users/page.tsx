@@ -5,6 +5,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { users, auth, roles } from '@/lib/api';
 import { AppSelect } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge, StatusPill } from '@/components/ui/badge';
 
 const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
 
@@ -118,33 +121,34 @@ export default function SettingsUsersPage() {
     return (
       <div className="flex items-center justify-center py-16">
         <div className="text-center">
-          <h2 className="text-xl font-bold mb-2">Access Denied</h2>
-          <p className="text-[var(--muted-foreground)] mb-4">Only administrators can access this page.</p>
+          <h2 className="text-xl font-bold text-[var(--text)] mb-2">Access Denied</h2>
+          <p className="text-[var(--text-2)] mb-4">Only administrators can access this page.</p>
           <Link href="/settings" className="text-[var(--brand)] hover:underline">Back to Settings</Link>
         </div>
       </div>
     );
   }
 
-  const totalCount = userList.length + invitationList.length;
+  const inputClass =
+    'w-full h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]';
+  const labelClass = 'block text-[12.5px] font-medium text-[var(--text-2)] mb-1';
+  const selectClass =
+    'w-full h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)]';
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-medium">User Management</h2>
-          <p className="text-sm text-[var(--muted-foreground)]">Manage users and send invitations.</p>
+          <h2 className="text-base font-semibold text-[var(--text)]">User Management</h2>
+          <p className="text-sm text-[var(--text-2)]">Manage users and send invitations.</p>
         </div>
-        <button
-          onClick={() => setShowInvite(!showInvite)}
-          className="bg-[var(--brand)] text-white px-3 py-1.5 rounded text-sm font-medium hover:opacity-90"
-        >
+        <Button size="sm" onClick={() => setShowInvite(!showInvite)}>
           {showInvite ? 'Cancel' : 'Invite User'}
-        </button>
+        </Button>
       </div>
 
       {msg && (
-        <div className="p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)]">
+        <div className="p-3 rounded-[9px] text-sm flex items-center" style={{ background: 'var(--t-info-bg)', color: 'var(--t-info-fg)' }}>
           {msg}
           <button onClick={() => setMsg('')} className="ml-2 underline">dismiss</button>
         </div>
@@ -152,37 +156,37 @@ export default function SettingsUsersPage() {
 
       {/* Invite User Form */}
       {showInvite && (
-        <div className="border border-[var(--border)] rounded-lg p-6 space-y-4">
-          <h3 className="text-lg font-medium">Invite a New User</h3>
-          <p className="text-xs text-[var(--muted-foreground)]">
+        <Card className="p-[22px] space-y-4">
+          <h3 className="text-sm font-semibold text-[var(--text)]">Invite a New User</h3>
+          <p className="text-xs text-[var(--text-2)]">
             Send an invitation email. The user will receive a link to create their account with the specified role.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
             <div>
-              <label className="block text-sm font-medium mb-1">Email</label>
+              <label className={labelClass}>Email</label>
               <input
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 placeholder="user@example.com"
-                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                className={inputClass}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">App Role</label>
+              <label className={labelClass}>App Role</label>
               <AppSelect
                 value={inviteRole}
                 onValueChange={setInviteRole}
-                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                className={selectClass}
                 options={ROLES.map((r) => ({ value: r, label: r }))}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">MCP Tool Role</label>
+              <label className={labelClass}>MCP Tool Role</label>
               <AppSelect
                 value={inviteMcpRoleId}
                 onValueChange={setInviteMcpRoleId}
-                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                className={selectClass}
                 options={[
                   { value: '', label: 'No restriction (full access)' },
                   ...roleList.map((r) => ({ value: r.id, label: r.name })),
@@ -194,97 +198,88 @@ export default function SettingsUsersPage() {
           {inviteUrl && (
             <div className="space-y-2">
               {inviteEmailError && (
-                <div className="border border-[var(--destructive)] bg-[var(--destructive-bg)] rounded-md p-3">
-                  <p className="text-xs font-medium text-[var(--destructive)] mb-1">
+                <div className="rounded-[9px] p-3" style={{ background: 'var(--t-danger-bg)', color: 'var(--t-danger-fg)' }}>
+                  <p className="text-xs font-medium mb-1">
                     Failed to send email:
                   </p>
-                  <p className="text-xs text-[var(--destructive)]">{inviteEmailError}</p>
+                  <p className="text-xs">{inviteEmailError}</p>
                 </div>
               )}
-              <div className="border border-[var(--border)] bg-[var(--muted)] rounded-md p-3">
-                <p className="text-xs font-medium text-[var(--foreground)] mb-1">
+              <div className="border border-[var(--border)] bg-[var(--surface-2)] rounded-[9px] p-3">
+                <p className="text-xs font-medium text-[var(--text)] mb-1">
                   Invitation link (share manually):
                 </p>
-                <code className="text-xs font-mono bg-[var(--background)] px-3 py-2 rounded border border-[var(--border)] select-all break-all block">
+                <code className="text-xs font-mono bg-[var(--surface)] px-3 py-2 rounded-[9px] border border-[var(--border)] select-all break-all block text-[var(--text)]">
                   {inviteUrl}
                 </code>
               </div>
             </div>
           )}
 
-          <button
-            onClick={handleInvite}
-            disabled={inviting || !inviteEmail.trim()}
-            className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
-          >
+          <Button onClick={handleInvite} disabled={inviting || !inviteEmail.trim()}>
             {inviting ? 'Sending...' : 'Send Invitation'}
-          </button>
-        </div>
+          </Button>
+        </Card>
       )}
 
       {loading ? (
-        <p className="text-center text-[var(--muted-foreground)] py-16">Loading...</p>
+        <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
       ) : (
-        <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+        <Card className="overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-[var(--muted)]">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium">Email</th>
-                <th className="text-left px-4 py-3 font-medium">Name</th>
-                <th className="text-left px-4 py-3 font-medium">Status</th>
-                <th className="text-left px-4 py-3 font-medium">Role</th>
-                <th className="text-left px-4 py-3 font-medium">MCP Role</th>
-                <th className="text-left px-4 py-3 font-medium">Date</th>
-                <th className="text-right px-4 py-3 font-medium">Actions</th>
+            <thead className="bg-[var(--surface-2)]">
+              <tr className="text-[var(--text-2)]">
+                <th className="text-left px-4 py-3 font-semibold">Email</th>
+                <th className="text-left px-4 py-3 font-semibold">Name</th>
+                <th className="text-left px-4 py-3 font-semibold">Status</th>
+                <th className="text-left px-4 py-3 font-semibold">Role</th>
+                <th className="text-left px-4 py-3 font-semibold">MCP Role</th>
+                <th className="text-left px-4 py-3 font-semibold">Date</th>
+                <th className="text-right px-4 py-3 font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody>
               {userList.map((u) => (
                 <tr key={u.id} className="border-t border-[var(--border)]">
                   <td className="px-4 py-3">
-                    <span className="font-mono text-xs">{u.email}</span>
+                    <span className="font-mono text-xs text-[var(--text)]">{u.email}</span>
                     {u.id === currentUser?.id && (
-                      <span className="ml-2 text-xs bg-[var(--brand)] text-white px-1.5 py-0.5 rounded">you</span>
+                      <Badge tone="brand" className="ml-2">you</Badge>
                     )}
                   </td>
-                  <td className="px-4 py-3">{u.name || '—'}</td>
+                  <td className="px-4 py-3 text-[var(--text)]">{u.name || '—'}</td>
                   <td className="px-4 py-3">
-                    <span className="text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full">
-                      Active
-                    </span>
+                    <StatusPill tone="success" dot="var(--ok)">Active</StatusPill>
                   </td>
                   <td className="px-4 py-3">
                     {u.id === currentUser?.id ? (
-                      <span className="text-xs font-medium bg-[var(--muted)] px-2 py-1 rounded">{u.role}</span>
+                      <Badge tone="neutral">{u.role}</Badge>
                     ) : (
                       <AppSelect
                         value={u.role}
                         onValueChange={(v) => handleRoleChange(u.id, v)}
-                        className="border border-[var(--input)] rounded px-2 py-1 text-xs bg-[var(--background)]"
+                        className="h-8 rounded-[9px] border border-[var(--border)] px-2 text-xs bg-[var(--surface)] text-[var(--text)]"
                         options={ROLES.map((r) => ({ value: r, label: r }))}
                       />
                     )}
                   </td>
                   <td className="px-4 py-3">
                     {u.role === 'ADMIN' ? (
-                      <span className="text-xs text-[var(--muted-foreground)]">Full access</span>
+                      <span className="text-xs text-[var(--text-3)]">Full access</span>
                     ) : u.mcpRole ? (
-                      <span className="text-xs bg-[var(--info-bg)] text-[var(--info-text)] px-1.5 py-0.5 rounded">{u.mcpRole.name}</span>
+                      <Badge tone="info">{u.mcpRole.name}</Badge>
                     ) : (
-                      <span className="text-xs text-[var(--muted-foreground)]">Unrestricted</span>
+                      <span className="text-xs text-[var(--text-3)]">Unrestricted</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-[var(--muted-foreground)]">
+                  <td className="px-4 py-3 text-[var(--text-3)]">
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {u.id !== currentUser?.id && (
-                      <button
-                        onClick={() => handleDelete(u.id, u.email)}
-                        className="border border-[var(--destructive)] text-[var(--destructive)] px-2 py-1 rounded text-xs hover:bg-[var(--destructive-bg)]"
-                      >
+                      <Button variant="danger" size="sm" onClick={() => handleDelete(u.id, u.email)}>
                         Delete
-                      </button>
+                      </Button>
                     )}
                   </td>
                 </tr>
@@ -294,48 +289,41 @@ export default function SettingsUsersPage() {
                 return (
                   <tr key={`inv-${inv.id}`} className="border-t border-[var(--border)] opacity-75">
                     <td className="px-4 py-3">
-                      <span className="font-mono text-xs">{inv.email}</span>
+                      <span className="font-mono text-xs text-[var(--text)]">{inv.email}</span>
                     </td>
-                    <td className="px-4 py-3 text-[var(--muted-foreground)]">—</td>
+                    <td className="px-4 py-3 text-[var(--text-3)]">—</td>
                     <td className="px-4 py-3">
                       {status === 'pending' ? (
-                        <span className="text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 px-2 py-0.5 rounded-full">
-                          Pending
-                        </span>
+                        <Badge tone="warn">Pending</Badge>
                       ) : (
-                        <span className="text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-full">
-                          Expired
-                        </span>
+                        <Badge tone="danger">Expired</Badge>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-xs font-medium bg-[var(--muted)] px-2 py-1 rounded">{inv.role}</span>
+                      <Badge tone="neutral">{inv.role}</Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-xs text-[var(--muted-foreground)]">—</span>
+                      <span className="text-xs text-[var(--text-3)]">—</span>
                     </td>
-                    <td className="px-4 py-3 text-[var(--muted-foreground)]">
+                    <td className="px-4 py-3 text-[var(--text-3)]">
                       <span title={`Expires: ${new Date(inv.expiresAt).toLocaleString()}`}>
                         {new Date(inv.createdAt).toLocaleDateString()}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleRevokeInvitation(inv.id, inv.email)}
-                        className="border border-[var(--destructive)] text-[var(--destructive)] px-2 py-1 rounded text-xs hover:bg-[var(--destructive-bg)]"
-                      >
+                      <Button variant="danger" size="sm" onClick={() => handleRevokeInvitation(inv.id, inv.email)}>
                         Revoke
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
 
-      <p className="text-xs text-[var(--muted-foreground)]">
+      <p className="text-xs text-[var(--text-3)]">
         {userList.length} user{userList.length !== 1 ? 's' : ''}
         {invitationList.length > 0 && (
           <>, {invitationList.length} pending invitation{invitationList.length !== 1 ? 's' : ''}</>

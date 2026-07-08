@@ -56,13 +56,15 @@ export class KgService {
   }
 
   async getSettings(organizationId: string) {
-    const [enabled, llmEnabled, captureIntent, autoExtend, skillAutoApply] = await Promise.all([
-      this.staticSvc.isEnabled(organizationId),
-      this.staticSvc.getFlag(organizationId, 'kg_llm_enabled', false),
-      this.staticSvc.getFlag(organizationId, 'kg_capture_intent', false),
-      this.staticSvc.getFlag(organizationId, 'kg_llm_auto', false),
-      this.staticSvc.getFlag(organizationId, 'kg_skill_auto_apply', false),
-    ]);
+    const [enabled, llmEnabled, captureIntent, autoExtend, skillAutoApply, edgeAutoApply] =
+      await Promise.all([
+        this.staticSvc.isEnabled(organizationId),
+        this.staticSvc.getFlag(organizationId, 'kg_llm_enabled', false),
+        this.staticSvc.getFlag(organizationId, 'kg_capture_intent', false),
+        this.staticSvc.getFlag(organizationId, 'kg_llm_auto', false),
+        this.staticSvc.getFlag(organizationId, 'kg_skill_auto_apply', false),
+        this.staticSvc.getFlag(organizationId, 'kg_edge_auto_apply', false),
+      ]);
     return {
       enabled,
       llmEnabled,
@@ -72,6 +74,9 @@ export class KgService {
       autoExtend,
       // Auto-apply generated skills at/above the confidence threshold.
       skillAutoApply,
+      // Auto-apply high-confidence AI-suggested graph connections (no extra AI cost —
+      // it only changes the status of edges the enrichment pass already produced).
+      edgeAutoApply,
     };
   }
 
@@ -83,6 +88,7 @@ export class KgService {
       captureIntent?: boolean;
       autoExtend?: boolean;
       skillAutoApply?: boolean;
+      edgeAutoApply?: boolean;
     },
   ) {
     if (typeof body.enabled === 'boolean') {
@@ -99,6 +105,9 @@ export class KgService {
     }
     if (typeof body.skillAutoApply === 'boolean') {
       await this.staticSvc.setFlag(organizationId, 'kg_skill_auto_apply', body.skillAutoApply);
+    }
+    if (typeof body.edgeAutoApply === 'boolean') {
+      await this.staticSvc.setFlag(organizationId, 'kg_edge_auto_apply', body.edgeAutoApply);
     }
     return this.getSettings(organizationId);
   }

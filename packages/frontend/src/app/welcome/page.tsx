@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { adapters, users } from '@/lib/api';
-import { LogoIcon } from '@/components/nav-bar';
+import { LogoIcon } from '@/components/logo-icon';
 import { DEMO_CONNECTORS, type DemoConnector } from '@/lib/demo-connectors';
 
 // A small, curated subset of slugs known to actually work end-to-end
@@ -88,18 +88,20 @@ export default function WelcomePage() {
 
   if (isLoading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
-        <div className="text-sm text-[var(--muted-foreground)]">Loading…</div>
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
+        <div className="text-sm text-[var(--text-2)]">Loading…</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <header className="border-b border-[var(--border)] bg-[var(--card)]">
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+      <header className="border-b border-[var(--border)] bg-[var(--surface)]">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <LogoIcon size={28} />
+            <span className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-[var(--brand-tint)] text-[var(--brand)]">
+              <LogoIcon size={20} />
+            </span>
             <span className="font-semibold">
               Anything<span className="text-[var(--brand)]">MCP</span>
             </span>
@@ -107,7 +109,7 @@ export default function WelcomePage() {
           <button
             onClick={handleSkip}
             disabled={skipping}
-            className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-50"
+            className="text-sm text-[var(--text-2)] hover:text-[var(--text)] disabled:opacity-50"
           >
             {skipping ? 'Skipping…' : 'Skip for now'}
           </button>
@@ -119,10 +121,10 @@ export default function WelcomePage() {
           <p className="text-xs uppercase tracking-[0.18em] text-[var(--brand)] font-mono mb-3">
             Welcome
           </p>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3 text-[var(--text)]">
             Connect your first tool, {user.name?.split(' ')[0] || 'friend'}.
           </h1>
-          <p className="text-[var(--muted-foreground)] max-w-xl mx-auto">
+          <p className="text-[var(--text-2)] max-w-xl mx-auto">
             AnythingMCP turns any API into MCP tools your AI agent can call.
             Pick a starter from the marketplace or paste your own OpenAPI
             spec — should take about a minute.
@@ -133,14 +135,14 @@ export default function WelcomePage() {
             This is the fastest path to a first successful tool result, so
             it sits above the marketplace/custom choices. */}
         <div className="mb-8">
-          <h3 className="text-sm font-semibold mb-1">
+          <h3 className="text-sm font-semibold mb-1 text-[var(--text)]">
             Try one instantly — no keys, no setup
           </h3>
-          <p className="text-xs text-[var(--muted-foreground)] mb-3">
+          <p className="text-xs text-[var(--text-2)] mb-3">
             We&apos;ll install it and run a real call so you can see a live result in seconds.
           </p>
           {demoError && (
-            <div className="mb-3 p-2 rounded-md text-xs border bg-[var(--destructive-bg)] text-[var(--destructive-text)] border-[var(--destructive-border)]">
+            <div className="mb-3 p-2.5 rounded-[9px] text-xs bg-[var(--t-danger-bg)] text-[var(--t-danger-fg)]">
               {demoError}
             </div>
           )}
@@ -150,13 +152,13 @@ export default function WelcomePage() {
                 key={d.slug}
                 onClick={() => startDemo(d)}
                 disabled={!!demoLoading}
-                className="text-left border border-[var(--border)] rounded-xl p-4 bg-[var(--card)] hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors disabled:opacity-60"
+                className="text-left border border-[var(--border)] rounded-[14px] p-4 bg-[var(--surface)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors disabled:opacity-60"
               >
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="text-xl">{d.emoji}</span>
-                  <span className="font-semibold text-sm">{d.name}</span>
+                  <span className="font-semibold text-sm text-[var(--text)]">{d.name}</span>
                 </div>
-                <p className="text-xs text-[var(--muted-foreground)] mb-3">{d.blurb}</p>
+                <p className="text-xs text-[var(--text-2)] mb-3">{d.blurb}</p>
                 <span className="text-sm font-medium text-[var(--brand)]">
                   {demoLoading === d.slug ? 'Starting…' : 'Try it →'}
                 </span>
@@ -169,15 +171,15 @@ export default function WelcomePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
           <Link
             href="/connectors/store?from=welcome"
-            className="group border border-[var(--border)] rounded-xl p-6 bg-[var(--card)] hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors text-left"
+            className="group border border-[var(--border)] rounded-[14px] p-6 bg-[var(--surface)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors text-left"
           >
             <div className="text-xs uppercase tracking-wider text-[var(--brand)] font-mono mb-2">
               Recommended
             </div>
-            <h2 className="text-lg font-semibold mb-1.5">
+            <h2 className="text-lg font-semibold mb-1.5 text-[var(--text)]">
               Browse the marketplace
             </h2>
-            <p className="text-sm text-[var(--muted-foreground)] mb-4">
+            <p className="text-sm text-[var(--text-2)] mb-4">
               180+ pre-built connectors. OAuth, API keys, refresh-token
               rotation — all wired up. Click → install → done.
             </p>
@@ -188,13 +190,13 @@ export default function WelcomePage() {
 
           <Link
             href="/connectors/new?from=welcome"
-            className="group border border-[var(--border)] rounded-xl p-6 bg-[var(--card)] hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors text-left"
+            className="group border border-[var(--border)] rounded-[14px] p-6 bg-[var(--surface)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors text-left"
           >
-            <div className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] font-mono mb-2">
+            <div className="text-xs uppercase tracking-wider text-[var(--text-3)] font-mono mb-2">
               Bring your own
             </div>
-            <h2 className="text-lg font-semibold mb-1.5">Add your own API</h2>
-            <p className="text-sm text-[var(--muted-foreground)] mb-4">
+            <h2 className="text-lg font-semibold mb-1.5 text-[var(--text)]">Add your own API</h2>
+            <p className="text-sm text-[var(--text-2)] mb-4">
               Paste an OpenAPI URL or JSON spec and we generate MCP tools
               for every endpoint. Works for REST, SOAP, GraphQL.
             </p>
@@ -207,7 +209,7 @@ export default function WelcomePage() {
         {/* Starter shortcuts — real logos + 1-click install */}
         {starters.length > 0 && (
           <div>
-            <h3 className="text-sm font-semibold mb-3 text-[var(--muted-foreground)]">
+            <h3 className="text-sm font-semibold mb-3 text-[var(--text-2)]">
               Popular starters
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -215,7 +217,7 @@ export default function WelcomePage() {
                 <Link
                   key={a.slug}
                   href={`/connectors/store?install=${encodeURIComponent(a.slug)}&from=welcome`}
-                  className="border border-[var(--border)] rounded-lg p-3 bg-[var(--card)] hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors flex items-center gap-3"
+                  className="border border-[var(--border)] rounded-[12px] p-3 bg-[var(--surface)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors flex items-center gap-3"
                 >
                   <div className="text-2xl shrink-0">
                     {a.icon === 'sendcloud' && '📦'}
@@ -238,8 +240,8 @@ export default function WelcomePage() {
                     ].includes(a.icon) && '🔌'}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">{a.name}</div>
-                    <div className="text-xs text-[var(--muted-foreground)] truncate">
+                    <div className="text-sm font-medium truncate text-[var(--text)]">{a.name}</div>
+                    <div className="text-xs text-[var(--text-2)] truncate">
                       {a.toolCount} tools
                     </div>
                   </div>
@@ -249,7 +251,29 @@ export default function WelcomePage() {
           </div>
         )}
 
-        <p className="mt-10 text-center text-xs text-[var(--muted-foreground)]">
+        {/* Differentiator teaser — what makes AnythingMCP "smart" beyond a
+            proxy. It's empty for a brand-new account, so this is a concept
+            hook (no data, no AI), nudging toward the graph once tools exist. */}
+        <div className="mt-10 rounded-[14px] border border-[var(--border)] bg-[var(--brand-tint)] p-6">
+          <div className="flex items-start gap-4">
+            <span className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[var(--surface)] text-[var(--brand)]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="6" r="2.4" /><circle cx="19" cy="6" r="2.4" /><circle cx="12" cy="18" r="2.4" /><path d="M7.2 7.2 10.6 16M16.8 7.2 13.4 16M7 6h10" /></svg>
+            </span>
+            <div>
+              <h3 className="text-base font-semibold text-[var(--text)]">More than a proxy — it learns how your tools connect</h3>
+              <p className="mt-1 text-sm text-[var(--text-2)]">
+                As you use your connectors, AnythingMCP builds a <strong>knowledge graph</strong> of how your
+                entities relate and turns recurring patterns into <strong>skills</strong> — so your agent chains
+                the right tools in the right order instead of guessing. It gets smarter the more you use it.
+              </p>
+              <Link href="/knowledge-graph" className="mt-3 inline-block text-sm font-medium text-[var(--brand)] hover:underline">
+                Explore the knowledge graph →
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        <p className="mt-10 text-center text-xs text-[var(--text-2)]">
           You can always come back and add more connectors from the dashboard.
         </p>
       </main>

@@ -3,9 +3,26 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { LogoIcon } from '@/components/nav-bar';
+import { LogoIcon } from '@/components/logo-icon';
+import { Card } from '@/components/ui/card';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 const API_BASE = '';
+
+/** Small AnythingMCP brand mark for the top of pre-auth cards. */
+function BrandMark() {
+  return (
+    <div className="flex items-center justify-center gap-2">
+      <span className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-[var(--brand-tint)] text-[var(--brand)]">
+        <LogoIcon size={20} />
+      </span>
+      <span className="text-base font-semibold text-[var(--text)]">
+        Anything<span className="text-[var(--brand)]">MCP</span>
+      </span>
+    </div>
+  );
+}
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -46,27 +63,29 @@ function VerifyEmailContent() {
 
   return (
     <div className="w-full max-w-sm">
-      <div className="text-center mb-8">
-        <div className="flex justify-center mb-4">
-          <LogoIcon size={56} />
+      <Card className="p-6">
+        <div className="text-center mb-6">
+          <div className="flex justify-center mb-4">
+            <BrandMark />
+          </div>
+          <h1 className="text-xl font-semibold text-[var(--text)]">Email Verification</h1>
         </div>
-        <h1 className="text-2xl font-bold">Email Verification</h1>
-      </div>
 
-      <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
         {status === 'loading' && (
-          <p className="text-center text-[var(--muted-foreground)]">
+          <p className="text-center text-[var(--text-2)]">
             Verifying your email...
           </p>
         )}
 
         {status === 'success' && (
           <div className="text-center space-y-4">
-            <div className="text-4xl">&#10003;</div>
-            <p className="text-sm font-medium">Your email has been verified successfully!</p>
+            <div className="inline-flex items-center justify-center w-12 h-12 mx-auto rounded-full bg-[var(--t-success-bg)] text-[var(--t-success-fg)] text-2xl">
+              &#10003;
+            </div>
+            <p className="text-sm font-medium text-[var(--text)]">Your email has been verified successfully!</p>
             <Link
               href="/login?emailVerified=true"
-              className="inline-block w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 text-center"
+              className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
             >
               Go to Sign In
             </Link>
@@ -75,25 +94,25 @@ function VerifyEmailContent() {
 
         {status === 'error' && (
           <div className="text-center space-y-4">
-            <p className="text-sm text-[var(--destructive-text)]">
+            <div className="rounded-[9px] px-3 py-2.5 text-sm bg-[var(--t-danger-bg)] text-[var(--t-danger-fg)]">
               {errorMessage}
-            </p>
+            </div>
             <Link
               href="/login"
-              className="inline-block w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 text-center"
+              className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
             >
               Back to Sign In
             </Link>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
 
 export default function VerifyEmailPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] px-4">
       <Suspense>
         <VerifyEmailContent />
       </Suspense>

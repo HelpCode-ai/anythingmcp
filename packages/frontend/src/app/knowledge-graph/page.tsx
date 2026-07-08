@@ -4,9 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { knowledgeGraph, connectors as connectorsApi, type KgNode, type KgEdge } from '@/lib/api';
-import { NavBar } from '@/components/nav-bar';
-import { Footer } from '@/components/footer';
 import { KgGraph } from '@/components/kg-graph';
+import { AppShell } from '@/components/app-shell';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { StatusPill } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 const SOURCES = ['STATIC', 'OBSERVED', 'MANUAL', 'LLM'] as const;
 const KIND_LABEL: Record<string, string> = {
@@ -23,6 +26,12 @@ const KIND_OPTIONS = [
   'parent_child',
   'related',
 ] as const;
+
+const inputClass =
+  'w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] outline-none focus:border-[var(--brand)]';
+const labelClass = 'block text-[12.5px] font-medium text-[var(--text-2)]';
+const sectionLabelClass =
+  'text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[var(--text-3)]';
 
 export default function KnowledgeGraphPage() {
   const { token, user } = useAuth();
@@ -217,107 +226,102 @@ export default function KnowledgeGraphPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--background)]">
-      <NavBar
-        title="Knowledge Graph"
-        actions={
-          isAdmin && enabled ? (
-            <div className="flex items-center gap-2">
-              {llmEnabled && (
-                <button
-                  onClick={enrich}
-                  disabled={enriching || rebuilding}
-                  className="px-3 py-1.5 rounded-md text-sm border border-[var(--brand)] text-[var(--brand)] hover:bg-[var(--brand-light)] disabled:opacity-50"
-                >
-                  {enriching ? 'Enriching…' : 'Enrich with AI'}
-                </button>
-              )}
-              <button
-                onClick={rebuild}
-                disabled={rebuilding || enriching}
-                className="px-3 py-1.5 rounded-md text-sm bg-[var(--brand)] text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {rebuilding ? 'Rebuilding…' : 'Rebuild graph'}
-              </button>
-            </div>
-          ) : undefined
-        }
-      />
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-4">
-        {/* Header / stats */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <p className="text-sm text-[var(--muted-foreground)]">
-            {nodes.length} entities · {visibleEdges.length} relationships
-            {lastBuiltAt && (
-              <> · built {new Date(lastBuiltAt).toLocaleString()}</>
-            )}
-          </p>
-          <div className="flex items-center gap-3">
-            {status && <p className="text-xs text-[var(--muted-foreground)]">{status}</p>}
-            <Link
-              href="/knowledge-graph/skills"
-              className="text-xs text-[var(--brand)] hover:underline whitespace-nowrap"
-            >
-              Skills →
-            </Link>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-4 mb-3 text-sm">
+    <AppShell
+      title="Knowledge Graph"
+      subtitle={`${nodes.length} entities · ${visibleEdges.length} relationships${
+        lastBuiltAt ? ` · built ${new Date(lastBuiltAt).toLocaleString()}` : ''
+      }`}
+      maxWidth="100%"
+      hideFooter
+      actions={
+        isAdmin && enabled ? (
           <div className="flex items-center gap-2">
-            <span className="text-[var(--muted-foreground)]">Layer:</span>
-            {SOURCES.map((s) => (
-              <button
-                key={s}
-                onClick={() => toggleSource(s)}
-                className={`px-2 py-0.5 rounded text-xs border ${
-                  activeSources.has(s)
-                    ? 'bg-[var(--brand-light)] text-[var(--brand)] border-[var(--brand)]'
-                    : 'text-[var(--muted-foreground)] border-[var(--border)]'
-                }`}
+            {llmEnabled && (
+              <Button
+                variant="outlineBrand"
+                onClick={enrich}
+                disabled={enriching || rebuilding}
               >
-                {s.toLowerCase()}
-              </button>
-            ))}
+                {enriching ? 'Enriching…' : 'Enrich with AI'}
+              </Button>
+            )}
+            <Button onClick={rebuild} disabled={rebuilding || enriching}>
+              {rebuilding ? 'Rebuilding…' : 'Rebuild graph'}
+            </Button>
           </div>
-          <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={showSuggested} onChange={(e) => setShowSuggested(e.target.checked)} />
-            <span>show suggested</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="text-[var(--muted-foreground)]">min confidence</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={minConfidence}
-              onChange={(e) => setMinConfidence(Number(e.target.value))}
-            />
-            <span className="tabular-nums w-8">{minConfidence.toFixed(2)}</span>
-          </label>
-          <Legend />
+        ) : undefined
+      }
+    >
+      {/* Filters / status bar */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
+        <div className="flex items-center gap-2">
+          <span className={sectionLabelClass}>Layer</span>
+          {SOURCES.map((s) => (
+            <button
+              key={s}
+              onClick={() => toggleSource(s)}
+              className={cn(
+                'rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-colors',
+                activeSources.has(s)
+                  ? 'border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)]'
+                  : 'border-[var(--border)] text-[var(--text-3)] hover:border-[var(--border-strong)]',
+              )}
+            >
+              {s.toLowerCase()}
+            </button>
+          ))}
         </div>
+        <label className="flex items-center gap-1.5 text-[var(--text-2)]">
+          <input type="checkbox" checked={showSuggested} onChange={(e) => setShowSuggested(e.target.checked)} />
+          <span>show suggested</span>
+        </label>
+        <label className="flex items-center gap-2 text-[var(--text-2)]">
+          <span className={sectionLabelClass}>min confidence</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={minConfidence}
+            onChange={(e) => setMinConfidence(Number(e.target.value))}
+          />
+          <span className="w-8 font-mono tabular-nums text-[var(--text-2)]">{minConfidence.toFixed(2)}</span>
+        </label>
+        <div className="ml-auto flex items-center gap-3">
+          {status && <span className="text-[12px] text-[var(--text-3)]">{status}</span>}
+          <Link
+            href="/knowledge-graph/skills"
+            className="whitespace-nowrap text-[12.5px] font-medium text-[var(--brand)] hover:underline"
+          >
+            Skills →
+          </Link>
+        </div>
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
-          {/* Graph canvas */}
-          <div className="border border-[var(--border)] rounded-lg bg-[var(--background)] overflow-hidden h-[68vh]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_340px] items-start">
+        {/* Graph canvas */}
+        <Card className="h-[72vh] overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+            <Legend />
+            <span className="text-[12px] text-[var(--text-3)]">
+              {nodes.length} entities · {visibleEdges.length} relationships
+            </span>
+          </div>
+          <div className="relative h-[calc(72vh-49px)] bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--brand)_5%,transparent),transparent_70%)]">
             {loading ? (
-              <div className="h-full flex items-center justify-center text-[var(--muted-foreground)]">
+              <div className="flex h-full items-center justify-center text-[var(--text-3)]">
                 Loading graph…
               </div>
             ) : !enabled ? (
-              <div className="h-full flex flex-col items-center justify-center gap-2 text-center px-6">
-                <p className="font-medium">The Knowledge Graph is disabled for this workspace.</p>
-                <p className="text-[var(--muted-foreground)] text-sm">
+              <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+                <p className="font-medium text-[var(--text)]">The Knowledge Graph is disabled for this workspace.</p>
+                <p className="text-[13px] text-[var(--text-3)]">
                   An admin can enable it in Settings → Organization → Features.
                 </p>
               </div>
             ) : nodes.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-6">
-                <p className="text-[var(--muted-foreground)]">
+              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <p className="text-[13px] text-[var(--text-3)]">
                   No graph yet. {isAdmin ? 'Click “Rebuild graph” to generate it from your connectors and usage.' : 'Ask an admin to build the graph.'}
                 </p>
               </div>
@@ -338,47 +342,48 @@ export default function KnowledgeGraphPage() {
               />
             )}
           </div>
+        </Card>
 
-          {/* Side panel */}
-          <aside className="border border-[var(--border)] rounded-lg p-4 h-[68vh] overflow-y-auto text-sm">
-            {selectedNode ? (
-              <NodePanel
-                key={selectedNode.id}
-                node={selectedNode}
-                edges={nodeEdges}
-                nodeById={nodeById}
-                isAdmin={isAdmin}
-                onSave={(body) => saveNode(selectedNode.id, body)}
-                onDelete={() => deleteNode(selectedNode.id)}
-              />
-            ) : selectedEdge ? (
-              <EdgePanel
-                key={selectedEdge.id}
-                edge={selectedEdge}
-                nodeById={nodeById}
-                isAdmin={isAdmin}
-                onConfirm={() => setEdgeStatus(selectedEdge.id, 'active')}
-                onReject={() => setEdgeStatus(selectedEdge.id, 'rejected')}
-                onDelete={() => deleteEdge(selectedEdge.id)}
-                onSave={(body) => saveEdge(selectedEdge.id, body)}
-              />
-            ) : (
-              <div className="text-[var(--muted-foreground)]">
-                <p className="font-medium text-[var(--foreground)] mb-1">Explore</p>
-                <p>Click an entity to see its fields and links, or an edge to inspect (and edit) a relationship.</p>
-                {isAdmin && connectorList.length > 0 && (
-                  <AddNodeForm connectors={connectorList} onCreate={createNode} />
-                )}
-                {isAdmin && nodes.length >= 2 && (
-                  <AddEdgeForm nodes={nodes} onCreate={createEdge} />
-                )}
-              </div>
-            )}
-          </aside>
-        </div>
-      </main>
-      <Footer />
-    </div>
+        {/* Side panel */}
+        <aside className="h-[72vh] overflow-y-auto">
+          {selectedNode ? (
+            <NodePanel
+              key={selectedNode.id}
+              node={selectedNode}
+              edges={nodeEdges}
+              nodeById={nodeById}
+              isAdmin={isAdmin}
+              onSave={(body) => saveNode(selectedNode.id, body)}
+              onDelete={() => deleteNode(selectedNode.id)}
+            />
+          ) : selectedEdge ? (
+            <EdgePanel
+              key={selectedEdge.id}
+              edge={selectedEdge}
+              nodeById={nodeById}
+              isAdmin={isAdmin}
+              onConfirm={() => setEdgeStatus(selectedEdge.id, 'active')}
+              onReject={() => setEdgeStatus(selectedEdge.id, 'rejected')}
+              onDelete={() => deleteEdge(selectedEdge.id)}
+              onSave={(body) => saveEdge(selectedEdge.id, body)}
+            />
+          ) : (
+            <Card className="p-[18px]">
+              <p className="mb-1 text-[14px] font-semibold text-[var(--text)]">Explore</p>
+              <p className="text-[13px] text-[var(--text-2)]">
+                Click an entity to see its fields and links, or an edge to inspect (and edit) a relationship.
+              </p>
+              {isAdmin && connectorList.length > 0 && (
+                <AddNodeForm connectors={connectorList} onCreate={createNode} />
+              )}
+              {isAdmin && nodes.length >= 2 && (
+                <AddEdgeForm nodes={nodes} onCreate={createEdge} />
+              )}
+            </Card>
+          )}
+        </aside>
+      </div>
+    </AppShell>
   );
 }
 
@@ -391,10 +396,10 @@ function Legend() {
     ['related', '#a855f7'],
   ] as const;
   return (
-    <div className="flex items-center gap-3 ml-auto">
+    <div className="flex flex-wrap items-center gap-3">
       {items.map(([label, color]) => (
-        <span key={label} className="flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
-          <span className="inline-block w-3 h-0.5" style={{ background: color }} />
+        <span key={label} className="flex items-center gap-1.5 text-[12px] text-[var(--text-2)]">
+          <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: color }} />
           {label}
         </span>
       ))}
@@ -421,111 +426,133 @@ function NodePanel({
   const [label, setLabel] = useState(node.label);
   const [description, setDescription] = useState(node.description ?? '');
   return (
-    <div>
-      <p className="text-[10px] uppercase tracking-wider text-[var(--muted-foreground)]">
-        {node.connectorName ?? 'connector'} · {String(node.source).toLowerCase()}
-      </p>
+    <div className="flex flex-col gap-3.5">
+      <Card className="p-[18px]">
+        <p className={cn(sectionLabelClass, 'mb-2')}>
+          {node.connectorName ?? 'connector'} · {String(node.source).toLowerCase()}
+        </p>
 
-      {editing ? (
-        <div className="mb-3 space-y-2">
-          <input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            className="w-full px-2 py-1 rounded border border-[var(--border)] text-sm"
-            placeholder="Label"
-          />
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            className="w-full px-2 py-1 rounded border border-[var(--border)] text-[13px]"
-            placeholder="Description (shown to AI clients reading the graph)"
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={() => {
-                onSave({ label, description: description.trim() ? description : null });
-                setEditing(false);
-              }}
-              className="px-2.5 py-1 rounded text-xs bg-[var(--brand)] text-white"
-            >
-              Save
-            </button>
-            <button
-              onClick={() => {
-                setLabel(node.label);
-                setDescription(node.description ?? '');
-                setEditing(false);
-              }}
-              className="px-2.5 py-1 rounded text-xs border border-[var(--border)]"
-            >
-              Cancel
-            </button>
+        {editing ? (
+          <div className="space-y-2">
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              className={inputClass}
+              placeholder="Label"
+            />
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className={inputClass}
+              placeholder="Description (shown to AI clients reading the graph)"
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  onSave({ label, description: description.trim() ? description : null });
+                  setEditing(false);
+                }}
+              >
+                Save
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setLabel(node.label);
+                  setDescription(node.description ?? '');
+                  setEditing(false);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="mb-2 flex items-start justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-semibold">{node.label}</h2>
-            {node.description && (
-              <p className="text-[13px] text-[var(--muted-foreground)] mt-0.5">{node.description}</p>
+        ) : (
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h2 className="text-[16px] font-semibold text-[var(--text)]">{node.label}</h2>
+              {node.description && (
+                <p className="mt-0.5 text-[13px] text-[var(--text-2)]">{node.description}</p>
+              )}
+            </div>
+            {isAdmin && (
+              <div className="flex shrink-0 gap-1.5">
+                <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={onDelete}
+                  className="text-[var(--danger)]"
+                  title="Delete this entity and its links"
+                >
+                  Delete
+                </Button>
+              </div>
             )}
           </div>
-          {isAdmin && (
-            <div className="shrink-0 flex gap-1.5">
-              <button
-                onClick={() => setEditing(true)}
-                className="px-2 py-0.5 rounded text-xs border border-[var(--border)]"
-              >
-                Edit
-              </button>
-              <button
-                onClick={onDelete}
-                className="px-2 py-0.5 rounded text-xs text-[var(--destructive)] border border-[var(--border)]"
-                title="Delete this entity and its links"
-              >
-                Delete
-              </button>
-            </div>
-          )}
+        )}
+      </Card>
+
+      <Card className="p-[18px]">
+        <p className={cn(sectionLabelClass, 'mb-2')}>Fields ({node.fields.length})</p>
+        <div className="flex flex-wrap gap-1.5">
+          {node.fields.slice(0, 40).map((f) => (
+            <span
+              key={f.name}
+              className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-[3px] font-mono text-[11.5px] text-[var(--text-2)]"
+            >
+              {f.name}
+            </span>
+          ))}
+          {node.fields.length === 0 && <span className="text-[13px] text-[var(--text-3)]">—</span>}
         </div>
-      )}
+      </Card>
 
-      <p className="text-xs text-[var(--muted-foreground)] mb-1">Fields ({node.fields.length})</p>
-      <div className="flex flex-wrap gap-1 mb-3">
-        {node.fields.slice(0, 40).map((f) => (
-          <span key={f.name} className="px-1.5 py-0.5 rounded bg-[var(--accent)] text-[11px]">
-            {f.name}
-          </span>
-        ))}
-        {node.fields.length === 0 && <span className="text-[var(--muted-foreground)]">—</span>}
-      </div>
+      <Card className="p-[18px]">
+        <p className={cn(sectionLabelClass, 'mb-2.5')}>Connections ({edges.length})</p>
+        <ul className="flex flex-col gap-2.5">
+          {edges.map((e) => {
+            const other = e.sourceNodeId === node.id ? nodeById.get(e.targetNodeId) : nodeById.get(e.sourceNodeId);
+            const dir = e.sourceNodeId === node.id ? '→' : '←';
+            return (
+              <li key={e.id} className="flex items-center gap-2.5">
+                <span className="w-3.5 flex-shrink-0 text-center font-mono text-[14px] text-[var(--text-3)]">
+                  {dir}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-[var(--text)]">{other?.label ?? '?'}</div>
+                  <div className="text-[11.5px] text-[var(--text-3)]">
+                    {KIND_LABEL[e.kind] ?? e.kind}
+                    {e.matchKey ? ` · ${e.matchKey}` : ''}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+          {edges.length === 0 && <li className="text-[13px] text-[var(--text-3)]">—</li>}
+        </ul>
+      </Card>
 
-      <p className="text-xs text-[var(--muted-foreground)] mb-1">Relationships ({edges.length})</p>
-      <ul className="space-y-1">
-        {edges.map((e) => {
-          const other = e.sourceNodeId === node.id ? nodeById.get(e.targetNodeId) : nodeById.get(e.sourceNodeId);
-          const dir = e.sourceNodeId === node.id ? '→' : '←';
-          return (
-            <li key={e.id} className="text-[13px]">
-              <span className="text-[var(--muted-foreground)]">{dir}</span> {other?.label ?? '?'}{' '}
-              <span className="text-[10px] text-[var(--muted-foreground)]">
-                ({KIND_LABEL[e.kind] ?? e.kind}{e.matchKey ? ` · ${e.matchKey}` : ''})
+      {node.toolNames.length > 0 && (
+        <Card className="p-[18px]">
+          <p className={cn(sectionLabelClass, 'mb-2')}>Tools ({node.toolNames.length})</p>
+          <div className="flex flex-wrap gap-1.5">
+            {node.toolNames.slice(0, 30).map((t) => (
+              <span
+                key={t}
+                className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-[3px] font-mono text-[10.5px] text-[var(--text-2)]"
+              >
+                {t}
               </span>
-            </li>
-          );
-        })}
-        {edges.length === 0 && <li className="text-[var(--muted-foreground)]">—</li>}
-      </ul>
-
-      <p className="text-xs text-[var(--muted-foreground)] mt-3 mb-1">Tools ({node.toolNames.length})</p>
-      <div className="flex flex-wrap gap-1">
-        {node.toolNames.slice(0, 30).map((t) => (
-          <span key={t} className="px-1.5 py-0.5 rounded bg-[var(--accent)] text-[10px] font-mono">
-            {t}
-          </span>
-        ))}
-      </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -553,14 +580,27 @@ function EdgePanel({
   const [note, setNote] = useState(edge.note ?? '');
   const dirty = kind !== edge.kind || (note ?? '') !== (edge.note ?? '');
   return (
-    <div>
-      <p className="text-[10px] uppercase tracking-wider text-[var(--muted-foreground)]">
-        {String(edge.source).toLowerCase()} · {edge.status}
-      </p>
-      <h2 className="text-base font-semibold mb-2">
-        {src?.label ?? '?'} <span className="text-[var(--muted-foreground)]">{KIND_LABEL[edge.kind] ?? edge.kind}</span> {tgt?.label ?? '?'}
-      </h2>
-      <dl className="space-y-1 text-[13px]">
+    <Card className="p-[18px]">
+      <div className="mb-3.5 flex items-center gap-2">
+        <span className={sectionLabelClass}>{String(edge.source).toLowerCase()}</span>
+        <StatusPill tone={edge.status === 'suggested' ? 'warn' : 'success'}>{edge.status}</StatusPill>
+      </div>
+
+      <div className="mb-3.5 flex items-center gap-2.5">
+        <div className="min-w-0 flex-1 rounded-[9px] border border-[var(--border)] px-2.5 py-2">
+          <div className="truncate text-[13px] font-semibold text-[var(--text)]">{src?.label ?? '?'}</div>
+          <div className="truncate text-[11px] text-[var(--text-3)]">{src?.connectorName ?? '—'}</div>
+        </div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+          <path d="M5 12h14M13 6l6 6-6 6" />
+        </svg>
+        <div className="min-w-0 flex-1 rounded-[9px] border border-[var(--border)] px-2.5 py-2">
+          <div className="truncate text-[13px] font-semibold text-[var(--text)]">{tgt?.label ?? '?'}</div>
+          <div className="truncate text-[11px] text-[var(--text-3)]">{tgt?.connectorName ?? '—'}</div>
+        </div>
+      </div>
+
+      <dl className="space-y-1.5 text-[13px]">
         <Row k="Kind" v={KIND_LABEL[edge.kind] ?? edge.kind} />
         {edge.matchKey && <Row k="Match key" v={edge.matchKey} />}
         <Row k="Confidence" v={edge.confidence.toFixed(2)} />
@@ -568,13 +608,13 @@ function EdgePanel({
       </dl>
 
       {isAdmin ? (
-        <div className="mt-3 space-y-2">
-          <label className="block text-xs text-[var(--muted-foreground)]">
-            Kind
+        <div className="mt-3.5 space-y-2.5">
+          <label className={labelClass}>
+            <span className="mb-1.5 block">Kind</span>
             <select
               value={kind}
               onChange={(e) => setKind(e.target.value)}
-              className="mt-0.5 w-full px-2 py-1 rounded border border-[var(--border)] text-sm bg-white"
+              className={inputClass}
             >
               {KIND_OPTIONS.map((k) => (
                 <option key={k} value={k}>
@@ -583,48 +623,44 @@ function EdgePanel({
               ))}
             </select>
           </label>
-          <label className="block text-xs text-[var(--muted-foreground)]">
-            Description (served to AI clients)
+          <label className={labelClass}>
+            <span className="mb-1.5 block">Description (served to AI clients)</span>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
-              className="mt-0.5 w-full px-2 py-1 rounded border border-[var(--border)] text-[13px]"
+              className={inputClass}
               placeholder="Why these entities are linked…"
             />
           </label>
-          <button
-            onClick={() => onSave({ kind, note: note.trim() ? note : null })}
-            disabled={!dirty}
-            className="px-2.5 py-1 rounded text-xs bg-[var(--brand)] text-white disabled:opacity-40"
-          >
+          <Button size="sm" onClick={() => onSave({ kind, note: note.trim() ? note : null })} disabled={!dirty}>
             Save changes
-          </button>
+          </Button>
         </div>
       ) : (
         edge.note && (
-          <p className="mt-2 text-[13px] text-[var(--muted-foreground)] italic">
+          <p className="mt-2.5 text-[13px] italic text-[var(--text-2)]">
             &ldquo;{edge.note}&rdquo;
           </p>
         )
       )}
 
       {isAdmin && (
-        <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-[var(--border)]">
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-3.5">
           {edge.status === 'suggested' && (
-            <button onClick={onConfirm} className="px-2.5 py-1 rounded text-xs bg-green-600 text-white">
+            <Button size="sm" onClick={onConfirm}>
               Confirm
-            </button>
+            </Button>
           )}
-          <button onClick={onReject} className="px-2.5 py-1 rounded text-xs border border-[var(--border)]">
+          <Button size="sm" variant="secondary" onClick={onReject}>
             Reject
-          </button>
-          <button onClick={onDelete} className="px-2.5 py-1 rounded text-xs text-[var(--destructive)] border border-[var(--border)]">
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onDelete} className="text-[var(--danger)]">
             Delete
-          </button>
+          </Button>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -642,28 +678,25 @@ function AddNodeForm({
 
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="mt-4 mr-2 px-2.5 py-1 rounded text-xs bg-[var(--brand)] text-white"
-      >
+      <Button size="sm" className="mt-4 mr-2" onClick={() => setOpen(true)}>
         + Add entity
-      </button>
+      </Button>
     );
   }
   const valid = label.trim() && connectorId;
   return (
-    <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-3">
-      <p className="font-medium text-[var(--foreground)]">New entity</p>
+    <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-3.5">
+      <p className="text-[13px] font-semibold text-[var(--text)]">New entity</p>
       <input
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         placeholder="Label (e.g. Loyalty tier)"
-        className="w-full px-2 py-1 rounded border border-[var(--border)] text-sm"
+        className={inputClass}
       />
       <select
         value={connectorId}
         onChange={(e) => setConnectorId(e.target.value)}
-        className="w-full px-2 py-1 rounded border border-[var(--border)] text-sm bg-white"
+        className={inputClass}
       >
         <option value="">Belongs to connector…</option>
         {connectors.map((c) => (
@@ -675,10 +708,11 @@ function AddNodeForm({
         onChange={(e) => setDescription(e.target.value)}
         rows={2}
         placeholder="Description (optional, served to AI clients)"
-        className="w-full px-2 py-1 rounded border border-[var(--border)] text-[13px]"
+        className={inputClass}
       />
       <div className="flex gap-2">
-        <button
+        <Button
+          size="sm"
           disabled={!valid}
           onClick={() => {
             onCreate({ connectorId, label, description: description.trim() || undefined });
@@ -687,13 +721,12 @@ function AddNodeForm({
             setDescription('');
             setOpen(false);
           }}
-          className="px-2.5 py-1 rounded text-xs bg-[var(--brand)] text-white disabled:opacity-40"
         >
           Add entity
-        </button>
-        <button onClick={() => setOpen(false)} className="px-2.5 py-1 rounded text-xs border border-[var(--border)]">
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => setOpen(false)}>
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -718,31 +751,28 @@ function AddEdgeForm({
 
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="mt-4 px-2.5 py-1 rounded text-xs bg-[var(--brand)] text-white"
-      >
+      <Button size="sm" className="mt-4" onClick={() => setOpen(true)}>
         + Add connection
-      </button>
+      </Button>
     );
   }
 
   const valid = source && target && source !== target;
   return (
-    <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-3">
-      <p className="font-medium text-[var(--foreground)]">New connection</p>
-      <select value={source} onChange={(e) => setSource(e.target.value)} className="w-full px-2 py-1 rounded border border-[var(--border)] text-sm bg-white">
+    <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-3.5">
+      <p className="text-[13px] font-semibold text-[var(--text)]">New connection</p>
+      <select value={source} onChange={(e) => setSource(e.target.value)} className={inputClass}>
         <option value="">From entity…</option>
         {sorted.map((n) => (
           <option key={n.id} value={n.id}>{n.label} ({n.connectorName ?? '—'})</option>
         ))}
       </select>
-      <select value={kind} onChange={(e) => setKind(e.target.value)} className="w-full px-2 py-1 rounded border border-[var(--border)] text-sm bg-white">
+      <select value={kind} onChange={(e) => setKind(e.target.value)} className={inputClass}>
         {KIND_OPTIONS.map((k) => (
           <option key={k} value={k}>{KIND_LABEL[k] ?? k}</option>
         ))}
       </select>
-      <select value={target} onChange={(e) => setTarget(e.target.value)} className="w-full px-2 py-1 rounded border border-[var(--border)] text-sm bg-white">
+      <select value={target} onChange={(e) => setTarget(e.target.value)} className={inputClass}>
         <option value="">To entity…</option>
         {sorted.map((n) => (
           <option key={n.id} value={n.id}>{n.label} ({n.connectorName ?? '—'})</option>
@@ -753,10 +783,11 @@ function AddEdgeForm({
         onChange={(e) => setNote(e.target.value)}
         rows={2}
         placeholder="Description (optional, served to AI clients)"
-        className="w-full px-2 py-1 rounded border border-[var(--border)] text-[13px]"
+        className={inputClass}
       />
       <div className="flex gap-2">
-        <button
+        <Button
+          size="sm"
           disabled={!valid}
           onClick={() => {
             onCreate({ sourceNodeId: source, targetNodeId: target, kind, note: note.trim() || undefined });
@@ -765,13 +796,12 @@ function AddEdgeForm({
             setNote('');
             setOpen(false);
           }}
-          className="px-2.5 py-1 rounded text-xs bg-[var(--brand)] text-white disabled:opacity-40"
         >
           Add
-        </button>
-        <button onClick={() => setOpen(false)} className="px-2.5 py-1 rounded text-xs border border-[var(--border)]">
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => setOpen(false)}>
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -780,8 +810,8 @@ function AddEdgeForm({
 function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between gap-2">
-      <dt className="text-[var(--muted-foreground)]">{k}</dt>
-      <dd className="font-medium text-right">{v}</dd>
+      <dt className="text-[var(--text-3)]">{k}</dt>
+      <dd className="text-right font-medium text-[var(--text)]">{v}</dd>
     </div>
   );
 }

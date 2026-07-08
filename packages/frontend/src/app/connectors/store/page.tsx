@@ -7,8 +7,11 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAuth } from '@/lib/auth-context';
 import { adapters } from '@/lib/api';
-import { NavBar } from '@/components/nav-bar';
-import { Footer } from '@/components/footer';
+import { AppShell } from '@/components/app-shell';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
 
 const REGION_LABELS: Record<string, string> = {
@@ -285,47 +288,38 @@ function AdapterStoreContent() {
   });
 
   return (
-    <div className="min-h-screen bg-[var(--background)] flex flex-col">
-      <NavBar
-        breadcrumbs={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Connectors', href: '/connectors' },
-        ]}
-        title="Adapter Store"
-        actions={
-          <Link
-            href="/connectors/new"
-            className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 flex items-center gap-1.5"
-          >
+    <AppShell
+      backTo={{ label: 'Connectors', href: '/connectors' }}
+      title="Marketplace"
+      subtitle="Pre-configured connector recipes for popular APIs. Import with one click and just add your API key."
+      actions={
+        <Link href="/connectors/new">
+          <Button>
             <PlusIcon />
             Custom Connector
-          </Link>
-        }
-      />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
+          </Button>
+        </Link>
+      }
+    >
+      <div className="flex flex-col gap-[18px]">
         {msg && (
-          <div className="mb-4 p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)] flex items-center justify-between">
+          <div
+            className="flex items-center justify-between rounded-[11px] border px-4 py-3 text-sm"
+            style={{ background: 'var(--t-info-bg)', color: 'var(--t-info-fg)', borderColor: 'color-mix(in srgb, var(--t-info-fg) 25%, transparent)' }}
+          >
             <span>{msg}</span>
             <button
               onClick={() => setMsg('')}
-              className="ml-3 text-[var(--info-text)] hover:opacity-70 text-xs underline"
+              className="ml-3 text-xs underline hover:opacity-70"
             >
               dismiss
             </button>
           </div>
         )}
 
-        <div className="mb-8 text-center">
-          <h2 className="text-2xl font-bold mb-2">Built-in Adapters</h2>
-          <p className="text-[var(--muted-foreground)] text-sm max-w-lg mx-auto">
-            Pre-configured connector recipes for popular APIs. Import with one click and just add your API key.
-          </p>
-        </div>
-
         {/* Search + Category Filters */}
-        <div className="flex items-center gap-3 mb-4 justify-center">
-          <div className="relative w-full max-w-sm">
+        <div className="flex flex-col gap-3">
+          <div className="relative w-full max-w-md">
             <SearchIcon />
             <input
               type="text"
@@ -334,62 +328,61 @@ function AdapterStoreContent() {
               placeholder="Search adapters..."
               aria-label="Search adapters"
               autoComplete="off"
-              className="w-full border border-[var(--input)] rounded-md pl-9 pr-3 py-2 text-sm bg-[var(--background)]"
+              className="h-9 w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] pl-9 pr-3 text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--border-strong)] focus:outline-none"
             />
           </div>
+
+          {categories.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setActiveCategory(null)}
+                className={cn(
+                  'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                  activeCategory === null
+                    ? 'border-[var(--brand)] bg-[var(--brand)] text-white'
+                    : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
+                )}
+              >
+                All
+              </button>
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
+                  className={cn(
+                    'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                    activeCategory === cat
+                      ? 'border-[var(--brand)] bg-[var(--brand)] text-white'
+                      : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
+                  )}
+                >
+                  {CATEGORY_LABELS[cat] || cat}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {categories.length > 1 && (
-          <div className="flex flex-wrap items-center gap-2 mb-6 justify-center">
-            <button
-              onClick={() => setActiveCategory(null)}
-              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                activeCategory === null
-                  ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
-                  : 'border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--brand)] hover:text-[var(--foreground)]'
-              }`}
-            >
-              All
-            </button>
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
-                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  activeCategory === cat
-                    ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
-                    : 'border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--brand)] hover:text-[var(--foreground)]'
-                }`}
-              >
-                {CATEGORY_LABELS[cat] || cat}
-              </button>
-            ))}
-          </div>
-        )}
-
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="border border-[var(--border)] rounded-lg p-6 animate-pulse"
-              >
-                <div className="h-6 w-32 rounded bg-[var(--muted)] mb-3" />
-                <div className="h-4 w-full rounded bg-[var(--muted)] mb-2" />
-                <div className="h-4 w-2/3 rounded bg-[var(--muted)]" />
-              </div>
+              <Card key={i} className="p-5" style={{ animation: 'pulse 1.5s ease-in-out infinite' }}>
+                <div className="mb-3 h-6 w-32 rounded bg-[var(--surface-3)]" />
+                <div className="mb-2 h-4 w-full rounded bg-[var(--surface-3)]" />
+                <div className="h-4 w-2/3 rounded bg-[var(--surface-3)]" />
+              </Card>
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 border border-dashed border-[var(--border)] rounded-lg">
-            <p className="text-[var(--muted-foreground)]">
+          <div className="rounded-[14px] border border-dashed border-[var(--border)] py-16 text-center">
+            <p className="text-[var(--text-3)]">
               {list.length === 0
                 ? 'No adapters available yet.'
                 : 'No adapters match your search.'}
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((adapter) => {
               const isPublic = adapter.authType === 'NONE';
               const isImporting = importing === adapter.slug;
@@ -399,38 +392,38 @@ function AdapterStoreContent() {
                 Math.min(10, Math.round(Math.log2(adapter.toolCount + 1) * 2.2)),
               );
               return (
-                <article
+                <Card
                   key={adapter.slug}
-                  className="group relative flex flex-col rounded-2xl border border-[var(--border)] bg-[var(--card,var(--background))] p-5 transition hover:-translate-y-0.5 hover:border-[var(--brand)] hover:shadow-md"
+                  className="group relative flex flex-col p-5 transition-colors hover:border-[var(--border-strong)]"
                 >
                   <div className="flex items-start gap-3">
                     <BrandTile adapter={adapter} size={44} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="truncate text-[15px] font-semibold leading-tight">
+                        <span className="truncate text-[15px] font-semibold leading-tight tracking-[-0.01em]">
                           {adapter.name}
                         </span>
                         <span aria-hidden className="shrink-0 text-sm">
                           {REGION_FLAGS[adapter.region] || '🌐'}
                         </span>
                       </div>
-                      <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-wider text-[var(--muted-foreground)]">
+                      <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-wider text-[var(--text-3)]">
                         <span>
                           {CATEGORY_LABELS[adapter.category] || adapter.category}
                         </span>
-                        <span className="text-[var(--border)]">·</span>
+                        <span className="text-[var(--border-strong)]">·</span>
                         <span>{REGION_LABELS[adapter.region] || adapter.region}</span>
                       </div>
                     </div>
                   </div>
 
-                  <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-[var(--muted-foreground)] flex-1">
+                  <p className="mt-3 line-clamp-3 flex-1 text-sm leading-relaxed text-[var(--text-2)]">
                     {adapter.description}
                   </p>
 
                   <div className="mt-4 flex items-center justify-between gap-3 border-t border-dashed border-[var(--border)] pt-3">
-                    <div className="flex items-center gap-2 font-mono text-[11px] text-[var(--muted-foreground)]">
-                      <span className="font-semibold text-[var(--foreground)]">
+                    <div className="flex items-center gap-2 font-mono text-[11px] text-[var(--text-3)]">
+                      <span className="font-semibold text-[var(--text)]">
                         {adapter.toolCount}
                       </span>
                       <span>tool{adapter.toolCount !== 1 ? 's' : ''}</span>
@@ -438,25 +431,21 @@ function AdapterStoreContent() {
                         {Array.from({ length: 10 }, (_, i) => (
                           <span
                             key={i}
-                            className={`block h-[6px] w-[3px] rounded-[1px] ${
-                              i < fillCount ? 'bg-[var(--brand)]' : 'bg-[var(--border)]'
-                            }`}
+                            className="block h-[6px] w-[3px] rounded-[1px]"
+                            style={{ background: i < fillCount ? 'var(--brand)' : 'var(--surface-3)' }}
                           />
                         ))}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       {adapter.authType && (
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-wider ${
-                            isPublic
-                              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                              : 'bg-[var(--muted)] text-[var(--foreground)] opacity-80'
-                          }`}
+                        <Badge
+                          tone={isPublic ? 'emerald' : 'neutral'}
+                          className="gap-1 font-mono uppercase tracking-wider"
                         >
                           {isPublic ? <SparklesIcon /> : <LockIcon />}
                           {AUTH_LABELS[adapter.authType] || adapter.authType}
-                        </span>
+                        </Badge>
                       )}
                       {adapter.docsUrl && (
                         <a
@@ -465,15 +454,16 @@ function AdapterStoreContent() {
                           rel="noopener noreferrer"
                           title="API documentation"
                           aria-label="API documentation"
-                          className="inline-flex size-7 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--card,var(--background))] text-[var(--muted-foreground)] transition hover:border-[var(--brand)] hover:text-[var(--foreground)]"
+                          className="inline-flex size-7 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-3)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)]"
                         >
                           <ExternalLinkIcon />
                         </a>
                       )}
-                      <button
+                      <Button
+                        size="sm"
                         onClick={() => handleImportClick(adapter)}
                         disabled={isImporting || configLoading}
-                        className="inline-flex h-7 items-center gap-1 rounded-md bg-[var(--brand)] px-2.5 text-[12px] font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                        className="h-7 gap-1 px-2.5"
                       >
                         {isImporting ? 'Importing…' : (
                           <>
@@ -481,15 +471,15 @@ function AdapterStoreContent() {
                             <ArrowRightIcon />
                           </>
                         )}
-                      </button>
+                      </Button>
                     </div>
                   </div>
-                </article>
+                </Card>
               );
             })}
           </div>
         )}
-      </main>
+      </div>
 
       {/* Credential Configuration Modal */}
       {configAdapter && (
@@ -498,23 +488,23 @@ function AdapterStoreContent() {
             className="absolute inset-0 bg-black/50"
             onClick={() => setConfigAdapter(null)}
           />
-          <div className="relative bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg w-full max-w-md mx-4 p-6">
+          <div className="relative mx-4 w-full max-w-md rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <button
               onClick={() => setConfigAdapter(null)}
-              className="absolute top-3 right-3 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              className="absolute right-3 top-3 text-[var(--text-3)] hover:text-[var(--text)]"
               aria-label="Close"
             >
               <CloseIcon />
             </button>
 
-            <h3 className="text-lg font-semibold mb-1">
+            <h3 className="mb-1 text-lg font-semibold tracking-[-0.01em]">
               Configure {configAdapter.name}
             </h3>
-            <p className="text-sm text-[var(--muted-foreground)] mb-4">
+            <p className="mb-4 text-sm text-[var(--text-2)]">
               This adapter requires credentials to work. Enter them now or skip and configure later.
             </p>
 
-            <div className="mb-3 flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+            <div className="mb-3 flex items-center gap-2 text-xs text-[var(--text-3)]">
               <LockIcon />
               <span>Auth type: {AUTH_LABELS[configAdapter.connector?.authType] || configAdapter.connector?.authType}</span>
             </div>
@@ -524,8 +514,8 @@ function AdapterStoreContent() {
                 content is the same Markdown stored on the adapter JSON's
                 `instructions` field. */}
             {configAdapter.instructions && (
-              <details className="mb-4 rounded-md border border-[var(--border)] bg-[var(--muted)]/30" open>
-                <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium hover:bg-[var(--muted)]/60 rounded-md">
+              <details className="mb-4 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)]" open>
+                <summary className="cursor-pointer select-none rounded-[9px] px-3 py-2 text-sm font-medium hover:bg-[var(--surface-3)]">
                   📖 How to get these credentials
                 </summary>
                 <div className="prose prose-sm max-w-none px-3 pb-3 pt-1 text-[13px] leading-relaxed dark:prose-invert max-h-[40vh] overflow-y-auto">
@@ -548,7 +538,7 @@ function AdapterStoreContent() {
                   <div key={envVar}>
                     <label
                       htmlFor={`cred-${envVar}`}
-                      className="block text-sm font-medium mb-1"
+                      className="mb-1 block text-sm font-medium"
                     >
                       {formatEnvVarLabel(envVar)}
                     </label>
@@ -564,10 +554,10 @@ function AdapterStoreContent() {
                           }))
                         }
                         placeholder={envVar}
-                        className={
-                          'w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] ' +
-                          (isSecret ? 'pr-16' : '')
-                        }
+                        className={cn(
+                          'w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--border-strong)] focus:outline-none',
+                          isSecret && 'pr-16'
+                        )}
                       />
                       {isSecret && (
                         <button
@@ -578,7 +568,7 @@ function AdapterStoreContent() {
                               [envVar]: !visible,
                             }))
                           }
-                          className="absolute inset-y-0 right-0 px-2 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                          className="absolute inset-y-0 right-0 px-2 text-xs text-[var(--text-3)] hover:text-[var(--text)]"
                           aria-label={visible ? 'Hide value' : 'Show value'}
                         >
                           {visible ? 'Hide' : 'Show'}
@@ -590,22 +580,21 @@ function AdapterStoreContent() {
               })}
             </div>
 
-            <div className="flex gap-3 justify-end">
-              <button
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="secondary"
                 onClick={() => doImport(configAdapter.slug)}
-                className="px-4 py-2 rounded-md text-sm border border-[var(--border)] hover:bg-[var(--muted)]"
               >
                 Skip for now
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleConfigSubmit}
                 disabled={configAdapter.requiredEnvVars.some(
                   (v) => !credentialValues[v]?.trim(),
                 )}
-                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
               >
                 Import with credentials
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -631,9 +620,7 @@ function AdapterStoreContent() {
           }}
         />
       )}
-
-      <Footer />
-    </div>
+    </AppShell>
   );
 }
 
@@ -656,7 +643,7 @@ function PlusIcon() {
 
 function SearchIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
       <circle cx="11" cy="11" r="8" />
       <path d="m21 21-4.3-4.3" />
     </svg>

@@ -5,6 +5,7 @@ describe('OnboardingCronService — activation pass', () => {
     onboardingCandidates?: any[];
     stuckUsers?: any[];
     sendOk?: boolean;
+    trials?: any[];
   }) {
     const findMany = jest
       .fn()
@@ -13,7 +14,12 @@ describe('OnboardingCronService — activation pass', () => {
       // 2nd call: activation (stuck) cohort
       .mockResolvedValueOnce(overrides.stuckUsers ?? []);
     const update = jest.fn().mockResolvedValue({});
-    const prisma = { user: { findMany, update } } as any;
+    const prisma = {
+      user: { findMany, update },
+      // The trial-lifecycle pass runs after the activation pass; with no
+      // trials it's a no-op. Stub just enough so it doesn't throw here.
+      license: { findMany: jest.fn().mockResolvedValue(overrides.trials ?? []) },
+    } as any;
     const email = {
       sendOnboardingReminderEmail: jest.fn().mockResolvedValue(true),
       sendActivationReminderEmail: jest

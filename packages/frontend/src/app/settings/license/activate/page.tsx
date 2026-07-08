@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { license } from '@/lib/api';
-import { LogoIcon } from '@/components/nav-bar';
+import { buttonVariants } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 const KEY_RE = /^AMCP-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}$/;
 
@@ -67,47 +69,42 @@ function LicenseActivateInner() {
   }, [key, token, user, isLoading, router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-6">
-          <div className="flex justify-center mb-3">
-            <LogoIcon size={48} />
-          </div>
-          <h1 className="text-xl font-bold">License Activation</h1>
-        </div>
-
-        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)] text-sm">
-          {phase === 'loading' || phase === 'activating' ? (
-            <p className="text-center text-[var(--muted-foreground)]">
-              {phase === 'loading' ? 'Preparing…' : 'Activating your license…'}
-            </p>
-          ) : null}
-
-          {phase === 'success' && (
-            <div className="text-center">
-              <p className="text-emerald-600 font-medium mb-2">{message}</p>
-              <p className="text-[var(--muted-foreground)] text-xs">Redirecting to settings…</p>
-            </div>
-          )}
-
-          {(phase === 'error' || phase === 'invalid') && (
-            <div className="space-y-3">
-              <p className="text-[var(--destructive-text)]">{message}</p>
-              {key && phase === 'error' && (
-                <p className="text-xs text-[var(--muted-foreground)] break-all">
-                  Key: <span className="font-mono">{key}</span>
-                </p>
-              )}
-              <Link
-                href="/settings/license"
-                className="inline-block bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"
-              >
-                Go to License Settings
-              </Link>
-            </div>
-          )}
-        </div>
+    <div className="mx-auto w-full max-w-md">
+      <div className="mb-6">
+        <h1 className="text-base font-semibold text-[var(--text)]">License Activation</h1>
       </div>
+
+      <Card className="p-6 text-sm">
+        {phase === 'loading' || phase === 'activating' ? (
+          <p className="text-center text-[var(--text-3)]">
+            {phase === 'loading' ? 'Preparing…' : 'Activating your license…'}
+          </p>
+        ) : null}
+
+        {phase === 'success' && (
+          <div className="text-center">
+            <p className="text-[var(--ok)] font-medium mb-2">{message}</p>
+            <p className="text-[var(--text-3)] text-xs">Redirecting to settings…</p>
+          </div>
+        )}
+
+        {(phase === 'error' || phase === 'invalid') && (
+          <div className="space-y-3">
+            <p className="text-[var(--danger)]">{message}</p>
+            {key && phase === 'error' && (
+              <p className="text-xs text-[var(--text-3)] break-all">
+                Key: <span className="font-mono">{key}</span>
+              </p>
+            )}
+            <Link
+              href="/settings/license"
+              className={cn(buttonVariants({ variant: 'primary' }))}
+            >
+              Go to License Settings
+            </Link>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

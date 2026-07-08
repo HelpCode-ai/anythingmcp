@@ -38,6 +38,12 @@ export class OrgSettingsService {
     await this.set(organizationId, key, JSON.stringify(value));
   }
 
+  async delete(organizationId: string, key: string): Promise<void> {
+    await this.prisma.orgSettings.deleteMany({
+      where: { organizationId, key },
+    });
+  }
+
   /**
    * Get SMTP config for an org, falling back to global SiteSettings if not configured.
    */

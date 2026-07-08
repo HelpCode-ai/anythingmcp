@@ -3,9 +3,11 @@ import {
   Get,
   Put,
   Post,
+  Delete,
   Body,
   Req,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -30,9 +32,13 @@ class SmtpConfigDto {
   @IsString()
   user: string;
 
-  @ApiProperty({ description: 'SMTP password / API key.' })
+  @ApiPropertyOptional({
+    description:
+      'SMTP password / API key. Omit or leave empty to keep the currently stored password.',
+  })
+  @IsOptional()
   @IsString()
-  pass: string;
+  pass?: string;
 
   @ApiPropertyOptional({
     description: '"From" address used by outbound mail. Defaults to the SMTP user.',
@@ -115,8 +121,10 @@ export class SiteSettingsAdminController {
   @Get('smtp')
   @ApiOperation({ summary: 'Get SMTP configuration for current organization (ADMIN)' })
   async getSmtpConfig(@Req() req: any) {
-    const config = await this.orgSettings.getSmtpConfig(req.user.organizationId);
-    if (!config) return { configured: false };
+    // Org-only — never fall back to the global/system config, so operator
+    // credentials are never exposed to workspace admins.
+    const config = await this.orgSettings.getJson<any>(req.user.organizationId, 'smtp_config');
+    if (!config?.host) return { configured: false };
     return {
       configured: true,
       host: config.host,
@@ -130,21 +138,44 @@ export class SiteSettingsAdminController {
   @Put('smtp')
   @ApiOperation({ summary: 'Update SMTP configuration for current organization (ADMIN)' })
   async updateSmtpConfig(@Req() req: any, @Body() dto: SmtpConfigDto) {
+    // Empty password = keep the stored one, so admins can edit host/port
+    // without re-entering the secret (the GET never returns it).
+    let pass = dto.pass;
+    if (!pass) {
+      const existing = await this.orgSettings.getJson<any>(
+        req.user.organizationId,
+        'smtp_config',
+      );
+      pass = existing?.pass;
+      if (!pass) {
+        throw new BadRequestException('SMTP password is required');
+      }
+    }
     await this.orgSettings.setJson(req.user.organizationId, 'smtp_config', {
       host: dto.host,
       port: dto.port,
       user: dto.user,
-      pass: dto.pass,
+      pass,
       from: dto.from || '',
       secure: dto.secure ?? (dto.port === 465),
     });
     return { message: 'SMTP configuration saved' };
   }
 
+  @Delete('smtp')
+  @ApiOperation({
+    summary:
+      'Remove the SMTP configuration for the current organization (ADMIN) — emails fall back to the platform mail service',
+  })
+  async deleteSmtpConfig(@Req() req: any) {
+    await this.orgSettings.delete(req.user.organizationId, 'smtp_config');
+    return { message: 'SMTP configuration removed' };
+  }
+
   @Post('smtp/test')
   @ApiOperation({ summary: 'Test SMTP connection (ADMIN)' })
-  async testSmtp() {
-    return this.emailService.testConnection();
+  async testSmtp(@Req() req: any) {
+    return this.emailService.testConnection(req.user.organizationId);
   }
 
   @Get('footer-links')

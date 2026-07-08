@@ -4,10 +4,13 @@ import Link from 'next/link';
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { connectors } from '@/lib/api';
-import { NavBar } from '@/components/nav-bar';
-import { Footer } from '@/components/footer';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AppSelect } from '@/components/ui/select';
+import { AppShell } from '@/components/app-shell';
+import { Card } from '@/components/ui/card';
+import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 type HealthStatus = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -19,38 +22,57 @@ const TYPE_STYLES: Record<string, { text: string; bg: string; icon: string }> = 
   DATABASE: { text: 'Database', bg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400', icon: 'DB' },
 };
 
+/** Connector TYPE → redesign Badge tone. */
+const TYPE_TONE: Record<string, Tone> = {
+  REST: 'info',
+  DATABASE: 'emerald',
+  DB: 'emerald',
+  SOAP: 'warn',
+  GRAPHQL: 'pink',
+  MCP: 'purple',
+};
+
+/** Human-readable label for a connector type Badge. */
+function typeLabel(type: string): string {
+  return TYPE_STYLES[type]?.text ?? type;
+}
+
+/** First-letters of a connector name, for the square icon fallback. */
+function initials(name: string): string {
+  const words = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
 /**
- * Brand logo for a connector, with type-badge fallback.
+ * Brand logo for a connector, with initials fallback.
  *
  * The backend enriches every connector with `icon` resolved from the source
  * adapter (see `resolveAdapterIcon`). If the icon is set AND the file is
  * present under /logos/connectors/<icon>.svg, render the brand mark. If the
  * file 404s or the connector wasn't imported from an adapter, fall back to
- * the language-tag badge (REST/GraphQL/SOAP/MCP/DB).
+ * a 42px rounded tile with the connector's initials.
  */
-function ConnectorLogo({ icon, type }: { icon?: string | null; type: string }) {
+function ConnectorLogo({ icon, name }: { icon?: string | null; name: string }) {
   const [failed, setFailed] = useState(false);
   if (icon && !failed) {
     return (
-      <span className="inline-flex items-center justify-center w-7 h-7 bg-white rounded p-0.5 ring-1 ring-black/5 dark:ring-white/10 flex-shrink-0">
+      <span className="inline-flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-[11px] bg-white p-1.5 ring-1 ring-black/5 dark:ring-white/10">
         <img
           src={`/logos/connectors/${icon}.svg`}
           alt={icon}
-          className="w-full h-full object-contain"
+          className="h-full w-full object-contain"
           loading="lazy"
           onError={() => setFailed(true)}
         />
       </span>
     );
   }
-  const ts =
-    TYPE_STYLES[type] || {
-      text: type,
-      bg: 'bg-[var(--muted)] text-[var(--muted-foreground)]',
-      icon: '?',
-    };
   return (
-    <span className={`text-xs font-bold px-2 py-1 rounded ${ts.bg}`}>{ts.icon}</span>
+    <span className="inline-flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-[11px] bg-[var(--surface-2)] text-sm font-semibold text-[var(--text-2)]">
+      {initials(name)}
+    </span>
   );
 }
 
@@ -178,306 +200,305 @@ export default function ConnectorsPage() {
     return true;
   });
 
+  const headerActions = (
+    <div className="flex gap-2">
+      <Button
+        variant="secondary"
+        size="md"
+        onClick={handleHealthCheck}
+        disabled={checkingHealth}
+        title="Health check all connectors"
+      >
+        <HeartPulseIcon />
+        <span className="hidden sm:inline">{checkingHealth ? 'Checking...' : 'Health Check'}</span>
+      </Button>
+      <Button variant="secondary" size="md" onClick={handleExportAll} title="Export all connectors as JSON">
+        <DownloadIcon />
+        <span className="hidden sm:inline">Export</span>
+      </Button>
+      <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title="Import connectors from JSON backup">
+        <UploadIcon />
+        <span className="hidden sm:inline">Import</span>
+      </Button>
+      <Link
+        href="/connectors/store"
+        title="Browse pre-built adapter recipes"
+        className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}
+      >
+        <StoreIcon />
+        <span className="hidden sm:inline">Adapters</span>
+      </Link>
+      <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
+        <PlusIcon />
+        Add Connector
+      </Link>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-[var(--background)] flex flex-col">
-      <NavBar
-        breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
-        title="Connectors"
-        actions={
-          <div className="flex gap-2">
-            <button
-              onClick={handleHealthCheck}
-              disabled={checkingHealth}
-              className="border border-[var(--border)] px-3 py-2 rounded-md text-sm hover:bg-[var(--accent)] disabled:opacity-50 flex items-center gap-1.5"
-              title="Health check all connectors"
-            >
-              <HeartPulseIcon />
-              <span className="hidden sm:inline">{checkingHealth ? 'Checking...' : 'Health Check'}</span>
-            </button>
-            <button
-              onClick={handleExportAll}
-              className="border border-[var(--border)] px-3 py-2 rounded-md text-sm hover:bg-[var(--accent)] flex items-center gap-1.5"
-              title="Export all connectors as JSON"
-            >
-              <DownloadIcon />
-              <span className="hidden sm:inline">Export</span>
-            </button>
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="border border-[var(--border)] px-3 py-2 rounded-md text-sm hover:bg-[var(--accent)] flex items-center gap-1.5"
-              title="Import connectors from JSON backup"
-            >
-              <UploadIcon />
-              <span className="hidden sm:inline">Import</span>
-            </button>
-            <Link
-              href="/connectors/store"
-              className="border border-[var(--border)] px-3 py-2 rounded-md text-sm hover:bg-[var(--accent)] flex items-center gap-1.5"
-              title="Browse pre-built adapter recipes"
-            >
-              <StoreIcon />
-              <span className="hidden sm:inline">Adapters</span>
-            </Link>
-            <Link
-              href="/connectors/new"
-              className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 flex items-center gap-1.5"
-            >
+    <AppShell title="Connectors" actions={headerActions}>
+      {msg && (
+        <div className="mb-4 flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
+          <span>{msg}</span>
+          <button onClick={() => setMsg('')} className="ml-3 text-xs text-[var(--text-3)] underline hover:text-[var(--text)]">dismiss</button>
+        </div>
+      )}
+
+      {/* Import Modal (Radix Dialog) */}
+      <Dialog.Root open={showImportModal} onOpenChange={(open) => { setShowImportModal(open); if (!open) setImportJson(''); }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+            <div className="mb-4 flex items-center justify-between">
+              <Dialog.Title className="text-lg font-semibold text-[var(--text)]">Import Connectors</Dialog.Title>
+              <Dialog.Close className="rounded-sm p-1 text-[var(--text-3)] hover:text-[var(--text)]">
+                <CloseIcon />
+              </Dialog.Close>
+            </div>
+            <Dialog.Description className="mb-4 text-sm text-[var(--text-3)]">
+              Paste a previously exported JSON backup or upload a file. Duplicate connectors will be skipped.
+            </Dialog.Description>
+            <div className="mb-3">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]">
+                <UploadIcon size={14} />
+                Choose File
+                <input type="file" accept=".json" onChange={handleImportFile} className="hidden" />
+              </label>
+            </div>
+            <textarea
+              value={importJson}
+              onChange={(e) => setImportJson(e.target.value)}
+              rows={8}
+              placeholder='{"version":"1.0","connectors":[...]}'
+              className="w-full rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-3 py-2 font-mono text-sm text-[var(--text)]"
+            />
+            <div className="mt-4 flex gap-2">
+              <Button variant="primary" size="md" onClick={handleImportAll} disabled={importingAll || !importJson.trim()}>
+                {importingAll ? 'Importing...' : 'Import'}
+              </Button>
+              <Dialog.Close className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}>
+                Cancel
+              </Dialog.Close>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog.Root open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+            <Dialog.Title className="mb-2 text-lg font-semibold text-[var(--text)]">Delete Connector</Dialog.Title>
+            <Dialog.Description className="mb-5 text-sm text-[var(--text-3)]">
+              Are you sure you want to delete <strong className="text-[var(--text)]">{deleteConfirm?.name}</strong> and all its tools? This action cannot be undone.
+            </Dialog.Description>
+            <div className="flex justify-end gap-2">
+              <Dialog.Close className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}>
+                Cancel
+              </Dialog.Close>
+              <Button variant="danger" size="md" onClick={handleDelete} disabled={deleting}>
+                {deleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Health Check Results */}
+      {healthStatus && (
+        <Card className="mb-6 p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-[var(--text)]">Health Check Results</h3>
+            <button onClick={() => setHealthStatus(null)} className="text-xs text-[var(--text-3)] hover:underline">dismiss</button>
+          </div>
+          <div className="mb-4 flex gap-4 text-sm text-[var(--text-2)]">
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: 'var(--ok)' }}></span> {healthStatus.healthy} healthy</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: 'var(--danger)' }}></span> {healthStatus.unhealthy} unhealthy</span>
+            <span className="text-[var(--text-3)]">{healthStatus.total} total active</span>
+          </div>
+          {healthStatus.connectors.length > 0 && (
+            <div className="space-y-2">
+              {healthStatus.connectors.map((c: any, i: number) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-2 text-sm"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: c.status === 'healthy' ? 'var(--ok)' : 'var(--danger)' }}></span>
+                    <span className="font-medium text-[var(--text)]">{c.name}</span>
+                    <span className="text-xs text-[var(--text-3)]">{c.type}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="text-[var(--text-3)]">{c.latencyMs}ms</span>
+                    <span style={{ color: c.status === 'healthy' ? 'var(--ok)' : 'var(--danger)' }}>{c.message}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {loading ? (
+        /* Skeleton loading state */
+        <div className="grid gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="animate-pulse p-[18px]">
+              <div className="mb-[14px] flex items-start gap-3">
+                <div className="h-[42px] w-[42px] rounded-[11px] bg-[var(--surface-2)]" />
+                <div className="flex-1 space-y-2 pt-1">
+                  <div className="h-4 w-32 rounded bg-[var(--surface-2)]" />
+                  <div className="h-3 w-44 rounded bg-[var(--surface-2)]" />
+                </div>
+                <div className="h-5 w-12 rounded bg-[var(--surface-2)]" />
+              </div>
+              <div className="flex items-center justify-between border-t border-[var(--border)] pt-[13px]">
+                <div className="flex gap-4">
+                  <div className="h-7 w-10 rounded bg-[var(--surface-2)]" />
+                  <div className="h-7 w-10 rounded bg-[var(--surface-2)]" />
+                </div>
+                <div className="h-5 w-16 rounded-full bg-[var(--surface-2)]" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : list.length === 0 ? (
+        <div className="rounded-[14px] border border-dashed border-[var(--border-strong)] py-16 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--brand-tint)]">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1" />
+              <path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9" />
+              <path d="M21 21v-2h-4" />
+              <path d="M3 5v2a1 1 0 0 0 1 1h1a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H4a1 1 0 0 0-1 1" />
+              <path d="M7 5H3" />
+            </svg>
+          </div>
+          <h3 className="mb-2 text-lg font-semibold text-[var(--text)]">No connectors yet</h3>
+          <p className="mb-2 text-sm text-[var(--text-3)]">
+            Add your first API connector to start generating MCP tools.
+          </p>
+          <p className="mb-6 text-xs text-[var(--text-3)]">
+            Supports {SUPPORTED_TYPES.map((t) => t.label).join(', ')}
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
               <PlusIcon />
               Add Connector
             </Link>
+            <Link href="/connectors/store" className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}>
+              <StoreIcon />
+              Browse Adapters
+            </Link>
+            <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)}>
+              <UploadIcon size={14} />
+              Import from Backup
+            </Button>
           </div>
-        }
-      />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
-        {msg && (
-          <div className="mb-4 p-3 rounded-md bg-[var(--info-bg)] text-[var(--info-text)] text-sm border border-[var(--info-border)] flex items-center justify-between">
-            <span>{msg}</span>
-            <button onClick={() => setMsg('')} className="ml-3 text-[var(--info-text)] hover:opacity-70 text-xs underline">dismiss</button>
-          </div>
-        )}
-
-        {/* Import Modal (Radix Dialog) */}
-        <Dialog.Root open={showImportModal} onOpenChange={(open) => { setShowImportModal(open); if (!open) setImportJson(''); }}>
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
-            <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg">
-              <div className="flex items-center justify-between mb-4">
-                <Dialog.Title className="text-lg font-medium">Import Connectors</Dialog.Title>
-                <Dialog.Close className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-sm p-1">
-                  <CloseIcon />
-                </Dialog.Close>
-              </div>
-              <Dialog.Description className="text-sm text-[var(--muted-foreground)] mb-4">
-                Paste a previously exported JSON backup or upload a file. Duplicate connectors will be skipped.
-              </Dialog.Description>
-              <div className="mb-3">
-                <label className="inline-flex items-center gap-1.5 border border-[var(--border)] px-3 py-1.5 rounded text-sm cursor-pointer hover:bg-[var(--accent)]">
-                  <UploadIcon size={14} />
-                  Choose File
-                  <input type="file" accept=".json" onChange={handleImportFile} className="hidden" />
-                </label>
-              </div>
-              <textarea
-                value={importJson}
-                onChange={(e) => setImportJson(e.target.value)}
-                rows={8}
-                placeholder='{"version":"1.0","connectors":[...]}'
-                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+        </div>
+      ) : (
+        <>
+          {/* Search and Filter bar */}
+          <div className="mb-[18px] flex flex-wrap items-center gap-[10px]">
+            <div className="relative min-w-[200px] flex-1">
+              <SearchIcon />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Filter connectors…"
+                aria-label="Search connectors by name or URL"
+                className="h-9 w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] pl-9 pr-3 text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)]"
               />
-              <div className="flex gap-2 mt-4">
-                <button
-                  onClick={handleImportAll}
-                  disabled={importingAll || !importJson.trim()}
-                  className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
-                >
-                  {importingAll ? 'Importing...' : 'Import'}
-                </button>
-                <Dialog.Close className="border border-[var(--border)] px-4 py-2 rounded-md text-sm hover:bg-[var(--accent)]">
-                  Cancel
-                </Dialog.Close>
-              </div>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
-
-        {/* Delete Confirmation Dialog */}
-        <Dialog.Root open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-            <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg">
-              <Dialog.Title className="text-lg font-medium mb-2">Delete Connector</Dialog.Title>
-              <Dialog.Description className="text-sm text-[var(--muted-foreground)] mb-5">
-                Are you sure you want to delete <strong className="text-[var(--foreground)]">{deleteConfirm?.name}</strong> and all its tools? This action cannot be undone.
-              </Dialog.Description>
-              <div className="flex gap-2 justify-end">
-                <Dialog.Close className="border border-[var(--border)] px-4 py-2 rounded-md text-sm hover:bg-[var(--accent)]">
-                  Cancel
-                </Dialog.Close>
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="bg-[var(--destructive)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
-                >
-                  {deleting ? 'Deleting...' : 'Delete'}
-                </button>
-              </div>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
-
-        {/* Health Check Results */}
-        {healthStatus && (
-          <div className="mb-6 border border-[var(--border)] rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium">Health Check Results</h3>
-              <button onClick={() => setHealthStatus(null)} className="text-xs text-[var(--muted-foreground)] hover:underline">dismiss</button>
             </div>
-            <div className="flex gap-4 mb-4 text-sm">
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[var(--success)]"></span> {healthStatus.healthy} healthy</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[var(--destructive)]"></span> {healthStatus.unhealthy} unhealthy</span>
-              <span className="text-[var(--muted-foreground)]">{healthStatus.total} total active</span>
-            </div>
-            {healthStatus.connectors.length > 0 && (
-              <div className="space-y-2">
-                {healthStatus.connectors.map((c: any, i: number) => (
-                  <div key={i} className={`flex items-center justify-between p-2 rounded text-sm border ${c.status === 'healthy' ? 'border-[var(--success-border)] bg-[var(--success-bg)]' : 'border-[var(--destructive-border)] bg-[var(--destructive-bg)]'}`}>
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${c.status === 'healthy' ? 'bg-[var(--success)]' : 'bg-[var(--destructive)]'}`}></span>
-                      <span className="font-medium">{c.name}</span>
-                      <span className="text-xs text-[var(--muted-foreground)]">{c.type}</span>
+            <AppSelect
+              value={typeFilter}
+              onValueChange={setTypeFilter}
+              className="h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] text-[var(--text)]"
+              options={[
+                { value: '', label: 'All types' },
+                { value: 'REST', label: 'REST' },
+                { value: 'SOAP', label: 'SOAP' },
+                { value: 'GRAPHQL', label: 'GraphQL' },
+                { value: 'MCP', label: 'MCP' },
+                { value: 'DATABASE', label: 'Database' },
+              ]}
+            />
+            <span className="text-[13px] text-[var(--text-3)]">
+              {filtered.length} connector{filtered.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          <div className="grid gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
+            {filtered.map((c) => {
+              const tone: Tone = TYPE_TONE[c.type] ?? 'neutral';
+              return (
+                <Card
+                  key={c.id}
+                  className="group relative flex flex-col p-[18px] transition-[border-color,box-shadow] hover:border-[var(--border-strong)] hover:shadow-[var(--shadow)]"
+                >
+                  <Link href={`/connectors/${c.id}`} className="absolute inset-0 z-0" aria-label={c.name} />
+                  <div className="relative z-0 mb-[14px] flex items-start gap-3 pointer-events-none">
+                    <ConnectorLogo icon={c.icon} name={c.name} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-[14.5px] font-semibold text-[var(--text)]">{c.name}</span>
+                      </div>
+                      <div className="mt-0.5 truncate font-mono text-[12px] text-[var(--text-3)]">{c.baseUrl}</div>
                     </div>
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className="text-[var(--muted-foreground)]">{c.latencyMs}ms</span>
-                      <span className={c.status === 'healthy' ? 'text-[var(--success-text)]' : 'text-[var(--destructive-text)]'}>{c.message}</span>
-                    </div>
+                    <Badge tone={tone} className="flex-shrink-0">{typeLabel(c.type)}</Badge>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {loading ? (
-          /* Skeleton loading state */
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="border border-[var(--border)] rounded-lg p-4 animate-pulse">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-6 rounded bg-[var(--muted)]" />
-                  <div className="h-5 w-40 rounded bg-[var(--muted)]" />
-                  <div className="w-2 h-2 rounded-full bg-[var(--muted)]" />
-                  <div className="h-4 w-12 rounded bg-[var(--muted)]" />
-                </div>
-                <div className="flex items-center gap-4 mt-2.5 ml-[52px]">
-                  <div className="h-3.5 w-48 rounded bg-[var(--muted)]" />
-                  <div className="h-3.5 w-16 rounded bg-[var(--muted)]" />
-                  <div className="h-3.5 w-20 rounded bg-[var(--muted)]" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : list.length === 0 ? (
-          <div className="text-center py-16 border border-dashed border-[var(--border)] rounded-lg">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[var(--brand-light)] flex items-center justify-center">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1" />
-                <path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9" />
-                <path d="M21 21v-2h-4" />
-                <path d="M3 5v2a1 1 0 0 0 1 1h1a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H4a1 1 0 0 0-1 1" />
-                <path d="M7 5H3" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-medium mb-2">No connectors yet</h3>
-            <p className="text-[var(--muted-foreground)] mb-2 text-sm">
-              Add your first API connector to start generating MCP tools.
-            </p>
-            <p className="text-[var(--muted-foreground)] mb-6 text-xs">
-              Supports {SUPPORTED_TYPES.map((t) => t.label).join(', ')}
-            </p>
-            <div className="flex items-center justify-center gap-3">
-              <Link
-                href="/connectors/new"
-                className="inline-flex items-center gap-1.5 bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
-              >
-                <PlusIcon />
-                Add Connector
-              </Link>
-              <Link
-                href="/connectors/store"
-                className="inline-flex items-center gap-1.5 border border-[var(--border)] px-4 py-2 rounded-md text-sm hover:bg-[var(--accent)]"
-              >
-                <StoreIcon />
-                Browse Adapters
-              </Link>
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="inline-flex items-center gap-1.5 border border-[var(--border)] px-4 py-2 rounded-md text-sm hover:bg-[var(--accent)]"
-              >
-                <UploadIcon size={14} />
-                Import from Backup
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Search and Filter bar */}
-            <div className="flex items-center gap-3 mb-6">
-              <div className="relative flex-1 max-w-sm">
-                <SearchIcon />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search connectors..."
-                  aria-label="Search connectors by name or URL"
-                  className="w-full border border-[var(--input)] rounded-md pl-9 pr-3 py-2 text-sm bg-[var(--background)]"
-                />
-              </div>
-              <AppSelect
-                value={typeFilter}
-                onValueChange={setTypeFilter}
-                className="border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-                options={[
-                  { value: '', label: 'All types' },
-                  { value: 'REST', label: 'REST' },
-                  { value: 'SOAP', label: 'SOAP' },
-                  { value: 'GRAPHQL', label: 'GraphQL' },
-                  { value: 'MCP', label: 'MCP' },
-                  { value: 'DATABASE', label: 'Database' },
-                ]}
-              />
-              <span className="text-sm text-[var(--muted-foreground)]">
-                {filtered.length} connector{filtered.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {filtered.map((c) => {
-                return (
-                  <div key={c.id} className="border border-[var(--border)] rounded-lg p-4 hover:border-[var(--brand)] transition-colors group">
-                    <div className="flex items-center justify-between gap-4">
-                      <Link href={`/connectors/${c.id}`} className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3">
-                          <ConnectorLogo icon={c.icon} type={c.type} />
-                          <h3 className="font-medium group-hover:text-[var(--brand)] transition-colors">{c.name}</h3>
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c.isActive ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
-                          <span className="text-xs text-[var(--muted-foreground)]">{c.isActive ? 'Active' : 'Inactive'}</span>
-                        </div>
-                        <div className="flex items-center gap-3 mt-1.5 ml-[40px] text-[var(--muted-foreground)]">
-                          <span className="font-mono text-xs truncate max-w-xs">{c.baseUrl}</span>
-                          <span className="w-1 h-1 rounded-full bg-[var(--border)] flex-shrink-0" />
-                          <span className="text-xs flex-shrink-0">{c.tools?.length || 0} tools</span>
-                          <span className="w-1 h-1 rounded-full bg-[var(--border)] flex-shrink-0" />
-                          <span className="text-xs flex-shrink-0">{c.authType}</span>
-                        </div>
-                      </Link>
-                      <div className="flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
-                        {(c.type === 'REST' || c.type === 'GRAPHQL' || c.type === 'SOAP') && (
-                          <button
-                            onClick={() => handleImportSpec(c.id)}
-                            className="border border-[var(--border)] px-3 py-1 rounded text-xs hover:bg-[var(--accent)]"
-                          >
-                            Import Spec
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setDeleteConfirm({ id: c.id, name: c.name })}
-                          className="border border-[var(--destructive)] text-[var(--destructive)] px-3 py-1 rounded text-xs hover:bg-[var(--destructive-bg)]"
-                        >
-                          Delete
-                        </button>
+                  <div className="relative z-0 mt-auto flex items-center justify-between border-t border-[var(--border)] pt-[13px] pointer-events-none">
+                    <div className="flex gap-4">
+                      <div>
+                        <div className="text-[11px] text-[var(--text-3)]">Tools</div>
+                        <div className="text-[14px] font-semibold text-[var(--text)]">{c.tools?.length || 0}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-[var(--text-3)]">Auth</div>
+                        <div className="text-[14px] font-semibold text-[var(--text)]">{c.authType}</div>
                       </div>
                     </div>
+                    <StatusPill
+                      tone={c.isActive ? 'success' : 'neutral'}
+                      dot={c.isActive ? 'var(--ok)' : 'var(--text-3)'}
+                    >
+                      {c.isActive ? 'Active' : 'Inactive'}
+                    </StatusPill>
                   </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </main>
-      <Footer />
-    </div>
+                  {/* Hover actions (above the full-card link) */}
+                  <div className="relative z-10 mt-[14px] flex gap-2 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                    {(c.type === 'REST' || c.type === 'GRAPHQL' || c.type === 'SOAP') && (
+                      <Button variant="secondary" size="sm" onClick={() => handleImportSpec(c.id)}>
+                        Import Spec
+                      </Button>
+                    )}
+                    <Button variant="danger" size="sm" onClick={() => setDeleteConfirm({ id: c.id, name: c.name })}>
+                      Delete
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
+
+            {/* Add a connector tile */}
+            <Link
+              href="/connectors/new"
+              className={cn(
+                'flex min-h-[140px] flex-col items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-[var(--border-strong)] p-[18px] text-[var(--text-2)]',
+                'transition-colors hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] hover:text-[var(--brand)]'
+              )}
+            >
+              <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-[var(--surface-2)]">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+              </span>
+              <span className="text-[13px] font-semibold">Add a connector</span>
+              <span className="text-[12px] text-[var(--text-3)]">Import a spec or pick an adapter</span>
+            </Link>
+          </div>
+        </>
+      )}
+    </AppShell>
   );
 }
 
@@ -494,7 +515,7 @@ function PlusIcon() {
 
 function SearchIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">
       <circle cx="11" cy="11" r="8" />
       <path d="m21 21-4.3-4.3" />
     </svg>

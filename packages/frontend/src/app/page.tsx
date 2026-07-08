@@ -3,7 +3,11 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, audit } from '@/lib/api';
+import { connectors, audit, knowledgeGraph } from '@/lib/api';
+import { AppShell } from '@/components/app-shell';
+import { Card } from '@/components/ui/card';
+import { StatCard } from '@/components/ui/stat-card';
+import { Button } from '@/components/ui/button';
 
 type HealthResult = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -14,8 +18,6 @@ interface AnalyticsData {
   successRate: number;
   avgDuration: number;
 }
-import { NavBar } from '@/components/nav-bar';
-import { Footer } from '@/components/footer';
 
 export default function DashboardPage() {
   const { token, user, isLoading } = useAuth();
@@ -25,6 +27,7 @@ export default function DashboardPage() {
   const [healthResult, setHealthResult] = useState<HealthResult>(null);
   const [checkingHealth, setCheckingHealth] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
+  const [kgStats, setKgStats] = useState<{ nodes: number; edges: number } | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -44,9 +47,12 @@ export default function DashboardPage() {
         });
         setRecentConnectors(connList.slice(0, 5));
         if (analyticsData) setAnalytics(analyticsData);
-        // Auto-run health check if there are connectors
         if (connList.length > 0) {
           connectors.healthCheck(token).then(setHealthResult).catch(() => {});
+          // Knowledge-graph teaser counts (free static/observational layers; no AI).
+          knowledgeGraph.stats(token)
+            .then((s) => setKgStats({ nodes: s.nodes, edges: s.edges }))
+            .catch(() => {});
         }
       } catch {
         // Backend may not be running
@@ -75,422 +81,290 @@ export default function DashboardPage() {
       : window.location.origin
     : 'http://localhost:4000';
 
+  const maxTotal = analytics?.daily?.length
+    ? Math.max(...analytics.daily.map((d) => d.success + d.error + d.timeout), 1)
+    : 1;
+
   return (
-    <div className="min-h-screen bg-[var(--background)] flex flex-col">
-      <NavBar />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
-        <div className="mb-8">
-          <h2 className="text-2xl font-semibold">Welcome back{user?.name ? `, ${user.name}` : ''}</h2>
-          <p className="text-[var(--muted-foreground)] mt-1 text-sm">Here&apos;s an overview of your MCP server.</p>
-        </div>
-
-        {/* First-run nudge: user has zero connectors → softly point them
-            back to the welcome wizard. Disappears as soon as they have
-            one. Non-blocking; safe to dismiss by clicking the CTA. */}
+    <AppShell
+      title={`Welcome back${user?.name ? `, ${user.name}` : ''}`}
+      subtitle="Here's an overview of your MCP server."
+      actions={
+        <Link href="/connectors/new">
+          <Button>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+            New connector
+          </Button>
+        </Link>
+      }
+    >
+      <div className="flex flex-col gap-[18px]">
+        {/* First-run nudge */}
         {!dataLoading && stats.connectors === 0 && (
-          <div className="mb-8 rounded-xl border border-[var(--brand)]/30 bg-[var(--brand-light)] px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex flex-col gap-3 rounded-[14px] border border-[var(--brand)]/30 bg-[var(--brand-tint)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="font-medium text-sm">
-                You&apos;re 60 seconds from your first AI superpower
-              </div>
-              <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
+              <div className="text-sm font-semibold">You&apos;re 60 seconds from your first AI superpower</div>
+              <div className="mt-0.5 text-xs text-[var(--text-2)]">
                 Pick a pre-built connector from the marketplace or paste your own OpenAPI spec.
               </div>
             </div>
-            <Link
-              href="/welcome"
-              className="shrink-0 inline-flex items-center justify-center bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"
-            >
-              Connect your first tool →
+            <Link href="/welcome" className="shrink-0">
+              <Button>Connect your first tool →</Button>
             </Link>
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        {/* Stat cards */}
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            title="Active Connectors"
-            value={String(stats.connectors)}
+            label="Active connectors"
+            value={dataLoading ? '—' : stats.connectors}
+            hint={
+              healthResult
+                ? `${healthResult.healthy} healthy · ${healthResult.unhealthy} down`
+                : 'connectors configured'
+            }
+            iconTone="info"
             icon={<CableStatIcon />}
-            color="brand"
-            loading={dataLoading}
           />
           <StatCard
-            title="MCP Tools"
-            value={String(stats.tools)}
+            label="MCP tools"
+            value={dataLoading ? '—' : stats.tools}
+            hint={`across ${stats.connectors} source${stats.connectors === 1 ? '' : 's'}`}
+            iconTone="emerald"
             icon={<WrenchStatIcon />}
-            color="success"
-            loading={dataLoading}
           />
           <StatCard
-            title="Invocations (24h)"
-            value={String(stats.invocations24h)}
+            label="Invocations · 24h"
+            value={dataLoading ? '—' : stats.invocations24h.toLocaleString()}
+            hint="last 24 hours"
+            iconTone="info"
             icon={<ActivityStatIcon />}
-            color="brand"
-            loading={dataLoading}
           />
           <StatCard
-            title="Errors (24h)"
-            value={String(stats.errors24h)}
+            label="Errors · 24h"
+            value={dataLoading ? '—' : stats.errors24h}
+            hint={
+              stats.invocations24h > 0
+                ? `${((stats.errors24h / stats.invocations24h) * 100).toFixed(2)}% error rate`
+                : 'no invocations'
+            }
+            hintTone={stats.errors24h > 0 ? 'warn' : 'muted'}
+            iconTone={stats.errors24h > 0 ? 'warn' : 'emerald'}
             icon={<AlertStatIcon />}
-            color={stats.errors24h > 0 ? 'destructive' : 'success'}
-            loading={dataLoading}
           />
         </div>
 
-        {/* Analytics Charts */}
+        {/* Chart + summary */}
         {analytics && analytics.totalInvocations > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            {/* 7-Day Invocation Chart */}
-            <div className="md:col-span-2 border border-[var(--border)] rounded-lg p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium">Invocations (7 days)</h3>
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[var(--brand)]"></span> Success</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[var(--destructive)]"></span> Error</span>
+          <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[2fr_1fr]">
+            <Card className="p-5">
+              <div className="mb-[18px] flex items-center justify-between">
+                <div className="text-sm font-semibold">Invocations · last 7 days</div>
+                <div className="flex gap-3.5 text-xs text-[var(--text-2)]">
+                  <span className="flex items-center gap-[5px]"><span className="h-2 w-2 rounded-sm bg-[var(--brand)]" />Success</span>
+                  <span className="flex items-center gap-[5px]"><span className="h-2 w-2 rounded-sm bg-[var(--danger)]" />Error</span>
                 </div>
               </div>
-              <div className="flex items-end gap-1 h-32">
+              <div className="flex h-[150px] items-end gap-2.5">
                 {analytics.daily.map((day) => {
                   const total = day.success + day.error + day.timeout;
-                  const maxTotal = Math.max(...analytics.daily.map(d => d.success + d.error + d.timeout), 1);
                   const height = (total / maxTotal) * 100;
                   const errorPct = total > 0 ? (day.error / total) * 100 : 0;
                   return (
-                    <div key={day.date} className="flex-1 flex flex-col items-center gap-1">
-                      <div className="w-full relative" style={{ height: `${Math.max(height, 4)}%` }}>
+                    <div key={day.date} className="flex flex-1 flex-col items-center gap-2">
+                      <div className="flex h-[130px] w-full items-end">
                         <div
-                          className="absolute bottom-0 w-full bg-[var(--brand)] rounded-t-sm"
-                          style={{ height: `${100 - errorPct}%`, opacity: 0.8 }}
-                        />
-                        {errorPct > 0 && (
-                          <div
-                            className="absolute top-0 w-full bg-[var(--destructive)] rounded-t-sm"
-                            style={{ height: `${errorPct}%`, opacity: 0.8 }}
-                          />
-                        )}
+                          className="relative mx-auto w-[62%] rounded-t-[5px] bg-[var(--brand)]"
+                          style={{ height: `${Math.max(height, 6)}%`, minHeight: 8 }}
+                          title={`${total} calls`}
+                        >
+                          <div className="absolute inset-x-0 top-0 rounded-t-[5px] bg-[var(--danger)]" style={{ height: `${errorPct}%` }} />
+                        </div>
                       </div>
-                      <span className="text-[9px] text-[var(--muted-foreground)]">
-                        {day.date.slice(5)}
-                      </span>
+                      <span className="text-[11px] text-[var(--text-3)]">{day.date.slice(5)}</span>
                     </div>
                   );
                 })}
               </div>
-            </div>
+            </Card>
 
-            {/* Summary Stats */}
-            <div className="border border-[var(--border)] rounded-lg p-6 space-y-4">
-              <h3 className="text-sm font-medium">7-Day Summary</h3>
+            <Card className="flex flex-col gap-4 p-5">
+              <div className="text-sm font-semibold">7-day summary</div>
               <div>
-                <p className="text-xs text-[var(--muted-foreground)]">Success Rate</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-2 bg-[var(--muted)] rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-[var(--success)] rounded-full"
-                      style={{ width: `${analytics.successRate}%` }}
-                    />
-                  </div>
-                  <span className="text-sm font-bold">{analytics.successRate}%</span>
+                <div className="mb-1.5 flex justify-between text-[12.5px] text-[var(--text-2)]">
+                  <span>Success rate</span>
+                  <span className="font-semibold text-[var(--text)]">{analytics.successRate}%</span>
+                </div>
+                <div className="h-[7px] overflow-hidden rounded-full bg-[var(--surface-3)]">
+                  <div className="h-full rounded-full bg-[var(--ok)]" style={{ width: `${analytics.successRate}%` }} />
                 </div>
               </div>
-              <div>
-                <p className="text-xs text-[var(--muted-foreground)]">Avg Response Time</p>
-                <p className="text-lg font-bold">{analytics.avgDuration}ms</p>
-              </div>
-              <div>
-                <p className="text-xs text-[var(--muted-foreground)]">Total Invocations</p>
-                <p className="text-lg font-bold">{analytics.totalInvocations}</p>
+              <div className="flex gap-5">
+                <div>
+                  <div className="text-xs text-[var(--text-3)]">Avg response</div>
+                  <div className="text-xl font-semibold tracking-[-0.02em]">{analytics.avgDuration} ms</div>
+                </div>
+                <div>
+                  <div className="text-xs text-[var(--text-3)]">Total calls</div>
+                  <div className="text-xl font-semibold tracking-[-0.02em]">{analytics.totalInvocations.toLocaleString()}</div>
+                </div>
               </div>
               {analytics.topTools.length > 0 && (
-                <div>
-                  <p className="text-xs text-[var(--muted-foreground)] mb-2">Top Tools</p>
-                  <div className="space-y-1">
-                    {analytics.topTools.slice(0, 5).map((t) => (
-                      <div key={t.name} className="flex items-center justify-between text-xs">
-                        <span className="font-mono truncate max-w-[140px]">{t.name}</span>
-                        <span className="text-[var(--muted-foreground)]">{t.count}x</span>
-                      </div>
-                    ))}
-                  </div>
+                <div className="border-t border-[var(--border)] pt-3">
+                  <div className="mb-2 text-xs text-[var(--text-3)]">Top tools</div>
+                  {analytics.topTools.slice(0, 5).map((t) => (
+                    <div key={t.name} className="flex items-center justify-between py-[3px] text-[12.5px]">
+                      <span className="truncate font-mono text-[var(--text-2)]">{t.name}</span>
+                      <span className="ml-2 flex-shrink-0 text-[var(--text-3)]">{t.count}x</span>
+                    </div>
+                  ))}
                 </div>
               )}
-            </div>
+            </Card>
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Quick Actions */}
-          <div className="border border-[var(--border)] rounded-lg p-6">
-            <h3 className="text-lg font-medium mb-4">Quick Actions</h3>
-            <div className="space-y-3">
-              <Link
-                href="/connectors/new"
-                className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors group"
-              >
-                <div className="w-9 h-9 rounded-lg bg-[var(--brand-light)] text-[var(--brand)] flex items-center justify-center group-hover:bg-[var(--brand)] group-hover:text-white transition-colors">
-                  <PlusIcon />
-                </div>
-                <div>
-                  <p className="font-medium text-sm">Add Connector</p>
-                  <p className="text-xs text-[var(--muted-foreground)]">Connect a REST, SOAP, GraphQL, or Database API</p>
-                </div>
-              </Link>
-              <Link
-                href="/mcp-server"
-                className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors group"
-              >
-                <div className="w-9 h-9 rounded-lg bg-[var(--success-light)] text-[var(--success)] flex items-center justify-center group-hover:bg-[var(--success)] group-hover:text-white transition-colors">
-                  <ServerStatIcon />
-                </div>
-                <div>
-                  <p className="font-medium text-sm">Configure MCP Client</p>
-                  <p className="text-xs text-[var(--muted-foreground)]">Get connection config for Claude, Cursor, or other clients</p>
-                </div>
-              </Link>
-              <Link
-                href="/logs"
-                className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors group"
-              >
-                <div className="w-9 h-9 rounded-lg bg-[var(--accent)] text-[var(--muted-foreground)] flex items-center justify-center group-hover:bg-[var(--brand)] group-hover:text-white transition-colors">
-                  <LogsStatIcon />
-                </div>
-                <div>
-                  <p className="font-medium text-sm">View Invocation Logs</p>
-                  <p className="text-xs text-[var(--muted-foreground)]">Monitor tool calls, errors, and performance</p>
-                </div>
-              </Link>
+        {/* Health + Quick actions */}
+        <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+          {/* Connector health */}
+          <Card className="p-5">
+            <div className="mb-3.5 flex items-center justify-between">
+              <div className="text-sm font-semibold">Connector health</div>
+              <button onClick={handleHealthCheck} disabled={checkingHealth} className="text-xs text-[var(--brand)] hover:underline disabled:opacity-50">
+                {checkingHealth ? 'Checking…' : 'Refresh'}
+              </button>
             </div>
-          </div>
-
-          {/* MCP Server Status + Health + Recent Connectors */}
-          <div className="space-y-6">
-            <div className="border border-[var(--border)] rounded-lg p-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-medium">MCP Server</h3>
-                <span className="flex items-center gap-1.5 text-xs text-[var(--success)] font-medium">
-                  <span className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse"></span>
-                  Running
-                </span>
+            {dataLoading ? (
+              <div className="space-y-3" style={{ animation: 'pulse 1.5s ease-in-out infinite' }}>
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-3 w-full rounded bg-[var(--surface-3)]" />
+                ))}
               </div>
-              <code className="block bg-[var(--muted)] px-3 py-2 rounded text-xs font-mono">
+            ) : healthResult ? (
+              <div>
+                <div className="mb-3.5 flex items-center gap-3">
+                  <div className="h-[7px] flex-1 overflow-hidden rounded-full bg-[var(--surface-3)]">
+                    <div className="h-full rounded-full bg-[var(--ok)] transition-all" style={{ width: healthResult.total > 0 ? `${(healthResult.healthy / healthResult.total) * 100}%` : '0%' }} />
+                  </div>
+                  <span className="text-[13px] font-semibold">{healthResult.healthy}/{healthResult.total}</span>
+                </div>
+                {healthResult.connectors.map((c: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between py-1.5 text-[13px]">
+                    <div className="flex items-center gap-2">
+                      <span className="h-[7px] w-[7px] rounded-full" style={{ background: c.status === 'healthy' ? 'var(--ok)' : 'var(--danger)' }} />
+                      <span className="font-medium">{c.name}</span>
+                    </div>
+                    <span className="font-mono text-xs text-[var(--text-3)]">{c.latencyMs}ms</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-[var(--text-3)]">No health data yet</p>
+            )}
+
+            <div className="mt-4 border-t border-[var(--border)] pt-4">
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-[0.05em] text-[var(--text-3)]">MCP endpoint</div>
+              <code className="block overflow-x-auto rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 font-mono text-xs text-[var(--text-2)]">
                 {apiUrl}/mcp
               </code>
             </div>
+          </Card>
 
-            {/* Connector Health */}
-            <div className="border border-[var(--border)] rounded-lg p-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-medium">Connector Health</h3>
-                <button
-                  onClick={handleHealthCheck}
-                  disabled={checkingHealth}
-                  className="text-xs text-[var(--brand)] hover:underline disabled:opacity-50"
-                >
-                  {checkingHealth ? 'Checking...' : 'Refresh'}
-                </button>
-              </div>
-              {dataLoading ? (
-                <div className="space-y-3 animate-pulse">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-2 bg-[var(--muted)] rounded-full" />
-                    <div className="h-4 w-8 bg-[var(--muted)] rounded" />
-                  </div>
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full bg-[var(--muted)]" />
-                        <div className="h-3 w-24 bg-[var(--muted)] rounded" />
-                      </div>
-                      <div className="h-3 w-10 bg-[var(--muted)] rounded" />
-                    </div>
-                  ))}
-                </div>
-              ) : healthResult ? (
-                <div>
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex-1 h-2 bg-[var(--muted)] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[var(--success)] rounded-full transition-all"
-                        style={{ width: healthResult.total > 0 ? `${(healthResult.healthy / healthResult.total) * 100}%` : '0%' }}
-                      />
-                    </div>
-                    <span className="text-sm font-medium">{healthResult.healthy}/{healthResult.total}</span>
-                  </div>
-                  <div className="space-y-1.5">
-                    {healthResult.connectors.map((c: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full ${c.status === 'healthy' ? 'bg-[var(--success)]' : 'bg-[var(--destructive)]'}`}></span>
-                          <span className="font-medium">{c.name}</span>
-                        </div>
-                        <span className="text-[var(--muted-foreground)]">{c.latencyMs}ms</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  {checkingHealth ? 'Running health checks...' : 'No health data yet'}
-                </p>
-              )}
-            </div>
+          {/* Quick actions */}
+          <Card className="flex flex-col gap-2.5 p-5">
+            <div className="mb-1 text-sm font-semibold">Quick actions</div>
+            <QuickAction href="/connectors/new" tone="info" title="Add a connector" desc="REST, SOAP, GraphQL, DB or MCP" icon={<PlusIcon />} />
+            <QuickAction href="/mcp-server" tone="emerald" title="Configure a client" desc="Claude, ChatGPT, Cursor…" icon={<ServerStatIcon />} />
+            <QuickAction
+              href="/knowledge-graph"
+              tone="purple"
+              title="Explore the graph"
+              desc={
+                kgStats && kgStats.nodes > 0
+                  ? `${kgStats.nodes} entities · ${kgStats.edges} connections`
+                  : 'See how your data connects'
+              }
+              icon={<KgStatIcon />}
+            />
 
-            {dataLoading ? (
-              <div className="border border-[var(--border)] rounded-lg p-6">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-medium">Recent Connectors</h3>
-                </div>
-                <div className="space-y-2 animate-pulse">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="flex items-center justify-between p-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-5 w-10 bg-[var(--muted)] rounded" />
-                        <div className="h-4 w-32 bg-[var(--muted)] rounded" />
-                      </div>
-                      <div className="h-3 w-14 bg-[var(--muted)] rounded" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : recentConnectors.length > 0 ? (
-              <div className="border border-[var(--border)] rounded-lg p-6">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-medium">Recent Connectors</h3>
+            {recentConnectors.length > 0 && (
+              <div className="mt-2 border-t border-[var(--border)] pt-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-xs text-[var(--text-3)]">Recent connectors</div>
                   <Link href="/connectors" className="text-xs text-[var(--brand)] hover:underline">View all</Link>
                 </div>
-                <div className="space-y-2">
-                  {recentConnectors.map((c) => (
-                    <Link
-                      key={c.id}
-                      href={`/connectors/${c.id}`}
-                      className="flex items-center justify-between p-2 rounded hover:bg-[var(--accent)] transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <ConnectorTypeIcon type={c.type} />
-                        <span className="text-sm font-medium">{c.name}</span>
-                      </div>
-                      <span className="text-xs text-[var(--muted-foreground)]">{c.tools?.length || 0} tools</span>
-                    </Link>
-                  ))}
-                </div>
+                {recentConnectors.map((c) => (
+                  <Link key={c.id} href={`/connectors/${c.id}`} className="flex items-center justify-between rounded-lg p-2 hover:bg-[var(--surface-2)]">
+                    <span className="text-[13px] font-medium">{c.name}</span>
+                    <span className="text-xs text-[var(--text-3)]">{c.tools?.length || 0} tools</span>
+                  </Link>
+                ))}
               </div>
-            ) : null}
-          </div>
-        </div>
-      </main>
-      <Footer />
-    </div>
-  );
-}
-
-function StatCard({ title, value, icon, color, loading }: { title: string; value: string; icon: React.ReactNode; color: string; loading?: boolean }) {
-  const colorMap: Record<string, string> = {
-    brand: 'text-[var(--brand)] bg-[var(--brand-light)]',
-    success: 'text-[var(--success)] bg-[var(--success-light)]',
-    destructive: 'text-[var(--destructive)] bg-[var(--destructive-bg)]',
-  };
-
-  return (
-    <div className="border border-[var(--border)] rounded-lg p-4">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-sm text-[var(--muted-foreground)]">{title}</p>
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colorMap[color] || colorMap.brand}`}>
-          {icon}
+            )}
+          </Card>
         </div>
       </div>
-      {loading ? (
-        <div className="h-9 w-16 bg-[var(--muted)] rounded animate-pulse" />
-      ) : (
-        <p className="text-3xl font-bold">{value}</p>
-      )}
-    </div>
+    </AppShell>
   );
 }
 
-function ConnectorTypeIcon({ type }: { type: string }) {
-  const labels: Record<string, { text: string; bg: string }> = {
-    REST: { text: 'REST', bg: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400' },
-    SOAP: { text: 'SOAP', bg: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400' },
-    GRAPHQL: { text: 'GQL', bg: 'bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-400' },
-    MCP: { text: 'MCP', bg: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400' },
-    DATABASE: { text: 'DB', bg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' },
-    WEBHOOK: { text: 'WH', bg: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' },
-  };
-  const l = labels[type] || { text: type, bg: 'bg-[var(--muted)] text-[var(--muted-foreground)]' };
+const tileTone: Record<string, React.CSSProperties> = {
+  info: { background: 'var(--t-info-bg)', color: 'var(--t-info-fg)' },
+  emerald: { background: 'var(--t-emerald-bg)', color: 'var(--t-emerald-fg)' },
+  purple: { background: 'var(--t-purple-bg)', color: 'var(--t-purple-fg)' },
+};
+
+function QuickAction({ href, tone, title, desc, icon }: { href: string; tone: string; title: string; desc: string; icon: React.ReactNode }) {
   return (
-    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${l.bg}`}>{l.text}</span>
+    <Link
+      href={href}
+      className="flex items-center gap-3 rounded-[11px] border border-[var(--border)] p-3 transition-colors hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]"
+    >
+      <span className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[9px]" style={tileTone[tone]}>
+        {icon}
+      </span>
+      <span>
+        <span className="block text-[13px] font-semibold text-[var(--text)]">{title}</span>
+        <span className="block text-xs text-[var(--text-3)]">{desc}</span>
+      </span>
+    </Link>
   );
 }
 
 /* Small stat icons */
 function CableStatIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1" />
-      <path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9" />
-      <path d="M21 21v-2h-4" />
-      <path d="M3 5v2a1 1 0 0 0 1 1h1a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H4a1 1 0 0 0-1 1" />
-      <path d="M7 5H3" />
-    </svg>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9" /></svg>
   );
 }
-
 function WrenchStatIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-    </svg>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z" /></svg>
   );
 }
-
 function ActivityStatIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />
-    </svg>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
   );
 }
-
 function AlertStatIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
-      <path d="M12 9v4" />
-      <path d="M12 17h.01" />
-    </svg>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3z" /><path d="M12 9v4M12 17h.01" /></svg>
   );
 }
-
 function PlusIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12h14" />
-      <path d="M12 5v14" />
-    </svg>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
   );
 }
-
 function ServerStatIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect width="20" height="8" x="2" y="2" rx="2" ry="2" />
-      <rect width="20" height="8" x="2" y="14" rx="2" ry="2" />
-      <line x1="6" x2="6.01" y1="6" y2="6" />
-      <line x1="6" x2="6.01" y1="18" y2="18" />
-    </svg>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="8" x="2" y="2" rx="2" /><rect width="20" height="8" x="2" y="14" rx="2" /></svg>
   );
 }
-
-function LogsStatIcon() {
+function KgStatIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M16 12H3" />
-      <path d="M16 6H3" />
-      <path d="M16 18H3" />
-      <path d="M21 12h.01" />
-      <path d="M21 6h.01" />
-      <path d="M21 18h.01" />
-    </svg>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="5" cy="6" r="2.4" /><circle cx="19" cy="6" r="2.4" /><circle cx="12" cy="18" r="2.4" /><path d="M7.2 7.2 10.6 16M16.8 7.2 13.4 16M7 6h10" /></svg>
   );
 }

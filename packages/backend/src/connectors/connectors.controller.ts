@@ -43,6 +43,11 @@ import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
+import { getAdapter } from '../adapters/catalog';
+import {
+  interpolateDeep,
+  interpolateString,
+} from '../common/env-interpolation.util';
 
 class CreateConnectorDto {
   @ApiProperty({
@@ -1051,9 +1056,55 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
-    const updated = await this.connectorsService.update(id, {
-      envVars: body.envVars,
-    });
+
+    // Trim pasted values — a stray leading/trailing space would be stored
+    // (and encrypted into authConfig below) verbatim and break auth with an
+    // error the UI can't explain, since the displayed value looks correct.
+    // Rebuild via Object.fromEntries (no dynamic user-keyed property write) so
+    // a stray leading/trailing space in a pasted value can't survive into the
+    // encrypted authConfig and produce a 401 the UI can't explain.
+    const envVars: Record<string, string> = Object.fromEntries(
+      Object.entries(body.envVars || {}).map(([k, v]) => [
+        k.trim(),
+        typeof v === 'string' ? v.trim() : v,
+      ]),
+    );
+
+    const updateData: {
+      envVars: Record<string, string>;
+      authConfig?: Record<string, unknown>;
+      baseUrl?: string;
+      headers?: Record<string, string>;
+    } = { envVars };
+
+    // For catalog-installed connectors, authConfig/baseUrl/headers were
+    // resolved from the adapter template at import time and frozen (auth
+    // encrypted). Re-resolve them from the template here so editing env vars
+    // actually changes the credentials used for requests — otherwise the UI
+    // shows the new value while auth keeps using the old one.
+    const cfg = connector.config as { adapterSlug?: string } | null;
+    const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
+    if (adapter) {
+      const merged = {
+        ...((connector.envVars as Record<string, string> | null) || {}),
+        ...envVars,
+      };
+      if (adapter.connector.authConfig) {
+        updateData.authConfig = interpolateDeep(
+          adapter.connector.authConfig as Record<string, unknown>,
+          merged,
+        );
+      }
+      updateData.baseUrl = interpolateString(adapter.connector.baseUrl, merged);
+      const adapterHeaders = (
+        adapter.connector as { headers?: Record<string, string> }
+      ).headers;
+      if (adapterHeaders) {
+        updateData.headers = interpolateDeep(adapterHeaders, merged);
+      }
+    }
+
+    const updated = await this.connectorsService.update(id, updateData);
     await this.mcpServer.reloadConnectorTools(id);
     return updated;
   }

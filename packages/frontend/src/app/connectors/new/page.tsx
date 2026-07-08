@@ -4,18 +4,23 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors } from '@/lib/api';
-import { NavBar } from '@/components/nav-bar';
-import { Footer } from '@/components/footer';
+import { AppShell } from '@/components/app-shell';
+import { Card } from '@/components/ui/card';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
 import { AppSelect } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 
 const CONNECTOR_TYPES = [
-  { id: 'REST', name: 'REST API', description: 'Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually.', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30', iconBg: 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' },
-  { id: 'SOAP', name: 'SOAP Service', description: 'Connect to SOAP web services via WSDL.', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/30', iconBg: 'bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400' },
-  { id: 'GRAPHQL', name: 'GraphQL', description: 'Connect to GraphQL APIs with schema introspection.', color: 'bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-400 dark:border-pink-500/30', iconBg: 'bg-pink-50 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400' },
-  { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30', iconBg: 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, or SQLite. Supports read-only or read-write mode.', color: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30', iconBg: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  { id: 'REST', name: 'REST API', description: 'Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually.', tone: 'bg-[var(--t-info-bg)] text-[var(--t-info-fg)]' },
+  { id: 'SOAP', name: 'SOAP Service', description: 'Connect to SOAP web services via WSDL.', tone: 'bg-[var(--t-warn-bg)] text-[var(--t-warn-fg)]' },
+  { id: 'GRAPHQL', name: 'GraphQL', description: 'Connect to GraphQL APIs with schema introspection.', tone: 'bg-[var(--t-pink-bg)] text-[var(--t-pink-fg)]' },
+  { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', tone: 'bg-[var(--t-purple-bg)] text-[var(--t-purple-fg)]' },
+  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, or SQLite. Supports read-only or read-write mode.', tone: 'bg-[var(--t-emerald-bg)] text-[var(--t-emerald-fg)]' },
 ];
+
+const inputClass =
+  'h-9 w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-3)] outline-none focus:border-[var(--border-strong)]';
+const labelClass = 'mb-1.5 block text-[12.5px] font-medium text-[var(--text)]';
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
   REST: <RestIcon />,
@@ -142,59 +147,57 @@ export default function NewConnectorPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)] flex flex-col">
-      <NavBar
-        breadcrumbs={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Connectors', href: '/connectors' },
-        ]}
-        title="New Connector"
-      />
+    <AppShell
+      backTo={{ label: 'Connectors', href: '/connectors' }}
+      title="New connector"
+      maxWidth={880}
+    >
+      <div className="mx-auto w-full max-w-[880px]">
+        <h2 className="mb-[3px] text-[15px] font-semibold text-[var(--text)]">Choose connector type</h2>
+        <p className="mb-4 text-[13px] text-[var(--text-3)]">Select the type of API you want to connect to.</p>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
-        <h2 className="text-lg font-medium mb-2">Choose connector type</h2>
-        <p className="text-sm text-[var(--muted-foreground)] mb-6">Select the type of API you want to connect to.</p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="mb-6 grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
           {CONNECTOR_TYPES.map((type) => (
             <button
               key={type.id}
               onClick={() => setSelectedType(type.id)}
-              className={`text-left border rounded-lg p-5 transition-all ${
+              className={cn(
+                'rounded-[13px] border bg-[var(--surface)] p-4 text-left transition-all',
                 selectedType === type.id
-                  ? 'border-[var(--brand)] ring-2 ring-[var(--brand)] ring-opacity-20 bg-[var(--brand-light)]'
-                  : 'border-[var(--border)] hover:border-[var(--brand)] hover:shadow-sm'
-              }`}
+                  ? 'border-[var(--brand)] bg-[var(--brand-tint)]'
+                  : 'border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]'
+              )}
             >
-              <div className="flex items-center gap-3 mb-2">
-                <div className={`w-10 h-10 rounded-lg ${type.iconBg} flex items-center justify-center`}>
+              <div className="mb-[9px] flex items-center gap-[11px]">
+                <span className={cn('flex h-[38px] w-[38px] items-center justify-center rounded-[10px]', type.tone)}>
                   {TYPE_ICONS[type.id]}
-                </div>
-                <span className="font-medium">{type.name}</span>
+                </span>
+                <span className="text-[14px] font-semibold text-[var(--text)]">{type.name}</span>
               </div>
-              <p className="text-sm text-[var(--muted-foreground)]">{type.description}</p>
+              <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">{type.description}</p>
             </button>
           ))}
         </div>
 
         {selectedType && (
-          <div className="mt-8 border border-[var(--border)] rounded-lg p-6">
-            <h3 className="text-lg font-medium mb-4">
+          <Card className="rounded-[14px] p-[22px] shadow-[var(--shadow-sm)]">
+            <h3 className="mb-4 text-[14px] font-semibold text-[var(--text)]">
               Configure {CONNECTOR_TYPES.find((t) => t.id === selectedType)?.name}
             </h3>
 
             {error && (
-              <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">{error}</div>
+              <div className="mb-4 rounded-[9px] border border-[var(--danger)]/30 bg-[var(--t-danger-bg)] p-3 text-sm text-[var(--t-danger-fg)]">{error}</div>
             )}
             {testResult && (
               <div
-                className={`mb-4 p-3 rounded-md text-sm border ${
+                className={cn(
+                  'mb-4 rounded-[9px] border p-3 text-sm',
                   testResult.ok
-                    ? 'bg-[var(--success-bg)] text-[var(--success-text)] border-[var(--success-border)]'
+                    ? 'border-[var(--ok)]/30 bg-[var(--t-success-bg)] text-[var(--t-success-fg)]'
                     : testResult.kind === 'auth_failed'
-                      ? 'bg-[var(--warning-bg)] text-[var(--warning-text)] border-[var(--warning-border)]'
-                      : 'bg-[var(--destructive-bg)] text-[var(--destructive-text)] border-[var(--destructive-border)]'
-                }`}
+                      ? 'border-[var(--warn)]/30 bg-[var(--t-warn-bg)] text-[var(--t-warn-fg)]'
+                      : 'border-[var(--danger)]/30 bg-[var(--t-danger-bg)] text-[var(--t-danger-fg)]'
+                )}
               >
                 {testResult.kind && testResult.kind !== 'ok' && (
                   <span className="font-semibold mr-1">
@@ -227,21 +230,21 @@ export default function NewConnectorPage() {
               </div>
             )}
 
-            <form className="space-y-4" onSubmit={handleSubmit}>
+            <form className="flex max-w-[560px] flex-col gap-[15px]" onSubmit={handleSubmit}>
               <div>
-                <label className="block text-sm font-medium mb-1">Connector Name</label>
+                <label className={labelClass}>Connector name</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g., My REST API"
-                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  className={inputClass}
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label className={labelClass}>
                   {selectedType === 'DATABASE' ? 'Connection String' : 'Base URL'}
                 </label>
                 <input
@@ -249,39 +252,41 @@ export default function NewConnectorPage() {
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder={selectedType === 'DATABASE' ? 'postgresql://user:pass@host:5432/db  or  mysql://user:pass@host:3306/db' : 'https://api.example.com/v1'}
-                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  className={cn(inputClass, 'font-mono text-[13px]')}
                   required
                 />
               </div>
 
               {selectedType === 'DATABASE' && (
                 <div>
-                  <label className="block text-sm font-medium mb-2">Access Mode</label>
-                  <div className="flex items-center gap-3">
+                  <label className={labelClass}>Access mode</label>
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setDbReadOnly(true)}
-                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
+                      className={cn(
+                        'rounded-[9px] px-[13px] py-[7px] text-[13px] font-semibold transition-all',
                         dbReadOnly
-                          ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
-                          : 'border-[var(--border)] hover:bg-[var(--accent)]'
-                      }`}
+                          ? 'bg-[var(--brand)] text-white'
+                          : 'border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)]'
+                      )}
                     >
                       Read-only
                     </button>
                     <button
                       type="button"
                       onClick={() => setDbReadOnly(false)}
-                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${
+                      className={cn(
+                        'rounded-[9px] px-[13px] py-[7px] text-[13px] font-semibold transition-all',
                         !dbReadOnly
-                          ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
-                          : 'border-[var(--border)] hover:bg-[var(--accent)]'
-                      }`}
+                          ? 'bg-[var(--brand)] text-white'
+                          : 'border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)]'
+                      )}
                     >
                       Read &amp; Write
                     </button>
                   </div>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-1.5">
+                  <p className="mt-2 text-[11.5px] text-[var(--text-3)]">
                     {dbReadOnly
                       ? 'Only SELECT queries will be allowed. Safe for analytics and reporting.'
                       : 'All SQL operations (SELECT, INSERT, UPDATE, DELETE) will be allowed. Use with caution.'}
@@ -291,7 +296,7 @@ export default function NewConnectorPage() {
 
               {(selectedType === 'REST' || selectedType === 'SOAP' || selectedType === 'GRAPHQL') && (
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label className={labelClass}>
                     {selectedType === 'REST'
                       ? 'OpenAPI Spec URL (optional)'
                       : selectedType === 'GRAPHQL'
@@ -309,20 +314,20 @@ export default function NewConnectorPage() {
                           ? 'https://api.example.com/graphql'
                           : 'https://service.example.com?wsdl'
                     }
-                    className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                    className={cn(inputClass, 'font-mono text-[13px]')}
                   />
-                  <p className="text-xs text-[var(--muted-foreground)] mt-1">
-                    Provide a spec URL to auto-generate MCP tools
+                  <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
+                    Provide a spec URL to auto-generate MCP tools.
                   </p>
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium mb-1">Authentication</label>
+                <label className={labelClass}>Authentication</label>
                 <AppSelect
                   value={authType}
                   onValueChange={setAuthType}
-                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  className={inputClass}
                   options={[
                     { value: 'NONE', label: 'None' },
                     { value: 'API_KEY', label: 'API Key' },
@@ -334,96 +339,96 @@ export default function NewConnectorPage() {
               </div>
 
               {selectedType === 'MCP' && authType === 'OAUTH2' && (
-                <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3 text-sm text-blue-700 dark:text-blue-300">
+                <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-sm text-[var(--t-info-fg)]">
                   After creating the connector, you will be redirected to authorize with the remote MCP server via OAuth. Tools will be discovered automatically after authorization.
                 </div>
               )}
 
               {authType === 'OAUTH2' && selectedType !== 'MCP' && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-medium mb-1">Client ID</label>
-                      <input type="text" value={oauthClientId} onChange={(e) => setOauthClientId(e.target.value)} placeholder="your-client-id" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                      <label className={labelClass}>Client ID</label>
+                      <input type="text" value={oauthClientId} onChange={(e) => setOauthClientId(e.target.value)} placeholder="your-client-id" className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Client Secret</label>
-                      <input type="password" value={oauthClientSecret} onChange={(e) => setOauthClientSecret(e.target.value)} placeholder="optional" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                      <label className={labelClass}>Client Secret</label>
+                      <input type="password" value={oauthClientSecret} onChange={(e) => setOauthClientSecret(e.target.value)} placeholder="optional" className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Authorization URL</label>
-                    <input type="text" value={oauthAuthUrl} onChange={(e) => setOauthAuthUrl(e.target.value)} placeholder="https://provider.com/oauth/authorize" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <label className={labelClass}>Authorization URL</label>
+                    <input type="text" value={oauthAuthUrl} onChange={(e) => setOauthAuthUrl(e.target.value)} placeholder="https://provider.com/oauth/authorize" className={cn(inputClass, 'font-mono text-[13px]')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Token URL</label>
-                    <input type="text" value={oauthTokenUrl} onChange={(e) => setOauthTokenUrl(e.target.value)} placeholder="https://provider.com/oauth/token" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <label className={labelClass}>Token URL</label>
+                    <input type="text" value={oauthTokenUrl} onChange={(e) => setOauthTokenUrl(e.target.value)} placeholder="https://provider.com/oauth/token" className={cn(inputClass, 'font-mono text-[13px]')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Scopes</label>
-                    <input type="text" value={oauthScopes} onChange={(e) => setOauthScopes(e.target.value)} placeholder="read write (space-separated, optional)" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <label className={labelClass}>Scopes</label>
+                    <input type="text" value={oauthScopes} onChange={(e) => setOauthScopes(e.target.value)} placeholder="read write (space-separated, optional)" className={cn(inputClass, 'font-mono text-[13px]')} />
                   </div>
-                  <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3 text-sm text-blue-700 dark:text-blue-300">
+                  <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-sm text-[var(--t-info-fg)]">
                     <p>After creating the connector, you will be redirected to authorize via OAuth2. Tokens will be stored securely.</p>
-                    <p className="mt-1.5 text-xs text-blue-600 dark:text-blue-400">
-                      Set the <strong>Redirect / Callback URI</strong> in your OAuth provider to: <code className="bg-blue-100 dark:bg-blue-900/50 px-1 py-0.5 rounded font-mono">{typeof window !== 'undefined' ? (window.location.hostname === 'localhost' ? window.location.origin.replace(':3000', ':4000') : window.location.origin) : 'http://localhost:4000'}/api/mcp-oauth/callback</code>
+                    <p className="mt-1.5 text-xs opacity-90">
+                      Set the <strong>Redirect / Callback URI</strong> in your OAuth provider to: <code className="rounded bg-[var(--surface-2)] px-1 py-0.5 font-mono">{typeof window !== 'undefined' ? (window.location.hostname === 'localhost' ? window.location.origin.replace(':3000', ':4000') : window.location.origin) : 'http://localhost:4000'}/api/mcp-oauth/callback</code>
                     </p>
                   </div>
                 </div>
               )}
 
               {authType === 'API_KEY' && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Header Name</label>
-                    <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <label className={labelClass}>Header name</label>
+                    <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="X-API-Key" className={cn(inputClass, 'font-mono text-[13px]')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">API Key</label>
-                    <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} placeholder="sk-..." className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <label className={labelClass}>API key</label>
+                    <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} placeholder="sk-..." className={cn(inputClass, 'font-mono text-[13px]')} />
                   </div>
                 </div>
               )}
               {authType === 'BEARER_TOKEN' && (
                 <div>
-                  <label className="block text-sm font-medium mb-1">Bearer Token</label>
-                  <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} placeholder="eyJ..." className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                  <label className={labelClass}>Bearer Token</label>
+                  <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} placeholder="eyJ..." className={cn(inputClass, 'font-mono text-[13px]')} />
                 </div>
               )}
               {authType === 'BASIC_AUTH' && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Username</label>
-                    <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <label className={labelClass}>Username</label>
+                    <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} className={inputClass} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Password</label>
-                    <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]" />
+                    <label className={labelClass}>Password</label>
+                    <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} className={inputClass} />
                   </div>
                 </div>
               )}
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-[10px] pt-1">
                 <button
                   type="submit"
                   disabled={loading}
-                  className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+                  className="h-10 rounded-[9px] bg-[var(--brand)] px-[18px] text-[13px] font-semibold text-white hover:bg-[var(--brand-strong)] disabled:opacity-50"
                 >
-                  {loading ? 'Creating...' : 'Create Connector'}
+                  {loading ? 'Creating...' : 'Create connector'}
                 </button>
                 <button
                   type="button"
                   onClick={handleTest}
                   disabled={loading || !baseUrl}
-                  className="border border-[var(--border)] px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--accent)] disabled:opacity-50"
+                  className="h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-4 text-[13px] font-medium text-[var(--text-2)] hover:border-[var(--border-strong)] disabled:opacity-50"
                 >
-                  Test Connection
+                  Test connection
                 </button>
               </div>
             </form>
-          </div>
+          </Card>
         )}
-      </main>
+      </div>
 
       {/* MCP Server Assignment Modal */}
       {createdConnector && token && (
@@ -445,9 +450,7 @@ export default function NewConnectorPage() {
           }}
         />
       )}
-
-      <Footer />
-    </div>
+    </AppShell>
   );
 }
 

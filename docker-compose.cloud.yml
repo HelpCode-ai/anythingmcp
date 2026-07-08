@@ -85,6 +85,15 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - KG_LLM_REDACT_INTENTS=${KG_LLM_REDACT_INTENTS:-true}
+      # System (operator) transactional-email fallback — used when a workspace
+      # hasn't set its own SMTP (e.g. Resend). Read only by the email sender,
+      # never exposed to workspace admins. Set these in the droplet .env.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
     depends_on:
       postgres:
         condition: service_healthy

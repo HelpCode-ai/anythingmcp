@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { NavBar } from '@/components/nav-bar';
-import { Footer } from '@/components/footer';
+import { AppShell } from '@/components/app-shell';
+import { cn } from '@/lib/utils';
 
 interface SidebarItem {
   href: string;
@@ -47,66 +47,51 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const isAdmin = user?.role === 'ADMIN';
 
   return (
-    <div className="min-h-screen bg-[var(--background)] flex flex-col">
-      <NavBar
-        breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
-        title="Settings"
-      />
+    <AppShell title="Settings">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[210px_1fr] lg:gap-8">
+        {/* Settings sub-navigation */}
+        <nav className="flex gap-1 overflow-x-auto pb-2 lg:sticky lg:top-0 lg:flex-col lg:overflow-x-visible lg:pb-0">
+          {SIDEBAR_SECTIONS.map((section, si) => {
+            if (section.adminOnly && !isAdmin) return null;
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full flex flex-col lg:flex-row gap-6 lg:gap-8">
-        {/* Sidebar navigation */}
-        <aside className="w-full lg:w-56 flex-shrink-0">
-          <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0">
-            {SIDEBAR_SECTIONS.map((section, si) => {
-              if (section.adminOnly && !isAdmin) return null;
-
-              return (
-                <div key={si}>
-                  {section.title && (
-                    <div className="hidden lg:flex items-center gap-1.5 px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-wider font-semibold text-[var(--muted-foreground)]">
-                      {section.icon && <section.icon size={12} />}
-                      {section.title}
-                    </div>
-                  )}
-                  {section.items.map((item) => {
-                    if (item.adminOnly && !isAdmin) return null;
-                    const isActive = item.exact
-                      ? pathname === item.href
-                      : pathname.startsWith(item.href);
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors flex-shrink-0 ${
-                          section.title ? 'lg:pl-5' : ''
-                        } ${
-                          isActive
-                            ? 'bg-[var(--brand-light)] text-[var(--brand)] font-medium'
-                            : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)]'
-                        }`}
-                      >
-                        <item.icon size={15} />
-                        <div className="min-w-0">
-                          <div className="truncate">{item.label}</div>
-                          <div className="text-xs opacity-70 truncate hidden lg:block">{item.description}</div>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </nav>
-        </aside>
+            return (
+              <div key={si} className="contents lg:block">
+                {section.title && (
+                  <div className="hidden items-center gap-1.5 px-2.5 pb-1 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-3)] lg:flex">
+                    {section.title}
+                  </div>
+                )}
+                {section.items.map((item) => {
+                  if (item.adminOnly && !isAdmin) return null;
+                  const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        'flex flex-shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors',
+                        isActive
+                          ? 'bg-[var(--brand-tint)] font-medium text-[var(--brand)]'
+                          : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'
+                      )}
+                    >
+                      <item.icon size={15} />
+                      <div className="min-w-0">
+                        <div className="truncate">{item.label}</div>
+                        <div className="hidden truncate text-[11px] text-[var(--text-3)] lg:block">{item.description}</div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </nav>
 
         {/* Main content */}
-        <main className="flex-1 min-w-0">
-          {children}
-        </main>
+        <main className="min-w-0">{children}</main>
       </div>
-
-      <Footer />
-    </div>
+    </AppShell>
   );
 }
 

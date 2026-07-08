@@ -3,95 +3,147 @@
 /* Class-based dark mode for manual toggle support */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Design tokens — "AnythingMCP Redesign" (Claude Design handoff).
+ * Primitive tokens come first; legacy token names are kept as aliases that
+ * reference the primitives so existing `bg-[var(--background)]`-style usages
+ * keep working while picking up the new palette.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #111827;
-  --card: #ffffff;
-  --card-foreground: #111827;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --secondary: #f3f4f6;
-  --secondary-foreground: #1f2937;
-  --muted: #f3f4f6;
-  --muted-foreground: #6b7280;
-  --accent: #f3f4f6;
-  --accent-foreground: #1f2937;
-  --destructive: #ef4444;
-  --border: #e5e7eb;
-  --input: #e5e7eb;
-  --ring: #2563eb;
-  --radius: 0.5rem;
+  /* ── Redesign primitives ── */
+  --bg: #f5f6f9;
+  --surface: #ffffff;
+  --surface-2: #f2f4f7;
+  --surface-3: #e9ecf1;
+  --border: #e7e9ef;
+  --border-strong: #d6dae3;
+  --text: #0f1219;
+  --text-2: #565d70;
+  --text-3: #8a91a3;
   --brand: #2563eb;
-  --brand-light: #dbeafe;
+  --brand-strong: #1d4ed8;
+  --brand-tint: #edf2ff;
+  --brand-ring: rgba(37, 99, 235, 0.16);
+  --ok: #16a34a;
+  --warn: #d97706;
+  --danger: #dc2626;
+  /* tag tones (bg + fg) */
+  --t-info-bg: #eaf1ff;     --t-info-fg: #1d4ed8;
+  --t-success-bg: #e6f6ed;  --t-success-fg: #15803d;
+  --t-warn-bg: #fcf1e1;     --t-warn-fg: #b45309;
+  --t-danger-bg: #fdecec;   --t-danger-fg: #c2282d;
+  --t-neutral-bg: #eef0f4;  --t-neutral-fg: #5b6275;
+  --t-pink-bg: #fce9f2;     --t-pink-fg: #be1d68;
+  --t-purple-bg: #f0ecfe;   --t-purple-fg: #6d28d9;
+  --t-emerald-bg: #e5f5ef;  --t-emerald-fg: #0f766e;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 6px 16px rgba(16, 24, 40, 0.06);
+  --sidebar: #ffffff;
+
+  /* radii */
+  --radius: 0.5rem;
+  --radius-card: 14px;
+  --radius-control: 9px;
+
+  /* fonts — next/font sets --font-geist-* on <html>; fall back to system */
+  --font-sans: var(--font-geist-sans, 'Geist'), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono, 'Geist Mono'), ui-monospace, SFMono-Regular, monospace;
+
+  /* ── Legacy aliases (map old names → redesign primitives) ── */
+  --background: var(--surface);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --primary: var(--brand);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--text-2);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--text);
+  --destructive: var(--danger);
+  --input: var(--border);
+  --ring: var(--brand);
+  --brand-light: var(--brand-tint);
   --brand-foreground: #ffffff;
-  --success: #22c55e;
-  --success-light: #f0fdf4;
-  --warning: #f59e0b;
-  --warning-light: #fffbeb;
+  --success: var(--ok);
+  --success-light: var(--t-success-bg);
+  --warning: var(--warn);
+  --warning-light: var(--t-warn-bg);
   /* Semantic status colors for alerts/badges */
-  --destructive-bg: #fef2f2;
-  --destructive-text: #dc2626;
-  --destructive-border: #fecaca;
-  --success-bg: #f0fdf4;
-  --success-text: #15803d;
-  --success-border: #bbf7d0;
-  --info-bg: #eff6ff;
-  --info-text: #1d4ed8;
-  --info-border: #bfdbfe;
-  --warning-bg: #fffbeb;
-  --warning-text: #b45309;
-  --warning-border: #fde68a;
+  --destructive-bg: var(--t-danger-bg);
+  --destructive-text: var(--t-danger-fg);
+  --destructive-border: var(--t-danger-bg);
+  --success-bg: var(--t-success-bg);
+  --success-text: var(--t-success-fg);
+  --success-border: var(--t-success-bg);
+  --info-bg: var(--t-info-bg);
+  --info-text: var(--t-info-fg);
+  --info-border: var(--t-info-bg);
+  --warning-bg: var(--t-warn-bg);
+  --warning-text: var(--t-warn-fg);
+  --warning-border: var(--t-warn-bg);
 }
 
 /* Class-based dark mode — applied via .dark on <html> */
 .dark {
-  --background: #111827;
-  --foreground: #f3f4f6;
-  --card: #1f2937;
-  --card-foreground: #f3f4f6;
-  --primary: #60a5fa;
-  --primary-foreground: #111827;
-  --secondary: #1f2937;
-  --secondary-foreground: #f3f4f6;
-  --muted: #1f2937;
-  --muted-foreground: #9ca3af;
-  --accent: #1f2937;
-  --accent-foreground: #f3f4f6;
-  --destructive: #dc2626;
-  --border: #374151;
-  --input: #374151;
-  --ring: #60a5fa;
-  --brand: #60a5fa;
-  --brand-light: #1e3a5f;
-  --brand-foreground: #111827;
-  --success: #4ade80;
-  --success-light: #052e16;
-  --warning: #fbbf24;
-  --warning-light: #451a03;
-  /* Semantic status colors for dark mode */
-  --destructive-bg: #1c1214;
-  --destructive-text: #f87171;
-  --destructive-border: #991b1b;
-  --success-bg: #0a1f0d;
-  --success-text: #4ade80;
-  --success-border: #14532d;
-  --info-bg: #0c1629;
-  --info-text: #60a5fa;
-  --info-border: #1e3a5f;
-  --warning-bg: #1a1408;
-  --warning-text: #fbbf24;
-  --warning-border: #78350f;
+  /* ── Redesign primitives (dark) ── */
+  --bg: #090b0f;
+  --surface: #13161d;
+  --surface-2: #191d25;
+  --surface-3: #222732;
+  --border: #232934;
+  --border-strong: #313846;
+  --text: #e8ebf2;
+  --text-2: #9aa1b2;
+  --text-3: #69707f;
+  --brand: #5b8cff;
+  --brand-strong: #7aa2ff;
+  --brand-tint: #15203a;
+  --brand-ring: rgba(91, 140, 255, 0.26);
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --t-info-bg: #16213c;     --t-info-fg: #9dbcff;
+  --t-success-bg: #10271d;  --t-success-fg: #5fd6a0;
+  --t-warn-bg: #2a2010;     --t-warn-fg: #f5c067;
+  --t-danger-bg: #2c1518;   --t-danger-fg: #f4a3a3;
+  --t-neutral-bg: #1d222c;  --t-neutral-fg: #9aa1b2;
+  --t-pink-bg: #2c1622;     --t-pink-fg: #f0a3cb;
+  --t-purple-bg: #1f1838;   --t-purple-fg: #bca3f7;
+  --t-emerald-bg: #0f261f;  --t-emerald-fg: #5fd6b8;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 26px rgba(0, 0, 0, 0.4);
+  --sidebar: #0c0f14;
+
+  /* legacy aliases inherit via var() references in :root, but a few need
+     explicit dark values where the alias target differs */
+  --primary-foreground: #0c0f14;
+  --brand-foreground: #0c0f14;
+}
+
+html, body {
+  background: var(--bg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
 }
 
-/* Smooth transitions for interactive elements */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Smooth transitions for interactive elements.
+   Scope to specific properties (not `all`) so theme switches don't jank. */
 button, a, input, select, textarea {
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease,
+    border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 /* Cursor pointer on all interactive elements */
@@ -111,16 +163,19 @@ button:disabled {
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 9px;
+  height: 9px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+  background: var(--border-strong);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-foreground);
+  background: var(--text-3);
+  background-clip: content-box;
 }

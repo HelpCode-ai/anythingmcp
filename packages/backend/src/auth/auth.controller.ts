@@ -30,6 +30,7 @@ import { PrismaService } from '../common/prisma.service';
 import { EmailService } from '../settings/email.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { LicenseService } from '../license/license.service';
 import { Roles, RolesGuard } from './roles.guard';
 
 class LoginDto {
@@ -145,6 +146,7 @@ export class AuthController {
     private readonly configService: ConfigService,
     private readonly siteSettings: SiteSettingsService,
     private readonly organizationsService: OrganizationsService,
+    private readonly licenseService: LicenseService,
   ) {}
 
   private getFrontendUrl(_req?: any): string {
@@ -175,10 +177,10 @@ export class AuthController {
       data: { userId, token: linkToken, code, expiresAt },
     });
 
-    // Build verification link URL — route through anythingmcp.com so the
-    // link domain matches the Resend sending domain (avoids spam filters).
+    // Link straight to the instance's verify-email page (the anythingmcp.com
+    // hop 404s behind the marketing site's i18n middleware).
     const instanceUrl = this.getFrontendUrl(req);
-    const verifyUrl = `https://anythingmcp.com/verify-email?token=${linkToken}&instance=${encodeURIComponent(instanceUrl)}`;
+    const verifyUrl = `${instanceUrl}/verify-email?token=${linkToken}`;
 
     // Send email
     try {
@@ -349,6 +351,10 @@ export class AuthController {
     // Mark user as verified
     await this.usersService.update(userId, { emailVerified: true });
 
+    // Cloud: deterministically ensure the workspace has a trial before any
+    // license gate evaluates (best-effort; never blocks verification).
+    await this.ensureCloudTrial(userId);
+
     return { message: 'Email verified successfully', emailVerified: true };
   }
 
@@ -372,9 +378,42 @@ export class AuthController {
     });
     await this.usersService.update(record.userId, { emailVerified: true });
 
+    // Cloud: ensure a trial exists before the user lands back in the app.
+    await this.ensureCloudTrial(record.userId);
+
     // Redirect to frontend
     const frontendUrl = this.getFrontendUrl(req);
     return res.redirect(`${frontendUrl}/login?emailVerified=true`);
+  }
+
+  /**
+   * Cloud only: make sure a freshly-verified user's workspace has a trial
+   * license, idempotently and best-effort. This removes the client-side race
+   * where a failed trial activation in the login flow dropped the user onto the
+   * "no-license" wall instead of onboarding. Never throws — verification must
+   * succeed regardless; the login flow + LicenseWall "Start trial" CTA remain
+   * as fallbacks.
+   */
+  private async ensureCloudTrial(userId: string): Promise<void> {
+    const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
+    if (!isCloud) return;
+    try {
+      const user = await this.usersService.findById(userId);
+      if (!user?.organizationId) return;
+      // Idempotent: skip if this org already has any license (trial or paid).
+      const existing = await this.prisma.license.findFirst({
+        where: { organizationId: user.organizationId },
+      });
+      if (existing) return;
+      await this.licenseService.requestTrialLicense(
+        user.email,
+        user.name || user.email,
+        user.organizationId,
+      );
+      this.logger.log(`Cloud trial activated for org ${user.organizationId} on email verification.`);
+    } catch (err: any) {
+      this.logger.warn(`Cloud trial activation on verify failed for user ${userId}: ${err.message}`);
+    }
   }
 
   @Post('resend-verification')
@@ -428,7 +467,9 @@ export class AuthController {
       // User exists but not in this org — allow invitation for multi-org membership
     }
 
-    // Check for existing pending invitation to this org
+    // Reuse an existing pending invitation instead of rejecting: throwing a
+    // 409 here left admins stuck with no way to get the link after a failed
+    // email send (the response with the URL only comes with a NEW invite).
     const existingInvite = await this.prisma.invitationToken.findFirst({
       where: {
         email: dto.email,
@@ -437,30 +478,32 @@ export class AuthController {
         expiresAt: { gt: new Date() },
       },
     });
-    if (existingInvite) {
-      throw new ConflictException('An active invitation already exists for this email');
+
+    const inviteToken = existingInvite
+      ? existingInvite.token
+      : crypto.randomBytes(32).toString('hex');
+
+    if (!existingInvite) {
+      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
+      await this.prisma.invitationToken.create({
+        data: {
+          email: dto.email,
+          token: inviteToken,
+          role: dto.role,
+          mcpRoleId: dto.mcpRoleId || null,
+          invitedBy: req.user.sub,
+          organizationId: req.user.organizationId,
+          expiresAt,
+        },
+      });
     }
 
-    // Generate invitation token
-    const inviteToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
-
-    await this.prisma.invitationToken.create({
-      data: {
-        email: dto.email,
-        token: inviteToken,
-        role: dto.role,
-        mcpRoleId: dto.mcpRoleId || null,
-        invitedBy: req.user.sub,
-        organizationId: req.user.organizationId,
-        expiresAt,
-      },
-    });
-
-    // Build invitation URL — route through anythingmcp.com so the
-    // link domain matches the Resend sending domain (avoids spam filters).
+    // Link straight to the instance's accept-invite page. (The old
+    // anythingmcp.com/accept-invite hop 404'd — that route is shadowed by the
+    // marketing site's i18n middleware — and it isn't needed now that we send
+    // via the org's own SMTP.)
     const instanceUrl = this.getFrontendUrl(req);
-    const inviteUrl = `https://anythingmcp.com/accept-invite?token=${inviteToken}&instance=${encodeURIComponent(instanceUrl)}`;
+    const inviteUrl = `${instanceUrl}/accept-invite?token=${inviteToken}`;
 
     // Get inviter's name for the email
     const inviter = await this.usersService.findById(req.user.sub);
@@ -479,12 +522,16 @@ export class AuthController {
       inviteUrl,
       inviterName,
       roleName,
+      req.user.organizationId,
     );
 
+    const created = existingInvite ? 'A pending invitation already existed' : 'Invitation created';
     return {
       message: emailResult.sent
-        ? `Invitation sent to ${dto.email}`
-        : `Invitation created for ${dto.email}, but the email could not be sent. Share the link manually.`,
+        ? existingInvite
+          ? `${created} for ${dto.email} — the email was re-sent.`
+          : `Invitation sent to ${dto.email}`
+        : `${created} for ${dto.email}, but the email could not be sent. Share the link manually.`,
       inviteUrl,
       emailSent: emailResult.sent,
       ...(emailResult.error ? { emailError: emailResult.error } : {}),

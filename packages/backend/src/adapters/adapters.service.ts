@@ -43,6 +43,22 @@ export class AdaptersService {
   ): Promise<{ connectorId: string; toolsCreated: number }> {
     const adapter = this.getBySlug(slug);
 
+    // Credentials arrive from the UI verbatim — a stray leading/trailing
+    // space (easy to pick up when pasting) would otherwise be encrypted into
+    // authConfig and break auth downstream (e.g. Basic Auth 401s that are
+    // invisible in the UI because the displayed env var looks correct).
+    if (credentials) {
+      // Rebuild via Object.fromEntries (no dynamic user-keyed property write)
+      // so a pasted leading/trailing space in a credential can't survive into
+      // the encrypted authConfig and break auth.
+      credentials = Object.fromEntries(
+        Object.entries(credentials).map(([k, v]) => [
+          k,
+          typeof v === 'string' ? v.trim() : v,
+        ]),
+      ) as Record<string, string>;
+    }
+
     // Resolve {{VAR}} placeholders in authConfig with provided credentials
     const resolvedAuthConfig = adapter.connector.authConfig
       ? this.resolveTemplate(adapter.connector.authConfig, credentials)

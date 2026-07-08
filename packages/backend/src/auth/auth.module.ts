@@ -16,6 +16,7 @@ import { UsersModule } from '../users/users.module';
 import { SettingsModule } from '../settings/settings.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { LicenseModule } from '../license/license.module';
 import { getRequiredSecret } from '../common/secrets.util';
 
 @Global()
@@ -25,6 +26,7 @@ import { getRequiredSecret } from '../common/secrets.util';
     SettingsModule,
     McpServersModule,
     OrganizationsModule,
+    LicenseModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

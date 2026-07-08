@@ -53,7 +53,15 @@ export class KgController {
   @ApiOperation({ summary: 'Update knowledge-graph settings for this workspace' })
   async setSettings(
     @Req() req: any,
-    @Body() body: { enabled?: boolean; llmEnabled?: boolean; captureIntent?: boolean },
+    @Body()
+    body: {
+      enabled?: boolean;
+      llmEnabled?: boolean;
+      captureIntent?: boolean;
+      autoExtend?: boolean;
+      skillAutoApply?: boolean;
+      edgeAutoApply?: boolean;
+    },
   ) {
     return this.kg.updateSettings(req.user.organizationId, body);
   }

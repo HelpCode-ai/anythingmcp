@@ -9,8 +9,11 @@ import {
   connectors as connectorsApi,
   type KgSkill,
 } from '@/lib/api';
-import { NavBar } from '@/components/nav-bar';
-import { Footer } from '@/components/footer';
+import { AppShell } from '@/components/app-shell';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge, type Tone } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
 
@@ -20,6 +23,11 @@ const TABS: Array<{ key: string; label: string; countKey: 'pending' | 'applied' 
   { key: 'applied', label: 'Active', countKey: 'applied' },
   { key: 'dismissed', label: 'Dismissed', countKey: 'dismissed' },
 ];
+
+const inputCls =
+  'w-full h-[38px] px-3 rounded-[9px] text-[13px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] placeholder:text-[var(--text-3)] outline-none focus:border-[var(--border-strong)]';
+const textareaCls =
+  'w-full px-3 py-2.5 rounded-[9px] text-[13px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] placeholder:text-[var(--text-3)] outline-none focus:border-[var(--border-strong)] leading-relaxed';
 
 export default function SkillsPage() {
   const { token, user } = useAuth();
@@ -122,163 +130,173 @@ export default function SkillsPage() {
   const everEmpty = counts.pending + counts.applied + counts.dismissed === 0;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--background)]">
-      <NavBar
-        breadcrumbs={[{ label: 'Knowledge Graph', href: '/knowledge-graph' }]}
-        title="Skills"
-        actions={
-          isAdmin && (
-            <div className="flex items-center gap-2">
-              <select
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                className="px-2 py-1.5 rounded-md text-sm bg-[var(--background)] border border-[var(--border)]"
-                title="Scope for Generate / Consolidate"
-              >
-                <option value="">From connectors</option>
-                {servers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    For server: {s.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={consolidate}
-                disabled={consolidating || generating}
-                title="Merge the active skills in this scope into fewer, non-redundant ones"
-                className="px-3 py-1.5 rounded-md text-sm border border-[var(--border)] hover:bg-[var(--accent)] disabled:opacity-50"
-              >
-                {consolidating ? 'Consolidating…' : 'Consolidate with AI'}
-              </button>
-              <button
-                onClick={generate}
-                disabled={generating || consolidating}
-                className="px-3 py-1.5 rounded-md text-sm border border-[var(--brand)] text-[var(--brand)] hover:bg-[var(--brand-light)] disabled:opacity-50"
-              >
-                {generating ? 'Generating…' : 'Generate with AI'}
-              </button>
-              <button
-                onClick={() => setShowNew((v) => !v)}
-                className="px-3 py-1.5 rounded-md text-sm bg-[var(--brand)] text-white hover:opacity-90"
-              >
-                {showNew ? 'Close' : '+ New skill'}
-              </button>
-            </div>
-          )
-        }
-      />
-
-      <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-5">
-        <p className="text-sm text-[var(--muted-foreground)] mb-4">
-          Reusable rules inferred from the user intents captured on your tool calls — per connector or
-          for a whole MCP server (combined context). Active skills are composed into the server&apos;s
-          instructions automatically.{' '}
-          <Link href="/knowledge-graph" className="text-[var(--brand)] hover:underline">
-            Back to graph
-          </Link>
-        </p>
-        {status && <p className="text-xs text-[var(--muted-foreground)] mb-3">{status}</p>}
-
-        {isAdmin && showNew && (
-          <NewSkillForm
-            token={token!}
-            servers={servers}
-            connectors={connectorList}
-            onCreated={() => {
-              setShowNew(false);
-              setStatus('Skill created (live for MCP).');
-              setPage(0);
-              load();
-            }}
-          />
-        )}
-
-        {everEmpty && !loading ? (
-          <div className="border border-[var(--border)] rounded-lg p-6 text-center text-sm text-[var(--muted-foreground)]">
-            No skills yet. Enable “Capture user intent” and “AI enrichment”, let some tool calls flow,
-            then {isAdmin ? 'click “Generate with AI”.' : 'ask an admin to generate them.'}
+    <AppShell
+      backTo={{ label: 'Knowledge Graph', href: '/knowledge-graph' }}
+      title="AI Skills"
+      maxWidth={860}
+      actions={
+        isAdmin && (
+          <div className="flex items-center gap-2">
+            <select
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              className="h-9 px-2.5 rounded-[9px] text-[12.5px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] outline-none"
+              title="Scope for Generate / Consolidate"
+            >
+              <option value="">From connectors</option>
+              {servers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  For server: {s.name}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={consolidate}
+              disabled={consolidating || generating}
+              title="Merge the active skills in this scope into fewer, non-redundant ones"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 8h10M7 12h10M9 16h6" />
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+              </svg>
+              {consolidating ? 'Consolidating…' : 'Consolidate'}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={generate} disabled={generating || consolidating}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 3v3M12 18v3M5 12H3M21 12h-2M6 6l1.5 1.5M18 18l-1.5-1.5" />
+                <circle cx="12" cy="12" r="3.5" />
+              </svg>
+              {generating ? 'Generating…' : 'Generate with AI'}
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setShowNew((v) => !v)}>
+              {showNew ? (
+                'Close'
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  New skill
+                </>
+              )}
+            </Button>
           </div>
-        ) : (
-          <>
-            {/* Status tabs with counts + search */}
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-1 rounded-lg border border-[var(--border)] p-0.5">
-                {TABS.map((t) => {
-                  const n = t.countKey ? counts[t.countKey] : counts.pending + counts.applied + counts.dismissed;
-                  const activeTab = statusFilter === t.key;
-                  return (
-                    <button
-                      key={t.key}
-                      onClick={() => {
-                        setStatusFilter(t.key);
-                        setPage(0);
-                      }}
-                      className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
-                        activeTab
-                          ? 'bg-[var(--brand)] text-white'
-                          : 'text-[var(--muted-foreground)] hover:bg-[var(--accent)]'
-                      }`}
-                    >
-                      {t.label}
-                      <span className={`ml-1.5 text-xs ${activeTab ? 'opacity-90' : 'opacity-70'}`}>{n}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <input
-                value={query}
-                onChange={(e) => onSearch(e.target.value)}
-                placeholder="Search skills…"
-                className="px-3 py-1.5 rounded-md text-sm bg-[var(--background)] border border-[var(--border)] w-full sm:w-56"
-              />
+        )
+      }
+    >
+      <p className="text-[13px] leading-relaxed text-[var(--text-2)] mb-4">
+        Reusable rules inferred from the user intents captured on your tool calls — per connector or
+        for a whole MCP server (combined context). <span className="text-[var(--text)]">Active</span> skills are
+        composed into the server&apos;s instructions automatically.{' '}
+        <Link href="/knowledge-graph" className="text-[var(--brand)] hover:underline">
+          Back to graph
+        </Link>
+      </p>
+      {status && <p className="text-[12px] text-[var(--text-3)] mb-3">{status}</p>}
+
+      {isAdmin && showNew && (
+        <NewSkillForm
+          token={token!}
+          servers={servers}
+          connectors={connectorList}
+          onCreated={() => {
+            setShowNew(false);
+            setStatus('Skill created (live for MCP).');
+            setPage(0);
+            load();
+          }}
+        />
+      )}
+
+      {everEmpty && !loading ? (
+        <Card className="p-6 text-center text-[13px] text-[var(--text-3)]">
+          No skills yet. Enable “Capture user intent” and “AI enrichment”, let some tool calls flow,
+          then {isAdmin ? 'click “Generate with AI”.' : 'ask an admin to generate them.'}
+        </Card>
+      ) : (
+        <>
+          {/* Status tabs with counts + search */}
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="inline-flex p-[3px] rounded-[10px] border border-[var(--border)] gap-0.5">
+              {TABS.map((t) => {
+                const n = t.countKey ? counts[t.countKey] : counts.pending + counts.applied + counts.dismissed;
+                const activeTab = statusFilter === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => {
+                      setStatusFilter(t.key);
+                      setPage(0);
+                    }}
+                    className={cn(
+                      'px-3 py-1.5 rounded-[7px] text-[12.5px] font-medium transition-colors',
+                      activeTab
+                        ? 'bg-[var(--brand)] text-white'
+                        : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
+                    )}
+                  >
+                    {t.label}
+                    <span className={cn('ml-1.5 text-[11px]', activeTab ? 'opacity-90' : 'opacity-70')}>{n}</span>
+                  </button>
+                );
+              })}
             </div>
+            <input
+              value={query}
+              onChange={(e) => onSearch(e.target.value)}
+              placeholder="Search skills…"
+              className={cn(inputCls, 'w-full sm:w-56')}
+            />
+          </div>
 
-            {loading ? (
-              <p className="text-[var(--muted-foreground)]">Loading…</p>
-            ) : items.length === 0 ? (
-              <div className="border border-[var(--border)] rounded-lg p-6 text-center text-sm text-[var(--muted-foreground)]">
-                No skills match this filter.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {items.map((s) => (
-                  <SkillCard key={s.id} s={s} isAdmin={isAdmin} token={token!} onChanged={onChanged} />
-                ))}
-              </div>
-            )}
+          {loading ? (
+            <p className="text-[13px] text-[var(--text-3)]">Loading…</p>
+          ) : items.length === 0 ? (
+            <Card className="p-6 text-center text-[13px] text-[var(--text-3)]">
+              No skills match this filter.
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {items.map((s) => (
+                <SkillCard key={s.id} s={s} isAdmin={isAdmin} token={token!} onChanged={onChanged} />
+              ))}
+            </div>
+          )}
 
-            {/* Pagination */}
-            {total > PAGE_SIZE && (
-              <div className="flex items-center justify-between mt-5 text-sm">
-                <span className="text-[var(--muted-foreground)]">
-                  {from}–{to} of {total}
+          {/* Pagination */}
+          {total > PAGE_SIZE && (
+            <div className="flex items-center justify-between mt-4 text-[13px]">
+              <span className="text-[var(--text-3)]">
+                {from}–{to} of {total}
+              </span>
+              <div className="flex items-center gap-2.5">
+                <Button
+                  variant="secondary"
+                  size="md"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  ← Prev
+                </Button>
+                <span className="text-[var(--text-3)]">
+                  Page {page + 1} / {totalPages}
                 </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    disabled={page === 0}
-                    onClick={() => setPage((p) => Math.max(0, p - 1))}
-                    className="px-3 py-1.5 rounded-md border border-[var(--border)] disabled:opacity-40 hover:bg-[var(--accent)]"
-                  >
-                    ← Prev
-                  </button>
-                  <span className="text-[var(--muted-foreground)]">
-                    Page {page + 1} / {totalPages}
-                  </span>
-                  <button
-                    disabled={page + 1 >= totalPages}
-                    onClick={() => setPage((p) => p + 1)}
-                    className="px-3 py-1.5 rounded-md border border-[var(--border)] disabled:opacity-40 hover:bg-[var(--accent)]"
-                  >
-                    Next →
-                  </button>
-                </div>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  disabled={page + 1 >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next →
+                </Button>
               </div>
-            )}
-          </>
-        )}
-      </main>
-      <Footer />
-    </div>
+            </div>
+          )}
+        </>
+      )}
+    </AppShell>
   );
 }
 
@@ -305,6 +323,13 @@ function SkillCard({
       ? `connector: ${s.connector.name}`
       : 'workspace';
 
+  const statusMeta: { label: string; tone: Tone } =
+    s.status === 'applied'
+      ? { label: 'Active', tone: 'success' }
+      : s.status === 'dismissed'
+        ? { label: 'Dismissed', tone: 'neutral' }
+        : { label: 'Suggested', tone: 'info' };
+
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -317,53 +342,61 @@ function SkillCard({
 
   if (editing) {
     return (
-      <div className="border border-[var(--border)] rounded-lg p-4 space-y-2">
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full px-2 py-1.5 text-sm rounded border border-[var(--border)] bg-[var(--background)]"
-          placeholder="Title"
-        />
-        <input
-          value={whenToUse}
-          onChange={(e) => setWhenToUse(e.target.value)}
-          className="w-full px-2 py-1.5 text-sm rounded border border-[var(--border)] bg-[var(--background)]"
-          placeholder="When to use"
-        />
-        <textarea
-          value={instruction}
-          onChange={(e) => setInstruction(e.target.value)}
-          rows={3}
-          className="w-full px-2 py-1.5 text-sm rounded border border-[var(--border)] bg-[var(--background)]"
-          placeholder="Instruction"
-        />
-        <div className="flex gap-2">
-          <button
-            disabled={busy}
-            onClick={() =>
-              run(async () => {
-                await knowledgeGraph.skills.update(token, s.id, { title, whenToUse, instruction });
-                setEditing(false);
-              })
-            }
-            className="px-2.5 py-1 rounded text-xs bg-[var(--brand)] text-white"
-          >
-            Save
-          </button>
-          <button onClick={() => setEditing(false)} className="px-2.5 py-1 rounded text-xs border border-[var(--border)]">
-            Cancel
-          </button>
+      <Card className="p-4">
+        <div className="flex flex-col gap-2.5">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className={cn(inputCls, 'h-9 bg-[var(--surface-2)]')}
+            placeholder="Title"
+          />
+          <input
+            value={whenToUse}
+            onChange={(e) => setWhenToUse(e.target.value)}
+            className={cn(inputCls, 'h-9 bg-[var(--surface-2)]')}
+            placeholder="When to use"
+          />
+          <textarea
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            rows={3}
+            className={cn(textareaCls, 'bg-[var(--surface-2)]')}
+            placeholder="Instruction"
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  await knowledgeGraph.skills.update(token, s.id, { title, whenToUse, instruction });
+                  setEditing(false);
+                })
+              }
+            >
+              Save
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
         </div>
-      </div>
+      </Card>
     );
   }
 
   return (
-    <div className={`border border-[var(--border)] rounded-lg p-4 ${s.status === 'dismissed' ? 'opacity-60' : ''}`}>
-      <div className="flex items-start justify-between gap-3">
+    <Card className={cn('px-[18px] py-4', s.status === 'dismissed' && 'opacity-60')}>
+      <div className="flex items-start justify-between gap-3 mb-2.5">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold">{s.title}</h3>
-          <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5">
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+            <span className="text-[14px] font-semibold text-[var(--text)]">{s.title}</span>
+            <Badge tone={statusMeta.tone} className="rounded-full px-2 py-[2px]">
+              {statusMeta.label}
+            </Badge>
+          </div>
+          <p className="text-[11.5px] text-[var(--text-3)]">
             {scope} · confidence {s.confidence.toFixed(2)}
             {s.evidenceCount ? ` · ${s.evidenceCount} example(s)` : ''}
           </p>
@@ -371,43 +404,52 @@ function SkillCard({
         {isAdmin && (
           <div className="flex gap-1.5 flex-shrink-0">
             {s.status !== 'applied' && (
-              <button
+              <Button
+                size="sm"
                 disabled={busy}
                 onClick={() => run(() => knowledgeGraph.skills.apply(token, s.id))}
-                className="px-2 py-1 rounded text-xs bg-green-600 text-white"
+                className="h-[30px] px-[11px] bg-[var(--ok)] text-white hover:opacity-90"
               >
                 {s.status === 'dismissed' ? 'Activate' : 'Apply'}
-              </button>
+              </Button>
             )}
             {s.status === 'applied' && (
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 disabled={busy}
                 onClick={() => run(() => knowledgeGraph.skills.dismiss(token, s.id))}
-                className="px-2 py-1 rounded text-xs border border-[var(--border)]"
+                className="h-[30px] px-[11px]"
               >
                 Deactivate
-              </button>
+              </Button>
             )}
-            <button onClick={() => setEditing(true)} className="px-2 py-1 rounded text-xs border border-[var(--border)]">
+            <Button variant="secondary" size="sm" onClick={() => setEditing(true)} className="h-[30px] px-[11px]">
               Edit
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               disabled={busy}
+              title="Delete"
+              aria-label="Delete skill"
               onClick={() => run(() => knowledgeGraph.skills.remove(token, s.id))}
-              className="px-2 py-1 rounded text-xs text-[var(--destructive)] border border-[var(--border)]"
+              className="h-[30px] w-[30px] p-0 text-[var(--danger)]"
             >
-              Delete
-            </button>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              </svg>
+            </Button>
           </div>
         )}
       </div>
-      <p className="text-[13px] mt-2">
-        <span className="text-[var(--muted-foreground)]">When:</span> {s.whenToUse}
+      <p className="text-[13px] leading-[1.55] mb-1 text-[var(--text)]">
+        <span className="text-[var(--text-3)]">When:</span> {s.whenToUse}
       </p>
-      <p className="text-[13px] mt-1">
-        <span className="text-[var(--muted-foreground)]">Do:</span> {s.instruction}
+      <p className="text-[13px] leading-[1.55] text-[var(--text)]">
+        <span className="text-[var(--text-3)]">Do:</span> {s.instruction}
       </p>
-    </div>
+    </Card>
   );
 }
 
@@ -453,61 +495,59 @@ function NewSkillForm({
   };
 
   return (
-    <div className="border border-[var(--border)] rounded-lg p-4 mb-5 space-y-2 bg-[var(--accent)]/40">
-      <p className="font-medium text-sm">New skill</p>
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Title (e.g. Always confirm the delivery address)"
-        className="w-full px-2 py-1.5 rounded border border-[var(--border)] text-sm"
-      />
-      <input
-        value={whenToUse}
-        onChange={(e) => setWhenToUse(e.target.value)}
-        placeholder="When to use (optional)"
-        className="w-full px-2 py-1.5 rounded border border-[var(--border)] text-sm"
-      />
-      <textarea
-        value={instruction}
-        onChange={(e) => setInstruction(e.target.value)}
-        rows={3}
-        placeholder="Instruction for the agent (imperative guidance)"
-        className="w-full px-2 py-1.5 rounded border border-[var(--border)] text-sm"
-      />
-      <select
-        value={scope}
-        onChange={(e) => setScope(e.target.value)}
-        className="w-full px-2 py-1.5 rounded border border-[var(--border)] text-sm bg-white"
-      >
-        <option value="">Scope… (where this skill applies)</option>
-        {servers.length > 0 && (
-          <optgroup label="MCP servers">
-            {servers.map((s) => (
-              <option key={s.id} value={`srv:${s.id}`}>Server: {s.name}</option>
-            ))}
-          </optgroup>
-        )}
-        {connectors.length > 0 && (
-          <optgroup label="Connectors">
-            {connectors.map((c) => (
-              <option key={c.id} value={`con:${c.id}`}>Connector: {c.name}</option>
-            ))}
-          </optgroup>
-        )}
-      </select>
-      {err && <p className="text-xs text-[var(--destructive)]">{err}</p>}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={submit}
-          disabled={!valid || saving}
-          className="px-3 py-1.5 rounded text-sm bg-[var(--brand)] text-white disabled:opacity-40"
+    <Card className="p-4 mb-3.5 bg-[var(--surface-2)]">
+      <p className="text-[13.5px] font-semibold mb-3 text-[var(--text)]">New skill</p>
+      <div className="flex flex-col gap-2.5">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Title (e.g. Always confirm the delivery address)"
+          className={inputCls}
+        />
+        <input
+          value={whenToUse}
+          onChange={(e) => setWhenToUse(e.target.value)}
+          placeholder="When to use (optional)"
+          className={inputCls}
+        />
+        <textarea
+          value={instruction}
+          onChange={(e) => setInstruction(e.target.value)}
+          rows={3}
+          placeholder="Instruction for the agent (imperative guidance)"
+          className={textareaCls}
+        />
+        <select
+          value={scope}
+          onChange={(e) => setScope(e.target.value)}
+          className={cn(inputCls, 'text-[var(--text)]')}
         >
-          {saving ? 'Creating…' : 'Create skill'}
-        </button>
-        <span className="text-xs text-[var(--muted-foreground)]">
-          Created as active → immediately available to the MCP server.
-        </span>
+          <option value="">Scope… (where this skill applies)</option>
+          {servers.length > 0 && (
+            <optgroup label="MCP servers">
+              {servers.map((s) => (
+                <option key={s.id} value={`srv:${s.id}`}>Server: {s.name}</option>
+              ))}
+            </optgroup>
+          )}
+          {connectors.length > 0 && (
+            <optgroup label="Connectors">
+              {connectors.map((c) => (
+                <option key={c.id} value={`con:${c.id}`}>Connector: {c.name}</option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        {err && <p className="text-[12px] text-[var(--danger)]">{err}</p>}
+        <div className="flex items-center gap-2.5 mt-0.5">
+          <Button variant="primary" size="md" onClick={submit} disabled={!valid || saving}>
+            {saving ? 'Creating…' : 'Create skill'}
+          </Button>
+          <span className="text-[11.5px] text-[var(--text-3)]">
+            Created as active → immediately available to the MCP server.
+          </span>
+        </div>
       </div>
-    </div>
+    </Card>
   );
 }

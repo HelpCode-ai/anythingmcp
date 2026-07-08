@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { license } from '@/lib/api';
 import { buildPricingUrl } from '@/lib/marketing';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 interface LicenseStatus {
   plan: string | null;
@@ -23,8 +26,16 @@ export default function LicenseSettingsPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [openingPortal, setOpeningPortal] = useState(false);
 
   const isCloud = deploymentMode === 'cloud';
+  // The Stripe billing portal only applies to a real paid subscription —
+  // not the free trial or a self-hosted community license.
+  const hasBillableSubscription =
+    isCloud &&
+    !!status?.plan &&
+    status.plan !== 'trial' &&
+    status.plan !== 'community';
 
   const loadStatus = async () => {
     try {
@@ -92,6 +103,23 @@ export default function LicenseSettingsPage() {
     }
   };
 
+  const handleBillingPortal = async () => {
+    if (!token) return;
+    setError('');
+    setMessage('');
+    setOpeningPortal(true);
+    try {
+      const { url } = await license.billingPortal(
+        token,
+        typeof window !== 'undefined' ? window.location.href : undefined,
+      );
+      window.location.href = url;
+    } catch (err: any) {
+      setError(err.message || 'Failed to open the billing portal');
+      setOpeningPortal(false);
+    }
+  };
+
   const handleActivateTrial = async () => {
     if (!token) return;
     setError('');
@@ -126,17 +154,17 @@ export default function LicenseSettingsPage() {
 
   const statusColor = (s: string) => {
     switch (s) {
-      case 'active': return 'text-emerald-600';
-      case 'expired': return 'text-amber-600';
-      case 'invalid': case 'revoked': return 'text-red-600';
-      case 'pending': return 'text-amber-500';
-      default: return 'text-[var(--muted-foreground)]';
+      case 'active': return 'text-[var(--ok)]';
+      case 'expired': return 'text-[var(--warn)]';
+      case 'invalid': case 'revoked': return 'text-[var(--danger)]';
+      case 'pending': return 'text-[var(--warn)]';
+      default: return 'text-[var(--text-3)]';
     }
   };
 
   if (user?.role !== 'ADMIN') {
     return (
-      <div className="text-center py-12 text-[var(--muted-foreground)]">
+      <div className="text-center py-12 text-[var(--text-3)]">
         Only administrators can manage the license.
       </div>
     );
@@ -145,126 +173,119 @@ export default function LicenseSettingsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold">License & Plan</h1>
-        <p className="text-sm text-[var(--muted-foreground)] mt-1">
+        <h1 className="text-base font-semibold text-[var(--text)]">License & Plan</h1>
+        <p className="text-sm text-[var(--text-2)] mt-1">
           Manage your Anything MCP license
         </p>
       </div>
 
       {/* Feedback */}
       {message && (
-        <div className="p-3 rounded-md bg-emerald-50 text-emerald-700 text-sm border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800">
+        <div className="p-3 rounded-[9px] text-sm" style={{ background: 'var(--t-success-bg)', color: 'var(--t-success-fg)' }}>
           {message}
         </div>
       )}
       {error && (
-        <div className="p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
+        <div className="p-3 rounded-[9px] text-sm" style={{ background: 'var(--t-danger-bg)', color: 'var(--t-danger-fg)' }}>
           {error}
         </div>
       )}
 
       {/* Current Plan */}
-      <section className="border border-[var(--border)] rounded-lg p-5 bg-[var(--card)]">
-        <h2 className="text-sm font-semibold mb-4">Current Plan</h2>
+      <Card className="p-5">
+        <h2 className="text-sm font-semibold text-[var(--text)] mb-4">Current Plan</h2>
 
         {!status || !status.plan ? (
           <div className="space-y-3">
-            <p className="text-sm text-[var(--muted-foreground)]">
+            <p className="text-sm text-[var(--text-2)]">
               No license registered yet.
             </p>
             {isCloud ? (
-              <button
-                onClick={handleActivateTrial}
-                disabled={loading}
-                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
-              >
+              <Button onClick={handleActivateTrial} disabled={loading}>
                 {loading ? 'Activating...' : 'Start 7-Day Free Trial'}
-              </button>
+              </Button>
             ) : (
-              <button
-                onClick={handleRegisterCommunity}
-                disabled={loading}
-                className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
-              >
+              <Button onClick={handleRegisterCommunity} disabled={loading}>
                 {loading ? 'Registering...' : 'Register Free Community License'}
-              </button>
+              </Button>
             )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
-              <div className="text-[var(--muted-foreground)] text-xs mb-0.5">Plan</div>
-              <div className="font-medium">{planLabel(status.plan)}</div>
+              <div className="text-[var(--text-3)] text-xs mb-0.5">Plan</div>
+              <div className="font-medium text-[var(--text)]">{planLabel(status.plan)}</div>
             </div>
             <div>
-              <div className="text-[var(--muted-foreground)] text-xs mb-0.5">Status</div>
+              <div className="text-[var(--text-3)] text-xs mb-0.5">Status</div>
               <div className={`font-medium capitalize ${statusColor(status.status)}`}>
                 {status.status}
               </div>
             </div>
             <div>
-              <div className="text-[var(--muted-foreground)] text-xs mb-0.5">Expires</div>
-              <div>{formatDate(status.expiresAt)}</div>
+              <div className="text-[var(--text-3)] text-xs mb-0.5">Expires</div>
+              <div className="text-[var(--text)]">{formatDate(status.expiresAt)}</div>
             </div>
             <div>
-              <div className="text-[var(--muted-foreground)] text-xs mb-0.5">Last Verified</div>
-              <div>{formatDate(status.lastVerifiedAt)}</div>
+              <div className="text-[var(--text-3)] text-xs mb-0.5">Last Verified</div>
+              <div className="text-[var(--text)]">{formatDate(status.lastVerifiedAt)}</div>
             </div>
             {status.trialDaysLeft !== undefined && (
               <div>
-                <div className="text-[var(--muted-foreground)] text-xs mb-0.5">Trial Days Left</div>
-                <div className={`font-medium ${status.trialDaysLeft <= 2 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                <div className="text-[var(--text-3)] text-xs mb-0.5">Trial Days Left</div>
+                <div className={`font-medium ${status.trialDaysLeft <= 2 ? 'text-[var(--warn)]' : 'text-[var(--ok)]'}`}>
                   {status.trialDaysLeft} days
                 </div>
               </div>
             )}
             {!isCloud && (
               <div className="sm:col-span-2">
-                <div className="text-[var(--muted-foreground)] text-xs mb-0.5">Instance ID</div>
-                <div className="font-mono text-xs break-all">{status.instanceId || '—'}</div>
+                <div className="text-[var(--text-3)] text-xs mb-0.5">Instance ID</div>
+                <div className="font-mono text-xs break-all text-[var(--text)]">{status.instanceId || '—'}</div>
               </div>
             )}
           </div>
         )}
 
         {status?.plan && (
-          <div className="mt-4 pt-4 border-t border-[var(--border)]">
-            <button
-              onClick={handleVerify}
-              disabled={verifying}
-              className="border border-[var(--border)] px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--accent)] disabled:opacity-50"
-            >
+          <div className="mt-4 pt-4 border-t border-[var(--border)] flex flex-wrap gap-3">
+            <Button variant="secondary" onClick={handleVerify} disabled={verifying}>
               {verifying ? 'Verifying...' : 'Verify Now'}
-            </button>
+            </Button>
+            {hasBillableSubscription && (
+              <Button onClick={handleBillingPortal} disabled={openingPortal}>
+                {openingPortal ? 'Opening…' : 'Manage subscription & billing'}
+              </Button>
+            )}
           </div>
         )}
-      </section>
+      </Card>
 
       {/* Features */}
       {status?.features && Object.keys(status.features).length > 0 && (
-        <section className="border border-[var(--border)] rounded-lg p-5 bg-[var(--card)]">
-          <h2 className="text-sm font-semibold mb-4">Features</h2>
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold text-[var(--text)] mb-4">Features</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             {Object.entries(status.features).map(([key, value]) => (
               <div key={key} className="flex justify-between py-1">
-                <span className="text-[var(--muted-foreground)]">
+                <span className="text-[var(--text-3)]">
                   {key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}
                 </span>
-                <span className="font-medium">
+                <span className="font-medium text-[var(--text)]">
                   {value === true ? 'Yes' : value === false ? 'No' : value === null ? 'Unlimited' : String(value)}
                 </span>
               </div>
             ))}
           </div>
-        </section>
+        </Card>
       )}
 
       {/* Change License Key — always available so admins can activate a purchased key any time */}
-      <section className="border border-[var(--border)] rounded-lg p-5 bg-[var(--card)]">
-          <h2 className="text-sm font-semibold mb-4">
+      <Card className="p-5">
+          <h2 className="text-sm font-semibold text-[var(--text)] mb-4">
             {status?.plan && status.plan !== 'trial' ? 'Change License Key' : 'Activate License Key'}
           </h2>
-          <p className="text-sm text-[var(--muted-foreground)] mb-4">
+          <p className="text-sm text-[var(--text-2)] mb-4">
             Purchase a license at{' '}
             <a
               href={buildPricingUrl()}
@@ -282,34 +303,30 @@ export default function LicenseSettingsPage() {
               value={licenseKey}
               onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
               placeholder="AMCP-XXXX-XXXX-XXXX-XXXX"
-              className="flex-1 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono tracking-wider"
+              className="flex-1 h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] font-mono tracking-wider outline-none focus:border-[var(--brand)]"
             />
-            <button
-              onClick={handleActivate}
-              disabled={loading || !licenseKey}
-              className="bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50 whitespace-nowrap"
-            >
+            <Button onClick={handleActivate} disabled={loading || !licenseKey}>
               {loading ? 'Activating...' : 'Activate'}
-            </button>
+            </Button>
           </div>
-        </section>
+        </Card>
 
       {/* Upgrade Plan (Cloud mode) */}
       {isCloud && status?.plan === 'trial' && (
-        <section className="border border-[var(--border)] rounded-lg p-5 bg-[var(--card)]">
-          <h2 className="text-sm font-semibold mb-4">Upgrade Plan</h2>
-          <p className="text-sm text-[var(--muted-foreground)] mb-4">
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold text-[var(--text)] mb-4">Upgrade Plan</h2>
+          <p className="text-sm text-[var(--text-2)] mb-4">
             Upgrade to a paid plan to continue using AnythingMCP Cloud after your trial ends.
           </p>
           <a
             href={buildPricingUrl()}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block bg-[var(--brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:brightness-90"
+            className={cn(buttonVariants({ variant: 'primary' }))}
           >
             View Plans
           </a>
-        </section>
+        </Card>
       )}
     </div>
   );

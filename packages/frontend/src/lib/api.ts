@@ -351,6 +351,7 @@ export interface KgSettings {
   captureIntent: boolean;
   autoExtend: boolean;
   skillAutoApply: boolean;
+  edgeAutoApply: boolean;
 }
 
 export interface KgSkillList {
@@ -377,6 +378,7 @@ export const knowledgeGraph = {
       captureIntent?: boolean;
       autoExtend?: boolean;
       skillAutoApply?: boolean;
+      edgeAutoApply?: boolean;
     },
   ) =>
     request<KgSettings>('/api/knowledge-graph/settings', { token, method: 'PUT', body }),
@@ -519,8 +521,10 @@ export const siteSettings = {
 export const adminSettings = {
   getSmtp: (token: string) =>
     request<{ configured: boolean; host?: string; port?: number; user?: string; from?: string; secure?: boolean }>('/api/admin/settings/smtp', { token }),
-  updateSmtp: (data: { host: string; port: number; user: string; pass: string; from?: string; secure?: boolean }, token: string) =>
+  updateSmtp: (data: { host: string; port: number; user: string; pass?: string; from?: string; secure?: boolean }, token: string) =>
     request<{ message: string }>('/api/admin/settings/smtp', { method: 'PUT', body: data, token }),
+  deleteSmtp: (token: string) =>
+    request<{ message: string }>('/api/admin/settings/smtp', { method: 'DELETE', token }),
   testSmtp: (token: string) =>
     request<{ ok: boolean; message: string }>('/api/admin/settings/smtp/test', { method: 'POST', token }),
   getFooterLinks: (token: string) =>
@@ -592,6 +596,12 @@ export const license = {
   registerCommunity: (token: string) =>
     request<{ message: string; email: string }>('/api/license/register-community', {
       method: 'POST',
+      token,
+    }),
+  billingPortal: (token: string, returnUrl?: string) =>
+    request<{ url: string }>('/api/license/billing-portal', {
+      method: 'POST',
+      body: { returnUrl },
       token,
     }),
   getInstanceId: () =>

@@ -60,6 +60,40 @@ export class LicenseService implements OnModuleInit {
     return (await this.siteSettings.get('instance_id')) || (await this.ensureInstanceId());
   }
 
+  // ── Stripe Billing Portal ──────────────────────────────────────────────────
+
+  /**
+   * Create a Stripe Billing Portal session for the org's active license so the
+   * user can manage payment method, invoices, or cancel their subscription.
+   * We hold only the license key locally; the licensing site (which owns the
+   * Stripe customer/subscription mapping) mints the actual portal URL.
+   */
+  async createBillingPortalSession(
+    organizationId: string,
+    returnUrl?: string,
+  ): Promise<{ url: string }> {
+    const license = await this.getCurrentLicense(organizationId);
+    if (!license?.licenseKey) {
+      throw new Error('No active license for this organization.');
+    }
+    try {
+      const { data } = await axios.post(
+        `${this.apiBase}/api/billing/portal`,
+        { licenseKey: license.licenseKey, returnUrl },
+        { timeout: 15000 },
+      );
+      if (!data?.url) throw new Error('No portal URL returned.');
+      return { url: data.url as string };
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.error ||
+        err?.message ||
+        'Failed to open the billing portal.';
+      this.logger.warn(`Billing portal request failed: ${msg}`);
+      throw new Error(msg);
+    }
+  }
+
   // ── Community License Request (sends key via email) ───────────────────────
 
   async requestCommunityLicense(

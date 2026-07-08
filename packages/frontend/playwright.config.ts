@@ -34,8 +34,11 @@ export default defineConfig({
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
         env: {
-          NEXT_PUBLIC_API_URL:
-            process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4100',
+          // Keep API calls same-origin (/api/*) so e2e tests can intercept
+          // them via page.route without tripping cross-origin CORS preflight
+          // (preflight OPTIONS requests aren't routed by Playwright). Backend-
+          // dependent behavior is covered by scripts/smoke-test/run.sh.
+          NEXT_PUBLIC_API_URL: '',
         },
       },
 });

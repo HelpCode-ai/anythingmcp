@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsString, Matches } from 'class-validator';
+import { IsString, IsOptional, Matches } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { LicenseService } from './license.service';
 import { LicenseGuardService } from './license-guard.service';
@@ -26,6 +26,12 @@ class SetLicenseKeyDto {
     message: 'Invalid license key format. Expected: AMCP-XXXX-XXXX-XXXX-XXXX',
   })
   licenseKey: string;
+}
+
+class BillingPortalDto {
+  @IsOptional()
+  @IsString()
+  returnUrl?: string;
 }
 
 @ApiTags('License')
@@ -130,6 +136,24 @@ export class LicenseController {
       return { message: 'License activated successfully', license };
     } catch (err: any) {
       throw new BadRequestException(err.message || 'Failed to activate license');
+    }
+  }
+
+  @Post('billing-portal')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Open the Stripe billing portal for the current subscription (ADMIN)',
+  })
+  async billingPortal(@Req() req: any, @Body() dto: BillingPortalDto) {
+    try {
+      return await this.licenseService.createBillingPortalSession(
+        req.user.organizationId,
+        dto?.returnUrl,
+      );
+    } catch (err: any) {
+      throw new BadRequestException(err.message || 'Failed to open billing portal');
     }
   }
 

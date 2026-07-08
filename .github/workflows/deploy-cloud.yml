@@ -61,8 +61,18 @@ jobs:
               echo "CRON_SECRET=${CRON_SECRET}" >> .env
             fi
 
-            # Restart services (force-recreate to pick up new image and config)
-            docker compose -f docker-compose.cloud.yml up -d --force-recreate --remove-orphans
+            # Recreate ONLY the app to pick up the new image/config (postgres,
+            # redis and db-rest keep running — no data churn, no needless
+            # downtime), and wait until it reports healthy. The old command
+            # force-recreated the whole stack with no health gate, so a
+            # crash-on-start went unnoticed and could take the DB down with it.
+            docker compose -f docker-compose.cloud.yml up -d \
+              --no-deps --force-recreate --wait --wait-timeout 300 app
+
+            # Ensure the proxy + any other services are up (caddy waits for the
+            # app to be healthy, which it now is).
+            docker compose -f docker-compose.cloud.yml up -d --remove-orphans
+
             docker image prune -f
 
             echo "Deployment complete"

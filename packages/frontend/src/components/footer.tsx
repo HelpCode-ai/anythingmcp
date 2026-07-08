@@ -52,14 +52,14 @@ export function Footer() {
   ];
 
   return (
-    <footer className="border-t border-[var(--border)] bg-[var(--background)]">
+    <footer className="border-t border-[var(--border)] bg-[var(--surface)]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Left: Legal links */}
-          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--muted-foreground)]">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-3)]">
             <span>&copy; {new Date().getFullYear()} Anything<span className="text-[var(--brand)]">MCP</span></span>
             <span className="hidden sm:inline">·</span>
-            <a href="https://helpcode.ai" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--foreground)] hover:underline">Powered by helpcode.ai</a>
+            <a href="https://helpcode.ai" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--text)] hover:underline">Powered by helpcode.ai</a>
             {links.length > 0 && (
               <>
                 <span className="hidden sm:inline">·</span>
@@ -69,7 +69,7 @@ export function Footer() {
                     href={link.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="hover:text-[var(--foreground)] hover:underline"
+                    className="hover:text-[var(--text)] hover:underline"
                   >
                     {link.label}
                   </a>
@@ -79,7 +79,7 @@ export function Footer() {
           </div>
 
           {/* Right: Theme toggle */}
-          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-[var(--muted)] border border-[var(--border)]">
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
             {themeOptions.map((opt) => {
               const isActive = theme === opt.value;
               return (
@@ -88,8 +88,8 @@ export function Footer() {
                   onClick={() => setTheme(opt.value)}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs transition-colors ${
                     isActive
-                      ? 'bg-[var(--background)] text-[var(--foreground)] shadow-sm font-medium'
-                      : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]'
+                      ? 'bg-[var(--surface)] text-[var(--text)] shadow-[var(--shadow-sm)] font-medium'
+                      : 'text-[var(--text-3)] hover:text-[var(--text)]'
                   }`}
                   title={opt.label}
                 >

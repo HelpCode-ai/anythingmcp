@@ -45,7 +45,13 @@ export function UsageBanner() {
   }
 
   return (
-    <div className="bg-amber-500 text-amber-950 text-sm py-2 px-4 text-center">
+    <div
+      className="text-sm py-2 px-4 text-center"
+      style={{
+        backgroundColor: 'var(--t-warn-bg)',
+        color: 'var(--t-warn-fg)',
+      }}
+    >
       <span>
         You&apos;re using <strong>{overAxes.join(', ')}</strong> — upgrade to{' '}
         <strong>{next}</strong> for higher limits.
@@ -62,7 +68,7 @@ export function UsageBanner() {
         type="button"
         onClick={() => setDismissed(true)}
         aria-label="Dismiss"
-        className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded text-amber-950/70 hover:bg-amber-950/10 hover:text-amber-950"
+        className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded hover:bg-black/10"
       >
         ×
       </button>

@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { organizations, knowledgeGraph, type KgSettings } from '@/lib/api';
 import * as Dialog from '@radix-ui/react-dialog';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { StatusPill } from '@/components/ui/badge';
 
 export default function OrganizationSettingsPage() {
   const { token, user, orgName, orgs, setOrgName, switchOrg, replaceSession } = useAuth();
@@ -40,7 +43,7 @@ export default function OrganizationSettingsPage() {
     knowledgeGraph.getSettings(token).then(setKg).catch(() => {});
   }, [token]);
 
-  const updateFlag = async (patch: { enabled?: boolean; llmEnabled?: boolean; captureIntent?: boolean; autoExtend?: boolean; skillAutoApply?: boolean }) => {
+  const updateFlag = async (patch: { enabled?: boolean; llmEnabled?: boolean; captureIntent?: boolean; autoExtend?: boolean; skillAutoApply?: boolean; edgeAutoApply?: boolean }) => {
     if (!token || !kg) return;
     setKgSaving(true);
     try {
@@ -105,11 +108,17 @@ export default function OrganizationSettingsPage() {
     }
   };
 
+  const inputClass =
+    'w-full h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]';
+  const inputReadonlyClass =
+    'w-full h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] px-3 text-sm text-[var(--text-3)] cursor-not-allowed';
+  const labelClass = 'block text-[12.5px] font-medium text-[var(--text-2)] mb-1';
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-lg font-semibold">Organization</h2>
-        <p className="text-sm text-[var(--muted-foreground)]">
+        <h2 className="text-base font-semibold text-[var(--text)]">Organization</h2>
+        <p className="text-sm text-[var(--text-2)]">
           {isAdmin
             ? 'Manage your workspace settings. All members of this organization share connectors, MCP servers, and tools.'
             : 'View your current organization and create new workspaces.'}
@@ -117,70 +126,66 @@ export default function OrganizationSettingsPage() {
       </div>
 
       {/* Current organization — editable only for ADMIN */}
-      <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5 space-y-4">
+      <Card className="p-5 space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Organization Name</label>
+          <label className={labelClass}>Organization Name</label>
           {isAdmin ? (
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand)] focus:border-transparent outline-none"
+              className={inputClass}
               placeholder="My Workspace"
             />
           ) : (
-            <p className="px-3 py-2 bg-[var(--accent)] border border-[var(--border)] rounded-lg text-sm text-[var(--muted-foreground)]">
+            <p className="flex h-9 items-center rounded-[9px] bg-[var(--surface-2)] border border-[var(--border)] px-3 text-sm text-[var(--text-2)]">
               {name}
             </p>
           )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Organization ID</label>
+          <label className={labelClass}>Organization ID</label>
           <input
             type="text"
             value={orgId}
             readOnly
-            className="w-full px-3 py-2 bg-[var(--accent)] border border-[var(--border)] rounded-lg text-sm text-[var(--muted-foreground)] cursor-not-allowed"
+            className={inputReadonlyClass}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Your Role</label>
-          <p className="text-sm text-[var(--muted-foreground)]">{user?.role}</p>
+          <label className={labelClass}>Your Role</label>
+          <p className="text-sm text-[var(--text-2)]">{user?.role}</p>
         </div>
 
         {createdAt && (
           <div>
-            <label className="block text-sm font-medium mb-1">Created</label>
-            <p className="text-sm text-[var(--muted-foreground)]">
+            <label className={labelClass}>Created</label>
+            <p className="text-sm text-[var(--text-2)]">
               {new Date(createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
         )}
 
         {message && (
-          <p className={`text-sm ${message.includes('success') ? 'text-green-600' : 'text-[var(--destructive)]'}`}>
+          <p className={`text-sm ${message.includes('success') ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
             {message}
           </p>
         )}
 
         {isAdmin && (
           <div className="pt-2">
-            <button
-              onClick={handleSave}
-              disabled={saving || !name.trim()}
-              className="px-4 py-2 bg-[var(--brand)] text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
-            >
+            <Button onClick={handleSave} disabled={saving || !name.trim()}>
               {saving ? 'Saving...' : 'Save Changes'}
-            </button>
+            </Button>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Features */}
-      <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5 space-y-4">
-        <h3 className="text-sm font-semibold">Features</h3>
+      <Card className="p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-[var(--text)]">Features</h3>
 
         <FeatureToggle
           label="Knowledge Graph"
@@ -199,6 +204,17 @@ export default function OrganizationSettingsPage() {
             disabled={!isAdmin || kgSaving || !kg?.enabled}
             isAdmin={isAdmin}
             onToggle={() => updateFlag({ llmEnabled: !kg?.llmEnabled })}
+          />
+        )}
+
+        {kg?.llmAvailable && (
+          <FeatureToggle
+            label="Auto-apply high-confidence connections"
+            description="When AI enrichment suggests a connection it is confident about (≥ 0.90), add it to the graph automatically instead of leaving it for manual review. Lower-confidence links still wait for your confirmation. No extra model cost — it only changes how existing suggestions are handled."
+            checked={!!kg?.edgeAutoApply}
+            disabled={!isAdmin || kgSaving || !kg?.enabled || !kg?.llmEnabled}
+            isAdmin={isAdmin}
+            onToggle={() => updateFlag({ edgeAutoApply: !kg?.edgeAutoApply })}
           />
         )}
 
@@ -232,72 +248,69 @@ export default function OrganizationSettingsPage() {
             onToggle={() => updateFlag({ skillAutoApply: !kg?.skillAutoApply })}
           />
         )}
-      </div>
+      </Card>
 
       {/* Danger Zone — ADMIN only */}
       {isAdmin && (
-        <div className="border border-[var(--destructive-border)] rounded-lg p-5 bg-[var(--destructive-bg)]/30 space-y-3">
-          <h3 className="text-sm font-semibold text-[var(--destructive-text)]">Danger Zone</h3>
-          <p className="text-xs text-[var(--muted-foreground)]">
+        <Card className="p-5 space-y-3 border-[var(--danger)]/30 bg-[var(--t-danger-bg)]">
+          <h3 className="text-sm font-semibold text-[var(--danger)]">Danger Zone</h3>
+          <p className="text-xs text-[var(--text-2)]">
             Permanently delete this organization, including all members, connectors, MCP servers,
             API keys, custom roles, pending invitations, and settings. Other members will be
             migrated to their next-oldest workspace if they have one. This action cannot be undone.
           </p>
-          <button
-            onClick={() => setDeleteOpen(true)}
-            className="border border-[var(--destructive)] text-[var(--destructive)] px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--destructive-bg)]"
-          >
+          <Button variant="danger" onClick={() => setDeleteOpen(true)}>
             Delete this organization
-          </button>
-        </div>
+          </Button>
+        </Card>
       )}
 
       <Dialog.Root open={deleteOpen} onOpenChange={(open) => { if (!open) resetDeleteOrgDialog(); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 shadow-lg">
-            <Dialog.Title className="text-lg font-medium mb-2">Delete organization</Dialog.Title>
-            <Dialog.Description className="text-sm text-[var(--muted-foreground)] mb-4">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Delete organization</Dialog.Title>
+            <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
               This deletes <strong>{name}</strong> and everything it contains. To confirm, type the
               organization name below.
             </Dialog.Description>
 
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium mb-1">Type <code>{name}</code> to confirm</label>
+                <label className={labelClass}>Type <code className="font-mono">{name}</code> to confirm</label>
                 <input
                   type="text"
                   value={deleteConfirmName}
                   onChange={(e) => setDeleteConfirmName(e.target.value)}
-                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  className={inputClass}
                   autoComplete="off"
                   placeholder={name}
                 />
               </div>
               {deleteError && (
-                <p className="text-sm text-[var(--destructive)]">{deleteError}</p>
+                <p className="text-sm text-[var(--danger)]">{deleteError}</p>
               )}
             </div>
 
             <div className="flex gap-2 justify-end mt-6">
-              <Dialog.Close className="border border-[var(--border)] px-4 py-2 rounded-md text-sm hover:bg-[var(--accent)]">
-                Cancel
+              <Dialog.Close asChild>
+                <Button variant="secondary">Cancel</Button>
               </Dialog.Close>
-              <button
+              <Button
+                variant="danger"
                 onClick={handleDeleteOrg}
                 disabled={deleting || deleteConfirmName.trim() !== name.trim()}
-                className="bg-[var(--destructive)] text-white px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
               >
                 {deleting ? 'Deleting…' : 'Delete organization'}
-              </button>
+              </Button>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
 
       {/* My organizations list + create new — available to ALL users */}
-      <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-5">
-        <h3 className="text-sm font-semibold">My Organizations</h3>
+      <Card className="p-5">
+        <h3 className="text-sm font-semibold text-[var(--text)]">My Organizations</h3>
         {orgs && orgs.length > 0 && (
           <div className="mt-3">
             {orgs.map((org, index) => {
@@ -307,26 +320,21 @@ export default function OrganizationSettingsPage() {
                   {index > 0 && (
                     <div className="border-t border-[var(--border)]" />
                   )}
-                  <div className={`flex items-center justify-between px-2 rounded-lg ${isActive ? 'bg-[var(--accent)] py-[7px] my-[7px]' : 'py-2.5'}`}>
+                  <div className={`flex items-center justify-between px-2 rounded-[9px] ${isActive ? 'bg-[var(--surface-2)] py-[7px] my-[7px]' : 'py-2.5'}`}>
                     <div className="min-w-0">
-                      <p className={`text-sm truncate ${isActive ? 'font-medium' : ''}`}>
+                      <p className={`text-sm truncate text-[var(--text)] ${isActive ? 'font-medium' : ''}`}>
                         {org.name}
                       </p>
-                      <p className="text-xs text-[var(--muted-foreground)]">
+                      <p className="text-xs text-[var(--text-3)]">
                         {org.role} &middot; Joined {new Date(org.joinedAt).toLocaleDateString()}
                       </p>
                     </div>
                     {isActive ? (
-                      <span className="text-xs bg-[var(--brand-light)] text-[var(--brand)] px-2 py-0.5 rounded-full font-medium flex-shrink-0">
-                        Active
-                      </span>
+                      <StatusPill tone="brand" className="flex-shrink-0">Active</StatusPill>
                     ) : (
-                      <button
-                        onClick={() => switchOrg(org.id)}
-                        className="text-xs px-3 py-1 border border-[var(--border)] rounded-lg hover:bg-[var(--accent)] transition-colors flex-shrink-0"
-                      >
+                      <Button variant="secondary" size="sm" onClick={() => switchOrg(org.id)} className="flex-shrink-0">
                         Switch
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -335,31 +343,27 @@ export default function OrganizationSettingsPage() {
           </div>
         )}
         <div className="space-y-2 mt-8">
-          <p className="text-xs font-medium text-[var(--muted-foreground)]">Create New Organization</p>
+          <p className="text-xs font-medium text-[var(--text-3)]">Create New Organization</p>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
               value={newOrgName}
               onChange={(e) => setNewOrgName(e.target.value)}
-              className="flex-1 px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded-lg text-sm focus:ring-2 focus:ring-[var(--brand)] focus:border-transparent outline-none"
+              className="flex-1 h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
               placeholder="New organization name"
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateOrg(); }}
             />
-            <button
-              onClick={handleCreateOrg}
-              disabled={creating || !newOrgName.trim()}
-              className="px-4 py-2 bg-[var(--brand)] text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity sm:flex-shrink-0"
-            >
+            <Button onClick={handleCreateOrg} disabled={creating || !newOrgName.trim()} className="sm:flex-shrink-0">
               {creating ? 'Creating...' : 'Create Organization'}
-            </button>
+            </Button>
           </div>
           {createMessage && (
-            <p className={`text-sm ${createMessage.includes('created') ? 'text-green-600' : 'text-[var(--destructive)]'}`}>
+            <p className={`text-sm ${createMessage.includes('created') ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
               {createMessage}
             </p>
           )}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -382,8 +386,8 @@ function FeatureToggle({
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{description}</p>
+        <p className="text-sm font-medium text-[var(--text)]">{label}</p>
+        <p className="text-xs text-[var(--text-2)] mt-0.5">{description}</p>
       </div>
       <button
         onClick={onToggle}
@@ -392,7 +396,7 @@ function FeatureToggle({
         aria-checked={checked}
         title={isAdmin ? '' : 'Only admins can change this'}
         className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-          checked ? 'bg-[var(--brand)]' : 'bg-[var(--border)]'
+          checked ? 'bg-[var(--brand)]' : 'bg-[var(--border-strong)]'
         }`}
       >
         <span

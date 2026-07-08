@@ -6,9 +6,36 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { auth, license, server } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { buildPricingUrl } from '@/lib/marketing';
-import { LogoIcon } from '@/components/nav-bar';
+import { LogoIcon } from '@/components/logo-icon';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 type SetupStep = 'auth' | 'verify-email' | 'license-choice' | 'license-email-sent' | 'license-key' | 'trial-activated';
+
+/** Small AnythingMCP brand mark for the top of pre-auth cards. */
+function BrandMark() {
+  return (
+    <div className="flex items-center justify-center gap-2">
+      <span className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-[var(--brand-tint)] text-[var(--brand)]">
+        <LogoIcon size={20} />
+      </span>
+      <span className="text-base font-semibold text-[var(--text)]">
+        Anything<span className="text-[var(--brand)]">MCP</span>
+      </span>
+    </div>
+  );
+}
+
+const inputClass =
+  'w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] ' +
+  'placeholder:text-[var(--text-3)] outline-none transition-colors ' +
+  'focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-ring)]';
+
+const alertDanger =
+  'mb-4 rounded-[9px] px-3 py-2.5 text-sm bg-[var(--t-danger-bg)] text-[var(--t-danger-fg)]';
+const alertSuccess =
+  'mb-4 rounded-[9px] px-3 py-2.5 text-sm bg-[var(--t-success-bg)] text-[var(--t-success-fg)]';
 
 function LoginForm() {
   const [email, setEmail] = useState('');
@@ -213,32 +240,24 @@ function LoginForm() {
   if (setupStep === 'verify-email') {
     return (
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <LogoIcon size={56} />
+        <Card className="p-6">
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <BrandMark />
+            </div>
+            <h1 className="text-xl font-semibold text-[var(--text)]">Verify Your Email</h1>
+            <p className="text-[var(--text-2)] mt-1 text-sm">
+              We sent a 6-digit code to <strong className="text-[var(--text)]">{userEmail}</strong>
+            </p>
           </div>
-          <h1 className="text-2xl font-bold">Verify Your Email</h1>
-          <p className="text-[var(--muted-foreground)] mt-1 text-sm">
-            We sent a 6-digit code to <strong>{userEmail}</strong>
-          </p>
-        </div>
 
-        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
-          {error && (
-            <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
-              {error}
-            </div>
-          )}
+          {error && <div className={alertDanger}>{error}</div>}
 
-          {resendMessage && (
-            <div className="mb-4 p-3 rounded-md bg-green-50 text-green-800 text-sm border border-green-200 dark:bg-green-950 dark:text-green-200 dark:border-green-800">
-              {resendMessage}
-            </div>
-          )}
+          {resendMessage && <div className={alertSuccess}>{resendMessage}</div>}
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Verification Code</label>
+              <label className="block text-sm font-medium mb-1 text-[var(--text)]">Verification Code</label>
               <input
                 type="text"
                 inputMode="numeric"
@@ -246,21 +265,22 @@ function LoginForm() {
                 value={verificationCode}
                 onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
                 placeholder="000000"
-                className="w-full text-center text-2xl tracking-[0.5em] font-mono border border-[var(--input)] rounded-md px-3 py-3 bg-[var(--background)]"
+                className="w-full text-center text-2xl tracking-[0.5em] font-mono h-12 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[var(--text)] placeholder:text-[var(--text-3)] outline-none transition-colors focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-ring)]"
                 autoFocus
               />
             </div>
 
-            <button
+            <Button
               onClick={handleVerifyCode}
               disabled={loading || verificationCode.length !== 6}
-              className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+              className="w-full"
+              size="lg"
             >
               {loading ? 'Verifying...' : 'Verify Email'}
-            </button>
+            </Button>
           </div>
 
-          <p className="text-center text-sm text-[var(--muted-foreground)] mt-4">
+          <p className="text-center text-sm text-[var(--text-2)] mt-4">
             Didn&apos;t receive it?{' '}
             <button
               onClick={handleResendCode}
@@ -278,13 +298,13 @@ function LoginForm() {
                   login(authToken, storedUser);
                   setSetupStep('license-choice');
                 }}
-                className="text-sm text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline"
+                className="text-sm text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
               >
                 Skip for now
               </button>
             </div>
           )}
-        </div>
+        </Card>
       </div>
     );
   }
@@ -294,53 +314,50 @@ function LoginForm() {
   if (setupStep === 'trial-activated') {
     return (
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <LogoIcon size={56} />
-          </div>
-          <h1 className="text-2xl font-bold">Trial Activated!</h1>
-          <p className="text-[var(--muted-foreground)] mt-1 text-sm">
-            Your 7-day free trial is now active
-          </p>
-        </div>
-
-        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
-          <div className="text-center mb-4">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-900 mb-3">
-              <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
+        <Card className="p-6">
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <BrandMark />
             </div>
-            <p className="text-sm text-[var(--muted-foreground)]">
-              You have <strong>{trialDaysLeft} days</strong> to explore AnythingMCP Cloud.
+            <h1 className="text-xl font-semibold text-[var(--text)]">Trial Activated!</h1>
+            <p className="text-[var(--text-2)] mt-1 text-sm">
+              Your 7-day free trial is now active
             </p>
           </div>
 
-          <div className="bg-[var(--background)] rounded-md p-4 mb-4">
-            <p className="text-xs font-medium text-[var(--muted-foreground)] mb-2">YOUR TRIAL INCLUDES</p>
-            <ul className="space-y-1.5 text-sm">
+          <div className="text-center mb-4">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[var(--t-success-bg)] mb-3">
+              <svg className="w-6 h-6 text-[var(--t-success-fg)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p className="text-sm text-[var(--text-2)]">
+              You have <strong className="text-[var(--text)]">{trialDaysLeft} days</strong> to explore AnythingMCP Cloud.
+            </p>
+          </div>
+
+          <div className="bg-[var(--surface-2)] rounded-[9px] p-4 mb-4">
+            <p className="text-xs font-medium text-[var(--text-3)] mb-2">YOUR TRIAL INCLUDES</p>
+            <ul className="space-y-1.5 text-sm text-[var(--text-2)]">
               <li className="flex items-center gap-2">
-                <span className="text-green-500">&#10003;</span> Up to 2 connectors
+                <span className="text-[var(--ok)]">&#10003;</span> Up to 2 connectors
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-500">&#10003;</span> Up to 2 MCP servers
+                <span className="text-[var(--ok)]">&#10003;</span> Up to 2 MCP servers
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-500">&#10003;</span> 1 user seat
+                <span className="text-[var(--ok)]">&#10003;</span> 1 user seat
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-500">&#10003;</span> Full audit log
+                <span className="text-[var(--ok)]">&#10003;</span> Full audit log
               </li>
             </ul>
           </div>
 
-          <button
-            onClick={() => router.push(redirectTo)}
-            className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90"
-          >
+          <Button onClick={() => router.push(redirectTo)} className="w-full" size="lg">
             Get Started
-          </button>
-        </div>
+          </Button>
+        </Card>
       </div>
     );
   }
@@ -350,38 +367,34 @@ function LoginForm() {
   if (setupStep === 'license-choice') {
     return (
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <LogoIcon size={56} />
+        <Card className="p-6">
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <BrandMark />
+            </div>
+            <h1 className="text-xl font-semibold text-[var(--text)]">Welcome to Anything<span className="text-[var(--brand)]">MCP</span></h1>
+            <p className="text-[var(--text-2)] mt-1 text-sm">
+              One last step to get started
+            </p>
           </div>
-          <h1 className="text-2xl font-bold">Welcome to Anything<span className="text-[var(--brand)]">MCP</span></h1>
-          <p className="text-[var(--muted-foreground)] mt-1 text-sm">
-            One last step to get started
-          </p>
-        </div>
 
-        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
-          <h2 className="text-lg font-semibold mb-2 text-center">
+          <h2 className="text-base font-semibold mb-2 text-center text-[var(--text)]">
             How will you use Anything<span className="text-[var(--brand)]">MCP</span>?
           </h2>
-          <p className="text-sm text-[var(--muted-foreground)] mb-6 text-center">
+          <p className="text-sm text-[var(--text-2)] mb-6 text-center">
             Commercial use requires a license from anythingmcp.com
           </p>
 
-          {error && (
-            <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
-              {error}
-            </div>
-          )}
+          {error && <div className={alertDanger}>{error}</div>}
 
           <div className="space-y-3">
             <button
               onClick={handlePersonalUse}
               disabled={loading}
-              className="w-full border border-[var(--border)] rounded-lg p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors disabled:opacity-50"
+              className="w-full border border-[var(--border)] rounded-[9px] p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors disabled:opacity-50"
             >
-              <div className="font-medium text-sm">Personal / Non-commercial</div>
-              <div className="text-xs text-[var(--muted-foreground)] mt-1">
+              <div className="font-medium text-sm text-[var(--text)]">Personal / Non-commercial</div>
+              <div className="text-xs text-[var(--text-2)] mt-1">
                 Free community license — unlimited connectors and users
               </div>
             </button>
@@ -389,10 +402,10 @@ function LoginForm() {
             <button
               onClick={handleCommercialChoice}
               disabled={loading}
-              className="w-full border border-[var(--border)] rounded-lg p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-light)] transition-colors disabled:opacity-50"
+              className="w-full border border-[var(--border)] rounded-[9px] p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors disabled:opacity-50"
             >
-              <div className="font-medium text-sm">Commercial</div>
-              <div className="text-xs text-[var(--muted-foreground)] mt-1">
+              <div className="font-medium text-sm text-[var(--text)]">Commercial</div>
+              <div className="text-xs text-[var(--text-2)] mt-1">
                 For businesses — purchase a license to unlock all features
               </div>
             </button>
@@ -402,13 +415,13 @@ function LoginForm() {
             <div className="mt-4 text-center">
               <button
                 onClick={handleSkip}
-                className="text-sm text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline"
+                className="text-sm text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
               >
                 Skip for now
               </button>
             </div>
           )}
-        </div>
+        </Card>
       </div>
     );
   }
@@ -418,60 +431,57 @@ function LoginForm() {
   if (setupStep === 'license-email-sent') {
     return (
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <LogoIcon size={56} />
+        <Card className="p-6">
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <BrandMark />
+            </div>
+            <h1 className="text-xl font-semibold text-[var(--text)]">Check Your Email</h1>
+            <p className="text-[var(--text-2)] mt-1 text-sm">
+              We sent your license key to <strong className="text-[var(--text)]">{userEmail}</strong>
+            </p>
           </div>
-          <h1 className="text-2xl font-bold">Check Your Email</h1>
-          <p className="text-[var(--muted-foreground)] mt-1 text-sm">
-            We sent your license key to <strong>{userEmail}</strong>
-          </p>
-        </div>
 
-        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
-          <p className="text-sm text-[var(--muted-foreground)] mb-4">
+          <p className="text-sm text-[var(--text-2)] mb-4">
             Enter the license key from the email to activate your instance.
           </p>
 
-          {error && (
-            <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
-              {error}
-            </div>
-          )}
+          {error && <div className={alertDanger}>{error}</div>}
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">License Key</label>
+              <label className="block text-sm font-medium mb-1 text-[var(--text)]">License Key</label>
               <input
                 type="text"
                 value={licenseKey}
                 onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
                 placeholder="AMCP-XXXX-XXXX-XXXX-XXXX"
-                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono tracking-wider"
+                className={cn(inputClass, 'font-mono tracking-wider')}
               />
             </div>
 
-            <button
+            <Button
               onClick={handleActivateLicense}
               disabled={loading || !licenseKey}
-              className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+              className="w-full"
+              size="lg"
             >
               {loading ? 'Activating...' : 'Activate License'}
-            </button>
+            </Button>
           </div>
 
           <div className="flex justify-between mt-4 text-sm">
-            <p className="text-[var(--muted-foreground)]">
+            <p className="text-[var(--text-2)]">
               Didn&apos;t receive it? Check your spam folder.
             </p>
             <button
               onClick={handleSkip}
-              className="text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline whitespace-nowrap ml-2"
+              className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline whitespace-nowrap ml-2"
             >
               Skip
             </button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -481,18 +491,18 @@ function LoginForm() {
   if (setupStep === 'license-key') {
     return (
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <LogoIcon size={56} />
+        <Card className="p-6">
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <BrandMark />
+            </div>
+            <h1 className="text-xl font-semibold text-[var(--text)]">Activate License</h1>
+            <p className="text-[var(--text-2)] mt-1 text-sm">
+              Enter your license key to activate Anything<span className="text-[var(--brand)]">MCP</span>
+            </p>
           </div>
-          <h1 className="text-2xl font-bold">Activate License</h1>
-          <p className="text-[var(--muted-foreground)] mt-1 text-sm">
-            Enter your license key to activate Anything<span className="text-[var(--brand)]">MCP</span>
-          </p>
-        </div>
 
-        <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
-          <p className="text-sm text-[var(--muted-foreground)] mb-4">
+          <p className="text-sm text-[var(--text-2)] mb-4">
             Purchase a license at{' '}
             <a
               href={buildPricingUrl()}
@@ -505,48 +515,45 @@ function LoginForm() {
             , then enter your key below.
           </p>
 
-          {error && (
-            <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
-              {error}
-            </div>
-          )}
+          {error && <div className={alertDanger}>{error}</div>}
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">License Key</label>
+              <label className="block text-sm font-medium mb-1 text-[var(--text)]">License Key</label>
               <input
                 type="text"
                 value={licenseKey}
                 onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
                 placeholder="AMCP-XXXX-XXXX-XXXX-XXXX"
-                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono tracking-wider"
+                className={cn(inputClass, 'font-mono tracking-wider')}
               />
             </div>
 
-            <button
+            <Button
               onClick={handleActivateLicense}
               disabled={loading || !licenseKey}
-              className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
+              className="w-full"
+              size="lg"
             >
               {loading ? 'Activating...' : 'Activate License'}
-            </button>
+            </Button>
           </div>
 
           <div className="flex justify-between mt-4 text-sm">
             <button
               onClick={() => setSetupStep('license-choice')}
-              className="text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline"
+              className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
             >
               Back
             </button>
             <button
               onClick={handleSkip}
-              className="text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline"
+              className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
             >
               Skip for now
             </button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -555,37 +562,31 @@ function LoginForm() {
 
   return (
     <div className="w-full max-w-sm">
-      <div className="text-center mb-8">
-        <div className="flex justify-center mb-4">
-          <LogoIcon size={56} />
+      <Card className="p-6">
+        <div className="text-center mb-6">
+          <div className="flex justify-center mb-4">
+            <BrandMark />
+          </div>
+          <h1 className="text-xl font-semibold text-[var(--text)]">
+            {isRegister ? 'Create your account' : 'Sign in'}
+          </h1>
+          <p className="text-[var(--text-2)] mt-1 text-sm">
+            Create custom connectors for Claude, ChatGPT, Copilot and any AI agent
+          </p>
         </div>
-        <h1 className="text-2xl font-bold">Anything<span className="text-[var(--brand)]">MCP</span></h1>
-        <p className="text-[var(--muted-foreground)] mt-1 text-sm">
-          Convert any API into an MCP server
-        </p>
-      </div>
-
-      <div className="border border-[var(--border)] rounded-lg p-6 bg-[var(--card)]">
-        <h2 className="text-lg font-semibold mb-4 text-center">
-          {isRegister ? 'Create your account' : 'Sign in'}
-        </h2>
 
         {emailVerifiedParam === 'true' && (
-          <div className="mb-4 p-3 rounded-md bg-green-50 text-green-800 text-sm border border-green-200 dark:bg-green-950 dark:text-green-200 dark:border-green-800">
+          <div className={alertSuccess}>
             Email verified successfully! You can now sign in.
           </div>
         )}
 
-        {error && (
-          <div className="mb-4 p-3 rounded-md bg-[var(--destructive-bg)] text-[var(--destructive-text)] text-sm border border-[var(--destructive-border)]">
-            {error}
-          </div>
-        )}
+        {error && <div className={alertDanger}>{error}</div>}
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           {isRegister && (
             <div>
-              <label htmlFor="auth-name" className="block text-sm font-medium mb-1">Name</label>
+              <label htmlFor="auth-name" className="block text-sm font-medium mb-1 text-[var(--text)]">Name</label>
               <input
                 id="auth-name"
                 name="name"
@@ -594,14 +595,14 @@ function LoginForm() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your name"
-                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                className={inputClass}
                 required
               />
             </div>
           )}
 
           <div>
-            <label htmlFor="auth-email" className="block text-sm font-medium mb-1">Email</label>
+            <label htmlFor="auth-email" className="block text-sm font-medium mb-1 text-[var(--text)]">Email</label>
             <input
               id="auth-email"
               name="email"
@@ -610,13 +611,13 @@ function LoginForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@example.com"
-              className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+              className={inputClass}
               required
             />
           </div>
 
           <div>
-            <label htmlFor="auth-password" className="block text-sm font-medium mb-1">Password</label>
+            <label htmlFor="auth-password" className="block text-sm font-medium mb-1 text-[var(--text)]">Password</label>
             <input
               id="auth-password"
               name="password"
@@ -625,7 +626,7 @@ function LoginForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Min. 8 characters"
-              className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+              className={inputClass}
               required
               minLength={8}
             />
@@ -638,7 +639,7 @@ function LoginForm() {
                   [/\d/.test(password), 'One number'],
                   [/[^a-zA-Z0-9]/.test(password), 'One special character'],
                 ].map(([ok, label]) => (
-                  <li key={label as string} className={ok ? 'text-green-500' : 'text-[var(--muted-foreground)]'}>
+                  <li key={label as string} className={ok ? 'text-[var(--ok)]' : 'text-[var(--text-3)]'}>
                     {ok ? '\u2713' : '\u2022'} {label as string}
                   </li>
                 ))}
@@ -649,7 +650,7 @@ function LoginForm() {
           {isRegister && (
             <>
               <div>
-                <label htmlFor="auth-confirm-password" className="block text-sm font-medium mb-1">Confirm Password</label>
+                <label htmlFor="auth-confirm-password" className="block text-sm font-medium mb-1 text-[var(--text)]">Confirm Password</label>
                 <input
                   id="auth-confirm-password"
                   name="confirm-password"
@@ -658,7 +659,7 @@ function LoginForm() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repeat your password"
-                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  className={inputClass}
                   required
                   minLength={8}
                 />
@@ -671,7 +672,7 @@ function LoginForm() {
                   onChange={(e) => setAcceptTerms(e.target.checked)}
                   className="mt-0.5 accent-[var(--brand)]"
                 />
-                <span className="text-sm text-[var(--muted-foreground)]">
+                <span className="text-sm text-[var(--text-2)]">
                   I accept the{' '}
                   <a
                     href="https://anythingmcp.com/en/agb"
@@ -686,25 +687,21 @@ function LoginForm() {
             </>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[var(--brand)] text-white px-4 py-2.5 rounded-md text-sm font-medium hover:brightness-90 disabled:opacity-50"
-          >
+          <Button type="submit" disabled={loading} className="w-full" size="lg">
             {loading ? 'Loading...' : isRegister ? 'Create Account' : 'Sign In'}
-          </button>
+          </Button>
         </form>
 
         {!isRegister && (
           <p className="text-center text-sm mt-3">
-            <Link href="/forgot-password" className="text-[var(--muted-foreground)] hover:text-[var(--brand)] hover:underline">
+            <Link href="/forgot-password" className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline">
               Forgot password?
             </Link>
           </p>
         )}
 
         {(registrationEnabled || isRegister) && (
-          <p className="text-center text-sm text-[var(--muted-foreground)] mt-3">
+          <p className="text-center text-sm text-[var(--text-2)] mt-3">
             {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
             <button
               onClick={() => { setIsRegister(!isRegister); setError(''); }}
@@ -714,14 +711,14 @@ function LoginForm() {
             </button>
           </p>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] px-4">
       <Suspense>
         <LoginForm />
       </Suspense>

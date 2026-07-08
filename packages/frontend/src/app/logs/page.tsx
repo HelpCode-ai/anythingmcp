@@ -3,11 +3,16 @@
 import { Fragment, useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { audit, connectors as connectorsApi, mcpServers } from '@/lib/api';
-import { NavBar } from '@/components/nav-bar';
-import { Footer } from '@/components/footer';
 import { AppSelect } from '@/components/ui/select';
+import { AppShell } from '@/components/app-shell';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { StatusPill, type Tone } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
+
+const GRID_COLS = '90px 1.5fr 1.2fr 70px 90px 90px';
 
 function parseClientInfo(raw: string | null | undefined) {
   if (!raw) return null;
@@ -29,6 +34,34 @@ function authMethodLabel(method: string | undefined): string {
   }
 }
 
+function statusTone(status: string | undefined): Tone {
+  switch (status) {
+    case 'SUCCESS': return 'success';
+    case 'ERROR': return 'danger';
+    case 'TIMEOUT': return 'warn';
+    default: return 'neutral';
+  }
+}
+
+function statusDot(status: string | undefined): string {
+  switch (status) {
+    case 'SUCCESS': return 'var(--ok)';
+    case 'ERROR': return 'var(--danger)';
+    case 'TIMEOUT': return 'var(--warn)';
+    default: return 'var(--text-3)';
+  }
+}
+
+/** Visual response-code chip derived from the invocation status (no extra data). */
+function statusCode(status: string | undefined): string {
+  switch (status) {
+    case 'SUCCESS': return '200';
+    case 'TIMEOUT': return '504';
+    case 'ERROR': return '500';
+    default: return '—';
+  }
+}
+
 function UserCell({ log }: { log: any }) {
   const ci = parseClientInfo(log.clientInfo);
   const email = log.user?.email || ci?.userEmail;
@@ -40,7 +73,7 @@ function UserCell({ log }: { log: any }) {
   return (
     <div className="flex flex-col gap-0.5">
       {email && <span className="truncate max-w-[150px]" title={email}>{email}</span>}
-      <span className="text-[10px] text-[var(--muted-foreground)]">
+      <span className="text-[10px] text-[var(--text-3)]">
         {keyName ? `${keyName}` : authMethodLabel(method)}
       </span>
     </div>
@@ -119,271 +152,242 @@ export default function LogsPage() {
     }
   };
 
-  const colSpan = 7;
+  // Segmented status filter (All / Success / Errors / Timeouts)
+  const segments: { value: string; label: string }[] = [
+    { value: '', label: 'All' },
+    { value: 'SUCCESS', label: 'Success' },
+    { value: 'ERROR', label: 'Errors' },
+    { value: 'TIMEOUT', label: 'Timeouts' },
+  ];
+
+  const exportButton = (
+    <Button
+      variant="secondary"
+      size="md"
+      onClick={fetchLogs}
+      disabled={loading}
+      title="Refresh"
+    >
+      <svg
+        className={cn('h-3.5 w-3.5', loading && 'animate-spin')}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      Refresh
+    </Button>
+  );
 
   return (
-    <div className="min-h-screen bg-[var(--background)] flex flex-col">
-      <NavBar
-        breadcrumbs={[{ label: 'Dashboard', href: '/' }]}
-        title="Logs"
-      />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          <div className="relative flex-1">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search tool name..."
-              className="w-full border border-[var(--input)] rounded-md pl-10 pr-3 py-2 text-sm bg-[var(--background)]"
-            />
-          </div>
-          <AppSelect
-            value={statusFilter}
-            onValueChange={setStatusFilter}
-            className="border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-            options={[
-              { value: '', label: 'All statuses' },
-              { value: 'SUCCESS', label: 'Success' },
-              { value: 'ERROR', label: 'Error' },
-              { value: 'TIMEOUT', label: 'Timeout' },
-            ]}
-          />
-          <AppSelect
-            value={connectorFilter}
-            onValueChange={setConnectorFilter}
-            className="border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-            options={[
-              { value: '', label: 'All connectors' },
-              ...connectors.map((c) => ({ value: c.id, label: c.name })),
-            ]}
-          />
-          <AppSelect
-            value={mcpServerFilter}
-            onValueChange={setMcpServerFilter}
-            className="border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
-            options={[
-              { value: '', label: 'All MCP servers' },
-              ...servers.map((s) => ({ value: s.id, label: s.name })),
-            ]}
-          />
-          <button
-            onClick={fetchLogs}
-            disabled={loading}
-            className="flex items-center gap-1.5 border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] hover:bg-[var(--accent)] transition-colors disabled:opacity-50"
-            title="Refresh"
-          >
-            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
+    <AppShell
+      title="Audit Log"
+      subtitle="Tool invocation history across your connectors and MCP servers."
+      actions={exportButton}
+    >
+      {/* Toolbar */}
+      <div className="mb-4 flex flex-wrap items-center gap-2.5">
+        {/* Segmented status filter */}
+        <div className="inline-flex gap-0.5 rounded-[10px] bg-[var(--surface-2)] p-[3px]">
+          {segments.map((seg) => {
+            const active = statusFilter === seg.value;
+            return (
+              <button
+                key={seg.value || 'all'}
+                onClick={() => setStatusFilter(seg.value)}
+                className={cn(
+                  'rounded-[7px] px-3.5 py-1.5 text-[12.5px] font-medium transition-colors',
+                  active
+                    ? 'bg-[var(--surface)] text-[var(--text)] shadow-[var(--shadow-sm)]'
+                    : 'text-[var(--text-3)] hover:text-[var(--text)]'
+                )}
+              >
+                {seg.label}
+              </button>
+            );
+          })}
         </div>
 
-        <div className="border border-[var(--border)] rounded-lg">
-          <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
-            <h3 className="font-medium">Tool Invocation Logs</h3>
-            <span className="text-sm text-[var(--muted-foreground)]">
-              Page {page + 1}{logs.length > 0 ? ` (${logs.length} results)` : ''}
-            </span>
-          </div>
+        {/* Search box */}
+        <div className="flex h-[34px] min-w-[200px] flex-1 items-center gap-2 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[var(--text-3)]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by tool or connector…"
+            className="w-full bg-transparent text-[12.5px] text-[var(--text)] outline-none placeholder:text-[var(--text-3)]"
+          />
+        </div>
 
-          {/* Desktop table */}
-          <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] text-left bg-[var(--muted)]">
-                  <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">Time</th>
-                  <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">Tool</th>
-                  <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">Connector</th>
-                  <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">User</th>
-                  <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">Server</th>
-                  <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">Status</th>
-                  <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">Duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={colSpan} className="px-4 py-8 text-center text-[var(--muted-foreground)]">
-                      <div className="inline-block w-5 h-5 border-2 border-[var(--brand)] border-t-transparent rounded-full animate-spin mb-2"></div>
-                      <p>Loading logs...</p>
-                    </td>
-                  </tr>
-                ) : logs.length === 0 ? (
-                  <tr>
-                    <td colSpan={colSpan} className="px-4 py-12 text-center text-[var(--muted-foreground)]">
-                      <p className="text-sm">{page > 0 ? 'No more results.' : 'No invocations found.'}</p>
-                    </td>
-                  </tr>
-                ) : (
-                  logs.map((log) => (
-                    <Fragment key={log.id}>
-                      <tr
-                        onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
-                        className="border-b border-[var(--border)] hover:bg-[var(--accent)] transition-colors cursor-pointer"
-                      >
-                        <td className="px-4 py-3 text-[var(--muted-foreground)] text-xs whitespace-nowrap">{formatTime(log.createdAt)}</td>
-                        <td className="px-4 py-3 font-medium font-mono text-xs">{log.tool?.name || log.toolId}</td>
-                        <td className="px-4 py-3 text-xs text-[var(--muted-foreground)]">
-                          {log.tool?.connector?.name || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-xs">
-                          <UserCell log={log} />
-                        </td>
-                        <td className="px-4 py-3 text-xs text-[var(--muted-foreground)]">
-                          {log.mcpServer?.name || '-'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            log.status === 'SUCCESS' ? 'bg-[var(--success-bg)] text-[var(--success-text)]' :
-                            log.status === 'ERROR' ? 'bg-[var(--destructive-bg)] text-[var(--destructive-text)]' :
-                            'bg-[var(--warning-bg)] text-[var(--warning-text)]'
-                          }`}>
-                            {log.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-[var(--muted-foreground)] text-xs">{log.durationMs ? `${log.durationMs}ms` : '-'}</td>
-                      </tr>
-                      {expandedId === log.id && (
-                        <tr>
-                          <td colSpan={colSpan} className="px-4 py-4 bg-[var(--muted)]/50 border-b border-[var(--border)]">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-full">
-                              <div>
-                                <h4 className="text-xs font-medium mb-2 text-[var(--muted-foreground)] uppercase tracking-wide">Input Parameters</h4>
-                                <pre className="bg-[var(--background)] border border-[var(--border)] rounded-md p-3 text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap break-all">
-                                  {formatJson(log.input)}
-                                </pre>
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-medium mb-2 text-[var(--muted-foreground)] uppercase tracking-wide">
-                                  {log.status === 'ERROR' ? 'Error' : 'Output'}
-                                </h4>
-                                <pre className="bg-[var(--background)] border border-[var(--border)] rounded-md p-3 text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap break-all">
-                                  {log.error || formatJson(log.output)}
-                                </pre>
-                              </div>
-                            </div>
-                            <div className="mt-3 flex flex-wrap gap-4 text-xs text-[var(--muted-foreground)]">
-                              {log.user?.email && <span>User: {log.user.email}</span>}
-                              {(() => {
-                                const ci = parseClientInfo(log.clientInfo);
-                                if (!ci) return null;
-                                return (
-                                  <>
-                                    {ci.authMethod && <span>Auth: {authMethodLabel(ci.authMethod)}</span>}
-                                    {ci.apiKeyName && <span>Key: {ci.apiKeyName}</span>}
-                                  </>
-                                );
-                              })()}
-                              {log.mcpServer && <span>Server: {log.mcpServer.name}</span>}
-                              {log.tool?.connector && <span>Connector: {log.tool.connector.name} ({log.tool.connector.type})</span>}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+        {/* Connector / Server filters */}
+        <AppSelect
+          value={connectorFilter}
+          onValueChange={setConnectorFilter}
+          className="h-[34px] rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[12.5px] text-[var(--text-2)]"
+          options={[
+            { value: '', label: 'All connectors' },
+            ...connectors.map((c) => ({ value: c.id, label: c.name })),
+          ]}
+        />
+        <AppSelect
+          value={mcpServerFilter}
+          onValueChange={setMcpServerFilter}
+          className="h-[34px] rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[12.5px] text-[var(--text-2)]"
+          options={[
+            { value: '', label: 'All MCP servers' },
+            ...servers.map((s) => ({ value: s.id, label: s.name })),
+          ]}
+        />
 
-          {/* Mobile card layout */}
-          <div className="sm:hidden divide-y divide-[var(--border)]">
-            {loading ? (
-              <div className="px-4 py-8 text-center text-[var(--muted-foreground)]">
-                <div className="inline-block w-5 h-5 border-2 border-[var(--brand)] border-t-transparent rounded-full animate-spin mb-2"></div>
-                <p>Loading logs...</p>
-              </div>
-            ) : logs.length === 0 ? (
-              <div className="px-4 py-12 text-center text-[var(--muted-foreground)]">
-                <p className="text-sm">{page > 0 ? 'No more results.' : 'No invocations found.'}</p>
-              </div>
-            ) : (
-              logs.map((log) => (
-                <div key={log.id}>
-                  <button
-                    onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
-                    className="w-full text-left px-4 py-3 hover:bg-[var(--accent)] transition-colors"
+        {/* Export */}
+        <Button variant="secondary" size="md" disabled title="Export (coming soon)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+          </svg>
+          Export
+        </Button>
+      </div>
+
+      {/* Table card */}
+      <Card className="overflow-hidden">
+        {/* Header row */}
+        <div
+          className="grid items-center gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-[18px] py-[11px] text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-3)]"
+          style={{ gridTemplateColumns: GRID_COLS }}
+        >
+          <span>Time</span>
+          <span>Tool</span>
+          <span>Connector</span>
+          <span>Code</span>
+          <span>Duration</span>
+          <span>Status</span>
+        </div>
+
+        {/* Rows */}
+        {loading ? (
+          <div className="px-[18px] py-10 text-center text-[var(--text-3)]">
+            <div className="mb-2 inline-block h-5 w-5 animate-spin rounded-full border-2 border-[var(--brand)] border-t-transparent"></div>
+            <p className="text-sm">Loading logs…</p>
+          </div>
+        ) : logs.length === 0 ? (
+          <div className="px-[18px] py-14 text-center text-[var(--text-3)]">
+            <p className="text-sm">{page > 0 ? 'No more results.' : 'No invocations found.'}</p>
+          </div>
+        ) : (
+          logs.map((log) => {
+            const tone = statusTone(log.status);
+            const isExpanded = expandedId === log.id;
+            return (
+              <Fragment key={log.id}>
+                <div
+                  onClick={() => setExpandedId(isExpanded ? null : log.id)}
+                  className="grid cursor-pointer items-center gap-3 border-b border-[var(--border)] px-[18px] py-[11px] text-[13px] transition-colors hover:bg-[var(--surface-2)]"
+                  style={{ gridTemplateColumns: GRID_COLS }}
+                >
+                  <span className="font-mono text-[12px] text-[var(--text-3)] whitespace-nowrap overflow-hidden text-ellipsis" title={formatTime(log.createdAt)}>
+                    {formatTime(log.createdAt)}
+                  </span>
+                  <span className="font-mono text-[12.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={log.tool?.name || log.toolId}>
+                    {log.tool?.name || log.toolId}
+                  </span>
+                  <span className="text-[var(--text-2)] whitespace-nowrap overflow-hidden text-ellipsis">
+                    {log.tool?.connector?.name || '-'}
+                  </span>
+                  <span
+                    className="justify-self-start rounded-md px-[7px] py-0.5 font-mono text-[12px] font-semibold"
+                    style={tone === 'success'
+                      ? { background: 'var(--t-success-bg)', color: 'var(--t-success-fg)' }
+                      : tone === 'neutral'
+                        ? { background: 'var(--t-neutral-bg)', color: 'var(--t-neutral-fg)' }
+                        : { background: 'var(--t-danger-bg)', color: 'var(--t-danger-fg)' }}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-mono text-xs font-medium truncate flex-1 mr-2">{log.tool?.name || log.toolId}</span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 ${
-                        log.status === 'SUCCESS' ? 'bg-[var(--success-bg)] text-[var(--success-text)]' :
-                        log.status === 'ERROR' ? 'bg-[var(--destructive-bg)] text-[var(--destructive-text)]' :
-                        'bg-[var(--warning-bg)] text-[var(--warning-text)]'
-                      }`}>
-                        {log.status}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
-                      <span>{formatTime(log.createdAt)}</span>
-                      {log.durationMs && <span>{log.durationMs}ms</span>}
-                      {log.user?.email && <span>{log.user.email}</span>}
-                      {log.mcpServer?.name && <span>{log.mcpServer.name}</span>}
-                    </div>
-                  </button>
-                  {expandedId === log.id && (
-                    <div className="px-4 py-3 bg-[var(--muted)]/50 space-y-3">
+                    {statusCode(log.status)}
+                  </span>
+                  <span className="font-mono text-[12px] text-[var(--text-2)]">
+                    {log.durationMs ? `${log.durationMs}ms` : '-'}
+                  </span>
+                  <StatusPill tone={tone} dot={statusDot(log.status)} className="justify-self-start">
+                    {log.status}
+                  </StatusPill>
+                </div>
+
+                {isExpanded && (
+                  <div className="border-b border-[var(--border)] bg-[var(--surface-2)] px-[18px] py-4">
+                    <div className="grid max-w-full grid-cols-1 gap-4 md:grid-cols-2">
                       <div>
-                        <h4 className="text-xs font-medium mb-1 text-[var(--muted-foreground)] uppercase tracking-wide">Input</h4>
-                        <pre className="bg-[var(--background)] border border-[var(--border)] rounded-md p-2 text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap break-all">
+                        <h4 className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-3)]">Input Parameters</h4>
+                        <pre className="max-h-64 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-all rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 font-mono text-xs">
                           {formatJson(log.input)}
                         </pre>
                       </div>
                       <div>
-                        <h4 className="text-xs font-medium mb-1 text-[var(--muted-foreground)] uppercase tracking-wide">
+                        <h4 className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-3)]">
                           {log.status === 'ERROR' ? 'Error' : 'Output'}
                         </h4>
-                        <pre className="bg-[var(--background)] border border-[var(--border)] rounded-md p-2 text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap break-all">
+                        <pre className="max-h-64 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-all rounded-md border border-[var(--border)] bg-[var(--surface)] p-3 font-mono text-xs">
                           {log.error || formatJson(log.output)}
                         </pre>
                       </div>
-                      <div className="flex flex-wrap gap-3 text-xs text-[var(--muted-foreground)]">
-                        {log.user?.email && <span>User: {log.user.email}</span>}
-                        {log.mcpServer && <span>Server: {log.mcpServer.name}</span>}
-                        {log.tool?.connector && <span>Connector: {log.tool.connector.name}</span>}
-                      </div>
                     </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
+                    <div className="mt-3 flex flex-wrap gap-4 text-xs text-[var(--text-3)]">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium text-[var(--text-2)]">User:</span>
+                        <UserCell log={log} />
+                      </div>
+                      {(() => {
+                        const ci = parseClientInfo(log.clientInfo);
+                        if (!ci) return null;
+                        return (
+                          <>
+                            {ci.authMethod && <span>Auth: {authMethodLabel(ci.authMethod)}</span>}
+                            {ci.apiKeyName && <span>Key: {ci.apiKeyName}</span>}
+                          </>
+                        );
+                      })()}
+                      {log.mcpServer && <span>Server: {log.mcpServer.name}</span>}
+                      {log.tool?.connector && <span>Connector: {log.tool.connector.name} ({log.tool.connector.type})</span>}
+                    </div>
+                  </div>
+                )}
+              </Fragment>
+            );
+          })
+        )}
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border)]">
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0 || loading}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-[var(--input)] rounded-md hover:bg-[var(--accent)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Previous
-            </button>
-            <span className="text-sm text-[var(--muted-foreground)]">Page {page + 1}</span>
-            <button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={!hasMore || loading}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-[var(--input)] rounded-md hover:bg-[var(--accent)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Next
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
+        {/* Pagination */}
+        <div className="flex items-center justify-between px-[18px] py-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0 || loading}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Previous
+          </Button>
+          <span className="text-[12.5px] text-[var(--text-3)]">
+            Page {page + 1}{logs.length > 0 ? ` · ${logs.length} results` : ''}
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={!hasMore || loading}
+          >
+            Next
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Button>
         </div>
-      </main>
-      <Footer />
-    </div>
+      </Card>
+    </AppShell>
   );
 }
