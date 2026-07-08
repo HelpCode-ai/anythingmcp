@@ -23,7 +23,7 @@ jobs:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile"
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/db-rest/Dockerfile"
           target: /tmp/anythingmcp-deploy
           overwrite: true
 
@@ -46,9 +46,14 @@ jobs:
             docker pull helpcodeai/anythingmcp:${{ inputs.tag }}
             docker pull helpcodeai/anythingmcp:latest
 
-            # Update compose and Caddyfile from checkout
+            # Update compose, Caddyfile and the custom db-rest Dockerfile from
+            # checkout. The Dockerfile is the build context for the db-rest
+            # service; `docker compose up` builds it if the pinned image tag is
+            # missing (fresh droplet), otherwise the existing image is reused.
             cp /tmp/anythingmcp-deploy/docker-compose.cloud.yml ./docker-compose.cloud.yml
             cp /tmp/anythingmcp-deploy/deploy/cloud/Caddyfile ./Caddyfile
+            mkdir -p ./deploy/cloud/db-rest
+            cp /tmp/anythingmcp-deploy/deploy/cloud/db-rest/Dockerfile ./deploy/cloud/db-rest/Dockerfile
             rm -rf /tmp/anythingmcp-deploy
 
             # Keep CRON_SECRET in the server .env in sync with the repo

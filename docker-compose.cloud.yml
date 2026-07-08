@@ -144,7 +144,12 @@ services:
   # v6.db.transport.rest; in cloud the app rewrites the host to this service via
   # DB_REST_INTERNAL_URL. Do NOT add a `ports:` entry or a Caddy route.
   db-rest:
-    image: docker.io/derhuerst/db-rest:6
+    # Custom image: derhuerst/db-rest:6 + bumped db-vendo-client (see
+    # deploy/cloud/db-rest/Dockerfile). The tag is version-pinned so the image
+    # persists across deploys and is only rebuilt when the Dockerfile changes.
+    build:
+      context: ./deploy/cloud/db-rest
+    image: anythingmcp-db-rest:6.10.12
     container_name: amcp-cloud-db-rest
     expose:
       - "3000"
@@ -152,6 +157,16 @@ services:
       - PORT=3000
       # Reuse the shared Redis for db-rest's response cache (separate DB index).
       - REDIS_URL=redis://redis:6379/1
+      # Route all upstream Deutsche Bahn calls through the Zyte web-unblocker.
+      # DB (Akamai) blocks datacenter IPs — dbnav/dbweb endpoints return
+      # OPS_BLOCKED / 403 Forbidden — so db-vendo-client (which reads
+      # HTTPS_PROXY) must egress via a residential/unblocker IP. Unset on
+      # self-host (CONNECTOR_PROXY_URL empty) → direct calls, as before.
+      - HTTPS_PROXY=${CONNECTOR_PROXY_URL:-}
+      # Zyte proxy-mode MITMs TLS, so its cert won't validate against the DB
+      # host. Only skip verification when a proxy is actually set. This
+      # container's only external egress is DB (via Zyte) + internal Redis.
+      - NODE_TLS_REJECT_UNAUTHORIZED=${CONNECTOR_PROXY_URL:+0}
     depends_on:
       redis:
         condition: service_healthy
