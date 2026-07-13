@@ -57,7 +57,7 @@
     "js-yaml": "^4.3.0",
     "mongodb": "^7.3.0",
     "mssql": "^12.7.0",
-    "mysql2": "^3.22.5",
+    "mysql2": "^3.22.6",
     "nestjs-pino": "^4.6.1",
     "nodemailer": "^8.0.11",
     "oracledb": "^6.10.0",
