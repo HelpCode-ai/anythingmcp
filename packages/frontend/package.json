@@ -44,7 +44,7 @@
     "autoprefixer": "^10.5.2",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.2.10",
-    "postcss": "^8.5.16",
+    "postcss": "^8.5.18",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.9.3"
   }
