@@ -264,7 +264,18 @@ export class DynamicMcpTools {
       // Grow the knowledge graph from this real call (debounced, fire-and-forget).
       void this.kgService.scheduleObservationalIngest(context?.organizationId);
 
-      const resultText = JSON.stringify(result, null, 2);
+      let resultText = JSON.stringify(result, null, 2);
+
+      // Optional per-tool workflow hint. When a tool's responseMapping.followUp
+      // is set, append it to the result so the calling agent sees — mid-workflow,
+      // inside the tool output it just received — what it should do next (e.g.
+      // "a complete answer also needs tools X and Y; call them before replying").
+      // This drives multi-step tool chains far more reliably than a pre-call
+      // description, which agents often read but don't act on. Purely additive
+      // and opt-in: tools without followUp are unaffected.
+      if (responseMapping?.followUp) {
+        resultText += `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`;
+      }
 
       // Cache the response if cacheTtl is set
       if (cacheTtl && cacheTtl > 0) {

@@ -70,6 +70,9 @@ export interface ResponseMapping {
   cacheTtl?: number;
   type?: string;
   fields?: string[];
+  // Optional workflow hint appended to the tool result (see DynamicMcpTools):
+  // tells the calling agent what to do next, to drive multi-step tool chains.
+  followUp?: string;
   [k: string]: unknown;
 }
 
