@@ -1,0 +1,1365 @@
+{
+  "slug": "api-football",
+  "name": "API-Football",
+  "description": "Live and historical football (soccer) data from API-Football v3 (API-Sports): leagues, standings, fixtures with live scores & events, teams, players & statistics, predictions, injuries, transfers and betting odds.",
+  "category": "Sports",
+  "region": "intl",
+  "icon": "https://media.api-sports.io/football.png",
+  "docsUrl": "https://www.api-football.com/documentation-v3",
+  "version": 1,
+  "requiredEnvVars": [
+    "API_FOOTBALL_KEY"
+  ],
+  "instructions": "API-Football v3 (API-Sports direct). Auth is a single header `x-apisports-key` (configured for you from API_FOOTBALL_KEY).\n\nRESPONSE ENVELOPE — every endpoint returns the SAME wrapper:\n`{ get, parameters, errors, results, paging: { current, total }, response: [ ... ] }`.\n- The real data is ALWAYS in `response`. `results` is its count.\n- IMPORTANT: check `errors` even on HTTP 200 — an empty array/object means OK; a non-empty `errors` (e.g. token/plan/parameter problems) means `response` is empty and the call failed logically.\n- Pagination: up to 250 items per page; if `paging.total` > 1 pass `page` to fetch more.\n\nSEASONS: `season` is the 4-digit START year of the season (e.g. 2023 = season 2023/24).\nDATES: `YYYY-MM-DD`. Times are UTC unless you pass `timezone` (get valid values from af_timezone).\n\nTYPICAL FLOW (resolve ids first — do NOT guess numeric ids):\n1. af_leagues(search='Bundesliga') → league id (78) + available seasons.\n2. af_standings(league=78, season=2023) or af_fixtures(league=78, season=2023, next=10).\n3. af_fixtures(...) → a fixture `id`, then af_fixture_statistics / af_fixture_events / af_fixture_lineups / af_predictions(fixture=id).\n4. Teams: af_teams(search=...) → team id; Players: af_players(team=id, season=2023).\n\nRATE LIMIT — the account is on the FREE plan: **100 requests/day** (check anytime with af_status, which costs 0). Be economical: use precise filters, prefer a single fixtures/players call with the right filters over many broad calls, and reuse ids you already resolved. Responses expose `x-ratelimit-requests-remaining`.\n\nRead-only data API: all tools are GET; nothing is written.\n\n=== ANALYSIS ===\nFor ANY analysis (preview/prediction, post-match report, team form, head-to-head, standings, top scorers, player scouting, squad, injuries, transfers, odds, live), call **af_analysis_playbook** FIRST — it returns the exact af_* tool sequence for each case (it makes no API call). HARD RULES: read `errors` even on HTTP 200 (`errors.plan` -> season not in plan, tell the user to upgrade); there is NO referee endpoint (referee is only fixture.referee, set late); national-team head-to-head is barely covered; the pre-match odds tool is af_odds_prematch; the players endpoint is paginated (paging.total); never fabricate numbers.\n\nPROFESSIONAL / COMPLETE PREDICTION — when the user wants a 'professional', 'complete' or 'detailed' prediction/analysis, run this FULL checklist in one go and DO NOT stop after the first call:\n1) af_teams(search=…)->team id, af_fixtures(team=<id>,next=1)->fixture id + opponent id (+ date, venue, referee).\n2) af_predictions(fixture=<id>) — probabilities, advice, comparison, form.\n3) af_odds_prematch(fixture=<id>) — bookmaker odds; convert to implied probabilities and COMPARE with the prediction %.\n4) af_fixture_lineups(fixture=<id>) — formations & XI (if published).\n5) af_team_statistics(league,season,team) AND af_injuries(league,season,team) for BOTH teams.\n6) af_topscorers + af_topassists(league,season) AND af_players(team,league,season) — individual player form/ratings.\n7) af_head_to_head(h2h='idA-idB') — prior meetings.\nOnly AFTER collecting all of the above do you write the analysis. A one-call (predictions-only) answer is NOT professional — always enrich with odds, lineups, player stats, team stats, injuries and top performers.",
+  "connector": {
+    "name": "API-Football v3",
+    "type": "REST",
+    "baseUrl": "https://v3.football.api-sports.io",
+    "healthPath": "/status",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-apisports-key",
+      "apiKey": "{{API_FOOTBALL_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "af_analysis_playbook",
+      "description": "START HERE for football analysis (optional but recommended): returns — with NO API call — the exact ordered list of af_* tools to run for a pronostico/preview, post-match report, standings, scouting, injuries, transfers, odds or live tracking. If you already know the tool you need, you can also call it directly.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "/",
+        "staticResponse": "FOOTBALL ANALYSIS PLAYBOOK — find the request type in the ROUTER, then call the listed af_* tools IN ORDER.\nGolden rules: resolve ids first (af_leagues(search=…)->league id [World Cup=1]; af_teams(search=…)->team id); season = START year (2026 = 2026 WC); real data is in `response`; ALWAYS check `errors` (errors.plan = that season isn't in the plan -> tell the user to upgrade, don't invent); every number must come from a tool.\n\nROUTER:\n• preview/predict an upcoming match -> [PREVIEW]  • report a finished match -> [POSTMATCH]  • team form/momentum -> [FORM]\n• two teams' history -> [H2H]  • table / title-relegation-qualification -> [STANDINGS]  • top scorers/assists/cards -> [TOPS]\n• scout/compare a player -> [PLAYER]  • full squad + coach -> [SQUAD]  • injuries/suspensions -> [INJURIES]\n• transfers/career -> [TRANSFERS]  • odds & value -> [ODDS]  • matches live now -> [LIVE]  • league overview -> [SNAPSHOT]\n\n[PREVIEW] (~7 calls): af_fixtures(team=<id>,next=1)->fixture.id + opponent id, date, venue, fixture.referee; af_predictions(fixture)->percent/advice/comparison/form; af_team_statistics(league,season,team) x2; af_injuries(league,season,team) x2; af_topscorers(league,season). Referee is only fixture.referee (often null until ~1-2 days before; NO referee endpoint). NATIONAL-team h2h is barely covered.\n[POSTMATCH] (only FINISHED: status FT/AET/PEN): af_fixtures(id); af_fixture_events (timeline); af_fixture_lineups (formations/XI/coach); af_fixture_statistics (shots, possession, corners…); af_fixture_players (MOTM = highest games.rating).\n[FORM]: af_team_statistics(league,season,team) -> form, W-D-L, goals for/against + averages, HOME/AWAY split, clean_sheet, failed_to_score, biggest/streaks, goals.for/against.minute (scoring windows); + af_fixtures(team,last=10) and (team,next=5); + af_injuries(league,season,team).\n[H2H] (clubs = rich, nations = poor): af_head_to_head(h2h='idA-idB') WITHOUT `last`; tally wins A/draws/wins B, goals, home/away & recent trend. For nations, state coverage is limited.\n[STANDINGS]: af_standings(league,season) — LEAGUE = one table; CUP/World Cup = one table PER GROUP (response[0].league.standings is an ARRAY of groups). Remaining: af_fixtures(league,season,next=N) + af_fixtures_rounds; recent: (last=N).\n[TOPS]: af_topscorers + af_topassists + af_topyellowcards + af_topredcards (league,season); combine goals+assists, efficiency, teams. ~Top 20 each.\n[PLAYER]: af_player_profiles(search=…)->player.id; af_players(id=<id>,season=<year>) -> that season's stats (goals/assists/rating/shots/passes/duels); af_player_seasons(player) to pick seasons; af_transfers(player)+af_trophies(player) for career; rank with af_topscorers.\n[SQUAD]: af_player_squads(team=<id>) (roster: name/age/number/position); af_players(team,league,season) per-player stats — PAGINATED, read paging.total and pass page=2,3…; af_coachs(team).\n[INJURIES]: af_injuries(league,season,team=<id>) (player.type 'Missing Fixture'=out / 'Questionable'=doubt + reason) OR (fixture=<id>) OR (league,season,date=YYYY-MM-DD). Cross-check af_topscorers/squad for impact. Empty list = none reported.\n[TRANSFERS]: player -> af_player_profiles(search)->id -> af_transfers(player)+af_trophies(player)+af_sidelined(player). Club -> af_transfers(team) (large; filter by move date). Coach -> af_coachs(id/team)+af_trophies(coach).\n[ODDS] (informational, NOT betting advice): af_odds_bookmakers + af_odds_bets (catalogues, ids/names; 1=Match Winner, 5=Goals O/U, 4=Asian Handicap); af_odds_prematch(fixture=<id>) [NOTE: the tool is af_odds_prematch, and it can be EMPTY for minor/very-early fixtures]; implied prob = de-vig(1/decimalOdds) compared with af_predictions.percent -> 'value'; live: af_odds_live(fixture).\n[LIVE] (in-play): af_fixtures(live='all' or '<lg>-<lg>') -> id, elapsed, live score, status; per match af_fixture_events + af_fixture_statistics; af_odds_live(fixture). Returns results:0 outside live windows; poll sparingly.\n[SNAPSHOT]: af_leagues(search)->id+seasons; af_standings(league,season); af_topscorers + af_topassists; af_fixtures(league,season,next=10) and (last=10)."
+      }
+    },
+    {
+      "name": "af_status",
+      "description": "Account status: subscription plan, daily request limit and current usage. Costs 0 requests.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/status"
+      }
+    },
+    {
+      "name": "af_timezone",
+      "description": "List of all valid timezone strings accepted by the `timezone` parameter of other endpoints.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timezone"
+      }
+    },
+    {
+      "name": "af_countries",
+      "description": "List available countries (name, code, flag). Filter to discover the value to pass as `country` elsewhere.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Country name, e.g. 'Germany'."
+          },
+          "code": {
+            "type": "string",
+            "description": "2-letter FR/GB-style country code, e.g. 'DE'."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search countries by ≥3 chars."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/countries",
+        "queryParams": {
+          "name": "$name",
+          "code": "$code",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "af_leagues",
+      "description": "Find LEAGUES & cups + their available seasons and numeric id (needed by standings/fixtures/topscorers/etc). Search by name: search='Bundesliga' (World Cup id=1). ALWAYS resolve the league id here first when the user names a competition.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "name": {
+            "type": "string",
+            "description": "League name, e.g. 'Bundesliga'."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Country code (DE, GB, ...)."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year, e.g. 2023."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id — leagues this team plays in."
+          },
+          "type": {
+            "type": "string",
+            "description": "'league' or 'cup'."
+          },
+          "current": {
+            "type": "string",
+            "description": "'true'|'false' — only current seasons."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search league/cup name (≥3 chars)."
+          },
+          "last": {
+            "type": "integer",
+            "description": "The N last added leagues."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leagues",
+        "queryParams": {
+          "id": "$id",
+          "name": "$name",
+          "country": "$country",
+          "code": "$code",
+          "season": "$season",
+          "team": "$team",
+          "type": "$type",
+          "current": "$current",
+          "search": "$search",
+          "last": "$last"
+        }
+      }
+    },
+    {
+      "name": "af_leagues_seasons",
+      "description": "List of all season years available across the API (e.g. 2010..2024). Costs 0 requests.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leagues/seasons"
+      }
+    },
+    {
+      "name": "af_teams",
+      "description": "Find TEAMS + their numeric id (needed by almost every other tool). Search by name: search='Argentina' (national sides have national=true). ALWAYS resolve the team id here first when the user names a team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Team id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Team name."
+          },
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country name."
+          },
+          "code": {
+            "type": "string",
+            "description": "3-letter team code, e.g. 'FCB'."
+          },
+          "venue": {
+            "type": "integer",
+            "description": "Venue id."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search team name (≥3 chars)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams",
+        "queryParams": {
+          "id": "$id",
+          "name": "$name",
+          "league": "$league",
+          "season": "$season",
+          "country": "$country",
+          "code": "$code",
+          "venue": "$venue",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "af_team_statistics",
+      "description": "A team's season STATISTICS in a competition: form, played, W-D-L, goals for/against (+ averages, home/away split), clean sheets, streaks and scoring-by-minute. Needs league+season+team. Use for 'team form / how good is / season stats of <team>'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id."
+          },
+          "date": {
+            "type": "string",
+            "description": "Limit stats up to this date (YYYY-MM-DD)."
+          }
+        },
+        "required": [
+          "league",
+          "season",
+          "team"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/statistics",
+        "queryParams": {
+          "league": "$league",
+          "season": "$season",
+          "team": "$team",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "af_team_seasons",
+      "description": "List of season years for which a given team has data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team": {
+            "type": "integer",
+            "description": "Team id."
+          }
+        },
+        "required": [
+          "team"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/seasons",
+        "queryParams": {
+          "team": "$team"
+        }
+      }
+    },
+    {
+      "name": "af_team_countries",
+      "description": "List of countries available for the teams endpoint.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/countries"
+      }
+    },
+    {
+      "name": "af_venues",
+      "description": "Search stadiums/venues (name, address, city, capacity, surface).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Venue id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Venue name."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search venue name/city (≥3 chars)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/venues",
+        "queryParams": {
+          "id": "$id",
+          "name": "$name",
+          "city": "$city",
+          "country": "$country",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "af_standings",
+      "description": "League TABLE / STANDINGS for a season: rank, points, W-D-L, goal difference, form. league=<id>, season=<year>. For cups & the World Cup it returns one table PER GROUP. Use for 'classifica / table / who is top / group standings / qualification'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id (that team's row only)."
+          }
+        },
+        "required": [
+          "season"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/standings",
+        "queryParams": {
+          "league": "$league",
+          "season": "$season",
+          "team": "$team"
+        }
+      }
+    },
+    {
+      "name": "af_fixtures",
+      "description": "Football MATCHES & scores. A team's NEXT match: team=<id>, next=1 (recent results: last=N). A single day: date=YYYY-MM-DD. A competition's games: league=<id>, season=<year>. Matches LIVE now: live='all'. Returns the fixture id (required by predictions/events/lineups/statistics), both teams (+ids), date, venue, referee, score and status. Use for 'next/last match, when do they play, live scores'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Single fixture id."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Multiple fixture ids joined by '-', e.g. '215662-215663'."
+          },
+          "live": {
+            "type": "string",
+            "description": "'all' or dash-joined league ids for in-play fixtures."
+          },
+          "date": {
+            "type": "string",
+            "description": "Single day (YYYY-MM-DD)."
+          },
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id."
+          },
+          "last": {
+            "type": "integer",
+            "description": "The N most recent fixtures."
+          },
+          "next": {
+            "type": "integer",
+            "description": "The N upcoming fixtures."
+          },
+          "from": {
+            "type": "string",
+            "description": "Range start (YYYY-MM-DD)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Range end (YYYY-MM-DD)."
+          },
+          "round": {
+            "type": "string",
+            "description": "Round name, e.g. 'Regular Season - 1'."
+          },
+          "status": {
+            "type": "string",
+            "description": "Status short codes, e.g. 'NS-FT-PST'."
+          },
+          "venue": {
+            "type": "integer",
+            "description": "Venue id."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone for times (see timezone endpoint)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fixtures",
+        "queryParams": {
+          "id": "$id",
+          "ids": "$ids",
+          "live": "$live",
+          "date": "$date",
+          "league": "$league",
+          "season": "$season",
+          "team": "$team",
+          "last": "$last",
+          "next": "$next",
+          "from": "$from",
+          "to": "$to",
+          "round": "$round",
+          "status": "$status",
+          "venue": "$venue",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "af_fixtures_rounds",
+      "description": "List of round names for a league+season (e.g. 'Regular Season - 1'). Use with the `round` filter of fixtures.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          },
+          "current": {
+            "type": "string",
+            "description": "'true' to return only the current round."
+          },
+          "dates": {
+            "type": "string",
+            "description": "'true' to also return each round's dates."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone."
+          }
+        },
+        "required": [
+          "league",
+          "season"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fixtures/rounds",
+        "queryParams": {
+          "league": "$league",
+          "season": "$season",
+          "current": "$current",
+          "dates": "$dates",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "af_head_to_head",
+      "description": "HEAD-TO-HEAD history between two teams (h2h='idA-idB'): past meetings with scores, competitions and venues. Great for CLUB teams; national-team history is barely covered. Use for '<A> vs <B> history / previous meetings / record between'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "h2h": {
+            "type": "string",
+            "description": "Two team ids joined by '-', e.g. '157-165'."
+          },
+          "date": {
+            "type": "string",
+            "description": "YYYY-MM-DD."
+          },
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          },
+          "last": {
+            "type": "integer",
+            "description": "N most recent meetings."
+          },
+          "next": {
+            "type": "integer",
+            "description": "N upcoming meetings."
+          },
+          "from": {
+            "type": "string",
+            "description": "Range start (YYYY-MM-DD)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Range end (YYYY-MM-DD)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Status short codes."
+          },
+          "venue": {
+            "type": "integer",
+            "description": "Venue id."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone."
+          }
+        },
+        "required": [
+          "h2h"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fixtures/headtohead",
+        "queryParams": {
+          "h2h": "$h2h",
+          "date": "$date",
+          "league": "$league",
+          "season": "$season",
+          "last": "$last",
+          "next": "$next",
+          "from": "$from",
+          "to": "$to",
+          "status": "$status",
+          "venue": "$venue",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "af_fixture_statistics",
+      "description": "Team match STATISTICS for a fixture: shots, shots on target, possession %, corners, fouls, offsides, passes & accuracy. Use for 'match stats / possession / shots'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture": {
+            "type": "integer",
+            "description": "Fixture id."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Restrict to one team id."
+          },
+          "type": {
+            "type": "string",
+            "description": "Single statistic type, e.g. 'Total Shots'."
+          },
+          "half": {
+            "type": "string",
+            "description": "'true' to include half-time breakdown."
+          }
+        },
+        "required": [
+          "fixture"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fixtures/statistics",
+        "queryParams": {
+          "fixture": "$fixture",
+          "team": "$team",
+          "type": "$type",
+          "half": "$half"
+        }
+      }
+    },
+    {
+      "name": "af_fixture_events",
+      "description": "Match TIMELINE for a fixture: goals (with assist), cards, substitutions and VAR, each with minute & player. Use for 'what happened / goals & cards / match events'. (Match should be started/finished.)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture": {
+            "type": "integer",
+            "description": "Fixture id."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id."
+          },
+          "player": {
+            "type": "integer",
+            "description": "Player id."
+          },
+          "type": {
+            "type": "string",
+            "description": "Event type: 'Goal','Card','subst','Var'."
+          }
+        },
+        "required": [
+          "fixture"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fixtures/events",
+        "queryParams": {
+          "fixture": "$fixture",
+          "team": "$team",
+          "player": "$player",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "af_fixture_lineups",
+      "description": "Starting XI, bench, FORMATION and coach for a fixture. Use for 'lineups / formation / who's playing'. Confirmed lineups appear ~1h before kickoff.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture": {
+            "type": "integer",
+            "description": "Fixture id."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id."
+          },
+          "player": {
+            "type": "integer",
+            "description": "Player id."
+          },
+          "type": {
+            "type": "string",
+            "description": "Filter, e.g. 'startXI'."
+          }
+        },
+        "required": [
+          "fixture"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fixtures/lineups",
+        "queryParams": {
+          "fixture": "$fixture",
+          "team": "$team",
+          "player": "$player",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "af_fixture_players",
+      "description": "Per-player match stats & RATINGS for a fixture (goals, shots, passes, duels, rating). Use for 'player ratings / man of the match / who played best' — MOTM = highest rating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture": {
+            "type": "integer",
+            "description": "Fixture id."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id."
+          }
+        },
+        "required": [
+          "fixture"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fixtures/players",
+        "queryParams": {
+          "fixture": "$fixture",
+          "team": "$team"
+        }
+      }
+    },
+    {
+      "name": "af_injuries",
+      "description": "INJURIES & suspensions — who is OUT or doubtful. Filter by league+season+team, or a fixture, or a date. player.type 'Missing Fixture'=out, 'Questionable'=doubt. Use for 'injuries / who's out / suspended / squad availability'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league": {
+            "type": "integer",
+            "description": "League id (requires season)."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          },
+          "fixture": {
+            "type": "integer",
+            "description": "Fixture id."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id."
+          },
+          "player": {
+            "type": "integer",
+            "description": "Player id."
+          },
+          "date": {
+            "type": "string",
+            "description": "YYYY-MM-DD."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Fixture ids joined by '-'."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/injuries",
+        "queryParams": {
+          "league": "$league",
+          "season": "$season",
+          "fixture": "$fixture",
+          "team": "$team",
+          "player": "$player",
+          "date": "$date",
+          "ids": "$ids",
+          "timezone": "$timezone"
+        }
+      }
+    },
+    {
+      "name": "af_predictions",
+      "description": "THE match-prediction endpoint for one fixture id (win/draw/loss %, advice, predicted winner, and a form/attack/defence comparison of the two teams). ⚠️ A 'professional' or 'complete' prediction is NOT finished after this single call. In the SAME turn you MUST ALSO call and combine ALL of: af_odds_prematch(fixture) — market odds; convert to implied % and compare with these prediction %; af_fixture_lineups(fixture) — formations & starting XI (once published); af_team_statistics(league,season,team) for BOTH teams — form, goals for/against, streaks, scoring-by-minute; af_injuries(league,season,team) for BOTH teams — who's out/suspended; af_topscorers + af_topassists(league,season) and af_players(team,league,season) — key individual players & ratings; af_head_to_head(h2h='idA-idB') — previous meetings. Do NOT stop at this one call: gather all of the above, THEN synthesise the professional prediction.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture": {
+            "type": "integer",
+            "description": "Fixture id."
+          }
+        },
+        "required": [
+          "fixture"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/predictions",
+        "queryParams": {
+          "fixture": "$fixture"
+        }
+      }
+    },
+    {
+      "name": "af_coachs",
+      "description": "Search coaches and their career. Filter by id, team or name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Coach id."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id (current & past coaches)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search coach name (≥3 chars)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coachs",
+        "queryParams": {
+          "id": "$id",
+          "team": "$team",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "af_players",
+      "description": "PLAYER statistics for a season: goals, assists, rating, minutes, shots, passes, dribbles, duels, cards. Filter by team+league+season, or id+season, or search (needs team/league). Paginated (paging.total). Use for 'player stats / scout / rate a player / best players of <team>'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Player id."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id."
+          },
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year (required with id/team/league)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search player name (≥4 chars; needs team or league)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number (250/page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players",
+        "queryParams": {
+          "id": "$id",
+          "team": "$team",
+          "league": "$league",
+          "season": "$season",
+          "search": "$search",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "af_player_seasons",
+      "description": "Season years available for a player (or all seasons if no player given).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player": {
+            "type": "integer",
+            "description": "Player id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/seasons",
+        "queryParams": {
+          "player": "$player"
+        }
+      }
+    },
+    {
+      "name": "af_player_squads",
+      "description": "Current squad of a team, or the teams a player belongs to. Give team OR player.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team": {
+            "type": "integer",
+            "description": "Team id — returns its squad."
+          },
+          "player": {
+            "type": "integer",
+            "description": "Player id — returns their team(s)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/squads",
+        "queryParams": {
+          "team": "$team",
+          "player": "$player"
+        }
+      }
+    },
+    {
+      "name": "af_player_teams",
+      "description": "List of teams a player has played for.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player": {
+            "type": "integer",
+            "description": "Player id."
+          }
+        },
+        "required": [
+          "player"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/teams",
+        "queryParams": {
+          "player": "$player"
+        }
+      }
+    },
+    {
+      "name": "af_player_profiles",
+      "description": "Player personal data (name, age, nationality, height...). Search or paginate the full index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player": {
+            "type": "integer",
+            "description": "Player id."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search surname (≥3 chars)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/profiles",
+        "queryParams": {
+          "player": "$player",
+          "search": "$search",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "af_topscorers",
+      "description": "TOP SCORERS / golden boot of a competition: goals, penalties, appearances, minutes-per-goal. Needs league+season. Use for 'top scorers / capocannonieri / most goals'. (Top assists: af_topassists; cards: af_topyellowcards/af_topredcards.)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          }
+        },
+        "required": [
+          "league",
+          "season"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/topscorers",
+        "queryParams": {
+          "league": "$league",
+          "season": "$season"
+        }
+      }
+    },
+    {
+      "name": "af_topassists",
+      "description": "Top 20 assist providers of a league+season.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          }
+        },
+        "required": [
+          "league",
+          "season"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/topassists",
+        "queryParams": {
+          "league": "$league",
+          "season": "$season"
+        }
+      }
+    },
+    {
+      "name": "af_topyellowcards",
+      "description": "Top 20 players by yellow cards in a league+season.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          }
+        },
+        "required": [
+          "league",
+          "season"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/topyellowcards",
+        "queryParams": {
+          "league": "$league",
+          "season": "$season"
+        }
+      }
+    },
+    {
+      "name": "af_topredcards",
+      "description": "Top 20 players by red cards in a league+season.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          }
+        },
+        "required": [
+          "league",
+          "season"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/topredcards",
+        "queryParams": {
+          "league": "$league",
+          "season": "$season"
+        }
+      }
+    },
+    {
+      "name": "af_transfers",
+      "description": "Transfer history. Give player OR team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player": {
+            "type": "integer",
+            "description": "Player id."
+          },
+          "team": {
+            "type": "integer",
+            "description": "Team id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transfers",
+        "queryParams": {
+          "player": "$player",
+          "team": "$team"
+        }
+      }
+    },
+    {
+      "name": "af_trophies",
+      "description": "Trophies won. Give player/coach id (or 'players'/'coachs' as dash-joined id lists).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player": {
+            "type": "integer",
+            "description": "Player id."
+          },
+          "coach": {
+            "type": "integer",
+            "description": "Coach id."
+          },
+          "players": {
+            "type": "string",
+            "description": "Player ids joined by '-'."
+          },
+          "coachs": {
+            "type": "string",
+            "description": "Coach ids joined by '-'."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/trophies",
+        "queryParams": {
+          "player": "$player",
+          "coach": "$coach",
+          "players": "$players",
+          "coachs": "$coachs"
+        }
+      }
+    },
+    {
+      "name": "af_sidelined",
+      "description": "Past absences (injuries/suspensions) for players/coaches. Give player/coach id or dash-joined lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player": {
+            "type": "integer",
+            "description": "Player id."
+          },
+          "coach": {
+            "type": "integer",
+            "description": "Coach id."
+          },
+          "players": {
+            "type": "string",
+            "description": "Player ids joined by '-'."
+          },
+          "coachs": {
+            "type": "string",
+            "description": "Coach ids joined by '-'."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sidelined",
+        "queryParams": {
+          "player": "$player",
+          "coach": "$coach",
+          "players": "$players",
+          "coachs": "$coachs"
+        }
+      }
+    },
+    {
+      "name": "af_odds_prematch",
+      "description": "Pre-match betting ODDS for a fixture across bookmakers & markets (fixture=<id>; optional bookmaker=/bet=). Informational only, not betting advice. Can be empty for minor/very-early games. Catalogues: af_odds_bookmakers, af_odds_bets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture": {
+            "type": "integer",
+            "description": "Fixture id."
+          },
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "season": {
+            "type": "integer",
+            "description": "Season start year."
+          },
+          "date": {
+            "type": "string",
+            "description": "YYYY-MM-DD."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Timezone."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number."
+          },
+          "bookmaker": {
+            "type": "integer",
+            "description": "Bookmaker id."
+          },
+          "bet": {
+            "type": "integer",
+            "description": "Bet (market) id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/odds",
+        "queryParams": {
+          "fixture": "$fixture",
+          "league": "$league",
+          "season": "$season",
+          "date": "$date",
+          "timezone": "$timezone",
+          "page": "$page",
+          "bookmaker": "$bookmaker",
+          "bet": "$bet"
+        }
+      }
+    },
+    {
+      "name": "af_odds_live",
+      "description": "In-play (live) odds updated in real time. Filter by fixture, league or bet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fixture": {
+            "type": "integer",
+            "description": "Fixture id."
+          },
+          "league": {
+            "type": "integer",
+            "description": "League id."
+          },
+          "bet": {
+            "type": "integer",
+            "description": "Bet (market) id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/odds/live",
+        "queryParams": {
+          "fixture": "$fixture",
+          "league": "$league",
+          "bet": "$bet"
+        }
+      }
+    },
+    {
+      "name": "af_odds_live_bets",
+      "description": "Catalogue of available in-play bet (market) types for live odds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Bet id."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search bet name (≥3 chars)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/odds/live/bets",
+        "queryParams": {
+          "id": "$id",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "af_odds_mapping",
+      "description": "Mapping of fixtures that have pre-match odds available. Paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/odds/mapping",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "af_odds_bookmakers",
+      "description": "List of available bookmakers (id + name) for the odds endpoints.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Bookmaker id."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search bookmaker name (≥3 chars)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/odds/bookmakers",
+        "queryParams": {
+          "id": "$id",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "af_odds_bets",
+      "description": "List of available pre-match bet (market) types (id + name).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Bet id."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search bet name (≥3 chars)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/odds/bets",
+        "queryParams": {
+          "id": "$id",
+          "search": "$search"
+        }
+      }
+    }
+  ]
+}

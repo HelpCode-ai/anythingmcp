@@ -40,6 +40,7 @@ import * as acuityScheduling from './intl/acuity-scheduling.json';
 import * as adyen from './intl/adyen.json';
 import * as agilecrm from './intl/agilecrm.json';
 import * as amadeus from './intl/amadeus.json';
+import * as apiFootball from './intl/api-football.json';
 import * as apollo from './intl/apollo.json';
 import * as attio from './intl/attio.json';
 import * as bamboohr from './intl/bamboohr.json';
@@ -318,6 +319,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   adyen as unknown as AdapterDefinition,
   agilecrm as unknown as AdapterDefinition,
   amadeus as unknown as AdapterDefinition,
+  apiFootball as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
   attio as unknown as AdapterDefinition,
   bamboohr as unknown as AdapterDefinition,
