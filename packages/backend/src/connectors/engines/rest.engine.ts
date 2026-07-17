@@ -217,7 +217,7 @@ export class RestEngine {
         if (newToken) {
           axiosConfig.headers = {
             ...axiosConfig.headers,
-            Authorization: `Bearer ${newToken}`,
+            ...buildOauth2TokenHeader(config.authConfig, newToken),
           };
           const retryResponse = await axios(axiosConfig);
           return retryResponse.data;
@@ -326,11 +326,9 @@ export class RestEngine {
           config.authConfig,
           config.connectorId,
         );
-        // Some vendors use a non-standard prefix (e.g. Zoho: "Zoho-oauthtoken").
-        const prefix = String(config.authConfig?.tokenPrefix ?? 'Bearer');
         axiosConfig.headers = {
           ...axiosConfig.headers,
-          Authorization: `${prefix} ${accessToken}`,
+          ...buildOauth2TokenHeader(config.authConfig, accessToken),
         };
         // Some vendors require additional static headers alongside the
         // Bearer token (e.g. Etsy v3 requires both `Authorization: Bearer
@@ -614,6 +612,31 @@ function renderBodyTemplate(
       return JSON.stringify(value);
     },
   );
+}
+
+/**
+ * Build the header that carries an OAuth2 access token.
+ *
+ * Default: `Authorization: <tokenPrefix|Bearer> <token>`. Vendors that expect
+ * the token in a custom header (e.g. Amazon SP-API's `x-amz-access-token`)
+ * set authConfig.headerName — the raw token is sent there without a prefix,
+ * unless tokenPrefix is explicitly configured too.
+ */
+export function buildOauth2TokenHeader(
+  authConfig: Record<string, unknown> | undefined,
+  accessToken: string,
+): Record<string, string> {
+  const headerName = String(authConfig?.headerName ?? 'Authorization');
+  // Some vendors use a non-standard prefix (e.g. Zoho: "Zoho-oauthtoken").
+  const explicitPrefix = authConfig?.tokenPrefix;
+  if (headerName === 'Authorization') {
+    return { Authorization: `${String(explicitPrefix ?? 'Bearer')} ${accessToken}` };
+  }
+  return {
+    [headerName]: explicitPrefix
+      ? `${String(explicitPrefix)} ${accessToken}`
+      : accessToken,
+  };
 }
 
 /**

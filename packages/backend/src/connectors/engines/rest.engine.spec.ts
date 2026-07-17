@@ -611,4 +611,71 @@ describe('RestEngine', () => {
       );
     });
   });
+
+  describe('OAuth2 token header injection', () => {
+    const oauthConfig = (extra: Record<string, unknown> = {}) => ({
+      baseUrl: 'https://api.example.com',
+      authType: 'OAUTH2',
+      authConfig: {
+        clientId: 'cid',
+        clientSecret: 'sec',
+        refreshToken: 'rt',
+        tokenUrl: 'https://auth.example.com/token',
+        ...extra,
+      },
+    });
+
+    it('defaults to Authorization: Bearer <token>', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(oauthConfig(), { method: 'GET', path: '/x' }, {});
+
+      const sent = mockedAxios.mock.calls[0][0] as any;
+      expect(sent.headers.Authorization).toBe('Bearer oauth2-access-token');
+    });
+
+    it('honours tokenPrefix on the Authorization header', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        oauthConfig({ tokenPrefix: 'Zoho-oauthtoken' }),
+        { method: 'GET', path: '/x' },
+        {},
+      );
+
+      const sent = mockedAxios.mock.calls[0][0] as any;
+      expect(sent.headers.Authorization).toBe('Zoho-oauthtoken oauth2-access-token');
+    });
+
+    it('sends the raw token in a custom headerName (Amazon SP-API style)', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        oauthConfig({ headerName: 'x-amz-access-token' }),
+        { method: 'GET', path: '/orders/v0/orders' },
+        {},
+      );
+
+      const sent = mockedAxios.mock.calls[0][0] as any;
+      expect(sent.headers['x-amz-access-token']).toBe('oauth2-access-token');
+      expect(sent.headers.Authorization).toBeUndefined();
+    });
+
+    it('re-injects the refreshed token into the custom header on 401 retry', async () => {
+      const err = new AxiosError('Unauthorized');
+      (err as any).response = { status: 401, data: {} };
+      mockedAxios.mockRejectedValueOnce(err).mockResolvedValueOnce({ data: { ok: true } });
+
+      const result = await engine.execute(
+        oauthConfig({ headerName: 'x-amz-access-token' }),
+        { method: 'GET', path: '/orders/v0/orders' },
+        {},
+      );
+
+      expect(result).toEqual({ ok: true });
+      const retried = mockedAxios.mock.calls[1][0] as any;
+      expect(retried.headers['x-amz-access-token']).toBe('new-access-token');
+      expect(retried.headers.Authorization).toBeUndefined();
+    });
+  });
 });
