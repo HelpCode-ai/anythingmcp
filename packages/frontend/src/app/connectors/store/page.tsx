@@ -488,15 +488,19 @@ function AdapterStoreContent() {
             className="absolute inset-0 bg-black/50"
             onClick={() => setConfigAdapter(null)}
           />
-          <div className="relative mx-4 w-full max-w-md rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+          <div className="relative mx-4 flex max-h-[90vh] w-full max-w-md flex-col rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">
             <button
               onClick={() => setConfigAdapter(null)}
-              className="absolute right-3 top-3 text-[var(--text-3)] hover:text-[var(--text)]"
+              className="absolute right-3 top-3 z-10 text-[var(--text-3)] hover:text-[var(--text)]"
               aria-label="Close"
             >
               <CloseIcon />
             </button>
 
+            {/* Scrollable content region. Keeps the footer actions pinned and
+                reachable even when an adapter has many env vars (the modal is
+                capped at 90vh instead of growing past the viewport). */}
+            <div className="flex-1 overflow-y-auto p-6">
             <h3 className="mb-1 text-lg font-semibold tracking-[-0.01em]">
               Configure {configAdapter.name}
             </h3>
@@ -526,7 +530,7 @@ function AdapterStoreContent() {
               </details>
             )}
 
-            <div className="space-y-3 mb-6">
+            <div className="space-y-3">
               {configAdapter.requiredEnvVars.map((envVar) => {
                 const isSecret =
                   envVar.toLowerCase().includes('secret') ||
@@ -579,8 +583,10 @@ function AdapterStoreContent() {
                 );
               })}
             </div>
+            </div>
 
-            <div className="flex justify-end gap-3">
+            {/* Pinned footer — always visible, never scrolls out of reach. */}
+            <div className="flex shrink-0 justify-end gap-3 border-t border-[var(--border)] p-6 py-4">
               <Button
                 variant="secondary"
                 onClick={() => doImport(configAdapter.slug)}
