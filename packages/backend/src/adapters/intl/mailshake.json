@@ -21,9 +21,9 @@
   "tools": [
     {
       "name": "mailshake_me",
-      "description": "Return the team the API key belongs to.",
+      "description": "Return the user/team the API key belongs to. Useful as a first call to verify the API key works.",
       "parameters": { "type": "object", "properties": {} },
-      "endpointMapping": { "method": "POST", "path": "/users/me" }
+      "endpointMapping": { "method": "GET", "path": "/me" }
     },
     {
       "name": "mailshake_list_campaigns",

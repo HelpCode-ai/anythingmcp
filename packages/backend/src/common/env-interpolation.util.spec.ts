@@ -31,6 +31,12 @@ describe('EnvInterpolation', () => {
       expect(interpolateString('{{API_BASE}}', {}))
         .toBe('{{API_BASE}}');
     });
+
+    it('should return a non-string template unchanged (no throw)', () => {
+      // Static tools omit `path`; interpolating undefined must not crash.
+      expect(interpolateString(undefined as unknown as string, envVars))
+        .toBeUndefined();
+    });
   });
 
   describe('interpolateDeep', () => {
@@ -82,6 +88,20 @@ describe('EnvInterpolation', () => {
       const mapping = { method: 'GET', path: '/users' };
       const result = interpolateConnectorConfig(config, mapping, {});
       expect(result.config.baseUrl).toBe('{{API_BASE}}');
+    });
+
+    it('should not throw for a static tool with no path', () => {
+      // Regression: a `static` tool endpointMapping has no `path`; with a
+      // connector that HAS env vars, interpolation used to crash on
+      // interpolateString(undefined).
+      const config = { baseUrl: 'https://v3.football.api-sports.io' };
+      const mapping = {
+        method: 'static',
+        staticResponse: 'PLAYBOOK …',
+      } as unknown as { method: string; path: string };
+      const result = interpolateConnectorConfig(config, mapping, envVars);
+      expect(result.endpointMapping.path).toBeUndefined();
+      expect(result.config.baseUrl).toBe('https://v3.football.api-sports.io');
     });
   });
 });

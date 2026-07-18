@@ -19,6 +19,10 @@ export function interpolateString(
   template: string,
   envVars: Record<string, string>,
 ): string {
+  // Callers pass optional fields (e.g. a static tool's endpointMapping has no
+  // `path`). Guard against a non-string template so interpolation never throws
+  // "Cannot read properties of undefined (reading 'replace')".
+  if (typeof template !== 'string') return template;
   return template.replace(VAR_PATTERN, (match, varName) => {
     const trimmed = varName.trim();
     return envVars[trimmed] !== undefined ? envVars[trimmed] : match;

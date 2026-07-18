@@ -123,7 +123,7 @@
     },
     {
       "name": "weclapp_list_invoices",
-      "description": "List sales invoices from weclapp ERP. Returns invoice numbers, amounts, due dates, and payment status. NOTE: invoice has NO 'customerName' field — do not request it in `properties` (weclapp returns 400); the name is in `recordAddress`, the link is `customerId`. Use `filter` for queries like 'paid-eq=false'. Date fields are Unix epoch milliseconds (e.g. 'invoiceDate-gt=1767225600000' for 2026-01-01).",
+      "description": "List sales invoices from weclapp ERP. Returns invoice numbers, amounts, due dates, and payment status. NOTE: invoice has NO 'customerName' field — do not request it in `properties` (weclapp returns 400); the name is in `recordAddress`, the link is `customerId`. Other common 400 traps: line items are `salesInvoiceItems` (not `invoiceItems`); the invoice-type field/filter is `salesInvoiceType` (not `invoiceType`); there is no `currencyName` (currency is `recordCurrencyId`, amounts are `netAmount`/`grossAmount`/`netAmountInCompanyCurrency`); a cancelled invoice is `status-eq=CANCELLED`, not an invoiceType. Use `filter` for queries like 'paid-eq=false'. Date fields are Unix epoch milliseconds (e.g. 'invoiceDate-gt=1767225600000' for 2026-01-01).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -141,7 +141,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull (the -null/-notnull operators take an EMPTY value, e.g. 'articleNumber-notnull='). Examples: 'articleNumber-eq=A5101', 'productionArticle-eq=true', 'name-ilike=%hammer%'. Combine with '&'."
+            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull (the -null/-notnull operators take an EMPTY value, e.g. 'articleNumber-notnull='). The -in/-notin operators need a BRACKETED comma list: 'id-in=[6501,84566]' — NOT 'id-in=6501,84566' (that returns 400 'invalid parameter value'). Examples: 'articleNumber-eq=A5101', 'productionArticle-eq=true', 'name-ilike=%hammer%'. Combine with '&'."
           },
           "sort": {
             "type": "string",
@@ -163,7 +163,7 @@
     },
     {
       "name": "weclapp_list_articles",
-      "description": "List articles (products) from weclapp ERP. Returns article numbers, names, prices, and stock info. Use `filter` like 'articleNumber-eq=ABC123' for SKU lookups.",
+      "description": "List articles (products) from weclapp ERP. Returns article numbers, names, and stock info. Use `filter` like 'articleNumber-eq=ABC123' for SKU lookups. NOTE on prices: an article has NO direct `salesPrice`/`purchasePrice`/`lastPurchasePrice`/`averagePurchasePrice`/`valuationPrice` property (those return 400 'unknown property'). Sales prices live in the `articlePrices` sub-entity and purchase prices in `supplySources` (note: `supplySources`, not `articleSupplySources`) — request those names in `properties` to get the nested price objects.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -181,7 +181,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull (the -null/-notnull operators take an EMPTY value, e.g. 'articleNumber-notnull='). Examples: 'articleNumber-eq=A5101', 'productionArticle-eq=true', 'name-ilike=%hammer%'. Combine with '&'."
+            "description": "weclapp filter. The property+operator IS the param name, so pass it as `property-operator=value` (NOT a `filter=` wrapper). Operators: -eq -ne -gt -lt -ge -le -like -ilike -in -notin -null -notnull (the -null/-notnull operators take an EMPTY value, e.g. 'articleNumber-notnull='). The -in/-notin operators need a BRACKETED comma list: 'id-in=[6501,84566]' — NOT 'id-in=6501,84566' (that returns 400 'invalid parameter value'). Examples: 'articleNumber-eq=A5101', 'productionArticle-eq=true', 'name-ilike=%hammer%'. Combine with '&'."
           },
           "sort": {
             "type": "string",
