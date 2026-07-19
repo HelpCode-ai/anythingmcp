@@ -1,33 +1,29 @@
 {
   "slug": "reddit",
   "name": "Reddit",
-  "description": "Read and post to Reddit from any AI agent: subreddit listings, post search, comments, user info, submit posts/comments, vote. 12 tools, OAuth2 Bearer auth.",
-  "instructions": "This connector uses the Reddit OAuth2 API (reddit.com/dev/api).\n\n**Setup**:\n1. Sign in to Reddit → https://www.reddit.com/prefs/apps → **Create another app**.\n2. Pick `script` (for personal use) or `web app` (for OAuth users).\n3. Note the **client_id** (under the app name) and **client_secret**.\n4. Obtain an access token via OAuth2 password grant (for script apps) or auth-code (for web apps). Endpoint: `POST https://www.reddit.com/api/v1/access_token` with HTTP Basic (client_id:client_secret).\n5. Set `REDDIT_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${REDDIT_ACCESS_TOKEN}`. Access tokens expire after 1 hour — your orchestrator must refresh.\n\n**User-Agent header REQUIRED**: Reddit blocks requests without a meaningful User-Agent. The adapter pins `User-Agent: AnythingMCP/1.0 (by /u/anythingmcp)`. If Reddit returns 429 unexpectedly, change this string to one specific to your app (Reddit recommends `<platform>:<app ID>:<version> (by /u/<reddit username>)`).\n\n**oauth.reddit.com vs www.reddit.com**: authenticated requests MUST go to `https://oauth.reddit.com` (the adapter does this). Anonymous calls go to www.reddit.com.\n\n**Resource model**: every Reddit object has a `kind` prefix:\n  - t1_ = comment\n  - t2_ = user\n  - t3_ = link/post\n  - t4_ = message\n  - t5_ = subreddit\nA full ID is `kind_id36`, e.g. `t3_abc123`. Plain `id36` works for some endpoints.\n\n**Listings (pagination)**: most list endpoints return a `Listing` with `after` and `before` cursors. Pass `after=t3_abc123` to paginate.\n\n**Rate limits**: 100 queries / minute / OAuth client (free tier as of 2025; commercial tiers higher). Reddit's API became paid for high-volume use in 2023 — read https://www.redditinc.com/policies/data-api-terms.\n\n**Out of scope here**: PRAW-style streaming, moderator actions (ban/approve), wiki edits, multireddits CRUD, scheduled posts.",
+  "description": "Read Reddit from any AI agent: subreddit info and listings, global/subreddit post search, comment trees, and public user profiles + submissions. 6 read tools, OAuth2 app-only auth (tokens auto-refresh).",
+  "instructions": "This connector reads Reddit's public content through the official OAuth2 API using the **app-only** (`client_credentials`) flow. Access tokens are obtained and refreshed automatically — you never paste or rotate a token.\n\n**Setup** (2 minutes):\n1. Sign in to Reddit → https://www.reddit.com/prefs/apps → **Create another app** (or **Create an app**).\n2. Choose type **`script`**. Name it anything; set the redirect URI to `http://localhost:8080` (unused by app-only, but the form requires one).\n3. After creating it, read the two values: the **client_id** is the string shown right under the app name (\"personal use script\"), and the **secret** is the `secret` field.\n4. Set `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`. That's it — the connector exchanges them for a 1-hour token at `https://www.reddit.com/api/v1/access_token` and refreshes on demand.\n\n**Scope**: app-only tokens can read **public** data only. This connector therefore exposes reads (subreddits, posts, search, comments, public user profiles). It does NOT do actions that need a logged-in user — posting, commenting, voting, saving, `/api/v1/me`, or your subscribed subreddits — those require a user-context OAuth flow that isn't part of this app-only connector.\n\n**User-Agent**: Reddit blocks requests without a meaningful User-Agent. The adapter pins `User-Agent: AnythingMCP/1.0 (by /u/anythingmcp)` on every call. If Reddit ever returns 429, change it to one specific to you (`<platform>:<app id>:<version> (by /u/<username>)`).\n\n**Resource model**: every Reddit object has a `kind` prefix — t1_ = comment, t2_ = user, t3_ = link/post, t5_ = subreddit. A full ID is `kind_id36`, e.g. `t3_abc123`; plain `id36` works for some endpoints.\n\n**Pagination**: list endpoints return a `Listing` with `after`/`before` cursors. Pass `after=t3_abc123` to page forward.\n\n**Rate limits**: ~100 queries / minute / OAuth client on the free tier. High-volume commercial use is billed — see https://www.redditinc.com/policies/data-api-terms.",
   "region": "intl",
   "category": "social",
   "icon": "reddit",
   "docsUrl": "https://www.reddit.com/dev/api",
-  "requiredEnvVars": ["REDDIT_ACCESS_TOKEN"],
+  "requiredEnvVars": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"],
   "connector": {
     "name": "Reddit API",
     "type": "REST",
     "baseUrl": "https://oauth.reddit.com",
-    "authType": "API_KEY",
+    "authType": "OAUTH2",
     "authConfig": {
-      "headerName": "Authorization",
-      "apiKey": "Bearer {{REDDIT_ACCESS_TOKEN}}",
+      "grant": "client_credentials",
+      "tokenUrl": "https://www.reddit.com/api/v1/access_token",
+      "clientId": "{{REDDIT_CLIENT_ID}}",
+      "clientSecret": "{{REDDIT_CLIENT_SECRET}}",
       "extraHeaders": {
         "User-Agent": "AnythingMCP/1.0 (by /u/anythingmcp)"
       }
     }
   },
   "tools": [
-    {
-      "name": "reddit_me",
-      "description": "Return the user the token belongs to (whoami): id, name, link_karma, comment_karma, created_utc, is_gold.",
-      "parameters": { "type": "object", "properties": {} },
-      "endpointMapping": { "method": "GET", "path": "/api/v1/me" }
-    },
     {
       "name": "reddit_get_subreddit_about",
       "description": "Fetch a subreddit's info: id, display_name, title, public_description, subscribers, active_user_count, over18, created_utc.",
@@ -134,7 +130,7 @@
     },
     {
       "name": "reddit_get_user_posts",
-      "description": "List a user's submitted posts.",
+      "description": "List a user's public submitted posts.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -155,121 +151,6 @@
           "limit": "$limit",
           "after": "$after"
         }
-      }
-    },
-    {
-      "name": "reddit_submit_post",
-      "description": "Submit a new post. kind='self' (text post with selftext) or 'link' (URL post with url). Required scope: 'submit'.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "sr": { "type": "string", "description": "Subreddit name to post to." },
-          "kind": { "type": "string", "description": "self or link." },
-          "title": { "type": "string", "description": "Post title." },
-          "text": { "type": "string", "description": "For kind=self: the markdown body." },
-          "url": { "type": "string", "description": "For kind=link: the URL." },
-          "flair_id": { "type": "string", "description": "Flair template ID (optional)." },
-          "flair_text": { "type": "string", "description": "Flair text override." },
-          "nsfw": { "type": "boolean", "description": "Mark NSFW." },
-          "spoiler": { "type": "boolean", "description": "Mark spoiler." },
-          "sendreplies": { "type": "boolean", "description": "Send inbox replies for comments. Default true." }
-        },
-        "required": ["sr", "kind", "title"]
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/api/submit",
-        "bodyEncoding": "form-urlencoded",
-        "bodyMapping": {
-          "sr": "$sr",
-          "kind": "$kind",
-          "title": "$title",
-          "text": "$text",
-          "url": "$url",
-          "flair_id": "$flair_id",
-          "flair_text": "$flair_text",
-          "nsfw": "$nsfw",
-          "spoiler": "$spoiler",
-          "sendreplies": "$sendreplies",
-          "api_type": "json"
-        }
-      }
-    },
-    {
-      "name": "reddit_post_comment",
-      "description": "Reply to a post or comment. `thing_id` is the fullname (t1_xxx for comment, t3_xxx for post).",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "thing_id": { "type": "string", "description": "Fullname (e.g. 't3_abc123' or 't1_xyz789')." },
-          "text": { "type": "string", "description": "Comment body (Markdown)." }
-        },
-        "required": ["thing_id", "text"]
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/api/comment",
-        "bodyEncoding": "form-urlencoded",
-        "bodyMapping": {
-          "thing_id": "$thing_id",
-          "text": "$text",
-          "api_type": "json"
-        }
-      }
-    },
-    {
-      "name": "reddit_vote",
-      "description": "Vote on a post or comment. dir=1 upvote, dir=-1 downvote, dir=0 remove vote.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string", "description": "Fullname (t1_xxx or t3_xxx)." },
-          "dir": { "type": "integer", "description": "1, -1, or 0." }
-        },
-        "required": ["id", "dir"]
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/api/vote",
-        "bodyEncoding": "form-urlencoded",
-        "bodyMapping": {
-          "id": "$id",
-          "dir": "$dir"
-        }
-      }
-    },
-    {
-      "name": "reddit_save",
-      "description": "Save (bookmark) a post or comment to the user's account.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string", "description": "Fullname (t1_xxx or t3_xxx)." }
-        },
-        "required": ["id"]
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/api/save",
-        "bodyEncoding": "form-urlencoded",
-        "bodyMapping": { "id": "$id" }
-      }
-    },
-    {
-      "name": "reddit_my_subreddits",
-      "description": "List subreddits the user is subscribed to.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "where": { "type": "string", "description": "subscriber, contributor, moderator." },
-          "limit": { "type": "integer", "description": "Per page (max 100)." },
-          "after": { "type": "string", "description": "Cursor." }
-        }
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/subreddits/mine/{where}",
-        "queryParams": { "limit": "$limit", "after": "$after" }
       }
     }
   ]
