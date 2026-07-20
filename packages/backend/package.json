@@ -29,7 +29,7 @@
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.28",
-    "@nestjs/swagger": "^11.4.5",
+    "@nestjs/swagger": "^11.4.6",
     "@nestjs/terminus": "^11.0.0",
     "@nestjs/throttler": "^6.5.0",
     "@opentelemetry/auto-instrumentations-node": "^0.78.0",
