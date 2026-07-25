@@ -13,6 +13,10 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { DeploymentService } from '../common/deployment.service';
 import { PrismaService } from '../common/prisma.service';
 import { interpolateConnectorConfig } from '../common/env-interpolation.util';
+import {
+  CALLER_CONTEXT_PREFIX,
+  buildCallerContextVars,
+} from '../common/caller-context.util';
 import { resolveInternalDbRestUrl } from '../common/db-rest.util';
 import { KgService } from '../knowledge-graph/kg.service';
 import type { RegisteredTool } from './tool-registry';
@@ -194,6 +198,14 @@ export class DynamicMcpTools {
     try {
       const envVars = tool.connectorConfig.envVars || {};
 
+      // Reserved {{amcp.*}} caller-context vars are merged AFTER the
+      // workspace's own env vars, so a connector variable can never shadow
+      // (i.e. spoof) the authenticated identity.
+      const interpolationVars = {
+        ...envVars,
+        ...buildCallerContextVars(context),
+      };
+
       // Interpolate {{VAR}} patterns in config and endpoint mapping
       const {
         config: interpolatedConfig,
@@ -204,7 +216,8 @@ export class DynamicMcpTools {
           headers: tool.connectorConfig.headers,
         },
         tool.endpointMapping,
-        envVars,
+        interpolationVars,
+        { reservedPrefix: CALLER_CONTEXT_PREFIX },
       );
 
       // Decide proxy routing (env present + tool opted in + cloud rate-limit).

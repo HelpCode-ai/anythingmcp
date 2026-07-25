@@ -12,6 +12,10 @@ import { RolesService } from '../roles/roles.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { KgStaticService } from '../knowledge-graph/kg-static.service';
+import {
+  ToolAnnotations,
+  deriveToolAnnotations,
+} from './tool-annotations';
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -81,6 +85,7 @@ export class McpServerService implements OnModuleInit {
             | Record<string, unknown>
             | undefined,
           outputSchema: tool.outputSchema as unknown,
+          annotations: tool.annotations as unknown,
         };
 
         // Register in our internal registry (for execution lookup)
@@ -100,7 +105,12 @@ export class McpServerService implements OnModuleInit {
         // time via getToolForOrg/getTool, so the second+ registration with
         // the same name would just overwrite and emit a warning.
         if (this.toolRegistry.countByName(tool.name) === 1) {
-          this.registerMcpTool(tool.name, tool.description, effectiveSchema);
+          this.registerMcpTool(
+            tool.name,
+            tool.description,
+            effectiveSchema,
+            deriveToolAnnotations(toolDef),
+          );
         }
       }
     }
@@ -152,6 +162,7 @@ export class McpServerService implements OnModuleInit {
             | Record<string, unknown>
             | undefined,
           outputSchema: tool.outputSchema as unknown,
+          annotations: tool.annotations as unknown,
         };
 
         this.toolRegistry.registerTool(toolDef);
@@ -165,7 +176,12 @@ export class McpServerService implements OnModuleInit {
         // single-tenant MCP registry only when this is the first tool
         // with this name across all orgs/connectors.
         if (this.toolRegistry.countByName(tool.name) === 1) {
-          this.registerMcpTool(tool.name, tool.description, effectiveSchema);
+          this.registerMcpTool(
+            tool.name,
+            tool.description,
+            effectiveSchema,
+            deriveToolAnnotations(toolDef),
+          );
         }
       }
     }
@@ -205,6 +221,7 @@ export class McpServerService implements OnModuleInit {
     name: string,
     description: string,
     jsonSchema: Record<string, unknown>,
+    annotations?: ToolAnnotations,
   ): void {
     const zodParams = this.jsonSchemaToZod(jsonSchema);
 
@@ -212,6 +229,7 @@ export class McpServerService implements OnModuleInit {
       name,
       description,
       parameters: zodParams,
+      ...(annotations ? { annotations } : {}),
       handler: async (args: Record<string, unknown>, _context: any, request: any) => {
         // Check role-based tool access if user is identified
         const user = request?.user;

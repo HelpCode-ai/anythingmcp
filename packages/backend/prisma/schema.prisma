@@ -414,6 +414,14 @@ model McpTool {
   //   fields: [...]
   // }
 
+  // Explicit MCP tool annotations (spec: ToolAnnotations). Null = derive them
+  // from the connector (HTTP verb, query/mutation, readOnly flag, SQL text).
+  // Set either by an admin override — needed for read-only endpoints that are
+  // exposed over POST, which no heuristic can detect — or captured from an
+  // upstream MCP server, whose own annotations are authoritative.
+  // { title?, readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
+  annotations Json?
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

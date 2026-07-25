@@ -10,6 +10,7 @@ import {
   Req,
   UseGuards,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -27,6 +28,15 @@ import { McpServerService } from '../mcp-server/mcp-server.service';
 import { ConnectorsService } from './connectors.service';
 import { inferJsonSchema } from './output-schema.util';
 import { classifyToolExecutionError } from './connector-error.util';
+import {
+  ToolAnnotations,
+  deriveToolAnnotations,
+  parseAnnotationsOverride,
+} from '../mcp-server/tool-annotations';
+import {
+  CALLER_CONTEXT_VARIABLES,
+  findUnknownCallerContextVars,
+} from '../common/caller-context.util';
 
 class CreateToolDto {
   @ApiProperty({
@@ -133,6 +143,24 @@ class BulkCreateToolsDto {
   tools: CreateToolDto[];
 }
 
+class SetToolAnnotationsDto {
+  @ApiPropertyOptional({
+    description:
+      'MCP tool annotations to advertise for this tool, overriding the values ' +
+      'derived from the connector. Allowed keys: title, readOnlyHint, ' +
+      'destructiveHint, idempotentHint, openWorldHint. Send null to drop the ' +
+      'override and go back to the derived values. Typical use: marking a ' +
+      'search endpoint that is exposed over POST as readOnlyHint=true.',
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    example: { readOnlyHint: true },
+  })
+  @IsOptional()
+  @IsObject()
+  annotations?: Record<string, unknown> | null;
+}
+
 class SetToolProxyDto {
   @ApiProperty({
     description:
@@ -193,6 +221,22 @@ export class ToolsController {
     if (connector.userId !== req.user.sub && req.user.role !== 'ADMIN') {
       throw new ForbiddenException('Only the connector owner or an admin can modify this resource');
     }
+    return connector;
+  }
+
+  /**
+   * Reject a typo'd reserved variable (e.g. `{{amcp.user_mail}}`) at save time.
+   * At runtime these resolve to an empty string on purpose — so without this
+   * check a misspelling would silently forward nothing.
+   */
+  private assertKnownCallerContextVars(endpointMapping: unknown) {
+    const unknown = findUnknownCallerContextVars(endpointMapping);
+    if (unknown.length > 0) {
+      throw new BadRequestException(
+        `Unknown caller-context variable(s): ${unknown.join(', ')}. ` +
+          `Available: ${Object.keys(CALLER_CONTEXT_VARIABLES).join(', ')}.`,
+      );
+    }
   }
 
   @Get()
@@ -213,6 +257,7 @@ export class ToolsController {
     @Body() dto: CreateToolDto,
   ) {
     await this.assertCanWriteConnector(connectorId, req);
+    this.assertKnownCallerContextVars(dto.endpointMapping);
     const tool = await this.prisma.mcpTool.create({
       data: {
         connectorId,
@@ -290,6 +335,9 @@ export class ToolsController {
     @Body() dto: UpdateToolDto,
   ) {
     await this.assertCanWriteConnector(connectorId, req);
+    if (dto.endpointMapping !== undefined) {
+      this.assertKnownCallerContextVars(dto.endpointMapping);
+    }
     // Bind the toolId to the connectorId in the WHERE clause so that
     // a request like /connectors/<my>/tools/<other-org's-tool> cannot
     // update a tool that doesn't belong to the requested connector.
@@ -303,6 +351,97 @@ export class ToolsController {
 
     await this.mcpServer.reloadConnectorTools(connectorId);
     return this.prisma.mcpTool.findUnique({ where: { id: toolId } });
+  }
+
+  @Get(':toolId/annotations')
+  @ApiOperation({
+    summary: 'Get the MCP annotations advertised for a tool',
+    description:
+      'Returns `derived` (inferred from the connector: HTTP verb, ' +
+      'query/mutation, readOnly flag, SQL text), `override` (the stored ' +
+      'explicit value, if any) and `effective` (what MCP clients actually ' +
+      'see). Also lists the supported keys.',
+  })
+  async getAnnotations(
+    @Req() req: any,
+    @Param('toolId') toolId: string,
+    @Param('connectorId') connectorId: string,
+  ) {
+    const connector = await this.assertCanWriteConnector(connectorId, req);
+    const tool = await this.prisma.mcpTool.findFirst({
+      where: { id: toolId, connectorId },
+    });
+    if (!tool) throw new ForbiddenException('Tool not found');
+
+    const source = {
+      name: tool.name,
+      connectorType: (connector as { type: string }).type,
+      endpointMapping: tool.endpointMapping as { method?: string; path?: string },
+      connectorConfig: {
+        config: (connector as { config?: Record<string, unknown> | null }).config,
+      },
+    };
+    return {
+      derived: deriveToolAnnotations(source),
+      override: (tool.annotations as Record<string, unknown> | null) ?? null,
+      effective: deriveToolAnnotations({ ...source, annotations: tool.annotations }),
+      supportedKeys: [
+        'title',
+        'readOnlyHint',
+        'destructiveHint',
+        'idempotentHint',
+        'openWorldHint',
+      ],
+    };
+  }
+
+  @Patch(':toolId/annotations')
+  @ApiOperation({
+    summary: 'Override the MCP annotations advertised for a tool',
+    description:
+      'Annotations are advisory hints (per the MCP spec, clients must not base ' +
+      'trust decisions on them) that let an agent tell a read-only tool from a ' +
+      'mutating one. They are normally derived from the connector; use this to ' +
+      'correct a case the derivation cannot know — most commonly a read-only ' +
+      'search exposed over POST. Send `annotations: null` to reset to derived.',
+  })
+  async setAnnotations(
+    @Req() req: any,
+    @Param('toolId') toolId: string,
+    @Param('connectorId') connectorId: string,
+    @Body() dto: SetToolAnnotationsDto,
+  ) {
+    const connector = await this.assertCanWriteConnector(connectorId, req);
+
+    let override: ToolAnnotations | null;
+    try {
+      override = parseAnnotationsOverride(dto.annotations ?? null);
+    } catch (err: any) {
+      throw new BadRequestException(err.message);
+    }
+
+    const result = await this.prisma.mcpTool.updateMany({
+      where: { id: toolId, connectorId },
+      data: { annotations: (override ?? null) as any },
+    });
+    if (result.count === 0) {
+      throw new ForbiddenException('Tool not found');
+    }
+
+    await this.mcpServer.reloadConnectorTools(connectorId);
+    const tool = await this.prisma.mcpTool.findUnique({ where: { id: toolId } });
+    return {
+      override,
+      effective: deriveToolAnnotations({
+        name: tool!.name,
+        connectorType: (connector as { type: string }).type,
+        endpointMapping: tool!.endpointMapping as { method?: string; path?: string },
+        connectorConfig: {
+          config: (connector as { config?: Record<string, unknown> | null }).config,
+        },
+        annotations: tool!.annotations,
+      }),
+    };
   }
 
   @Patch(':toolId/proxy')

@@ -178,6 +178,116 @@ This filters the response to only include the specified fields, reducing token u
 
 ---
 
+## 4. Tool Annotations (Optional)
+
+Annotations are the [MCP spec's](https://modelcontextprotocol.io/specification) advisory hints that let an
+agent reason about a tool *before* calling it — above all whether it can change anything. An agent that
+knows a tool is read-only will probe it freely instead of asking for confirmation.
+
+| Hint | Spec default | Meaning |
+|---|---|---|
+| `title` | — | Human-readable title for display |
+| `readOnlyHint` | `false` | The tool does not modify its environment |
+| `destructiveHint` | `true` | The write removes/overwrites rather than only adding. Meaningful only when `readOnlyHint` is false |
+| `idempotentHint` | `false` | Repeating the call with the same arguments changes nothing further. Meaningful only when `readOnlyHint` is false |
+| `openWorldHint` | `true` | Interacts with an external system of unbounded scope |
+
+> Annotations are hints, not access control. The spec states clients must never make trust decisions based
+> on them. Real enforcement stays in roles and per-tool access.
+
+### Derived automatically
+
+You normally do not set these. AnythingMCP derives them from what the connector already declares:
+
+| Connector | Signal | Result |
+|---|---|---|
+| REST | `GET` / `HEAD` / `OPTIONS` | `readOnlyHint: true` |
+| REST | `POST` | write, additive, non-idempotent |
+| REST | `PUT` / `DELETE` | write, destructive, idempotent |
+| REST | `PATCH` | write, destructive, non-idempotent |
+| GraphQL | `query` / `mutation` | read-only / write |
+| Database | connector `readOnly` flag, or `SELECT` vs `INSERT`/`UPDATE`/`DELETE` in the statement | read-only / write; always `openWorldHint: false` |
+| Database | `static` method | read-only |
+| SOAP | operation name only | never asserts read-only; flags a clearly-named destructive op |
+| MCP bridge | the upstream server's own annotations | passed through verbatim |
+
+An unambiguous tool name (`delete_…`, `create_…`) refines `destructiveHint`, but **name heuristics never
+assert `readOnlyHint`**: wrongly claiming read-only would invite an agent to call a mutating tool freely,
+whereas omitting the hint only makes it more careful.
+
+### Overriding
+
+The one case the derivation cannot solve is a **read-only endpoint exposed over `POST`** — very common for
+search APIs, and indistinguishable from a write at the protocol level. Fix it per tool, in the UI via the
+tool's **Hints** button, or over the API:
+
+```bash
+# Mark a POST-based search as read-only
+curl -X PATCH .../api/connectors/<connectorId>/tools/<toolId>/annotations \
+  -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"annotations": {"readOnlyHint": true}}'
+
+# Inspect derived vs override vs effective
+curl .../api/connectors/<connectorId>/tools/<toolId>/annotations -H 'Authorization: Bearer <token>'
+
+# Drop the override, go back to derived
+curl -X PATCH .../api/connectors/<connectorId>/tools/<toolId>/annotations \
+  -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"annotations": null}'
+```
+
+An override survives a re-import. Annotations coming from an *upstream MCP server* are refreshed on
+re-import, since that server is authoritative about its own tools.
+
+---
+
+## 5. Caller-Context Variables (`{{amcp.*}}`)
+
+Connectors often front a **service**-based API while users authenticate to AnythingMCP individually (OAuth,
+per-user MCP API keys). The target system then only ever sees the service identity and cannot record who
+actually asked. These reserved variables forward the calling identity so it can — in headers, query
+parameters, the body, or the path:
+
+```json
+{
+  "method": "POST",
+  "path": "/tickets",
+  "headers": {
+    "X-Requested-By": "{{amcp.user_email}}"
+  },
+  "bodyMapping": {
+    "subject": "$subject",
+    "requestedBy": "{{amcp.user_email}}"
+  }
+}
+```
+
+| Variable | Value |
+|---|---|
+| `{{amcp.user_email}}` | E-mail of the calling user |
+| `{{amcp.user_id}}` | Internal user id |
+| `{{amcp.org_id}}` | Workspace (organization) id |
+| `{{amcp.server_id}}` | Id of the MCP server that exposed the tool |
+| `{{amcp.server_name}}` | Name of that MCP server |
+| `{{amcp.auth_method}}` | `jwt`, `mcp_api_key`, `static_api_key`, `static_bearer` or `none` |
+| `{{amcp.api_key_name}}` | Name of the MCP API key used, when applicable |
+
+Behaviour worth knowing:
+
+- **Opt-in.** Nothing is forwarded unless you write the variable somewhere. Identity is personal data, so it
+  is never attached automatically.
+- **Not always available.** Identity exists for OAuth and per-user MCP API keys. With an instance-wide static
+  API key or bearer token, and in anonymous mode, there is no user — the variable resolves to an **empty
+  string** rather than leaking a literal `{{amcp.…}}` to the target.
+- **Non-spoofable.** The values are resolved server-side from the authenticated request and merged *after*
+  connector env vars, so neither a workspace variable nor a tool argument can shadow them.
+- **Typos are rejected** when you save the tool, since at runtime an unknown reserved variable would silently
+  resolve to empty.
+- These variables apply to `baseUrl`, connector headers and the endpoint mapping. They are **not** substituted
+  inside `authConfig`.
+
+---
+
 ## Full Tool Example
 
 ```json

@@ -781,6 +781,7 @@ export class ConnectorsController {
           path: '/mcp',
         },
         outputSchema: rt.outputSchema ?? null,
+        annotations: rt.annotations ?? null,
       }));
 
       return this.createToolsFromParsed(connector.id, parsedTools);
@@ -1026,6 +1027,7 @@ export class ConnectorsController {
                 path: dto.url || '/mcp',
               },
               outputSchema: rt.outputSchema ?? null,
+              annotations: rt.annotations ?? null,
             });
           }
           break;
@@ -1216,6 +1218,13 @@ export class ConnectorsController {
               tool.outputSchema != null
                 ? (tool.outputSchema as any)
                 : (match.outputSchema as any),
+            // Annotations only arrive from an upstream MCP server, which is
+            // authoritative about its own tools. Every other import path leaves
+            // them untouched so an admin override survives a re-import.
+            annotations:
+              tool.annotations != null
+                ? (tool.annotations as any)
+                : (match.annotations as any),
             operationId: tool.operationId ?? match.operationId,
             deprecatedAt: null,
             // Re-enable if it was disabled only because we'd previously
@@ -1240,6 +1249,7 @@ export class ConnectorsController {
             endpointMapping: tool.endpointMapping as any,
             responseMapping: tool.responseMapping as any,
             outputSchema: (tool.outputSchema ?? null) as any,
+            annotations: (tool.annotations ?? null) as any,
           },
         });
         tools.push(created);
