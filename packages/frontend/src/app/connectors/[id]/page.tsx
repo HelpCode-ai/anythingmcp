@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 
 const IMPORT_SOURCES = [
   { id: 'openapi', label: 'OpenAPI / Swagger', placeholder: 'Paste OpenAPI JSON/YAML or enter URL...' },
@@ -40,6 +41,8 @@ export default function ConnectorDetailPage() {
   // Whether CONNECTOR_PROXY_URL is configured on this instance — drives
   // visibility of the per-tool "Use proxy" checkbox.
   const [proxyAvailable, setProxyAvailable] = useState(false);
+  // Tool whose MCP hints (annotations) panel is expanded, if any.
+  const [hintsToolId, setHintsToolId] = useState<string | null>(null);
 
   // OAuth + MCP discovery
   const [authorizing, setAuthorizing] = useState(false);
@@ -1203,6 +1206,15 @@ export default function ConnectorDetailPage() {
                             Edit
                           </button>
                           <button
+                            onClick={() =>
+                              setHintsToolId(hintsToolId === tool.id ? null : tool.id)
+                            }
+                            title="MCP annotations — tells agents whether this tool is read-only, destructive, idempotent."
+                            className="inline-flex items-center justify-center rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs font-medium transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)]"
+                          >
+                            {hintsToolId === tool.id ? 'Close hints' : 'Hints'}
+                          </button>
+                          <button
                             onClick={() => handleToggleTool(tool.id, tool.isEnabled)}
                             className="inline-flex items-center justify-center rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs font-medium transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)]"
                           >
@@ -1230,6 +1242,16 @@ export default function ConnectorDetailPage() {
                           </button>
                         </div>
                       </div>
+
+                      {/* MCP annotations (hints) */}
+                      {hintsToolId === tool.id && (
+                        <div className="mt-3 pt-3 border-t border-[var(--border)]">
+                          <ToolAnnotationsEditor
+                            connectorId={id}
+                            toolId={tool.id}
+                          />
+                        </div>
+                      )}
 
                       {/* Tool Playground */}
                       {testingToolId === tool.id && (() => {

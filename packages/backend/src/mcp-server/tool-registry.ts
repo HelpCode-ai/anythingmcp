@@ -42,6 +42,9 @@ export interface RegisteredTool {
   responseMapping?: Record<string, unknown>;
   // JSON Schema of the response, served to clients as the tool's outputSchema.
   outputSchema?: unknown;
+  // Explicit MCP tool annotations: an admin override, or the annotations
+  // reported by an upstream MCP server. Layered over the derived ones.
+  annotations?: unknown;
 }
 
 @Injectable()

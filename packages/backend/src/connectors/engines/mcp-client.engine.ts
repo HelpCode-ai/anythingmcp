@@ -116,6 +116,7 @@ export class McpClientEngine {
       description: string;
       inputSchema: Record<string, unknown>;
       outputSchema?: Record<string, unknown>;
+      annotations?: Record<string, unknown>;
     }>
   > {
     const mcpUrl = new URL(config.mcpPath || '/mcp', config.baseUrl);
@@ -147,6 +148,11 @@ export class McpClientEngine {
         },
         ...(tool.outputSchema
           ? { outputSchema: tool.outputSchema as Record<string, unknown> }
+          : {}),
+        // The upstream server knows its own tools' semantics better than any
+        // heuristic of ours, so carry its annotations through verbatim.
+        ...(tool.annotations
+          ? { annotations: tool.annotations as Record<string, unknown> }
           : {}),
       }));
     } finally {

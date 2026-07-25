@@ -241,6 +241,19 @@ export const adapters = {
 };
 
 // Tools
+/**
+ * MCP tool annotations — advisory hints an agent reads before calling a tool.
+ * Normally derived from the connector; an override corrects cases the
+ * derivation cannot know (classically a read-only search exposed over POST).
+ */
+export interface ToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
 export const tools = {
   list: (connectorId: string, token: string) =>
     request<any[]>(`/api/connectors/${connectorId}/tools`, { token }),
@@ -259,6 +272,23 @@ export const tools = {
       body: { useProxy },
       token,
     }),
+  getAnnotations: (connectorId: string, toolId: string, token: string) =>
+    request<{
+      derived: ToolAnnotations;
+      override: ToolAnnotations | null;
+      effective: ToolAnnotations;
+      supportedKeys: string[];
+    }>(`/api/connectors/${connectorId}/tools/${toolId}/annotations`, { token }),
+  setAnnotations: (
+    connectorId: string,
+    toolId: string,
+    annotations: ToolAnnotations | null,
+    token: string,
+  ) =>
+    request<{ override: ToolAnnotations | null; effective: ToolAnnotations }>(
+      `/api/connectors/${connectorId}/tools/${toolId}/annotations`,
+      { method: 'PATCH', body: { annotations }, token },
+    ),
   delete: (connectorId: string, toolId: string, token: string) =>
     request(`/api/connectors/${connectorId}/tools/${toolId}`, { method: 'DELETE', token }),
   test: (connectorId: string, toolId: string, params: Record<string, unknown>, token: string) =>

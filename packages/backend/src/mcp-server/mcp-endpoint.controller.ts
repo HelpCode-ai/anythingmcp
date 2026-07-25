@@ -25,6 +25,10 @@ import { RolesService } from '../roles/roles.service';
 import { registerDemoTools } from './mcp-demo.tools';
 import { KgService } from '../knowledge-graph/kg.service';
 import { outputSchemaToZodShape } from '../connectors/output-schema.util';
+import {
+  annotationsSignature,
+  deriveToolAnnotations,
+} from './tool-annotations';
 
 /** Minimal handle returned by McpServer.tool()/registerTool() that we keep so a
  * live (stateful) session can drop a tool when its surface changes. */
@@ -658,11 +662,16 @@ export class McpEndpointController {
         ? outputSchemaToZodShape(tool.outputSchema)
         : null;
 
+      // Advisory hints (readOnlyHint & co) so an agent can tell a probe-safe
+      // tool from a mutating one before calling it.
+      const annotations = deriveToolAnnotations(tool);
+
       const sig = [
         tool.name,
         tool.description,
         Object.keys(zodShape).sort().join(','),
         outShape ? Object.keys(outShape).sort().join(',') : '',
+        annotationsSignature(annotations),
       ].join('');
 
       entries.push({
@@ -700,21 +709,16 @@ export class McpEndpointController {
             return result;
           };
 
-          if (outShape) {
-            return mcpServer.registerTool(
-              tool.name,
-              {
-                description: tool.description,
-                inputSchema: zodShape,
-                outputSchema: outShape,
-              },
-              handler,
-            ) as unknown as ToolHandle;
-          }
-          return mcpServer.tool(
+          // registerTool for both branches: the legacy tool() overload has no
+          // slot for annotations.
+          return mcpServer.registerTool(
             tool.name,
-            tool.description,
-            zodShape,
+            {
+              description: tool.description,
+              inputSchema: zodShape,
+              ...(outShape ? { outputSchema: outShape } : {}),
+              annotations,
+            },
             handler,
           ) as unknown as ToolHandle;
         },
@@ -735,18 +739,27 @@ export class McpEndpointController {
         name: 'kg_how_to_obtain',
         sig: 'kg_how_to_obtain',
         register: (mcpServer: McpServer) =>
-          mcpServer.tool(
+          mcpServer.registerTool(
             'kg_how_to_obtain',
-            'Knowledge graph for THIS MCP server: given an entity or a parameter you need ' +
-              '(e.g. "customer_id", "order", "person"), returns which entities/tools produce ' +
-              'or relate to it across the connectors assigned to this server, plus any ' +
-              'human-written descriptions and the workspace skills (pre-built workflows) you ' +
-              'can use. Relationships are learned from these connectors, real usage, and ' +
-              'curated edits, so you can chain tool calls.',
             {
-              query: z
-                .string()
-                .describe('An entity or parameter name, e.g. "customer_id" or "deal".'),
+              description:
+                'Knowledge graph for THIS MCP server: given an entity or a parameter you need ' +
+                '(e.g. "customer_id", "order", "person"), returns which entities/tools produce ' +
+                'or relate to it across the connectors assigned to this server, plus any ' +
+                'human-written descriptions and the workspace skills (pre-built workflows) you ' +
+                'can use. Relationships are learned from these connectors, real usage, and ' +
+                'curated edits, so you can chain tool calls.',
+              inputSchema: {
+                query: z
+                  .string()
+                  .describe('An entity or parameter name, e.g. "customer_id" or "deal".'),
+              },
+              // Pure lookup over this workspace's own graph.
+              annotations: {
+                title: 'How to obtain',
+                readOnlyHint: true,
+                openWorldHint: false,
+              },
             },
             async (args: { query: string }) => {
               const result = await this.kgService.lookup(orgId, args.query, {

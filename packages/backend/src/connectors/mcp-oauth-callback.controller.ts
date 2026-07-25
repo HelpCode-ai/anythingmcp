@@ -129,6 +129,8 @@ export class McpOAuthCallbackController {
                   method: rt.name,
                   path: '/mcp',
                 } as any,
+                // The upstream server is authoritative about its own tools.
+                annotations: (rt.annotations ?? null) as any,
               },
             });
             toolsImported++;
