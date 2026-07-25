@@ -436,6 +436,39 @@ describe('RestEngine', () => {
       expect(mockedAxios).toHaveBeenCalledTimes(2);
     });
 
+    // A web-unblocker proxy answers 421 when its own upstream TLS handshake to
+    // the origin fails, so the origin never processed the request.
+    it('retries on 421 (misdirected request, e.g. proxy upstream TLS failure)', async () => {
+      mockedAxios
+        .mockRejectedValueOnce(err(421))
+        .mockResolvedValueOnce({ data: { ok: true } });
+
+      const result = await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'GET', path: '/' },
+        {},
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(mockedAxios).toHaveBeenCalledTimes(2);
+    });
+
+    // TLS alert while writing — the request never reached the application.
+    it('retries on a TLS-level error (EPROTO)', async () => {
+      mockedAxios
+        .mockRejectedValueOnce(err(undefined, 'EPROTO'))
+        .mockResolvedValueOnce({ data: { ok: true } });
+
+      const result = await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'GET', path: '/' },
+        {},
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(mockedAxios).toHaveBeenCalledTimes(2);
+    });
+
     it('does NOT retry on a 400 client error', async () => {
       mockedAxios.mockRejectedValue(err(400));
 

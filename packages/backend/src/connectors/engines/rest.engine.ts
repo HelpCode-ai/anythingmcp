@@ -247,16 +247,30 @@ export class RestEngine {
   /**
    * Whether an error is a transient failure worth retrying. We only retry on
    * signals that strongly imply the origin did NOT process the request:
-   * 429/502/503/504 responses, or connection-level failures with no response.
-   * This keeps non-idempotent writes safe (a 500 is never retried).
+   * 421/429/502/503/504 responses, or connection-level failures with no
+   * response. This keeps non-idempotent writes safe (a 500 is never retried).
+   *
+   * 421 (Misdirected Request) means the request reached a server that could not
+   * produce a response for the target — RFC 9110 explicitly allows retrying it
+   * on a different connection. Our web-unblocker proxy returns it when its own
+   * upstream TLS handshake to the origin fails, so the origin never saw the
+   * request.
+   *
+   * EPROTO is a TLS-level failure while writing (e.g. the origin or an
+   * intermediary aborts the handshake with an alert). Like the other codes
+   * here, the request never reached the application, so a retry is safe.
    */
   private isTransientError(error: unknown): boolean {
     if (!(error instanceof AxiosError)) return false;
     const status = error.response?.status;
-    if (status) return [429, 502, 503, 504].includes(status);
-    return ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNABORTED'].includes(
-      error.code ?? '',
-    );
+    if (status) return [421, 429, 502, 503, 504].includes(status);
+    return [
+      'ECONNRESET',
+      'ETIMEDOUT',
+      'EAI_AGAIN',
+      'ECONNABORTED',
+      'EPROTO',
+    ].includes(error.code ?? '');
   }
 
   /** Execute the request with a small bounded backoff on transient errors. */
