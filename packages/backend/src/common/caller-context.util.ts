@@ -23,6 +23,16 @@
 /** Prefix marking the reserved, server-resolved namespace. */
 export const CALLER_CONTEXT_PREFIX = 'amcp.';
 
+/**
+ * Matches a reference to a reserved variable, e.g. `{{ amcp.user_email }}`.
+ *
+ * Every quantifier here spans a character class disjoint from what follows it
+ * (`\s`, then non-space/non-brace, then `\s`, then `}}`), so matching is linear.
+ * A looser `\{\{([^}]+)\}\}` would backtrack polynomially on input like
+ * `{{{{{{…` — a ReDoS, and this runs on operator-supplied tool config.
+ */
+const RESERVED_VAR_PATTERN = /\{\{\s*(amcp\.[^{}\s]*)\s*\}\}/g;
+
 /** Identity/context of the MCP caller, as resolved by the auth guard. */
 export interface CallerContext {
   userId?: string;
@@ -67,10 +77,9 @@ export function buildCallerContextVars(
 
 /** True when the string references at least one reserved variable. */
 export function usesCallerContext(value: unknown): boolean {
-  return (
-    typeof value === 'string' &&
-    new RegExp(`\\{\\{\\s*${CALLER_CONTEXT_PREFIX.replace('.', '\\.')}`).test(value)
-  );
+  // Deliberately not RESERVED_VAR_PATTERN: that one is /g, so .test() would
+  // advance lastIndex and make repeated calls return alternating results.
+  return typeof value === 'string' && /\{\{\s*amcp\./.test(value);
 }
 
 /**
@@ -82,14 +91,9 @@ export function findUnknownCallerContextVars(value: unknown): string[] {
   const found = new Set<string>();
   const walk = (node: unknown) => {
     if (typeof node === 'string') {
-      for (const match of node.matchAll(/\{\{([^}]+)\}\}/g)) {
-        const key = match[1].trim();
-        if (
-          key.startsWith(CALLER_CONTEXT_PREFIX) &&
-          !(key in CALLER_CONTEXT_VARIABLES)
-        ) {
-          found.add(key);
-        }
+      for (const match of node.matchAll(RESERVED_VAR_PATTERN)) {
+        const key = match[1];
+        if (!(key in CALLER_CONTEXT_VARIABLES)) found.add(key);
       }
       return;
     }

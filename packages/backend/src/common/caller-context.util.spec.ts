@@ -179,4 +179,26 @@ describe('findUnknownCallerContextVars', () => {
       findUnknownCallerContextVars(['{{amcp.x}}', '{{amcp.x}}']),
     ).toEqual(['amcp.x']);
   });
+
+  it('stays linear on adversarial brace runs', () => {
+    // A looser pattern backtracks polynomially here (ReDoS). This scans
+    // operator-supplied tool config, so it must not be exploitable.
+    const evil = '{{{{'.repeat(20000);
+    const started = Date.now();
+    expect(findUnknownCallerContextVars(evil)).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('tolerates unterminated placeholders', () => {
+    expect(findUnknownCallerContextVars('{{amcp.user_email')).toEqual([]);
+  });
+});
+
+describe('usesCallerContext repeated calls', () => {
+  it('is stateless across calls', () => {
+    // A /g regex reused with .test() would alternate true/false.
+    const v = '{{amcp.user_email}}';
+    expect(usesCallerContext(v)).toBe(true);
+    expect(usesCallerContext(v)).toBe(true);
+  });
 });
