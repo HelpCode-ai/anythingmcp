@@ -197,6 +197,27 @@ cd packages/backend && node dist/main.js
 cd packages/frontend && npm start
 ```
 
+### With GitHub Actions (CI/CD — Railway)
+
+Push to `main` to trigger an automated deploy via GitHub Actions:
+
+1. **Connect the repo** in your [Railway dashboard](https://railway.app) — link `hillstreet-ph/open-hide` to the project `238354fb-7b1b-4817-a00a-ec3f5ce72ab0`.
+2. **Add `RAILWAY_TOKEN`** as a GitHub repository secret (`Settings` → `Secrets and variables` → `Actions`). Obtain the token from [Railway](https://railway.com/api).
+3. Push to `main`:
+
+```bash
+git add .
+git commit -m "deploy: update application"
+git push origin main
+```
+
+The workflow in `.github/workflows/deploy-railway.yml` will automatically:
+- Install the Railway CLI
+- Run `railway up --force` to build and deploy the container
+- Scale and health-check the deployment using the settings in `railway.json`
+
+> **Note:** You can also trigger a manual deploy from the **Actions** tab in GitHub via the `Deploy to Railway` workflow.
+
 ---
 
 ## Reverse Proxy & HTTPS
