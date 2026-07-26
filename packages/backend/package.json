@@ -1,7 +1,7 @@
 {
-  "name": "@anythingmcp/backend",
+  "name": "@open-hide/backend",
   "version": "0.3.6",
-  "description": "AnythingMCP — NestJS Backend + Dynamic MCP Server",
+  "description": "Open-Hide — NestJS Backend + Dynamic MCP Server",
   "private": true,
   "license": "AGPL-3.0-only",
   "scripts": {

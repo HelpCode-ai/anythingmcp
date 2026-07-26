@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — turn any API, database or MCP server into custom connectors for Claude, ChatGPT, Gemini, Copilot and Cursor." width="100%" />
+  <img src="docs/assets/banner.png" alt="Open-Hide — turn any API, database or MCP server into custom connectors for Claude, ChatGPT, Gemini, Copilot and Cursor." width="100%" />
 </p>
 
-<h1 align="center">AnythingMCP</h1>
+<h1 align="center">Open-Hide</h1>
 
 <p align="center">
   <strong>Turn any API, database or MCP server into custom connectors for Claude, ChatGPT and more — no code.</strong><br/>
@@ -10,47 +10,23 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=flat&logo=github&logoColor=white&color=2563eb&labelColor=0b1220" alt="GitHub Stars"></a>
-  <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
-  <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2563eb?labelColor=0b1220" alt="License"></a>
+  <a href="https://github.com/hillstreet-ph/open-hide/stargazers"><img src="https://img.shields.io/github/stars/hillstreet-ph/open-hide?style=flat&logo=github&logoColor=white&color=2563eb&labelColor=0b1220" alt="GitHub Stars"></a>
+  <a href="https://github.com/hillstreet-ph/open-hide/releases"><img src="https://img.shields.io/github/v/release/hillstreet-ph/open-hide?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
+  <a href="https://github.com/hillstreet-ph/open-hide/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2563eb?labelColor=0b1220" alt="License"></a>
   <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/badge/docker-ready-2563eb?logo=docker&logoColor=white&labelColor=0b1220" alt="Docker Ready"></a>
-  <a href="https://github.com/HelpCode-ai/anythingmcp/commits/main"><img src="https://img.shields.io/github/last-commit/HelpCode-ai/anythingmcp?color=2563eb&labelColor=0b1220" alt="Last Commit"></a>
-  <a href="https://glama.ai/mcp/servers/HelpCode-ai/anythingmcp"><img src="https://glama.ai/mcp/servers/HelpCode-ai/anythingmcp/badges/score.svg" alt="anythingmcp MCP server"></a>
+  <a href="https://github.com/hillstreet-ph/open-hide/commits/main"><img src="https://img.shields.io/github/last-commit/hillstreet-ph/open-hide?color=2563eb&labelColor=0b1220" alt="Last Commit"></a>
+  <a href="https://glama.ai/mcp/servers/hillstreet-ph/open-hide"><img src="https://glama.ai/mcp/servers/hillstreet-ph/open-hide/badges/score.svg" alt="open-hide MCP server"></a>
 </p>
 
 <p align="center">
-  <a href="https://cloud.anythingmcp.com"><strong>Try on Cloud →</strong></a> &nbsp;·&nbsp;
-  <a href="https://anythingmcp.com/en/video-promo"><strong>Watch 90-sec demo →</strong></a> &nbsp;·&nbsp;
-  <a href="https://anythingmcp.com/guides"><strong>Setup guides →</strong></a>
+  <a href="https://cloud.open-hide.com"><strong>Try on Cloud →</strong></a> &nbsp;·&nbsp;
+  <a href="https://open-hide.com/en/video-promo"><strong>Watch 90-sec demo →</strong></a> &nbsp;·&nbsp;
+  <a href="https://open-hide.com/guides"><strong>Setup guides →</strong></a>
 </p>
-
-**AnythingMCP** is a self-hosted, open-source **smart, AI-empowered MCP gateway** and **MCP server** that turns the systems you already run into [Model Context Protocol](https://modelcontextprotocol.io/) tools — **REST and SOAP APIs, GraphQL, SQL & NoSQL databases, and even other MCP servers**. Import a spec or point it at a database, and expose it as a **custom connector** to **Claude**, **ChatGPT**, **Gemini**, **Copilot**, **Cursor** and any MCP-compatible client. No SDK, no code changes — point, configure, connect.
-
-It ships with **175+ ready-to-use adapters** — including **Deutsche Bahn**, **weclapp ERP**, **Etsy**, **Shopware**, **DHL** and **Sendcloud** — so the most common integrations work in one click, while the visual editor and import tools (OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL) let you wrap any other API or database in minutes.
-
-What makes it **smart**, not just a pipe: AnythingMCP builds a per-workspace **Knowledge Graph** of how your connectors' data relates, serves it back to the agent over MCP so it chains tools correctly across systems, and turns how your tools are actually used into reusable **AI skills**. A plain gateway forwards calls; AnythingMCP gives your agents the context to use them well. *(All AI features are optional and opt-in — the gateway works fully without them.)*
-
-https://github.com/user-attachments/assets/2ae92f90-7012-4c00-8836-bae5a6422ca6
 
 <p align="center">
-  <em>90-second demo — <a href="https://anythingmcp.com/demo.mp4">direct link</a> if the player doesn't load.</em>
+  <em>90-second demo — <a href="https://open-hide.com/demo.mp4">direct link</a> if the player doesn't load.</em>
 </p>
-
-<details>
-<summary><strong>📖 Table of contents</strong></summary>
-
-- [Get started in 60 seconds](#get-started-in-60-seconds)
-- [Key features](#key-features)
-- [Knowledge Graph &amp; AI skills](#knowledge-graph--ai-skills)
-- [Build custom Claude connectors — no code](#build-custom-claude-connectors--no-code)
-- [Turn your API into a ChatGPT app](#turn-your-api-into-a-chatgpt-app)
-- [Why AnythingMCP](#why-anythingmcp)
-- [Pre-configured MCP connectors](#pre-configured-mcp-connectors)
-- [Guides, client setup &amp; FAQ](#guides-client-setup--faq)
-- [Community &amp; support](#community--support)
-- [License](#license)
-
-</details>
 
 ---
 
@@ -59,8 +35,8 @@ https://github.com/user-attachments/assets/2ae92f90-7012-4c00-8836-bae5a6422ca6
 > **Requires** Docker 24+, `bash`, `openssl`. On macOS, start Docker Desktop first.
 
 ```bash
-git clone https://github.com/HelpCode-ai/anythingmcp.git
-cd anythingmcp && ./setup.sh
+git clone https://github.com/hillstreet-ph/open-hide.git
+cd open-hide && ./setup.sh
 # When setup finishes, open http://localhost:3000 and register
 # the first user — they automatically become the admin.
 ```
@@ -140,7 +116,7 @@ MCP tool work with no LLM key at all.
 
 ## Build custom Claude connectors — no code
 
-Claude supports **custom connectors**: remote MCP servers you add once in *Settings → Connectors*, and that work across Claude.ai, Claude Desktop and Claude Code. AnythingMCP creates that connector **from any API you already have** — without writing an MCP server:
+Claude supports **custom connectors**: remote MCP servers you add once in *Settings → Connectors*, and that work across Claude.ai, Claude Desktop and Claude Code. Open-Hide creates that connector **from any API you already have** — without writing an MCP server:
 
 1. Import your API spec (OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL introspection) or pick a pre-built adapter
 2. Adjust tool names, descriptions and parameters in the **visual editor** — what the AI sees is up to you
@@ -152,15 +128,15 @@ Your credentials stay on your infrastructure (AES-256-GCM at rest), every tool c
 
 ## Turn your API into a ChatGPT app
 
-**Apps in ChatGPT — what OpenAI renamed connectors to in December 2025 — are built on MCP**, and AnythingMCP gives you that MCP backend without writing one. Point it at your REST, SOAP, GraphQL or database endpoint and you get a ChatGPT-ready connector: add it in ChatGPT's settings (or use it as the tool layer of an Apps SDK app) and ChatGPT can read and act on your business data.
+**Apps in ChatGPT — what OpenAI renamed connectors to in December 2025 — are built on MCP**, and Open-Hide gives you that MCP backend without writing one. Point it at your REST, SOAP, GraphQL or database endpoint and you get a ChatGPT-ready connector: add it in ChatGPT's settings (or use it as the tool layer of an Apps SDK app) and ChatGPT can read and act on your business data.
 
 The same connector works simultaneously in **Claude, ChatGPT, Gemini, Copilot and Cursor** — build once, connect everywhere. [ChatGPT setup guide →](docs/integrations/chatgpt.md)
 
 ---
 
-## Why AnythingMCP
+## Why Open-Hide
 
-AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writing and maintaining a bespoke MCP server per system — with auth, audit and access control — takes weeks each. AnythingMCP is the no-code layer in between:
+AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writing and maintaining a bespoke MCP server per system — with auth, audit and access control — takes weeks each. Open-Hide is the no-code layer in between:
 
 | Problem | Solution |
 |---|---|
@@ -172,13 +148,13 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 | You can't ship credentials to a SaaS gateway | **Runs on your infrastructure** — credentials AES-256-GCM at rest |
 | You need auth, audit logs, and RBAC | Built-in **OAuth2, audit log, and role-based access** — no DIY |
 
-**Typical use cases** — search train schedules and live delays with [Deutsche Bahn](https://anythingmcp.com/guides/deutsche-bahn-to-mcp) · talk to your ERP from Claude ([weclapp](https://anythingmcp.com/guides/weclapp-erp-to-mcp), [Xentral](https://anythingmcp.com/guides/xentral-to-mcp)) · track parcels with AI ([DHL](https://anythingmcp.com/guides/dhl-tracking-to-mcp), [GLS](https://anythingmcp.com/guides/gls-tracking-to-mcp)) · validate invoices ([VIES VAT](https://anythingmcp.com/guides/vies-vat-to-mcp), [Handelsregister](https://anythingmcp.com/guides/handelsregister-to-mcp)) · let agents query production databases safely · bridge legacy SOAP to modern AI · import a Postman collection and get MCP tools instantly.
+**Typical use cases** — search train schedules and live delays with [Deutsche Bahn](https://open-hide.com/guides/deutsche-bahn-to-mcp) · talk to your ERP from Claude ([weclapp](https://open-hide.com/guides/weclapp-erp-to-mcp), [Xentral](https://open-hide.com/guides/xentral-to-mcp)) · track parcels with AI ([DHL](https://open-hide.com/guides/dhl-tracking-to-mcp), [GLS](https://open-hide.com/guides/gls-tracking-to-mcp)) · validate invoices ([VIES VAT](https://open-hide.com/guides/vies-vat-to-mcp), [Handelsregister](https://open-hide.com/guides/handelsregister-to-mcp)) · let agents query production databases safely · bridge legacy SOAP to modern AI · import a Postman collection and get MCP tools instantly.
 
 ---
 
 ## Pre-configured MCP connectors
 
-AnythingMCP ships with **175+ ready-to-use adapters** — provide your API credentials at import time and the tools become available immediately. Every adapter has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides) (English, German, Italian).
+Open-Hide ships with **175+ ready-to-use adapters** — provide your API credentials at import time and the tools become available immediately. Every adapter has a setup guide on [open-hide.com/guides](https://open-hide.com/guides) (English, German, Italian).
 
 | Category | Examples |
 |---|---|
@@ -200,17 +176,17 @@ Connecting an AI client, the connector types you can build, full documentation a
 
 ➡️ **[docs/guides.md](docs/guides.md)** — Claude / ChatGPT / Gemini / Copilot / Cursor setup · REST / SOAP / GraphQL / Database / MCP-bridge connector guides · API reference & deployment docs · FAQ.
 
-Looking for a specific service? Every adapter has a step-by-step guide at **[anythingmcp.com/guides](https://anythingmcp.com/guides)**.
+Looking for a specific service? Every adapter has a step-by-step guide at **[open-hide.com/guides](https://open-hide.com/guides)**.
 
 ---
 
 ## Community &amp; support
 
-- 💬 **Questions &amp; discussions** — [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions) — vote on the next adapter, share what you've built
-- 🐛 **Bugs / 💡 features** — [Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · 🆘 [SUPPORT.md](SUPPORT.md)
-- 🏢 Built by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany — AnythingMCP was extracted from a production system connecting AI agents to 15+ legacy systems (ERP, CRM, SOAP, on-prem databases) in a German industrial group, and open-sourced because the catalog grows faster as a community. AI-assisted development, human-reviewed: see [AUTHORS.md](AUTHORS.md).
+- 💬 **Questions &amp; discussions** — [GitHub Discussions](https://github.com/hillstreet-ph/open-hide/discussions) — vote on the next adapter, share what you've built
+- 🐛 **Bugs / 💡 features** — [Issues](https://github.com/hillstreet-ph/open-hide/issues) · 🆘 [SUPPORT.md](SUPPORT.md)
+- 🏢 Built by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany — Open-Hide was extracted from a production system connecting AI agents to 15+ legacy systems (ERP, CRM, SOAP, on-prem databases) in a German industrial group, and open-sourced because the catalog grows faster as a community. AI-assisted development, human-reviewed: see [AUTHORS.md](AUTHORS.md).
 
-> ⭐ **Like what you see?** [Star this repo](https://github.com/HelpCode-ai/anythingmcp/stargazers) — every star helps another developer discover AnythingMCP.
+> ⭐ **Like what you see?** [Star this repo](https://github.com/hillstreet-ph/open-hide/stargazers) — every star helps another developer discover Open-Hide.
 
 ## Contributing
 
@@ -218,4 +194,4 @@ We welcome contributions! Please read our [Contributing guide](CONTRIBUTING.md) 
 
 ## License
 
-AnythingMCP is **open source**, licensed under the [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Cloud-operator code under `ee/` directories is separately licensed and is not required for self-hosting — see the [License FAQ](docs/license-faq.md).
+Open-Hide is **open source**, licensed under the [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Cloud-operator code under `ee/` directories is separately licensed and is not required for self-hosting — see the [License FAQ](docs/license-faq.md).

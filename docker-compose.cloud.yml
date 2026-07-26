@@ -1,18 +1,18 @@
 # =============================================================================
-# AnythingMCP Cloud — Managed SaaS Deployment
+# Open-Hide Cloud — Managed SaaS Deployment
 # =============================================================================
 # Usage:  docker compose -f docker-compose.cloud.yml up -d
-# Domain: cloud.anythingmcp.com
+# Domain: cloud.open-hide.com
 # =============================================================================
 
-name: amcp-cloud
+name: oh-cloud
 
 services:
 
   # Caddy Reverse Proxy — automatic HTTPS via Let's Encrypt
   caddy:
     image: caddy:2-alpine
-    container_name: amcp-cloud-caddy
+    container_name: oh-cloud-caddy
     ports:
       - "80:80"
       - "443:443"
@@ -29,8 +29,8 @@ services:
 
   # NestJS Backend + Next.js Frontend (single container)
   app:
-    image: helpcodeai/anythingmcp:latest
-    container_name: amcp-cloud-app
+    image: hillstreetph/open-hide:latest
+    container_name: oh-cloud-app
     expose:
       - "3000"
       - "4000"
@@ -39,7 +39,7 @@ services:
       - PORT=4000
       - DEPLOYMENT_MODE=cloud
       - NEXT_PUBLIC_API_URL=https://${DOMAIN}
-      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
+      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/open-hide
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
@@ -61,7 +61,7 @@ services:
       # `-32001 Session not found` errors Copilot hits against stateful servers.
       - MCP_STREAMABLE_JSON_RESPONSE=${MCP_STREAMABLE_JSON_RESPONSE:-true}
       - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-true}
-      - LICENSE_API_URL=${LICENSE_API_URL:-https://anythingmcp.com}
+      - LICENSE_API_URL=${LICENSE_API_URL:-https://open-hide.com}
       # Operator analytics — cloud build only. Leave unset on self-hosted.
       - GTM_ID=${GTM_ID:-}
       - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
@@ -118,15 +118,15 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:17-alpine
-    container_name: amcp-cloud-postgres
+    container_name: oh-cloud-postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=amcp
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=anythingmcp
+      - POSTGRES_DB=open-hide
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U amcp -d anythingmcp"]
+      test: ["CMD-SHELL", "pg_isready -U amcp -d open-hide"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -135,7 +135,7 @@ services:
   # Redis Cache — caching & rate limiting
   redis:
     image: redis:7-alpine
-    container_name: amcp-cloud-redis
+    container_name: oh-cloud-redis
     volumes:
       - redis_data:/data
     healthcheck:
@@ -147,7 +147,7 @@ services:
 
   # db-rest — self-hosted Deutsche Bahn REST wrapper (derhuerst/db-rest).
   # INTERNAL ONLY: deliberately NO `ports:` mapping → reachable solely as
-  # http://db-rest:3000 from the app over the amcp-cloud_default network, never
+  # http://db-rest:3000 from the app over the oh-cloud_default network, never
   # from the internet. The deutsche-bahn connector ships pointing at the public
   # v6.db.transport.rest; in cloud the app rewrites the host to this service via
   # DB_REST_INTERNAL_URL. Do NOT add a `ports:` entry or a Caddy route.
@@ -157,8 +157,8 @@ services:
     # persists across deploys and is only rebuilt when the Dockerfile changes.
     build:
       context: ./deploy/cloud/db-rest
-    image: anythingmcp-db-rest:6.10.12
-    container_name: amcp-cloud-db-rest
+    image: open-hide-db-rest:6.10.12
+    container_name: oh-cloud-db-rest
     expose:
       - "3000"
     environment:

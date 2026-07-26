@@ -1,5 +1,5 @@
 # =============================================================================
-# AnythingMCP — Full Stack Deployment (Single Container)
+# Open-Hide — Full Stack Deployment (Single Container)
 # =============================================================================
 # Usage:  docker compose up -d
 # UI:     http://localhost:3000
@@ -9,8 +9,8 @@
 
 # Project name — also the prefix for the auto-created network and volumes.
 # Override COMPOSE_PROJECT_NAME (in .env or the environment) to run more than
-# one AnythingMCP stack on the same host without name collisions.
-name: ${COMPOSE_PROJECT_NAME:-amcp}
+# one Open-Hide stack on the same host without name collisions.
+name: ${COMPOSE_PROJECT_NAME:-oh}
 
 services:
 
@@ -19,7 +19,7 @@ services:
   caddy:
     image: caddy:2-alpine
     profiles: ["proxy"]
-    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-caddy
+    container_name: ${COMPOSE_PROJECT_NAME:-oh}-caddy
     ports:
       - "80:80"
       - "443:443"
@@ -34,11 +34,11 @@ services:
 
   # NestJS Backend + Next.js Frontend (single container)
   app:
-    image: helpcodeai/anythingmcp:latest
+    image: hillstreetph/open-hide:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-app
+    container_name: ${COMPOSE_PROJECT_NAME:-oh}-app
     # Bind published ports to loopback by default so the API/MCP endpoint is
     # not exposed on every network interface out of the box. To reach it from
     # the LAN or the public internet, set APP_BIND_IP=0.0.0.0 in .env (and put
@@ -51,7 +51,7 @@ services:
       - NODE_ENV=production
       - PORT=4000
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000}
-      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD:-amcp}@postgres:5432/anythingmcp
+      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD:-amcp}@postgres:5432/open-hide
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production-min-32-chars}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-in-production-exactly-32}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
@@ -87,15 +87,15 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:17-alpine
-    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-postgres
+    container_name: ${COMPOSE_PROJECT_NAME:-oh}-postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=amcp
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-amcp}
-      - POSTGRES_DB=anythingmcp
+      - POSTGRES_DB=open-hide
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U amcp -d anythingmcp"]
+      test: ["CMD-SHELL", "pg_isready -U amcp -d open-hide"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -104,7 +104,7 @@ services:
   # Redis Cache (optional — uncomment to enable response caching and rate limiting)
   # redis:
   #   image: redis:7-alpine
-  #   container_name: ${COMPOSE_PROJECT_NAME:-amcp}-redis
+  #   container_name: ${COMPOSE_PROJECT_NAME:-oh}-redis
   #   volumes:
   #     - redis_data:/data
   #   healthcheck:
