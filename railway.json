@@ -16,9 +16,9 @@
     {
       "name": "app",
       "description": "AnythingMCP — NestJS Backend + Next.js Frontend",
-      "icon": "https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/packages/frontend/public/logo.svg",
+      "icon": "https://raw.githubusercontent.com/hillstreet-ph/open-hide/main/packages/frontend/public/logo.svg",
       "source": {
-        "repo": "HelpCode-ai/anythingmcp"
+        "repo": "hillstreet-ph/open-hide"
       },
       "build": {
         "builder": "DOCKERFILE",

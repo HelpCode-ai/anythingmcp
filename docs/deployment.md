@@ -15,7 +15,7 @@ The fastest way to get AnythingMCP running — no local setup required:
 | **Railway** | [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic) |
 | **DigitalOcean Marketplace** | [![Install on DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://marketplace.digitalocean.com/apps/anythingmcp) |
 
-- **Railway** builds the container and provisions a managed PostgreSQL database automatically. Fill in the environment variables and click Deploy.
+- **Railway** builds the container and provisions a managed PostgreSQL database automatically. Fill in the environment variables and click Deploy. For automated CI/CD, see the [GitHub Actions section](#with-github-actions-cicd---railway) below.
 - **DigitalOcean Marketplace** creates a pre-configured Droplet with AnythingMCP installed. Choose your droplet size and region, then open the droplet IP in your browser.
 
 In both cases, the first user to register becomes **Admin**.
@@ -196,6 +196,27 @@ cd packages/backend && npx prisma migrate deploy
 cd packages/backend && node dist/main.js
 cd packages/frontend && npm start
 ```
+
+### With GitHub Actions (CI/CD — Railway)
+
+Push to `main` to trigger an automated deploy via GitHub Actions:
+
+1. **Connect the repo** in your [Railway dashboard](https://railway.app) — link `hillstreet-ph/open-hide` to the project `238354fb-7b1b-4817-a00a-ec3f5ce72ab0`.
+2. **Add `RAILWAY_TOKEN`** as a GitHub repository secret (`Settings` → `Secrets and variables` → `Actions`). Obtain the token from [Railway](https://railway.com/api).
+3. Push to `main`:
+
+```bash
+git add .
+git commit -m "deploy: update application"
+git push origin main
+```
+
+The workflow in `.github/workflows/deploy-railway.yml` will automatically:
+- Install the Railway CLI
+- Run `railway up --force` to build and deploy the container
+- Scale and health-check the deployment using the settings in `railway.json`
+
+> **Note:** You can also trigger a manual deploy from the **Actions** tab in GitHub via the `Deploy to Railway` workflow.
 
 ---
 
