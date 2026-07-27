@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConnectorsController } from './connectors.controller';
 
 const VALID_ENCRYPTION_KEY = 'a'.repeat(48);
@@ -110,6 +110,154 @@ describe('ConnectorsController role enforcement', () => {
       });
 
       expect(prisma.connector.create).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+describe('OAuth2 config endpoints', () => {
+  const oauthConnector = (over: Record<string, unknown> = {}) => ({
+    id: 'c1',
+    type: 'REST',
+    authType: 'OAUTH2',
+    userId: 'u1',
+    organizationId: 'org1',
+    ...over,
+  });
+
+  const build = (connector: any) =>
+    buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(connector),
+        updateAuthConfigMerge: jest.fn().mockResolvedValue(connector),
+      },
+    });
+
+  describe('PATCH :id/oauth-config', () => {
+    it('merges only the fields that were sent', async () => {
+      // A partial edit must not blank the rest of the config — the stored
+      // tokens and endpoints live in the same object.
+      const { controller, connectorsService } = build(oauthConnector());
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', {
+        tokenAuthMethod: 'client_secret_basic',
+      });
+
+      expect(connectorsService.updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+        tokenAuthMethod: 'client_secret_basic',
+      });
+    });
+
+    it('passes client credentials through when supplied', async () => {
+      const { controller, connectorsService } = build(oauthConnector());
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', {
+        clientId: 'public-client',
+        clientSecret: 'public',
+        tokenAuthMethod: 'client_secret_basic',
+      });
+
+      expect(connectorsService.updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+        clientId: 'public-client',
+        clientSecret: 'public',
+        tokenAuthMethod: 'client_secret_basic',
+      });
+    });
+
+    it('resets to the default when the auth method is cleared', async () => {
+      const { controller, connectorsService } = build(oauthConnector());
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', {
+        tokenAuthMethod: '',
+      });
+
+      expect(connectorsService.updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+        tokenAuthMethod: undefined,
+      });
+    });
+
+    it('does not write anything when the body is empty', async () => {
+      const { controller, connectorsService } = build(oauthConnector());
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', {});
+
+      expect(connectorsService.updateAuthConfigMerge).not.toHaveBeenCalled();
+    });
+
+    it('rejects connectors that do not use OAuth2', async () => {
+      const { controller, connectorsService } = build(
+        oauthConnector({ authType: 'BEARER_TOKEN' }),
+      );
+
+      await expect(
+        controller.updateOAuthConfig(req('ADMIN'), 'c1', {
+          tokenAuthMethod: 'client_secret_basic',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(connectorsService.updateAuthConfigMerge).not.toHaveBeenCalled();
+    });
+
+    it('rejects VIEWER', async () => {
+      const { controller, connectorsService } = build(oauthConnector());
+
+      await expect(
+        controller.updateOAuthConfig(req('VIEWER'), 'c1', {
+          tokenAuthMethod: 'client_secret_basic',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(connectorsService.updateAuthConfigMerge).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET :id/oauth-config', () => {
+    it('never returns the client secret or the issued tokens', async () => {
+      const { encrypt } = require('../common/crypto/encryption.util');
+      const authConfig = encrypt(
+        JSON.stringify({
+          clientId: 'public-client',
+          clientSecret: 'public',
+          tokenUrl: 'https://example.invalid/token',
+          tokenAuthMethod: 'client_secret_basic',
+          accessToken: 'at',
+          refreshToken: 'rt',
+        }),
+        VALID_ENCRYPTION_KEY,
+      );
+      const { controller } = build(oauthConnector({ authConfig }));
+
+      const result = await controller.getOAuthConfig(req('ADMIN'), 'c1');
+
+      expect(result).toMatchObject({
+        clientId: 'public-client',
+        tokenUrl: 'https://example.invalid/token',
+        tokenAuthMethod: 'client_secret_basic',
+        hasClientSecret: true,
+        hasAccessToken: true,
+        hasRefreshToken: true,
+      });
+      expect(JSON.stringify(result)).not.toContain('public"');
+      expect(JSON.stringify(result)).not.toContain('"at"');
+      expect(JSON.stringify(result)).not.toContain('"rt"');
+    });
+
+    it('reports the default auth method when none is stored', async () => {
+      const { controller } = build(oauthConnector({ authConfig: null }));
+
+      const result = await controller.getOAuthConfig(req('ADMIN'), 'c1');
+
+      expect(result.tokenAuthMethod).toBe('client_secret_post');
+      expect(result.hasClientSecret).toBe(false);
+    });
+
+    it('degrades gracefully when the stored config cannot be decrypted', async () => {
+      // e.g. after an encryption-key rotation — the page must still load.
+      const { controller } = build(oauthConnector({ authConfig: 'not-decryptable' }));
+
+      const result = await controller.getOAuthConfig(req('ADMIN'), 'c1');
+
+      expect(result.clientId).toBe('');
+      expect(result.tokenAuthMethod).toBe('client_secret_post');
     });
   });
 });
