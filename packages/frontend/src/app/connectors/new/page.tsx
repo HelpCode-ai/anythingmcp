@@ -48,6 +48,9 @@ export default function NewConnectorPage() {
   const [oauthAuthUrl, setOauthAuthUrl] = useState('');
   const [oauthTokenUrl, setOauthTokenUrl] = useState('');
   const [oauthScopes, setOauthScopes] = useState('');
+  // How client credentials reach the token endpoint. Some providers (Datto RMM,
+  // DATEV) reject body-supplied credentials and require an HTTP Basic header.
+  const [oauthTokenAuthMethod, setOauthTokenAuthMethod] = useState('client_secret_post');
   // LOGIN_TOKEN (credentials → short-lived token, auto-refreshed) fields
   const [ltLoginUrl, setLtLoginUrl] = useState('');
   const [ltMethod, setLtMethod] = useState('POST');
@@ -107,6 +110,10 @@ export default function NewConnectorPage() {
             authorizationUrl: oauthAuthUrl,
             tokenUrl: oauthTokenUrl,
             scopes: oauthScopes || undefined,
+            tokenAuthMethod:
+              oauthTokenAuthMethod === 'client_secret_basic'
+                ? 'client_secret_basic'
+                : undefined,
           };
         }
         return undefined;
@@ -406,6 +413,21 @@ export default function NewConnectorPage() {
                   <div>
                     <label className={labelClass}>Scopes</label>
                     <input type="text" value={oauthScopes} onChange={(e) => setOauthScopes(e.target.value)} placeholder="read write (space-separated, optional)" className={cn(inputClass, 'font-mono text-[13px]')} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Token endpoint authentication</label>
+                    <select
+                      value={oauthTokenAuthMethod}
+                      onChange={(e) => setOauthTokenAuthMethod(e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="client_secret_post">Client secret in body (default)</option>
+                      <option value="client_secret_basic">HTTP Basic header (client_secret_basic)</option>
+                    </select>
+                    <p className="mt-1 text-xs text-[var(--text-3)]">
+                      Switch to HTTP Basic if the provider returns 401 when exchanging the
+                      code — Datto RMM and DATEV both require it. Applies to token refreshes too.
+                    </p>
                   </div>
                   <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-sm text-[var(--t-info-fg)]">
                     <p>After creating the connector, you will be redirected to authorize via OAuth2. Tokens will be stored securely.</p>

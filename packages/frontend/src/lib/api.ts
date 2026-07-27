@@ -187,6 +187,39 @@ export const connectors = {
     request<any>(`/api/connectors/${id}`, { token }),
   update: (id: string, data: unknown, token: string) =>
     request(`/api/connectors/${id}`, { method: 'PUT', body: data, token }),
+  /** Non-secret OAuth2 settings, for pre-filling the edit form. */
+  getOAuthConfig: (id: string, token: string) =>
+    request<{
+      clientId: string;
+      authorizationUrl: string;
+      tokenUrl: string;
+      scopes: string;
+      tokenAuthMethod: string;
+      hasClientSecret: boolean;
+      hasAccessToken: boolean;
+      hasRefreshToken: boolean;
+    }>(`/api/connectors/${id}/oauth-config`, { token }),
+  /**
+   * Partial update of the OAuth2 settings. Merges server-side, so editing one
+   * field keeps the stored tokens and the rest of the configuration intact.
+   */
+  updateOAuthConfig: (
+    id: string,
+    data: {
+      clientId?: string;
+      clientSecret?: string;
+      authorizationUrl?: string;
+      tokenUrl?: string;
+      scopes?: string;
+      tokenAuthMethod?: string;
+    },
+    token: string,
+  ) =>
+    request<{ message: string }>(`/api/connectors/${id}/oauth-config`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
   delete: (id: string, token: string) =>
     request(`/api/connectors/${id}`, { method: 'DELETE', token }),
   test: (id: string, token: string) =>

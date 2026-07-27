@@ -55,6 +55,8 @@ export default function ConnectorDetailPage() {
   const [editAuthType, setEditAuthType] = useState('NONE');
   const [editAuthKey, setEditAuthKey] = useState('');
   const [editAuthValue, setEditAuthValue] = useState('');
+  // OAuth2 only: how client credentials reach the token endpoint.
+  const [editTokenAuthMethod, setEditTokenAuthMethod] = useState('client_secret_post');
   // LOGIN_TOKEN (credentials → short-lived token, auto-refreshed) fields
   const [editLtLoginUrl, setEditLtLoginUrl] = useState('');
   const [editLtMethod, setEditLtMethod] = useState('POST');
@@ -121,6 +123,15 @@ export default function ConnectorDetailPage() {
       // Don't pre-fill credentials — they are encrypted on the server
       setEditAuthKey('');
       setEditAuthValue('');
+      // The auth method is not secret, so it can be shown. Without this the
+      // select would always read "body" and saving any other field would
+      // silently reset a connector configured for HTTP Basic.
+      if (c.authType === 'OAUTH2' && c.type !== 'MCP') {
+        connectors
+          .getOAuthConfig(id, token)
+          .then((r) => setEditTokenAuthMethod(r.tokenAuthMethod || 'client_secret_post'))
+          .catch(() => setEditTokenAuthMethod('client_secret_post'));
+      }
       // authConfig is encrypted server-side, so LOGIN_TOKEN fields start empty;
       // headers are stored in the clear and can be pre-filled for editing.
       setEditLtPassword('');
@@ -224,6 +235,22 @@ export default function ConnectorDetailPage() {
         data.config = { readOnly: editDbReadOnly };
       }
       await connectors.update(id, data, token);
+
+      // OAuth2 credentials live in authConfig alongside the issued tokens, so
+      // they are patched separately (a full write would discard the tokens and
+      // the endpoints captured during authorization).
+      if (editAuthType === 'OAUTH2' && connector.type !== 'MCP') {
+        const oauthPatch: Record<string, string> = {
+          tokenAuthMethod:
+            editTokenAuthMethod === 'client_secret_basic'
+              ? 'client_secret_basic'
+              : '',
+        };
+        if (editAuthKey) oauthPatch.clientId = editAuthKey;
+        if (editAuthValue) oauthPatch.clientSecret = editAuthValue;
+        await connectors.updateOAuthConfig(id, oauthPatch, token);
+      }
+
       setMsg('Connector updated');
       setEditing(false);
       fetchConnector();
@@ -761,6 +788,21 @@ export default function ConnectorDetailPage() {
                       <label className="block text-sm font-medium mb-1">Client Secret</label>
                       <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Token endpoint authentication</label>
+                    <select
+                      value={editTokenAuthMethod}
+                      onChange={(e) => setEditTokenAuthMethod(e.target.value)}
+                      className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                    >
+                      <option value="client_secret_post">Client secret in body (default)</option>
+                      <option value="client_secret_basic">HTTP Basic header (client_secret_basic)</option>
+                    </select>
+                    <p className="mt-1 text-xs text-[var(--text-3)]">
+                      Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM
+                      and DATEV require it. Applies to refreshes too. Re-authorize after changing it.
+                    </p>
                   </div>
                   <p className="text-xs text-[var(--text-3)]">
                     Leave credential fields empty to keep the current values. Authorization URL, Token URL, and Scopes are preserved from initial setup.

@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -11,6 +12,7 @@ import {
   UseGuards,
   Logger,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -23,6 +25,7 @@ import {
   IsObject,
   IsBoolean,
   IsArray,
+  IsIn,
   ValidateNested,
   ArrayMinSize,
 } from 'class-validator';
@@ -219,6 +222,49 @@ class UpdateConnectorDto {
   @IsOptional()
   @IsString()
   instructions?: string;
+}
+
+class UpdateOAuthConfigDto {
+  @ApiPropertyOptional({ description: 'OAuth2 client id.' })
+  @IsOptional()
+  @IsString()
+  clientId?: string;
+
+  @ApiPropertyOptional({ description: 'OAuth2 client secret.' })
+  @IsOptional()
+  @IsString()
+  clientSecret?: string;
+
+  @ApiPropertyOptional({ description: 'Authorization endpoint.' })
+  @IsOptional()
+  @IsString()
+  authorizationUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Token endpoint.' })
+  @IsOptional()
+  @IsString()
+  tokenUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Space-separated scopes.' })
+  @IsOptional()
+  @IsString()
+  scopes?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'How client credentials are presented to the token endpoint. ' +
+      '`client_secret_post` (default) sends them in the request body; ' +
+      '`client_secret_basic` sends them as an HTTP Basic header (RFC 6749 ' +
+      '§2.3.1). Providers such as Datto RMM and DATEV reject body-supplied ' +
+      'credentials with 401 and require basic. Applies to both the initial ' +
+      'authorization-code exchange and later token refreshes. Empty string ' +
+      'resets to the default.',
+    enum: ['', 'client_secret_post', 'client_secret_basic', 'basic', 'post'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['', 'client_secret_post', 'client_secret_basic', 'basic', 'post'])
+  tokenAuthMethod?: string;
 }
 
 class ImportToolsDto {
@@ -623,6 +669,89 @@ export class ConnectorsController {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
     return this.connectorsService.update(id, dto);
+  }
+
+  @Get(':id/oauth-config')
+  @ApiOperation({
+    summary: 'Read the non-secret OAuth2 settings of a connector',
+    description:
+      'Returns the endpoints, client id and token-endpoint auth method so the ' +
+      'UI can show the current configuration. The client secret and the issued ' +
+      'tokens are never returned — only booleans saying whether they are set.',
+  })
+  async getOAuthConfig(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertOrgMatch(connector, req);
+
+    let cfg: Record<string, unknown> = {};
+    if (connector.authConfig) {
+      try {
+        cfg = JSON.parse(decrypt(connector.authConfig, this.encryptionKey));
+      } catch {
+        // Unreadable config (e.g. rotated key) — report it as empty rather
+        // than failing the page load.
+      }
+    }
+    const str = (v: unknown) => (typeof v === 'string' ? v : '');
+    return {
+      clientId: str(cfg.clientId),
+      authorizationUrl: str(cfg.authorizationUrl),
+      tokenUrl: str(cfg.tokenUrl),
+      scopes: str(cfg.scopes),
+      tokenAuthMethod: str(cfg.tokenAuthMethod) || 'client_secret_post',
+      hasClientSecret: !!cfg.clientSecret,
+      hasAccessToken: !!cfg.accessToken,
+      hasRefreshToken: !!cfg.refreshToken,
+    };
+  }
+
+  @Patch(':id/oauth-config')
+  @ApiOperation({
+    summary: 'Update the OAuth2 settings of a connector (partial)',
+    description:
+      'Merges the supplied fields into the connector\'s existing authConfig ' +
+      'instead of replacing it, so the stored access/refresh tokens and the ' +
+      'endpoints established during authorization are preserved. Omitted ' +
+      'fields keep their current value; send an empty string to clear one. ' +
+      'Use `tokenAuthMethod` when a provider rejects credentials sent in the ' +
+      'request body (RFC 6749 §2.3.1 client_secret_basic) — Datto RMM and ' +
+      'DATEV both require it.',
+  })
+  async updateOAuthConfig(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateOAuthConfigDto,
+  ) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+
+    if (connector.authType !== 'OAUTH2') {
+      throw new BadRequestException('Connector auth type must be OAUTH2');
+    }
+
+    // Only forward what the caller actually sent, so a partial edit (e.g.
+    // just the auth method) never blanks the other settings.
+    const patch: Record<string, unknown> = {};
+    for (const key of [
+      'clientId',
+      'clientSecret',
+      'authorizationUrl',
+      'tokenUrl',
+      'scopes',
+    ] as const) {
+      if (dto[key] !== undefined) patch[key] = dto[key];
+    }
+    if (dto.tokenAuthMethod !== undefined) {
+      // Empty = back to the default (credentials in the body).
+      patch.tokenAuthMethod = dto.tokenAuthMethod || undefined;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return { message: 'Nothing to update' };
+    }
+
+    await this.connectorsService.updateAuthConfigMerge(id, patch);
+    return { message: 'OAuth configuration updated' };
   }
 
   @Delete(':id')
