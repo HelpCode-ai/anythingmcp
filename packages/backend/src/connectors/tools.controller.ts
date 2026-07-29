@@ -36,6 +36,7 @@ import {
 import {
   CALLER_CONTEXT_VARIABLES,
   findUnknownCallerContextVars,
+  usesCallerContextDeep,
 } from '../common/caller-context.util';
 
 class CreateToolDto {
@@ -499,6 +500,15 @@ export class ToolsController {
     // `arguments` first, fall back to `params` so old clients keep working.
     const inputs = body.arguments ?? body.params ?? {};
 
+    // This runs from the admin UI, not through an authenticated MCP session,
+    // so {{amcp.*}} resolves to empty here and the result can differ from a
+    // real call. Say so rather than letting it look like a broken tool.
+    const callerContextNote = usesCallerContextDeep(tool.endpointMapping)
+      ? 'This tool uses caller-context variables ({{amcp.*}}). They resolve to ' +
+        'empty in this test because it does not run through an authenticated ' +
+        'MCP session — run it from a connected client to see the real result.'
+      : undefined;
+
     const startTime = Date.now();
     try {
       const result = await this.connectorsService.executeConnectorCall(
@@ -507,6 +517,7 @@ export class ToolsController {
         inputs,
       );
       const durationMs = Date.now() - startTime;
+      const withNote = callerContextNote ? { note: callerContextNote } : {};
       // Auto-fill the tool's output schema from this real response (first time
       // only). Best-effort — never let it affect the test result.
       if (!tool.outputSchema) {
@@ -527,12 +538,14 @@ export class ToolsController {
         ok: true,
         durationMs,
         result,
+        ...withNote,
       };
     } catch (err: any) {
       const durationMs = Date.now() - startTime;
+      const withNote = callerContextNote ? { note: callerContextNote } : {};
       // Return rich error details for debugging
       if (err.soapDetail) {
-        return { ok: false, durationMs, ...err.soapDetail };
+        return { ok: false, durationMs, ...err.soapDetail, ...withNote };
       }
       const { AxiosError: AxiosErr } = await import('axios');
       if (err instanceof AxiosErr && err.response) {
@@ -550,6 +563,7 @@ export class ToolsController {
           responseBody: err.response.data,
           kind,
           hint,
+          ...withNote,
         };
       }
       const { kind, hint } = classifyToolExecutionError({
@@ -562,6 +576,7 @@ export class ToolsController {
         error: err.message || 'Execution failed',
         kind,
         hint,
+        ...withNote,
       };
     }
   }

@@ -283,8 +283,13 @@ Behaviour worth knowing:
   connector env vars, so neither a workspace variable nor a tool argument can shadow them.
 - **Typos are rejected** when you save the tool, since at runtime an unknown reserved variable would silently
   resolve to empty.
-- These variables apply to `baseUrl`, connector headers and the endpoint mapping. They are **not** substituted
-  inside `authConfig`.
+- These variables apply to `baseUrl`, connector headers and the whole endpoint mapping — `path`,
+  `queryParams`, `bodyMapping` **and `bodyTemplate`**. In a `bodyTemplate` the substituted value is escaped
+  for its JSON string context, so a quote or backslash cannot break the document. They are **not**
+  substituted inside `authConfig`.
+- The **Test** button in the connector UI does not run through an authenticated MCP session, so `{{amcp.*}}`
+  resolves to empty there; the test result says so. Call the tool from a connected MCP client to see the
+  real value.
 
 ---
 

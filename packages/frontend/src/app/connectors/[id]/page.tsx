@@ -57,6 +57,12 @@ export default function ConnectorDetailPage() {
   const [editAuthValue, setEditAuthValue] = useState('');
   // OAuth2 only: how client credentials reach the token endpoint.
   const [editTokenAuthMethod, setEditTokenAuthMethod] = useState('client_secret_post');
+  // OAuth2 endpoints. Editable because a connector switched to OAUTH2 after
+  // creation has none, and could otherwise never be authorized
+  // ("No authorization URL configured for this connector").
+  const [editOauthAuthUrl, setEditOauthAuthUrl] = useState('');
+  const [editOauthTokenUrl, setEditOauthTokenUrl] = useState('');
+  const [editOauthScopes, setEditOauthScopes] = useState('');
   // LOGIN_TOKEN (credentials → short-lived token, auto-refreshed) fields
   const [editLtLoginUrl, setEditLtLoginUrl] = useState('');
   const [editLtMethod, setEditLtMethod] = useState('POST');
@@ -129,7 +135,12 @@ export default function ConnectorDetailPage() {
       if (c.authType === 'OAUTH2' && c.type !== 'MCP') {
         connectors
           .getOAuthConfig(id, token)
-          .then((r) => setEditTokenAuthMethod(r.tokenAuthMethod || 'client_secret_post'))
+          .then((r) => {
+            setEditTokenAuthMethod(r.tokenAuthMethod || 'client_secret_post');
+            setEditOauthAuthUrl(r.authorizationUrl || '');
+            setEditOauthTokenUrl(r.tokenUrl || '');
+            setEditOauthScopes(r.scopes || '');
+          })
           .catch(() => setEditTokenAuthMethod('client_secret_post'));
       }
       // authConfig is encrypted server-side, so LOGIN_TOKEN fields start empty;
@@ -248,6 +259,11 @@ export default function ConnectorDetailPage() {
         };
         if (editAuthKey) oauthPatch.clientId = editAuthKey;
         if (editAuthValue) oauthPatch.clientSecret = editAuthValue;
+        // Endpoints are not secret, so the form always holds their current
+        // value and can round-trip them.
+        oauthPatch.authorizationUrl = editOauthAuthUrl.trim();
+        oauthPatch.tokenUrl = editOauthTokenUrl.trim();
+        oauthPatch.scopes = editOauthScopes.trim();
         await connectors.updateOAuthConfig(id, oauthPatch, token);
       }
 
@@ -790,6 +806,18 @@ export default function ConnectorDetailPage() {
                     </div>
                   </div>
                   <div>
+                    <label className="block text-sm font-medium mb-1">Authorization URL</label>
+                    <input type="text" value={editOauthAuthUrl} onChange={(e) => setEditOauthAuthUrl(e.target.value)} placeholder="https://provider.com/oauth/authorize" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)] font-mono text-[13px]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Token URL</label>
+                    <input type="text" value={editOauthTokenUrl} onChange={(e) => setEditOauthTokenUrl(e.target.value)} placeholder="https://provider.com/oauth/token" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)] font-mono text-[13px]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Scopes</label>
+                    <input type="text" value={editOauthScopes} onChange={(e) => setEditOauthScopes(e.target.value)} placeholder="read write (space-separated, optional)" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)] font-mono text-[13px]" />
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium mb-1">Token endpoint authentication</label>
                     <select
                       value={editTokenAuthMethod}
@@ -805,7 +833,9 @@ export default function ConnectorDetailPage() {
                     </p>
                   </div>
                   <p className="text-xs text-[var(--text-3)]">
-                    Leave credential fields empty to keep the current values. Authorization URL, Token URL, and Scopes are preserved from initial setup.
+                    Leave Client ID / Client Secret empty to keep the stored values. Endpoints
+                    are shown as configured and can be corrected here — useful when a connector
+                    was switched to OAuth2 after creation and has none yet.
                   </p>
                 </div>
               )}
@@ -1337,6 +1367,11 @@ export default function ConnectorDetailPage() {
                                   </span>
                                 )}
                               </label>
+                              {toolTestResult && typeof toolTestResult.note === 'string' && (
+                                <div className="mt-2 rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] px-3 py-2 text-xs text-[var(--t-info-fg)]">
+                                  {toolTestResult.note}
+                                </div>
+                              )}
                               {toolTestResult && !toolTestResult.ok && typeof toolTestResult.hint === 'string' && (
                                 <div
                                   className="mb-2 p-2 rounded-[9px] text-xs border"

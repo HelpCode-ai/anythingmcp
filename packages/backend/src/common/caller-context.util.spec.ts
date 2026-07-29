@@ -202,3 +202,62 @@ describe('usesCallerContext repeated calls', () => {
     expect(usesCallerContext(v)).toBe(true);
   });
 });
+
+describe('bodyTemplate interpolation', () => {
+  // Regression: bodyTemplate was excluded from interpolateConnectorConfig, so
+  // {{amcp.*}} (and plain {{VAR}}) reached the target system unresolved.
+  const render = (bodyTemplate: string, extra: Record<string, string> = {}) =>
+    interpolateConnectorConfig(
+      { baseUrl: 'https://api.test' },
+      { method: 'POST', path: '/q', bodyTemplate },
+      { ...extra, ...buildCallerContextVars(context) },
+      opts,
+    ).endpointMapping.bodyTemplate;
+
+  it('resolves a caller-context variable inside a JSON template', () => {
+    const out = render('{"filter":[{"field":"email","value":"{{amcp.user_email}}"}]}');
+    expect(out).toContain('dominik@example.com');
+    expect(JSON.parse(out!)).toEqual({
+      filter: [{ field: 'email', value: 'dominik@example.com' }],
+    });
+  });
+
+  it('resolves ordinary connector env vars too', () => {
+    const out = render('{"tenant":"{{TENANT}}"}', { TENANT: 'acme' });
+    expect(JSON.parse(out!)).toEqual({ tenant: 'acme' });
+  });
+
+  it('escapes characters that would otherwise break the JSON document', () => {
+    const out = interpolateConnectorConfig(
+      { baseUrl: 'https://api.test' },
+      { method: 'POST', path: '/q', bodyTemplate: '{"v":"{{EVIL}}"}' },
+      { EVIL: 'a" , "injected": "yes', ...buildCallerContextVars(context) },
+      opts,
+    ).endpointMapping.bodyTemplate;
+    const parsed = JSON.parse(out!);
+    expect(parsed).toEqual({ v: 'a" , "injected": "yes' });
+    expect(parsed).not.toHaveProperty('injected');
+  });
+
+  it('keeps a bare numeric placeholder valid JSON', () => {
+    const out = render('{"limit":{{MAX}}}', { MAX: '5' });
+    expect(JSON.parse(out!)).toEqual({ limit: 5 });
+  });
+
+  it('leaves ${param} placeholders for the engine to render', () => {
+    // renderBodyTemplate handles those later, with its own escaping.
+    const out = render('{"q":"${query}","by":"{{amcp.user_email}}"}');
+    expect(out).toContain('${query}');
+    expect(out).toContain('dominik@example.com');
+  });
+
+  it('resolves an unavailable identity to empty, keeping valid JSON', () => {
+    const out = interpolateConnectorConfig(
+      { baseUrl: 'https://api.test' },
+      { method: 'POST', path: '/q', bodyTemplate: '{"v":"{{amcp.user_email}}"}' },
+      buildCallerContextVars(undefined),
+      opts,
+    ).endpointMapping.bodyTemplate;
+    expect(JSON.parse(out!)).toEqual({ v: '' });
+  });
+});

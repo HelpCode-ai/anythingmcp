@@ -82,6 +82,16 @@ export function usesCallerContext(value: unknown): boolean {
   return typeof value === 'string' && /\{\{\s*amcp\./.test(value);
 }
 
+/** True when any string anywhere in the value references a reserved variable. */
+export function usesCallerContextDeep(value: unknown): boolean {
+  if (typeof value === 'string') return usesCallerContext(value);
+  if (Array.isArray(value)) return value.some(usesCallerContextDeep);
+  if (value && typeof value === 'object') {
+    return Object.values(value).some(usesCallerContextDeep);
+  }
+  return false;
+}
+
 /**
  * Reserved variables referenced by a value (recursively) that are not
  * recognised — i.e. typos. Callers use this to reject a bad configuration at
