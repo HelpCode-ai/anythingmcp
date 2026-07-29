@@ -40,6 +40,10 @@ export interface ToolEditorData {
   bodyTemplate?: string;
   /** When true, use bodyTemplate instead of per-field bodyMapping */
   useBodyTemplate?: boolean;
+  /** Raw bodyMapping JSON, for structures the field editor cannot express */
+  bodyMappingJson?: string;
+  /** When true, send bodyMappingJson verbatim as the bodyMapping */
+  useBodyMappingJson?: boolean;
   /** Body encoding: 'json' (default), 'form-urlencoded', or 'form-data' */
   bodyEncoding?: string;
   /** Static text response (returned directly without any API/DB call) */
@@ -174,12 +178,22 @@ function parseExistingTool(
     }
   }
 
-  // Parse bodyMapping
+  // Parse bodyMapping. The field editor can only express a flat
+  // "param -> $param" mapping; anything else (nested objects, arrays, literal
+  // values, {{variables}}) is kept as raw JSON so saving from the GUI cannot
+  // silently discard it.
+  let detectedBodyMappingJson: string | undefined;
   if (em.bodyMapping) {
-    for (const [, value] of Object.entries(em.bodyMapping)) {
-      if (typeof value === 'string' && value.startsWith('$')) {
-        bodyMapped.add(value.substring(1));
+    const entries = Object.entries(em.bodyMapping as Record<string, unknown>);
+    const isSimple = entries.every(
+      ([, value]) => typeof value === 'string' && value.startsWith('$'),
+    );
+    if (isSimple) {
+      for (const [, value] of entries) {
+        bodyMapped.add((value as string).substring(1));
       }
+    } else if (entries.length > 0) {
+      detectedBodyMappingJson = JSON.stringify(em.bodyMapping, null, 2);
     }
   }
 
@@ -255,6 +269,8 @@ function parseExistingTool(
     cacheTtl: rm?.cacheTtl || 0,
     bodyTemplate: detectedBodyTemplate,
     useBodyTemplate: detectedUseBodyTemplate,
+    bodyMappingJson: detectedBodyMappingJson,
+    useBodyMappingJson: !!detectedBodyMappingJson,
     bodyEncoding: (em.bodyEncoding as string) || 'json',
   };
 }
@@ -262,6 +278,22 @@ function parseExistingTool(
 /* ------------------------------------------------------------------ */
 /*  Helpers: editor state → backend format                            */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Parse a JSON object, returning null instead of throwing. The live preview
+ * re-renders on every keystroke, so a half-typed document must not crash it.
+ */
+function safeParseJsonObject(raw?: string): Record<string, unknown> | null {
+  if (!raw || !raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 function buildToolPayload(data: ToolEditorData, connectorType: string) {
   // Build JSON Schema for parameters
@@ -332,7 +364,17 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
 
   const endpointMapping: Record<string, unknown> = { method, path };
   if (Object.keys(queryParams).length > 0) endpointMapping.queryParams = queryParams;
-  if (data.useBodyTemplate && data.bodyTemplate) {
+  const parsedBodyMappingJson = data.useBodyMappingJson
+    ? safeParseJsonObject(data.bodyMappingJson)
+    : null;
+  if (parsedBodyMappingJson) {
+    // Round-trip verbatim — this is the escape hatch for structures the field
+    // editor cannot represent.
+    endpointMapping.bodyMapping = parsedBodyMappingJson;
+    if (data.bodyEncoding && data.bodyEncoding !== 'json') {
+      endpointMapping.bodyEncoding = data.bodyEncoding;
+    }
+  } else if (data.useBodyTemplate && data.bodyTemplate) {
     endpointMapping.bodyTemplate = data.bodyTemplate;
   } else if (Object.keys(bodyMapping).length > 0) {
     endpointMapping.bodyMapping = bodyMapping;
@@ -392,6 +434,8 @@ export function ToolEditor({
   const [cacheTtl, setCacheTtl] = useState(0);
   const [bodyTemplate, setBodyTemplate] = useState('');
   const [useBodyTemplate, setUseBodyTemplate] = useState(false);
+  const [bodyMappingJson, setBodyMappingJson] = useState('');
+  const [useBodyMappingJson, setUseBodyMappingJson] = useState(false);
   const [bodyEncoding, setBodyEncoding] = useState('json');
   const [staticResponse, setStaticResponse] = useState('');
 
@@ -409,6 +453,10 @@ export function ToolEditor({
       if (parsed.cacheTtl) setCacheTtl(parsed.cacheTtl);
       if (parsed.bodyTemplate) setBodyTemplate(parsed.bodyTemplate);
       if (parsed.useBodyTemplate) setUseBodyTemplate(true);
+      if (parsed.useBodyMappingJson) {
+        setUseBodyMappingJson(true);
+        setBodyMappingJson(parsed.bodyMappingJson || '');
+      }
       if (parsed.bodyEncoding) setBodyEncoding(parsed.bodyEncoding);
       if (parsed.staticResponse) setStaticResponse(parsed.staticResponse);
     }
@@ -507,12 +555,22 @@ export function ToolEditor({
       cacheTtl,
       bodyTemplate: useBodyTemplate ? bodyTemplate : undefined,
       useBodyTemplate,
+      bodyMappingJson: useBodyMappingJson ? bodyMappingJson : undefined,
+      useBodyMappingJson,
       bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined,
     };
     onSave(buildToolPayload(data, type));
   };
 
-  const isValid = name.trim() && description.trim() && params.every(p => p.name.trim());
+  const bodyMappingJsonInvalid =
+    useBodyMappingJson &&
+    !!bodyMappingJson.trim() &&
+    !safeParseJsonObject(bodyMappingJson);
+  const isValid =
+    name.trim() &&
+    description.trim() &&
+    params.every((p) => p.name.trim()) &&
+    !bodyMappingJsonInvalid;
 
   return (
     <div className="border border-[var(--border)] rounded-lg p-5 space-y-5 bg-[var(--card)]">
@@ -713,8 +771,11 @@ export function ToolEditor({
                 <input
                   type="radio"
                   name="bodyMode"
-                  checked={!useBodyTemplate}
-                  onChange={() => setUseBodyTemplate(false)}
+                  checked={!useBodyTemplate && !useBodyMappingJson}
+                  onChange={() => {
+                    setUseBodyTemplate(false);
+                    setUseBodyMappingJson(false);
+                  }}
                 />
                 Body Fields
               </label>
@@ -723,14 +784,53 @@ export function ToolEditor({
                   type="radio"
                   name="bodyMode"
                   checked={useBodyTemplate}
-                  onChange={() => setUseBodyTemplate(true)}
+                  onChange={() => {
+                    setUseBodyTemplate(true);
+                    setUseBodyMappingJson(false);
+                  }}
                 />
                 Body Template (JSON)
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  name="bodyMode"
+                  checked={useBodyMappingJson}
+                  onChange={() => {
+                    setUseBodyMappingJson(true);
+                    setUseBodyTemplate(false);
+                  }}
+                />
+                Body Mapping (JSON)
               </label>
             </div>
           </div>
 
-          {!useBodyTemplate && (
+          {useBodyMappingJson && (
+            <div className="space-y-1">
+              <textarea
+                value={bodyMappingJson}
+                onChange={(e) => setBodyMappingJson(e.target.value)}
+                rows={10}
+                spellCheck={false}
+                placeholder={'{\n  "filter": [\n    { "field": "email", "value": "{{amcp.user_email}}" }\n  ]\n}'}
+                className="w-full px-2 py-1.5 border border-[var(--border)] rounded-md bg-[var(--background)] text-xs font-mono"
+              />
+              {bodyMappingJsonInvalid && (
+                <p className="text-[11px] text-[var(--danger)]">
+                  Not valid JSON — saving is disabled until this parses.
+                </p>
+              )}
+              <p className="text-[11px] text-[var(--muted-foreground)]">
+                Sent as the request body, structure preserved. Use <code>$param</code> for
+                tool arguments and <code>{'{{VAR}}'}</code> / <code>{'{{amcp.*}}'}</code> for
+                connector and caller-context values. Shown automatically when the stored
+                mapping is nested — editing it here keeps it intact.
+              </p>
+            </div>
+          )}
+
+          {!useBodyTemplate && !useBodyMappingJson && (
             <div className="flex items-center gap-2">
               <label className="text-xs text-[var(--muted-foreground)]">Encoding:</label>
               <AppSelect
@@ -963,7 +1063,7 @@ export function ToolEditor({
           </summary>
           <pre className="mt-2 p-3 bg-[var(--muted)] rounded text-[10px] font-mono overflow-x-auto max-h-48 overflow-y-auto">
             {JSON.stringify(
-              buildToolPayload({ name, description, method, path, params, graphqlQuery, sqlTemplate, staticResponse: method === 'static' ? staticResponse : undefined, cacheTtl, bodyTemplate: useBodyTemplate ? bodyTemplate : undefined, useBodyTemplate, bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined }, type),
+              buildToolPayload({ name, description, method, path, params, graphqlQuery, sqlTemplate, staticResponse: method === 'static' ? staticResponse : undefined, cacheTtl, bodyTemplate: useBodyTemplate ? bodyTemplate : undefined, useBodyTemplate, bodyMappingJson: useBodyMappingJson ? bodyMappingJson : undefined, useBodyMappingJson, bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined }, type),
               null,
               2,
             )}

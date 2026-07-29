@@ -20,6 +20,22 @@ export interface InterpolateOptions {
    * unresolved placeholder is never sent to the target system.
    */
   reservedPrefix?: string;
+  /**
+   * Escape substituted values for a JSON string context. Use when the template
+   * is raw JSON text (a bodyTemplate) rather than a value inside an already
+   * structured object, so a quote or backslash in the value cannot terminate
+   * the surrounding string and inject syntax.
+   *
+   * Only the content is escaped — no quotes are added — so a bare numeric
+   * placeholder such as `{"limit": {{MAX}}}` still yields valid JSON.
+   */
+  jsonEscape?: boolean;
+}
+
+/** Escape a value for embedding inside a JSON string literal. */
+function escapeForJsonString(value: string): string {
+  const encoded = JSON.stringify(value);
+  return encoded.slice(1, -1);
 }
 
 /**
@@ -38,9 +54,11 @@ export function interpolateString(
   // "Cannot read properties of undefined (reading 'replace')".
   if (typeof template !== 'string') return template;
   const reservedPrefix = options?.reservedPrefix;
+  const emit = (value: string) =>
+    options?.jsonEscape ? escapeForJsonString(value) : value;
   return template.replace(VAR_PATTERN, (match, varName) => {
     const trimmed = varName.trim();
-    if (envVars[trimmed] !== undefined) return envVars[trimmed];
+    if (envVars[trimmed] !== undefined) return emit(envVars[trimmed]);
     if (reservedPrefix && trimmed.startsWith(reservedPrefix)) return '';
     return match;
   });
@@ -85,7 +103,8 @@ export function interpolateDeep<T>(
 
 /**
  * Interpolate connector config fields with env vars.
- * Applies to: baseUrl, headers, endpointMapping (path, queryParams, bodyMapping, headers).
+ * Applies to: baseUrl, headers, endpointMapping (path, queryParams, bodyMapping,
+ * bodyTemplate, headers).
  *
  * `options.reservedPrefix` enables the server-resolved namespace (see
  * caller-context.util.ts). Reserved values must already be merged into
@@ -101,6 +120,7 @@ export function interpolateConnectorConfig(
     path: string;
     queryParams?: Record<string, unknown>;
     bodyMapping?: Record<string, unknown>;
+    bodyTemplate?: string;
     headers?: Record<string, string>;
   },
   envVars: Record<string, string>,
@@ -132,6 +152,16 @@ export function interpolateConnectorConfig(
         : undefined,
       bodyMapping: endpointMapping.bodyMapping
         ? interpolateDeep(endpointMapping.bodyMapping, envVars, options)
+        : undefined,
+      // A bodyTemplate is raw JSON text, so substituted values must be escaped
+      // for a JSON string context — otherwise a quote in a value would break
+      // the document. Without this, {{VAR}} (and {{amcp.*}}) silently reached
+      // the target system unresolved.
+      bodyTemplate: endpointMapping.bodyTemplate
+        ? interpolateString(endpointMapping.bodyTemplate, envVars, {
+            ...options,
+            jsonEscape: true,
+          })
         : undefined,
       headers: endpointMapping.headers
         ? interpolateDeep(endpointMapping.headers, envVars, options)
