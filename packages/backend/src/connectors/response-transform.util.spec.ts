@@ -345,6 +345,27 @@ describe('applyResponseTransform — include / exclude', () => {
     expect(out.value).toEqual({ a: { keep: 1 } });
   });
 
+  it('keeps element positions when including a single array index', () => {
+    const out = applyResponseTransform(
+      { items: [{ a: 1, b: 9 }, { a: 2, b: 9 }, { a: 3, b: 9 }] },
+      { transform: { include: ['items[1].a'] } },
+    );
+    // Positions preserved, and the result must be a dense array — a sparse one
+    // would serialize with stray nulls and confuse the calling agent.
+    const items = (out.value as { items: unknown[] }).items;
+    expect(items).toHaveLength(3);
+    expect(items[1]).toEqual({ a: 2 });
+    expect(JSON.parse(JSON.stringify(items))).toEqual([null, { a: 2 }, null]);
+  });
+
+  it('excludes a field under a single array index without dropping siblings', () => {
+    const out = applyResponseTransform(
+      { items: [{ a: 1, b: 2 }, { a: 3, b: 4 }] },
+      { transform: { exclude: ['items[0].b'] } },
+    );
+    expect(out.value).toEqual({ items: [{ a: 1 }, { a: 3, b: 4 }] });
+  });
+
   it('runs the legacy `fields` list as an include', () => {
     const out = applyResponseTransform(DATTO, { type: 'json', fields: ['pageDetails.count'] });
     expect(out.applied).toBe(true);

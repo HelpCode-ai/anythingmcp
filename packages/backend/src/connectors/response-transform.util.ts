@@ -261,19 +261,21 @@ function mergePick(
 
   const token = tokens[i];
 
+  // Array branches rebuild with map rather than an indexed write: it keeps
+  // element positions aligned with the source, avoids producing a sparse array
+  // (which would serialize as stray nulls), and leaves no computed-property
+  // write for a reader — or a static analyzer — to have to reason about.
   if (token.kind === 'wildcard' || token.kind === 'index') {
     if (!Array.isArray(value)) return acc;
-    const base: unknown[] = Array.isArray(acc) ? [...acc] : [];
+    const prev: unknown[] = Array.isArray(acc) ? acc : [];
     if (token.kind === 'index') {
       const idx = token.index < 0 ? value.length + token.index : token.index;
       if (idx < 0 || idx >= value.length) return acc;
-      base[idx] = mergePick(base[idx], value[idx], tokens, i + 1, budget);
-      return base;
+      return value.map((el, k) =>
+        k === idx ? mergePick(prev[k], el, tokens, i + 1, budget) : prev[k],
+      );
     }
-    for (let k = 0; k < value.length; k++) {
-      base[k] = mergePick(base[k], value[k], tokens, i + 1, budget);
-    }
-    return base;
+    return value.map((el, k) => mergePick(prev[k], el, tokens, i + 1, budget));
   }
 
   if (!isPlainObject(value) || !hasOwn(value, token.name)) return acc;
@@ -326,9 +328,7 @@ function omitPath(
     const idx = token.index < 0 ? value.length + token.index : token.index;
     if (idx < 0 || idx >= value.length) return value;
     if (isLast) return value.filter((_, k) => k !== idx);
-    const copy = [...value];
-    copy[idx] = omitPath(copy[idx], tokens, i + 1, budget);
-    return copy;
+    return value.map((el, k) => (k === idx ? omitPath(el, tokens, i + 1, budget) : el));
   }
 
   if (!isPlainObject(value)) return value;
