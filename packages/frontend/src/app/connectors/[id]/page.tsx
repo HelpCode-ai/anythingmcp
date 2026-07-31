@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, tools } from '@/lib/api';
+import { connectors, tools, type ToolTestResult } from '@/lib/api';
 import { findDemoByTool } from '@/lib/demo-connectors';
 import { ToolEditor } from '@/components/tool-editor';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -27,6 +27,12 @@ const IMPORT_SOURCES = [
 ];
 
 const EDIT_DEFAULT_LOGIN_BODY = '{\n  "username": "${username}",\n  "password": "${password}"\n}';
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function ConnectorDetailPage() {
   const { token } = useAuth();
@@ -93,7 +99,10 @@ export default function ConnectorDetailPage() {
   const [testingToolId, setTestingToolId] = useState<string | null>(null);
   const [testParams, setTestParams] = useState('{}');
   const [testRunning, setTestRunning] = useState(false);
-  const [toolTestResult, setToolTestResult] = useState<{ ok: boolean; durationMs: number; result?: unknown; error?: string; [key: string]: unknown } | null>(null);
+  const [toolTestResult, setToolTestResult] = useState<ToolTestResult | null>(null);
+  // Which side of a mapped response the playground shows. Defaults to what an
+  // AI client would actually receive.
+  const [testResponseView, setTestResponseView] = useState<'mapped' | 'raw'>('mapped');
 
   // Import modal
   const [showImport, setShowImport] = useState(false);
@@ -394,6 +403,7 @@ export default function ConnectorDetailPage() {
     if (!token) return;
     setTestRunning(true);
     setToolTestResult(null);
+    setTestResponseView('mapped');
     try {
       const params =
         paramsOverride !== undefined ? paramsOverride : JSON.parse(testParams);
@@ -1176,11 +1186,16 @@ export default function ConnectorDetailPage() {
                     <ToolEditor
                       connectorType={connector.type}
                       envVarKeys={new Set(envVarEntries.map((e) => e.key.trim()).filter(Boolean))}
+                      connectorId={id}
+                      toolId={tool.id}
                       existingTool={{
                         name: tool.name,
                         description: tool.description,
                         parameters: tool.parameters || { type: 'object', properties: {} },
                         endpointMapping: tool.endpointMapping || { method: 'GET', path: '/' },
+                        // Without this the editor starts from an empty mapping
+                        // and wipes cacheTtl / followUp / transform on save.
+                        responseMapping: tool.responseMapping || undefined,
                       }}
                       onSave={(data) => handleUpdateTool(tool.id, data)}
                       onCancel={() => setEditingToolId(null)}
@@ -1207,6 +1222,15 @@ export default function ConnectorDetailPage() {
                                 title={`Removed from the source spec on ${new Date(tool.deprecatedAt).toLocaleString()}. Role assignments and history are preserved.`}
                               >
                                 deprecated
+                              </Badge>
+                            )}
+                            {tool.responseMapping?.transform && (
+                              <Badge
+                                tone="info"
+                                className="flex-shrink-0"
+                                title="A response mapping shapes this tool's output before it reaches the AI client. Edit it under Response Mapping."
+                              >
+                                mapped
                               </Badge>
                             )}
                           </div>
@@ -1367,6 +1391,39 @@ export default function ConnectorDetailPage() {
                                   </span>
                                 )}
                               </label>
+                              {/* Raw vs mapped, so the effect of a response
+                                  mapping (and its token saving) is visible
+                                  right where the tool is exercised. */}
+                              {toolTestResult?.ok && toolTestResult.mappingApplied === true && (
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  {(['mapped', 'raw'] as const).map((view) => (
+                                    <button
+                                      key={view}
+                                      onClick={() => setTestResponseView(view)}
+                                      className={cn(
+                                        'rounded-[7px] border px-2 py-0.5 text-[11px] font-medium transition-colors',
+                                        testResponseView === view
+                                          ? 'border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)]'
+                                          : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)]',
+                                      )}
+                                    >
+                                      {view === 'mapped' ? 'Mapped (what the AI sees)' : 'Raw API response'}
+                                    </button>
+                                  ))}
+                                  <span className="text-[11px] text-[var(--text-3)]">
+                                    {formatBytes(Number(toolTestResult.rawBytes) || 0)} →{' '}
+                                    {formatBytes(Number(toolTestResult.mappedBytes) || 0)} (
+                                    {Number(toolTestResult.bytesSavedPct) > 0 ? '−' : ''}
+                                    {Math.abs(Number(toolTestResult.bytesSavedPct) || 0)}%)
+                                  </span>
+                                </div>
+                              )}
+                              {toolTestResult?.ok && typeof toolTestResult.mappingError === 'string' && (
+                                <div className="mb-2 rounded-[9px] border border-[var(--t-warn-bg)] bg-[var(--t-warn-bg)] px-3 py-2 text-xs text-[var(--t-warn-fg)]">
+                                  Response mapping failed ({String(toolTestResult.mappingError)}) — the
+                                  raw response is being returned. Fix it under Edit → Response Mapping.
+                                </div>
+                              )}
                               {toolTestResult && typeof toolTestResult.note === 'string' && (
                                 <div className="mt-2 rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] px-3 py-2 text-xs text-[var(--t-info-fg)]">
                                   {toolTestResult.note}
@@ -1396,7 +1453,14 @@ export default function ConnectorDetailPage() {
                               <pre className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-xs bg-[var(--surface-2)] font-mono overflow-auto max-h-40 min-h-[8rem]">
                                 {toolTestResult
                                   ? toolTestResult.ok
-                                    ? JSON.stringify(toolTestResult.result, null, 2)
+                                    ? JSON.stringify(
+                                        toolTestResult.mappingApplied === true &&
+                                          testResponseView === 'mapped'
+                                          ? toolTestResult.mapped
+                                          : toolTestResult.result,
+                                        null,
+                                        2,
+                                      )
                                     : JSON.stringify(toolTestResult, null, 2)
                                   : 'Click "Run Test" to execute this tool...'}
                               </pre>

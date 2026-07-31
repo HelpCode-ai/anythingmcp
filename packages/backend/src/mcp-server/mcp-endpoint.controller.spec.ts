@@ -178,3 +178,98 @@ describe('McpEndpointController — tenant isolation', () => {
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
 });
+
+/**
+ * structuredContent is what an MCP client parses when a tool advertises an
+ * outputSchema. It used to be rebuilt by re-parsing content[0].text, which
+ * silently produced {} for every tool carrying a followUp workflow hint (the
+ * appended text is not JSON). The executor now hands back the object directly.
+ */
+describe('McpEndpointController — structuredContent', () => {
+  const TOOL = {
+    id: 't1',
+    name: 'list_devices',
+    description: 'List devices',
+    parameters: { type: 'object', properties: {} },
+    connectorType: 'REST',
+    connectorConfig: { envVars: {} },
+    endpointMapping: { method: 'GET', path: '/devices' },
+    outputSchema: { type: 'object', properties: { total: {}, devices: {} } },
+  };
+
+  function planHandler(executeResult: any) {
+    const toolExecutor = { executeTool: jest.fn().mockResolvedValue(executeResult) };
+    const controller = new McpEndpointController(
+      { findById: jest.fn() } as any,
+      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      toolExecutor as any,
+      { getAllowedToolIds: jest.fn() } as any,
+      { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
+      { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
+    );
+
+    const entries = (controller as any).planToolSet({
+      serverTools: [TOOL],
+      allowedToolIds: null,
+      captureIntent: false,
+      invocationContext: { organizationId: 'org-A', mcpServerId: 'srv-A' },
+    });
+
+    let handler: any;
+    const fakeMcpServer = {
+      registerTool: (_n: string, _c: unknown, h: any) => {
+        handler = h;
+        return {};
+      },
+    };
+    entries.find((e: any) => e.name === 'list_devices').register(fakeMcpServer);
+    return handler;
+  }
+
+  it('uses the executor object, so a followUp hint no longer empties it', async () => {
+    const mapped = { total: 812, devices: [{ hostname: 'PC-01' }] };
+    const handler = planHandler({
+      content: [
+        {
+          type: 'text',
+          text: `${JSON.stringify(mapped, null, 2)}\n\n---\nWORKFLOW HINT: call get_device next`,
+        },
+      ],
+      structured: mapped,
+    });
+
+    const result = await handler({});
+    expect(result.structuredContent).toEqual(mapped);
+    // Our transport field must not leak into the MCP result.
+    expect(result).not.toHaveProperty('structured');
+  });
+
+  it('still parses content[0].text when the executor provides no object', async () => {
+    const handler = planHandler({
+      content: [{ type: 'text', text: '{"total": 812}' }],
+    });
+    const result = await handler({});
+    expect(result.structuredContent).toEqual({ total: 812 });
+  });
+
+  it('falls back to {} for a non-object result', async () => {
+    const handler = planHandler({
+      content: [{ type: 'text', text: '[1,2,3]' }],
+      structured: [1, 2, 3],
+    });
+    const result = await handler({});
+    expect(result.structuredContent).toEqual({});
+  });
+
+  it('skips structuredContent on an error result', async () => {
+    const handler = planHandler({
+      content: [{ type: 'text', text: '{"error":"boom"}' }],
+      structured: { error: 'boom' },
+      isError: true,
+    });
+    const result = await handler({});
+    expect(result.structuredContent).toBeUndefined();
+    expect(result).not.toHaveProperty('structured');
+    expect(result.isError).toBe(true);
+  });
+});

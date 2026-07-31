@@ -2,6 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { AppSelect } from '@/components/ui/select';
+import {
+  EMPTY_MAPPING_STATE,
+  ResponseMappingPanel,
+  mappingStateInvalid,
+  parseTransformToState,
+  stateToTransform,
+  type ResponseMappingState,
+} from './response-mapping-panel';
+import type { ResponseTransform } from '@/lib/api';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -48,6 +57,14 @@ export interface ToolEditorData {
   bodyEncoding?: string;
   /** Static text response (returned directly without any API/DB call) */
   staticResponse?: string;
+  /** Optional shaping of the API response before it reaches the AI client */
+  responseMapping?: ResponseMappingState;
+  /**
+   * Everything else already stored under responseMapping (e.g. followUp).
+   * Round-tripped verbatim so saving from the GUI cannot silently drop keys
+   * this editor doesn't render.
+   */
+  responseMappingExtra?: Record<string, unknown>;
 }
 
 interface ToolEditorProps {
@@ -64,6 +81,9 @@ interface ToolEditorProps {
   };
   /** Environment variable keys — parameters matching these names are auto-filled at runtime */
   envVarKeys?: Set<string>;
+  /** Enables the response-mapping preview (needs a saved tool to sample from) */
+  connectorId?: string;
+  toolId?: string;
   onSave: (data: {
     name: string;
     description: string;
@@ -254,7 +274,10 @@ function parseExistingTool(
     });
   }
 
-  const rm = tool.responseMapping as any;
+  // Split responseMapping into the parts this editor renders (cacheTtl,
+  // transform) and everything else, which is round-tripped untouched.
+  const rm = (tool.responseMapping ?? {}) as Record<string, unknown>;
+  const { cacheTtl: _cacheTtl, transform, ...responseMappingExtra } = rm;
 
   return {
     name: tool.name,
@@ -266,7 +289,9 @@ function parseExistingTool(
     soapOperation: connectorType === 'SOAP' ? em.method : undefined,
     sqlTemplate: connectorType === 'DATABASE' && em.method !== 'static' ? em.path : undefined,
     staticResponse: em.staticResponse || undefined,
-    cacheTtl: rm?.cacheTtl || 0,
+    cacheTtl: (rm.cacheTtl as number) || 0,
+    responseMapping: parseTransformToState(transform as ResponseTransform | undefined),
+    responseMappingExtra,
     bodyTemplate: detectedBodyTemplate,
     useBodyTemplate: detectedUseBodyTemplate,
     bodyMappingJson: detectedBodyMappingJson,
@@ -400,9 +425,20 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
     endpointMapping,
   };
 
+  // Rebuild responseMapping from its parts. Anything this editor doesn't
+  // render (followUp, …) is carried over verbatim — reconstructing the object
+  // from cacheTtl alone used to wipe it on every save from the GUI.
+  const responseMapping: Record<string, unknown> = { ...(data.responseMappingExtra ?? {}) };
   if (data.cacheTtl && data.cacheTtl > 0) {
-    result.responseMapping = { cacheTtl: data.cacheTtl };
+    responseMapping.cacheTtl = data.cacheTtl;
   }
+  const transform = data.responseMapping ? stateToTransform(data.responseMapping) : null;
+  if (transform) {
+    responseMapping.transform = transform;
+  }
+  // Always sent, even when empty: omitting the key leaves whatever is stored in
+  // place, so switching the mapping back to "Off" would never take effect.
+  result.responseMapping = responseMapping;
 
   return result;
 }
@@ -415,6 +451,8 @@ export function ToolEditor({
   connectorType,
   existingTool,
   envVarKeys,
+  connectorId,
+  toolId,
   onSave,
   onCancel,
   saving = false,
@@ -438,6 +476,9 @@ export function ToolEditor({
   const [useBodyMappingJson, setUseBodyMappingJson] = useState(false);
   const [bodyEncoding, setBodyEncoding] = useState('json');
   const [staticResponse, setStaticResponse] = useState('');
+  const [responseMapping, setResponseMapping] =
+    useState<ResponseMappingState>(EMPTY_MAPPING_STATE);
+  const [responseMappingExtra, setResponseMappingExtra] = useState<Record<string, unknown>>({});
 
   // Initialize from existing tool
   useEffect(() => {
@@ -459,6 +500,8 @@ export function ToolEditor({
       }
       if (parsed.bodyEncoding) setBodyEncoding(parsed.bodyEncoding);
       if (parsed.staticResponse) setStaticResponse(parsed.staticResponse);
+      setResponseMapping(parsed.responseMapping ?? EMPTY_MAPPING_STATE);
+      setResponseMappingExtra(parsed.responseMappingExtra ?? {});
     }
   }, [existingTool, type]);
 
@@ -558,6 +601,8 @@ export function ToolEditor({
       bodyMappingJson: useBodyMappingJson ? bodyMappingJson : undefined,
       useBodyMappingJson,
       bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined,
+      responseMapping,
+      responseMappingExtra,
     };
     onSave(buildToolPayload(data, type));
   };
@@ -570,7 +615,8 @@ export function ToolEditor({
     name.trim() &&
     description.trim() &&
     params.every((p) => p.name.trim()) &&
-    !bodyMappingJsonInvalid;
+    !bodyMappingJsonInvalid &&
+    !mappingStateInvalid(responseMapping);
 
   return (
     <div className="border border-[var(--border)] rounded-lg p-5 space-y-5 bg-[var(--card)]">
@@ -1055,6 +1101,16 @@ export function ToolEditor({
         </p>
       </div>
 
+      {/* Response Mapping */}
+      {method !== 'static' && (
+        <ResponseMappingPanel
+          state={responseMapping}
+          onChange={setResponseMapping}
+          connectorId={connectorId}
+          toolId={toolId}
+        />
+      )}
+
       {/* Preview */}
       <div>
         <details className="text-xs">
@@ -1063,7 +1119,7 @@ export function ToolEditor({
           </summary>
           <pre className="mt-2 p-3 bg-[var(--muted)] rounded text-[10px] font-mono overflow-x-auto max-h-48 overflow-y-auto">
             {JSON.stringify(
-              buildToolPayload({ name, description, method, path, params, graphqlQuery, sqlTemplate, staticResponse: method === 'static' ? staticResponse : undefined, cacheTtl, bodyTemplate: useBodyTemplate ? bodyTemplate : undefined, useBodyTemplate, bodyMappingJson: useBodyMappingJson ? bodyMappingJson : undefined, useBodyMappingJson, bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined }, type),
+              buildToolPayload({ name, description, method, path, params, graphqlQuery, sqlTemplate, staticResponse: method === 'static' ? staticResponse : undefined, cacheTtl, bodyTemplate: useBodyTemplate ? bodyTemplate : undefined, useBodyTemplate, bodyMappingJson: useBodyMappingJson ? bodyMappingJson : undefined, useBodyMappingJson, bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined, responseMapping, responseMappingExtra }, type),
               null,
               2,
             )}

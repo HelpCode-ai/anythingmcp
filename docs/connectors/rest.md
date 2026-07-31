@@ -186,16 +186,86 @@ The `endpointMapping` defines how MCP tool parameters map to the HTTP request:
 
 ### Response Mapping
 
-Optionally filter and transform API responses:
+Optionally shape the API response before it reaches the AI client. Without it,
+the raw upstream response is returned unchanged.
+
+APIs routinely return far more than a tool needs — a Datto RMM device carries up
+to 300 UDF fields, IPs and remote-control URLs when the tool only wants hostname,
+site, OS and status. Every extra byte is billed to the agent's context window and
+exposed to a third-party model. A response mapping declares what a tool actually
+publishes.
 
 ```json
 {
   "responseMapping": {
-    "type": "json",
-    "fields": ["id", "name", "email", "status"]
+    "transform": {
+      "select": {
+        "page": {
+          "count": "$.pageDetails.count",
+          "totalCount": "$.pageDetails.totalCount",
+          "nextPageUrl": "$.pageDetails.nextPageUrl"
+        },
+        "devices": {
+          "$from": "$.devices[*]",
+          "$select": {
+            "id": "id",
+            "hostname": "hostname",
+            "siteName": "siteName",
+            "category": "deviceType.category",
+            "operatingSystem": "operatingSystem",
+            "online": "online",
+            "antivirusStatus": "antivirus.antivirusStatus"
+          }
+        }
+      },
+      "exclude": ["devices[*].udf"]
+    }
   }
 }
 ```
+
+#### `transform` keys
+
+| Key | Meaning |
+|-----|---------|
+| `select` | Output template. Keys are the output names; leaf syntax below. |
+| `include` | Keep only these paths, preserving the original document shape. |
+| `exclude` | Drop these paths. Applied **before** `include` / `select`. |
+| `expression` | A [JMESPath](https://jmespath.org) expression, with `"mode": "jmespath"`. Use it for computed values (`length(devices)`) and filters (``devices[?online == `false`]``). |
+| `mode` | `select` (default), `jmespath`, or `off` to keep the config without applying it. |
+| `fallbackToRaw` | Default `true`: a mapping that fails returns the raw response and logs a warning rather than failing the call. Set `false` to surface the error instead. |
+| `maxBytes` | Hard cap on the serialized output. `0` / absent = no cap. On overflow the result is replaced by `{ "_truncated": true, … }`. |
+
+#### Leaf syntax in `select`
+
+| Leaf | Result |
+|------|--------|
+| `"$.a.b"` / `"a.b"` | Value at that path. A leading `$.` is optional. |
+| `"items[*].id"` | Array of `id` over `items` — elements without the field are skipped. |
+| `"items[0].id"`, `"items[-1].id"` | Index access; negative counts from the end. |
+| `"a['weird.key']"` | Quoted segment, for keys containing dots. |
+| `"= my-source"` | Static string literal (`= ` prefix), for constants. |
+| `42`, `true`, `null` | Passed through as-is. |
+| `{ "$from": "path[*]", "$select": { … } }` | Reshape every element of an array. Optional `$limit` caps how many. |
+
+A path that does not resolve leaves its key **out** of the output rather than
+emitting `null` — that is what keeps mapped responses small.
+
+Response mapping applies to every connector type, not just REST.
+
+#### Legacy shape
+
+`{"type": "json", "fields": [...]}` is still honoured and behaves as
+`transform.include`.
+
+#### Editing and previewing
+
+- UI: **Connector → tool → Edit → Response Mapping**. "Preview with last real
+  response" maps the most recent recorded response for that tool without calling
+  the API again, and shows the size delta.
+- API: `PATCH /api/connectors/:id/tools/:toolId/response-mapping` sets or clears
+  it, `POST .../preview-mapping` dry-runs one. The tool test endpoint returns
+  both `result` (raw) and `mapped`.
 
 ---
 

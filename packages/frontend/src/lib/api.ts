@@ -287,6 +287,55 @@ export interface ToolAnnotations {
   openWorldHint?: boolean;
 }
 
+/**
+ * Optional per-tool shaping of the API response before it reaches the MCP
+ * client. Absent means the raw upstream response is returned unchanged.
+ */
+export interface ResponseTransform {
+  mode?: 'select' | 'jmespath' | 'off';
+  /** Keep only these paths, preserving the document shape. */
+  include?: string[];
+  /** Drop these paths. Applied before include/select. */
+  exclude?: string[];
+  /** Output template — leaves are paths (`$.a.b`), `= literal`, or `{ $from, $select }`. */
+  select?: Record<string, unknown>;
+  /** JMESPath expression, for computed values. */
+  expression?: string;
+  /** On error, return the raw response instead of failing. Default true. */
+  fallbackToRaw?: boolean;
+  /** Hard cap on the serialized output. 0 = off. */
+  maxBytes?: number;
+}
+
+/** Size accounting returned by the test and preview endpoints. */
+export interface MappingSummary {
+  mapped?: unknown;
+  mappingApplied?: boolean;
+  mappingError?: string;
+  mappingTruncated?: boolean;
+  rawBytes?: number;
+  mappedBytes?: number;
+  bytesSavedPct?: number;
+}
+
+export interface MappingPreview extends MappingSummary {
+  ok: boolean;
+  sampleSource: 'body' | 'last-invocation' | 'none';
+  sampleCapturedAt?: string | null;
+  raw?: unknown;
+  error?: string;
+}
+
+export interface ToolTestResult extends MappingSummary {
+  ok: boolean;
+  durationMs: number;
+  result?: unknown;
+  error?: string;
+  note?: string;
+  hint?: string;
+  kind?: string;
+}
+
 export const tools = {
   list: (connectorId: string, token: string) =>
     request<any[]>(`/api/connectors/${connectorId}/tools`, { token }),
@@ -322,13 +371,49 @@ export const tools = {
       `/api/connectors/${connectorId}/tools/${toolId}/annotations`,
       { method: 'PATCH', body: { annotations }, token },
     ),
+  getResponseMapping: (connectorId: string, toolId: string, token: string) =>
+    request<{
+      transform: ResponseTransform | null;
+      active: boolean;
+      sampleAvailable: boolean;
+      sampleCapturedAt: string | null;
+    }>(`/api/connectors/${connectorId}/tools/${toolId}/response-mapping`, { token }),
+  setResponseMapping: (
+    connectorId: string,
+    toolId: string,
+    transform: ResponseTransform | null,
+    token: string,
+  ) =>
+    request<{ transform: ResponseTransform | null; active: boolean }>(
+      `/api/connectors/${connectorId}/tools/${toolId}/response-mapping`,
+      { method: 'PATCH', body: { transform }, token },
+    ),
+  /** Dry-run a mapping against a sample (or the last real response). No API call. */
+  previewMapping: (
+    connectorId: string,
+    toolId: string,
+    body: { transform?: ResponseTransform | null; sample?: unknown },
+    token: string,
+  ) =>
+    request<MappingPreview>(
+      `/api/connectors/${connectorId}/tools/${toolId}/preview-mapping`,
+      { method: 'POST', body, token },
+    ),
   delete: (connectorId: string, toolId: string, token: string) =>
     request(`/api/connectors/${connectorId}/tools/${toolId}`, { method: 'DELETE', token }),
-  test: (connectorId: string, toolId: string, params: Record<string, unknown>, token: string) =>
-    request<{ ok: boolean; durationMs: number; result?: unknown; error?: string }>(
-      `/api/connectors/${connectorId}/tools/${toolId}/test`,
-      { method: 'POST', body: { params }, token },
-    ),
+  test: (
+    connectorId: string,
+    toolId: string,
+    params: Record<string, unknown>,
+    token: string,
+    transform?: ResponseTransform | null,
+  ) =>
+    request<ToolTestResult>(`/api/connectors/${connectorId}/tools/${toolId}/test`, {
+      method: 'POST',
+      // MCP-standard field name; `params` is still sent for older backends.
+      body: { arguments: params, params, ...(transform ? { transform } : {}) },
+      token,
+    }),
 };
 
 // Audit

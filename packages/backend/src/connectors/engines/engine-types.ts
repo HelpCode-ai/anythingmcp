@@ -63,16 +63,22 @@ export type AnyEndpointMapping =
   | McpEndpointMapping;
 
 /**
- * Common metadata that may appear on responseMapping. We only use cacheTtl
- * for the moment (used by dynamic-mcp-tools to short-circuit re-execution).
+ * Metadata that may appear on a tool's responseMapping.
+ *
+ * `cacheTtl`  — Redis response cache TTL in seconds (DynamicMcpTools).
+ * `followUp`  — workflow hint appended to the tool result: tells the calling
+ *               agent what to do next, to drive multi-step tool chains.
+ * `transform` — optional response shaping applied before the result reaches the
+ *               MCP client (see response-transform.util).
+ * `fields`    — legacy include list, kept working as a shorthand for
+ *               `transform.include`.
  */
 export interface ResponseMapping {
   cacheTtl?: number;
   type?: string;
   fields?: string[];
-  // Optional workflow hint appended to the tool result (see DynamicMcpTools):
-  // tells the calling agent what to do next, to drive multi-step tool chains.
   followUp?: string;
+  transform?: Record<string, unknown>;
   [k: string]: unknown;
 }
 
