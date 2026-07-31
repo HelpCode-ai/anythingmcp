@@ -318,11 +318,30 @@ Behaviour worth knowing:
     }
   },
   "responseMapping": {
-    "type": "json",
-    "fields": ["id", "name", "price", "category"]
+    "transform": {
+      "select": {
+        "total": "$.meta.totalCount",
+        "products": {
+          "$from": "$.data[*]",
+          "$select": {
+            "id": "id",
+            "name": "attributes.name",
+            "price": "attributes.price.amount",
+            "category": "relationships.category.name"
+          }
+        }
+      }
+    }
   }
 }
 ```
+
+`responseMapping.transform` shapes the response before it reaches the AI client —
+fewer tokens, and only the fields this tool needs leave the workspace. It is
+optional: without it the raw upstream response is returned unchanged. See
+[REST connector → Response Mapping](connectors/rest.md#response-mapping) for the
+full syntax (`select`, `include`, `exclude`, JMESPath, `maxBytes`) — it applies
+to every connector type, not just REST.
 
 ---
 

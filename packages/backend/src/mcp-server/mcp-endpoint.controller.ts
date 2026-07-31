@@ -693,20 +693,31 @@ export class McpEndpointController {
               ctx,
             );
             // When an outputSchema is advertised, the SDK requires
-            // structuredContent on success. Provide the parsed object
+            // structuredContent on success. Provide the result object
             // (permissive schema never fails); errors skip validation.
+            // `structured` is our own transport field, not part of the MCP
+            // result shape — strip it before returning either way.
+            const { structured: direct, ...rest } = result;
             if (outShape && !result.isError) {
+              // Prefer the executor's object. Re-parsing content[0].text used
+              // to be the only source, and it silently yielded {} for every
+              // tool with a followUp hint (the appended text broke JSON.parse).
+              // The text parse stays as a fallback for results without it.
               let structured: Record<string, unknown> = {};
-              try {
-                const parsed = JSON.parse(result.content?.[0]?.text ?? '{}');
-                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
-                  structured = parsed;
-              } catch {
-                /* keep {} */
+              if (direct && typeof direct === 'object' && !Array.isArray(direct)) {
+                structured = direct as Record<string, unknown>;
+              } else if (direct === undefined) {
+                try {
+                  const parsed = JSON.parse(result.content?.[0]?.text ?? '{}');
+                  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+                    structured = parsed;
+                } catch {
+                  /* keep {} */
+                }
               }
-              return { ...result, structuredContent: structured };
+              return { ...rest, structuredContent: structured };
             }
-            return result;
+            return rest;
           };
 
           // registerTool for both branches: the legacy tool() overload has no

@@ -29,6 +29,11 @@ import { ConnectorsService } from './connectors.service';
 import { inferJsonSchema } from './output-schema.util';
 import { classifyToolExecutionError } from './connector-error.util';
 import {
+  applyResponseTransform,
+  hasTransform,
+  validateTransform,
+} from './response-transform.util';
+import {
   ToolAnnotations,
   deriveToolAnnotations,
   parseAnnotationsOverride,
@@ -38,6 +43,34 @@ import {
   findUnknownCallerContextVars,
   usesCallerContextDeep,
 } from '../common/caller-context.util';
+
+const RESPONSE_MAPPING_DESC =
+  'Optional response handling for this tool. Keys: `cacheTtl` (seconds), ' +
+  '`followUp` (workflow hint appended to the result) and `transform` — the ' +
+  'response shaping applied before the result reaches the MCP client. ' +
+  '`transform` accepts `include` / `exclude` (path lists, shape preserved), ' +
+  '`select` (output template: leaves are paths like `$.a.b`, `= literal` for ' +
+  'static values, `{ $from, $select }` to reshape array elements), ' +
+  '`expression` with `mode: "jmespath"`, `fallbackToRaw` (default true) and ' +
+  '`maxBytes`. Omit `transform` and the raw upstream response is returned ' +
+  'unchanged.';
+
+const RESPONSE_MAPPING_EXAMPLE = {
+  transform: {
+    select: {
+      page: { count: '$.pageDetails.count', totalCount: '$.pageDetails.totalCount' },
+      devices: {
+        $from: '$.devices[*]',
+        $select: {
+          id: 'id',
+          hostname: 'hostname',
+          category: 'deviceType.category',
+          antivirusStatus: 'antivirus.antivirusStatus',
+        },
+      },
+    },
+  },
+};
 
 class CreateToolDto {
   @ApiProperty({
@@ -78,9 +111,10 @@ class CreateToolDto {
   endpointMapping: Record<string, unknown>;
 
   @ApiPropertyOptional({
-    description: 'Optional response shaping (field selection, rename).',
+    description: RESPONSE_MAPPING_DESC,
     type: 'object',
     additionalProperties: true,
+    example: RESPONSE_MAPPING_EXAMPLE,
   })
   @IsOptional()
   @IsObject()
@@ -117,9 +151,10 @@ class UpdateToolDto {
   endpointMapping?: Record<string, unknown>;
 
   @ApiPropertyOptional({
-    description: 'Response shaping.',
+    description: RESPONSE_MAPPING_DESC,
     type: 'object',
     additionalProperties: true,
+    example: RESPONSE_MAPPING_EXAMPLE,
   })
   @IsOptional()
   @IsObject()
@@ -193,6 +228,55 @@ class TestToolDto {
   @IsOptional()
   @IsObject()
   params?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description:
+      'Response transform to preview for this run, overriding the one stored on ' +
+      'the tool. Lets the editor try an unsaved mapping against a live response. ' +
+      'The stored mapping is not modified.',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @IsObject()
+  transform?: Record<string, unknown>;
+}
+
+class SetResponseMappingDto {
+  @ApiPropertyOptional({
+    description:
+      'The response transform to store. Send `null` to remove it and go back to ' +
+      'returning the raw upstream response. `cacheTtl` and `followUp` on the ' +
+      'tool are preserved.',
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    example: RESPONSE_MAPPING_EXAMPLE.transform,
+  })
+  @IsOptional()
+  @IsObject()
+  transform?: Record<string, unknown> | null;
+}
+
+class PreviewMappingDto {
+  @ApiPropertyOptional({
+    description:
+      'The transform to evaluate. Defaults to the one stored on the tool.',
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsObject()
+  transform?: Record<string, unknown> | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Sample response to map. When omitted, the most recent real response ' +
+      'recorded for this tool is used.',
+  })
+  @IsOptional()
+  sample?: unknown;
 }
 
 @ApiTags('Tools')
@@ -240,6 +324,72 @@ export class ToolsController {
     }
   }
 
+  /**
+   * Reject a malformed response transform at save time. Left to runtime it
+   * would silently fall back to the raw response, which reads as "the mapping
+   * does nothing" — the hardest kind of bug to diagnose from the UI.
+   */
+  private assertValidResponseMapping(responseMapping: unknown) {
+    if (!responseMapping || typeof responseMapping !== 'object') return;
+    const transform = (responseMapping as Record<string, unknown>).transform;
+    if (transform === undefined || transform === null) return;
+    const error = validateTransform(transform);
+    if (error) {
+      throw new BadRequestException(`Invalid response mapping: ${error}`);
+    }
+  }
+
+  /**
+   * Most recent real response recorded for a tool, used as the sample for the
+   * mapping preview. Scans the last few successful invocations rather than
+   * filtering on JSON null in SQL: `output` is only null for older rows, and a
+   * small scan keeps the query portable.
+   */
+  private async findLatestSample(
+    toolId: string,
+  ): Promise<{ output: unknown; createdAt: Date } | null> {
+    const recent = await this.prisma.toolInvocation.findMany({
+      where: { toolId, status: 'SUCCESS' },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: { output: true, createdAt: true },
+    });
+    const hit = recent.find((r) => r.output !== null && r.output !== undefined);
+    return hit ? { output: hit.output, createdAt: hit.createdAt } : null;
+  }
+
+  private static byteLength(value: unknown): number {
+    try {
+      const json = JSON.stringify(value);
+      return json === undefined ? 0 : Buffer.byteLength(json, 'utf8');
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Summary of what a transform did to a response, shared by the test and
+   * preview endpoints so the UI can render the same "12.4 KB → 0.9 KB (−93%)"
+   * badge in both places.
+   */
+  private static mappingSummary(raw: unknown, mapping: unknown) {
+    const outcome = applyResponseTransform(raw, mapping as any);
+    const rawBytes = ToolsController.byteLength(raw);
+    const mappedBytes = outcome.applied
+      ? ToolsController.byteLength(outcome.value)
+      : rawBytes;
+    return {
+      mapped: outcome.value,
+      mappingApplied: outcome.applied,
+      ...(outcome.error ? { mappingError: outcome.error } : {}),
+      ...(outcome.truncated ? { mappingTruncated: true } : {}),
+      rawBytes,
+      mappedBytes,
+      bytesSavedPct:
+        rawBytes > 0 ? Math.round(((rawBytes - mappedBytes) / rawBytes) * 100) : 0,
+    };
+  }
+
   @Get()
   @ApiOperation({ summary: 'List tools for a connector' })
   async list(@Req() req: any, @Param('connectorId') connectorId: string) {
@@ -259,6 +409,7 @@ export class ToolsController {
   ) {
     await this.assertCanWriteConnector(connectorId, req);
     this.assertKnownCallerContextVars(dto.endpointMapping);
+    this.assertValidResponseMapping(dto.responseMapping);
     const tool = await this.prisma.mcpTool.create({
       data: {
         connectorId,
@@ -297,6 +448,7 @@ export class ToolsController {
     const skipped: string[] = [];
 
     for (const dto of toolDefs) {
+      this.assertValidResponseMapping(dto.responseMapping);
       try {
         const tool = await this.prisma.mcpTool.create({
           data: {
@@ -339,12 +491,32 @@ export class ToolsController {
     if (dto.endpointMapping !== undefined) {
       this.assertKnownCallerContextVars(dto.endpointMapping);
     }
+    if (dto.responseMapping !== undefined) {
+      this.assertValidResponseMapping(dto.responseMapping);
+    }
+
+    // A changed transform changes the shape clients receive, so the stored
+    // outputSchema (inferred from the previous shape) no longer describes it.
+    // Drop it and let the next successful test re-infer it.
+    const data: Record<string, unknown> = { ...(dto as Record<string, unknown>) };
+    if (dto.responseMapping !== undefined) {
+      const current = await this.prisma.mcpTool.findFirst({
+        where: { id: toolId, connectorId },
+        select: { responseMapping: true },
+      });
+      const before = JSON.stringify(
+        (current?.responseMapping as Record<string, unknown> | null)?.transform ?? null,
+      );
+      const after = JSON.stringify(dto.responseMapping?.transform ?? null);
+      if (before !== after) data.outputSchema = null;
+    }
+
     // Bind the toolId to the connectorId in the WHERE clause so that
     // a request like /connectors/<my>/tools/<other-org's-tool> cannot
     // update a tool that doesn't belong to the requested connector.
     const result = await this.prisma.mcpTool.updateMany({
       where: { id: toolId, connectorId },
-      data: dto as any,
+      data: data as any,
     });
     if (result.count === 0) {
       throw new ForbiddenException('Tool not found');
@@ -445,6 +617,158 @@ export class ToolsController {
     };
   }
 
+  @Get(':toolId/response-mapping')
+  @ApiOperation({
+    summary: 'Get the response mapping configured for a tool',
+    description:
+      'Returns the stored `transform` (or null), whether it is active, and ' +
+      'whether a recent real response is available to preview it against.',
+  })
+  async getResponseMapping(
+    @Req() req: any,
+    @Param('toolId') toolId: string,
+    @Param('connectorId') connectorId: string,
+  ) {
+    await this.assertCanWriteConnector(connectorId, req);
+    const tool = await this.prisma.mcpTool.findFirst({
+      where: { id: toolId, connectorId },
+      select: { responseMapping: true },
+    });
+    if (!tool) throw new ForbiddenException('Tool not found');
+
+    const responseMapping = tool.responseMapping as Record<string, unknown> | null;
+    const lastSample = await this.findLatestSample(toolId);
+
+    return {
+      transform: (responseMapping?.transform as Record<string, unknown>) ?? null,
+      active: hasTransform(responseMapping),
+      sampleAvailable: !!lastSample,
+      sampleCapturedAt: lastSample?.createdAt ?? null,
+    };
+  }
+
+  @Patch(':toolId/response-mapping')
+  @ApiOperation({
+    summary: 'Set or clear the response mapping for a tool',
+    description:
+      'Stores `responseMapping.transform` without touching `cacheTtl` or ' +
+      '`followUp`. Response mapping shrinks what an MCP client receives — ' +
+      'fewer tokens, and only the fields the tool actually needs leave the ' +
+      'workspace. Send `transform: null` to go back to the raw response. ' +
+      'A malformed transform is rejected here rather than silently ignored at ' +
+      'call time.',
+  })
+  async setResponseMapping(
+    @Req() req: any,
+    @Param('toolId') toolId: string,
+    @Param('connectorId') connectorId: string,
+    @Body() dto: SetResponseMappingDto,
+  ) {
+    await this.assertCanWriteConnector(connectorId, req);
+
+    const tool = await this.prisma.mcpTool.findFirst({
+      where: { id: toolId, connectorId },
+      select: { responseMapping: true },
+    });
+    if (!tool) throw new ForbiddenException('Tool not found');
+
+    if (dto.transform) {
+      const error = validateTransform(dto.transform);
+      if (error) throw new BadRequestException(`Invalid response mapping: ${error}`);
+    }
+
+    // Merge, so cacheTtl / followUp survive a mapping edit.
+    const current = (tool.responseMapping as Record<string, unknown> | null) ?? {};
+    const next: Record<string, unknown> = { ...current };
+    if (dto.transform) {
+      next.transform = dto.transform;
+    } else {
+      delete next.transform;
+    }
+
+    await this.prisma.mcpTool.updateMany({
+      where: { id: toolId, connectorId },
+      data: {
+        responseMapping: (Object.keys(next).length > 0 ? next : null) as any,
+        // The advertised outputSchema described the previous shape.
+        outputSchema: null as any,
+      },
+    });
+
+    await this.mcpServer.reloadConnectorTools(connectorId);
+    return {
+      transform: dto.transform ?? null,
+      active: hasTransform(next),
+    };
+  }
+
+  @Post(':toolId/preview-mapping')
+  @ApiOperation({
+    summary: 'Preview a response mapping without calling the upstream API',
+    description:
+      'Runs a transform against a sample response and returns the mapped ' +
+      'result plus the size delta. With no `sample`, the most recent real ' +
+      'response recorded for this tool is used — so a mapping can be built and ' +
+      'checked against production-shaped data without hitting the API again. ' +
+      'Purely read-only: nothing is stored.',
+  })
+  async previewMapping(
+    @Req() req: any,
+    @Param('toolId') toolId: string,
+    @Param('connectorId') connectorId: string,
+    @Body() dto: PreviewMappingDto,
+  ) {
+    await this.assertCanWriteConnector(connectorId, req);
+
+    const tool = await this.prisma.mcpTool.findFirst({
+      where: { id: toolId, connectorId },
+      select: { responseMapping: true },
+    });
+    if (!tool) throw new ForbiddenException('Tool not found');
+
+    if (dto.transform) {
+      const error = validateTransform(dto.transform);
+      if (error) throw new BadRequestException(`Invalid response mapping: ${error}`);
+    }
+
+    let sample = dto.sample;
+    let sampleSource: 'body' | 'last-invocation' | 'none' = 'body';
+    let sampleCapturedAt: Date | null = null;
+
+    if (sample === undefined) {
+      const last = await this.findLatestSample(toolId);
+      if (!last) {
+        return {
+          ok: false,
+          sampleSource: 'none' as const,
+          error:
+            'No sample available. Run the tool once (Test, or from a connected ' +
+            'client), or pass a `sample` in the request body.',
+        };
+      }
+      sample = last.output;
+      sampleSource = 'last-invocation';
+      sampleCapturedAt = last.createdAt;
+    }
+
+    // An explicit `transform: null` previews "no mapping"; omitting the key
+    // previews whatever is stored on the tool.
+    const mapping =
+      dto.transform !== undefined
+        ? dto.transform === null
+          ? null
+          : { transform: dto.transform }
+        : (tool.responseMapping as Record<string, unknown> | null);
+
+    return {
+      ok: true,
+      sampleSource,
+      sampleCapturedAt,
+      raw: sample,
+      ...ToolsController.mappingSummary(sample, mapping),
+    };
+  }
+
   @Patch(':toolId/proxy')
   @ApiOperation({
     summary: 'Toggle proxy / web-unblocker routing for a single tool',
@@ -518,11 +842,25 @@ export class ToolsController {
       );
       const durationMs = Date.now() - startTime;
       const withNote = callerContextNote ? { note: callerContextNote } : {};
+
+      // Shape the response the same way a real MCP call would. `result` stays
+      // the raw upstream payload so existing API consumers are unaffected; the
+      // mapped view is additive. An unsaved `transform` in the body wins, so
+      // the editor can try a mapping before committing to it.
+      const mapping = body.transform
+        ? { transform: body.transform }
+        : (tool.responseMapping as Record<string, unknown> | null);
+      const summary = ToolsController.mappingSummary(result, mapping);
+
       // Auto-fill the tool's output schema from this real response (first time
-      // only). Best-effort — never let it affect the test result.
+      // only). Infer from the mapped shape when a mapping is active, so the
+      // advertised schema describes what clients actually receive.
+      // Best-effort — never let it affect the test result.
       if (!tool.outputSchema) {
         try {
-          const inferred = inferJsonSchema(result);
+          const inferred = inferJsonSchema(
+            summary.mappingApplied ? summary.mapped : result,
+          );
           if (inferred) {
             await this.prisma.mcpTool.update({
               where: { id: tool.id },
@@ -538,6 +876,7 @@ export class ToolsController {
         ok: true,
         durationMs,
         result,
+        ...summary,
         ...withNote,
       };
     } catch (err: any) {

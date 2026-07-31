@@ -18,7 +18,9 @@ import {
   buildCallerContextVars,
 } from '../common/caller-context.util';
 import { resolveInternalDbRestUrl } from '../common/db-rest.util';
+import { applyResponseTransform } from '../connectors/response-transform.util';
 import { KgService } from '../knowledge-graph/kg.service';
+import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 
 /**
@@ -136,7 +138,16 @@ export class DynamicMcpTools {
       connectorIds?: string[];
       intent?: string;
     },
-  ): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
+  ): Promise<{
+    content: { type: 'text'; text: string }[];
+    isError?: boolean;
+    /**
+     * The result as an object, before it was serialized into `content[0].text`.
+     * Lets the MCP endpoint build structuredContent without re-parsing the text
+     * — which silently produced `{}` for any tool with a followUp hint.
+     */
+    structured?: unknown;
+  }> {
     // Check license before executing tool (cloud mode only)
     try {
       await this.licenseGuard.checkLicenseActive(context?.organizationId);
@@ -176,19 +187,23 @@ export class DynamicMcpTools {
       };
     }
 
-    // Check response cache
-    const responseMapping = tool.responseMapping as
-      | import('../connectors/engines/engine-types').ResponseMapping
-      | undefined;
+    // Check response cache. The cache holds the *raw* upstream response, so
+    // editing a tool's response mapping takes effect immediately instead of
+    // after up to cacheTtl seconds.
+    const responseMapping = tool.responseMapping as ResponseMapping | undefined;
     const cacheTtl = responseMapping?.cacheTtl;
     if (cacheTtl && cacheTtl > 0) {
       const cacheKey = this.buildCacheKey(toolName, params);
       const cached = await this.redisService.get(cacheKey);
       if (cached) {
-        this.logger.debug(`Cache hit for tool ${toolName}`);
-        return {
-          content: [{ type: 'text' as const, text: cached }],
-        };
+        try {
+          const raw = JSON.parse(cached);
+          this.logger.debug(`Cache hit for tool ${toolName}`);
+          return this.renderResult(raw, responseMapping, toolName);
+        } catch {
+          // Unreadable entry — fall through and re-execute.
+          this.logger.warn(`Discarding unparsable cache entry for tool ${toolName}`);
+        }
       }
     }
 
@@ -277,31 +292,19 @@ export class DynamicMcpTools {
       // Grow the knowledge graph from this real call (debounced, fire-and-forget).
       void this.kgService.scheduleObservationalIngest(context?.organizationId);
 
-      let resultText = JSON.stringify(result, null, 2);
-
-      // Optional per-tool workflow hint. When a tool's responseMapping.followUp
-      // is set, append it to the result so the calling agent sees — mid-workflow,
-      // inside the tool output it just received — what it should do next (e.g.
-      // "a complete answer also needs tools X and Y; call them before replying").
-      // This drives multi-step tool chains far more reliably than a pre-call
-      // description, which agents often read but don't act on. Purely additive
-      // and opt-in: tools without followUp are unaffected.
-      if (responseMapping?.followUp) {
-        resultText += `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`;
-      }
-
-      // Cache the response if cacheTtl is set
+      // Cache the raw response if cacheTtl is set (shaping happens on read).
       if (cacheTtl && cacheTtl > 0) {
         const cacheKey = this.buildCacheKey(toolName, params);
-        await this.redisService.set(cacheKey, resultText, cacheTtl);
-        this.logger.debug(
-          `Cached response for tool ${toolName} (TTL: ${cacheTtl}s)`,
-        );
+        const serialized = JSON.stringify(result);
+        if (serialized !== undefined) {
+          await this.redisService.set(cacheKey, serialized, cacheTtl);
+          this.logger.debug(
+            `Cached response for tool ${toolName} (TTL: ${cacheTtl}s)`,
+          );
+        }
       }
 
-      return {
-        content: [{ type: 'text' as const, text: resultText }],
-      };
+      return this.renderResult(result, responseMapping, toolName);
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
       const errorDetail = this.extractErrorDetail(error);
@@ -339,6 +342,69 @@ export class DynamicMcpTools {
     }
   }
 
+  /**
+   * Turn a raw engine result into the MCP tool result.
+   *
+   * Two opt-in per-tool behaviours live here, in this order:
+   *
+   *  1. `responseMapping.transform` — response shaping. Upstream endpoints
+   *     routinely return far more than the tool needs (a Datto RMM device
+   *     carries up to 300 UDF fields when the tool wants five), and every extra
+   *     byte is billed to the agent's context and exposed to a third-party
+   *     model. A tool without a transform takes the identity path and its
+   *     output is byte-identical to before this existed.
+   *
+   *  2. `responseMapping.followUp` — a workflow hint appended to the result so
+   *     the calling agent sees, mid-workflow, what it should do next. Drives
+   *     multi-step tool chains far more reliably than a pre-call description.
+   *
+   * A broken mapping must never break a working tool, so a transform error
+   * falls back to the raw response and only warns — unless the operator set
+   * `fallbackToRaw: false`, which is an explicit "I'd rather see the error".
+   */
+  private renderResult(
+    raw: unknown,
+    responseMapping: ResponseMapping | undefined,
+    toolName: string,
+  ): {
+    content: { type: 'text'; text: string }[];
+    isError?: boolean;
+    structured?: unknown;
+  } {
+    const outcome = applyResponseTransform(raw, responseMapping);
+
+    if (outcome.error) {
+      if (outcome.fatal) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(
+                { error: `Response mapping failed: ${outcome.error}` },
+                null,
+                2,
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
+      this.logger.warn(
+        `Response mapping for tool ${toolName} failed (${outcome.error}) — returning the raw response.`,
+      );
+    }
+
+    let resultText = JSON.stringify(outcome.value, null, 2) ?? 'null';
+    if (responseMapping?.followUp) {
+      resultText += `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`;
+    }
+
+    return {
+      content: [{ type: 'text' as const, text: resultText }],
+      structured: outcome.value,
+    };
+  }
+
   private buildCacheKey(
     toolName: string,
     params: Record<string, unknown>,
@@ -347,7 +413,10 @@ export class DynamicMcpTools {
       .update(JSON.stringify(params, Object.keys(params).sort()))
       .digest('hex')
       .slice(0, 12);
-    return `tool_cache:${toolName}:${paramsHash}`;
+    // v2: entries hold the raw upstream response instead of the rendered text.
+    // The prefix bump makes sure a v1 entry is never read back in the new
+    // format — old keys simply expire.
+    return `tool_cache:v2:${toolName}:${paramsHash}`;
   }
 
   /**
