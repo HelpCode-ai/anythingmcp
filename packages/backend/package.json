@@ -34,7 +34,7 @@
     "@nestjs/terminus": "^11.0.0",
     "@nestjs/throttler": "^6.5.0",
     "@opentelemetry/auto-instrumentations-node": "^0.78.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
     "@opentelemetry/resources": "^2.7.1",
     "@opentelemetry/sdk-node": "^0.219.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
