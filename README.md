@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.keysersoft%2Fanythingmcp.svg)](https://mcptoplist.com/server/io.github.keysersoft%2Fanythingmcp)
+
 <p align="center">
   <img src="docs/assets/banner.png" alt="AnythingMCP — turn any API, database or MCP server into custom connectors for Claude, ChatGPT, Gemini, Copilot and Cursor." width="100%" />
 </p>
