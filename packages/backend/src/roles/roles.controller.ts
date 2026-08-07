@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsString, IsOptional, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsArray, ArrayMaxSize } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { RolesService } from './roles.service';
 
@@ -59,6 +59,20 @@ class AssignRoleDto {
   @IsOptional()
   @IsString()
   roleId?: string | null;
+}
+
+class SetUserRolesDto {
+  @ApiProperty({
+    description:
+      'MCP role ids to attach. Pass an empty array to clear the manual assignments. The user receives the UNION of these roles\' tool whitelists.',
+    type: [String],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  // Bounded because an IdP group sync will drive this endpoint: a misconfigured
+  // mapping should fail validation, not write thousands of rows.
+  @ArrayMaxSize(100)
+  roleIds: string[];
 }
 
 @ApiTags('Roles')
@@ -141,7 +155,10 @@ export class RolesController {
   // ── User assignment ───────────────────────────────────────────────────────
 
   @Put('assign/:userId')
-  @ApiOperation({ summary: 'Assign MCP role to a user (ADMIN)' })
+  @ApiOperation({
+    summary:
+      'DEPRECATED — assign a single MCP role to a user (ADMIN). Use PUT /api/roles/assignments/:userId, which supports several roles.',
+  })
   async assignRole(
     @Req() req: any,
     @Param('userId') userId: string,
@@ -154,5 +171,38 @@ export class RolesController {
     );
     if (!result) throw new NotFoundException('User or role not found');
     return { message: 'Role assigned' };
+  }
+
+  @Get('assignments/:userId')
+  @ApiOperation({ summary: 'List the MCP roles assigned to a user (ADMIN)' })
+  async getAssignments(@Req() req: any, @Param('userId') userId: string) {
+    const assignments = await this.rolesService.getUserRoles(
+      userId,
+      req.user.organizationId,
+    );
+    return {
+      roleIds: [...new Set(assignments.map((a) => a.roleId))],
+      roles: assignments.map((a) => ({
+        id: a.role.id,
+        name: a.role.name,
+        source: a.source,
+      })),
+    };
+  }
+
+  @Put('assignments/:userId')
+  @ApiOperation({ summary: 'Set the MCP roles assigned to a user (ADMIN)' })
+  async setAssignments(
+    @Req() req: any,
+    @Param('userId') userId: string,
+    @Body() dto: SetUserRolesDto,
+  ) {
+    const result = await this.rolesService.setUserRoles(
+      userId,
+      dto.roleIds,
+      req.user.organizationId,
+    );
+    if (!result) throw new NotFoundException('User or role not found');
+    return { message: 'Roles updated', roleIds: result.roleIds };
   }
 }

@@ -18,7 +18,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, Equals, Matches } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, Equals, Matches, IsArray } from 'class-validator';
 import { UserRole } from '../generated/prisma/client';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
@@ -32,6 +32,7 @@ import { SiteSettingsService } from '../settings/site-settings.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import { LicenseService } from '../license/license.service';
+import { RolesService } from '../roles/roles.service';
 import { Roles, RolesGuard } from './roles.guard';
 
 class LoginDto {
@@ -115,6 +116,16 @@ class InviteUserDto {
   @IsOptional()
   @IsString()
   mcpRoleId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'MCP role ids to attach. Supersedes mcpRoleId; the invitee receives the UNION of these roles\' tool whitelists.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  mcpRoleIds?: string[];
 }
 
 class AcceptInviteDto {
@@ -149,6 +160,7 @@ export class AuthController {
     private readonly organizationsService: OrganizationsService,
     private readonly licenseService: LicenseService,
     private readonly securityEvents: SecurityEventService,
+    private readonly rolesService: RolesService,
   ) {}
 
   private getFrontendUrl(_req?: any): string {
@@ -499,6 +511,12 @@ export class AuthController {
       ? existingInvite.token
       : crypto.randomBytes(32).toString('hex');
 
+    // `mcpRoleIds` supersedes the single `mcpRoleId`; accept either so an older
+    // frontend bundle keeps working.
+    const invitedMcpRoleIds = [
+      ...new Set(dto.mcpRoleIds ?? (dto.mcpRoleId ? [dto.mcpRoleId] : [])),
+    ];
+
     if (!existingInvite) {
       const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
       await this.prisma.invitationToken.create({
@@ -506,7 +524,8 @@ export class AuthController {
           email: dto.email,
           token: inviteToken,
           role: dto.role,
-          mcpRoleId: dto.mcpRoleId || null,
+          mcpRoleId: invitedMcpRoleIds[0] ?? null,
+          mcpRoleIds: invitedMcpRoleIds,
           invitedBy: req.user.sub,
           organizationId: req.user.organizationId,
           expiresAt,
@@ -527,9 +546,14 @@ export class AuthController {
 
     // Build role label
     let roleName: string = dto.role;
-    if (dto.mcpRoleId) {
-      const mcpRole = await this.prisma.role.findUnique({ where: { id: dto.mcpRoleId } });
-      if (mcpRole) roleName = `${dto.role} (MCP: ${mcpRole.name})`;
+    if (invitedMcpRoleIds.length > 0) {
+      const mcpRoles = await this.prisma.role.findMany({
+        where: { id: { in: invitedMcpRoleIds } },
+        select: { name: true },
+      });
+      if (mcpRoles.length > 0) {
+        roleName = `${dto.role} (MCP: ${mcpRoles.map((r) => r.name).join(', ')})`;
+      }
     }
 
     // Send email
@@ -617,11 +641,25 @@ export class AuthController {
 
       // Create default MCP server for new user
       await this.mcpServersService.createDefaultForUser(user.id, invite.organizationId);
+    }
 
-      // Assign MCP role if specified
-      if (invite.mcpRoleId) {
-        await this.usersService.update(user.id, { mcpRoleId: invite.mcpRoleId });
-      }
+    // Apply the MCP roles the inviting admin chose. This sits OUTSIDE the
+    // branch on purpose: it used to live in the new-user path only, so an
+    // EXISTING user joining a second organization silently lost the roles the
+    // admin had selected — and losing a role fails OPEN here (no role at all
+    // means unrestricted), which is the wrong direction to fail.
+    const invitedRoleIds =
+      invite.mcpRoleIds.length > 0
+        ? invite.mcpRoleIds
+        : invite.mcpRoleId
+          ? [invite.mcpRoleId]
+          : [];
+    if (invitedRoleIds.length > 0) {
+      await this.rolesService.setUserRoles(
+        user.id,
+        invitedRoleIds,
+        invite.organizationId,
+      );
     }
 
     // Mark invitation as used

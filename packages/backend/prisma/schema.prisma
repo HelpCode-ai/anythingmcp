@@ -42,6 +42,7 @@ model Organization {
   kgValueSeen      KgValueSeen[]
   kgSkills         KgSkillSuggestion[]
   securityEvents   SecurityEvent[]
+  userRoleAssignments UserRoleAssignment[]
 
   @@map("organizations")
 }
@@ -138,10 +139,14 @@ model User {
   // could set a password and walk straight past SSO, MFA and Conditional Access.
   passwordLoginDisabled Boolean @default(false) @map("password_login_disabled")
 
-  // MCP tool governance — optional custom role for tool access control
+  // MCP tool governance.
+  /// @deprecated Single, GLOBAL role. Superseded by `roleAssignments`
+  /// (per-organization, many-to-many). Still written so a rollback to the
+  /// previous release keeps working; dropped in the contract migration.
   mcpRoleId String? @map("mcp_role_id")
   mcpRole   Role?   @relation(fields: [mcpRoleId], references: [id], onDelete: SetNull)
 
+  roleAssignments          UserRoleAssignment[]
   securityEventsAsActor    SecurityEvent[] @relation("SecurityEventActor")
   securityEventsAsTarget   SecurityEvent[] @relation("SecurityEventTarget")
 
@@ -226,7 +231,10 @@ model InvitationToken {
   email          String
   token          String    @unique
   role           UserRole  @default(EDITOR)
+  /// @deprecated Superseded by `mcpRoleIds`; kept for invites created by the
+  /// previous release, which stay valid for their 48h lifetime.
   mcpRoleId      String?   @map("mcp_role_id")
+  mcpRoleIds     String[]  @default([]) @map("mcp_role_ids")
   invitedBy      String    @map("invited_by") // admin user id
   organizationId String    @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -249,11 +257,53 @@ model Role {
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
-  users      User[]
-  toolAccess ToolRoleAccess[]
+  /// @deprecated Single-FK back-relation of `User.mcpRoleId`. Superseded by
+  /// `assignments`; removed with the column in the contract migration.
+  users       User[]
+  assignments UserRoleAssignment[]
+  toolAccess  ToolRoleAccess[]
 
   @@unique([organizationId, name])
   @@map("roles")
+}
+
+// ── User ↔ Role (per-organization, many-to-many) ────────────────────────────
+// Replaces the single `users.mcp_role_id` FK, which was both single-valued and
+// GLOBAL: a user could hold one MCP role across every workspace they belonged
+// to, so per-org governance was structurally impossible and one org's admin
+// could overwrite another's assignment.
+//
+// A user in several Entra groups must accumulate the UNION of those groups'
+// tool whitelists, which a single FK cannot express either.
+model UserRoleAssignment {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId String @map("role_id")
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  // NULLABLE on purpose. A null-org grant applies in every organization, which
+  // is how a grant of an `isSystem` role behaves. Forcing NOT NULL would mean
+  // the backfill has to drop rows it cannot attribute — and dropping a grant
+  // fails OPEN here (no grant at all = unrestricted), so a stricter column
+  // would be the less safe choice.
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// 'manual' = set by an admin, 'entra' = derived from an IdP group claim.
+  /// Part of the unique key so that revoking an IdP-derived grant can never
+  /// silently delete one an admin made by hand.
+  source      String  @default("manual")
+  /// Provenance for synced grants — the Entra group object id or app role.
+  externalRef String? @map("external_ref")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, roleId, source])
+  @@index([userId])
+  @@index([roleId])
+  @@index([organizationId])
+  @@map("user_roles")
 }
 
 // ── Tool ↔ Role Access (whitelist) ──────────────────────────────────────────
