@@ -1,7 +1,7 @@
 // Curated, zero-credential connectors used for the onboarding "aha moment":
 // install in one click (no auth), then auto-run a sample tool so a brand-new
 // user sees a real, successful result before being asked to connect anything.
-// All three are authType NONE in the adapter catalog.
+// All of them are authType NONE in the adapter catalog.
 export interface DemoConnector {
   slug: string;
   name: string;
@@ -29,14 +29,6 @@ export const DEMO_CONNECTORS: DemoConnector[] = [
     blurb: 'Official EUR exchange rates — no key.',
     tool: 'bundesbank_get_exchange_rates',
     params: { currency: 'USD' },
-  },
-  {
-    slug: 'playtomic-public',
-    name: 'Playtomic',
-    emoji: '🎾',
-    blurb: 'Padel sport catalog — no login.',
-    tool: 'playtomic_get_sport_configuration',
-    params: {},
   },
 ];
 

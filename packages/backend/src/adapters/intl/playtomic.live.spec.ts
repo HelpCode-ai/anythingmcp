@@ -19,14 +19,14 @@ describe('playtomic adapter — static spec conformance', () => {
   it('is the full LOGIN_TOKEN variant in the sports category', () => {
     expect(a.slug).toBe('playtomic');
     expect(a.category).toBe('sports');
-    expect(a.connector.baseUrl).toBe('https://app.playtomic.io');
+    expect(a.connector.baseUrl).toBe('https://api.app.playtomic.io');
     expect(a.connector.authType).toBe('LOGIN_TOKEN');
     expect(a.requiredEnvVars).toEqual(['PLAYTOMIC_EMAIL', 'PLAYTOMIC_PASSWORD']);
   });
 
-  it('login posts to /api/v3/auth/login with ROLE_CUSTOMER and reads access_token + expiration', () => {
+  it('login posts to /v3/auth/login with ROLE_CUSTOMER and reads access_token + expiration', () => {
     const auth = a.connector.authConfig as Record<string, unknown>;
-    expect(auth.loginUrl).toBe('https://app.playtomic.io/api/v3/auth/login');
+    expect(auth.loginUrl).toBe('https://api.app.playtomic.io/v3/auth/login');
     expect(auth.loginMethod).toBe('POST');
     expect(auth.tokenJsonPath).toBe('access_token');
     expect(auth.expiryJsonPath).toBe('access_token_expiration');
