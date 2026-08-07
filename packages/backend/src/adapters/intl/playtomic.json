@@ -2,7 +2,7 @@
   "slug": "playtomic",
   "name": "Playtomic",
   "description": "Full Playtomic access for padel, tennis, and futsal players. Search clubs and availability, find open matches to join, read your own profile, level, stats, history, and recommendations. 13 tools, email + password auth with automatic JWT refresh.",
-  "instructions": "## Authentication (handled automatically)\n\nPlaytomic uses email + password to mint a ~1-hour JWT. The AnythingMCP `LOGIN_TOKEN` engine handles login, caching, and refresh:\n\n1. `POST https://app.playtomic.io/api/v3/auth/login` with `{ email, password, requested_user_roles: [\"ROLE_CUSTOMER\"] }`.\n2. The response contains `access_token` (JWT, ~1h TTL) and `refresh_token` (~60d).\n3. Every tool call attaches `Authorization: Bearer <access_token>`.\n4. The engine proactively re-logs in 60 s before expiry and on any `401`. Tokens are cached encrypted in the `connector_auth_cache` DB table.\n\n## Credentials\n\n- `PLAYTOMIC_EMAIL` — your Playtomic account email.\n- `PLAYTOMIC_PASSWORD` — your plain account password. Stored encrypted; only sent over TLS to Playtomic's login endpoint.\n\n## When dedicated tools are not enough\n\nThe 13 tools below cover the common Playtomic workflows. Anything not exposed (e.g. accepting a join request, creating a match, paying for a booking) requires Playtomic's mobile app — there is no documented public booking write API and we deliberately don't expose write endpoints.\n\n## Public vs full connector\n\nIf you only want to **search clubs and check availability** (no account, no personal data), use the `playtomic-public` connector instead — same 4 read tools but no credentials needed.\n\n## Pricing notes\n\n- `price` is a string like `\"48 EUR\"` — parse amount + currency.\n- The same `start_time` may appear with several `duration` values (60/90/120 min). These are alternative bookings of the same slot, not separate free slots.\n- `duration` is in **minutes**.\n- If your account has linked club memberships, pricing returned by `playtomic_get_availability` reflects your member discount.\n\n## Time handling\n\n- `local_start_min` / `local_start_max` are naive ISO-8601 in the **tenant's** local timezone (see `tenant.address.timezone`, e.g. `Europe/Berlin`). For a full day use `T00:00:00` → `T23:59:59` on the same date.\n- Match/course/tournament date filters use the same naive ISO format unless otherwise noted.\n\n## Joining availability to courts\n\nEvery availability row has a `resource_id`. Map it back to `tenant.resources[]` (from `playtomic_get_tenant`) to know court name, indoor/outdoor, single/double, surface.\n\n## Levels & match recommendations\n\n- `level_value` is your Playtomic skill rating (typically 0–7). `level_confidence` reflects how many matches the rating is based on.\n- `playtomic_match_recommendations` returns open matches at your level near a coordinate. Empty array = no recommendations right now (it's normal).\n\n## Rate limits\n\nPlaytomic has no published SLA. Keep request volume reasonable (≤1 req/s steady state). The engine auto-handles `401` with a retry-after-relogin and gives up after one retry — if you see `401` twice, check that your credentials are correct.\n\n## Stability\n\nThis is an undocumented/internal API reverse-engineered from the Playtomic iOS app. Endpoints can change without notice. If a tool starts failing, check the AnythingMCP docs for a connector update.\n\n## Useful starter prompts\n\n- \"Find open padel matches at my level near Milan this weekend.\" → `playtomic_match_recommendations`\n- \"What's my current padel level on Playtomic?\" → `playtomic_get_my_level`\n- \"How many padel matches have I won this year?\" → `playtomic_get_my_stats`\n- \"At which clubs do I play the most?\" → `playtomic_get_top_clubs`\n- \"Show me free crystal-court slots tomorrow afternoon within 20 km of my home.\" → `playtomic_search_tenants` + `playtomic_get_availability`\n- \"Are there any padel tournaments coming up near Barcelona?\" → `playtomic_list_tournaments`",
+  "instructions": "## Authentication (handled automatically)\n\nPlaytomic uses email + password to mint a ~1-hour JWT. The AnythingMCP `LOGIN_TOKEN` engine handles login, caching, and refresh:\n\n1. `POST https://api.app.playtomic.io/v3/auth/login` with `{ email, password, requested_user_roles: [\"ROLE_CUSTOMER\"] }`.\n2. The response contains `access_token` (JWT, ~1h TTL) and `refresh_token` (~60d).\n3. Every tool call attaches `Authorization: Bearer <access_token>`.\n4. The engine proactively re-logs in 60 s before expiry and on any `401`. Tokens are cached encrypted in the `connector_auth_cache` DB table.\n\n## Credentials\n\n- `PLAYTOMIC_EMAIL` — your Playtomic account email.\n- `PLAYTOMIC_PASSWORD` — your plain account password. Stored encrypted; only sent over TLS to Playtomic's login endpoint.\n\n## When dedicated tools are not enough\n\nThe 13 tools below cover the common Playtomic workflows. Anything not exposed (e.g. accepting a join request, creating a match, paying for a booking) requires Playtomic's mobile app — there is no documented public booking write API and we deliberately don't expose write endpoints.\n\n## Public vs full connector\n\nIf you only want to **search clubs and check availability** (no personal data), use the `playtomic-public` (Playtomic Lite) connector instead — the same 4 read tools with a lighter scope. It still needs a free Playtomic account, since Playtomic closed anonymous API access.\n\n## Pricing notes\n\n- `price` is a string like `\"48 EUR\"` — parse amount + currency.\n- The same `start_time` may appear with several `duration` values (60/90/120 min). These are alternative bookings of the same slot, not separate free slots.\n- `duration` is in **minutes**.\n- If your account has linked club memberships, pricing returned by `playtomic_get_availability` reflects your member discount.\n\n## Time handling\n\n- `local_start_min` / `local_start_max` are naive ISO-8601 in the **tenant's** local timezone (see `tenant.address.timezone`, e.g. `Europe/Berlin`). For a full day use `T00:00:00` → `T23:59:59` on the same date.\n- Match/course/tournament date filters use the same naive ISO format unless otherwise noted.\n\n## Joining availability to courts\n\nEvery availability row has a `resource_id`. Map it back to `tenant.resources[]` (from `playtomic_get_tenant`) to know court name, indoor/outdoor, single/double, surface.\n\n## Levels & match recommendations\n\n- `level_value` is your Playtomic skill rating (typically 0–7). `level_confidence` reflects how many matches the rating is based on.\n- `playtomic_match_recommendations` returns open matches at your level near a coordinate. Empty array = no recommendations right now (it's normal).\n\n## Rate limits\n\nPlaytomic has no published SLA. Keep request volume reasonable (≤1 req/s steady state). The engine auto-handles `401` with a retry-after-relogin and gives up after one retry — if you see `401` twice, check that your credentials are correct.\n\n## Stability\n\nThis is an undocumented/internal API reverse-engineered from the Playtomic iOS app. Endpoints can change without notice. If a tool starts failing, check the AnythingMCP docs for a connector update.\n\n## Useful starter prompts\n\n- \"Find open padel matches at my level near Milan this weekend.\" → `playtomic_match_recommendations`\n- \"What's my current padel level on Playtomic?\" → `playtomic_get_my_level`\n- \"How many padel matches have I won this year?\" → `playtomic_get_my_stats`\n- \"At which clubs do I play the most?\" → `playtomic_get_top_clubs`\n- \"Show me free crystal-court slots tomorrow afternoon within 20 km of my home.\" → `playtomic_search_tenants` + `playtomic_get_availability`\n- \"Are there any padel tournaments coming up near Barcelona?\" → `playtomic_list_tournaments`",
   "region": "intl",
   "category": "sports",
   "icon": "playtomic",
@@ -16,10 +16,10 @@
   "connector": {
     "name": "Playtomic",
     "type": "REST",
-    "baseUrl": "https://app.playtomic.io",
+    "baseUrl": "https://api.app.playtomic.io",
     "authType": "LOGIN_TOKEN",
     "authConfig": {
-      "loginUrl": "https://app.playtomic.io/api/v3/auth/login",
+      "loginUrl": "https://api.app.playtomic.io/v3/auth/login",
       "loginMethod": "POST",
       "loginBody": {
         "requested_user_roles": [
@@ -84,7 +84,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/tenants",
+        "path": "/v1/tenants",
         "queryParams": {
           "coordinate": "$coordinate",
           "radius": "$radius",
@@ -113,7 +113,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/tenants/{tenant_id}"
+        "path": "/v1/tenants/{tenant_id}"
       }
     },
     {
@@ -153,7 +153,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/availability",
+        "path": "/v1/availability",
         "queryParams": {
           "sport_id": "$sport_id",
           "tenant_id": "$tenant_id",
@@ -173,7 +173,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v2/configuration"
+        "path": "/v2/configuration"
       }
     },
     {
@@ -186,7 +186,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v2/users/me"
+        "path": "/v2/users/me"
       }
     },
     {
@@ -205,7 +205,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/levels",
+        "path": "/v1/levels",
         "queryParams": {
           "user_id": "me",
           "with_history": "$with_history"
@@ -232,7 +232,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/matches_summary/results",
+        "path": "/v1/matches_summary/results",
         "queryParams": {
           "player_user_id": "me",
           "sport_id": "$sport_id"
@@ -269,7 +269,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/matches_summary/top_tenants_by_player",
+        "path": "/v1/matches_summary/top_tenants_by_player",
         "queryParams": {
           "player_user_id": "me",
           "sport_id": "$sport_id",
@@ -312,7 +312,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/matches",
+        "path": "/v1/matches",
         "queryParams": {
           "after_end_date": "$after_end_date",
           "before_end_date": "$before_end_date",
@@ -341,7 +341,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/matches/{match_id}"
+        "path": "/v1/matches/{match_id}"
       }
     },
     {
@@ -373,7 +373,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/match_recommendations",
+        "path": "/v1/match_recommendations",
         "queryParams": {
           "coordinate": "$coordinate",
           "size": "$size",
@@ -410,7 +410,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v2/tournaments",
+        "path": "/v2/tournaments",
         "queryParams": {
           "to_start_date": "$to_start_date",
           "status": "$status",
@@ -459,7 +459,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/leagues",
+        "path": "/v1/leagues",
         "queryParams": {
           "coordinate": "$coordinate",
           "radius": "$radius",

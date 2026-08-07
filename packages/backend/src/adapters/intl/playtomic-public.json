@@ -1,21 +1,43 @@
 {
   "slug": "playtomic-public",
-  "name": "Playtomic (Public)",
-  "description": "Find padel, tennis, and futsal courts worldwide — read-only, no account needed. Search clubs near you, check court availability and pricing, browse Playtomic's tenant catalog. 4 tools, zero setup.",
-  "instructions": "This connector wraps Playtomic's **public** read endpoints — no login, no API key, no setup. It's the fastest way to give an AI agent the ability to find padel/tennis courts and check availability.\n\n**What you can do without an account**:\n- Search clubs (tenants) by geo coordinate + radius, optionally filtered by sport.\n- Fetch a single club's full details (resources/courts, opening info, address, timezone, images).\n- Read free time slots for a given day across one or more clubs, with prices.\n- Read Playtomic's sport configuration (allowed durations, resource types, sport list).\n\n**What requires the full Playtomic connector instead**:\n- Your own profile, level, match history, social graph.\n- Open matches you can join.\n- Member/club-specific discounted pricing (this connector returns generic pricing).\n- Booking a court (write operations are not exposed — Playtomic has no official public booking API).\n\n**Pricing notes**:\n- `price` is a string like `\"48 EUR\"` — parse amount + currency separately.\n- Same `start_time` may appear multiple times with different `duration` values (60/90/120 min). These are alternative bookings of the same slot, not separate free slots.\n- `duration` is in **minutes**.\n\n**Time handling**:\n- `local_start_min` / `local_start_max` are naive ISO-8601 in the tenant's local timezone — find the timezone in `tenant.address.timezone` (e.g. `Europe/Berlin`).\n- For a full-day window use `2026-05-23T00:00:00` → `2026-05-23T23:59:59`.\n\n**Joining availability back to courts**: every availability row has a `resource_id`; map it back to `tenant.resources[].name` from `get_tenant` to know which court (indoor/outdoor, single/double, etc.).\n\n**Rate limits**: Playtomic has no published public-API SLA. Be gentle — under 1 req/s is safe. The connector identifies itself honestly as AnythingMCP (no UA spoofing).\n\n**Stability**: this is an undocumented/internal API reverse-engineered from the iOS app. Endpoints can change without notice. If a tool breaks, check the docs URL for updates.\n\n**Suggested starter prompts**:\n- \"Find padel clubs within 30 km of Milan that are open today.\"\n- \"What time slots are free on Saturday afternoon at FREIBURG PADEL?\"\n- \"Compare prices across all padel clubs in Madrid for Sunday morning, 90-minute sessions.\"\n- \"Which courts in Barcelona offer indoor crystal padel?\"",
+  "name": "Playtomic (Lite)",
+  "description": "Find padel, tennis, and futsal courts worldwide — read-only. Search clubs near you, check court availability and pricing, browse Playtomic's tenant catalog. 4 read tools; needs a free Playtomic account (email + password), no API key.",
+  "instructions": "This is the **lite, read-only** Playtomic connector — the fastest way to give an AI agent the ability to find padel/tennis courts and check availability, without the 13-tool full connector's personal-data scope.\n\n**Authentication (handled automatically)**: Playtomic closed anonymous access to its API in mid-2025, so even read-only club search now needs an authenticated session. Provide a **free** Playtomic account (`PLAYTOMIC_EMAIL` + `PLAYTOMIC_PASSWORD`); the AnythingMCP `LOGIN_TOKEN` engine logs in, attaches `Authorization: Bearer <jwt>` to every call, caches the token encrypted, and re-logs in automatically ~60 s before expiry and on any `401`. Your password is stored encrypted and only sent over TLS to Playtomic's login endpoint. No club membership is required — any registered Playtomic user works.\n\n**What you can do**:\n- Search clubs (tenants) by geo coordinate + radius, optionally filtered by sport.\n- Fetch a single club's full details (resources/courts, opening info, address, timezone, images).\n- Read free time slots for a given day across one or more clubs, with prices.\n- Read Playtomic's sport configuration (allowed durations, resource types, sport list).\n\n**What requires the full Playtomic connector instead**:\n- Your own profile, level, match history, social graph.\n- Open matches you can join.\n- Member/club-specific discounted pricing (this connector returns generic pricing).\n- Booking a court (write operations are not exposed — Playtomic has no official public booking API).\n\n**Pricing notes**:\n- `price` is a string like `\"48 EUR\"` — parse amount + currency separately.\n- Same `start_time` may appear multiple times with different `duration` values (60/90/120 min). These are alternative bookings of the same slot, not separate free slots.\n- `duration` is in **minutes**.\n\n**Time handling**:\n- `local_start_min` / `local_start_max` are naive ISO-8601 in the tenant's local timezone — find the timezone in `tenant.address.timezone` (e.g. `Europe/Berlin`).\n- For a full-day window use `2026-05-23T00:00:00` → `2026-05-23T23:59:59`.\n\n**Joining availability back to courts**: every availability row has a `resource_id`; map it back to `tenant.resources[].name` from `get_tenant` to know which court (indoor/outdoor, single/double, etc.).\n\n**Rate limits**: Playtomic has no published public-API SLA. Be gentle — under 1 req/s is safe. The connector identifies itself honestly as AnythingMCP (no UA spoofing).\n\n**Stability**: this is an undocumented/internal API reverse-engineered from the iOS app. Endpoints can change without notice. If a tool breaks, check the docs URL for updates.\n\n**Suggested starter prompts**:\n- \"Find padel clubs within 30 km of Milan that are open today.\"\n- \"What time slots are free on Saturday afternoon at FREIBURG PADEL?\"\n- \"Compare prices across all padel clubs in Madrid for Sunday morning, 90-minute sessions.\"\n- \"Which courts in Barcelona offer indoor crystal padel?\"",
   "region": "intl",
   "category": "sports",
   "icon": "playtomic",
   "docsUrl": "https://playtomic.io",
   "featured": true,
   "priority": 80,
-  "requiredEnvVars": [],
+  "requiredEnvVars": [
+    "PLAYTOMIC_EMAIL",
+    "PLAYTOMIC_PASSWORD"
+  ],
   "connector": {
-    "name": "Playtomic Public API",
+    "name": "Playtomic Lite",
     "type": "REST",
-    "baseUrl": "https://app.playtomic.io",
-    "authType": "NONE",
-    "authConfig": {}
+    "baseUrl": "https://api.app.playtomic.io",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://api.app.playtomic.io/v3/auth/login",
+      "loginMethod": "POST",
+      "loginBody": {
+        "requested_user_roles": [
+          "ROLE_CUSTOMER"
+        ],
+        "email": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{PLAYTOMIC_EMAIL}}",
+      "password": "{{PLAYTOMIC_PASSWORD}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "access_token_expiration",
+      "expiryFormat": "iso8601",
+      "refreshOn401": true,
+      "proactiveRefreshSeconds": 60,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    }
   },
   "tools": [
     {
@@ -62,7 +84,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/tenants",
+        "path": "/v1/tenants",
         "queryParams": {
           "coordinate": "$coordinate",
           "radius": "$radius",
@@ -91,7 +113,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/tenants/{tenant_id}"
+        "path": "/v1/tenants/{tenant_id}"
       }
     },
     {
@@ -132,7 +154,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v1/availability",
+        "path": "/v1/availability",
         "queryParams": {
           "sport_id": "$sport_id",
           "tenant_id": "$tenant_id",
@@ -151,7 +173,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v2/configuration"
+        "path": "/v2/configuration"
       }
     }
   ]
