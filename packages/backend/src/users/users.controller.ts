@@ -146,6 +146,15 @@ export class UsersController {
     const user = await this.usersService.findById(req.user.sub);
     if (!user) throw new UnauthorizedException('User not found');
 
+    // An IdP-provisioned user has no password to confirm with. Refuse rather
+    // than hand null to bcrypt — and rather than skip the confirmation, which
+    // would make account deletion a one-click action on a stolen session.
+    if (!user.passwordHash) {
+      throw new UnauthorizedException(
+        'This account has no password. Account deletion is not available for SSO-only accounts.',
+      );
+    }
+
     const isValid = await this.authService.comparePassword(dto.password, user.passwordHash);
     if (!isValid) throw new UnauthorizedException('Invalid password');
 
@@ -159,6 +168,15 @@ export class UsersController {
     const user = await this.usersService.findById(req.user.sub);
     if (!user) return { error: 'User not found' };
 
+    // SSO-only accounts must not be able to grow a password: that would create
+    // a second way in that bypasses the IdP's MFA and Conditional Access.
+    if (user.passwordLoginDisabled || !user.passwordHash) {
+      return {
+        error:
+          'Password sign-in is disabled for this account. Manage credentials through your organization sign-in.',
+      };
+    }
+
     const isValid = await this.authService.comparePassword(
       dto.currentPassword,
       user.passwordHash,
@@ -167,9 +185,19 @@ export class UsersController {
       return { error: 'Current password is incorrect' };
     }
 
+    // Revoke every session issued before now, exactly as the reset flow does.
+    // Changing a password is a "lock everyone else out" action; leaving old
+    // tokens alive would keep an attacker's session valid for up to 24h (longer
+    // on an MCP refresh token) after the user thinks they have shut it down.
     const newHash = await this.authService.hashPassword(dto.newPassword);
-    await this.usersService.update(req.user.sub, { passwordHash: newHash });
-    return { message: 'Password changed successfully' };
+    await this.usersService.update(req.user.sub, {
+      passwordHash: newHash,
+      sessionsValidFrom: new Date(),
+    });
+    return {
+      message:
+        'Password changed successfully. Other sessions have been signed out.',
+    };
   }
 
   // ── Admin endpoints ──────────────────────────────────────────────────────

@@ -137,25 +137,52 @@ export class RolesService {
    * Get the list of tool IDs a user is allowed to use.
    * Returns null if user has unrestricted access (no role assigned or ADMIN).
    */
-  async getAllowedToolIds(userId: string): Promise<string[] | null> {
-    // The MCP OAuth JWT sets `sub` to the user's email/username (not the DB UUID).
-    // Try lookup by ID first, then fall back to email.
-    let user = await this.prisma.user.findUnique({
+  async getAllowedToolIds(
+    userId: string,
+    organizationId?: string,
+  ): Promise<string[] | null> {
+    // SECURITY: `userId` is the `users.id` cuid on every auth path — app JWTs
+    // carry it in `sub`, and so do MCP OAuth tokens (LocalOAuthProvider maps
+    // the profile `username` to the cuid). There is deliberately NO fallback
+    // to `where: { email: userId }`: that turned a mutable, IdP-supplied email
+    // into a lookup key for tool authorization, so a token bearing a victim's
+    // email would inherit the victim's tool grants.
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, mcpRoleId: true },
+      select: { role: true, mcpRoleId: true, organizationId: true },
     });
 
-    if (!user) {
-      user = await this.prisma.user.findUnique({
-        where: { email: userId },
-        select: { role: true, mcpRoleId: true },
-      });
-    }
-
+    // Unknown principal — fail closed (no tools), never `null`/unrestricted.
     if (!user) return [];
 
-    // ADMIN always has full access
-    if (user.role === 'ADMIN') return null;
+    // SECURITY: `users.role` is only a CACHE of the role in the user's active
+    // organization (OrganizationsService refreshes it on switchOrg). Reading it
+    // here granted unrestricted tool access across org boundaries: in cloud
+    // every self-registered user is ADMIN of their own workspace, so anyone who
+    // had ever signed up carried ADMIN in the cache and, when calling a
+    // corporate org's /mcp/:serverId where they are merely a VIEWER, matched
+    // the `=== 'ADMIN'` bypass below and received EVERY tool — straight past
+    // that org's ToolRoleAccess whitelist.
+    //
+    // The authoritative per-org role lives in organization_members, so resolve
+    // against the organization actually being acted on.
+    const orgId = organizationId ?? user.organizationId ?? null;
+    let effectiveRole: string = user.role;
+    if (orgId) {
+      const membership = await this.prisma.organizationMember.findUnique({
+        where: {
+          userId_organizationId: { userId, organizationId: orgId },
+        },
+        select: { role: true },
+      });
+      // Not a member of this org — fail closed. The endpoint-level tenant check
+      // denies this case first; this is defense in depth, not the only gate.
+      if (!membership) return [];
+      effectiveRole = membership.role;
+    }
+
+    // ADMIN of THIS organization always has full access
+    if (effectiveRole === 'ADMIN') return null;
 
     // No custom role = full access (backward compat)
     if (!user.mcpRoleId) return null;

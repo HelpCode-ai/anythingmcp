@@ -41,6 +41,7 @@ model Organization {
   kgConnectorState KgConnectorState[]
   kgValueSeen      KgValueSeen[]
   kgSkills         KgSkillSuggestion[]
+  securityEvents   SecurityEvent[]
 
   @@map("organizations")
 }
@@ -87,7 +88,8 @@ enum UserRole {
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
-  passwordHash   String   @map("password_hash")
+  // Nullable: users provisioned through an external IdP never have one.
+  passwordHash   String?  @map("password_hash")
   name           String?
   role           UserRole @default(EDITOR)
   emailVerified  Boolean  @default(false) @map("email_verified")
@@ -113,9 +115,35 @@ model User {
   firstSuccessfulInvocationAt DateTime? @map("first_successful_invocation_at")
   activationReminderAt        DateTime? @map("activation_reminder_at")
 
+  // ── Revocation ────────────────────────────────────────────────────────────
+  // Tokens are stateless JWTs signed with a shared secret, and `/revoke` is
+  // advertised but unimplemented, so until now NOTHING could be revoked before
+  // its natural expiry — not a demoted user's session, not a deprovisioned
+  // account, not an MCP token.
+  //
+  // `sessionsValidFrom` is a cutover instant: any token whose `iat` predates it
+  // is refused. A timestamp rather than an epoch COUNTER on purpose — a counter
+  // has to be echoed back as a claim, and MCP access tokens are minted by
+  // @rekog/mcp-nest, which we cannot ask to carry one. Every JWT already has
+  // `iat`, so this single field revokes both token families at once.
+  //
+  // Comparison is at second granularity (`iat` is in seconds), leaving a
+  // sub-second window where a token minted in the very same second as the
+  // revocation survives. Accepted: closing it would instead reject a legitimate
+  // token issued moments after a password change.
+  sessionsValidFrom DateTime? @map("sessions_valid_from")
+
+  // Set when the user must authenticate through an external IdP. Gates BOTH
+  // password login and password RESET — otherwise anyone with mailbox access
+  // could set a password and walk straight past SSO, MFA and Conditional Access.
+  passwordLoginDisabled Boolean @default(false) @map("password_login_disabled")
+
   // MCP tool governance — optional custom role for tool access control
   mcpRoleId String? @map("mcp_role_id")
   mcpRole   Role?   @relation(fields: [mcpRoleId], references: [id], onDelete: SetNull)
+
+  securityEventsAsActor    SecurityEvent[] @relation("SecurityEventActor")
+  securityEventsAsTarget   SecurityEvent[] @relation("SecurityEventTarget")
 
   memberships              OrganizationMember[]
   connectors               Connector[]
@@ -569,6 +597,58 @@ model ToolInvocation {
   @@index([organizationId, createdAt])
   @@index([connectorId, createdAt])
   @@map("tool_invocations")
+}
+
+// ── Security Audit Log ──────────────────────────────────────────────────────
+// Append-only trail for AUTHENTICATION and AUTHORIZATION events.
+//
+// `tool_invocations` cannot carry these: its `tool_id` is NOT NULL with an FK
+// to `mcp_tools`, so an event like "SSO login failed" or "role granted from an
+// IdP group" has nowhere to go and would only ever reach the Pino logs.
+//
+// `organization_id` is NULLABLE on purpose: some of the most important events
+// happen BEFORE an org can be resolved (a rejected token, a login attempt for
+// an unknown user). Dropping those would defeat the point, so they are kept
+// with a null org rather than lost.
+//
+// That nullability is also why this table is deliberately NOT registered in
+// `prisma/rls/enable-rls.sql`: the `org_isolation` policy compares
+// `organization_id = current_setting('app.current_org')`, and `NULL = NULL` is
+// never true, so every org-less security event would become invisible — the
+// exact rows an investigation needs most. Reads are scoped in the app layer.
+model SecurityEvent {
+  id String @id @default(cuid())
+
+  // Slug, e.g. 'SSO_LOGIN_SUCCESS'. A string rather than an enum so adding an
+  // event type never requires a migration.
+  event String
+
+  // Who acted: 'USER' | 'SYSTEM' | 'ANONYMOUS'.
+  actorType String @map("actor_type")
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  // SetNull, not Cascade: deleting a user must not erase the evidence of what
+  // was done to or by them.
+  actorUserId  String? @map("actor_user_id")
+  actorUser    User?   @relation("SecurityEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  targetUserId String? @map("target_user_id")
+  targetUser   User?   @relation("SecurityEventTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  // Free-form, REDACTED before write — never tokens, secrets or full id_tokens.
+  metadata Json?
+
+  ip        String?
+  userAgent String? @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([event, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@map("security_events")
 }
 
 // ── OAuth2 Authorization Server ─────────────────────────────────────────────

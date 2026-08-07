@@ -27,6 +27,9 @@ import { McpAuthMiddleware } from './auth/mcp-auth.middleware';
 import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
 import { ClientCredentialsMiddleware } from './auth/client-credentials.middleware';
 import { OAuthRegisterGuardMiddleware } from './auth/oauth-register-guard.middleware';
+import { AuthorizePkceMiddleware } from './auth/authorize-pkce.middleware';
+import { ResourceIndicatorMiddleware } from './auth/resource-indicator.middleware';
+import { AuthorizationIssuerMiddleware } from './auth/authorization-issuer.middleware';
 import { LocalOAuthProvider } from './auth/local-oauth.provider';
 import { PrismaOAuthStore } from './auth/prisma-oauth.store';
 import { PrismaService } from './common/prisma.service';
@@ -169,6 +172,20 @@ export class AppModule implements NestModule {
     // with a 500 on undefined.redirect_uris). Always on — the guard is
     // a pure body-shape validator and a no-op for valid JSON requests.
     consumer.apply(OAuthRegisterGuardMiddleware).forRoutes('register');
+
+    // Require PKCE with S256 on /authorize. Upstream only validates a code
+    // challenge when one is present and defaults the method to 'plain', which
+    // — with open DCR — leaves authorization codes replayable.
+    if (mode === 'oauth2' || mode === 'both') {
+      consumer.apply(AuthorizePkceMiddleware).forRoutes('authorize');
+
+      // MCP 2026-07-28 alignment. Capture the client's RFC 8707 `resource`
+      // (upstream ignores it) and append the RFC 9207 `iss` to authorization
+      // responses — the latter MUST stay in step with
+      // `authorization_response_iss_parameter_supported` in the metadata.
+      consumer.apply(ResourceIndicatorMiddleware).forRoutes('authorize');
+      consumer.apply(AuthorizationIssuerMiddleware).forRoutes('callback');
+    }
 
     // Apply legacy auth middleware for MCP endpoint
     if (mode === 'legacy' || mode === 'both') {

@@ -298,10 +298,15 @@ export class McpEndpointController {
     const allTools = this.toolRegistry.getAllTools();
     const serverTools = allTools.filter((t) => connectorIds.includes(t.connectorId));
 
-    // 4. Further filter by role-based access if user is identified
+    // 4. Further filter by role-based access if user is identified. Scope to
+    // THIS server's organization so the caller's role is read from their
+    // membership of it, not from the cached active-org role.
     let allowedToolIds: string[] | null = null;
     if (user?.sub) {
-      allowedToolIds = await this.rolesService.getAllowedToolIds(user.sub);
+      allowedToolIds = await this.rolesService.getAllowedToolIds(
+        user.sub,
+        mcpServerConfig.organizationId,
+      );
     }
 
     // 5. Create a per-request MCP server with only the assigned tools
@@ -357,6 +362,7 @@ export class McpEndpointController {
     if (McpSessionManager.isEnabled()) {
       await this.handleStatefulRequest(
         serverId,
+        mcpServerConfig.organizationId,
         req,
         res,
         body,
@@ -474,6 +480,7 @@ export class McpEndpointController {
    */
   private async handleStatefulRequest(
     serverId: string,
+    serverOrganizationId: string,
     req: Request,
     res: Response,
     body: unknown,
@@ -505,6 +512,7 @@ export class McpEndpointController {
           rebuild: this.makeRebuild(
             sid,
             serverId,
+            serverOrganizationId,
             user,
             captureIntent,
             kgEnabled,
@@ -559,6 +567,7 @@ export class McpEndpointController {
   private makeRebuild(
     sessionId: string,
     serverId: string,
+    serverOrganizationId: string,
     user: any,
     captureIntent: boolean,
     kgEnabled: boolean,
@@ -575,7 +584,13 @@ export class McpEndpointController {
         .filter((t) => connectorIds.includes(t.connectorId));
       let allowedToolIds: string[] | null = null;
       if (user?.sub) {
-        allowedToolIds = await this.rolesService.getAllowedToolIds(user.sub);
+        // Scope to the SERVER's org, not `invocationContext.organizationId`
+        // (which is the caller's active org and may differ for a multi-org
+        // member).
+        allowedToolIds = await this.rolesService.getAllowedToolIds(
+          user.sub,
+          serverOrganizationId,
+        );
       }
 
       const entries = this.planToolSet({

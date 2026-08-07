@@ -42,18 +42,56 @@ export class OAuthUrlRewriteInterceptor implements NestInterceptor {
 
     const externalUrl = `${proto}://${host}`;
 
-    // If the external URL matches the internal URL, no rewrite needed
-    if (externalUrl === internalUrl) {
-      return next.handle();
-    }
-
     return next.handle().pipe(
       map((data) => {
         if (!data || typeof data !== 'object') return data;
-        return JSON.parse(
-          JSON.stringify(data).replaceAll(internalUrl, externalUrl),
-        );
+        const rewritten =
+          externalUrl === internalUrl
+            ? data
+            : JSON.parse(
+                JSON.stringify(data).replaceAll(internalUrl, externalUrl),
+              );
+        return alignAuthorizationMetadata(rewritten, path);
       }),
     );
   }
+}
+
+/**
+ * Brings the ROOT discovery documents — which @rekog/mcp-nest builds itself —
+ * in line with what this server actually does.
+ *
+ * WellKnownOAuthController only owns the per-server variants
+ * (`/.well-known/oauth-authorization-server/mcp/:id` and friends). The root
+ * documents come from upstream, and most clients discover those first. Without
+ * this, the two disagree: the root one would still advertise `plain` PKCE that
+ * AuthorizePkceMiddleware refuses, and `offline_access` that the MCP
+ * 2026-07-28 spec says a resource should not list — so a client would follow
+ * the advertised contract and get a 400.
+ */
+export function alignAuthorizationMetadata(data: any, path: string): any {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+
+  const out = { ...data };
+
+  if (Array.isArray(out.code_challenge_methods_supported)) {
+    // We require S256; advertising `plain` would promise what we reject.
+    out.code_challenge_methods_supported = ['S256'];
+  }
+
+  // Refresh tokens are a client concern, not a requirement of the resource.
+  if (Array.isArray(out.scopes_supported)) {
+    out.scopes_supported = out.scopes_supported.filter(
+      (s: unknown) => s !== 'offline_access',
+    );
+  }
+
+  // RFC 9207. Only claim this on an authorization-SERVER document, and only
+  // because AuthorizationIssuerMiddleware really does append `iss`: a client
+  // that reads this flag and then sees a response without `iss` MUST reject it.
+  if (path.startsWith('/.well-known/oauth-authorization-server')) {
+    out.authorization_response_iss_parameter_supported = true;
+  }
+
+  return out;
 }

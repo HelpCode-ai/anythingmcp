@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { JwtPayload } from './auth.service';
+import { JwtPayload, isForeignIssuedToken, isTokenRevoked } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
 import { getRequiredSecret } from '../common/secrets.util';
 
@@ -23,11 +23,26 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
+    // SECURITY: the MCP OAuth authorization server signs its access/refresh
+    // tokens with the same JWT_SECRET as this strategy, so a valid signature
+    // does not imply a dashboard token. Reject anything bearing the MCP-side
+    // claims before it can be traded for a dashboard session.
+    if (isForeignIssuedToken(payload as unknown as Record<string, unknown>)) {
+      throw new UnauthorizedException('Token is not valid for this API');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
     if (!user) {
       throw new UnauthorizedException('User no longer exists');
+    }
+
+    // Revocation: refuse tokens minted before the user's cutover instant (set
+    // on password change, demotion, deprovisioning or an SSO config change).
+    // Free to check — the user row is already loaded.
+    if (isTokenRevoked(payload, user.sessionsValidFrom)) {
+      throw new UnauthorizedException('Session has been revoked');
     }
 
     // Self-heal a NULL active org by snapping to the oldest remaining membership.
