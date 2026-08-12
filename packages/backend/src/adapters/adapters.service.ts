@@ -152,7 +152,15 @@ export class AdaptersService {
     credentials?: Record<string, string>,
   ): string {
     if (!credentials) return str;
-    return str.replace(/\{\{(\w+)\}\}/g, (_, key) => credentials[key] || `{{${key}}}`);
+    // An explicitly-supplied empty value must resolve to empty, not fall back
+    // to the literal placeholder — some APIs require a credential header to be
+    // present but blank (e.g. Destatis GENESIS wants `password: ""` when
+    // identifying via API token). A `||` fallback here would send the string
+    // "{{DESTATIS_PASSWORD}}" as the password. Only an *absent* key keeps its
+    // placeholder, so the operator can still fill it in later.
+    return str.replace(/\{\{(\w+)\}\}/g, (_, key) =>
+      key in credentials ? credentials[key] : `{{${key}}}`,
+    );
   }
 
   /** Deep-replace {{VAR}} placeholders in an object/value */
