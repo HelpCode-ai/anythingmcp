@@ -20,11 +20,19 @@ git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp && docker compose up -d
 ```
 
-### Passo 2: Importa l'Adattatore Destatis
+### Passo 2: Ottieni le Credenziali GENESIS
 
-Apri `http://localhost:3000/connectors/store` e clicca **Import**. Inserisci username e password GENESIS.
+Registrati gratuitamente su [genesis.destatis.de](https://genesis.destatis.de/).
 
-### Passo 3: Collega al Tuo Agente AI
+Destatis raccomanda di identificarsi con un **token API personale** anziché con la password: dopo il login, copia la stringa di 32 caratteri dal modale **"Webservice-Schnittstelle (API)"**. Il token può essere rigenerato indipendentemente dalle credenziali. Attenzione: con il token è possibile solo l'accesso in lettura; le query su tabelle molto grandi che Destatis accoda (`job=true`) richiedono ancora username e password.
+
+### Passo 3: Importa l'Adattatore Destatis
+
+Apri `http://localhost:3000/connectors/store` e clicca **Import**. Inserisci **il token API oppure** la tua Nutzerkennung nel campo *Username or Token*. Il campo *Password* è opzionale — lascialo vuoto se usi un token.
+
+> **Nota sull'autenticazione:** Destatis ha disattivato definitivamente le richieste GET con credenziali nell'URL il **30 giugno 2025**. L'API è ora raggiungibile solo via POST con le credenziali nell'header HTTP, e l'adattatore è configurato di conseguenza. Se una ricerca di tabelle torna vuota, esegui prima `destatis_login_check`: quando le credenziali non vengono risolte, `find/find` risponde comunque con `Code: 0` come account ospite `GAST` e con tutte le liste di risultati a `null`, indistinguibile da una ricerca senza risultati. I servizi dati e metadati invece falliscono in modo esplicito con `Code: 15`.
+
+### Passo 4: Collega al Tuo Agente AI
 
 ```json
 {

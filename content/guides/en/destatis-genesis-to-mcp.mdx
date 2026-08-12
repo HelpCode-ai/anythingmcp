@@ -20,13 +20,17 @@ git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp && docker compose up -d
 ```
 
-### Step 2: Import the Destatis Adapter
+### Step 2: Get GENESIS Credentials
 
-Open `http://localhost:3000/connectors/store` and click **Import** on the Destatis GENESIS Statistics adapter. Enter your GENESIS username and password when prompted.
+Register for a free account at [genesis.destatis.de](https://genesis.destatis.de/).
 
-### Step 3: Get GENESIS Credentials
+Destatis recommends identifying with a **personal API token** rather than your password: log in, open the **"Webservice-Schnittstelle (API)"** modal and copy the 32-character token. It can be regenerated independently of your password, which is useful for shared projects. Note that a token allows read access only — very large table queries that Destatis pushes into its queue (`job=true`) still require username and password.
 
-Register for a free account at [www-genesis.destatis.de](https://www-genesis.destatis.de/) to get API access credentials.
+### Step 3: Import the Destatis Adapter
+
+Open `http://localhost:3000/connectors/store` and click **Import** on the Destatis GENESIS Statistics adapter. Put **either** your API token **or** your Nutzerkennung into the *Username or Token* field. The *Password* field is optional — leave it blank when using a token.
+
+> **Authentication note:** Destatis permanently shut down GET requests with credentials in the URL on **30 June 2025**. The API is now reachable only via POST with credentials in the HTTP header, and this adapter is configured accordingly. If a table search comes back empty, run `destatis_login_check` first: when credentials fail to resolve, `find/find` still answers `Code: 0` as the `GAST` guest account with all result lists `null`, which is indistinguishable from a genuine no-hits search. The data and metadata services are stricter and fail loudly with `Code: 15`.
 
 ### Step 4: Connect to Your AI Agent
 
@@ -44,9 +48,10 @@ Register for a free account at [www-genesis.destatis.de](https://www-genesis.des
 
 | Tool | Description |
 |------|-------------|
+| `destatis_login_check` | Verify credentials and confirm which account the API sees |
 | `destatis_search_tables` | Search for statistical tables by keyword |
 | `destatis_get_table` | Retrieve data from a specific statistical table |
-| `destatis_get_metadata` | Get metadata and definitions for a table |
+| `destatis_get_table_metadata` | Get metadata and definitions for a table |
 | `destatis_list_statistics` | List all available statistics catalogs |
 
 ## AI Agent Use Cases
