@@ -201,6 +201,12 @@ export interface AdapterMeta {
   icon: string;
   docsUrl: string;
   requiredEnvVars: string[];
+  /** Env vars the connector references but that may legitimately be left blank
+   *  (e.g. Destatis GENESIS needs no password when an API token is used). The
+   *  install modal prompts for these without blocking submission, and submits
+   *  them as an empty string so the placeholder resolves instead of leaking
+   *  into the request verbatim. */
+  optionalEnvVars?: string[];
   toolCount: number;
   /** Content-addressed version of the adapter's installable content (tools +
    *  connector meta + instructions). Stamped onto a connector at install
@@ -492,6 +498,7 @@ export function listAdapters(): AdapterMeta[] {
     icon: adapter.icon,
     docsUrl: adapter.docsUrl,
     requiredEnvVars: adapter.requiredEnvVars,
+    optionalEnvVars: adapter.optionalEnvVars,
     toolCount: adapter.tools.length,
     version: adapter.version,
     authType: adapter.connector.authType,
