@@ -1,0 +1,149 @@
+{
+  "slug": "georgian-railway",
+  "name": "Georgian Railway",
+  "description": "Search Georgian Railway (საქართველოს რკინიგზა) passenger trains: find stations, look up services between any two stations on a given date, and read live seat availability and fares in GEL. Covers the Tbilisi–Batumi and Tbilisi–Zugdidi main lines and every regional stop. No account or API key needed.",
+  "region": "intl",
+  "category": "transport",
+  "icon": "train",
+  "docsUrl": "https://gr.com.ge",
+  "requiredEnvVars": [],
+  "instructions": "## Georgian Railway\n\nThis connector wraps the JSON API behind **gr.com.ge**, the official booking site of Georgian Railway (საქართველოს რკინიგზა). It is read-only, needs no account and no API key.\n\n**Always start with `gr_search_stations`.** Journey search takes numeric station codes, never names. Resolve the name the user gave you into a `station_code` first, then pass those codes to `gr_search_trains`. The station list holds 515 entries — most of them are freight platforms and halts, so prefer the result whose `name_en` matches the city exactly.\n\nThe main passenger stations are:\n\n| Station | Code |\n|---|---|\n| Tbilisi | `56014` |\n| Batumi | `57151` |\n| Kutaisi (airport) | `57450` |\n| Zugdidi | `57290` |\n| Poti | `57210` |\n\nBeware of near-duplicates: `56014` (Tbilisi, the passenger terminal) is the one travellers want, not `56000` / `56010` / `56020`, which are technical stations on the same node. The same applies to Batumi, where `57151` is the passenger station and `57150` is not.\n\nKutaisi is the trap worth remembering: the station that actually has bookable services is **Kutaisi International Airport (`57450`)**. `Kutaisi I` (`57530`) exists in the station list but returns no trains, so a search against it looks like \"no service\" when the real answer is \"wrong station\".\n\n**Reading a journey result.** Each train carries `train` (the service number, e.g. 803), `departure` / `arrival` as local times (`HH:MM:SS`), and `classes` — one entry per travel class actually on sale, each with `seatsLeft` and `price` in **GEL** (Georgian lari). An **empty `classes` array means the train runs but is sold out** for the requested passenger mix — say so rather than reporting that no train exists. `onSale: false` means booking is not open yet.\n\n**Dates and times.** `date` is the departure date in ISO 8601 with a `Z` suffix, but `departure` and `arrival` are **local Georgian time** (UTC+4) and are the fields to quote to a traveller. Ask for a concrete date if the user only says \"tomorrow\"; the API has no relative-date support.\n\n**Passenger mix.** `standard_passengers`, `child_passengers` and `disabled_passengers` change which fares and seat counts come back, so pass the real party composition. `routeType: 0` means all route types and is the sensible default.\n\n**Round trips.** Supplying `returnDateFrom` makes the API return two groups, outbound first and return second. The tool flattens them into a single list — read the `from` / `to` fields to tell the directions apart.\n\n**Language.** `interface-language` is set to `en` on the connector, so station and class names come back in English where a translation exists. Some names remain transliterated Georgian.\n\n**Booking is not exposed.** This connector only reads timetables, availability and fares. Actually buying a ticket has to happen on gr.com.ge — send the user there with the train number and date.\n\n**Stability.** This is the site's own internal API, not a published product with a compatibility guarantee. Endpoints can change without notice; if a tool starts failing, check gr.com.ge for changes.",
+  "connector": {
+    "name": "Georgian Railway",
+    "type": "REST",
+    "baseUrl": "https://gr.com.ge",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "interface-language": "en",
+      "x-device": "web",
+      "User-Agent": "anythingmcp/1.0 (+https://anythingmcp.com)"
+    }
+  },
+  "tools": [
+    {
+      "name": "gr_search_stations",
+      "description": "Find Georgian Railway stations by name and return their station_code, which every other tool needs. Searches Georgian, English and Russian names at once, so 'Tbilisi', 'თბილისი' and 'Тбилиси' all work. Call this first to turn a place name into a code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Station name or fragment, in Georgian, English or Russian (e.g. 'Batumi', 'თბილისი')."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of stations to return. Defaults to 20; the full list is 515 entries.",
+            "default": 20
+          },
+          "page": {
+            "type": "number",
+            "description": "1-based page number, for paging through a large result set.",
+            "default": 1
+          }
+        },
+        "required": ["search"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/stations",
+        "queryParams": {
+          "search": "$search",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 86400,
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{ total: data.meta.totalItems, page: data.meta.currentPage, totalPages: data.meta.totalPages, stations: data.data[].{ code: station_code, name: name_en, nameKa: name_ka, nameRu: name_ru } }"
+        }
+      }
+    },
+    {
+      "name": "gr_search_trains",
+      "description": "Search Georgian Railway services between two stations on a date, returning departure and arrival times, the train number, and per-class seat availability with fares in GEL. Pass station codes from gr_search_stations, not names. Add returnDateFrom for a round trip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "startStationCode": {
+            "type": "string",
+            "description": "Departure station code, e.g. '57151' for Batumi. Get it from gr_search_stations."
+          },
+          "endStationCode": {
+            "type": "string",
+            "description": "Arrival station code, e.g. '56014' for Tbilisi. Get it from gr_search_stations."
+          },
+          "departureDateFrom": {
+            "type": "string",
+            "description": "Outbound date as YYYY-MM-DD (e.g. '2026-08-25'). Relative dates are not supported."
+          },
+          "returnDateFrom": {
+            "type": "string",
+            "description": "Optional return date as YYYY-MM-DD. When set, return services are appended to the result."
+          },
+          "standard_passengers": {
+            "type": "number",
+            "description": "Number of adult passengers. Affects which fares and seat counts are returned.",
+            "default": 1
+          },
+          "child_passengers": {
+            "type": "number",
+            "description": "Number of child passengers.",
+            "default": 0
+          },
+          "disabled_passengers": {
+            "type": "number",
+            "description": "Number of passengers travelling with a disability concession.",
+            "default": 0
+          },
+          "routeType": {
+            "type": "number",
+            "description": "Route type filter. 0 means all route types and is the right default.",
+            "default": 0
+          }
+        },
+        "required": ["startStationCode", "endStationCode", "departureDateFrom"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/ticket-search",
+        "bodyMapping": {
+          "startStationCode": "$startStationCode",
+          "endStationCode": "$endStationCode",
+          "departureDateFrom": "$departureDateFrom",
+          "returnDateFrom": "$returnDateFrom",
+          "standard_passengers": "$standard_passengers",
+          "child_passengers": "$child_passengers",
+          "disabled_passengers": "$disabled_passengers",
+          "routeType": "$routeType"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{ train: rideNumber, from: rideStartStation.station.name, to: rideEndStation.station.name, departure: rideStartStation.departureTime, arrival: rideEndStation.arrivalTime, date: rideStartDate, onSale: saleFlag, classes: availableSeatsClasses[].{ class: seatClass.name, seatsLeft: availableNumberOfSeats, price: priceOfSeats.amount, currency: priceOfSeats.currencyCode } }"
+        }
+      }
+    },
+    {
+      "name": "gr_get_notifications",
+      "description": "Read the current service notices Georgian Railway publishes on its site: timetable changes, engineering works, cancellations and seasonal services. Worth checking alongside a journey search when a trip is close or a train looks unexpectedly unavailable.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/info-content",
+        "queryParams": {
+          "type": "notifications"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 3600
+      }
+    }
+  ]
+}
