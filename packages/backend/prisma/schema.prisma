@@ -43,6 +43,7 @@ model Organization {
   kgSkills         KgSkillSuggestion[]
   securityEvents   SecurityEvent[]
   userRoleAssignments UserRoleAssignment[]
+  identityProviders   IdentityProvider[]
 
   @@map("organizations")
 }
@@ -647,6 +648,135 @@ model ToolInvocation {
   @@index([organizationId, createdAt])
   @@index([connectorId, createdAt])
   @@map("tool_invocations")
+}
+
+// ── Identity Providers (SSO) ────────────────────────────────────────────────
+
+enum IdentityProviderType {
+  ENTRA
+  GOOGLE
+  OKTA
+  AUTH0
+  GITHUB
+  /// Any spec-compliant OIDC provider (Keycloak, …). Self-host only: a
+  /// free-form issuer supplied by a workspace admin is a server-side fetch to
+  /// a host they choose, which is a disproportionate surface in cloud.
+  OIDC
+}
+
+/// What a role sync reads. Which values are meaningful depends on the type —
+/// Entra can emit app roles or group object ids, GitHub has neither and uses
+/// org teams.
+enum RoleSyncSource {
+  APP_ROLES
+  GROUPS
+}
+
+/// What to do when no mapping matches the claims presented at login.
+enum RoleSyncFallback {
+  /// Grant nothing. Default: the alternative fails OPEN, because a user with
+  /// no role assignment is unrestricted.
+  DENY_ALL
+  KEEP_EXISTING
+  DEFAULT_ROLE
+}
+
+model IdentityProvider {
+  id String @id @default(cuid())
+
+  /// IMMUTABLE. The provider — not the request — is the authority on which
+  /// organization a session belongs to, so this may never be reassigned.
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  type     IdentityProviderType
+  /// Shown on the sign-in button.
+  name     String
+  isActive Boolean              @default(true) @map("is_active")
+
+  /// Exact issuer expected in the id_token. Derived from `config.tenantId` for
+  /// ENTRA, fixed for GOOGLE/GITHUB, admin-supplied for OKTA/AUTH0/OIDC — and
+  /// always validated against a hardcoded per-type host allowlist before use.
+  issuer String
+
+  clientId        String  @map("client_id")
+  /// AES-256-GCM, with the AAD bound to (provider, organization) so a
+  /// ciphertext cannot be replayed into another row. Never returned by the API.
+  clientSecretEnc String? @map("client_secret_enc")
+  /// Microsoft caps secrets at 24 months and recommends under 12; surfaced in
+  /// the UI so an expiry does not lock a whole workspace out by surprise.
+  clientSecretExpiresAt DateTime? @map("client_secret_expires_at")
+
+  /// Opaque entry point for /sso/<initiateId>. The route itself lands in PR 3;
+  /// generated here so it is stable from the moment a provider exists. There is
+  /// no rotation endpoint yet — deleting and recreating the provider is the
+  /// only way to change it today. Deliberately NOT a
+  /// readable slug — that would allow workspace enumeration, squatting on
+  /// names like `admin`, and homoglyph typosquatting on the very URL a human
+  /// is asked to trust.
+  initiateId String @unique @map("initiate_id")
+
+  /// Provision an account on first successful sign-in. Default OFF: with it on,
+  /// everyone in the external tenant can enter the workspace.
+  jitProvisioning Boolean  @default(false) @map("jit_provisioning")
+  /// Capped at VIEWER in the service layer — never ADMIN or EDITOR.
+  jitDefaultRole  UserRole @default(VIEWER) @map("jit_default_role")
+
+  roleSyncEnabled  Boolean          @default(false) @map("role_sync_enabled")
+  roleSyncSource   RoleSyncSource   @default(GROUPS) @map("role_sync_source")
+  roleSyncFallback RoleSyncFallback @default(DENY_ALL) @map("role_sync_fallback")
+
+  /// PLACEHOLDER — column exists, NOTHING reads or writes it yet (PR 6).
+  /// Intended to disable password sign-in for members of this organization.
+  /// Deliberately not exposed by the API: switching it on without the recovery
+  /// codes and the soak period below would let an admin lock a whole workspace
+  /// out with no way back in.
+  enforceSso Boolean @default(false) @map("enforce_sso")
+  /// PLACEHOLDER — written by the SSO login flow (PR 3), unused until then.
+  /// Will guard `enforceSso`: it cannot be switched on until a real sign-in
+  /// through this provider has succeeded.
+  lastSuccessfulLoginAt DateTime? @map("last_successful_login_at")
+
+  /// Per-type settings, validated by a Zod schema keyed on `type` — the same
+  /// shape-in-Json approach as connector engines. ENTRA: { tenantId }.
+  /// OKTA: { authorizationServerId? }. AUTH0: { rolesClaimNamespace }.
+  /// GITHUB: { organization? }. OIDC: { groupsClaimName? }.
+  config Json @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  roleMappings IdentityProviderRoleMapping[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("identity_providers")
+}
+
+/// Maps an external group or application role onto AnythingMCP roles.
+model IdentityProviderRoleMapping {
+  id         String           @id @default(cuid())
+  providerId String           @map("provider_id")
+  provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  /// The group's OBJECT ID or the app role's `value` — never the display name.
+  /// Microsoft is explicit that group names are not unique, so any user able to
+  /// create a group could otherwise mint one matching a privileged mapping.
+  externalId String  @map("external_id")
+  /// Display-only, for the admin UI. Carries no authorization meaning.
+  label      String?
+
+  /// Organization role granted by this mapping. Null leaves it untouched.
+  userRole UserRole? @map("user_role")
+  /// MCP role ids granted. The user receives the UNION across all matches.
+  mcpRoleIds String[] @default([]) @map("mcp_role_ids")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([providerId, externalId])
+  @@index([providerId])
+  @@map("identity_provider_role_mappings")
 }
 
 // ── Security Audit Log ──────────────────────────────────────────────────────

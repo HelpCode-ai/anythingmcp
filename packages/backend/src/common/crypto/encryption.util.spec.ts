@@ -43,4 +43,33 @@ describe('Encryption Utility', () => {
     const wrongKey = 'different-key-exactly-32-chars!!';
     expect(() => decrypt(encrypted, wrongKey)).toThrow();
   });
+
+  describe('additional authenticated data (AAD)', () => {
+    // The encryption key is instance-wide, so without AAD a stored ciphertext
+    // could be copied into another row — another organization's identity
+    // provider, say — and would still decrypt happily.
+    const aad = 'idp_client_secret:provider-1:org-1';
+
+    it('round-trips when the AAD matches', () => {
+      const encrypted = encrypt('client-secret', key, aad);
+      expect(decrypt(encrypted, key, aad)).toBe('client-secret');
+    });
+
+    it('refuses to decrypt a ciphertext moved to another row', () => {
+      const encrypted = encrypt('client-secret', key, aad);
+      const otherRow = 'idp_client_secret:provider-1:org-2';
+      expect(() => decrypt(encrypted, key, otherRow)).toThrow();
+    });
+
+    it('refuses to decrypt without the AAD it was bound to', () => {
+      const encrypted = encrypt('client-secret', key, aad);
+      expect(() => decrypt(encrypted, key)).toThrow();
+    });
+
+    it('stays compatible with data encrypted before AAD existed', () => {
+      // Connector credentials were written without it and must keep working.
+      const legacy = encrypt('legacy-value', key);
+      expect(decrypt(legacy, key)).toBe('legacy-value');
+    });
+  });
 });
