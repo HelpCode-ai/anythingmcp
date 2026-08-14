@@ -83,6 +83,7 @@ import * as freshchat from './intl/freshchat.json';
 import * as freshdesk from './intl/freshdesk.json';
 import * as freshservice from './intl/freshservice.json';
 import * as front from './intl/front.json';
+import * as georgianRailway from './intl/georgian-railway.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
 import * as gocardless from './intl/gocardless.json';
@@ -364,6 +365,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   freshdesk as unknown as AdapterDefinition,
   freshservice as unknown as AdapterDefinition,
   front as unknown as AdapterDefinition,
+  georgianRailway as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
   gocardless as unknown as AdapterDefinition,
