@@ -160,7 +160,9 @@ the third-party model behind it — only ever receives the shape you approved.
   employee's salary, an access token an API hands back alongside the data.
 - **Or declare the whole output.** A `select` template names the fields to keep
   and what to call them; a JMESPath expression covers the reshaping a template
-  can't express.
+  can't express. Where an agent is better served by a stable shape, swap the
+  value for a placeholder (`"iban": "= [redacted]"`) instead of removing the
+  field.
 - **See it before you save it.** The editor runs the mapping against a real
   response and shows the before/after side by side, with the size difference. A
   shipped adapter measures **12,172 B → 1,072 B (−91%)** on a four-train result.

@@ -200,9 +200,31 @@ the API actually returned.
 | `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap |
 | `cacheTtl` | Seconds to cache the **raw** upstream response; shaping happens on read |
 
+### `select` leaf syntax
+
+| Leaf | Result |
+|------|--------|
+| `"$.a.b"` / `"a.b"` | Path lookup. The key is omitted when the path is not found |
+| `"= [redacted]"` | The static string `[redacted]`. Leading `=` marks a literal, so a constant is not mistaken for a path |
+| `42`, `true`, `null` | Passed through as-is |
+| `{ "$from": "$.rows[*]", "$select": { … } }` | Iterate an array and reshape every element |
+| `{ … }` / `[ … ]` | Nested template / array of the above |
+
 Paths accept `$.a.b`, `a[0].b`, `a[*].b` and `a['weird.key']`. A leading `$.` is
 optional. Depth, path count and output size are bounded, so a pathological
 response or template cannot pin a worker.
+
+**Masking rather than dropping.** `exclude` removes a field outright, which
+changes the shape of the response. When an agent is better served by a stable
+shape, replace the value instead:
+
+```json
+{ "transform": { "mode": "select", "select": {
+  "order": "$.id",
+  "customer": "$.customer.name",
+  "iban": "= [redacted]"
+} } }
+```
 
 **In the UI:** the tool editor has a Response Mapping panel with the same three
 modes and a **live preview** that runs the mapping against a real response and
