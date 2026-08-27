@@ -25,4 +25,4 @@ jobs:
           path-to-signatures: 'signatures/cla.json'
           path-to-document: 'https://github.com/HelpCode-ai/anythingmcp/blob/main/CLA.md'
           branch: 'cla-signatures'
-          allowlist: 'keysersoft,dependabot[bot],Claude'
+          allowlist: 'keysersoft,mirkopoloni,dependabot[bot],Claude'
