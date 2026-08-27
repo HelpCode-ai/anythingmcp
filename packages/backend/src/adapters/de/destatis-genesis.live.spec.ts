@@ -33,7 +33,7 @@ const a = adapter as unknown as {
     baseUrl: string;
     authType: string;
     authConfig: Record<string, unknown>;
-    headers?: Record<string, string>;
+    healthcheckPath?: string;
   };
   requiredEnvVars: string[];
   optionalEnvVars?: string[];
@@ -47,6 +47,7 @@ const a = adapter as unknown as {
       bodyEncoding?: string;
       bodyMapping?: Record<string, unknown>;
       queryParams?: Record<string, unknown>;
+      headers?: Record<string, string>;
     };
   }>;
 };
@@ -123,12 +124,16 @@ describe('destatis-genesis adapter — static spec conformance', () => {
     });
   });
 
-  it('declares the UTF-8 charset on the form body', () => {
+  it('declares the UTF-8 charset on every form body', () => {
     // Without it GENESIS decodes "Bev%C3%B6lkerung" as latin-1 and returns
-    // Code 0 with no results — a silent wrong answer, not an error.
-    expect(a.connector.headers?.['Content-Type']).toBe(
-      'application/x-www-form-urlencoded; charset=UTF-8',
-    );
+    // Code 0 with no results — a silent wrong answer, not an error. It lives on
+    // the tools rather than the connector because a Content-Type describes a
+    // body: on the bodyless healthcheck GET, GENESIS answers 415.
+    for (const tool of a.tools) {
+      expect(tool.endpointMapping.headers?.['Content-Type']).toBe(
+        'application/x-www-form-urlencoded; charset=UTF-8',
+      );
+    }
   });
 
   it('prefixes every tool name with destatis_', () => {
@@ -179,9 +184,6 @@ live('destatis-genesis adapter — live GENESIS API reachability', () => {
 
   const config = {
     baseUrl: a.connector.baseUrl,
-    // Ship-what-you-test: the charset in this header is what makes an umlaut
-    // survive the round trip.
-    headers: a.connector.headers,
     authType: 'API_KEY',
     authConfig: {
       headerName: 'username',

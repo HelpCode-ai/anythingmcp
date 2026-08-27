@@ -230,6 +230,12 @@ export interface AdapterDefinition extends AdapterMeta {
     baseUrl: string;
     authType: string;
     authConfig?: Record<string, unknown>;
+    /** Static headers sent on every call (e.g. a per-tenant account id, or a
+     *  Content-Type an API is picky about). Already used by ~10 adapters. */
+    headers?: Record<string, string>;
+    /** Path the "Test connection" probe GETs. Without one it probes `/`, which
+     *  many APIs answer with 404 — an alarming result for a healthy install. */
+    healthcheckPath?: string;
   };
   tools: Array<{
     name: string;

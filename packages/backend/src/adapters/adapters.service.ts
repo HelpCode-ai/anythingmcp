@@ -97,6 +97,11 @@ export class AdaptersService {
         authType: (adapter.connector.authType as any) || 'NONE',
         authConfig: encryptedAuth,
         headers: resolvedHeaders as any,
+        // Without this the "Test connection" probe GETs `/`, which plenty of
+        // APIs answer with 404 and the UI reports as a broken connector.
+        healthcheckPath:
+          (adapter.connector as { healthcheckPath?: string }).healthcheckPath ||
+          null,
         envVars: envVarsToPersist as any,
         instructions: adapter.instructions || null,
         // Persist the source adapter slug (brand-logo resolution survives a
