@@ -63,3 +63,110 @@ describe('McpOAuthService.exchangeCodeForTokens client authentication', () => {
     expect((config as any).headers.Authorization).toMatch(/^Basic /);
   });
 });
+
+describe('McpOAuthService.discoverMetadata', () => {
+  let service: McpOAuthService;
+
+  const AS_METADATA = {
+    issuer: 'https://auth.example.com',
+    authorization_endpoint: 'https://auth.example.com/authorize',
+    token_endpoint: 'https://auth.example.com/token',
+  };
+
+  /** Serve only the listed URLs; anything else 404s like a real server. */
+  const serve = (documents: Record<string, unknown>) => {
+    mockedAxios.get.mockImplementation(((url: string) =>
+      url in documents
+        ? Promise.resolve({ data: documents[url] } as any)
+        : Promise.reject(new Error('Request failed with status code 404'))) as any);
+  };
+
+  beforeEach(() => {
+    service = new McpOAuthService();
+    mockedAxios.get.mockReset();
+  });
+
+  it('follows the RFC 9728 protected-resource document of a path-hosted server', async () => {
+    serve({
+      'https://cloud.anythingmcp.com/.well-known/oauth-protected-resource/mcp/srv_1':
+        {
+          resource: 'https://cloud.anythingmcp.com/mcp/srv_1',
+          authorization_servers: ['https://auth.example.com'],
+        },
+      'https://auth.example.com/.well-known/oauth-authorization-server':
+        AS_METADATA,
+    });
+
+    const metadata = await service.discoverMetadata(
+      'https://cloud.anythingmcp.com/mcp/srv_1',
+    );
+
+    // An authorization server named by the resource is external on purpose,
+    // so it must NOT be rebased onto the MCP server's origin.
+    expect(metadata.authorization_endpoint).toBe(
+      'https://auth.example.com/authorize',
+    );
+    expect(metadata.token_endpoint).toBe('https://auth.example.com/token');
+  });
+
+  it('falls back to the path-inserted authorization-server metadata (RFC 8414 §3.1)', async () => {
+    serve({
+      'https://acct.snowflakecomputing.com/.well-known/oauth-authorization-server/api/v2/databases/db/schemas/public/mcp-servers/srv':
+        {
+          issuer: 'https://acct.snowflakecomputing.com',
+          authorization_endpoint:
+            'https://acct.snowflakecomputing.com/oauth/authorize',
+          token_endpoint: 'https://acct.snowflakecomputing.com/oauth/token-request',
+        },
+    });
+
+    const metadata = await service.discoverMetadata(
+      'https://acct.snowflakecomputing.com/api/v2/databases/db/schemas/public/mcp-servers/srv',
+    );
+
+    expect(metadata.token_endpoint).toBe(
+      'https://acct.snowflakecomputing.com/oauth/token-request',
+    );
+  });
+
+  it('still finds the origin-level document, and keeps rebasing it (legacy behaviour)', async () => {
+    serve({
+      'https://mcp.example.com/.well-known/oauth-authorization-server': {
+        issuer: 'http://localhost:4000',
+        authorization_endpoint: 'http://localhost:4000/oauth/authorize',
+        token_endpoint: 'http://localhost:4000/oauth/token',
+      },
+    });
+
+    const metadata = await service.discoverMetadata('https://mcp.example.com/mcp');
+
+    // A self-hosted server with a misconfigured OAUTH_SERVER_URL gets its
+    // endpoints pulled back onto the origin we actually reached.
+    expect(metadata.authorization_endpoint).toBe(
+      'https://mcp.example.com/oauth/authorize',
+    );
+    expect(metadata.token_endpoint).toBe('https://mcp.example.com/oauth/token');
+  });
+
+  it('only probes the origin-level document for a bare-origin base URL', async () => {
+    serve({
+      'https://mcp.example.com/.well-known/oauth-authorization-server': {
+        issuer: 'https://mcp.example.com',
+        authorization_endpoint: 'https://mcp.example.com/authorize',
+        token_endpoint: 'https://mcp.example.com/token',
+      },
+    });
+
+    await service.discoverMetadata('https://mcp.example.com');
+
+    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports every URL it tried when nothing is discoverable', async () => {
+    serve({});
+
+    await expect(
+      service.discoverMetadata('https://mcp.example.com/deep/mcp'),
+    ).rejects.toThrow(/oauth-protected-resource\/deep\/mcp/);
+  });
+});

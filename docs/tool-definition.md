@@ -161,6 +161,10 @@ Adapter authors don't need to declare them.
 }
 ```
 
+`path` is optional here: omit it and the call goes to the connector's base URL
+(or `<host>/mcp` if the base URL has no path). Set it only to send this one tool
+somewhere else — see [MCP Bridge](connectors/mcp-bridge.md).
+
 ---
 
 ## 3. Response Mapping (Optional)

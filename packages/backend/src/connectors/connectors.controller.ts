@@ -905,6 +905,9 @@ export class ConnectorsController {
         name: rt.name,
         description: rt.description || `MCP tool: ${rt.name}`,
         parameters: rt.inputSchema || { type: 'object', properties: {} },
+        // '/mcp' here is the historical *default*, not a user choice: when the
+        // connector's base URL carries a path of its own, resolveMcpEndpointUrl()
+        // treats this value as unset and calls the base URL directly (#501).
         endpointMapping: {
           method: rt.name,
           path: '/mcp',
@@ -1151,6 +1154,10 @@ export class ConnectorsController {
               name: rt.name,
               description: rt.description || `MCP tool: ${rt.name}`,
               parameters: rt.inputSchema || { type: 'object', properties: {} },
+              // dto.url is the optional path the user typed in the import
+              // dialog; '/mcp' is the fallback default, which
+              // resolveMcpEndpointUrl() treats as unset so a path in the
+              // connector's base URL wins (#501).
               endpointMapping: {
                 method: rt.name,
                 path: dto.url || '/mcp',

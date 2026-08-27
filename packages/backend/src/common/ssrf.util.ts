@@ -240,5 +240,25 @@ export async function assertSafeOutboundHost(
   }
 }
 
+/**
+ * Pull the blocked host out of an SSRF guard message, when adding that host to
+ * the allowlist would actually unblock the request.
+ *
+ * The allowlist is consulted before the literal-IP, loopback and DNS checks
+ * (see assertSafeOutboundHost), so every "this address/hostname is not public"
+ * variant is fixable that way — including a Docker service name that does not
+ * resolve from outside its network. `invalid URL` and `protocol not allowed`
+ * are not: those are malformed input, so they return undefined and the caller
+ * shows the plain error.
+ */
+export function extractSsrfBlockedHostname(
+  message: string,
+): string | undefined {
+  const match = /SSRF guard:\s*(?:address|hostname|cannot resolve)\s*'([^']+)'/.exec(
+    message || '',
+  );
+  return match?.[1];
+}
+
 // Exposed for unit tests.
 export const __test = { isPublicIp, hostMatchesAllowlist, readPolicy };

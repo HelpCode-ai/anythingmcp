@@ -3,10 +3,17 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { DEFAULT_MCP_PATH, resolveMcpEndpointUrl } from '../../common/url.util';
 
 @Injectable()
 export class McpClientEngine {
   private readonly logger = new Logger(McpClientEngine.name);
+
+  /**
+   * Base URLs already reported by {@link warnLegacyUrlChange}, so an upgrade
+   * notice is logged once per connector instead of on every tool call.
+   */
+  private readonly legacyUrlWarned = new Set<string>();
 
   constructor(private readonly oauth2TokenService: OAuth2TokenService) {}
 
@@ -28,10 +35,8 @@ export class McpClientEngine {
       `MCP bridge call: ${endpointMapping.method} → ${config.baseUrl}`,
     );
 
-    const mcpUrl = new URL(
-      endpointMapping.path || '/mcp',
-      config.baseUrl,
-    );
+    const mcpUrl = resolveMcpEndpointUrl(config.baseUrl, endpointMapping.path);
+    this.warnLegacyUrlChange(config.baseUrl, endpointMapping.path, mcpUrl);
     await assertSafeOutboundUrl(mcpUrl.toString());
 
     const headers: Record<string, string> = { ...config.headers };
@@ -119,9 +124,14 @@ export class McpClientEngine {
       annotations?: Record<string, unknown>;
     }>
   > {
-    const mcpUrl = new URL(config.mcpPath || '/mcp', config.baseUrl);
+    const mcpUrl = resolveMcpEndpointUrl(config.baseUrl, config.mcpPath);
+    this.warnLegacyUrlChange(config.baseUrl, config.mcpPath, mcpUrl);
 
     this.logger.debug(`MCP listTools: ${mcpUrl.toString()}`);
+
+    // Discovery reaches a user-supplied URL just like execute() does, so it
+    // needs the same SSRF guard — it was missing here.
+    await assertSafeOutboundUrl(mcpUrl.toString());
 
     const headers: Record<string, string> = { ...config.headers };
     await this.injectAuth(headers, config.authType, config.authConfig, config.connectorId);
@@ -162,6 +172,36 @@ export class McpClientEngine {
         // Ignore close errors
       }
     }
+  }
+
+  /**
+   * Until issue #501 was fixed, every bridge request went to `<origin>/mcp`
+   * because the path was resolved root-absolutely against the base URL. Any
+   * connector whose base URL carried a path is therefore called at a different
+   * address after the upgrade — log that once per connector so a self-hosted
+   * operator can see exactly what moved instead of guessing.
+   */
+  private warnLegacyUrlChange(
+    baseUrl: string,
+    pathOverride: string | undefined,
+    resolved: URL,
+  ): void {
+    if (this.legacyUrlWarned.has(baseUrl)) return;
+
+    let legacy: string;
+    try {
+      legacy = new URL(pathOverride || DEFAULT_MCP_PATH, baseUrl).toString();
+    } catch {
+      return;
+    }
+    if (legacy === resolved.toString()) return;
+
+    this.legacyUrlWarned.add(baseUrl);
+    this.logger.warn(
+      `MCP endpoint for "${baseUrl}" now resolves to ${resolved.toString()} ` +
+        `(previous releases called it at ${legacy}) — the base URL's path is ` +
+        `no longer discarded.`,
+    );
   }
 
   private async injectAuth(

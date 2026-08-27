@@ -41,29 +41,146 @@ export class McpOAuthService {
   private pendingFlows = new Map<string, PendingOAuthFlow>();
 
   /**
-   * Fetch OAuth Authorization Server Metadata (RFC 8414)
-   * from a remote MCP server's .well-known endpoint.
+   * Discover the OAuth metadata of a remote MCP server.
    *
-   * If the metadata contains endpoint URLs with a different origin than the
-   * actual server (common misconfiguration), they are rebased automatically.
+   * An MCP server hosted under a path (Snowflake's managed servers,
+   * AnythingMCP's own `/mcp/<serverId>` endpoints, …) publishes its metadata
+   * at a *path-inserted* well-known URL: RFC 8414 §3.1 and RFC 9728 §3 put the
+   * resource path after the well-known suffix, not before it. Looking only at
+   * `<origin>/.well-known/oauth-authorization-server` — which is all this used
+   * to do — therefore misses every such server (#501).
+   *
+   * Candidates are tried in order, first usable document wins, and the
+   * origin-level URL stays last so nothing that works today regresses.
    */
   async discoverMetadata(baseUrl: string): Promise<OAuthMetadata> {
-    const actualOrigin = new URL(baseUrl).origin;
+    const base = new URL(baseUrl);
+    const actualOrigin = base.origin;
+    const resourcePath = base.pathname.replace(/\/+$/, '');
 
-    // Try the standard well-known path
-    const metadataUrl = new URL(
-      '/.well-known/oauth-authorization-server',
-      baseUrl,
-    ).toString();
+    const candidates: Array<{ url: string; protectedResource: boolean }> = [];
+    if (resourcePath) {
+      candidates.push(
+        // RFC 9728 — what current MCP clients look for first.
+        {
+          url: `${actualOrigin}/.well-known/oauth-protected-resource${resourcePath}`,
+          protectedResource: true,
+        },
+        {
+          url: `${actualOrigin}/.well-known/oauth-authorization-server${resourcePath}`,
+          protectedResource: false,
+        },
+        {
+          url: `${actualOrigin}/.well-known/openid-configuration${resourcePath}`,
+          protectedResource: false,
+        },
+      );
+    }
+    candidates.push({
+      url: `${actualOrigin}/.well-known/oauth-authorization-server`,
+      protectedResource: false,
+    });
 
-    this.logger.debug(`Discovering OAuth metadata from ${metadataUrl}`);
+    const failures: string[] = [];
 
-    await assertSafeOutboundUrl(metadataUrl);
-    const response = await axios.get(metadataUrl, { timeout: 10000 });
-    const metadata: OAuthMetadata = response.data;
+    for (const candidate of candidates) {
+      let document: any;
+      try {
+        document = await this.fetchJson(candidate.url);
+      } catch (err: any) {
+        failures.push(`${candidate.url}: ${err.message}`);
+        continue;
+      }
 
-    // Rebase endpoint URLs if the remote server reports a different origin
-    // (e.g. the server's OAUTH_SERVER_URL env var is misconfigured).
+      // A protected-resource document does not carry the endpoints itself; it
+      // points at one or more authorization servers, which may legitimately
+      // live on another origin.
+      if (candidate.protectedResource) {
+        const issuer = document?.authorization_servers?.[0];
+        if (!issuer) {
+          failures.push(`${candidate.url}: no authorization_servers entry`);
+          continue;
+        }
+        try {
+          const metadata = await this.fetchAuthorizationServerMetadata(issuer);
+          this.logger.debug(
+            `OAuth metadata for ${baseUrl} discovered via protected-resource document at ${candidate.url} (issuer ${issuer})`,
+          );
+          // No rebasing here: the resource explicitly named an external
+          // authorization server, so its origin is intentional.
+          return metadata;
+        } catch (err: any) {
+          failures.push(`${issuer}: ${err.message}`);
+          continue;
+        }
+      }
+
+      if (!document?.authorization_endpoint || !document?.token_endpoint) {
+        failures.push(`${candidate.url}: missing authorization/token endpoint`);
+        continue;
+      }
+
+      this.logger.debug(
+        `OAuth metadata for ${baseUrl} discovered at ${candidate.url}`,
+      );
+      return this.rebaseToOrigin(document as OAuthMetadata, actualOrigin);
+    }
+
+    throw new Error(
+      `Could not discover OAuth metadata for ${baseUrl}. Tried: ${failures.join('; ')}`,
+    );
+  }
+
+  /**
+   * Fetch RFC 8414 metadata for an issuer, honouring path-insertion for
+   * issuers that carry a path, then falling back to the OpenID Connect
+   * discovery document.
+   */
+  private async fetchAuthorizationServerMetadata(
+    issuer: string,
+  ): Promise<OAuthMetadata> {
+    const parsed = new URL(issuer);
+    const issuerPath = parsed.pathname.replace(/\/+$/, '');
+
+    const urls = [
+      `${parsed.origin}/.well-known/oauth-authorization-server${issuerPath}`,
+      `${parsed.origin}/.well-known/openid-configuration${issuerPath}`,
+      `${parsed.origin}${issuerPath}/.well-known/openid-configuration`,
+    ];
+
+    const failures: string[] = [];
+    for (const url of urls) {
+      try {
+        const document = await this.fetchJson(url);
+        if (document?.authorization_endpoint && document?.token_endpoint) {
+          return document as OAuthMetadata;
+        }
+        failures.push(`${url}: missing authorization/token endpoint`);
+      } catch (err: any) {
+        failures.push(`${url}: ${err.message}`);
+      }
+    }
+
+    throw new Error(`no usable metadata (${failures.join('; ')})`);
+  }
+
+  private async fetchJson(url: string): Promise<any> {
+    await assertSafeOutboundUrl(url);
+    const response = await axios.get(url, { timeout: 10000 });
+    return response.data;
+  }
+
+  /**
+   * Rebase endpoint URLs onto the MCP server's own origin when the metadata
+   * reports a different one (e.g. a self-hosted server whose OAUTH_SERVER_URL
+   * env var is misconfigured). Only applied to same-origin AS metadata — a
+   * protected-resource document naming an external authorization server is
+   * taken at face value.
+   */
+  private rebaseToOrigin(
+    metadata: OAuthMetadata,
+    actualOrigin: string,
+  ): OAuthMetadata {
     const rebase = (endpoint: string): string => {
       try {
         const parsed = new URL(endpoint);

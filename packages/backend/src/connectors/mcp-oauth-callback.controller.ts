@@ -125,6 +125,8 @@ export class McpOAuthCallbackController {
                 name: rt.name,
                 description: rt.description || `MCP tool: ${rt.name}`,
                 parameters: rt.inputSchema as any,
+                // Default path, not a user choice — resolveMcpEndpointUrl()
+                // treats it as unset when the base URL has a path (#501).
                 endpointMapping: {
                   method: rt.name,
                   path: '/mcp',
