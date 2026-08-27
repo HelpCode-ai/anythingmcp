@@ -527,6 +527,68 @@ describe('RestEngine', () => {
       );
     });
 
+    it('keeps a Content-Type the connector configured, charset included', async () => {
+      // URLSearchParams percent-encodes UTF-8, but the media type alone does
+      // not say so: Destatis GENESIS decodes the body as latin-1 and answers
+      // "success" with zero results unless the charset is declared.
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        {
+          baseUrl: 'https://genesis.destatis.de/genesisWS/rest/2020',
+          authType: 'NONE',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          },
+        },
+        {
+          method: 'POST',
+          path: '/find/find',
+          bodyEncoding: 'form-urlencoded',
+          bodyMapping: { term: '$term' },
+        },
+        { term: 'Bevölkerung' },
+      );
+
+      const sent = mockedAxios.mock.calls[0][0] as unknown as {
+        data: string;
+        headers: Record<string, string>;
+      };
+      expect(sent.headers['Content-Type']).toBe(
+        'application/x-www-form-urlencoded; charset=UTF-8',
+      );
+      expect(sent.data).toContain('Bev%C3%B6lkerung');
+    });
+
+    it('matches a configured content-type case-insensitively', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        {
+          baseUrl: 'https://api.example.com',
+          authType: 'NONE',
+          headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+        },
+        {
+          method: 'POST',
+          path: '/x',
+          bodyEncoding: 'form-urlencoded',
+          bodyMapping: { a: '$a' },
+        },
+        { a: '1' },
+      );
+
+      const sent = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+      };
+      // Header names are case-insensitive, so the default must not be added
+      // alongside the configured one.
+      expect(sent.headers['Content-Type']).toBeUndefined();
+      expect(sent.headers['content-type']).toBe(
+        'application/x-www-form-urlencoded; charset=UTF-8',
+      );
+    });
+
     it('encodes an array form-urlencoded param as indexed brackets', async () => {
       mockedAxios.mockResolvedValue({ data: {} });
 

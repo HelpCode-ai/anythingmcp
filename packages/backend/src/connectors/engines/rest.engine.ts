@@ -155,10 +155,18 @@ export class RestEngine {
               appendFormParam((key, val) => urlParams.append(key, val), k, v);
             }
             axiosConfig.data = urlParams.toString();
-            axiosConfig.headers = {
-              ...axiosConfig.headers,
-              'Content-Type': 'application/x-www-form-urlencoded',
-            };
+            // URLSearchParams percent-encodes UTF-8 bytes, but the charset of a
+            // form body is not implied by the media type: a server that assumes
+            // latin-1 reads "Bev%C3%B6lkerung" as mojibake and, in the Destatis
+            // GENESIS case, answers "success" with an empty result set. So an
+            // adapter must be able to state its own Content-Type (typically
+            // "...; charset=UTF-8"); only fill in the default when it has not.
+            if (!hasHeader(axiosConfig.headers, 'content-type')) {
+              axiosConfig.headers = {
+                ...axiosConfig.headers,
+                'Content-Type': 'application/x-www-form-urlencoded',
+              };
+            }
           } else if (encoding === 'form-data') {
             const form = new FormData();
             for (const [k, v] of spreadFormEntries(mapped)) {
@@ -501,6 +509,20 @@ export class RestEngine {
     }
     return value;
   }
+}
+
+/**
+ * Case-insensitive presence check for an HTTP header. Header names are
+ * case-insensitive per RFC 9110, so an adapter writing "content-type" must
+ * count as having set "Content-Type".
+ */
+function hasHeader(
+  headers: Record<string, unknown> | undefined,
+  name: string,
+): boolean {
+  if (!headers) return false;
+  const wanted = name.toLowerCase();
+  return Object.keys(headers).some((k) => k.toLowerCase() === wanted);
 }
 
 /**
