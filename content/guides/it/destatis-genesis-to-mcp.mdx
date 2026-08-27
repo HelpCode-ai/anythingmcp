@@ -30,7 +30,9 @@ Destatis raccomanda di identificarsi con un **token API personale** anziché con
 
 Apri `http://localhost:3000/connectors/store` e clicca **Import**. Inserisci **il token API oppure** la tua Nutzerkennung nel campo *Username or Token*. Il campo *Password* è opzionale — lascialo vuoto se usi un token.
 
-> **Nota sull'autenticazione:** Destatis ha disattivato definitivamente le richieste GET con credenziali nell'URL il **30 giugno 2025**. L'API è ora raggiungibile solo via POST con le credenziali nell'header HTTP, e l'adattatore è configurato di conseguenza. Se una ricerca di tabelle torna vuota, esegui prima `destatis_login_check`: quando le credenziali non vengono risolte, `find/find` risponde comunque con `Code: 0` come account ospite `GAST` e con tutte le liste di risultati a `null`, indistinguibile da una ricerca senza risultati. I servizi dati e metadati invece falliscono in modo esplicito con `Code: 15`.
+> **Nota sull'autenticazione:** Destatis ha disattivato definitivamente le richieste GET con credenziali nell'URL il **30 giugno 2025**. L'API è ora raggiungibile solo via POST con le credenziali nell'header HTTP, e l'adattatore è configurato di conseguenza. `find/find` è un servizio **pubblico**: risponde `Code: 0` con gli stessi risultati con o senza credenziali, quindi una ricerca di tabelle vuota significa che non è stato trovato nulla e non indica mai un problema di credenziali. I servizi dati, metadati e catalogo sono invece protetti: `Code: 15` significa che le credenziali non sono arrivate, `Code: 2` che sono arrivate ma sono errate. Per sapere quale utenza sta rispondendo usa `destatis_login_check`: riporta `isGuest: true` quando la richiesta gira come account anonimo `GAST`.
+
+> **Aggiornare un'installazione esistente:** rimuovi il connettore e reinstallalo dallo store invece di sincronizzarlo. La sincronizzazione del catalogo aggiorna le definizioni dei tool ma non il tipo di autenticazione né la base URL del connettore: un connettore vecchio sincronizzato continuerebbe a inviare le credenziali come parametri URL verso l'host dismesso.
 
 ### Passo 4: Collega al Tuo Agente AI
 

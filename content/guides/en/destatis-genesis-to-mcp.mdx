@@ -30,7 +30,9 @@ Destatis recommends identifying with a **personal API token** rather than your p
 
 Open `http://localhost:3000/connectors/store` and click **Import** on the Destatis GENESIS Statistics adapter. Put **either** your API token **or** your Nutzerkennung into the *Username or Token* field. The *Password* field is optional — leave it blank when using a token.
 
-> **Authentication note:** Destatis permanently shut down GET requests with credentials in the URL on **30 June 2025**. The API is now reachable only via POST with credentials in the HTTP header, and this adapter is configured accordingly. If a table search comes back empty, run `destatis_login_check` first: when credentials fail to resolve, `find/find` still answers `Code: 0` as the `GAST` guest account with all result lists `null`, which is indistinguishable from a genuine no-hits search. The data and metadata services are stricter and fail loudly with `Code: 15`.
+> **Authentication note:** Destatis permanently shut down GET requests with credentials in the URL on **30 June 2025**. The API is now reachable only via POST with credentials in the HTTP header, and this adapter is configured accordingly. `find/find` is a **public** service: it answers `Code: 0` with the same results whether or not credentials are sent, so an empty table search means the search genuinely found nothing and never indicates a credential problem. The data, metadata and catalogue services are gated: `Code: 15` means the credentials never arrived, `Code: 2` that they arrived but are wrong. To see which account is answering, run `destatis_login_check` — it reports `isGuest: true` when the request runs as the anonymous `GAST` account.
+
+> **Upgrading an older install:** remove the connector and install it again from the store rather than re-syncing it. The catalogue re-sync refreshes tool definitions but not a connector's authentication type or base URL, so a re-synced old connector would still send its credentials as URL parameters against the retired host.
 
 ### Step 4: Connect to Your AI Agent
 
