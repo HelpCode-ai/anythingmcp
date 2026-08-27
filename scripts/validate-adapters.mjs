@@ -148,6 +148,32 @@ function validateAdapter(adapter, file, region) {
     }
   }
 
+  // optionalEnvVars is prompted for in the install modal but never blocks
+  // submission. It must still be a real, referenced placeholder: an optional
+  // var nobody references is dead UI, and one that overlaps requiredEnvVars
+  // would render twice with contradictory labels.
+  if (adapter.optionalEnvVars !== undefined) {
+    if (
+      !Array.isArray(adapter.optionalEnvVars) ||
+      adapter.optionalEnvVars.some((v) => typeof v !== 'string')
+    ) {
+      errors.push('optionalEnvVars must be an array of strings');
+    } else {
+      for (const envVar of adapter.optionalEnvVars) {
+        if ((adapter.requiredEnvVars || []).includes(envVar)) {
+          errors.push(
+            `"${envVar}" appears in both requiredEnvVars and optionalEnvVars`,
+          );
+        }
+        if (!isPlaceholderReferenced(envVar, adapter)) {
+          warnings.push(
+            `optionalEnvVars contains "${envVar}" but it's not referenced via {{${envVar}}}`,
+          );
+        }
+      }
+    }
+  }
+
   const slugUnderscored = adapter.slug.replace(/-/g, '_');
   if (!Array.isArray(adapter.tools) || adapter.tools.length === 0) {
     errors.push('tools array is empty');

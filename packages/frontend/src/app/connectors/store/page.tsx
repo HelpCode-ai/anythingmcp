@@ -246,8 +246,14 @@ function AdapterStoreContent() {
   const handleImportClick = async (adapter: AdapterItem) => {
     if (!token) return;
 
-    // If no auth required, import directly
-    if (!adapter.requiredEnvVars || adapter.requiredEnvVars.length === 0) {
+    // If nothing at all is prompted for, import directly. Optional vars count:
+    // skipping the modal would leave them unset, and an unset {{VAR}} survives
+    // resolution and is sent to the API as a literal string.
+    const promptedVars = [
+      ...(adapter.requiredEnvVars || []),
+      ...(adapter.optionalEnvVars || []),
+    ];
+    if (promptedVars.length === 0) {
       await doImport(adapter.slug);
       return;
     }
