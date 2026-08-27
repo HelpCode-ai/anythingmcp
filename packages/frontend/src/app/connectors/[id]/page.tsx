@@ -23,7 +23,7 @@ const IMPORT_SOURCES = [
   { id: 'graphql', label: 'GraphQL Introspection', placeholder: 'Enter GraphQL endpoint URL...' },
   { id: 'wsdl', label: 'WSDL', placeholder: 'Enter WSDL URL...' },
   { id: 'json', label: 'JSON Definition', placeholder: '[\n  {\n    "name": "get_users",\n    "description": "Fetch users",\n    "parameters": { "type": "object", "properties": { "limit": { "type": "number" } } },\n    "endpointMapping": { "method": "GET", "path": "/users", "queryParams": { "limit": "$limit" } }\n  }\n]' },
-  { id: 'mcp', label: 'MCP Discovery', placeholder: 'Enter MCP endpoint path (default: /mcp)' },
+  { id: 'mcp', label: 'MCP Discovery', placeholder: "Optional — leave empty to use the connector's Base URL" },
 ];
 
 const EDIT_DEFAULT_LOGIN_BODY = '{\n  "username": "${username}",\n  "password": "${password}"\n}';

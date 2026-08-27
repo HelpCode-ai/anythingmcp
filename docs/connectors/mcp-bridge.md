@@ -29,7 +29,7 @@ The MCP Bridge connector lets you connect to **other MCP servers** and re-expose
 
 1. Go to **Connectors** > **New Connector**
 2. Select **MCP** as the type
-3. Enter the **Remote MCP Server URL** (e.g., `http://other-mcp-server:3000/mcp`)
+3. Enter the **Remote MCP Server URL** — the *complete* endpoint URL, including its path (e.g., `http://other-mcp-server:3000/mcp`)
 4. Configure authentication for the remote server
 5. Click **Create**
 
@@ -49,6 +49,26 @@ curl -s http://localhost:4000/api/connectors \
     }
   }'
 ```
+
+### The base URL is the endpoint
+
+Whatever path you put in the base URL is the path AnythingMCP calls. This matters for
+providers that do not serve MCP at the root of their host:
+
+| Remote server | Base URL to enter |
+|---------------|-------------------|
+| Most hosted servers | `https://mcp.example.com/mcp` |
+| Snowflake managed MCP server | `https://<account>.snowflakecomputing.com/api/v2/databases/<db>/schemas/<schema>/mcp-servers/<name>` |
+| Another AnythingMCP instance | `https://your-anythingmcp.example.com/mcp/<serverId>` |
+| Zoho MCP | `https://<workspace>.zohomcp.com/mcp/<token>/message` |
+
+A base URL with **no** path (`https://mcp.example.com`) falls back to `/mcp`, which is where
+most servers listen.
+
+> **Changed behaviour.** Releases up to v0.4.2 always POSTed to `<origin>/mcp` and silently
+> discarded the base URL's path, so servers hosted under a path could never be reached
+> ([#501](https://github.com/HelpCode-ai/anythingmcp/issues/501)). If you had worked around
+> this by leaving an unrelated path in the base URL, set it back to the bare host.
 
 ---
 
@@ -80,6 +100,7 @@ MCP bridge tools use a simple mapping:
 |-------|-------------|
 | `method` | The tool name on the remote MCP server |
 | `bodyMapping` | Maps local parameters to remote tool parameters |
+| `path` | Optional. Overrides the endpoint for this tool only. A leading `/` is resolved against the host, a relative value is appended to the base URL's path, and a full `https://…` URL is used verbatim. The default `/mcp` means "use the connector's base URL". |
 
 ---
 

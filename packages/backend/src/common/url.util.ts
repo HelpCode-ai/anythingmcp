@@ -57,3 +57,65 @@ export function normalizeConnectorBaseUrl(
 
   return withScheme;
 }
+
+/**
+ * The path every discovered MCP tool has been stamped with since the MCP
+ * bridge shipped. It is a *default*, not a user choice: nothing in the UI ever
+ * asked for it, so it must not be allowed to override a real path.
+ */
+export const DEFAULT_MCP_PATH = '/mcp';
+
+/**
+ * Resolve the outbound URL of a remote MCP endpoint.
+ *
+ * The bridge used to build this with `new URL('/mcp', baseUrl)`, whose
+ * root-absolute path silently resolves against the *origin* and throws away
+ * any path the base URL carried. That made every MCP server not hosted at
+ * `<origin>/mcp` unreachable — Snowflake's managed servers
+ * (`/api/v2/databases/…/mcp-servers/<name>`), Zoho's
+ * (`/mcp/<token>/message`), and even AnythingMCP's own per-tenant
+ * `/mcp/<serverId>` endpoints (issue #501).
+ *
+ * Resolution order:
+ *  1. An override that is a full `http(s)://` URL wins verbatim — the same
+ *     per-tool escape hatch RestEngine offers for vendors spread over several
+ *     hosts.
+ *  2. A root-absolute override (`/sse`) resolves against the origin, exactly
+ *     as before, so explicitly-configured paths keep their meaning.
+ *  3. A relative override (`sub/mcp`) is joined onto the base URL's path.
+ *  4. No override — or the historical `/mcp` default, which is
+ *     indistinguishable from "unset" — means the base URL *is* the endpoint
+ *     when it carries a path, and `<origin>/mcp` when it does not.
+ */
+export function resolveMcpEndpointUrl(
+  baseUrl: string,
+  pathOverride?: string,
+): URL {
+  let base: URL;
+  try {
+    base = new URL((baseUrl ?? '').trim());
+  } catch {
+    throw new BadRequestException(
+      `"${baseUrl}" is not a valid MCP server URL. Use a full address like ` +
+        `https://mcp.example.com/mcp.`,
+    );
+  }
+
+  const override = (pathOverride ?? '').trim();
+  // Trailing slashes carry no meaning here and would otherwise produce a
+  // double slash at the seam ("…/base//sub").
+  const basePath = base.pathname.replace(/\/+$/, '');
+
+  if (override && override !== DEFAULT_MCP_PATH) {
+    if (/^https?:\/\//i.test(override)) return new URL(override);
+    if (override.startsWith('/')) return new URL(override, base.origin);
+    return new URL(`${basePath}/${override.replace(/^\/+/, '')}`, base.origin);
+  }
+
+  if (basePath) {
+    // Preserve the query string: some hosted gateways carry a key there.
+    return new URL(`${basePath}${base.search}`, base.origin);
+  }
+
+  return new URL(DEFAULT_MCP_PATH, base.origin);
+}

@@ -296,10 +296,27 @@ export default function NewConnectorPage() {
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder={selectedType === 'DATABASE' ? 'postgresql://user:pass@host:5432/db  or  mysql://user:pass@host:3306/db' : 'https://api.example.com/v1'}
+                  placeholder={
+                    selectedType === 'DATABASE'
+                      ? 'postgresql://user:pass@host:5432/db  or  mysql://user:pass@host:3306/db'
+                      : selectedType === 'MCP'
+                        ? 'https://mcp.example.com/mcp'
+                        : 'https://api.example.com/v1'
+                  }
                   className={cn(inputClass, 'font-mono text-[13px]')}
                   required
                 />
+                {selectedType === 'MCP' && (
+                  <p className="mt-1 text-xs text-[var(--text-3)]">
+                    Paste the complete MCP endpoint URL including its path — e.g. a
+                    Snowflake managed server at{' '}
+                    <span className="font-mono">
+                      /api/v2/databases/db/schemas/public/mcp-servers/srv
+                    </span>
+                    . A bare host with no path defaults to{' '}
+                    <span className="font-mono">/mcp</span>.
+                  </p>
+                )}
               </div>
 
               {selectedType === 'DATABASE' && (
