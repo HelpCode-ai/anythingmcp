@@ -169,16 +169,48 @@ somewhere else — see [MCP Bridge](connectors/mcp-bridge.md).
 
 ## 3. Response Mapping (Optional)
 
-Transform the API response before returning to the AI:
+Shapes the API response **before it reaches the AI client**. Two reasons to use
+it: keeping fields that should never travel out of the model's context, and not
+paying for upstream noise in the context window.
+
+The mapping is applied on the way out, so anything you drop never reaches the
+agent or the model provider behind it. Your audit log still records the full
+upstream response, so shaping the answer does not cost you the evidence of what
+the API actually returned.
 
 ```json
 {
-  "type": "json",
-  "fields": ["id", "name", "email", "status"]
+  "transform": {
+    "mode": "select",
+    "exclude": ["customer.iban", "customer.taxId"],
+    "select": { "order": "$.id", "total": "$.amounts.gross", "status": "$.state" }
+  },
+  "cacheTtl": 3600
 }
 ```
 
-This filters the response to only include the specified fields, reducing token usage and focusing the AI on relevant data.
+| Field | Description |
+|-------|-------------|
+| `mode` | `select` (declarative template), `jmespath` (evaluate `expression`), or `off` to keep the config without applying it |
+| `exclude` | Paths to drop, applied before everything else. The lever for PII and secrets |
+| `include` | Keep only these paths, preserving the original document shape |
+| `select` | Output template: keys are output names, leaves are paths (`$.a.b[*].c`) or literals |
+| `expression` | JMESPath expression, for reshaping a template cannot express |
+| `fallbackToRaw` | On error, return the raw response instead of failing. Default `true` |
+| `maxBytes` | Hard cap on the serialized output. `0` or absent means no cap |
+| `cacheTtl` | Seconds to cache the **raw** upstream response; shaping happens on read |
+
+Paths accept `$.a.b`, `a[0].b`, `a[*].b` and `a['weird.key']`. A leading `$.` is
+optional. Depth, path count and output size are bounded, so a pathological
+response or template cannot pin a worker.
+
+**In the UI:** the tool editor has a Response Mapping panel with the same three
+modes and a **live preview** that runs the mapping against a real response and
+reports the before/after size. A tool with a broken mapping is flagged in the
+tool list rather than failing silently.
+
+> A tool without a mapping behaves exactly as before — same object, byte for
+> byte. The no-op path is the one that must never regress.
 
 ---
 
