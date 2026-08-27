@@ -102,6 +102,43 @@ describe('McpClientEngine endpoint resolution', () => {
     });
   });
 
+  describe('headers', () => {
+    it('forwards connector headers alongside the injected auth header', async () => {
+      // Snowflake needs both: the PAT in Authorization AND a token-type header.
+      await engine.execute(
+        {
+          baseUrl:
+            'https://acct.snowflakecomputing.com/api/v2/databases/db/schemas/public/mcp-servers/srv',
+          authType: 'BEARER_TOKEN',
+          authConfig: { token: 'snowflake-pat' },
+          headers: {
+            'X-Snowflake-Authorization-Token-Type': 'PROGRAMMATIC_ACCESS_TOKEN',
+          },
+        },
+        { method: 'query', path: '/mcp' },
+        {},
+      );
+
+      const { requestInit } = MockedTransport.mock.calls[0][1];
+      expect(requestInit.headers).toEqual({
+        'X-Snowflake-Authorization-Token-Type': 'PROGRAMMATIC_ACCESS_TOKEN',
+        Authorization: 'Bearer snowflake-pat',
+      });
+    });
+
+    it('sends the API key header on a path-hosted server', async () => {
+      await engine.listTools({
+        baseUrl: 'https://gw.example.com/tenant/a/mcp',
+        authType: 'API_KEY',
+        authConfig: { headerName: 'X-API-Key', apiKey: 'k-123' },
+        headers: {},
+      });
+
+      const { requestInit } = MockedTransport.mock.calls[0][1];
+      expect(requestInit.headers['X-API-Key']).toBe('k-123');
+    });
+  });
+
   describe('listTools', () => {
     it('discovers against the base URL path instead of <origin>/mcp', async () => {
       const baseUrl = 'https://app.linkmcp.io/api/mcp';
