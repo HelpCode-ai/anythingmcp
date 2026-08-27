@@ -125,3 +125,25 @@ describe('resolveMcpEndpointUrl', () => {
     );
   });
 });
+
+describe('resolveMcpEndpointUrl credential handling', () => {
+  it('keeps credentials embedded in the base URL', () => {
+    expect(
+      resolveMcpEndpointUrl('https://user:pass@mcp.example.com', '/mcp').toString(),
+    ).toBe('https://user:pass@mcp.example.com/mcp');
+
+    expect(
+      resolveMcpEndpointUrl('https://user:pass@mcp.example.com/deep/mcp', '/mcp').toString(),
+    ).toBe('https://user:pass@mcp.example.com/deep/mcp');
+
+    expect(
+      resolveMcpEndpointUrl('https://user:pass@mcp.example.com/deep', '/sse').toString(),
+    ).toBe('https://user:pass@mcp.example.com/sse');
+  });
+
+  it('keeps a non-default port', () => {
+    expect(
+      resolveMcpEndpointUrl('http://mcp.example.com:8931/tenant/a', '/mcp').toString(),
+    ).toBe('http://mcp.example.com:8931/tenant/a');
+  });
+});

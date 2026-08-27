@@ -108,14 +108,30 @@ export function resolveMcpEndpointUrl(
 
   if (override && override !== DEFAULT_MCP_PATH) {
     if (/^https?:\/\//i.test(override)) return new URL(override);
-    if (override.startsWith('/')) return new URL(override, base.origin);
-    return new URL(`${basePath}/${override.replace(/^\/+/, '')}`, base.origin);
+    return withPath(
+      base,
+      override.startsWith('/')
+        ? override
+        : `${basePath}/${override.replace(/^\/+/, '')}`,
+      '',
+    );
   }
 
-  if (basePath) {
-    // Preserve the query string: some hosted gateways carry a key there.
-    return new URL(`${basePath}${base.search}`, base.origin);
-  }
+  // Preserve the query string: some hosted gateways carry a key there.
+  if (basePath) return withPath(base, basePath, base.search);
 
-  return new URL(DEFAULT_MCP_PATH, base.origin);
+  return withPath(base, DEFAULT_MCP_PATH, '');
+}
+
+/**
+ * Rebuild a URL with a different path, keeping everything else the base URL
+ * carried — port, and in particular any `user:pass@` credentials, which
+ * `new URL(path, origin)` would silently drop.
+ */
+function withPath(base: URL, pathname: string, search: string): URL {
+  const url = new URL(base.toString());
+  url.pathname = pathname;
+  url.search = search;
+  url.hash = '';
+  return url;
 }
