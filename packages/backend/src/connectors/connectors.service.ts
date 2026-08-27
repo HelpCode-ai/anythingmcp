@@ -10,6 +10,7 @@ import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
 import { resolveInternalDbRestUrl } from '../common/db-rest.util';
+import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
 
@@ -331,19 +332,20 @@ export class ConnectorsService {
     // Network-layer errors (DNS, ECONNREFUSED, SSRF guard, timeout)
     const msg = String(error?.message || '');
 
-    // Specifically: SSRF guard blocked an internal hostname. Attach a fix
-    // hint so the UI can deep-link to the admin allowlist page.
-    const ssrfMatch = msg.match(
-      /SSRF guard:\s*hostname '([^']+)' resolves to non-public address/,
-    );
-    if (ssrfMatch) {
+    // Specifically: SSRF guard blocked an internal host. Attach a fix hint so
+    // the UI can deep-link to the admin allowlist page. This covers every
+    // blocked-host variant, not just the DNS one — a private IP, 'localhost'
+    // and an unresolvable Docker service name are all fixed by allowlisting,
+    // and MCP bridges to a server on the local network hit exactly those.
+    const ssrfHostname = extractSsrfBlockedHostname(msg);
+    if (ssrfHostname) {
       return {
         ok: false,
         kind: 'unreachable',
         message: msg,
         suggestedFix: {
           action: 'add-to-ssrf-allowlist',
-          hostname: ssrfMatch[1],
+          hostname: ssrfHostname,
           url: '/admin/settings#ssrf',
         },
       };
