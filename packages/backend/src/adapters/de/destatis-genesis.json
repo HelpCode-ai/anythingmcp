@@ -5,22 +5,59 @@
   "region": "de",
   "category": "government",
   "icon": "destatis",
-  "docsUrl": "https://www-genesis.destatis.de/genesis/misc/GENESIS-Webservices_Einfuehrung.pdf",
+  "docsUrl": "https://genesis.destatis.de/datenbank/online/docs/GENESIS-Webservices_Einfuehrung.pdf",
+  "instructions": "This connector uses the GENESIS-Online RESTful/JSON web service (Anwenderdokumentation Version 5.1, 01.06.2026).\n\n**IMPORTANT — POST only.** Destatis permanently shut down GET requests with credentials in the URL on **30 June 2025** (\"Zur Verbesserung des Schutzes Ihrer Nutzerdaten wird die bisher angebotene Möglichkeit der API Nutzung mittels GET Requests am 30. Juni 2025 endgültig abgeschaltet\"). Since then the API is reachable **only via POST**, with credentials sent as HTTP **header** fields and all other parameters in a `application/x-www-form-urlencoded` request body. Every tool here is mapped that way. Every tool also pins `Content-Type: application/x-www-form-urlencoded; charset=UTF-8`: without the charset GENESIS decodes the body as latin-1, so a search term with an umlaut (`Bevölkerung`) silently returns `Code 0` with no results. Do not convert any tool back to GET — a GET now returns the GENESIS HTML web interface instead of JSON.\n\n**Setup**:\n1. Register free at https://genesis.destatis.de (Registrierung).\n2. Recommended: log in and open the modal **\"Webservice-Schnittstelle (API)\"** to copy your personal **API token** (32 characters). Destatis explicitly recommends the token: it can be reset independently of your password and contains no characters that need escaping.\n3. Set `DESTATIS_USERNAME_OR_TOKEN` to **either** your Nutzerkennung/e-mail **or** the API token. When using a token, leave `DESTATIS_PASSWORD` empty — the API accepts the password header blank, and a password is not required. When using a Nutzerkennung, set `DESTATIS_PASSWORD` as well.\n\n**Token limitation**: a token identifies but cannot authenticate write access. Requests with `job=true` (used automatically for very large tables), `profile/password` and `profile/removeresult` require Nutzerkennung + password. All tools in this connector are read-only, so a token covers them — except when a table is large enough to be pushed into the queue.\n\n**Which errors mean what** (verified against the live API): `find/find` is a **public** service. It answers `Status.Code = 0` with the same results whether or not credentials are sent, so an empty `destatis_search_tables` result means the search genuinely found nothing — it is never a sign of an authentication problem, and this service cannot be used to test credentials. The data, metadata and catalogue services are gated: `Code = 15` (\"Sie sind nicht berechtigt diesen Service aufzurufen…\") means the credentials never arrived, and `Code = 2` (\"Bitte prüfen und korrigieren Sie Ihren Nutzernamen oder Ihren Token bzw. das Passwort\") means they arrived but are wrong. To check which account is answering, call `destatis_login_check`: it reports `isGuest: true` when the request is running as the anonymous `GAST` account.\n\n**\"Test connection\" only proves reachability.** GENESIS is POST-only, so the probe can just confirm the service answers (`GET /helloworld/whoami`); it cannot check credentials. Use `destatis_login_check` for that.\n\n**Resource limits** (chapter 1.7 of the docs): a maximum of **3 parallel requests** per account; requests running longer than 15 minutes are terminated. Tables with more than ~40,000 values cannot be downloaded in the dialog and return `Status.Code = 98` — split the query by time range or narrow the classifying variables.\n\n**Reading responses**: every response carries a `Status` block. `Code: 0` means success; a non-zero `Code` carries the reason in `Content`. Table codes look like `12411-0001` (population) or `61111-0001` (consumer price index) — use `destatis_search_tables` to find them before calling `destatis_get_table`.",
   "requiredEnvVars": [
-    "DESTATIS_USERNAME",
+    "DESTATIS_USERNAME_OR_TOKEN"
+  ],
+  "optionalEnvVars": [
     "DESTATIS_PASSWORD"
   ],
   "connector": {
     "name": "Destatis GENESIS",
     "type": "REST",
-    "baseUrl": "https://www-genesis.destatis.de/genesisWS/rest/2020",
-    "authType": "QUERY_AUTH",
+    "baseUrl": "https://genesis.destatis.de/genesisWS/rest/2020",
+    "healthcheckPath": "/helloworld/whoami",
+    "authType": "API_KEY",
     "authConfig": {
-      "username": "{{DESTATIS_USERNAME}}",
-      "password": "{{DESTATIS_PASSWORD}}"
+      "headerName": "username",
+      "apiKey": "{{DESTATIS_USERNAME_OR_TOKEN}}",
+      "extraHeaders": {
+        "password": "{{DESTATIS_PASSWORD}}"
+      }
     }
   },
   "tools": [
+    {
+      "name": "destatis_login_check",
+      "description": "Verify that the configured GENESIS credentials work and report which account the API sees. Use this first when results look wrong — if the returned Username is 'GAST' the credentials did not resolve and you are getting guest-level data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "description": "Language for status messages: 'de' for German or 'en' for English. Default: 'de'"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/helloworld/logincheck",
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "bodyMapping": {
+          "language": "$language"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{ status: Status, isGuest: contains([Username], 'GAST') }"
+        }
+      }
+    },
     {
       "name": "destatis_search_tables",
       "description": "Search for statistical tables in the Destatis GENESIS database by keyword. Returns table codes, titles, and metadata. Use this to find the right table before retrieving data.",
@@ -41,9 +78,13 @@
         ]
       },
       "endpointMapping": {
-        "method": "GET",
+        "method": "POST",
         "path": "/find/find",
-        "queryParams": {
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "bodyMapping": {
           "term": "$searchterm",
           "category": "tables",
           "language": "$language"
@@ -78,9 +119,13 @@
         ]
       },
       "endpointMapping": {
-        "method": "GET",
+        "method": "POST",
         "path": "/data/table",
-        "queryParams": {
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "bodyMapping": {
           "name": "$name",
           "startyear": "$startyear",
           "endyear": "$endyear",
@@ -108,9 +153,13 @@
         ]
       },
       "endpointMapping": {
-        "method": "GET",
+        "method": "POST",
         "path": "/metadata/table",
-        "queryParams": {
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "bodyMapping": {
           "name": "$name",
           "language": "$language"
         }
@@ -122,9 +171,9 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "searchterm": {
+          "selection": {
             "type": "string",
-            "description": "Optional filter keyword"
+            "description": "Statistic code pattern with '*' as wildcard, e.g. '12*' or '122*'. This filters by CODE, not by keyword: a word like 'Bevoelkerung' returns Code 104 and an empty list. Use destatis_search_tables to search by keyword. Omit to list everything."
           },
           "language": {
             "type": "string",
@@ -133,10 +182,16 @@
         }
       },
       "endpointMapping": {
-        "method": "GET",
+        "method": "POST",
         "path": "/catalogue/statistics",
-        "queryParams": {
-          "selection": "$searchterm",
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "bodyMapping": {
+          "selection": "$selection",
+          "searchcriterion": "Code",
+          "sortcriterion": "Code",
           "language": "$language"
         }
       }

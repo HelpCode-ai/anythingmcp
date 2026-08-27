@@ -55,7 +55,7 @@ const ALLOWED_AUTH_TYPES = new Set([
   'OAUTH2',
   'OAUTH1', // OAuth 1.0a HMAC-SHA1 request signing (e.g. ImmobilienScout24)
   'LOGIN_TOKEN',
-  'QUERY_AUTH', // existing adapters (destatis, here-geocoding, oxomi) pass the API key as a query string parameter
+  'QUERY_AUTH', // existing adapters (here-geocoding, oxomi) pass the API key as a query string parameter
 ]);
 
 const REQUIRED_TOP_LEVEL = [
@@ -145,6 +145,32 @@ function validateAdapter(adapter, file, region) {
       warnings.push(
         `requiredEnvVars contains "${envVar}" but it's not auto-injected via {{${envVar}}} (operator must set it for documentation, agent passes it as a tool param)`,
       );
+    }
+  }
+
+  // optionalEnvVars is prompted for in the install modal but never blocks
+  // submission. It must still be a real, referenced placeholder: an optional
+  // var nobody references is dead UI, and one that overlaps requiredEnvVars
+  // would render twice with contradictory labels.
+  if (adapter.optionalEnvVars !== undefined) {
+    if (
+      !Array.isArray(adapter.optionalEnvVars) ||
+      adapter.optionalEnvVars.some((v) => typeof v !== 'string')
+    ) {
+      errors.push('optionalEnvVars must be an array of strings');
+    } else {
+      for (const envVar of adapter.optionalEnvVars) {
+        if ((adapter.requiredEnvVars || []).includes(envVar)) {
+          errors.push(
+            `"${envVar}" appears in both requiredEnvVars and optionalEnvVars`,
+          );
+        }
+        if (!isPlaceholderReferenced(envVar, adapter)) {
+          warnings.push(
+            `optionalEnvVars contains "${envVar}" but it's not referenced via {{${envVar}}}`,
+          );
+        }
+      }
     }
   }
 

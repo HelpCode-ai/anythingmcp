@@ -147,8 +147,25 @@ interface AdapterItem {
   icon: string;
   docsUrl: string;
   requiredEnvVars: string[];
+  // Env vars that may legitimately stay blank (e.g. Destatis GENESIS needs no
+  // password when an API token is used). Prompted, but never block Import.
+  optionalEnvVars?: string[];
   toolCount: number;
   authType?: string;
+}
+
+/**
+ * Pre-fill every optional env var with an empty string. An optional var the
+ * user never touches must still reach the backend as '' — otherwise the
+ * {{VAR}} placeholder survives resolution and is sent to the target API as a
+ * literal string (e.g. a Destatis password header of "{{DESTATIS_PASSWORD}}").
+ */
+function seedOptionalCredentials(adapter: {
+  optionalEnvVars?: string[];
+}): Record<string, string> {
+  return Object.fromEntries(
+    (adapter.optionalEnvVars || []).map((v) => [v, '']),
+  );
 }
 
 interface AdapterDetail extends AdapterItem {
@@ -229,8 +246,14 @@ function AdapterStoreContent() {
   const handleImportClick = async (adapter: AdapterItem) => {
     if (!token) return;
 
-    // If no auth required, import directly
-    if (!adapter.requiredEnvVars || adapter.requiredEnvVars.length === 0) {
+    // If nothing at all is prompted for, import directly. Optional vars count:
+    // skipping the modal would leave them unset, and an unset {{VAR}} survives
+    // resolution and is sent to the API as a literal string.
+    const promptedVars = [
+      ...(adapter.requiredEnvVars || []),
+      ...(adapter.optionalEnvVars || []),
+    ];
+    if (promptedVars.length === 0) {
       await doImport(adapter.slug);
       return;
     }
@@ -240,7 +263,10 @@ function AdapterStoreContent() {
     try {
       const detail = await adapters.get(adapter.slug, token);
       setConfigAdapter(detail);
-      setCredentialValues({});
+      // Seed optional vars to '' so leaving one blank still submits an empty
+      // value. Without the key the backend keeps the literal {{VAR}}
+      // placeholder and sends it to the API verbatim.
+      setCredentialValues(seedOptionalCredentials(detail));
       setRevealedCredentials({});
     } catch {
       // Fallback: use list data
@@ -248,7 +274,7 @@ function AdapterStoreContent() {
         ...adapter,
         connector: { name: adapter.name, type: 'REST', baseUrl: '', authType: 'API_KEY' },
       } as AdapterDetail);
-      setCredentialValues({});
+      setCredentialValues(seedOptionalCredentials(adapter));
       setRevealedCredentials({});
     } finally {
       setConfigLoading(false);
@@ -531,7 +557,13 @@ function AdapterStoreContent() {
             )}
 
             <div className="space-y-3">
-              {configAdapter.requiredEnvVars.map((envVar) => {
+              {[
+                ...configAdapter.requiredEnvVars,
+                ...(configAdapter.optionalEnvVars || []),
+              ].map((envVar) => {
+                const isOptional = (
+                  configAdapter.optionalEnvVars || []
+                ).includes(envVar);
                 const isSecret =
                   envVar.toLowerCase().includes('secret') ||
                   envVar.toLowerCase().includes('password') ||
@@ -545,6 +577,11 @@ function AdapterStoreContent() {
                       className="mb-1 block text-sm font-medium"
                     >
                       {formatEnvVarLabel(envVar)}
+                      {isOptional && (
+                        <span className="ml-1 font-normal text-[var(--text-3)]">
+                          (optional)
+                        </span>
+                      )}
                     </label>
                     <div className="relative">
                       <input

@@ -97,6 +97,11 @@ export class AdaptersService {
         authType: (adapter.connector.authType as any) || 'NONE',
         authConfig: encryptedAuth,
         headers: resolvedHeaders as any,
+        // Without this the "Test connection" probe GETs `/`, which plenty of
+        // APIs answer with 404 and the UI reports as a broken connector.
+        healthcheckPath:
+          (adapter.connector as { healthcheckPath?: string }).healthcheckPath ||
+          null,
         envVars: envVarsToPersist as any,
         instructions: adapter.instructions || null,
         // Persist the source adapter slug (brand-logo resolution survives a
@@ -152,7 +157,15 @@ export class AdaptersService {
     credentials?: Record<string, string>,
   ): string {
     if (!credentials) return str;
-    return str.replace(/\{\{(\w+)\}\}/g, (_, key) => credentials[key] || `{{${key}}}`);
+    // An explicitly-supplied empty value must resolve to empty, not fall back
+    // to the literal placeholder — some APIs require a credential header to be
+    // present but blank (e.g. Destatis GENESIS wants `password: ""` when
+    // identifying via API token). A `||` fallback here would send the string
+    // "{{DESTATIS_PASSWORD}}" as the password. Only an *absent* key keeps its
+    // placeholder, so the operator can still fill it in later.
+    return str.replace(/\{\{(\w+)\}\}/g, (_, key) =>
+      key in credentials ? credentials[key] : `{{${key}}}`,
+    );
   }
 
   /** Deep-replace {{VAR}} placeholders in an object/value */

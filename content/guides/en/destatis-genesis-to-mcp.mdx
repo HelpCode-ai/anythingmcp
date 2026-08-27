@@ -20,13 +20,19 @@ git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp && docker compose up -d
 ```
 
-### Step 2: Import the Destatis Adapter
+### Step 2: Get GENESIS Credentials
 
-Open `http://localhost:3000/connectors/store` and click **Import** on the Destatis GENESIS Statistics adapter. Enter your GENESIS username and password when prompted.
+Register for a free account at [genesis.destatis.de](https://genesis.destatis.de/).
 
-### Step 3: Get GENESIS Credentials
+Destatis recommends identifying with a **personal API token** rather than your password: log in, open the **"Webservice-Schnittstelle (API)"** modal and copy the 32-character token. It can be regenerated independently of your password, which is useful for shared projects. Note that a token allows read access only — very large table queries that Destatis pushes into its queue (`job=true`) still require username and password.
 
-Register for a free account at [www-genesis.destatis.de](https://www-genesis.destatis.de/) to get API access credentials.
+### Step 3: Import the Destatis Adapter
+
+Open `http://localhost:3000/connectors/store` and click **Import** on the Destatis GENESIS Statistics adapter. Put **either** your API token **or** your Nutzerkennung into the *Username or Token* field. The *Password* field is optional — leave it blank when using a token.
+
+> **Authentication note:** Destatis permanently shut down GET requests with credentials in the URL on **30 June 2025**. The API is now reachable only via POST with credentials in the HTTP header, and this adapter is configured accordingly. `find/find` is a **public** service: it answers `Code: 0` with the same results whether or not credentials are sent, so an empty table search means the search genuinely found nothing and never indicates a credential problem. The data, metadata and catalogue services are gated: `Code: 15` means the credentials never arrived, `Code: 2` that they arrived but are wrong. To see which account is answering, run `destatis_login_check` — it reports `isGuest: true` when the request runs as the anonymous `GAST` account.
+
+> **Upgrading an older install:** remove the connector and install it again from the store rather than re-syncing it. The catalogue re-sync refreshes tool definitions but not a connector's authentication type or base URL, so a re-synced old connector would still send its credentials as URL parameters against the retired host.
 
 ### Step 4: Connect to Your AI Agent
 
@@ -44,9 +50,10 @@ Register for a free account at [www-genesis.destatis.de](https://www-genesis.des
 
 | Tool | Description |
 |------|-------------|
+| `destatis_login_check` | Verify credentials and confirm which account the API sees |
 | `destatis_search_tables` | Search for statistical tables by keyword |
 | `destatis_get_table` | Retrieve data from a specific statistical table |
-| `destatis_get_metadata` | Get metadata and definitions for a table |
+| `destatis_get_table_metadata` | Get metadata and definitions for a table |
 | `destatis_list_statistics` | List all available statistics catalogs |
 
 ## AI Agent Use Cases

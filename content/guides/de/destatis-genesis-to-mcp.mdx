@@ -20,13 +20,19 @@ git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp && docker compose up -d
 ```
 
-### Schritt 2: Destatis-Adapter importieren
+### Schritt 2: GENESIS-Zugangsdaten erhalten
 
-Öffnen Sie `http://localhost:3000/connectors/store` und klicken Sie auf **Import**. Geben Sie Ihren GENESIS-Benutzernamen und Passwort ein.
+Registrieren Sie sich kostenlos auf [genesis.destatis.de](https://genesis.destatis.de/).
 
-### Schritt 3: GENESIS-Zugangsdaten erhalten
+Destatis empfiehlt die Identifizierung über einen **persönlichen API-Token** anstelle des Passworts: Nach dem Login finden Sie die 32-stellige Zeichenkette im Modal **„Webservice-Schnittstelle (API)"**. Der Token lässt sich unabhängig von Ihren Zugangsdaten zurücksetzen — praktisch bei gemeinsam genutzten Projekten. Beachten Sie: Mit Token sind nur lesende Zugriffe möglich; sehr große Tabellenabfragen, die Destatis in die Warteschlange schreibt (`job=true`), erfordern weiterhin Benutzername und Passwort.
 
-Registrieren Sie sich kostenlos auf [www-genesis.destatis.de](https://www-genesis.destatis.de/).
+### Schritt 3: Destatis-Adapter importieren
+
+Öffnen Sie `http://localhost:3000/connectors/store` und klicken Sie auf **Import**. Tragen Sie **entweder** Ihren API-Token **oder** Ihre Nutzerkennung in das Feld *Username or Token* ein. Das Feld *Password* ist optional — bei Verwendung eines Tokens lassen Sie es leer.
+
+> **Hinweis zur Authentifizierung:** Destatis hat GET-Anfragen mit Zugangsdaten in der URL zum **30.06.2025** endgültig abgeschaltet. Die API ist seitdem ausschließlich per POST mit Zugangsdaten im HTTP-Header erreichbar; der Adapter ist entsprechend konfiguriert. `find/find` ist ein **öffentlicher** Dienst: Er antwortet mit `Code: 0` und denselben Treffern, ob Zugangsdaten mitgesendet werden oder nicht. Eine leere Tabellensuche bedeutet also, dass wirklich nichts gefunden wurde, und ist nie ein Hinweis auf ein Zugangsdaten-Problem. Die Daten-, Metadaten- und Katalogdienste sind dagegen geschützt: `Code: 15` heißt, die Zugangsdaten sind nicht angekommen, `Code: 2`, dass sie angekommen, aber falsch sind. Welches Konto antwortet, zeigt `destatis_login_check` — bei der anonymen Kennung `GAST` meldet es `isGuest: true`.
+
+> **Bestehende Installation aktualisieren:** Entfernen Sie den Connector und installieren Sie ihn neu aus dem Store, statt ihn zu synchronisieren. Die Katalog-Synchronisierung aktualisiert die Tool-Definitionen, nicht aber Authentifizierungsart und Basis-URL eines Connectors — ein synchronisierter alter Connector würde seine Zugangsdaten weiterhin als URL-Parameter an den abgeschalteten Host senden.
 
 ### Schritt 4: Mit KI-Agent verbinden
 
