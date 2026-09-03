@@ -26,9 +26,11 @@
 
 **AnythingMCP** is a self-hosted, open-source **smart, AI-empowered MCP gateway** and **MCP server** that turns the systems you already run into [Model Context Protocol](https://modelcontextprotocol.io/) tools — **REST and SOAP APIs, GraphQL, SQL & NoSQL databases, and even other MCP servers**. Import a spec or point it at a database, and expose it as a **custom connector** to **Claude**, **ChatGPT**, **Gemini**, **Copilot**, **Cursor** and any MCP-compatible client. No SDK, no code changes — point, configure, connect.
 
-It ships with **175+ ready-to-use adapters** — including **Deutsche Bahn**, **weclapp ERP**, **Etsy**, **Shopware**, **DHL** and **Sendcloud** — so the most common integrations work in one click, while the visual editor and import tools (OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL) let you wrap any other API or database in minutes.
+It ships with **188 ready-to-use adapters** — including **Deutsche Bahn**, **weclapp ERP**, **Etsy**, **Shopware**, **DHL** and **Sendcloud** — so the most common integrations work in one click, while the visual editor and import tools (OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL) let you wrap any other API or database in minutes.
 
 What makes it **smart**, not just a pipe: AnythingMCP builds a per-workspace **Knowledge Graph** of how your connectors' data relates, serves it back to the agent over MCP so it chains tools correctly across systems, and turns how your tools are actually used into reusable **AI skills**. A plain gateway forwards calls; AnythingMCP gives your agents the context to use them well. *(All AI features are optional and opt-in — the gateway works fully without them.)*
+
+And because every call runs through your own infrastructure, you decide what leaves it: **per-tool response mapping** declares which fields ever reach the model, so PII and secrets can be dropped before the answer goes out, while the audit log keeps the full upstream response on your side.
 
 https://github.com/user-attachments/assets/2ae92f90-7012-4c00-8836-bae5a6422ca6
 
@@ -42,12 +44,14 @@ https://github.com/user-attachments/assets/2ae92f90-7012-4c00-8836-bae5a6422ca6
 - [Get started in 60 seconds](#get-started-in-60-seconds)
 - [Key features](#key-features)
 - [Knowledge Graph &amp; AI skills](#knowledge-graph--ai-skills)
+- [Control what the model sees](#control-what-the-model-sees)
 - [Build custom Claude connectors — no code](#build-custom-claude-connectors--no-code)
 - [Turn your API into a ChatGPT app](#turn-your-api-into-a-chatgpt-app)
 - [Why AnythingMCP](#why-anythingmcp)
 - [Pre-configured MCP connectors](#pre-configured-mcp-connectors)
 - [Guides, client setup &amp; FAQ](#guides-client-setup--faq)
 - [Community &amp; support](#community--support)
+- [Contributing](#contributing)
 - [License](#license)
 
 </details>
@@ -90,11 +94,12 @@ The interactive setup handles everything: deployment mode, domain & HTTPS (autom
 ## Key features
 
 - **5 connector types** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Database](docs/connectors/database.md) (PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite), [MCP-to-MCP bridge](docs/connectors/mcp-bridge.md)
-- **6 import formats** — OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL introspection, custom JSON
-- **175+ pre-built adapters** — logistics, ERP, HR, e-commerce, payments, public data — [see catalog](#pre-configured-mcp-connectors)
+- **6 import formats + live discovery** — OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL introspection, custom JSON, plus tool discovery straight from a running MCP server
+- **188 pre-built adapters** — logistics, ERP, HR, e-commerce, payments, public data — [see catalog](#pre-configured-mcp-connectors)
 - **Visual tool editor** — map parameters to path, query, body, headers; rename and describe tools for the AI
 - **Dynamic MCP server** — tools registered at runtime, no restart
 - **[Knowledge Graph &amp; AI skills](docs/knowledge-graph.md)** — a per-workspace, PII-safe map of how your connectors' data relates, served to the agent via an MCP tool, plus reusable AI skills composed into the server's instructions (optional, opt-in)
+- **[Response shaping &amp; data governance](#control-what-the-model-sees)** — declare per tool exactly which fields reach the model; drop PII, secrets and noise before they leave your network, with a live before/after preview
 - **Full auth** — OAuth2 (PKCE + Client Credentials), Bearer, API Key, Basic, WS-Security, client certificates, [LOGIN_TOKEN](docs/connectors/login-token-auth.md) and OAuth 1.0a handshakes
 - **Audit logging** — every tool call logged with input, output, duration, status
 - **Roles &amp; access control** — tool-level whitelisting per custom role, per-user MCP API keys
@@ -105,9 +110,11 @@ The interactive setup handles everything: deployment mode, domain & HTTPS (autom
 
 ## Knowledge Graph &amp; AI skills
 
-Beyond exposing tools, AnythingMCP can map **how the data in your connectors
-relates** — and feed that context back to the AI client so it chains tools
-correctly across systems.
+A gateway that only forwards calls leaves the hard part to the agent: knowing
+which tool to call next, and what your business actually means by "open order"
+or "active customer". AnythingMCP learns both — **how the data in your
+connectors relates**, and **how your team really uses the tools** — then feeds
+that back to the AI client as context rather than as extra tool calls.
 
 - **Knowledge Graph** — a per-workspace map of *entities* (customers, orders,
   products…) and their *relationships*. It builds itself from tool names,
@@ -121,13 +128,17 @@ correctly across systems.
 - **Served over MCP** — each server exposes a `kg_how_to_obtain` tool so the
   *customer's* agent can ask "how do I get this?" and receive chaining hints
   across connectors.
-- **AI skills** — reusable business rules captured from how the tools are
-  actually used (e.g. *"today's revenue includes order statuses 2, 3 and 4"*),
-  reviewed by a human, then composed into the MCP server's **instructions** — so
-  they guide the agent **without adding any extra tool calls**. Search, status
-  tabs and pagination keep them manageable at scale; optional **auto-apply** for
-  high-confidence skills and an AI **"consolidate"** action merges overlapping
-  ones into fewer rules.
+- **AI skills, written from real usage** — with intent capture on, each tool
+  call can record *why* it was made. An AI pass turns recurring patterns into
+  small reusable rules (e.g. *"today's revenue includes order statuses 2, 3 and
+  4"*), scoped to a connector or a whole server. You **Apply / Edit / Dismiss**
+  each one, or let **auto-apply** take the high-confidence ones (≥ 0.90)
+  unattended. Applied skills are composed into the MCP server's **instructions**
+  at serve time, so they guide the agent **without adding a single tool call**,
+  and editing one takes effect on the next request. **Consolidate with AI**
+  merges overlapping rules back into a tight set as they accumulate.
+  The knowledge your team builds up by using the system stops living in
+  someone's head.
 
 The AI passes (graph enrichment, skill generation, scheduled extension) work
 with OpenAI, OpenRouter or Anthropic and are **off by default** — opt-in with a
@@ -135,6 +146,47 @@ global env flag *and* a per-workspace switch. The graph, manual editing and the
 MCP tool work with no LLM key at all.
 
 ➡️ **[Knowledge Graph &amp; AI skills guide →](docs/knowledge-graph.md)**
+
+---
+
+## Control what the model sees
+
+Every tool can declare **exactly which fields leave your infrastructure**. The
+mapping is attached per tool and applied on the way out, so the AI client — and
+the third-party model behind it — only ever receives the shape you approved.
+
+- **Drop what should never travel.** List the paths to remove and they are
+  stripped before the response reaches the agent: a customer's IBAN, an
+  employee's salary, an access token an API hands back alongside the data.
+- **Or declare the whole output.** A `select` template names the fields to keep
+  and what to call them; a JMESPath expression covers the reshaping a template
+  can't express. Where an agent is better served by a stable shape, swap the
+  value for a placeholder (`"iban": "= [redacted]"`) instead of removing the
+  field.
+- **See it before you save it.** The editor runs the mapping against a real
+  response and shows the before/after side by side, with the size difference. A
+  shipped adapter measures **12,172 B → 1,072 B (−91%)** on a four-train result.
+- **Fails safe.** A broken mapping returns the raw response and logs a warning
+  rather than breaking a working tool — unless you explicitly opt out.
+
+Two payoffs at once: sensitive fields never reach the model, and every field you
+drop is a field you don't pay for in the context window.
+
+```json
+{
+  "transform": {
+    "mode": "select",
+    "exclude": ["customer.iban", "customer.taxId"],
+    "select": { "order": "$.id", "total": "$.amounts.gross", "status": "$.state" }
+  }
+}
+```
+
+> The audit log still records the full upstream response inside your own
+> database. Shaping what the agent sees never costs you the evidence of what the
+> API actually returned.
+
+➡️ **[Response mapping reference →](docs/tool-definition.md#3-response-mapping-optional)**
 
 ---
 
@@ -168,9 +220,11 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 | You have legacy SOAP/WSDL services | **SOAP → MCP** bridge with automatic WSDL parsing |
 | You need to query databases from AI agents | **DB → MCP** with auto-generated query tools (7 engines) |
 | You want one MCP gateway for all your APIs | **MCP middleware** that aggregates multiple connectors |
-| You need an MCP server for Deutsche Bahn / DHL / weclapp / … | **175+ pre-built adapters** — install in one click |
+| You need an MCP server for Deutsche Bahn / DHL / weclapp / … | **188 pre-built adapters** — install in one click |
 | You can't ship credentials to a SaaS gateway | **Runs on your infrastructure** — credentials AES-256-GCM at rest |
 | You need auth, audit logs, and RBAC | Built-in **OAuth2, audit log, and role-based access** — no DIY |
+| A third-party model would see every field your API returns | **[Per-tool response mapping](#control-what-the-model-sees)** — drop or reshape fields before they leave your network |
+| Your agent calls tools in the wrong order, or misses how two systems connect | **[Knowledge Graph &amp; AI skills](#knowledge-graph--ai-skills)** — chaining hints and learned business rules, served as context |
 
 **Typical use cases** — search train schedules and live delays with [Deutsche Bahn](https://anythingmcp.com/guides/deutsche-bahn-to-mcp) · talk to your ERP from Claude ([weclapp](https://anythingmcp.com/guides/weclapp-erp-to-mcp), [Xentral](https://anythingmcp.com/guides/xentral-to-mcp)) · track parcels with AI ([DHL](https://anythingmcp.com/guides/dhl-tracking-to-mcp), [GLS](https://anythingmcp.com/guides/gls-tracking-to-mcp)) · validate invoices ([VIES VAT](https://anythingmcp.com/guides/vies-vat-to-mcp), [Handelsregister](https://anythingmcp.com/guides/handelsregister-to-mcp)) · let agents query production databases safely · bridge legacy SOAP to modern AI · import a Postman collection and get MCP tools instantly.
 
@@ -178,7 +232,7 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 
 ## Pre-configured MCP connectors
 
-AnythingMCP ships with **175+ ready-to-use adapters** — provide your API credentials at import time and the tools become available immediately. Every adapter has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides) (English, German, Italian).
+AnythingMCP ships with **188 ready-to-use adapters** — provide your API credentials at import time and the tools become available immediately. Every adapter has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Examples |
 |---|---|
