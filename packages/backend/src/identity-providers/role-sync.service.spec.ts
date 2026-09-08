@@ -139,7 +139,7 @@ describe('RoleSyncService', () => {
   });
 
   // The whole point of DENY_ALL. Deleting the user's grants would leave them
-  // with none, and `getUserToolAccess` reads "no role" as UNRESTRICTED — so
+  // with none, and `getAllowedToolIds` reads "no role" as UNRESTRICTED — so
   // the obvious implementation grants full access.
   it('DENY_ALL assigns an empty role instead of leaving the user role-less', async () => {
     const out = await service.syncOnLogin(makeProvider(), USER, { groups: ['nope'] });

@@ -41,6 +41,7 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 | [Knowledge Graph &amp; AI skills](knowledge-graph.md) | Per-workspace data-relationship map served over MCP, plus AI skills composed into server instructions |
 | [Deployment guide](deployment.md) | Docker, production setup, reverse proxy, env vars |
 | [Authentication](deployment.md#authentication) | OAuth2, JWT, API keys, MCP auth modes |
+| [Single sign-on](sso.md) | Entra ID, Google, Okta &amp; OIDC; role sync from directory groups; recovery codes — **self-hosted only** |
 | [License FAQ](license-faq.md) | Plain-language AGPL explanation |
 
 ---
