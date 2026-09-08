@@ -21,6 +21,7 @@ import {
 } from '@modelcontextprotocol/node';
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
 import { mcpHttpTransport } from './mcp-strategy';
+import { toolVisibilityRole } from './mcp-server.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { ToolRegistry, RegisteredTool } from './tool-registry';
@@ -124,17 +125,71 @@ export class McpEndpointController {
 
   @Post()
   async handleGlobalPost(@Req() req: Request, @Res() res: Response) {
+    await this.attachVisibleTools(req);
     await mcpHttpTransport.httpHandlers.handlePost(req, res);
   }
 
   @Get()
   async handleGlobalGet(@Req() req: Request, @Res() res: Response) {
+    await this.attachVisibleTools(req);
     await mcpHttpTransport.httpHandlers.handleGet(req, res);
   }
 
   @Delete()
   async handleGlobalDelete(@Req() req: Request, @Res() res: Response) {
     await mcpHttpTransport.httpHandlers.handleDelete(req, res);
+  }
+
+  /**
+   * Resolves which tools the caller may SEE and records them on the request.
+   *
+   * The global registry is shared by every organization — it holds one entry
+   * per tool name across the whole deployment — and the transport's
+   * `tools/list` handler is synchronous, so it can neither query the database
+   * nor know which tenant is asking. Left alone it therefore returns EVERY
+   * registered tool to any authenticated caller, which leaks one tenant's tool
+   * names, descriptions and input schemas to every other tenant, and hands a
+   * role-restricted user the full inventory of their own workspace.
+   *
+   * Calls were never affected: `tools/call` resolves the tool by name AND
+   * organization and refuses a mismatch. This closes the listing side.
+   *
+   * Two scopes are applied, in this order:
+   *   1. ORGANIZATION — only tools owned by the caller's active org.
+   *   2. ROLE — of those, only the ones the caller's MCP roles allow.
+   */
+  private async attachVisibleTools(req: Request) {
+    const user = (req as any).user;
+
+    // No identified principal: a static MCP_API_KEY / MCP_BEARER_TOKEN or an
+    // explicitly enabled anonymous mode. Both are operator credentials on a
+    // single-tenant self-hosted box, so the pre-existing "everything" answer
+    // is the correct one and narrowing it here would break those deployments.
+    if (!user?.sub || !user.organizationId) return;
+
+    const orgTools = this.toolRegistry
+      .getAllTools()
+      .filter((t) => t.organizationId === user.organizationId);
+
+    const allowedToolIds = await this.rolesService.getAllowedToolIds(
+      user.sub,
+      user.organizationId,
+    );
+
+    // `null` means unrestricted — an ADMIN, or a user holding no MCP role at
+    // all. The organization scope still applies.
+    const visible =
+      allowedToolIds === null
+        ? orgTools
+        : orgTools.filter((t) => allowedToolIds.includes(t.id));
+
+    user.roles = [
+      ...new Set(visible.map((t) => toolVisibilityRole(t.name))),
+      // Tools declared statically in code (the Knowledge Graph helper, the
+      // demo tools) carry no visibility role and stay visible to everyone —
+      // they hold no tenant data.
+      ...(Array.isArray(user.roles) ? user.roles : []),
+    ];
   }
 
   // ─── Public, anonymous, static demo MCP server ──────────────────────────

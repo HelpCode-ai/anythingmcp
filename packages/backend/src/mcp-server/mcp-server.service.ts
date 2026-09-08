@@ -17,6 +17,14 @@ import {
   deriveToolAnnotations,
 } from './tool-annotations';
 
+/**
+ * The synthetic role that makes one tool visible in the GLOBAL `/mcp`
+ * `tools/list`. Prefixed so it can never collide with a real role name.
+ */
+export function toolVisibilityRole(toolName: string): string {
+  return `tool:${toolName}`;
+}
+
 @Injectable()
 export class McpServerService implements OnModuleInit {
   private readonly logger = new Logger(McpServerService.name);
@@ -232,9 +240,28 @@ export class McpServerService implements OnModuleInit {
       name,
       description,
       parameters: zodParams,
+      // Gate this entry on a synthetic "role" naming the tool itself, matched
+      // with 'any'. The transport's `tools/list` handler is SYNCHRONOUS, so it
+      // cannot ask the database who the caller is — but it does compare
+      // `user.roles` against this list. The global endpoint therefore resolves
+      // the caller's visible tools asynchronously BEFORE delegating and plants
+      // the answer on `req.user.roles`. See `visibleToolRoles` in
+      // mcp-endpoint.controller.ts.
+      //
+      // Keyed on NAME, not tool id: this registry holds one entry per name
+      // across every organization, so the id belongs to whichever tenant
+      // registered it first. Name is also what the call handler resolves by
+      // (`getToolForOrg(name, org)`), so the two stay consistent.
+      requiredRoles: [toolVisibilityRole(name)],
+      requiredRolesMatch: 'any',
       ...(annotations ? { annotations } : {}),
       handler: async (args: Record<string, unknown>, _context: any, request: any) => {
-        // Check role-based tool access if user is identified
+        // Role check, kept as the SECOND layer. The transport now refuses a
+        // disallowed call before the handler runs, because `requiredRoles`
+        // above gates `tools/call` as well as `tools/list`. This stays so that
+        // a tool registered without a visibility role — a future code path, a
+        // merge that drops the option — is still not freely callable. Defence
+        // in depth, not the only gate.
         const user = request?.user;
         if (user?.sub) {
           // Global /mcp registry: there is no server-scoped org here, so the
