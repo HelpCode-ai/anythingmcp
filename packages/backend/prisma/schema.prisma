@@ -42,6 +42,8 @@ model Organization {
   kgValueSeen      KgValueSeen[]
   kgSkills         KgSkillSuggestion[]
   securityEvents   SecurityEvent[]
+  userRoleAssignments UserRoleAssignment[]
+  identityProviders   IdentityProvider[]
 
   @@map("organizations")
 }
@@ -138,10 +140,15 @@ model User {
   // could set a password and walk straight past SSO, MFA and Conditional Access.
   passwordLoginDisabled Boolean @default(false) @map("password_login_disabled")
 
-  // MCP tool governance — optional custom role for tool access control
+  // MCP tool governance.
+  /// @deprecated Single, GLOBAL role. Superseded by `roleAssignments`
+  /// (per-organization, many-to-many). Still written so a rollback to the
+  /// previous release keeps working; dropped in the contract migration.
   mcpRoleId String? @map("mcp_role_id")
   mcpRole   Role?   @relation(fields: [mcpRoleId], references: [id], onDelete: SetNull)
 
+  roleAssignments          UserRoleAssignment[]
+  identities               UserIdentity[]
   securityEventsAsActor    SecurityEvent[] @relation("SecurityEventActor")
   securityEventsAsTarget   SecurityEvent[] @relation("SecurityEventTarget")
 
@@ -226,7 +233,10 @@ model InvitationToken {
   email          String
   token          String    @unique
   role           UserRole  @default(EDITOR)
+  /// @deprecated Superseded by `mcpRoleIds`; kept for invites created by the
+  /// previous release, which stay valid for their 48h lifetime.
   mcpRoleId      String?   @map("mcp_role_id")
+  mcpRoleIds     String[]  @default([]) @map("mcp_role_ids")
   invitedBy      String    @map("invited_by") // admin user id
   organizationId String    @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -249,11 +259,53 @@ model Role {
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
-  users      User[]
-  toolAccess ToolRoleAccess[]
+  /// @deprecated Single-FK back-relation of `User.mcpRoleId`. Superseded by
+  /// `assignments`; removed with the column in the contract migration.
+  users       User[]
+  assignments UserRoleAssignment[]
+  toolAccess  ToolRoleAccess[]
 
   @@unique([organizationId, name])
   @@map("roles")
+}
+
+// ── User ↔ Role (per-organization, many-to-many) ────────────────────────────
+// Replaces the single `users.mcp_role_id` FK, which was both single-valued and
+// GLOBAL: a user could hold one MCP role across every workspace they belonged
+// to, so per-org governance was structurally impossible and one org's admin
+// could overwrite another's assignment.
+//
+// A user in several Entra groups must accumulate the UNION of those groups'
+// tool whitelists, which a single FK cannot express either.
+model UserRoleAssignment {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId String @map("role_id")
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  // NULLABLE on purpose. A null-org grant applies in every organization, which
+  // is how a grant of an `isSystem` role behaves. Forcing NOT NULL would mean
+  // the backfill has to drop rows it cannot attribute — and dropping a grant
+  // fails OPEN here (no grant at all = unrestricted), so a stricter column
+  // would be the less safe choice.
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// 'manual' = set by an admin, 'entra' = derived from an IdP group claim.
+  /// Part of the unique key so that revoking an IdP-derived grant can never
+  /// silently delete one an admin made by hand.
+  source      String  @default("manual")
+  /// Provenance for synced grants — the Entra group object id or app role.
+  externalRef String? @map("external_ref")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, roleId, source])
+  @@index([userId])
+  @@index([roleId])
+  @@index([organizationId])
+  @@map("user_roles")
 }
 
 // ── Tool ↔ Role Access (whitelist) ──────────────────────────────────────────
@@ -597,6 +649,222 @@ model ToolInvocation {
   @@index([organizationId, createdAt])
   @@index([connectorId, createdAt])
   @@map("tool_invocations")
+}
+
+// ── Identity Providers (SSO) ────────────────────────────────────────────────
+
+enum IdentityProviderType {
+  ENTRA
+  GOOGLE
+  OKTA
+  AUTH0
+  GITHUB
+  /// Any spec-compliant OIDC provider (Keycloak, …). Self-host only: a
+  /// free-form issuer supplied by a workspace admin is a server-side fetch to
+  /// a host they choose, which is a disproportionate surface in cloud.
+  OIDC
+}
+
+/// What a role sync reads. Which values are meaningful depends on the type —
+/// Entra can emit app roles or group object ids, GitHub has neither and uses
+/// org teams.
+enum RoleSyncSource {
+  APP_ROLES
+  GROUPS
+}
+
+/// What to do when no mapping matches the claims presented at login.
+enum RoleSyncFallback {
+  /// Grant nothing. Default: the alternative fails OPEN, because a user with
+  /// no role assignment is unrestricted.
+  DENY_ALL
+  KEEP_EXISTING
+  DEFAULT_ROLE
+}
+
+model IdentityProvider {
+  id String @id @default(cuid())
+
+  /// IMMUTABLE. The provider — not the request — is the authority on which
+  /// organization a session belongs to, so this may never be reassigned.
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  type     IdentityProviderType
+  /// Shown on the sign-in button.
+  name     String
+  isActive Boolean              @default(true) @map("is_active")
+
+  /// Exact issuer expected in the id_token. Derived from `config.tenantId` for
+  /// ENTRA, fixed for GOOGLE/GITHUB, admin-supplied for OKTA/AUTH0/OIDC — and
+  /// always validated against a hardcoded per-type host allowlist before use.
+  issuer String
+
+  clientId        String  @map("client_id")
+  /// AES-256-GCM, with the AAD bound to (provider, organization) so a
+  /// ciphertext cannot be replayed into another row. Never returned by the API.
+  clientSecretEnc String? @map("client_secret_enc")
+  /// Microsoft caps secrets at 24 months and recommends under 12; surfaced in
+  /// the UI so an expiry does not lock a whole workspace out by surprise.
+  clientSecretExpiresAt DateTime? @map("client_secret_expires_at")
+
+  /// Opaque entry point for /sso/<initiateId>. The route itself lands in PR 3;
+  /// generated here so it is stable from the moment a provider exists. There is
+  /// no rotation endpoint yet — deleting and recreating the provider is the
+  /// only way to change it today. Deliberately NOT a
+  /// readable slug — that would allow workspace enumeration, squatting on
+  /// names like `admin`, and homoglyph typosquatting on the very URL a human
+  /// is asked to trust.
+  initiateId String @unique @map("initiate_id")
+
+  /// Provision an account on first successful sign-in. Default OFF: with it on,
+  /// everyone in the external tenant can enter the workspace.
+  jitProvisioning Boolean  @default(false) @map("jit_provisioning")
+  /// Capped at VIEWER in the service layer — never ADMIN or EDITOR.
+  jitDefaultRole  UserRole @default(VIEWER) @map("jit_default_role")
+
+  roleSyncEnabled  Boolean          @default(false) @map("role_sync_enabled")
+  roleSyncSource   RoleSyncSource   @default(GROUPS) @map("role_sync_source")
+  roleSyncFallback RoleSyncFallback @default(DENY_ALL) @map("role_sync_fallback")
+
+  /// PLACEHOLDER — column exists, NOTHING reads or writes it yet (PR 6).
+  /// Intended to disable password sign-in for members of this organization.
+  /// Deliberately not exposed by the API: switching it on without the recovery
+  /// codes and the soak period below would let an admin lock a whole workspace
+  /// out with no way back in.
+  enforceSso Boolean @default(false) @map("enforce_sso")
+  /// PLACEHOLDER — written by the SSO login flow (PR 3), unused until then.
+  /// Will guard `enforceSso`: it cannot be switched on until a real sign-in
+  /// through this provider has succeeded.
+  lastSuccessfulLoginAt DateTime? @map("last_successful_login_at")
+
+  /// Per-type settings, validated by a Zod schema keyed on `type` — the same
+  /// shape-in-Json approach as connector engines. ENTRA: { tenantId }.
+  /// OKTA: { authorizationServerId? }. AUTH0: { rolesClaimNamespace }.
+  /// GITHUB: { organization? }. OIDC: { groupsClaimName? }.
+  config Json @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  roleMappings  IdentityProviderRoleMapping[]
+  identities    UserIdentity[]
+  loginAttempts SsoLoginAttempt[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("identity_providers")
+}
+
+/// Maps an external group or application role onto AnythingMCP roles.
+model IdentityProviderRoleMapping {
+  id         String           @id @default(cuid())
+  providerId String           @map("provider_id")
+  provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  /// The group's OBJECT ID or the app role's `value` — never the display name.
+  /// Microsoft is explicit that group names are not unique, so any user able to
+  /// create a group could otherwise mint one matching a privileged mapping.
+  externalId String  @map("external_id")
+  /// Display-only, for the admin UI. Carries no authorization meaning.
+  label      String?
+
+  /// Organization role granted by this mapping. Null leaves it untouched.
+  userRole UserRole? @map("user_role")
+  /// MCP role ids granted. The user receives the UNION across all matches.
+  mcpRoleIds String[] @default([]) @map("mcp_role_ids")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([providerId, externalId])
+  @@index([providerId])
+  @@map("identity_provider_role_mappings")
+}
+
+/// Links a local user to an identity at an external provider.
+///
+/// SECURITY: the key is (provider, externalSubject) — NEVER the email. Entra's
+/// `mail` attribute is mutable, unverified and not unique, and Microsoft is
+/// explicit that it must not be used for authorization or as a primary
+/// identifier. Keying on it is the nOAuth vulnerability.
+model UserIdentity {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  providerId String           @map("provider_id")
+  provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  /// The provider's immutable subject. Entra: the `oid` claim.
+  externalSubject String  @map("external_subject")
+  /// Entra: the `tid` claim. Stored so a tenant change becomes detectable.
+  externalTid     String? @map("external_tid")
+
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([providerId, externalSubject])
+  /// One identity per provider per user. Without this a user could accumulate
+  /// several accounts at the same provider, and `DELETE /link/:providerId`
+  /// would have no single row to remove — deprovisioning would silently leave
+  /// one of them behind.
+  @@unique([userId, providerId])
+  @@index([userId])
+  @@map("user_identities")
+}
+
+/// Server-side state for one round trip to the identity provider.
+///
+/// Everything security-relevant lives here rather than in a cookie that has to
+/// survive the hop to the IdP and back: the CSRF `state`, the replay-guarding
+/// `nonce`, and the PKCE verifier. Consumed atomically exactly once.
+model SsoLoginAttempt {
+  id String @id @default(cuid())
+
+  /// Opaque, single-use. Echoed by the provider and matched on return.
+  state        String @unique
+  /// Compared against the id_token `nonce` claim to stop token replay.
+  nonce        String
+  /// PKCE (S256). Never leaves the server.
+  codeVerifier String @map("code_verifier")
+
+  providerId String           @map("provider_id")
+  provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  /// 'DASHBOARD', 'LINK' or 'MCP'. The MCP surface lands in PR 4.
+  surface String @default("DASHBOARD")
+
+  /// LINK only: the already-authenticated user this round trip will attach the
+  /// external identity to. Captured when the flow STARTS, from the JWT — never
+  /// from the callback, where an attacker controls what comes back. A null here
+  /// on a LINK attempt is a bug, and the callback refuses rather than guessing.
+  linkUserId String? @map("link_user_id")
+
+  /// Internal path to return to. Validated against an allowlist before use —
+  /// an unchecked value here is an open redirect.
+  returnTo String? @map("return_to")
+
+  /// PR 4: the pending mcp-nest cookie values, recorded so the callback can
+  /// ASSERT the browser is the same one that started the flow. Deliberately
+  /// not for restoring them — re-planting both would turn mcp-nest's only
+  /// binding check into `x === x` and create a session-fixation primitive.
+  oauthSessionId  String? @map("oauth_session_id")
+  oauthStateValue String? @map("oauth_state_value")
+
+  /// Set once authentication has succeeded: a one-time code the SPA exchanges
+  /// for a session. The JWT itself is never stored — it is minted at exchange
+  /// time from `resolvedUserId`, so no token sits at rest.
+  handoffCode    String? @unique @map("handoff_code")
+  resolvedUserId String? @map("resolved_user_id")
+
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([providerId])
+  @@index([expiresAt])
+  @@map("sso_login_attempts")
 }
 
 // ── Security Audit Log ──────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { auth, license, server } from '@/lib/api';
+import { auth, license, server, sso, type SsoProviderButton } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { buildPricingUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/logo-icon';
@@ -65,11 +65,17 @@ function LoginForm() {
   const redirectTo = searchParams.get('redirect') || '/';
   const emailVerifiedParam = searchParams.get('emailVerified');
   const modeParam = searchParams.get('mode'); // 'register' or 'login'
+  const ssoCode = searchParams.get('sso');
+  const errorParam = searchParams.get('error');
+  const [ssoProviders, setSsoProviders] = useState<SsoProviderButton[]>([]);
+  const [ssoExchanging, setSsoExchanging] = useState(Boolean(ssoCode));
 
   useEffect(() => {
     server.info().then((info) => {
       setRegistrationEnabled(info.registrationEnabled);
       setIsCloudMode(info.deploymentMode === 'cloud');
+      // Empty in cloud by design — see the comment on the backend endpoint.
+      setSsoProviders(info.ssoProviders ?? []);
       if (!info.hasUsers) {
         setIsRegister(true);
       } else if (modeParam === 'register' && info.registrationEnabled) {
@@ -79,6 +85,43 @@ function LoginForm() {
       }
     }).catch(() => {});
   }, [modeParam]);
+
+  // Surface a failure the SSO callback redirected back with.
+  useEffect(() => {
+    if (errorParam) setError(errorParam);
+  }, [errorParam]);
+
+  // Trade the one-time code from the sign-in redirect for a session. The code
+  // is single-use and lives 30 seconds; the token itself never travels in a URL.
+  //
+  // Guarded by a ref rather than the usual `cancelled` flag, because the code
+  // is spent by the REQUEST, not by what we do with the response. Under React
+  // StrictMode the effect runs twice: the first call burns the code, its
+  // result is discarded as stale, and the second call reports "invalid or
+  // expired" for a sign-in that actually succeeded. The same race can strand a
+  // user on any remount. Recording the code before awaiting makes the exchange
+  // happen at most once per code.
+  const exchangedCode = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ssoCode || exchangedCode.current === ssoCode) return;
+    exchangedCode.current = ssoCode;
+    (async () => {
+      try {
+        const result = await sso.exchange(ssoCode);
+        if (!result.accessToken) {
+          setError(result.error || 'Sign-in code is invalid or has expired');
+          setSsoExchanging(false);
+          return;
+        }
+        login(result.accessToken, result.user);
+        router.replace(redirectTo);
+      } catch (err: any) {
+        setError(err.message || 'Sign-in failed');
+        setSsoExchanging(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ssoCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -583,7 +626,35 @@ function LoginForm() {
 
         {error && <div className={alertDanger}>{error}</div>}
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        {ssoExchanging && (
+          <p className="text-center text-sm text-[var(--text-2)] py-6">
+            Signing you in…
+          </p>
+        )}
+
+        {!ssoExchanging && !isRegister && ssoProviders.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {ssoProviders.map((p) => (
+              <a
+                key={p.startUrl}
+                href={p.startUrl}
+                className="flex items-center justify-center w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text)] hover:border-[var(--brand)] transition-colors"
+              >
+                {p.name}
+              </a>
+            ))}
+            <div className="flex items-center gap-3 pt-1">
+              <div className="h-px flex-1 bg-[var(--border)]" />
+              <span className="text-[11.5px] text-[var(--text-3)]">or</span>
+              <div className="h-px flex-1 bg-[var(--border)]" />
+            </div>
+          </div>
+        )}
+
+        <form
+          className={`space-y-4${ssoExchanging ? ' hidden' : ''}`}
+          onSubmit={handleSubmit}
+        >
           {isRegister && (
             <div>
               <label htmlFor="auth-name" className="block text-sm font-medium mb-1 text-[var(--text)]">Name</label>

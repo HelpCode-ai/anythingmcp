@@ -655,6 +655,8 @@ export const server = {
       deploymentMode: string;
       hasUsers: boolean;
       registrationEnabled: boolean;
+      /** Empty in cloud: listing providers publicly would enumerate workspaces. */
+      ssoProviders: SsoProviderButton[];
       oauthEndpoints: { wellKnown: string; authorize: string; token: string; register: string } | null;
     }>('/health/server-info'),
 };
@@ -686,6 +688,107 @@ export const adminSettings = {
 };
 
 // Roles (Admin)
+export interface IdentityProvider {
+  id: string;
+  type: 'ENTRA' | 'GOOGLE' | 'OKTA' | 'AUTH0' | 'GITHUB' | 'OIDC';
+  name: string;
+  isActive: boolean;
+  issuer: string;
+  clientId: string;
+  clientSecretExpiresAt: string | null;
+  initiateId: string;
+  jitProvisioning: boolean;
+  jitDefaultRole: string;
+  roleSyncEnabled: boolean;
+  roleSyncSource: 'APP_ROLES' | 'GROUPS';
+  roleSyncFallback: 'DENY_ALL' | 'KEEP_EXISTING' | 'DEFAULT_ROLE';
+  enforceSso: boolean;
+  lastSuccessfulLoginAt: string | null;
+  config: Record<string, string>;
+  _count?: { roleMappings: number };
+}
+
+export interface IdentityProviderInput {
+  type: string;
+  name: string;
+  clientId: string;
+  /**
+   * Omit (or send empty) on update to keep the stored secret — the API never
+   * returns it, so there is nothing to round-trip. Same contract as the SMTP
+   * password in `adminSettings.updateSmtp`.
+   */
+  clientSecret?: string;
+  clientSecretExpiresAt?: string | null;
+  issuer?: string;
+  config?: Record<string, string>;
+  isActive?: boolean;
+  jitProvisioning?: boolean;
+  roleSyncEnabled?: boolean;
+  roleSyncSource?: string;
+  roleSyncFallback?: string;
+}
+
+export interface SsoProviderButton {
+  name: string;
+  type: string;
+  startUrl: string;
+}
+
+export interface LinkableProvider {
+  id: string;
+  name: string;
+  type: string;
+  linked: boolean;
+  linkedAt: string | null;
+  lastLoginAt: string | null;
+}
+
+export const sso = {
+  /** Trades the one-time code from the sign-in redirect for a session. */
+  exchange: (code: string) =>
+    request<{ accessToken: string; user: any; error?: string }>(
+      '/api/auth/sso/exchange',
+      { method: 'POST', body: { code } },
+    ),
+
+  /** Providers the signed-in user may connect, and whether they already have. */
+  myProviders: (token: string) =>
+    request<LinkableProvider[]>('/api/auth/sso/providers', { token }),
+
+  /**
+   * Begins a link. Returns the provider URL for the caller to navigate to —
+   * the browser has to arrive there as a top-level navigation, so this
+   * deliberately does not redirect.
+   */
+  startLink: (providerId: string, redirect: string | undefined, token: string) =>
+    request<{ authorizationUrl: string }>(
+      `/api/auth/sso/link/${providerId}`,
+      { method: 'POST', body: { redirect }, token },
+    ),
+
+  unlink: (providerId: string, token: string) =>
+    request<{ message: string }>(`/api/auth/sso/link/${providerId}`, {
+      method: 'DELETE',
+      token,
+    }),
+};
+
+export const identityProviders = {
+  list: (token: string) =>
+    request<IdentityProvider[]>('/api/identity-providers', { token }),
+  create: (data: IdentityProviderInput, token: string) =>
+    request<IdentityProvider>('/api/identity-providers', { method: 'POST', body: data, token }),
+  update: (id: string, data: IdentityProviderInput, token: string) =>
+    request<IdentityProvider>(`/api/identity-providers/${id}`, { method: 'PUT', body: data, token }),
+  delete: (id: string, token: string) =>
+    request<{ message: string }>(`/api/identity-providers/${id}`, { method: 'DELETE', token }),
+  test: (id: string, token: string) =>
+    request<{ ok: boolean; message: string; details?: Record<string, string> }>(
+      `/api/identity-providers/${id}/test`,
+      { method: 'POST', token },
+    ),
+};
+
 export const roles = {
   list: (token: string) =>
     request<any[]>('/api/roles', { token }),

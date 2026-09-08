@@ -8,15 +8,38 @@ export class RolesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(organizationId?: string) {
-    return this.prisma.role.findMany({
+    const roles = await this.prisma.role.findMany({
       where: organizationId
         ? { OR: [{ organizationId }, { isSystem: true }] }
         : undefined,
       include: {
-        _count: { select: { users: true, toolAccess: true } },
+        _count: { select: { toolAccess: true } },
       },
       orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
     });
+
+    // `_count.users` cannot come from the relation: `user_roles` is unique on
+    // (user, role, SOURCE), so one person holding a role both manually and via
+    // an IdP sync counts twice. Count DISTINCT users instead. Roles per org are
+    // few, so one query and a Set is cheaper than a raw aggregate.
+    const assignments = await this.prisma.userRoleAssignment.findMany({
+      where: { roleId: { in: roles.map((r) => r.id) } },
+      select: { roleId: true, userId: true },
+    });
+    const usersByRole = new Map<string, Set<string>>();
+    for (const a of assignments) {
+      const set = usersByRole.get(a.roleId) ?? new Set<string>();
+      set.add(a.userId);
+      usersByRole.set(a.roleId, set);
+    }
+
+    return roles.map((r) => ({
+      ...r,
+      _count: {
+        ...r._count,
+        users: usersByRole.get(r.id)?.size ?? 0,
+      },
+    }));
   }
 
   async findById(id: string) {
@@ -26,7 +49,7 @@ export class RolesService {
         toolAccess: {
           include: { tool: { select: { id: true, name: true, connector: { select: { name: true } } } } },
         },
-        _count: { select: { users: true } },
+        _count: { select: { toolAccess: true } },
       },
     });
   }
@@ -46,7 +69,7 @@ export class RolesService {
         toolAccess: {
           include: { tool: { select: { id: true, name: true, connector: { select: { name: true } } } } },
         },
-        _count: { select: { users: true } },
+        _count: { select: { toolAccess: true } },
       },
     });
   }
@@ -92,6 +115,18 @@ export class RolesService {
   }
 
   async setToolAccess(roleId: string, toolIds: string[], organizationId: string) {
+    // System roles are global (organizationId is null), and `findByIdForOrg`
+    // deliberately makes them visible to every org. `updateRole` and
+    // `deleteRole` both refuse them; this path did not, so any org admin could
+    // rewrite the tool whitelist of a role every other organization shares.
+    const role = await this.prisma.role.findUnique({
+      where: { id: roleId },
+      select: { isSystem: true },
+    });
+    if (role?.isSystem) {
+      throw new Error('Cannot modify tool access on a system role');
+    }
+
     // Validate that every tool ID belongs to the given organization. This
     // prevents an admin from assigning tools owned by another org to a role
     // they control.
@@ -134,8 +169,14 @@ export class RolesService {
   // ── Tool access query for MCP filtering ───────────────────────────────────
 
   /**
-   * Get the list of tool IDs a user is allowed to use.
-   * Returns null if user has unrestricted access (no role assigned or ADMIN).
+   * Tool IDs a user may use in the given organization.
+   *
+   *   null = unrestricted (ADMIN of that org, or no role assigned)
+   *   []   = the assigned role(s) grant nothing, or the caller is unknown /
+   *          not a member — always fail closed, never `null`
+   *
+   * With many-to-many roles the result is the UNION of every assigned role's
+   * whitelist.
    */
   async getAllowedToolIds(
     userId: string,
@@ -149,7 +190,7 @@ export class RolesService {
     // email would inherit the victim's tool grants.
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, mcpRoleId: true, organizationId: true },
+      select: { role: true, organizationId: true },
     });
 
     // Unknown principal — fail closed (no tools), never `null`/unrestricted.
@@ -184,67 +225,171 @@ export class RolesService {
     // ADMIN of THIS organization always has full access
     if (effectiveRole === 'ADMIN') return null;
 
-    // No custom role = full access (backward compat)
-    if (!user.mcpRoleId) return null;
+    // Every role assigned to the user IN THIS ORG, plus grants with no org,
+    // which apply everywhere (that is how an `isSystem` role behaves).
+    const assignments = await this.prisma.userRoleAssignment.findMany({
+      where: {
+        userId,
+        ...(orgId
+          ? { OR: [{ organizationId: orgId }, { organizationId: null }] }
+          : {}),
+      },
+      select: { roleId: true },
+    });
 
-    // Get tools assigned to this role
+    // Deduplicated in JS rather than with Prisma's `distinct`, which for a
+    // non-unique column is emulated client-side anyway — a Set is clearer.
+    const roleIds = [...new Set(assignments.map((a) => a.roleId))];
+
+    // No role assigned = unrestricted. Preserved from the single-FK behaviour:
+    // tightening it here would silently revoke access from every user who has
+    // simply never been given a role, which is currently everyone.
+    if (roleIds.length === 0) return null;
+
+    // UNION of the assigned roles' whitelists: being in more groups can only
+    // ever widen access, never narrow it.
     const access = await this.prisma.toolRoleAccess.findMany({
-      where: { roleId: user.mcpRoleId },
+      where: { roleId: { in: roleIds } },
       select: { toolId: true },
     });
 
-    return access.map((a) => a.toolId);
+    return [...new Set(access.map((a) => a.toolId))];
   }
 
   // ── User role assignment ──────────────────────────────────────────────────
 
+  /**
+   * Replaces the user's MANUAL role assignments in one organization.
+   *
+   * Grants with `source` other than 'manual' — an IdP sync, for instance — are
+   * left alone, so an admin editing roles by hand never silently undoes what a
+   * group mapping granted, and vice versa.
+   *
+   * Returns null when the user is not in the org or a role is not visible to
+   * it, which the controller turns into a 404.
+   */
+  async setUserRoles(
+    userId: string,
+    roleIds: string[],
+    organizationId: string,
+  ): Promise<{ userId: string; roleIds: string[] } | null> {
+    // Membership check against organization_members, not `users.organizationId`
+    // — the latter is only the ACTIVE org, so a multi-org user would be
+    // editable or not depending on which workspace they happen to be viewing.
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId, organizationId } },
+      select: { userId: true },
+    });
+    if (!membership) return null;
+
+    const unique = [...new Set(roleIds)];
+    if (unique.length > 0) {
+      // Every role must be org-owned or a system role, so an admin cannot
+      // attach a role belonging to a different organization.
+      const valid = await this.prisma.role.count({
+        where: {
+          id: { in: unique },
+          OR: [{ organizationId }, { isSystem: true }],
+        },
+      });
+      if (valid !== unique.length) return null;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.userRoleAssignment.deleteMany({
+        where: { userId, organizationId, source: 'manual' },
+      });
+      if (unique.length > 0) {
+        await tx.userRoleAssignment.createMany({
+          data: unique.map((roleId) => ({
+            userId,
+            roleId,
+            organizationId,
+            source: 'manual',
+          })),
+          skipDuplicates: true,
+        });
+      }
+      // Keep the deprecated scalar in step so a rollback to the previous
+      // release still sees a sensible value. Lossy by definition — one of N.
+      await tx.user.update({
+        where: { id: userId },
+        data: { mcpRoleId: unique[0] ?? null },
+      });
+    });
+
+    await this.warnOnEmptyRoles(unique, userId);
+
+    return { userId, roleIds: unique };
+  }
+
+  /**
+   * @deprecated Single-role adapter kept for the previous API shape. A browser
+   * tab holding a stale frontend bundle is the real caller here, since frontend
+   * and backend ship in the same container.
+   */
   async assignRoleToUser(
     userId: string,
     roleId: string | null,
     organizationId: string,
   ) {
-    // The user must belong to the requesting org, and the role must be
-    // visible to that org (system roles or org-owned). Otherwise an admin
-    // could assign someone else's user a role from their own org.
-    const user = await this.prisma.user.findFirst({
-      where: { id: userId, organizationId },
-      select: { id: true },
-    });
-    if (!user) return null;
+    return this.setUserRoles(userId, roleId ? [roleId] : [], organizationId);
+  }
 
-    if (roleId !== null) {
-      const role = await this.prisma.role.findFirst({
-        where: {
-          id: roleId,
-          OR: [{ organizationId }, { isSystem: true }],
-        },
-        select: { id: true },
-      });
-      if (!role) return null;
-    }
-
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { mcpRoleId: roleId },
+  /** Role ids assigned to a user in an organization, with their provenance. */
+  async getUserRoles(userId: string, organizationId: string) {
+    return this.prisma.userRoleAssignment.findMany({
+      where: {
+        userId,
+        OR: [{ organizationId }, { organizationId: null }],
+      },
+      select: {
+        roleId: true,
+        source: true,
+        role: { select: { id: true, name: true } },
+      },
     });
   }
 
   // ── Seed system roles ─────────────────────────────────────────────────────
 
-  async ensureSystemRoles() {
-    const systemRoles = [
-      { name: 'Full Access', description: 'Unrestricted access to all MCP tools' },
-    ];
+  // `ensureSystemRoles()` used to live here, seeding a system role named
+  // "Full Access" with NO tool access rows. That is the exact inverse of its
+  // name: a role with an empty whitelist grants ZERO tools, so assigning it
+  // locked the user out of everything.
+  //
+  // It was never called outside its own spec, which is the only reason it never
+  // bit. Removed rather than repaired because the product already has a "full
+  // access" state and it is the ABSENCE of a role — `getAllowedToolIds` returns
+  // null (unrestricted) when a user has no assignment. A role that has to be
+  // assigned in order to grant everything would be strictly worse than that.
+  //
+  // The lockout shape itself still exists for any hand-made empty role, which
+  // is why `setUserRoles` warns about it — see `warnOnEmptyRoles`.
 
-    for (const role of systemRoles) {
-      const existing = await this.prisma.role.findFirst({
-        where: { name: role.name, isSystem: true },
-      });
-      if (!existing) {
-        await this.prisma.role.create({
-          data: { ...role, isSystem: true },
-        });
-      }
+  /**
+   * Logs when a user is given a role that grants no tools at all.
+   *
+   * Not blocked: an admin may legitimately create a role and populate it
+   * afterwards. But an empty role denies EVERYTHING rather than allowing
+   * everything, which reads backwards to most people, so it should not happen
+   * silently. Production currently holds four such roles, all leftovers.
+   */
+  private async warnOnEmptyRoles(roleIds: string[], userId: string) {
+    if (roleIds.length === 0) return;
+    const withTools = await this.prisma.toolRoleAccess.findMany({
+      where: { roleId: { in: roleIds } },
+      select: { roleId: true },
+      distinct: ['roleId'],
+    });
+    const granting = new Set(withTools.map((t) => t.roleId));
+    const empty = roleIds.filter((id) => !granting.has(id));
+    if (empty.length > 0) {
+      this.logger.warn(
+        `User ${userId} assigned role(s) with an empty tool whitelist (${empty.join(', ')}) — ` +
+          'an empty role grants NO tools. Add tools to it, or remove the assignment ' +
+          'to restore unrestricted access.',
+      );
     }
   }
 }

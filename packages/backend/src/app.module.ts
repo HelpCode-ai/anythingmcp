@@ -27,6 +27,7 @@ import { OAuthRegisterGuardMiddleware } from './auth/oauth-register-guard.middle
 import { AuthorizePkceMiddleware } from './auth/authorize-pkce.middleware';
 import { ResourceIndicatorMiddleware } from './auth/resource-indicator.middleware';
 import { AuthorizationIssuerMiddleware } from './auth/authorization-issuer.middleware';
+import { IdentityProvidersModule } from './identity-providers/identity-providers.module';
 import { LocalOAuthProvider } from './auth/local-oauth.provider';
 import { PrismaOAuthStore } from './auth/prisma-oauth.store';
 import { PrismaService } from './common/prisma.service';
@@ -118,6 +119,7 @@ if (useOAuth) {
 
     OrganizationsModule,
     AuditModule,
+    IdentityProvidersModule,
     HealthModule,
     SettingsModule,
     RolesModule,

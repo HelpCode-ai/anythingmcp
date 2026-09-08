@@ -1,4 +1,9 @@
+// `openid-client` is ESM-only and this suite reaches it transitively through
+// LoginController -> SsoService. Nothing here exercises the network half.
+jest.mock('openid-client', () => ({}));
+
 import { LoginController } from './login.controller';
+import type { SsoService } from '../identity-providers/sso.service';
 import type { Request, Response } from 'express';
 import type { AuthService } from './auth.service';
 import type { PrismaService } from '../common/prisma.service';
@@ -67,17 +72,21 @@ describe('LoginController', () => {
     Pick<PrismaOAuthStore, 'getOAuthSession' | 'getClient'>
   >;
 
+  let sso: { startMcp: jest.Mock };
+
   beforeEach(() => {
     authService = { comparePassword: jest.fn() };
     prisma = { user: { findUnique: jest.fn() } };
     config = { get: jest.fn().mockReturnValue(undefined) };
     store = { getOAuthSession: jest.fn(), getClient: jest.fn() };
+    sso = { startMcp: jest.fn() };
 
     controller = new LoginController(
       authService as unknown as AuthService,
       prisma as unknown as PrismaService,
       config as unknown as ConfigService,
       store as unknown as PrismaOAuthStore,
+      sso as unknown as SsoService,
     );
   });
 

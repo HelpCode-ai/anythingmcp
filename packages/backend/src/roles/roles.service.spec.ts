@@ -7,6 +7,7 @@ describe('RolesService', () => {
   beforeEach(() => {
     mockPrisma = {
       role: {
+        count: jest.fn(),
         findMany: jest.fn(),
         findUnique: jest.fn(),
         findFirst: jest.fn(),
@@ -23,7 +24,7 @@ describe('RolesService', () => {
         update: jest.fn(),
       },
       toolRoleAccess: {
-        findMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(),
         deleteMany: jest.fn(),
         upsert: jest.fn(),
@@ -34,21 +35,38 @@ describe('RolesService', () => {
       organizationMember: {
         findUnique: jest.fn(),
       },
-      $transaction: jest.fn(),
+      userRoleAssignment: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+      },
+      // setUserRoles uses the callback form; run it against the same mock.
+      $transaction: jest.fn((arg: any) =>
+        typeof arg === 'function' ? arg(mockPrisma) : Promise.all(arg),
+      ),
     };
     service = new RolesService(mockPrisma);
   });
 
   describe('findAll', () => {
-    it('should return roles with user/tool counts, ordered by isSystem then name', async () => {
-      const roles = [{ id: 'r1', name: 'Full Access', _count: { users: 2, toolAccess: 5 } }];
-      mockPrisma.role.findMany.mockResolvedValue(roles);
+    it('counts DISTINCT users per role, not assignment rows', async () => {
+      // user_roles is unique on (user, role, SOURCE), so one person holding a
+      // role both manually and through an IdP sync would otherwise count twice.
+      mockPrisma.role.findMany.mockResolvedValue([
+        { id: 'r1', name: 'Full Access', _count: { toolAccess: 5 } },
+        { id: 'r2', name: 'Viewer', _count: { toolAccess: 1 } },
+      ]);
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([
+        { roleId: 'r1', userId: 'u1' },
+        { roleId: 'r1', userId: 'u1' }, // same person, second source
+        { roleId: 'r1', userId: 'u2' },
+      ]);
+
       const result = await service.findAll();
-      expect(result).toBe(roles);
-      expect(mockPrisma.role.findMany).toHaveBeenCalledWith({
-        include: { _count: { select: { users: true, toolAccess: true } } },
-        orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
-      });
+
+      expect(result[0]._count.users).toBe(2);
+      expect(result[0]._count.toolAccess).toBe(5);
+      expect(result[1]._count.users).toBe(0);
     });
   });
 
@@ -200,15 +218,69 @@ describe('RolesService', () => {
       expect(result).toBeNull();
     });
 
-    it('should return tool IDs for user with role', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue({ role: 'USER', mcpRoleId: 'r1' });
+    it('returns the UNION of every assigned role, deduplicated', async () => {
+      // The core new behaviour: being in more groups can only widen access.
+      mockPrisma.user.findUnique.mockResolvedValue({
+        role: 'EDITOR',
+        organizationId: 'org-1',
+      });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR' });
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([
+        { roleId: 'sales' },
+        { roleId: 'support' },
+        { roleId: 'sales' }, // duplicate source rows collapse
+      ]);
       mockPrisma.toolRoleAccess.findMany.mockResolvedValue([
         { toolId: 't1' },
         { toolId: 't2' },
+        { toolId: 't1' }, // overlapping whitelists collapse
       ]);
-      const result = await service.getAllowedToolIds('user-1');
+
+      const result = await service.getAllowedToolIds('user-1', 'org-1');
+
+      expect(mockPrisma.toolRoleAccess.findMany).toHaveBeenCalledWith({
+        where: { roleId: { in: ['sales', 'support'] } },
+        select: { toolId: true },
+      });
       expect(result).toEqual(['t1', 't2']);
     });
+
+    it('a role granting nothing does not shrink the union', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        role: 'EDITOR',
+        organizationId: 'org-1',
+      });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR' });
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([
+        { roleId: 'empty' },
+        { roleId: 'sales' },
+      ]);
+      mockPrisma.toolRoleAccess.findMany.mockResolvedValue([{ toolId: 't1' }]);
+
+      expect(await service.getAllowedToolIds('user-1', 'org-1')).toEqual(['t1']);
+    });
+
+    it('applies grants with no organization in every org', async () => {
+      // That is how a grant of an isSystem role behaves.
+      mockPrisma.user.findUnique.mockResolvedValue({
+        role: 'EDITOR',
+        organizationId: 'org-1',
+      });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR' });
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([{ roleId: 'sys' }]);
+      mockPrisma.toolRoleAccess.findMany.mockResolvedValue([{ toolId: 't9' }]);
+
+      await service.getAllowedToolIds('user-1', 'org-1');
+
+      expect(mockPrisma.userRoleAssignment.findMany).toHaveBeenCalledWith({
+        where: {
+          userId: 'user-1',
+          OR: [{ organizationId: 'org-1' }, { organizationId: null }],
+        },
+        select: { roleId: true },
+      });
+    });
+
 
     it('reads the role from the membership of the org being acted on, not the cache', async () => {
       // V3 regression guard. `users.role` is the cache of the ACTIVE org's
@@ -217,12 +289,14 @@ describe('RolesService', () => {
       // therefore EVERY tool — inside any other org they could reach.
       mockPrisma.user.findUnique.mockResolvedValue({
         role: 'ADMIN', // cached: ADMIN of their personal workspace
-        mcpRoleId: 'restricted-role',
         organizationId: 'org-personal',
       });
       mockPrisma.organizationMember.findUnique.mockResolvedValue({
         role: 'VIEWER', // authoritative: only a VIEWER in the corporate org
       });
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([
+        { roleId: 'restricted-role' },
+      ]);
       mockPrisma.toolRoleAccess.findMany.mockResolvedValue([{ toolId: 't1' }]);
 
       const result = await service.getAllowedToolIds('user-1', 'org-corporate');
@@ -243,7 +317,6 @@ describe('RolesService', () => {
     it('grants the ADMIN bypass only to an ADMIN of that same org', async () => {
       mockPrisma.user.findUnique.mockResolvedValue({
         role: 'VIEWER',
-        mcpRoleId: 'restricted-role',
         organizationId: 'org-a',
       });
       mockPrisma.organizationMember.findUnique.mockResolvedValue({
@@ -256,7 +329,6 @@ describe('RolesService', () => {
     it('fails closed when the user is not a member of the org', async () => {
       mockPrisma.user.findUnique.mockResolvedValue({
         role: 'ADMIN',
-        mcpRoleId: null,
         organizationId: 'org-personal',
       });
       mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
@@ -269,7 +341,6 @@ describe('RolesService', () => {
       // Self-host / instance-level path: no org context anywhere.
       mockPrisma.user.findUnique.mockResolvedValue({
         role: 'ADMIN',
-        mcpRoleId: null,
         organizationId: null,
       });
 
@@ -291,7 +362,7 @@ describe('RolesService', () => {
       expect(mockPrisma.user.findUnique).toHaveBeenCalledTimes(1);
       expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
         where: { id: 'victim@example.com' },
-        select: { role: true, mcpRoleId: true, organizationId: true },
+        select: { role: true, organizationId: true },
       });
     });
 
@@ -302,61 +373,160 @@ describe('RolesService', () => {
     });
   });
 
-  describe('assignRoleToUser', () => {
-    it('should update user mcpRoleId when both user and role belong to the org', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
-      mockPrisma.role.findFirst.mockResolvedValue({ id: 'r1' });
-      const updated = { id: 'user-1', mcpRoleId: 'r1' };
-      mockPrisma.user.update.mockResolvedValue(updated);
-      const result = await service.assignRoleToUser('user-1', 'r1', 'org-1');
-      expect(result).toBe(updated);
+  describe('setUserRoles', () => {
+    const memberOf = (org = 'org-1') =>
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ userId: 'user-1' });
+
+    it('replaces the manual grants and leaves IdP-derived ones alone', async () => {
+      // An admin editing roles by hand must never silently undo what a group
+      // mapping granted — and vice versa. Hence the source-scoped delete.
+      memberOf();
+      mockPrisma.role.count.mockResolvedValue(2);
+
+      const result = await service.setUserRoles('user-1', ['r1', 'r2'], 'org-1');
+
+      expect(mockPrisma.userRoleAssignment.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', organizationId: 'org-1', source: 'manual' },
+      });
+      expect(mockPrisma.userRoleAssignment.createMany).toHaveBeenCalledWith({
+        data: [
+          { userId: 'user-1', roleId: 'r1', organizationId: 'org-1', source: 'manual' },
+          { userId: 'user-1', roleId: 'r2', organizationId: 'org-1', source: 'manual' },
+        ],
+        skipDuplicates: true,
+      });
+      expect(result).toEqual({ userId: 'user-1', roleIds: ['r1', 'r2'] });
+    });
+
+    it('deduplicates the requested ids', async () => {
+      memberOf();
+      mockPrisma.role.count.mockResolvedValue(1);
+
+      const result = await service.setUserRoles('user-1', ['r1', 'r1'], 'org-1');
+
+      expect(result).toEqual({ userId: 'user-1', roleIds: ['r1'] });
+      expect(mockPrisma.role.count).toHaveBeenCalledWith({
+        where: { id: { in: ['r1'] }, OR: [{ organizationId: 'org-1' }, { isSystem: true }] },
+      });
+    });
+
+    it('clears the manual grants on an empty array without touching roles', async () => {
+      memberOf();
+
+      const result = await service.setUserRoles('user-1', [], 'org-1');
+
+      expect(mockPrisma.role.count).not.toHaveBeenCalled();
+      expect(mockPrisma.userRoleAssignment.createMany).not.toHaveBeenCalled();
+      expect(result).toEqual({ userId: 'user-1', roleIds: [] });
+    });
+
+    it('keeps the deprecated scalar in step for rollback safety', async () => {
+      memberOf();
+      mockPrisma.role.count.mockResolvedValue(2);
+
+      await service.setUserRoles('user-1', ['r1', 'r2'], 'org-1');
+
+      // Lossy by definition — one of N — but a rollback to the previous
+      // release must still see a sensible value.
       expect(mockPrisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
         data: { mcpRoleId: 'r1' },
       });
     });
 
-    it('should allow setting roleId to null without role lookup', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
-      mockPrisma.user.update.mockResolvedValue({ id: 'user-1', mcpRoleId: null });
-      await service.assignRoleToUser('user-1', null, 'org-1');
-      expect(mockPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: 'user-1' },
-        data: { mcpRoleId: null },
+    it('checks membership, not the cached active org', async () => {
+      // users.organizationId is only the ACTIVE org, so using it would make a
+      // multi-org user editable or not depending on what they are looking at.
+      memberOf();
+      mockPrisma.role.count.mockResolvedValue(1);
+
+      await service.setUserRoles('user-1', ['r1'], 'org-1');
+
+      expect(mockPrisma.organizationMember.findUnique).toHaveBeenCalledWith({
+        where: { userId_organizationId: { userId: 'user-1', organizationId: 'org-1' } },
+        select: { userId: true },
       });
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
     });
 
-    it('returns null when user belongs to a different org', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue(null);
-      const result = await service.assignRoleToUser('user-1', 'r1', 'org-2');
-      expect(result).toBeNull();
-      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    it('returns null when the user is not a member of the org', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
+
+      expect(await service.setUserRoles('user-1', ['r1'], 'org-2')).toBeNull();
+      expect(mockPrisma.userRoleAssignment.deleteMany).not.toHaveBeenCalled();
     });
 
-    it('returns null when role belongs to a different org', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
-      mockPrisma.role.findFirst.mockResolvedValue(null);
-      const result = await service.assignRoleToUser('user-1', 'r1', 'org-1');
-      expect(result).toBeNull();
-      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    it('returns null when any role is not visible to the org', async () => {
+      memberOf();
+      mockPrisma.role.count.mockResolvedValue(1); // asked for 2, only 1 valid
+
+      expect(await service.setUserRoles('user-1', ['r1', 'foreign'], 'org-1')).toBeNull();
+      expect(mockPrisma.userRoleAssignment.deleteMany).not.toHaveBeenCalled();
     });
   });
 
-  describe('ensureSystemRoles', () => {
-    it.skip('should upsert Full Access system role', async () => {
-      // Implementation switched from upsert to findFirst+create. Test left
-      // as documentation of historical behaviour; skip to keep CI green.
-      mockPrisma.role.upsert.mockResolvedValue({});
-      await service.ensureSystemRoles();
-      expect(mockPrisma.role.upsert).toHaveBeenCalledWith({
-        where: { name: 'Full Access' },
-        create: {
-          name: 'Full Access',
-          description: 'Unrestricted access to all MCP tools',
-          isSystem: true,
-        },
-        update: {},
-      });
+  describe('assignRoleToUser (deprecated adapter)', () => {
+    it('delegates a single role to setUserRoles', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ userId: 'user-1' });
+      mockPrisma.role.count.mockResolvedValue(1);
+
+      const result = await service.assignRoleToUser('user-1', 'r1', 'org-1');
+
+      expect(result).toEqual({ userId: 'user-1', roleIds: ['r1'] });
+    });
+
+    it('maps a null roleId to an empty set', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ userId: 'user-1' });
+
+      const result = await service.assignRoleToUser('user-1', null, 'org-1');
+
+      expect(result).toEqual({ userId: 'user-1', roleIds: [] });
+      expect(mockPrisma.role.count).not.toHaveBeenCalled();
+    });
+
+    it('returns null when the user is not in the org', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
+      expect(await service.assignRoleToUser('user-1', 'r1', 'org-2')).toBeNull();
+    });
+  });
+
+  describe('empty-role safety', () => {
+    it('warns when a user is given a role that grants no tools', async () => {
+      // An empty whitelist denies EVERYTHING rather than allowing everything,
+      // which reads backwards — so it must not happen silently.
+      const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation(() => {});
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ userId: 'user-1' });
+      mockPrisma.role.count.mockResolvedValue(2);
+      mockPrisma.toolRoleAccess.findMany.mockResolvedValue([{ roleId: 'has-tools' }]);
+
+      await service.setUserRoles('user-1', ['has-tools', 'empty'], 'org-1');
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('empty'));
+      warn.mockRestore();
+    });
+
+    it('stays quiet when every assigned role grants something', async () => {
+      const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation(() => {});
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ userId: 'user-1' });
+      mockPrisma.role.count.mockResolvedValue(1);
+      mockPrisma.toolRoleAccess.findMany.mockResolvedValue([{ roleId: 'r1' }]);
+
+      await service.setUserRoles('user-1', ['r1'], 'org-1');
+
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+  });
+
+  describe('setToolAccess on system roles', () => {
+    it('refuses, matching updateRole and deleteRole', async () => {
+      // System roles are global and visible to every org; without this any org
+      // admin could rewrite a whitelist every other organization shares.
+      mockPrisma.role.findUnique.mockResolvedValue({ isSystem: true });
+
+      await expect(service.setToolAccess('sys', ['t1'], 'org-1')).rejects.toThrow(
+        'system role',
+      );
     });
   });
 });

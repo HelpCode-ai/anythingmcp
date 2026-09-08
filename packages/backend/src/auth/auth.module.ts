@@ -18,6 +18,7 @@ import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { LicenseModule } from '../license/license.module';
 import { getRequiredSecret } from '../common/secrets.util';
+import { IdentityProvidersModule } from '../identity-providers/identity-providers.module';
 
 @Global()
 @Module({
@@ -27,6 +28,9 @@ import { getRequiredSecret } from '../common/secrets.util';
     McpServersModule,
     OrganizationsModule,
     LicenseModule,
+    // LoginController offers the workspace's identity providers on the MCP
+    // authorization page, so it needs SsoService.
+    IdentityProvidersModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

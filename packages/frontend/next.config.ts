@@ -24,6 +24,8 @@ const nextConfig: NextConfig = {
       { source: '/mcp/:path*', destination: `${BACKEND_URL}/mcp/:path*` },
       { source: '/.well-known/:path*', destination: `${BACKEND_URL}/.well-known/:path*` },
       { source: '/auth/:path*', destination: `${BACKEND_URL}/auth/:path*` },
+      // SSO entry point. The OIDC callback already arrives under /auth/*.
+      { source: '/sso/:path*', destination: `${BACKEND_URL}/sso/:path*` },
       { source: '/authorize', destination: `${BACKEND_URL}/authorize` },
       { source: '/callback', destination: `${BACKEND_URL}/callback` },
       { source: '/token', destination: `${BACKEND_URL}/token` },
