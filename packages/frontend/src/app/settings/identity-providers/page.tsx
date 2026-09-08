@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/toast';
+import { RoleMappingsPanel } from './role-mappings';
 
 /**
  * Per-type configuration fields.
@@ -129,6 +130,7 @@ export default function IdentityProvidersPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [mappingsFor, setMappingsFor] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -172,6 +174,7 @@ export default function IdentityProvidersPage() {
       roleSyncEnabled: p.roleSyncEnabled,
       roleSyncSource: p.roleSyncSource,
       roleSyncFallback: p.roleSyncFallback,
+      roleSyncDefaultRoleIds: p.roleSyncDefaultRoleIds ?? [],
     });
     setEditingId(p.id);
     setShowForm(true);
@@ -446,6 +449,62 @@ export default function IdentityProvidersPage() {
                 </span>
               </label>
 
+              <div className="pt-1 space-y-2 border-t border-[var(--border)]">
+                <label className="flex items-start gap-2 text-[13px] text-[var(--text)] pt-2">
+                  <input
+                    type="checkbox"
+                    className="accent-[var(--brand)] mt-0.5"
+                    checked={form.roleSyncEnabled ?? false}
+                    onChange={(e) => setForm({ ...form, roleSyncEnabled: e.target.checked })}
+                  />
+                  <span>
+                    Sync roles from the directory on every sign-in
+                    <span className="block text-[11.5px] text-[var(--text-3)]">
+                      Rights are then maintained where joiners and leavers are already
+                      handled. Roles an admin assigned by hand are never removed by a sync.
+                    </span>
+                  </span>
+                </label>
+
+                {form.roleSyncEnabled && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-6">
+                    <div>
+                      <label className={labelClass}>Read roles from</label>
+                      <AppSelect
+                        value={form.roleSyncSource ?? 'GROUPS'}
+                        onValueChange={(v) => setForm({ ...form, roleSyncSource: v })}
+                        options={[
+                          { value: 'GROUPS', label: 'Security / Microsoft 365 groups' },
+                          { value: 'APP_ROLES', label: 'Application roles' },
+                        ]}
+                      />
+                      <p className={helpClass}>
+                        Groups reuse what the directory already maintains, at the cost of
+                        matching on object IDs rather than readable names. Application roles
+                        read better but have to be declared in the app manifest first.
+                      </p>
+                    </div>
+                    <div>
+                      <label className={labelClass}>When nothing matches</label>
+                      <AppSelect
+                        value={form.roleSyncFallback ?? 'DENY_ALL'}
+                        onValueChange={(v) => setForm({ ...form, roleSyncFallback: v })}
+                        options={[
+                          { value: 'DENY_ALL', label: 'Grant no tools' },
+                          { value: 'KEEP_EXISTING', label: 'Leave existing roles alone' },
+                          { value: 'DEFAULT_ROLE', label: 'Grant a default role' },
+                        ]}
+                      />
+                      <p className={helpClass}>
+                        &ldquo;Grant no tools&rdquo; is the default deliberately: a user
+                        holding no MCP role at all is treated as unrestricted, so the
+                        alternative to denying is granting everything.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <label className="flex items-center gap-2 text-[13px] text-[var(--text)]">
                 <input
                   type="checkbox"
@@ -480,8 +539,9 @@ export default function IdentityProvidersPage() {
               {providers.map((p) => (
                 <div
                   key={p.id}
-                  className="rounded-[9px] border border-[var(--border)] p-3 flex items-start justify-between gap-3"
+                  className="rounded-[9px] border border-[var(--border)] p-3"
                 >
+                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-[var(--text)]">{p.name}</span>
@@ -531,6 +591,22 @@ export default function IdentityProvidersPage() {
                       Delete
                     </Button>
                   </div>
+                 </div>
+                 {/*
+                   Kept collapsed by default: most workspaces run SSO without
+                   role sync, and an always-open editor for a table they do not
+                   use is the loudest thing on the page.
+                 */}
+                 <button
+                   type="button"
+                   className="mt-2 text-[11.5px] text-[var(--brand)] hover:underline"
+                   onClick={() => setMappingsFor(mappingsFor === p.id ? null : p.id)}
+                 >
+                   {mappingsFor === p.id ? 'Hide role mappings' : 'Role mappings'}
+                 </button>
+                 {mappingsFor === p.id && token && (
+                   <RoleMappingsPanel provider={p} token={token} />
+                 )}
                 </div>
               ))}
             </div>

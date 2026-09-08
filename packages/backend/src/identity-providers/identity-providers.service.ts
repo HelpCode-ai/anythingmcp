@@ -40,6 +40,7 @@ export interface UpsertProviderInput {
   roleSyncEnabled?: boolean;
   roleSyncSource?: RoleSyncSource;
   roleSyncFallback?: RoleSyncFallback;
+  roleSyncDefaultRoleIds?: string[];
 }
 
 /** Shape returned to the API. Never carries the client secret. */
@@ -57,6 +58,7 @@ const PUBLIC_SELECT = {
   roleSyncEnabled: true,
   roleSyncSource: true,
   roleSyncFallback: true,
+  roleSyncDefaultRoleIds: true,
   enforceSso: true,
   lastSuccessfulLoginAt: true,
   config: true,
@@ -150,6 +152,7 @@ export class IdentityProvidersService {
           roleSyncEnabled: input.roleSyncEnabled ?? false,
           roleSyncSource: input.roleSyncSource ?? 'GROUPS',
           roleSyncFallback: input.roleSyncFallback ?? 'DENY_ALL',
+          roleSyncDefaultRoleIds: input.roleSyncDefaultRoleIds ?? [],
           clientSecretExpiresAt: input.clientSecretExpiresAt
             ? this.parseExpiry(input.clientSecretExpiresAt)
             : null,
@@ -218,6 +221,7 @@ export class IdentityProvidersService {
         roleSyncEnabled: input.roleSyncEnabled,
         roleSyncSource: input.roleSyncSource,
         roleSyncFallback: input.roleSyncFallback,
+        roleSyncDefaultRoleIds: input.roleSyncDefaultRoleIds,
         // `null` clears it; omitting the key keeps the stored value. Without
         // the null branch a stale expiry could never be removed and the
         // renewal reminder would keep reporting a date that no longer applies
@@ -428,5 +432,104 @@ export class IdentityProvidersService {
     }
 
     return { issuer, config };
+  }
+
+  // ── Role mappings ─────────────────────────────────────────────────────────
+
+  /**
+   * The provider's group/app-role mappings, ordered by label so the admin
+   * table is stable across reloads.
+   */
+  async listRoleMappings(providerId: string, organizationId: string) {
+    const provider = await this.prisma.identityProvider.findFirst({
+      where: { id: providerId, organizationId },
+      select: { id: true },
+    });
+    if (!provider) return null;
+    return this.prisma.identityProviderRoleMapping.findMany({
+      where: { providerId },
+      select: {
+        id: true,
+        externalId: true,
+        label: true,
+        userRole: true,
+        mcpRoleIds: true,
+      },
+      orderBy: [{ label: 'asc' }, { externalId: 'asc' }],
+    });
+  }
+
+  /**
+   * Replaces the whole mapping set in one transaction.
+   *
+   * Whole-set rather than per-row CRUD on purpose: a half-applied edit to an
+   * authorization table is a state nobody can reason about, and the audit
+   * event for "these are now the rules" is far easier to read during an
+   * investigation than a stream of individual adds and removes.
+   */
+  async replaceRoleMappings(
+    providerId: string,
+    organizationId: string,
+    mappings: {
+      externalId: string;
+      label?: string | null;
+      userRole?: UserRole | null;
+      mcpRoleIds?: string[];
+    }[],
+  ) {
+    const provider = await this.prisma.identityProvider.findFirst({
+      where: { id: providerId, organizationId },
+      select: { id: true },
+    });
+    if (!provider) return null;
+
+    const seen = new Set<string>();
+    for (const m of mappings) {
+      const id = m.externalId?.trim();
+      if (!id) {
+        throw new IdentityProviderError('Every mapping needs a group or app role id');
+      }
+      // @@unique([providerId, externalId]) would reject this anyway, but as a
+      // P2002 mid-transaction rather than a message naming the duplicate.
+      if (seen.has(id)) {
+        throw new IdentityProviderError(`Duplicate mapping for "${id}"`);
+      }
+      seen.add(id);
+    }
+
+    // Roles are re-checked against the workspace here rather than only at
+    // sync time, so an admin gets a 400 while editing instead of a mapping
+    // that silently grants nothing months later.
+    const referenced = [...new Set(mappings.flatMap((m) => m.mcpRoleIds ?? []))];
+    if (referenced.length > 0) {
+      const visible = await this.prisma.role.count({
+        where: {
+          id: { in: referenced },
+          OR: [{ organizationId }, { isSystem: true }],
+        },
+      });
+      if (visible !== referenced.length) {
+        throw new IdentityProviderError(
+          'One or more MCP roles do not exist in this workspace',
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.identityProviderRoleMapping.deleteMany({ where: { providerId } });
+      if (mappings.length > 0) {
+        await tx.identityProviderRoleMapping.createMany({
+          data: mappings.map((m) => ({
+            providerId,
+            externalId: m.externalId.trim(),
+            label: m.label?.trim() || null,
+            userRole: m.userRole ?? null,
+            mcpRoleIds: m.mcpRoleIds ?? [],
+          })),
+        });
+      }
+    });
+
+    return this.listRoleMappings(providerId, organizationId);
   }
 }

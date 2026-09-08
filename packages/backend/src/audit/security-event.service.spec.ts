@@ -153,4 +153,28 @@ describe('SecurityEventService', () => {
       });
     });
   });
+
+  // Regression: the depth cut-off used to emit the same '[REDACTED]' string as
+  // a real key match, so an audit row that had simply nested too far was
+  // indistinguishable from one that had a credential stripped out of it.
+  it('marks a depth cut-off as truncation, not redaction', async () => {
+    await service.log({
+      event: 'IDP_ROLE_MAPPING_CHANGED',
+      actorType: 'USER',
+      metadata: { after: [{ mcpRoleIds: ['role_1'] }] },
+    });
+    const written = (prisma.securityEvent.create as jest.Mock).mock.calls[0][0].data.metadata;
+    expect(written.after[0].mcpRoleIds[0]).toBe('[TRUNCATED:depth]');
+    expect(written.after[0].mcpRoleIds[0]).not.toBe('[REDACTED]');
+  });
+
+  it('still redacts on a key match at any depth', async () => {
+    await service.log({
+      event: 'IDP_UPDATED',
+      actorType: 'USER',
+      metadata: { before: { clientSecret: 'hunter2' } },
+    });
+    const written = (prisma.securityEvent.create as jest.Mock).mock.calls[0][0].data.metadata;
+    expect(written.before.clientSecret).toBe('[REDACTED]');
+  });
 });

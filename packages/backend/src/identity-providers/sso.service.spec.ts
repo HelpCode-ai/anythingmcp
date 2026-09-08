@@ -51,6 +51,7 @@ describe('SsoService', () => {
       { getClientSecret: jest.fn() } as any,
       { generateToken: jest.fn(() => 'jwt') } as any,
       securityEvents as any,
+      { syncOnLogin: jest.fn(async () => ({ applied: false, reason: 'disabled' })) } as any,
     );
   });
 

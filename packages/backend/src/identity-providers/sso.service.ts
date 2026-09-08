@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import * as client from 'openid-client';
 import { PrismaService } from '../common/prisma.service';
+import { RoleSyncService } from './role-sync.service';
 import { DeploymentService } from '../common/deployment.service';
 import { AuthService } from '../auth/auth.service';
 import { assertSafeOutboundUrl } from '../common/ssrf.util';
@@ -68,6 +69,7 @@ export class SsoService {
     private readonly providers: IdentityProvidersService,
     private readonly authService: AuthService,
     private readonly securityEvents: SecurityEventService,
+    private readonly roleSync: RoleSyncService,
   ) {}
 
   /**
@@ -330,6 +332,10 @@ export class SsoService {
             jitProvisioning: true,
             jitDefaultRole: true,
             config: true,
+            roleSyncEnabled: true,
+            roleSyncSource: true,
+            roleSyncFallback: true,
+            roleSyncDefaultRoleIds: true,
           },
         },
       },
@@ -397,12 +403,24 @@ export class SsoService {
       });
       if (!user) throw new SsoError('user_vanished');
 
+      // Synced BEFORE the profile is returned: the MCP surface is where the
+      // roles are actually spent, so a session must never be handed out with
+      // yesterday's group membership still in force.
+      const sync = await this.roleSync.syncOnLogin(provider, user.id, claims, ctx);
+
       await this.securityEvents.log({
         event: SecurityEvents.SSO_LOGIN_SUCCESS,
         actorType: 'USER',
         organizationId: provider.organizationId,
         actorUserId: user.id,
-        metadata: { providerId: provider.id, oid: subject, tid, surface: 'MCP' },
+        metadata: {
+          providerId: provider.id,
+          oid: subject,
+          tid,
+          surface: 'MCP',
+          ...this.claimShape(claims),
+          roleSync: sync.reason,
+        },
         ip: ctx.ip,
         userAgent: ctx.userAgent,
       });
@@ -420,6 +438,8 @@ export class SsoService {
 
     const userId = await this.resolveUser(provider, subject, tid, claims, ctx);
 
+    const sync = await this.roleSync.syncOnLogin(provider, userId, claims, ctx);
+
     const handoffCode = randomBytes(32).toString('base64url');
     await this.prisma.ssoLoginAttempt.update({
       where: { id: attempt.id },
@@ -435,12 +455,36 @@ export class SsoService {
       actorType: 'USER',
       organizationId: provider.organizationId,
       actorUserId: userId,
-      metadata: { providerId: provider.id, oid: subject, tid, surface: 'DASHBOARD' },
+      metadata: {
+        providerId: provider.id,
+        oid: subject,
+        tid,
+        surface: 'DASHBOARD',
+        ...this.claimShape(claims),
+        roleSync: sync.reason,
+      },
       ip: ctx.ip,
       userAgent: ctx.userAgent,
     });
 
     return { kind: 'LOGIN', handoffCode, returnTo: attempt.returnTo ?? '/' };
+  }
+
+  /**
+   * What the token carried, as SHAPE only.
+   *
+   * The counts answer the first question asked when role sync misbehaves —
+   * did the directory send any groups at all? — which an absent claim and a
+   * claim matching no mapping otherwise look identical for. The ids
+   * themselves are directory structure and are deliberately not persisted in
+   * a long-lived audit row.
+   */
+  private claimShape(claims: Record<string, any>) {
+    return {
+      groupCount: Array.isArray(claims.groups) ? claims.groups.length : 0,
+      appRoleCount: Array.isArray(claims.roles) ? claims.roles.length : 0,
+      groupsOverage: Boolean(claims._claim_names?.groups),
+    };
   }
 
   // ── Linking ───────────────────────────────────────────────────────────────

@@ -702,6 +702,7 @@ export interface IdentityProvider {
   roleSyncEnabled: boolean;
   roleSyncSource: 'APP_ROLES' | 'GROUPS';
   roleSyncFallback: 'DENY_ALL' | 'KEEP_EXISTING' | 'DEFAULT_ROLE';
+  roleSyncDefaultRoleIds: string[];
   enforceSso: boolean;
   lastSuccessfulLoginAt: string | null;
   config: Record<string, string>;
@@ -726,6 +727,21 @@ export interface IdentityProviderInput {
   roleSyncEnabled?: boolean;
   roleSyncSource?: string;
   roleSyncFallback?: string;
+  roleSyncDefaultRoleIds?: string[];
+}
+
+/**
+ * One directory group (or application role) projected onto AnythingMCP roles.
+ *
+ * `externalId` is the group's OBJECT ID, not its name — Entra does not make
+ * group names unique. `label` exists only so the admin table is readable.
+ */
+export interface RoleMapping {
+  id?: string;
+  externalId: string;
+  label: string | null;
+  userRole: 'VIEWER' | 'EDITOR' | 'ADMIN' | null;
+  mcpRoleIds: string[];
 }
 
 export interface SsoProviderButton {
@@ -787,6 +803,17 @@ export const identityProviders = {
       `/api/identity-providers/${id}/test`,
       { method: 'POST', token },
     ),
+
+  roleMappings: (id: string, token: string) =>
+    request<RoleMapping[]>(`/api/identity-providers/${id}/role-mappings`, { token }),
+
+  /** Replaces the whole set — the API has no per-row endpoint on purpose. */
+  saveRoleMappings: (id: string, mappings: RoleMapping[], token: string) =>
+    request<RoleMapping[]>(`/api/identity-providers/${id}/role-mappings`, {
+      method: 'PUT',
+      body: { mappings },
+      token,
+    }),
 };
 
 export const roles = {

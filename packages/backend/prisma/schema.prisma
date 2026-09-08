@@ -726,6 +726,10 @@ model IdentityProvider {
   roleSyncEnabled  Boolean          @default(false) @map("role_sync_enabled")
   roleSyncSource   RoleSyncSource   @default(GROUPS) @map("role_sync_source")
   roleSyncFallback RoleSyncFallback @default(DENY_ALL) @map("role_sync_fallback")
+  /// MCP roles granted when `roleSyncFallback` is DEFAULT_ROLE and nothing
+  /// matched. Empty makes DEFAULT_ROLE behave like DENY_ALL, which is the safe
+  /// reading of "a default that was never configured".
+  roleSyncDefaultRoleIds String[] @default([]) @map("role_sync_default_role_ids")
 
   /// PLACEHOLDER — column exists, NOTHING reads or writes it yet (PR 6).
   /// Intended to disable password sign-in for members of this organization.
