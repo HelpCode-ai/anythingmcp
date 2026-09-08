@@ -205,17 +205,17 @@ on** — or turn enforcement off first.
 Role sync decides which **MCP roles** a user holds; those roles decide which
 tools they may use. Where that restriction is applied depends on the endpoint:
 
+Both endpoints filter `tools/list` to the tools the caller's roles allow, and
+refuse `tools/call` for anything else:
+
 | Endpoint | `tools/list` | `tools/call` |
 |---|---|---|
 | `/mcp/<serverId>` (per server) | Filtered to the user's tools | Denied if not allowed |
-| `/mcp` (global) | **Lists every tool of the workspace** | Denied if not allowed |
+| `/mcp` (global) | Filtered to the user's tools, within their organization | Denied if not allowed |
 
-A restricted user can never *invoke* a tool their roles do not grant on either
-endpoint. But on the global `/mcp` endpoint they still *see* the whole
-inventory, and an AI client will plan with tools it cannot use.
-
-**Prefer a per-server endpoint** (`Settings → MCP Servers`) when you rely on
-role-based restriction.
+A tool that has **no** role assigned to it at all is visible only to users whose
+access is unrestricted — an admin, or someone holding no MCP role. Once a user
+holds any MCP role, they see exactly what their roles grant.
 
 ---
 

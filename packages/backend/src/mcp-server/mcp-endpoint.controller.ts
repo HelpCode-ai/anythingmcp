@@ -21,6 +21,7 @@ import {
 } from '@modelcontextprotocol/node';
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
 import { mcpHttpTransport } from './mcp-strategy';
+import { toolVisibilityRole } from './mcp-server.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { ToolRegistry, RegisteredTool } from './tool-registry';
@@ -124,17 +125,119 @@ export class McpEndpointController {
 
   @Post()
   async handleGlobalPost(@Req() req: Request, @Res() res: Response) {
+    const visible = await this.attachVisibleTools(req);
+    if (this.refuseHiddenToolCall(req, res, visible)) return;
     await mcpHttpTransport.httpHandlers.handlePost(req, res);
   }
 
   @Get()
   async handleGlobalGet(@Req() req: Request, @Res() res: Response) {
+    await this.attachVisibleTools(req);
     await mcpHttpTransport.httpHandlers.handleGet(req, res);
   }
 
   @Delete()
   async handleGlobalDelete(@Req() req: Request, @Res() res: Response) {
     await mcpHttpTransport.httpHandlers.handleDelete(req, res);
+  }
+
+  /**
+   * Resolves which tools the caller may SEE and records them on the request.
+   *
+   * The global registry is shared by every organization — it holds one entry
+   * per tool name across the whole deployment — and the transport's
+   * `tools/list` handler is synchronous, so it can neither query the database
+   * nor know which tenant is asking. Left alone it therefore returns EVERY
+   * registered tool to any authenticated caller, which leaks one tenant's tool
+   * names, descriptions and input schemas to every other tenant, and hands a
+   * role-restricted user the full inventory of their own workspace.
+   *
+   * Calls were never affected: `tools/call` resolves the tool by name AND
+   * organization and refuses a mismatch. This closes the listing side.
+   *
+   * Two scopes are applied, in this order:
+   *   1. ORGANIZATION — only tools owned by the caller's active org.
+   *   2. ROLE — of those, only the ones the caller's MCP roles allow.
+   */
+  private async attachVisibleTools(req: Request): Promise<Set<string> | null> {
+    const user = (req as any).user;
+
+    // No identified principal: a static MCP_API_KEY / MCP_BEARER_TOKEN or an
+    // explicitly enabled anonymous mode. Both are operator credentials on a
+    // single-tenant self-hosted box, so the pre-existing "everything" answer
+    // is the correct one and narrowing it here would break those deployments.
+    if (!user?.sub || !user.organizationId) return null;
+
+    const orgTools = this.toolRegistry
+      .getAllTools()
+      .filter((t) => t.organizationId === user.organizationId);
+
+    const allowedToolIds = await this.rolesService.getAllowedToolIds(
+      user.sub,
+      user.organizationId,
+    );
+
+    // `null` means unrestricted — an ADMIN, or a user holding no MCP role at
+    // all. The organization scope still applies.
+    const visible =
+      allowedToolIds === null
+        ? orgTools
+        : orgTools.filter((t) => allowedToolIds.includes(t.id));
+
+    const visibleNames = new Set(visible.map((t) => t.name));
+    user.roles = [
+      ...[...visibleNames].map(toolVisibilityRole),
+      // Tools declared statically in code (the Knowledge Graph helper, the
+      // demo tools) carry no visibility role and stay visible to everyone —
+      // they hold no tenant data.
+      ...(Array.isArray(user.roles) ? user.roles : []),
+    ];
+    return visibleNames;
+  }
+
+  /**
+   * Answers a call for a tool the caller cannot see, before the transport does.
+   *
+   * The transport would refuse it anyway — the same visibility role gates
+   * `tools/call` — but its message names the synthetic role
+   * (`requires any of roles: tool:foo`), which exposes an implementation
+   * detail and tells an operator nothing about what to do next.
+   *
+   * The wording is deliberately ambiguous between "another workspace's tool"
+   * and "your role does not grant it": distinguishing them would confirm to a
+   * caller that a tool of that name exists somewhere else in the deployment,
+   * which is the disclosure this whole path exists to prevent.
+   */
+  private refuseHiddenToolCall(
+    req: Request,
+    res: Response,
+    visible: Set<string> | null,
+  ): boolean {
+    // `null` means visibility was not narrowed for this caller — an operator
+    // credential on a single-tenant box. Nothing to refuse.
+    if (visible === null) return false;
+
+    const body = (req as any).body;
+    // Only single calls. A batch is handled by the transport, which still
+    // refuses each hidden tool — with the less friendly message.
+    if (!body || Array.isArray(body) || body.method !== 'tools/call') return false;
+
+    const name = body?.params?.name;
+    if (typeof name !== 'string' || visible.has(name)) return false;
+
+    // Static, code-declared tools carry no visibility role and are open to
+    // everyone, so they must not be refused here.
+    if (this.toolRegistry.countByName(name) === 0) return false;
+
+    res.status(200).json({
+      jsonrpc: '2.0',
+      id: body.id ?? null,
+      error: {
+        code: -32600,
+        message: `Tool '${name}' is not available to you. It belongs to another workspace, or your MCP role does not grant it.`,
+      },
+    });
+    return true;
   }
 
   // ─── Public, anonymous, static demo MCP server ──────────────────────────
