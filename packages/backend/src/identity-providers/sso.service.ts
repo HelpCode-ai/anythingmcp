@@ -40,7 +40,17 @@ export class SsoError extends Error {
  */
 export type SsoCompletion =
   | { kind: 'LOGIN'; handoffCode: string; returnTo: string }
-  | { kind: 'LINK'; returnTo: string };
+  | { kind: 'LINK'; returnTo: string }
+  /**
+   * The MCP authorization surface. Carries the profile the OAuth strategy
+   * expects in the short-lived `login_user` cookie — the same shape the
+   * password path produces, so the rest of the authorization flow cannot tell
+   * the two apart.
+   */
+  | {
+      kind: 'MCP';
+      profile: { id: string; email: string; name: string | null; username: string };
+    };
 
 /** How long a user has to complete the trip to the provider and back. */
 const ATTEMPT_TTL_MS = 5 * 60 * 1000;
@@ -175,6 +185,46 @@ export class SsoService {
     });
   }
 
+  /**
+   * Begins a sign-in from the MCP authorization page.
+   *
+   * This is the surface that matters most: it is where a user authorizes an AI
+   * client, and until now it accepted only a password — so an SSO-enforced
+   * account could not connect a client at all, and everyone else bypassed the
+   * IdP's MFA and Conditional Access on exactly the flow worth protecting.
+   *
+   * `oauthSessionId` is the pending mcp-nest session this login belongs to. It
+   * is recorded now and ASSERTED on return, so the identity can only ever be
+   * attached to the authorization that the same browser started.
+   */
+  async startMcp(
+    providerId: string,
+    oauthSessionId: string,
+  ): Promise<{ authorizationUrl: string }> {
+    if (!oauthSessionId) throw new SsoError('mcp_without_oauth_session');
+
+    const provider = await this.prisma.identityProvider.findUnique({
+      where: { id: providerId },
+      select: {
+        id: true,
+        type: true,
+        issuer: true,
+        clientId: true,
+        isActive: true,
+        organizationId: true,
+        config: true,
+      },
+    });
+    if (!provider || !provider.isActive) {
+      throw new SsoError('unknown_or_inactive_provider');
+    }
+
+    return this.beginAuthorization(provider, {
+      surface: 'MCP',
+      oauthSessionId,
+    });
+  }
+
   /** Shared by both entry points: PKCE, state, nonce and the stored attempt. */
   private async beginAuthorization(
     provider: {
@@ -185,7 +235,12 @@ export class SsoService {
       organizationId: string;
       config: any;
     },
-    opts: { surface: string; returnTo?: string; linkUserId?: string },
+    opts: {
+      surface: string;
+      returnTo?: string;
+      linkUserId?: string;
+      oauthSessionId?: string;
+    },
   ): Promise<{ authorizationUrl: string }> {
     const clientSecret = await this.providers.getClientSecret(
       provider.id,
@@ -208,6 +263,7 @@ export class SsoService {
         providerId: provider.id,
         surface: opts.surface,
         linkUserId: opts.linkUserId ?? null,
+        oauthSessionId: opts.oauthSessionId ?? null,
         returnTo: this.safeReturnTo(opts.returnTo),
         expiresAt: new Date(Date.now() + ATTEMPT_TTL_MS),
       },
@@ -248,7 +304,7 @@ export class SsoService {
    */
   async complete(
     currentUrl: URL,
-    ctx: { ip?: string; userAgent?: string },
+    ctx: { ip?: string; userAgent?: string; oauthSessionId?: string },
   ): Promise<SsoCompletion> {
     const state = currentUrl.searchParams.get('state');
     if (!state) throw new SsoError('missing_state');
@@ -322,6 +378,44 @@ export class SsoService {
         ctx,
       );
       return { kind: 'LINK', returnTo };
+    }
+
+    if (attempt.surface === 'MCP') {
+      // Bind the return to the browser that started it. Without this an
+      // attacker could open an authorization on their own machine, get the
+      // victim to complete the IdP leg, and have the victim's identity
+      // attached to the attacker's pending authorization.
+      //
+      // ASSERTED, never restored: re-planting the cookie would reduce
+      // mcp-nest's own binding check to comparing a value against itself.
+      await this.assertMcpBinding(attempt, provider, subject, ctx);
+
+      const userId = await this.resolveUser(provider, subject, tid, claims, ctx);
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, email: true, name: true },
+      });
+      if (!user) throw new SsoError('user_vanished');
+
+      await this.securityEvents.log({
+        event: SecurityEvents.SSO_LOGIN_SUCCESS,
+        actorType: 'USER',
+        organizationId: provider.organizationId,
+        actorUserId: user.id,
+        metadata: { providerId: provider.id, oid: subject, tid, surface: 'MCP' },
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+      });
+
+      return {
+        kind: 'MCP',
+        profile: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          username: user.email,
+        },
+      };
     }
 
     const userId = await this.resolveUser(provider, subject, tid, claims, ctx);
@@ -538,6 +632,46 @@ export class SsoService {
       linkedAt: linked.get(p.id)?.createdAt ?? null,
       lastLoginAt: linked.get(p.id)?.lastLoginAt ?? null,
     }));
+  }
+
+  /**
+   * The returning browser must be the one that started this authorization.
+   *
+   * Without it an attacker could open an authorization on their own machine,
+   * get a victim to complete the identity-provider leg, and end up with the
+   * victim's identity attached to the attacker's pending authorization — and
+   * therefore an access token for the victim's workspace.
+   *
+   * The recorded value is ASSERTED against the cookie the browser presents
+   * now, never restored onto the response. Re-planting it would reduce
+   * mcp-nest's own session check to comparing a value with itself.
+   */
+  private async assertMcpBinding(
+    attempt: { oauthSessionId: string | null },
+    provider: { id: string; organizationId: string },
+    subject: string,
+    ctx: { ip?: string; userAgent?: string; oauthSessionId?: string },
+  ): Promise<void> {
+    if (
+      !attempt.oauthSessionId ||
+      !ctx.oauthSessionId ||
+      attempt.oauthSessionId !== ctx.oauthSessionId
+    ) {
+      await this.securityEvents.log({
+        event: SecurityEvents.SSO_LOGIN_FAILED,
+        actorType: 'ANONYMOUS',
+        organizationId: provider.organizationId,
+        metadata: {
+          providerId: provider.id,
+          reason: 'mcp_session_binding_mismatch',
+          oid: subject,
+          surface: 'MCP',
+        },
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+      });
+      throw new SsoError('mcp_session_binding_mismatch', 'Sign-in failed', true);
+    }
   }
 
   /** Fails closed: a non-member is treated exactly like an unknown provider. */

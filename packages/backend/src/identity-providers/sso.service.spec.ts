@@ -354,6 +354,108 @@ describe('SsoService', () => {
     });
   });
 
+  describe('the MCP authorization surface', () => {
+    const attempt = {
+      id: 'a1',
+      surface: 'MCP',
+      oauthSessionId: 'oauth-session-abc',
+      returnTo: null,
+      linkUserId: null,
+    };
+
+    const bind = (attemptSession: string | null, cookieSession?: string) =>
+      service.assertMcpBinding(
+        { oauthSessionId: attemptSession },
+        { id: 'p1', organizationId: 'org-1' },
+        'oid-1',
+        { oauthSessionId: cookieSession },
+      );
+
+    it('accepts a return from the browser that started the authorization', async () => {
+      await expect(bind('sess-1', 'sess-1')).resolves.toBeUndefined();
+    });
+
+    it('refuses a return carrying a DIFFERENT OAuth session', async () => {
+      // The attack this exists to stop: an attacker opens an authorization on
+      // their own machine, gets the victim to finish the identity-provider leg,
+      // and ends up holding a token for the victim's workspace.
+      await expect(bind('sess-attacker', 'sess-victim')).rejects.toThrow(
+        expect.objectContaining({ reason: 'mcp_session_binding_mismatch' }),
+      );
+    });
+
+    it('refuses a return carrying NO OAuth session', async () => {
+      // Dropping the cookie must not be a way to skip the check.
+      await expect(bind('sess-1', undefined)).rejects.toThrow(
+        expect.objectContaining({ reason: 'mcp_session_binding_mismatch' }),
+      );
+    });
+
+    it('refuses when the attempt recorded no session either', async () => {
+      // Two missing values must not compare equal and wave the request through.
+      await expect(bind(null, undefined)).rejects.toThrow(
+        expect.objectContaining({ reason: 'mcp_session_binding_mismatch' }),
+      );
+    });
+
+    it('audits the mismatch once, with the provider and subject attached', async () => {
+      await bind('sess-attacker', 'sess-victim').catch(() => {});
+      expect(securityEvents.log).toHaveBeenCalledTimes(1);
+      expect(securityEvents.log.mock.calls[0][0].metadata).toMatchObject({
+        reason: 'mcp_session_binding_mismatch',
+        surface: 'MCP',
+        providerId: 'p1',
+        oid: 'oid-1',
+      });
+    });
+
+    it('refuses to start without a pending OAuth session', async () => {
+      // Without one there is nothing to bind the returning identity to, so the
+      // result could be attached to any authorization that happens to be open.
+      await expect(service.startMcp('p1', '')).rejects.toThrow(
+        expect.objectContaining({ reason: 'mcp_without_oauth_session' }),
+      );
+    });
+
+    it('refuses a provider that is inactive or unknown', async () => {
+      prisma.identityProvider = { findUnique: jest.fn().mockResolvedValue(null) };
+      await expect(service.startMcp('p1', 'oauth-session-abc')).rejects.toThrow(
+        expect.objectContaining({ reason: 'unknown_or_inactive_provider' }),
+      );
+    });
+
+    it('records the OAuth session on the attempt so the callback can assert it', async () => {
+      prisma.identityProvider = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'p1',
+          type: 'ENTRA',
+          issuer: provider.issuer,
+          clientId: 'c',
+          isActive: true,
+          organizationId: 'org-1',
+          config: provider.config,
+        }),
+      };
+      prisma.ssoLoginAttempt.create = jest.fn();
+      // The network half is mocked away; we only care about what gets stored.
+      service.beginAuthorization = jest.fn(async (_p: any, opts: any) => {
+        await prisma.ssoLoginAttempt.create({ data: { surface: opts.surface, oauthSessionId: opts.oauthSessionId } });
+        return { authorizationUrl: 'https://idp.example/authorize' };
+      });
+
+      await service.startMcp('p1', 'oauth-session-abc');
+
+      expect(prisma.ssoLoginAttempt.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            surface: 'MCP',
+            oauthSessionId: 'oauth-session-abc',
+          }),
+        }),
+      );
+    });
+  });
+
   describe('starting a link', () => {
     it('refuses a provider belonging to another workspace', async () => {
       // `identityProvider.id` is a cuid, not the opaque initiateId, so it is

@@ -15,6 +15,8 @@ import { randomBytes, timingSafeEqual } from 'crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
 import { PrismaOAuthStore } from './prisma-oauth.store';
+import { SsoService } from '../identity-providers/sso.service';
+import { MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
 
 /**
  * Context describing the OAuth client that initiated the current authorize
@@ -38,6 +40,7 @@ export class LoginController {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly oauthStore: PrismaOAuthStore,
+    private readonly sso: SsoService,
   ) {}
 
   @Get('login')
@@ -67,8 +70,12 @@ export class LoginController {
       signed: true,
     });
 
+    const ssoProviders = await this.loadSsoProviders(req);
+
     res.setHeader('Content-Type', 'text/html');
-    res.send(this.renderLoginPage({ error, serverName, consent, csrfToken }));
+    res.send(
+      this.renderLoginPage({ error, serverName, consent, csrfToken, ssoProviders }),
+    );
   }
 
   @Post('login')
@@ -105,6 +112,27 @@ export class LoginController {
       res.clearCookie('oauth_state');
       res.setHeader('Content-Type', 'text/html');
       return res.send(this.renderDeniedPage(serverName));
+    }
+
+    // "Sign in with <provider>" is a submit button on the same form, so it
+    // arrives here having already passed the CSRF check above rather than as a
+    // bare GET that any page could trigger.
+    if (body.action?.startsWith('sso:')) {
+      const providerId = body.action.slice(4);
+      const oauthSessionId = req.cookies?.oauth_session;
+      try {
+        const { authorizationUrl } = await this.sso.startMcp(
+          providerId,
+          oauthSessionId,
+        );
+        res.clearCookie('login_csrf');
+        return res.redirect(authorizationUrl);
+      } catch (error: any) {
+        this.logger.warn(`MCP SSO start failed: ${error?.reason ?? error}`);
+        return res.redirect(
+          `/auth/login?error=${encodeURIComponent('Single sign-on is unavailable. Please contact your administrator.')}`,
+        );
+      }
     }
 
     const { email, password } = body;
@@ -264,16 +292,69 @@ export class LoginController {
     );
   }
 
+  /**
+   * The identity providers offered on this page.
+   *
+   * Scoped to the ONE workspace this authorization is for, resolved from the
+   * `mcp_resource` cookie that `ResourceIndicatorMiddleware` captured from the
+   * client's RFC 8707 `resource` parameter at /authorize.
+   *
+   * Deliberately not "every active provider": this page is unauthenticated, so
+   * an unscoped list would let anyone read off every customer's workspace and
+   * directory — the same enumeration oracle that keeps the provider list off
+   * /health/server-info in cloud. Scoping to the resource leaks nothing,
+   * because reaching here already required that tenant's own server id.
+   *
+   * Returns nothing when the client sent no `resource`, which leaves the page
+   * exactly as it is today: password only.
+   */
+  private async loadSsoProviders(
+    req: Request,
+  ): Promise<{ id: string; name: string }[]> {
+    // SIGNED cookie, so it lives in `signedCookies` — reading `req.cookies`
+    // here silently yields undefined and the buttons never render.
+    const serverId = (req as any).signedCookies?.[MCP_RESOURCE_COOKIE];
+    if (!serverId) return [];
+    try {
+      const server = await this.prisma.mcpServerConfig.findUnique({
+        where: { id: serverId },
+        select: { organizationId: true },
+      });
+      if (!server?.organizationId) return [];
+      return await this.prisma.identityProvider.findMany({
+        where: { organizationId: server.organizationId, isActive: true },
+        select: { id: true, name: true },
+        orderBy: { createdAt: 'asc' },
+      });
+    } catch (error: any) {
+      // Never let this break the password path — it is only an extra option.
+      this.logger.warn(`Could not load SSO providers: ${error?.message}`);
+      return [];
+    }
+  }
+
   private renderLoginPage(params: {
     error: string | undefined;
     serverName: string;
     consent: ConsentContext | null;
     csrfToken: string;
+    ssoProviders: { id: string; name: string }[];
   }): string {
-    const { error, serverName, consent, csrfToken } = params;
+    const { error, serverName, consent, csrfToken, ssoProviders } = params;
 
     const errorHtml = error
       ? `<div class="error">${this.escapeHtml(error)}</div>`
+      : '';
+
+    // `formnovalidate` matters: without it the browser blocks the submit
+    // because the still-empty email and password inputs are `required`.
+    const ssoHtml = ssoProviders.length
+      ? ssoProviders
+          .map(
+            (p) =>
+              `<button type="submit" name="action" value="sso:${this.escapeHtml(p.id)}" formnovalidate class="sso">${this.escapeHtml(p.name)}</button>`,
+          )
+          .join('') + '<div class="divider"><span>or</span></div>'
       : '';
 
     const consentHtml = consent
@@ -409,6 +490,27 @@ export class LoginController {
       margin-top: 8px;
     }
     button.secondary:hover { background: #f1f5f9; }
+    button.sso {
+      background: #fff;
+      color: #0f172a;
+      border: 1px solid #cbd5e1;
+      margin-bottom: 4px;
+    }
+    button.sso:hover { background: #f8fafc; }
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 14px 0 4px;
+      color: #94a3b8;
+      font-size: 12px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }
   </style>
 </head>
 <body>
@@ -419,6 +521,7 @@ export class LoginController {
     ${consentHtml}
     <form method="POST" action="/auth/login">
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">
+      ${ssoHtml}
       <label for="email">Email</label>
       <input type="email" id="email" name="email" required autofocus placeholder="you@example.com">
       <label for="password">Password</label>

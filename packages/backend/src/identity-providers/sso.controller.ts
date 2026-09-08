@@ -128,9 +128,34 @@ export class SsoController {
       const result = await this.sso.complete(currentUrl, {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
+        // Read from the cookie the browser is presenting NOW, so the service
+        // can assert it against the one recorded when the flow started.
+        oauthSessionId: (req as any).cookies?.oauth_session,
       });
 
       res.setHeader('Referrer-Policy', 'no-referrer');
+
+      if (result.kind === 'MCP') {
+        // Hand the OAuth strategy exactly what the password path hands it: a
+        // short-lived, signed, httpOnly profile cookie, then the redirect to
+        // /callback. Everything downstream is identical, so SSO and password
+        // authorization converge on one code path.
+        const isSecure =
+          (req.headers['x-forwarded-proto'] as string) === 'https' || req.secure;
+        res.cookie(
+          'login_user',
+          Buffer.from(JSON.stringify(result.profile)).toString('base64url'),
+          {
+            httpOnly: true,
+            secure: isSecure,
+            maxAge: 60 * 1000,
+            sameSite: isSecure ? 'none' : 'lax',
+            signed: true,
+          },
+        );
+        res.clearCookie('login_csrf');
+        return res.redirect(303, `${this.mcpBaseUrl(req)}/callback`);
+      }
 
       if (result.kind === 'LINK') {
         // The caller was already signed in, so there is no session to hand
@@ -247,6 +272,24 @@ export class SsoController {
       // Deliberately the same 401 for expired, replayed and forged codes.
       return { error: 'Sign-in code is invalid or has expired' };
     }
+  }
+
+  /**
+   * Base URL for the MCP authorization leg.
+   *
+   * Mirrors `LoginController.getBaseUrl`: it trusts `x-forwarded-host` because
+   * the MCP flow must work behind a tunnel or reverse proxy, and `/callback`
+   * has to land on the same origin the client is talking to. This is only used
+   * to continue an already-bound flow — the OIDC `redirect_uri` is still built
+   * from server-side config alone, where a spoofed header would matter.
+   */
+  private mcpBaseUrl(req: Request): string {
+    const proto =
+      (req.headers['x-forwarded-proto'] as string) ||
+      (req.secure ? 'https' : 'http');
+    const host =
+      (req.headers['x-forwarded-host'] as string) || req.headers.host;
+    return host ? `${proto}://${host}` : this.frontendUrl();
   }
 
   private async logFailure(
