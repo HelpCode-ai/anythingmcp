@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { DeploymentService } from '../common/deployment.service';
 
 /**
  * Answers one question: may this user still sign in with a password?
@@ -12,10 +13,18 @@ import { PrismaService } from '../common/prisma.service';
  */
 @Injectable()
 export class SsoEnforcementService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly deployment: DeploymentService,
+  ) {}
 
   /** Organizations of this user that require SSO. Empty means password is fine. */
   async enforcingOrganizations(userId: string): Promise<string[]> {
+    // Single sign-on is self-hosted only, so in cloud there is nothing to
+    // enforce and no reason to pay for two queries on the hot path of every
+    // password sign-in in the deployment.
+    if (this.deployment.isCloud()) return [];
+
     const memberships = await this.prisma.organizationMember.findMany({
       where: { userId },
       select: { organizationId: true },

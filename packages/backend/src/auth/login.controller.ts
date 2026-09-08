@@ -14,6 +14,7 @@ import { Request, Response } from 'express';
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
+import { DeploymentService } from '../common/deployment.service';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { SsoService } from '../identity-providers/sso.service';
 import { MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
@@ -41,6 +42,7 @@ export class LoginController {
     private readonly configService: ConfigService,
     private readonly oauthStore: PrismaOAuthStore,
     private readonly sso: SsoService,
+    private readonly deployment: DeploymentService,
   ) {}
 
   @Get('login')
@@ -313,6 +315,11 @@ export class LoginController {
   ): Promise<{ id: string; name: string }[]> {
     // SIGNED cookie, so it lives in `signedCookies` — reading `req.cookies`
     // here silently yields undefined and the buttons never render.
+    // Self-hosted only, like the rest of SSO. Cloud has no providers to find,
+    // so this would return an empty list anyway — but saying so here means the
+    // MCP authorization page never queries for them.
+    if (this.deployment.isCloud()) return [];
+
     const serverId = (req as any).signedCookies?.[MCP_RESOURCE_COOKIE];
     if (!serverId) return [];
     try {

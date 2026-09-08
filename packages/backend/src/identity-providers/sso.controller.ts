@@ -15,6 +15,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
 import {
   ApiTags,
   ApiOperation,
@@ -74,6 +75,11 @@ const LINK_FAILURE_REASONS = new Map<string, string>([
  * these endpoints into an enumeration oracle for workspaces and accounts.
  */
 @ApiTags('SSO')
+// Whole surface, not only the admin API: the sign-in entry point, the callback
+// and the identity-linking routes are all part of the same self-hosted-only
+// feature, and leaving them mounted in cloud would keep a directory-driven
+// account-provisioning path reachable in a shared deployment.
+@UseGuards(SelfHostedOnlyGuard)
 @Controller()
 export class SsoController {
   private readonly logger = new Logger(SsoController.name);

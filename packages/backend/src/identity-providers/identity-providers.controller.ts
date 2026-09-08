@@ -33,6 +33,7 @@ import {
 import { Type } from 'class-transformer';
 import { IdentityProviderType } from '../generated/prisma/client';
 import { Roles, RolesGuard } from '../auth/roles.guard';
+import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
 import {
   IdentityProvidersService,
   IdentityProviderError,
@@ -192,7 +193,7 @@ class ReplaceRoleMappingsDto {
  */
 @ApiTags('Identity Providers')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(SelfHostedOnlyGuard, AuthGuard('jwt'), RolesGuard)
 @Roles('ADMIN')
 @Controller('api/identity-providers')
 export class IdentityProvidersController {

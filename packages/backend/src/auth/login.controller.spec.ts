@@ -87,6 +87,7 @@ describe('LoginController', () => {
       config as unknown as ConfigService,
       store as unknown as PrismaOAuthStore,
       sso as unknown as SsoService,
+      { mode: 'self-hosted', isCloud: () => false, isSelfHosted: () => true } as any,
     );
   });
 

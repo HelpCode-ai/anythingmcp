@@ -36,6 +36,7 @@ import { RolesService } from '../roles/roles.service';
 import { RecoveryCodesService } from './recovery-codes.service';
 import { SsoEnforcementService } from './sso-enforcement.service';
 import { Roles, RolesGuard } from './roles.guard';
+import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
 
 class RecoveryLoginDto {
   @ApiProperty()
@@ -221,6 +222,11 @@ export class AuthController {
 
   @Post('login/recovery')
   @HttpCode(HttpStatus.OK)
+  // Recovery codes exist only to make `enforceSso` safe to enable, and that is
+  // self-hosted only. Leaving this mounted in cloud would keep a password-free
+  // authentication path reachable for a feature no cloud tenant can even turn
+  // on.
+  @UseGuards(SelfHostedOnlyGuard)
   // Tighter than the password path: a recovery code is 50 bits and single-use,
   // but it is also the credential that bypasses the workspace's SSO policy, so
   // an attacker gets fewer attempts at it, not the same number.
@@ -873,7 +879,7 @@ export class AuthController {
   // ── Recovery codes ────────────────────────────────────────────────────────
 
   @Get('recovery-codes')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(SelfHostedOnlyGuard, AuthGuard('jwt'))
   @ApiBearerAuth()
   @ApiOperation({ summary: 'How many recovery codes the caller still holds' })
   async recoveryCodeStatus(@Req() req: any) {
@@ -882,7 +888,7 @@ export class AuthController {
 
   @Post('recovery-codes')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(SelfHostedOnlyGuard, AuthGuard('jwt'))
   @ApiBearerAuth()
   @ApiOperation({
     summary:
