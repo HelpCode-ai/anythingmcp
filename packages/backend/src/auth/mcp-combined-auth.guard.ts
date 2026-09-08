@@ -1,6 +1,6 @@
 import { Injectable, CanActivate, ExecutionContext, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AuthService } from './auth.service';
+import { AuthService, isTokenRevoked } from './auth.service';
 import { McpApiKeysService } from '../roles/mcp-api-keys.service';
 import { PrismaService } from '../common/prisma.service';
 
@@ -105,41 +105,46 @@ export class McpCombinedAuthGuard implements CanActivate {
         // allowing cross-organization access to any /mcp/:serverId endpoint.
         let organizationId: string | undefined =
           payload.organizationId ?? undefined;
-        // The MCP OAuth flow (rekog/mcp-nest) signs `sub` with whatever
-        // identifier the auth code carried — in our integration that's the
-        // user's EMAIL, not the `users.id` cuid. App JWTs, by contrast, put
-        // the cuid in `sub`. So we can't assume `sub` is a primary key:
-        // resolve the user by id OR email, trying every identifier the token
-        // exposes. Without this, OAuth callers resolve to `organizationId ===
-        // undefined` and the downstream per-server tenant check fails closed
-        // with 403 — locking legitimate owners out of their own servers.
-        const subId: string | undefined = payload.sub || payload.user_data?.id;
-        const email: string | undefined =
-          payload.email ?? payload.user_data?.email ?? undefined;
-        if (!organizationId && (subId || email)) {
-          // `sub` may itself be an email; collect every candidate and match
-          // on id OR email in a single query.
-          const ids = [subId].filter(
-            (v): v is string => !!v && !v.includes('@'),
+        // SECURITY: resolve the caller by `users.id` ONLY — never by matching
+        // an email claim against `users.email`. `user_data` is the stored OAuth
+        // profile copied verbatim into the signed token, so an email-based
+        // lookup would let anyone able to influence that profile — an external
+        // IdP, once SSO lands — resolve to another organization's user and
+        // inherit their `organizationId`, defeating the tenant check below.
+        const subId = await this.resolveUserId(payload);
+
+        // The user row is loaded whenever we can identify the caller — not only
+        // when the org is missing. Revocation needs `sessionsValidFrom`, and
+        // skipping the lookup on the org-present fast path would leave a
+        // dashboard JWT presented to /mcp unrevocable (JwtStrategy, which does
+        // check, never runs on this route).
+        const dbUser = subId
+          ? await this.prisma.user.findUnique({
+              where: { id: subId },
+              select: {
+                id: true,
+                organizationId: true,
+                email: true,
+                role: true,
+                sessionsValidFrom: true,
+              },
+            })
+          : null;
+
+        if (dbUser && isTokenRevoked(payload, dbUser.sessionsValidFrom)) {
+          this.logger.warn(
+            `Rejected revoked token for user ${dbUser.id} on ${reqPath}`,
           );
-          const emails = [email, subId].filter(
-            (v): v is string => !!v && v.includes('@'),
-          );
-          const dbUser = await this.prisma.user.findFirst({
-            where: {
-              OR: [
-                ...ids.map((id) => ({ id })),
-                ...emails.map((e) => ({ email: e })),
-              ],
-            },
-            select: { id: true, organizationId: true, email: true, role: true },
-          });
+          return this.deny(req, res, reqPath);
+        }
+
+        if (!organizationId && subId) {
           organizationId = dbUser?.organizationId ?? undefined;
           req.user = {
             ...payload,
             sub: dbUser?.id ?? subId,
             organizationId,
-            email: dbUser?.email ?? email,
+            email: dbUser?.email ?? payload.email,
             role: payload.role ?? dbUser?.role,
             authMethod: 'jwt',
           };
@@ -172,7 +177,14 @@ export class McpCombinedAuthGuard implements CanActivate {
     }
 
     // Auth failed — build proper WWW-Authenticate header for MCP OAuth flow
-    // The MCP spec requires resource_metadata pointing to the protected resource metadata
+    return this.deny(req, res, reqPath);
+  }
+
+  /**
+   * Emits the spec-compliant 401. The MCP spec requires `resource_metadata`
+   * pointing at the protected-resource metadata document.
+   */
+  private deny(req: any, res: any, reqPath: string): boolean {
     const proto =
       (req.headers['x-forwarded-proto'] as string) ||
       (req.secure ? 'https' : 'http');
@@ -196,5 +208,45 @@ export class McpCombinedAuthGuard implements CanActivate {
       id: null,
     });
     return false;
+  }
+
+  /**
+   * Resolves the `users.id` cuid a token belongs to, WITHOUT ever trusting an
+   * email claim.
+   *
+   * Tokens minted after LocalOAuthProvider started mapping the profile
+   * `username` to the cuid carry it directly in `sub`.
+   *
+   * Tokens minted BEFORE that carry the user's email in `sub` — but they also
+   * carry `user_profile_id`, and `oauth_user_profiles.external_id` has always
+   * stored the cuid (PrismaOAuthStore.upsertUserProfile writes
+   * `externalId: profile.id`, and `profile.id` comes from the login cookie's
+   * `user.id`). So the cuid is recoverable from authoritative server state,
+   * keyed by an opaque identifier that is bound to the signed token.
+   *
+   * That is why no legacy email fallback is needed: previously-issued sessions
+   * keep working, and the mutable, IdP-supplied `email` claim never takes part
+   * in identity resolution.
+   */
+  private async resolveUserId(payload: any): Promise<string | undefined> {
+    const sub: string | undefined = payload?.sub;
+
+    // Modern tokens: `sub` is already the cuid. Emails are the only other
+    // shape we have ever put there, so an '@' is a reliable discriminator.
+    if (sub && !sub.includes('@')) return sub;
+
+    const profileId: string | undefined = payload?.user_profile_id;
+    if (profileId) {
+      const profile = await this.prisma.oAuthUserProfile.findUnique({
+        where: { profileId },
+        select: { externalId: true },
+      });
+      if (profile?.externalId) return profile.externalId;
+    }
+
+    // Legacy token with no recoverable profile → fail closed. Returning the
+    // email here would reintroduce the email-keyed lookup this method exists
+    // to remove.
+    return undefined;
   }
 }

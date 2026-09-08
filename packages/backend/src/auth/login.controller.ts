@@ -127,6 +127,25 @@ export class LoginController {
       );
     }
 
+    // SSO-only account: this consent page has its own bcrypt path, so the gate
+    // in POST /api/auth/login does not cover it. Without this, an SSO-enforced
+    // user could still authorize an AI client with a password — bypassing the
+    // IdP's MFA and Conditional Access on exactly the surface that matters.
+    if (user.passwordLoginDisabled) {
+      this.logger.warn(`Password login refused for SSO-only account: ${email}`);
+      return res.redirect(
+        `/auth/login?error=${encodeURIComponent('Password sign-in is disabled for this account. Use your organization sign-in.')}`,
+      );
+    }
+
+    // Nullable for IdP-provisioned users — never hand null to bcrypt.
+    if (!user.passwordHash) {
+      this.logger.warn(`Login attempt for passwordless account: ${email}`);
+      return res.redirect(
+        `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
+      );
+    }
+
     // Verify password
     const passwordValid = await this.authService.comparePassword(
       password,

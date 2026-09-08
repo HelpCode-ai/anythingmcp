@@ -120,4 +120,51 @@ describe('OAuthRegisterGuardMiddleware', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.statusCode).toBe(200);
   });
+
+  describe('redirect_uri content validation', () => {
+    const register = (redirect_uris: unknown[]) => {
+      const next = jest.fn();
+      const res = makeRes();
+      guard.use(
+        makeReq({
+          headers: { 'content-type': 'application/json' },
+          body: { redirect_uris },
+        }),
+        res,
+        next,
+      );
+      return { next, res };
+    };
+
+    it.each([
+      ['a wildcard', 'https://*.evil.tld/cb'],
+      ['path traversal', 'https://example.com/cb/../../admin'],
+      ['a fragment', 'https://example.com/cb#t'],
+      ['cleartext http to a public host', 'http://example.com/cb'],
+    ])('rejects %s', (_label, uri) => {
+      const { next, res } = register([uri]);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(400);
+      expect((res.body as any).error).toBe('invalid_redirect_uri');
+    });
+
+    it('still accepts the URI shapes real MCP clients register', () => {
+      const { next, res } = register([
+        'https://claude.ai/api/mcp/auth_callback',
+        'http://localhost:33418/callback',
+        'vscode://anthropic.claude/authenticate',
+      ]);
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('rejects the whole registration when any URI is bad', () => {
+      const { next, res } = register([
+        'https://claude.ai/api/mcp/auth_callback',
+        'https://*.evil.tld/cb',
+      ]);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(400);
+    });
+  });
 });

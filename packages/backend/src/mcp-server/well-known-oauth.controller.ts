@@ -57,8 +57,19 @@ export class WellKnownOAuthController {
         'client_secret_post',
         'none',
       ],
-      code_challenge_methods_supported: ['S256', 'plain'],
-      scopes_supported: ['offline_access'],
+      // `plain` is no longer accepted: AuthorizePkceMiddleware requires S256 on
+      // /authorize, so advertising `plain` would promise something we refuse.
+      code_challenge_methods_supported: ['S256'],
+      // RFC 9207: we append `iss` to authorization responses
+      // (AuthorizationIssuerMiddleware), so clients may validate it. Per the
+      // MCP 2026-07-28 authorization spec, a client that sees this set to true
+      // and NO `iss` in the response MUST reject that response — so this flag
+      // and the middleware have to ship together, and stay together.
+      authorization_response_iss_parameter_supported: true,
+      // MCP 2026-07-28: resource servers SHOULD NOT advertise `offline_access`
+      // here, because refresh tokens are a client concern and not a
+      // requirement of the resource. Clients that want one still request it.
+      scopes_supported: [],
       // Minimal OIDC fields so clients that probe openid-configuration accept
       // the document. Tokens are HS256-signed (symmetric), so there is no jwks_uri.
       subject_types_supported: ['public'],
@@ -70,8 +81,16 @@ export class WellKnownOAuthController {
     return {
       resource: `${base}${resourcePath}`,
       authorization_servers: [base],
-      scopes_supported: ['offline_access'],
+      // See the note in authServerMetadata: the MCP authorization spec says a
+      // protected resource SHOULD NOT list `offline_access` in scopes_supported.
+      scopes_supported: [],
       bearer_methods_supported: ['header'],
+      // `2025-06-18` remains first because it is what the transport in this
+      // build actually implements. `2026-07-28` removed protocol sessions, the
+      // initialize handshake and the GET endpoint, and added `server/discover`
+      // — that migration is a separate workstream; only its AUTHORIZATION
+      // requirements (RFC 9207 `iss`, S256 PKCE, resource indicators,
+      // scopes_supported) are honoured here.
       mcp_versions_supported: ['2025-06-18'],
     };
   }

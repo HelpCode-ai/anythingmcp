@@ -234,7 +234,13 @@ export class McpServerService implements OnModuleInit {
         // Check role-based tool access if user is identified
         const user = request?.user;
         if (user?.sub) {
-          const allowedToolIds = await this.rolesService.getAllowedToolIds(user.sub);
+          // Global /mcp registry: there is no server-scoped org here, so the
+          // caller's active org is the relevant one — same org used by
+          // getToolForOrg below.
+          const allowedToolIds = await this.rolesService.getAllowedToolIds(
+            user.sub,
+            user.organizationId,
+          );
           if (allowedToolIds !== null) {
             // User has restricted access — check if this tool is allowed.
             // Resolve by org first so we don't read the wrong org's tool

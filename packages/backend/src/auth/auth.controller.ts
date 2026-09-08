@@ -30,6 +30,7 @@ import { PrismaService } from '../common/prisma.service';
 import { EmailService } from '../settings/email.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import { LicenseService } from '../license/license.service';
 import { Roles, RolesGuard } from './roles.guard';
 
@@ -147,6 +148,7 @@ export class AuthController {
     private readonly siteSettings: SiteSettingsService,
     private readonly organizationsService: OrganizationsService,
     private readonly licenseService: LicenseService,
+    private readonly securityEvents: SecurityEventService,
   ) {}
 
   private getFrontendUrl(_req?: any): string {
@@ -198,6 +200,20 @@ export class AuthController {
   async login(@Req() req: any, @Body() dto: LoginDto) {
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // SSO-only account: refuse the password path entirely. Checked BEFORE the
+    // bcrypt compare so a disabled account cannot be used as a password oracle.
+    if (user.passwordLoginDisabled) {
+      throw new UnauthorizedException(
+        'Password sign-in is disabled for this account. Use your organization sign-in.',
+      );
+    }
+
+    // `passwordHash` is nullable for SSO-provisioned users — never hand null to
+    // bcrypt, which would throw a 500 instead of failing the login cleanly.
+    if (!user.passwordHash) {
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -649,6 +665,18 @@ export class AuthController {
       return { message: 'If the email exists, a reset link has been sent.' };
     }
 
+    // SSO-only account: issue no reset token. Gating login alone would leave
+    // this endpoint as a way for anyone with mailbox access to set a password
+    // and walk past SSO, MFA and Conditional Access. The response is identical
+    // to the unknown-email case so this does not become an enumeration oracle
+    // for which accounts are SSO-only.
+    if (user.passwordLoginDisabled) {
+      this.logger.warn(
+        `Password reset refused for SSO-only account: ${user.email}`,
+      );
+      return { message: 'If the email exists, a reset link has been sent.' };
+    }
+
     // Generate secure token
     const resetToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
@@ -684,7 +712,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Reset password using token' })
-  async resetPassword(@Body() dto: ResetPasswordDto) {
+  async resetPassword(@Req() req: any, @Body() dto: ResetPasswordDto) {
     const resetRecord = await this.prisma.passwordResetToken.findUnique({
       where: { token: dto.token },
     });
@@ -701,16 +729,30 @@ export class AuthController {
       throw new BadRequestException('This reset link has expired');
     }
 
-    // Update password
+    // Update the password AND revoke every session issued before now. A reset
+    // is the classic "someone else may be in my account" moment: leaving old
+    // tokens valid would let an attacker keep a live session for up to 24h
+    // (longer on an MCP refresh token) after the victim locks them out.
     const newHash = await this.authService.hashPassword(dto.newPassword);
-    await this.usersService.update(resetRecord.userId, {
-      passwordHash: newHash,
+    await this.prisma.user.update({
+      where: { id: resetRecord.userId },
+      data: { passwordHash: newHash, sessionsValidFrom: new Date() },
     });
 
     // Mark token as used
     await this.prisma.passwordResetToken.update({
       where: { id: resetRecord.id },
       data: { usedAt: new Date() },
+    });
+
+    await this.securityEvents.log({
+      event: SecurityEvents.SESSIONS_REVOKED,
+      actorType: 'USER',
+      actorUserId: resetRecord.userId,
+      targetUserId: resetRecord.userId,
+      metadata: { reason: 'password_reset' },
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
     });
 
     return { message: 'Password has been reset successfully' };

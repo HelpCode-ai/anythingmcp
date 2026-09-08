@@ -26,7 +26,10 @@ describe('McpCombinedAuthGuard', () => {
     mockConfig = { get: jest.fn() };
     mockAuth = { verifyToken: jest.fn() };
     mockApiKeys = { resolveUserByKey: jest.fn() };
-    mockPrisma = { user: { findUnique: jest.fn(), findFirst: jest.fn() } };
+    mockPrisma = {
+      user: { findUnique: jest.fn(), findFirst: jest.fn() },
+      oAuthUserProfile: { findUnique: jest.fn().mockResolvedValue(null) },
+    };
     guard = new McpCombinedAuthGuard(
       mockConfig,
       mockAuth,
@@ -36,7 +39,11 @@ describe('McpCombinedAuthGuard', () => {
   });
 
   describe('organization resolution for JWT/OAuth tokens', () => {
-    it('keeps organizationId from an app JWT without a DB lookup', async () => {
+    it('keeps organizationId from an app JWT, and still loads the user for revocation', async () => {
+      // The old zero-query fast path was given up deliberately: revocation
+      // needs `sessionsValidFrom`, and skipping the lookup here would leave a
+      // dashboard JWT presented to /mcp unrevocable, since JwtStrategy (which
+      // does check) never runs on this route.
       mockConfig.get.mockReturnValue(undefined);
       mockAuth.verifyToken.mockReturnValue({
         sub: 'u1',
@@ -44,13 +51,63 @@ describe('McpCombinedAuthGuard', () => {
         role: 'ADMIN',
         organizationId: 'org-A',
       });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        organizationId: 'org-A',
+        email: 'a@b.com',
+        role: 'ADMIN',
+        sessionsValidFrom: null,
+      });
 
       const ctx = mockContext({ authorization: 'Bearer app-jwt' });
       const result = await guard.canActivate(ctx);
 
       expect(result).toBe(true);
-      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+      // The claim still wins for the org — the lookup is only for revocation.
       expect(ctx.switchToHttp().getRequest().user.organizationId).toBe('org-A');
+    });
+
+    it('rejects a token issued before the user revocation cutover', async () => {
+      mockConfig.get.mockReturnValue(undefined);
+      mockAuth.verifyToken.mockReturnValue({
+        sub: 'u1',
+        email: 'a@b.com',
+        role: 'ADMIN',
+        organizationId: 'org-A',
+        iat: Math.floor(new Date('2026-01-01T00:00:00Z').getTime() / 1000),
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        organizationId: 'org-A',
+        email: 'a@b.com',
+        role: 'ADMIN',
+        // Password changed after the token was minted.
+        sessionsValidFrom: new Date('2026-06-01T00:00:00Z'),
+      });
+
+      const ctx = mockContext({ authorization: 'Bearer stale-jwt' });
+      expect(await guard.canActivate(ctx)).toBe(false);
+    });
+
+    it('accepts a token issued after the revocation cutover', async () => {
+      mockConfig.get.mockReturnValue(undefined);
+      mockAuth.verifyToken.mockReturnValue({
+        sub: 'u1',
+        email: 'a@b.com',
+        role: 'ADMIN',
+        organizationId: 'org-A',
+        iat: Math.floor(new Date('2026-06-02T00:00:00Z').getTime() / 1000),
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        organizationId: 'org-A',
+        email: 'a@b.com',
+        role: 'ADMIN',
+        sessionsValidFrom: new Date('2026-06-01T00:00:00Z'),
+      });
+
+      const ctx = mockContext({ authorization: 'Bearer fresh-jwt' });
+      expect(await guard.canActivate(ctx)).toBe(true);
     });
 
     it('resolves organizationId from the user record for an OAuth token whose sub is a cuid', async () => {
@@ -61,7 +118,7 @@ describe('McpCombinedAuthGuard', () => {
         type: 'access',
         user_data: { id: 'u-finance', email: 'finance@helpcode.ai' },
       });
-      mockPrisma.user.findFirst.mockResolvedValue({
+      mockPrisma.user.findUnique.mockResolvedValue({
         id: 'u-finance',
         organizationId: 'org-B',
         email: 'finance@helpcode.ai',
@@ -72,52 +129,108 @@ describe('McpCombinedAuthGuard', () => {
       const result = await guard.canActivate(ctx);
 
       expect(result).toBe(true);
-      // Resolves by id OR email — the user_data.email is also a candidate.
-      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
-        where: {
-          OR: [{ id: 'u-finance' }, { email: 'finance@helpcode.ai' }],
+      // Resolved by primary key only — the user_data.email is NOT a candidate.
+      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'u-finance' },
+        select: {
+          id: true,
+          organizationId: true,
+          email: true,
+          role: true,
+          sessionsValidFrom: true,
         },
-        select: { id: true, organizationId: true, email: true, role: true },
       });
       expect(ctx.switchToHttp().getRequest().user.organizationId).toBe('org-B');
     });
 
-    it('resolves organizationId when the OAuth token sub IS the email (rekog/mcp-nest)', async () => {
-      // Regression test for the production 403 incident: rekog signs `sub`
-      // with the email, not the users.id cuid. The guard must still resolve
-      // the org (by email) so legitimate owners are not locked out.
+    it('resolves a LEGACY token whose sub is an email via its stored profile', async () => {
+      // Tokens minted before `sub` became the cuid carry the email there, but
+      // they also carry `user_profile_id`, and oauth_user_profiles.external_id
+      // has always held the cuid. Resolving through that keeps already-issued
+      // sessions working WITHOUT an email-keyed lookup — no forced re-auth.
       mockConfig.get.mockReturnValue(undefined);
       mockAuth.verifyToken.mockReturnValue({
-        sub: 'jjstrick9@gmail.com',
+        sub: 'owner@example.com',
         type: 'access',
-        user_data: {},
+        user_profile_id: 'local:cmpzj8mm9007j1ymn5mo2y3eq',
+        user_data: { email: 'owner@example.com' },
       });
-      mockPrisma.user.findFirst.mockResolvedValue({
+      mockPrisma.oAuthUserProfile.findUnique.mockResolvedValue({
+        externalId: 'cmpzj8mm9007j1ymn5mo2y3eq',
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
         id: 'cmpzj8mm9007j1ymn5mo2y3eq',
-        organizationId: 'cmpzj8mds007i1ymntpyjngdp',
-        email: 'jjstrick9@gmail.com',
+        organizationId: 'org-legacy',
+        email: 'owner@example.com',
         role: 'ADMIN',
       });
 
-      const ctx = mockContext({ authorization: 'Bearer oauth-token' });
-      const result = await guard.canActivate(ctx);
+      const ctx = mockContext({ authorization: 'Bearer legacy-token' });
+      expect(await guard.canActivate(ctx)).toBe(true);
 
-      expect(result).toBe(true);
-      // sub is an email → matched via the email branch, not id.
-      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
-        where: { OR: [{ email: 'jjstrick9@gmail.com' }] },
-        select: { id: true, organizationId: true, email: true, role: true },
+      expect(mockPrisma.oAuthUserProfile.findUnique).toHaveBeenCalledWith({
+        where: { profileId: 'local:cmpzj8mm9007j1ymn5mo2y3eq' },
+        select: { externalId: true },
       });
       const u = ctx.switchToHttp().getRequest().user;
-      expect(u.organizationId).toBe('cmpzj8mds007i1ymntpyjngdp');
-      // sub is normalised back to the real cuid for downstream ownership checks.
+      expect(u.organizationId).toBe('org-legacy');
       expect(u.sub).toBe('cmpzj8mm9007j1ymn5mo2y3eq');
+    });
+
+    it('does NOT resolve a user from the token email claim', async () => {
+      // SECURITY regression guard. `user_data` is the stored OAuth profile
+      // copied verbatim into the signed token. If the guard matched its email
+      // against users.email, anyone able to influence that profile — an
+      // external IdP, once SSO lands — could mint a token bearing a victim's
+      // address and inherit the victim's organization. With no recoverable
+      // profile, an email-shaped `sub` must fail closed rather than fall back.
+      mockConfig.get.mockReturnValue(undefined);
+      mockAuth.verifyToken.mockReturnValue({
+        sub: 'victim@example.com',
+        type: 'access',
+        user_data: { email: 'victim@example.com' },
+      });
+      mockPrisma.oAuthUserProfile.findUnique.mockResolvedValue(null);
+
+      const ctx = mockContext({ authorization: 'Bearer forged-token' });
+      await guard.canActivate(ctx);
+
+      // The users table is never queried by email — in fact not at all here.
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      // No org inherited → the per-server tenant check downstream fails closed.
+      expect(
+        ctx.switchToHttp().getRequest().user.organizationId,
+      ).toBeUndefined();
+    });
+
+    it('never queries users by email', async () => {
+      mockConfig.get.mockReturnValue(undefined);
+      mockAuth.verifyToken.mockReturnValue({
+        sub: 'u-1',
+        type: 'access',
+        email: 'someone@example.com',
+        user_data: { email: 'other@example.com' },
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'u-1',
+        organizationId: 'org-A',
+        email: 'u1@example.com',
+        role: 'EDITOR',
+      });
+
+      await guard.canActivate(mockContext({ authorization: 'Bearer t' }));
+
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      for (const call of mockPrisma.user.findUnique.mock.calls) {
+        expect(JSON.stringify(call[0].where)).not.toContain('email');
+      }
     });
 
     it('leaves organizationId undefined when the user cannot be resolved (fail closed downstream)', async () => {
       mockConfig.get.mockReturnValue(undefined);
       mockAuth.verifyToken.mockReturnValue({ sub: 'ghost', user_data: {} });
-      mockPrisma.user.findFirst.mockResolvedValue(null);
+      mockPrisma.user.findUnique.mockResolvedValue(null);
 
       const ctx = mockContext({ authorization: 'Bearer oauth-token' });
       await guard.canActivate(ctx);

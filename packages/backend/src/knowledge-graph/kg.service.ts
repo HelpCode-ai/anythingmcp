@@ -40,7 +40,10 @@ export class KgService {
     organizationId: string,
     userId: string,
   ): Promise<string[] | null> {
-    const allowedToolIds = await this.roles.getAllowedToolIds(userId);
+    const allowedToolIds = await this.roles.getAllowedToolIds(
+      userId,
+      organizationId,
+    );
     if (allowedToolIds === null) return null;
     if (allowedToolIds.length === 0) return [];
     const tools = await this.prisma.mcpTool.findMany({

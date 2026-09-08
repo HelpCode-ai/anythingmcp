@@ -1,5 +1,6 @@
 import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
+import { validateRedirectUris } from './redirect-uri.util';
 
 /**
  * Guards the POST /register OAuth Dynamic Client Registration endpoint
@@ -72,6 +73,34 @@ export class OAuthRegisterGuardMiddleware implements NestMiddleware {
       return;
     }
 
+    // Content validation, not just shape. Registration here is open, so this
+    // cannot stop an attacker registering their own host — the consent screen
+    // is what does that. It does stop the cases where the URI itself is the
+    // weapon: wildcards, path traversal, fragments, and cleartext http to a
+    // non-loopback host. See redirect-uri.util.ts.
+    const rejections = validateRedirectUris(redirectUris);
+    if (rejections.length > 0) {
+      this.logger.warn(
+        `Rejecting /register: ${rejections
+          .map((r) => `'${r.uri}' ${r.reason}`)
+          .join('; ')}`,
+      );
+      res
+        .status(400)
+        .header('Content-Type', 'application/json')
+        .json({
+          error: 'invalid_redirect_uri',
+          error_description: rejections
+            .map((r) => `redirect_uri '${r.uri}': ${r.reason}`)
+            .join('; '),
+        });
+      return;
+    }
+
+    // Deliberately NOT audit-logged here: /register is unauthenticated and
+    // open, so writing a row per attempt would let anyone flood the security
+    // audit table. The detection value for the phishing class lives on the
+    // consent decision, which is behind a login.
     next();
   }
 }

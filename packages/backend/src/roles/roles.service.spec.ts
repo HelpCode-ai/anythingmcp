@@ -31,6 +31,9 @@ describe('RolesService', () => {
       mcpTool: {
         count: jest.fn(),
       },
+      organizationMember: {
+        findUnique: jest.fn(),
+      },
       $transaction: jest.fn(),
     };
     service = new RolesService(mockPrisma);
@@ -207,23 +210,93 @@ describe('RolesService', () => {
       expect(result).toEqual(['t1', 't2']);
     });
 
-    it('should fall back to email lookup when id lookup fails', async () => {
-      mockPrisma.user.findUnique
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ role: 'ADMIN', mcpRoleId: null });
-      const result = await service.getAllowedToolIds('user@example.com');
-      expect(result).toBeNull();
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledTimes(2);
-      expect(mockPrisma.user.findUnique).toHaveBeenLastCalledWith({
-        where: { email: 'user@example.com' },
-        select: { role: true, mcpRoleId: true },
+    it('reads the role from the membership of the org being acted on, not the cache', async () => {
+      // V3 regression guard. `users.role` is the cache of the ACTIVE org's
+      // role. In cloud every self-registered user is ADMIN of their own
+      // workspace, so reading the cache handed them the ADMIN bypass — and
+      // therefore EVERY tool — inside any other org they could reach.
+      mockPrisma.user.findUnique.mockResolvedValue({
+        role: 'ADMIN', // cached: ADMIN of their personal workspace
+        mcpRoleId: 'restricted-role',
+        organizationId: 'org-personal',
+      });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({
+        role: 'VIEWER', // authoritative: only a VIEWER in the corporate org
+      });
+      mockPrisma.toolRoleAccess.findMany.mockResolvedValue([{ toolId: 't1' }]);
+
+      const result = await service.getAllowedToolIds('user-1', 'org-corporate');
+
+      expect(mockPrisma.organizationMember.findUnique).toHaveBeenCalledWith({
+        where: {
+          userId_organizationId: {
+            userId: 'user-1',
+            organizationId: 'org-corporate',
+          },
+        },
+        select: { role: true },
+      });
+      // Restricted to the role's whitelist — NOT null/unrestricted.
+      expect(result).toEqual(['t1']);
+    });
+
+    it('grants the ADMIN bypass only to an ADMIN of that same org', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        role: 'VIEWER',
+        mcpRoleId: 'restricted-role',
+        organizationId: 'org-a',
+      });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({
+        role: 'ADMIN',
+      });
+
+      expect(await service.getAllowedToolIds('user-1', 'org-a')).toBeNull();
+    });
+
+    it('fails closed when the user is not a member of the org', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        role: 'ADMIN',
+        mcpRoleId: null,
+        organizationId: 'org-personal',
+      });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
+
+      // Not null (unrestricted) and not the ADMIN bypass — no tools at all.
+      expect(await service.getAllowedToolIds('user-1', 'org-other')).toEqual([]);
+    });
+
+    it('falls back to the cached role when no org can be resolved', async () => {
+      // Self-host / instance-level path: no org context anywhere.
+      mockPrisma.user.findUnique.mockResolvedValue({
+        role: 'ADMIN',
+        mcpRoleId: null,
+        organizationId: null,
+      });
+
+      expect(await service.getAllowedToolIds('user-1')).toBeNull();
+      expect(mockPrisma.organizationMember.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('never falls back to an email lookup', async () => {
+      // SECURITY regression guard. The old implementation retried
+      // `findUnique({ where: { email: userId } })` when the id lookup missed,
+      // which made a mutable, IdP-supplied email a key for TOOL authorization:
+      // a token bearing a victim's address inherited the victim's grants.
+      // An email-shaped principal must now simply fail closed.
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+
+      const result = await service.getAllowedToolIds('victim@example.com');
+
+      expect(result).toEqual([]);
+      expect(mockPrisma.user.findUnique).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'victim@example.com' },
+        select: { role: true, mcpRoleId: true, organizationId: true },
       });
     });
 
     it('should return empty array when user not found', async () => {
-      mockPrisma.user.findUnique
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
+      mockPrisma.user.findUnique.mockResolvedValue(null);
       const result = await service.getAllowedToolIds('ghost');
       expect(result).toEqual([]);
     });
