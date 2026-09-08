@@ -350,6 +350,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `NEXTAUTH_SECRET` | No | NextAuth secret for frontend |
 | `FRONTEND_URL` | No | Frontend URL for email links (default: `http://localhost:3000`) |
 | `MCP_AUTH_MODE` | No | MCP auth: `none`, `legacy`, `oauth2`, `both` (default: `oauth2`) |
+| `DEPLOYMENT_MODE` | No | `self-hosted` (default) or `cloud`. Anything other than `cloud` is self-hosted, so a community operator who never sets it keeps every self-hosted feature — including [single sign-on](sso.md) |
 | `MCP_BEARER_TOKEN` | No | Bearer token for legacy MCP auth |
 | `MCP_API_KEY` | No | API key for legacy MCP auth |
 | `SERVER_URL` | No | Server URL for OAuth2 metadata (default: `http://localhost:4000`) |

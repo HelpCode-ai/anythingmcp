@@ -417,7 +417,7 @@ export class RoleSyncService {
   /**
    * DENY_ALL cannot be implemented by deleting the user's grants.
    *
-   * `RolesService.getUserToolAccess` returns `null` — meaning UNRESTRICTED —
+   * `RolesService.getAllowedToolIds` returns `null` — meaning UNRESTRICTED —
    * for a user with no role at all, which is the behaviour inherited from the
    * single-FK era. So "revoke everything" written the obvious way produces
    * full access: the precise failure this fallback exists to prevent.
