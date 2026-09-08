@@ -1,4 +1,4 @@
-import type { OAuthProviderConfig } from '@rekog/mcp-nest';
+import type { OAuthProviderConfig } from '@rekog/mcp-nest-auth';
 import { LocalOAuthStrategy } from './local-oauth.strategy';
 
 export const LocalOAuthProvider: OAuthProviderConfig = {

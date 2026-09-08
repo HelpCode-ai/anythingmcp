@@ -14,9 +14,13 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
+import {
+  NodeStreamableHTTPServerTransport as StreamableHTTPServerTransport,
+  toNodeHandler,
+} from '@modelcontextprotocol/node';
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
+import { mcpHttpTransport } from './mcp-strategy';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { ToolRegistry, RegisteredTool } from './tool-registry';
@@ -106,7 +110,35 @@ export class McpEndpointController {
     return process.env.MCP_STREAMABLE_JSON_RESPONSE === 'true';
   }
 
+  // ── The global /mcp endpoint ───────────────────────────────────────────────
+  //
+  // Served here rather than by the transport itself. mcp-nest v2 dropped the
+  // `guards` option that used to protect it, so a self-mounting transport would
+  // register `/mcp` straight onto the HTTP adapter, outside Nest's pipeline and
+  // therefore UNAUTHENTICATED. The transport is built with `mount: false` and
+  // its handlers are invoked from here instead, which puts the endpoint behind
+  // the same `McpCombinedAuthGuard` as every per-tenant `/mcp/:serverId`.
+  //
+  // Declared before the ':serverId' routes: these have no path segment, so they
+  // only ever match the bare /mcp.
+
+  @Post()
+  async handleGlobalPost(@Req() req: Request, @Res() res: Response) {
+    await mcpHttpTransport.httpHandlers.handlePost(req, res);
+  }
+
+  @Get()
+  async handleGlobalGet(@Req() req: Request, @Res() res: Response) {
+    await mcpHttpTransport.httpHandlers.handleGet(req, res);
+  }
+
+  @Delete()
+  async handleGlobalDelete(@Req() req: Request, @Res() res: Response) {
+    await mcpHttpTransport.httpHandlers.handleDelete(req, res);
+  }
+
   // ─── Public, anonymous, static demo MCP server ──────────────────────────
+  //
   // A self-describing MCP endpoint at the EXACT path /mcp/demo. It exposes only
   // static "how to use AnythingMCP" tools and NEVER resolves a serverId, queries
   // the database, or touches connectors / tenant data — so it has nothing to
@@ -187,41 +219,25 @@ export class McpEndpointController {
     res: Response,
     body: unknown,
   ) {
-    const mcpServer = new McpServer(
-      { name: 'AnythingMCP Demo', version: '1.0.0' },
-      {
-        instructions:
-          'Public, read-only demo of AnythingMCP. These tools describe the ' +
-          'product and how to use it; they expose no customer data. Start with ' +
-          'anythingmcp_overview.',
+    await this.serveStateless(
+      req,
+      res,
+      body,
+      () => {
+        const mcpServer = new McpServer(
+          { name: 'AnythingMCP Demo', version: '1.0.0' },
+          {
+            instructions:
+              'Public, read-only demo of AnythingMCP. These tools describe the ' +
+              'product and how to use it; they expose no customer data. Start with ' +
+              'anythingmcp_overview.',
+          },
+        );
+        registerDemoTools(mcpServer);
+        return mcpServer;
       },
+      'demo',
     );
-    registerDemoTools(mcpServer);
-
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: this.jsonResponseEnabled(),
-    });
-    try {
-      await mcpServer.connect(transport);
-      await transport.handleRequest(req, res, body);
-    } catch (error: any) {
-      this.logger.error(`Error handling demo MCP request: ${error.message}`);
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal server error' },
-          id: null,
-        });
-      }
-    } finally {
-      try {
-        await transport.close();
-        await mcpServer.close();
-      } catch {
-        // Ignore cleanup errors
-      }
-    }
   }
 
   private async handleMcpRequest(
@@ -377,16 +393,53 @@ export class McpEndpointController {
       return;
     }
 
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined, // stateless mode
-      enableJsonResponse: this.jsonResponseEnabled(),
+    // The server was already built above with this caller's tool surface, so
+    // the factory hands back that instance rather than constructing another.
+    await this.serveStateless(req, res, body, () => mcpServer, `server ${serverId}`);
+  }
+
+  /**
+   * Serves one stateless request through the 2026-07-28 handler.
+   *
+   * `legacy: 'stateless'` is what makes this dual: the same handler answers
+   * modern envelope traffic natively AND 2025-era requests through the
+   * stateless fallback — the latter being exactly what the old transport did
+   * on its own. Until this existed, a client probing `server/discover` against
+   * a tenant endpoint got "Unsupported protocol version: 2026-07-28" and had
+   * to fall back to `initialize`, so every tenant was served the old protocol
+   * even after the library was upgraded.
+   *
+   * A fresh handler per request, not one shared across the controller: the
+   * tool surface depends on the caller's organization and role, so a shared
+   * factory would risk serving one tenant from another's construction. The
+   * previous code created a transport per request for the same reason; this
+   * keeps that property rather than trading it for a pooled handler.
+   */
+  private async serveStateless(
+    req: Request,
+    res: Response,
+    body: unknown,
+    buildServer: () => McpServer,
+    label: string,
+  ): Promise<void> {
+    const handler = createMcpHandler(() => buildServer(), {
+      legacy: 'stateless',
+      // Mapped from the old `enableJsonResponse` boolean, deliberately NOT to
+      // 'auto'. 'auto' answers with JSON whenever it can and upgrades to SSE
+      // only when a mid-call message appears, which would silently change the
+      // framing for clients that get SSE today. 'sse' preserves it exactly.
+      responseMode: this.jsonResponseEnabled() ? 'json' : 'sse',
+      onerror: (error) =>
+        this.logger.error(`MCP handler error (${label}): ${error.message}`),
     });
 
     try {
-      await mcpServer.connect(transport);
-      await transport.handleRequest(req, res, body);
+      await toNodeHandler(handler, {
+        onerror: (error) =>
+          this.logger.error(`MCP adapter error (${label}): ${error.message}`),
+      })(req, res, body);
     } catch (error: any) {
-      this.logger.error(`Error handling MCP request for server ${serverId}: ${error.message}`);
+      this.logger.error(`Error handling MCP request (${label}): ${error.message}`);
       if (!res.headersSent) {
         res.status(500).json({
           jsonrpc: '2.0',
@@ -395,10 +448,10 @@ export class McpEndpointController {
         });
       }
     } finally {
-      // Clean up stateless server
+      // Aborts any in-flight modern exchange and closes the per-request
+      // instance the factory produced.
       try {
-        await transport.close();
-        await mcpServer.close();
+        await handler.close();
       } catch {
         // Ignore cleanup errors
       }

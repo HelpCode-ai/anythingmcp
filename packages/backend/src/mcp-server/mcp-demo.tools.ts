@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/server';
 
 /**
  * Static, self-describing tools for the PUBLIC demo MCP server (`/mcp/demo`).
@@ -68,37 +68,50 @@ MCP-to-MCP bridge. Browse everything: ${SITE}/guides`;
  * Register the static demo tools on a per-request McpServer instance.
  */
 export function registerDemoTools(server: McpServer): void {
-  server.tool(
+  // `server.tool(name, description, shape, cb)` was removed in the 2.0 SDK.
+  // `registerTool` takes the description in a config object, and wants a whole
+  // schema rather than a raw shape — the shape form still compiles but is
+  // deprecated, so these use `z.object()` directly.
+  server.registerTool(
     'anythingmcp_overview',
-    'What AnythingMCP is, what this demo endpoint does, and where to learn more.',
-    {},
+    {
+      description:
+        'What AnythingMCP is, what this demo endpoint does, and where to learn more.',
+    },
     async () => ({ content: [{ type: 'text' as const, text: OVERVIEW }] }),
   );
 
-  server.tool(
+  server.registerTool(
     'anythingmcp_get_started',
-    'How to install and run your own AnythingMCP gateway in ~60 seconds.',
-    {},
+    {
+      description:
+        'How to install and run your own AnythingMCP gateway in ~60 seconds.',
+    },
     async () => ({ content: [{ type: 'text' as const, text: GET_STARTED }] }),
   );
 
-  server.tool(
+  server.registerTool(
     'anythingmcp_connect_client',
-    'Setup instructions to connect an AI client (Claude, ChatGPT, Gemini, Copilot, Cursor) to AnythingMCP.',
     {
-      client: z
-        .enum(['claude', 'chatgpt', 'gemini', 'copilot', 'cursor'])
-        .describe('Which AI client to connect.'),
+      description:
+        'Setup instructions to connect an AI client (Claude, ChatGPT, Gemini, Copilot, Cursor) to AnythingMCP.',
+      inputSchema: z.object({
+        client: z
+          .enum(['claude', 'chatgpt', 'gemini', 'copilot', 'cursor'])
+          .describe('Which AI client to connect.'),
+      }),
     },
     async ({ client }) => ({
       content: [{ type: 'text' as const, text: CONNECT[client] ?? CONNECT.claude }],
     }),
   );
 
-  server.tool(
+  server.registerTool(
     'anythingmcp_list_connectors',
-    'Overview of the 175+ pre-built connectors and the connector types you can build.',
-    {},
+    {
+      description:
+        'Overview of the 175+ pre-built connectors and the connector types you can build.',
+    },
     async () => ({ content: [{ type: 'text' as const, text: CONNECTORS }] }),
   );
 }

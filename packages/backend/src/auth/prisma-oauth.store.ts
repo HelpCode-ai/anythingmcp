@@ -6,8 +6,8 @@ import type {
   OAuthClient,
   AuthorizationCode,
   ClientRegistrationDto,
-} from '@rekog/mcp-nest';
-import type { OAuthSession, OAuthUserProfile } from '@rekog/mcp-nest';
+} from '@rekog/mcp-nest-auth';
+import type { OAuthSession, OAuthUserProfile } from '@rekog/mcp-nest-auth';
 
 @Injectable()
 export class PrismaOAuthStore implements IOAuthStore {
