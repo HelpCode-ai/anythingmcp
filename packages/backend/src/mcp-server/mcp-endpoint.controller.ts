@@ -429,12 +429,21 @@ export class McpEndpointController {
       // only when a mid-call message appears, which would silently change the
       // framing for clients that get SSE today. 'sse' preserves it exactly.
       responseMode: this.jsonResponseEnabled() ? 'json' : 'sse',
+      // WARN, not ERROR: this callback reports rejected requests as well as
+      // genuine faults, and a rejection is usually the client's doing — a
+      // crawler sending `Mcp-Method` (a 2026-07-28 construct) alongside
+      // `MCP-Protocol-Version: 2025-06-18` is refused with a 400, exactly as
+      // it should be. Logging that at error level lets any malformed client
+      // inflate the error rate and bury real failures underneath it.
       onerror: (error) =>
-        this.logger.error(`MCP handler error (${label}): ${error.message}`),
+        this.logger.warn(`MCP request rejected (${label}): ${error.message}`),
     });
 
     try {
       await toNodeHandler(handler, {
+        // ERROR here is right: the adapter only calls this when it answers a
+        // 500 because request conversion or the handler itself threw, which is
+        // our fault rather than the caller's.
         onerror: (error) =>
           this.logger.error(`MCP adapter error (${label}): ${error.message}`),
       })(req, res, body);
