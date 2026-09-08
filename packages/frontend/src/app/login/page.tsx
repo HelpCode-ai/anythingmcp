@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { auth, license, server, sso, type SsoProviderButton } from '@/lib/api';
@@ -93,13 +93,21 @@ function LoginForm() {
 
   // Trade the one-time code from the sign-in redirect for a session. The code
   // is single-use and lives 30 seconds; the token itself never travels in a URL.
+  //
+  // Guarded by a ref rather than the usual `cancelled` flag, because the code
+  // is spent by the REQUEST, not by what we do with the response. Under React
+  // StrictMode the effect runs twice: the first call burns the code, its
+  // result is discarded as stale, and the second call reports "invalid or
+  // expired" for a sign-in that actually succeeded. The same race can strand a
+  // user on any remount. Recording the code before awaiting makes the exchange
+  // happen at most once per code.
+  const exchangedCode = useRef<string | null>(null);
   useEffect(() => {
-    if (!ssoCode) return;
-    let cancelled = false;
+    if (!ssoCode || exchangedCode.current === ssoCode) return;
+    exchangedCode.current = ssoCode;
     (async () => {
       try {
         const result = await sso.exchange(ssoCode);
-        if (cancelled) return;
         if (!result.accessToken) {
           setError(result.error || 'Sign-in code is invalid or has expired');
           setSsoExchanging(false);
@@ -108,14 +116,10 @@ function LoginForm() {
         login(result.accessToken, result.user);
         router.replace(redirectTo);
       } catch (err: any) {
-        if (cancelled) return;
         setError(err.message || 'Sign-in failed');
         setSsoExchanging(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ssoCode]);
 
