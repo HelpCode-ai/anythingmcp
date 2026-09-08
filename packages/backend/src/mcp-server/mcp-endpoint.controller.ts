@@ -14,9 +14,10 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import { NodeStreamableHTTPServerTransport as StreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
+import { mcpHttpTransport } from './mcp-strategy';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { ToolRegistry, RegisteredTool } from './tool-registry';
@@ -106,7 +107,35 @@ export class McpEndpointController {
     return process.env.MCP_STREAMABLE_JSON_RESPONSE === 'true';
   }
 
+  // ── The global /mcp endpoint ───────────────────────────────────────────────
+  //
+  // Served here rather than by the transport itself. mcp-nest v2 dropped the
+  // `guards` option that used to protect it, so a self-mounting transport would
+  // register `/mcp` straight onto the HTTP adapter, outside Nest's pipeline and
+  // therefore UNAUTHENTICATED. The transport is built with `mount: false` and
+  // its handlers are invoked from here instead, which puts the endpoint behind
+  // the same `McpCombinedAuthGuard` as every per-tenant `/mcp/:serverId`.
+  //
+  // Declared before the ':serverId' routes: these have no path segment, so they
+  // only ever match the bare /mcp.
+
+  @Post()
+  async handleGlobalPost(@Req() req: Request, @Res() res: Response) {
+    await mcpHttpTransport.httpHandlers.handlePost(req, res);
+  }
+
+  @Get()
+  async handleGlobalGet(@Req() req: Request, @Res() res: Response) {
+    await mcpHttpTransport.httpHandlers.handleGet(req, res);
+  }
+
+  @Delete()
+  async handleGlobalDelete(@Req() req: Request, @Res() res: Response) {
+    await mcpHttpTransport.httpHandlers.handleDelete(req, res);
+  }
+
   // ─── Public, anonymous, static demo MCP server ──────────────────────────
+  //
   // A self-describing MCP endpoint at the EXACT path /mcp/demo. It exposes only
   // static "how to use AnythingMCP" tools and NEVER resolves a serverId, queries
   // the database, or touches connectors / tenant data — so it has nothing to

@@ -26,6 +26,7 @@ import cookieParser from 'cookie-parser';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { mcpStrategy } from './mcp-server/mcp-strategy';
 import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
 import { validateRequiredSecretsAtStartup } from './common/secrets.util';
 
@@ -140,6 +141,17 @@ async function bootstrap() {
   // restart). Without this, long-running tool invocations would be killed
   // mid-flight and the audit log entry never written.
   app.enableShutdownHooks();
+
+  // The MCP server is a microservice transport strategy in mcp-nest v2, not a
+  // module, so it has to be connected and started explicitly. `setHttpAdapter`
+  // gives it the same HTTP server Nest is about to listen on; without it the
+  // HTTP transports have nowhere to attach.
+  //
+  // Order matters: `startAllMicroservices()` must run BEFORE `listen()` so the
+  // MCP routes exist before the server accepts its first connection.
+  mcpStrategy.setHttpAdapter(app.getHttpAdapter());
+  app.connectMicroservice({ strategy: mcpStrategy });
+  await app.startAllMicroservices();
 
   const server = await app.listen(port);
   server.keepAliveTimeout = 65_000;

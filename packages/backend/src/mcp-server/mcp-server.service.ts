@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { z } from 'zod';
-import { McpRegistryService } from '@rekog/mcp-nest';
+import { McpStrategy, MCP_STRATEGY } from '@rekog/mcp-nest';
 import { PrismaService } from '../common/prisma.service';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
@@ -20,7 +20,7 @@ import {
 @Injectable()
 export class McpServerService implements OnModuleInit {
   private readonly logger = new Logger(McpServerService.name);
-  private mcpRegistry!: McpRegistryService;
+  private mcpRegistry!: McpStrategy;
   private readonly encryptionKey: string;
 
   constructor(
@@ -41,9 +41,12 @@ export class McpServerService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    // Resolve McpRegistryService from the global app context
-    // (it's exported by McpModule.forRoot() in AppModule)
-    this.mcpRegistry = this.moduleRef.get(McpRegistryService, {
+    // Resolve the MCP strategy from the global app context. In mcp-nest v2
+    // the strategy IS the registry: `McpRegistryService` no longer exists, and
+    // the strategy instance provided under MCP_STRATEGY owns tool
+    // registration. `registerTool` and `removeTool` kept the same shape, so
+    // only the lookup changed.
+    this.mcpRegistry = this.moduleRef.get<McpStrategy>(MCP_STRATEGY, {
       strict: false,
     });
 

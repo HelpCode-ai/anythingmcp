@@ -1,13 +1,11 @@
 import { McpClientEngine } from './mcp-client.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
-jest.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
+// Both classes now live in one package, so a single mock covers them.
+jest.mock('@modelcontextprotocol/client', () => ({
   Client: jest.fn(),
-}));
-jest.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   StreamableHTTPClientTransport: jest.fn(),
 }));
 jest.mock('../../common/ssrf.util', () => ({

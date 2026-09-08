@@ -3,12 +3,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { join } from 'path';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import {
-  McpModule,
-  McpTransportType,
-  McpAuthModule,
-  McpAuthJwtGuard,
-} from '@rekog/mcp-nest';
+import { MCP_STRATEGY } from '@rekog/mcp-nest';
+import { McpAuthModule } from '@rekog/mcp-nest-auth';
+import { mcpStrategy } from './mcp-server/mcp-strategy';
 import { AuthModule } from './auth/auth.module';
 import { ConnectorsModule } from './connectors/connectors.module';
 import { McpServerModule } from './mcp-server/mcp-server.module';
@@ -109,18 +106,6 @@ if (useOAuth) {
     // strict bucket would also throttle the MCP endpoints.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
 
-    // MCP Server (dynamic tools registered by McpServerModule)
-    McpModule.forRoot({
-      name: 'anythingmcp',
-      version: '0.1.0',
-      transport: McpTransportType.STREAMABLE_HTTP,
-      mcpEndpoint: '/mcp',
-      ...(useOAuth ? { guards: [McpAuthJwtGuard] } : {}),
-      streamableHttp: {
-        enableJsonResponse: true,
-      },
-    }),
-
     // OAuth2 module (conditionally loaded)
     ...conditionalImports,
 
@@ -146,6 +131,9 @@ if (useOAuth) {
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: EmailVerifiedGuard },
+    // Injected by McpServerService, which registers the tools defined in the
+    // database once the app is up.
+    { provide: MCP_STRATEGY, useValue: mcpStrategy },
     ...(useOAuth
       ? [{ provide: APP_INTERCEPTOR, useClass: OAuthUrlRewriteInterceptor }]
       : []),
@@ -196,6 +184,9 @@ export class AppModule implements NestModule {
       // No auth — only rate limiting
       consumer.apply(McpRateLimitMiddleware).forRoutes('mcp');
     }
-    // For 'oauth2' mode: McpAuthJwtGuard handles auth (applied by McpAuthModule)
+    // For 'oauth2' mode the bearer token is checked by McpCombinedAuthGuard on
+    // McpEndpointController, which now serves the global /mcp too. mcp-nest v2
+    // removed the `guards` option that used to apply McpAuthJwtGuard here, so
+    // relying on it would leave the endpoint open.
   }
 }
