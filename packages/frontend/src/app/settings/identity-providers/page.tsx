@@ -128,6 +128,7 @@ export default function IdentityProvidersPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -228,6 +229,23 @@ export default function IdentityProvidersPage() {
     }
   };
 
+  const handleCopyLink = async (p: IdentityProvider) => {
+    try {
+      await navigator.clipboard.writeText(signInUrl(p));
+      setCopiedId(p.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      // navigator.clipboard is undefined on a non-HTTPS origin, which is the
+      // normal case for a self-hosted deployment on a LAN address. Falling back
+      // to a toast keeps the link reachable instead of failing silently.
+      toast.show({
+        tone: 'error',
+        title: 'Could not copy',
+        description: signInUrl(p),
+      });
+    }
+  };
+
   const handleTest = async (p: IdentityProvider) => {
     if (!token) return;
     setTesting(p.id);
@@ -262,6 +280,12 @@ export default function IdentityProvidersPage() {
   const labelClass = 'block text-[12.5px] font-medium text-[var(--text-2)] mb-1';
   const helpClass = 'text-[11.5px] text-[var(--text-3)] mt-1 max-w-sm';
 
+  // Built from the browser's own origin rather than a configured base URL:
+  // self-hosted deployments have no reliable public URL to read, and getting it
+  // wrong hands the admin a link that silently sends members nowhere.
+  const signInUrl = (p: IdentityProvider) =>
+    `${typeof window === 'undefined' ? '' : window.location.origin}/sso/${p.initiateId}`;
+
   const spec = PROVIDER_TYPES[form.type];
   const expiringSoon = (p: IdentityProvider) => {
     if (!p.clientSecretExpiresAt) return false;
@@ -281,8 +305,8 @@ export default function IdentityProvidersPage() {
               <h3 className="text-base font-semibold text-[var(--text)]">Single sign-on</h3>
               <p className="text-[13px] text-[var(--text-2)] mt-1 max-w-2xl">
                 Let members sign in with your organization&apos;s identity provider instead of
-                a password. Sign-in itself is not enabled yet — this page configures the
-                providers that will be offered.
+                a password. Share the sign-in link below with them — it is the entry point
+                for this workspace.
               </p>
             </div>
             <Button size="sm" onClick={showForm ? () => setShowForm(false) : openCreate}>
@@ -471,6 +495,25 @@ export default function IdentityProvidersPage() {
                         Creates accounts on first sign-in
                       </p>
                     )}
+                    {/*
+                      The only way an admin can reach this link. Providers are
+                      deliberately NOT listed on the public sign-in page in
+                      cloud — that would let anyone enumerate which workspaces
+                      exist and which directory each belongs to — so without
+                      showing it here the configured provider is unreachable.
+                    */}
+                    <div className="flex items-center gap-2 mt-2">
+                      <code className="text-[11.5px] text-[var(--text-2)] bg-[var(--surface-2)] rounded px-1.5 py-0.5 truncate">
+                        {signInUrl(p)}
+                      </code>
+                      <button
+                        type="button"
+                        className="text-[11.5px] text-[var(--brand)] hover:underline shrink-0"
+                        onClick={() => handleCopyLink(p)}
+                      >
+                        {copiedId === p.id ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <Button

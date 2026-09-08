@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-password', '/accept-invite'];
+const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -13,6 +13,12 @@ export function proxy(request: NextRequest) {
     pathname.startsWith('/api') ||
     pathname.startsWith('/health') ||
     pathname.startsWith('/mcp') ||
+    // Sign-in entry point and OIDC callback. Both are rewritten to the backend
+    // in next.config, but this gate runs on the INCOMING pathname, before the
+    // rewrite — without these an unauthenticated sign-in would be bounced to
+    // /login, which is the page the user is trying to reach through.
+    pathname.startsWith('/sso') ||
+    pathname.startsWith('/auth') ||
     pathname.startsWith('/.well-known') ||
     pathname === '/authorize' ||
     pathname === '/token' ||

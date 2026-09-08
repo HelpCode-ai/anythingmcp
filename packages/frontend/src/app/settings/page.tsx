@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { users, server, ApiError } from '@/lib/api';
+import { users, server, sso, ApiError, type LinkableProvider } from '@/lib/api';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useToast } from '@/components/toast';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,10 @@ export default function SettingsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [blockingOrgs, setBlockingOrgs] = useState<{ id: string; name: string }[] | null>(null);
 
+  // Connected accounts
+  const [linkable, setLinkable] = useState<LinkableProvider[]>([]);
+  const [linkBusy, setLinkBusy] = useState<string | null>(null);
+
   // Load server info
   useEffect(() => {
     server.info().then((info) => {
@@ -47,6 +51,70 @@ export default function SettingsPage() {
       setServerUrl(info.serverUrl);
     }).catch(() => {});
   }, []);
+
+  const loadLinkable = () => {
+    if (!token) return;
+    // Silently empty when the workspace has no provider: this card should not
+    // announce a feature the workspace has not configured.
+    sso.myProviders(token).then(setLinkable).catch(() => setLinkable([]));
+  };
+
+  useEffect(() => {
+    loadLinkable();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // The callback lands back here with the outcome in the query string. Read it
+  // once and strip it, so a refresh does not replay the same toast.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linked = params.get('linked');
+    const linkError = params.get('linkError');
+    if (!linked && !linkError) return;
+
+    if (linkError) {
+      toast.show({ tone: 'error', title: 'Could not connect', description: linkError });
+    } else {
+      toast.show({ tone: 'success', title: 'Account connected' });
+      loadLinkable();
+    }
+    window.history.replaceState({}, '', window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleLink = async (p: LinkableProvider) => {
+    if (!token) return;
+    setLinkBusy(p.id);
+    try {
+      const { authorizationUrl } = await sso.startLink(p.id, '/settings', token);
+      // Top-level navigation, not fetch: the provider needs to render its own
+      // sign-in page to the user.
+      window.location.href = authorizationUrl;
+    } catch (err: any) {
+      toast.show({ tone: 'error', title: 'Could not connect', description: err.message });
+      setLinkBusy(null);
+    }
+  };
+
+  const handleUnlink = async (p: LinkableProvider) => {
+    if (!token) return;
+    if (
+      !confirm(
+        `Disconnect "${p.name}"? You will need your password to sign in afterwards.`,
+      )
+    )
+      return;
+    setLinkBusy(p.id);
+    try {
+      await sso.unlink(p.id, token);
+      toast.show({ tone: 'success', title: 'Account disconnected' });
+      loadLinkable();
+    } catch (err: any) {
+      toast.show({ tone: 'error', title: 'Could not disconnect', description: err.message });
+    } finally {
+      setLinkBusy(null);
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!token) return;
@@ -213,6 +281,49 @@ export default function SettingsPage() {
           </Button>
         </div>
       </Card>
+
+      {/* Connected accounts */}
+      {linkable.length > 0 && (
+        <Card className="p-[22px]">
+          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Connected accounts</h3>
+          <p className="text-sm text-[var(--text-2)] mb-4">
+            Connect your directory account to sign in without a password. Your
+            administrator cannot do this for you — the connection is only
+            trusted because you made it while signed in.
+          </p>
+          <div className="space-y-2 max-w-md">
+            {linkable.map((p) => (
+              <div
+                key={p.id}
+                className="rounded-[9px] border border-[var(--border)] p-3 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-[var(--text)]">{p.name}</div>
+                  <div className="text-[11.5px] text-[var(--text-3)] mt-0.5">
+                    {p.linked
+                      ? p.lastLoginAt
+                        ? `Connected · last used ${new Date(p.lastLoginAt).toLocaleDateString()}`
+                        : 'Connected'
+                      : 'Not connected'}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant={p.linked ? 'secondary' : 'primary'}
+                  disabled={linkBusy === p.id}
+                  onClick={() => (p.linked ? handleUnlink(p) : handleLink(p))}
+                >
+                  {linkBusy === p.id
+                    ? 'Working...'
+                    : p.linked
+                      ? 'Disconnect'
+                      : 'Connect'}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* MCP Auth */}
       <Card className="p-[22px]">

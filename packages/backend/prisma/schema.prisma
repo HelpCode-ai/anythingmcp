@@ -148,6 +148,7 @@ model User {
   mcpRole   Role?   @relation(fields: [mcpRoleId], references: [id], onDelete: SetNull)
 
   roleAssignments          UserRoleAssignment[]
+  identities               UserIdentity[]
   securityEventsAsActor    SecurityEvent[] @relation("SecurityEventActor")
   securityEventsAsTarget   SecurityEvent[] @relation("SecurityEventTarget")
 
@@ -746,7 +747,9 @@ model IdentityProvider {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  roleMappings IdentityProviderRoleMapping[]
+  roleMappings  IdentityProviderRoleMapping[]
+  identities    UserIdentity[]
+  loginAttempts SsoLoginAttempt[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -777,6 +780,91 @@ model IdentityProviderRoleMapping {
   @@unique([providerId, externalId])
   @@index([providerId])
   @@map("identity_provider_role_mappings")
+}
+
+/// Links a local user to an identity at an external provider.
+///
+/// SECURITY: the key is (provider, externalSubject) — NEVER the email. Entra's
+/// `mail` attribute is mutable, unverified and not unique, and Microsoft is
+/// explicit that it must not be used for authorization or as a primary
+/// identifier. Keying on it is the nOAuth vulnerability.
+model UserIdentity {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  providerId String           @map("provider_id")
+  provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  /// The provider's immutable subject. Entra: the `oid` claim.
+  externalSubject String  @map("external_subject")
+  /// Entra: the `tid` claim. Stored so a tenant change becomes detectable.
+  externalTid     String? @map("external_tid")
+
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([providerId, externalSubject])
+  /// One identity per provider per user. Without this a user could accumulate
+  /// several accounts at the same provider, and `DELETE /link/:providerId`
+  /// would have no single row to remove — deprovisioning would silently leave
+  /// one of them behind.
+  @@unique([userId, providerId])
+  @@index([userId])
+  @@map("user_identities")
+}
+
+/// Server-side state for one round trip to the identity provider.
+///
+/// Everything security-relevant lives here rather than in a cookie that has to
+/// survive the hop to the IdP and back: the CSRF `state`, the replay-guarding
+/// `nonce`, and the PKCE verifier. Consumed atomically exactly once.
+model SsoLoginAttempt {
+  id String @id @default(cuid())
+
+  /// Opaque, single-use. Echoed by the provider and matched on return.
+  state        String @unique
+  /// Compared against the id_token `nonce` claim to stop token replay.
+  nonce        String
+  /// PKCE (S256). Never leaves the server.
+  codeVerifier String @map("code_verifier")
+
+  providerId String           @map("provider_id")
+  provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  /// 'DASHBOARD', 'LINK' or 'MCP'. The MCP surface lands in PR 4.
+  surface String @default("DASHBOARD")
+
+  /// LINK only: the already-authenticated user this round trip will attach the
+  /// external identity to. Captured when the flow STARTS, from the JWT — never
+  /// from the callback, where an attacker controls what comes back. A null here
+  /// on a LINK attempt is a bug, and the callback refuses rather than guessing.
+  linkUserId String? @map("link_user_id")
+
+  /// Internal path to return to. Validated against an allowlist before use —
+  /// an unchecked value here is an open redirect.
+  returnTo String? @map("return_to")
+
+  /// PR 4: the pending mcp-nest cookie values, recorded so the callback can
+  /// ASSERT the browser is the same one that started the flow. Deliberately
+  /// not for restoring them — re-planting both would turn mcp-nest's only
+  /// binding check into `x === x` and create a session-fixation primitive.
+  oauthSessionId  String? @map("oauth_session_id")
+  oauthStateValue String? @map("oauth_state_value")
+
+  /// Set once authentication has succeeded: a one-time code the SPA exchanges
+  /// for a session. The JWT itself is never stored — it is minted at exchange
+  /// time from `resolvedUserId`, so no token sits at rest.
+  handoffCode    String? @unique @map("handoff_code")
+  resolvedUserId String? @map("resolved_user_id")
+
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([providerId])
+  @@index([expiresAt])
+  @@map("sso_login_attempts")
 }
 
 // ── Security Audit Log ──────────────────────────────────────────────────────

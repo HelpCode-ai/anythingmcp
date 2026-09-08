@@ -30,7 +30,27 @@ export class HealthController {
     const serverUrl = this.configService.get<string>('SERVER_URL') || '';
     const userCount = await this.usersService.count();
     const allowOpen = this.configService.get<string>('ALLOW_OPEN_REGISTRATION') === 'true';
+
+    // Sign-in buttons for the login page — SELF-HOST ONLY.
+    //
+    // This endpoint is unauthenticated. On a self-hosted instance there is
+    // effectively one organization, so listing its providers is the expected
+    // behaviour. In cloud it would be a workspace ENUMERATION oracle: anyone
+    // could read off every customer's provider names and entry links. There,
+    // users reach sign-in through the opaque /sso/<initiateId> link their
+    // admin distributes, which is exactly why that id is opaque.
+    const ssoProviders = this.deployment.isSelfHosted()
+      ? (
+          await this.prisma.identityProvider.findMany({
+            where: { isActive: true },
+            select: { name: true, type: true, initiateId: true },
+            orderBy: { createdAt: 'asc' },
+          })
+        ).map((p) => ({ name: p.name, type: p.type, startUrl: `/sso/${p.initiateId}` }))
+      : [];
+
     return {
+      ssoProviders,
       mcpAuthMode: authMode,
       serverUrl,
       mcpEndpoint: '/mcp',

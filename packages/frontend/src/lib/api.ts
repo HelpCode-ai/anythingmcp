@@ -655,6 +655,8 @@ export const server = {
       deploymentMode: string;
       hasUsers: boolean;
       registrationEnabled: boolean;
+      /** Empty in cloud: listing providers publicly would enumerate workspaces. */
+      ssoProviders: SsoProviderButton[];
       oauthEndpoints: { wellKnown: string; authorize: string; token: string; register: string } | null;
     }>('/health/server-info'),
 };
@@ -725,6 +727,51 @@ export interface IdentityProviderInput {
   roleSyncSource?: string;
   roleSyncFallback?: string;
 }
+
+export interface SsoProviderButton {
+  name: string;
+  type: string;
+  startUrl: string;
+}
+
+export interface LinkableProvider {
+  id: string;
+  name: string;
+  type: string;
+  linked: boolean;
+  linkedAt: string | null;
+  lastLoginAt: string | null;
+}
+
+export const sso = {
+  /** Trades the one-time code from the sign-in redirect for a session. */
+  exchange: (code: string) =>
+    request<{ accessToken: string; user: any; error?: string }>(
+      '/api/auth/sso/exchange',
+      { method: 'POST', body: { code } },
+    ),
+
+  /** Providers the signed-in user may connect, and whether they already have. */
+  myProviders: (token: string) =>
+    request<LinkableProvider[]>('/api/auth/sso/providers', { token }),
+
+  /**
+   * Begins a link. Returns the provider URL for the caller to navigate to —
+   * the browser has to arrive there as a top-level navigation, so this
+   * deliberately does not redirect.
+   */
+  startLink: (providerId: string, redirect: string | undefined, token: string) =>
+    request<{ authorizationUrl: string }>(
+      `/api/auth/sso/link/${providerId}`,
+      { method: 'POST', body: { redirect }, token },
+    ),
+
+  unlink: (providerId: string, token: string) =>
+    request<{ message: string }>(`/api/auth/sso/link/${providerId}`, {
+      method: 'DELETE',
+      token,
+    }),
+};
 
 export const identityProviders = {
   list: (token: string) =>

@@ -214,10 +214,12 @@ export class IdentityProvidersController {
         roleSyncEnabled: updated.roleSyncEnabled,
         isActive: updated.isActive,
       },
-      // NOT named `*secret*`: SecurityEventService.redact matches the KEY
-      // against /secret/i, so `secretRotated` would persist as the string
-      // "[REDACTED]" instead of a boolean — the signal would never arrive.
-      credentialRotated: Boolean(dto.clientSecret),
+      // The key must avoid EVERY word in SecurityEventService's redaction
+      // pattern, which matches the KEY, not the value. Both `secretRotated`
+      // and `credentialRotated` hit it ("secret" and "credential" are both
+      // listed) and persisted as the string "[REDACTED]" instead of a boolean,
+      // silently losing the record of whether an admin rotated the credential.
+      rotated: Boolean(dto.clientSecret),
     });
 
     if (dto.clientSecret) {
