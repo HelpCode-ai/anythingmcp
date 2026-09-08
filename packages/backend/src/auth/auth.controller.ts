@@ -33,7 +33,19 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import { LicenseService } from '../license/license.service';
 import { RolesService } from '../roles/roles.service';
+import { RecoveryCodesService } from './recovery-codes.service';
+import { SsoEnforcementService } from './sso-enforcement.service';
 import { Roles, RolesGuard } from './roles.guard';
+
+class RecoveryLoginDto {
+  @ApiProperty()
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ description: 'One of the codes issued at generation. Case and dashes are ignored.' })
+  @IsString()
+  code: string;
+}
 
 class LoginDto {
   @ApiProperty({ description: 'Email address.', example: 'user@example.com' })
@@ -161,6 +173,8 @@ export class AuthController {
     private readonly licenseService: LicenseService,
     private readonly securityEvents: SecurityEventService,
     private readonly rolesService: RolesService,
+    private readonly recoveryCodes: RecoveryCodesService,
+    private readonly ssoEnforcement: SsoEnforcementService,
   ) {}
 
   private getFrontendUrl(_req?: any): string {
@@ -205,6 +219,57 @@ export class AuthController {
     }
   }
 
+  @Post('login/recovery')
+  @HttpCode(HttpStatus.OK)
+  // Tighter than the password path: a recovery code is 50 bits and single-use,
+  // but it is also the credential that bypasses the workspace's SSO policy, so
+  // an attacker gets fewer attempts at it, not the same number.
+  @Throttle({ default: { limit: 3, ttl: 300_000 } })
+  @ApiOperation({
+    summary: 'Sign in with a recovery code when single sign-on is unreachable',
+  })
+  async loginWithRecoveryCode(@Req() req: any, @Body() dto: RecoveryLoginDto) {
+    const user = await this.usersService.findByEmail(dto.email);
+
+    // One message for every failure below — unknown address, wrong code, code
+    // already spent. Each distinction would confirm something to an attacker
+    // that they cannot otherwise learn.
+    const refuse = () =>
+      new UnauthorizedException('Invalid email or recovery code');
+
+    if (!user) throw refuse();
+
+    const ok = await this.recoveryCodes.consume(user.id, dto.code, {
+      organizationId: user.organizationId,
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
+    if (!ok) throw refuse();
+
+    const token = this.authService.generateToken({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      organizationId: user.organizationId,
+      mcpRoleId: user.mcpRoleId,
+    });
+
+    const { unused } = await this.recoveryCodes.status(user.id);
+
+    return {
+      accessToken: token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        organizationId: user.organizationId,
+        emailVerified: user.emailVerified,
+      },
+      recoveryCodesRemaining: unused,
+    };
+  }
+
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
@@ -220,6 +285,15 @@ export class AuthController {
     if (user.passwordLoginDisabled) {
       throw new UnauthorizedException(
         'Password sign-in is disabled for this account. Use your organization sign-in.',
+      );
+    }
+
+    // Organization-wide enforcement. Checked BEFORE bcrypt for the same reason
+    // as the per-account flag: comparing first would turn this into an oracle
+    // for whether a password is correct on an account that cannot use one.
+    if (await this.ssoEnforcement.isPasswordLoginBlocked(user.id)) {
+      throw new UnauthorizedException(
+        'This workspace requires single sign-on. Use your organization sign-in, or a recovery code if you cannot reach it.',
       );
     }
 
@@ -794,5 +868,32 @@ export class AuthController {
     });
 
     return { message: 'Password has been reset successfully' };
+  }
+
+  // ── Recovery codes ────────────────────────────────────────────────────────
+
+  @Get('recovery-codes')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'How many recovery codes the caller still holds' })
+  async recoveryCodeStatus(@Req() req: any) {
+    return this.recoveryCodes.status(req.user.sub);
+  }
+
+  @Post('recovery-codes')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Generate a fresh set of recovery codes. Returns them ONCE; any previous set stops working.',
+  })
+  async generateRecoveryCodes(@Req() req: any) {
+    const codes = await this.recoveryCodes.generate(req.user.sub, {
+      organizationId: req.user.organizationId,
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
+    return { codes };
   }
 }

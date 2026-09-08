@@ -159,6 +159,7 @@ model User {
   passwordResetTokens      PasswordResetToken[]
   mcpApiKeys               McpApiKey[]
   emailVerificationTokens  EmailVerificationToken[]
+  recoveryCodes            RecoveryCode[]
 
   @@index([organizationId])
   @@map("users")
@@ -680,6 +681,39 @@ enum RoleSyncFallback {
   DENY_ALL
   KEEP_EXISTING
   DEFAULT_ROLE
+}
+
+/// Single-use break-glass credential for a user.
+///
+/// Exists so that `IdentityProvider.enforceSso` can be switched on at all: an
+/// organization that turns off password sign-in and then loses its directory —
+/// an expired client secret, a tenant migration, a misconfigured claim — has no
+/// remaining way in. Recovery codes are that way in, and the API refuses to
+/// enable enforcement until the acting admin holds some.
+///
+/// Deliberately per-USER and not per-organization: a shared break-glass secret
+/// records that *someone* got in, which is the one thing an audit trail must
+/// never be vague about.
+model RecoveryCode {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// bcrypt. The plaintext is shown once at generation and never recoverable —
+  /// storing it reversibly would make this a password list.
+  codeHash String @map("code_hash")
+
+  /// Single use. Kept rather than deleted so the audit trail can still tie a
+  /// past sign-in to a specific code.
+  usedAt DateTime? @map("used_at")
+  /// Truncated fingerprint of the code, for support conversations ("which one
+  /// did you use?") without storing anything that could be replayed.
+  label  String
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("recovery_codes")
 }
 
 model IdentityProvider {

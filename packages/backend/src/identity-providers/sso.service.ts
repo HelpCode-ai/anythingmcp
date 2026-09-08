@@ -440,6 +440,14 @@ export class SsoService {
 
     const sync = await this.roleSync.syncOnLogin(provider, userId, claims, ctx);
 
+    // Recorded here rather than in the MCP branch as well, because this is the
+    // signal `enforceSso` is gated on: it must mean "a human completed this
+    // provider's flow in a browser", which is exactly the dashboard surface.
+    await this.prisma.identityProvider.update({
+      where: { id: provider.id },
+      data: { lastSuccessfulLoginAt: new Date() },
+    });
+
     const handoffCode = randomBytes(32).toString('base64url');
     await this.prisma.ssoLoginAttempt.update({
       where: { id: attempt.id },

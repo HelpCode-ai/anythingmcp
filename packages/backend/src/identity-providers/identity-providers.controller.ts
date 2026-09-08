@@ -41,6 +41,7 @@ import {
   SecurityEventService,
   SecurityEvents,
 } from '../audit/security-event.service';
+import { RecoveryCodesService } from '../auth/recovery-codes.service';
 
 // Derived from the Prisma enum rather than hand-kept: a new provider type is
 // then accepted automatically and cannot drift out of sync with the database.
@@ -163,6 +164,15 @@ class RoleMappingDto {
   mcpRoleIds?: string[];
 }
 
+class EnforceSsoDto {
+  @ApiProperty({
+    description:
+      'Turn password sign-in off for this workspace. Enabling requires a completed sign-in through this provider and unused recovery codes on the calling account.',
+  })
+  @IsBoolean()
+  enforce: boolean;
+}
+
 class ReplaceRoleMappingsDto {
   @ApiProperty({ type: [RoleMappingDto] })
   @IsArray()
@@ -189,6 +199,7 @@ export class IdentityProvidersController {
   constructor(
     private readonly service: IdentityProvidersService,
     private readonly securityEvents: SecurityEventService,
+    private readonly recoveryCodes: RecoveryCodesService,
   ) {}
 
   @Get()
@@ -338,6 +349,30 @@ export class IdentityProvidersController {
       after: (after ?? []).map(summariseMapping),
     });
     return after;
+  }
+
+  @Put(':id/enforce-sso')
+  @ApiOperation({
+    summary: 'Require single sign-on for this workspace (ADMIN)',
+  })
+  async setEnforceSso(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: EnforceSsoDto,
+  ) {
+    const hasRecoveryCodes = await this.recoveryCodes.hasUnused(req.user.sub);
+    const updated = await this.run(() =>
+      this.service.setEnforceSso(id, req.user.organizationId, dto.enforce, {
+        userId: req.user.sub,
+        hasRecoveryCodes,
+      }),
+    );
+    if (!updated) throw new NotFoundException('Identity provider not found');
+
+    await this.audit(req, SecurityEvents.SSO_ENFORCEMENT_CHANGED, id, {
+      enforce: dto.enforce,
+    });
+    return updated;
   }
 
   @Post(':id/test')

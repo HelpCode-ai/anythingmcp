@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/toast';
 import { RoleMappingsPanel } from './role-mappings';
+import { RecoveryCodesCard } from './recovery-codes';
 
 /**
  * Per-type configuration fields.
@@ -131,6 +132,7 @@ export default function IdentityProvidersPage() {
   const [testing, setTesting] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [mappingsFor, setMappingsFor] = useState<string | null>(null);
+  const [enforcing, setEnforcing] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -178,6 +180,34 @@ export default function IdentityProvidersPage() {
     });
     setEditingId(p.id);
     setShowForm(true);
+  };
+
+  const handleEnforceSso = async (p: IdentityProvider, enforce: boolean) => {
+    if (!token) return;
+    // Confirm only on the way IN. Turning enforcement off removes a lockout
+    // risk, and putting a dialog in front of that would be an obstacle in
+    // exactly the moment someone is trying to undo a mistake.
+    if (
+      enforce &&
+      !confirm(
+        'Require single sign-on for this workspace?\n\nPassword sign-in stops working for every member. Your recovery codes become the only way in if the identity provider becomes unreachable.',
+      )
+    ) {
+      return;
+    }
+    setEnforcing(p.id);
+    try {
+      await identityProviders.setEnforceSso(p.id, enforce, token);
+      toast.show({
+        tone: 'success',
+        title: enforce ? 'Single sign-on required' : 'Password sign-in re-enabled',
+      });
+      await loadData();
+    } catch (err: any) {
+      toast.show({ tone: 'error', title: 'Could not change enforcement', description: err.message });
+    } finally {
+      setEnforcing(null);
+    }
   };
 
   const handleSave = async () => {
@@ -547,6 +577,7 @@ export default function IdentityProvidersPage() {
                       <span className="text-sm font-medium text-[var(--text)]">{p.name}</span>
                       <Badge tone="neutral">{PROVIDER_TYPES[p.type]?.label ?? p.type}</Badge>
                       {!p.isActive && <Badge tone="warn">Inactive</Badge>}
+                      {p.enforceSso && <Badge tone="danger">SSO required</Badge>}
                       {expiringSoon(p) && <Badge tone="danger">Secret expiring</Badge>}
                     </div>
                     <p className="text-[12px] text-[var(--text-3)] mt-1 truncate">{p.issuer}</p>
@@ -597,13 +628,25 @@ export default function IdentityProvidersPage() {
                    role sync, and an always-open editor for a table they do not
                    use is the loudest thing on the page.
                  */}
-                 <button
-                   type="button"
-                   className="mt-2 text-[11.5px] text-[var(--brand)] hover:underline"
-                   onClick={() => setMappingsFor(mappingsFor === p.id ? null : p.id)}
-                 >
-                   {mappingsFor === p.id ? 'Hide role mappings' : 'Role mappings'}
-                 </button>
+                 <div className="mt-2 flex items-center gap-4 flex-wrap">
+                   <button
+                     type="button"
+                     className="text-[11.5px] text-[var(--brand)] hover:underline"
+                     onClick={() => setMappingsFor(mappingsFor === p.id ? null : p.id)}
+                   >
+                     {mappingsFor === p.id ? 'Hide role mappings' : 'Role mappings'}
+                   </button>
+                   <label className="flex items-center gap-2 text-[11.5px] text-[var(--text-2)]">
+                     <input
+                       type="checkbox"
+                       className="accent-[var(--brand)]"
+                       checked={p.enforceSso}
+                       disabled={enforcing === p.id}
+                       onChange={(e) => handleEnforceSso(p, e.target.checked)}
+                     />
+                     Require single sign-on
+                   </label>
+                 </div>
                  {mappingsFor === p.id && token && (
                    <RoleMappingsPanel provider={p} token={token} />
                  )}
@@ -611,6 +654,8 @@ export default function IdentityProvidersPage() {
               ))}
             </div>
           )}
+
+          {token && <RecoveryCodesCard token={token} />}
         </Card>
       )}
     </div>

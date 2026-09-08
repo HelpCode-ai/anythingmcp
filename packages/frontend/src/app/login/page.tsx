@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { auth, license, server, sso, type SsoProviderButton } from '@/lib/api';
+import { auth, license, server, sso, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { buildPricingUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/logo-icon';
@@ -40,6 +40,8 @@ const alertSuccess =
 function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [error, setError] = useState('');
@@ -153,6 +155,8 @@ function LoginForm() {
         const regResult = await auth.register(email, password, name, acceptTerms);
         result = regResult;
         needsLicenseSetup = !!regResult.isFirstUser;
+      } else if (recoveryMode) {
+        result = await recoveryApi.login(email, recoveryCode);
       } else {
         const loginResult = await auth.login(email, password);
         result = loginResult;
@@ -687,7 +691,7 @@ function LoginForm() {
             />
           </div>
 
-          <div>
+          <div className={recoveryMode ? 'hidden' : undefined}>
             <label htmlFor="auth-password" className="block text-sm font-medium mb-1 text-[var(--text)]">Password</label>
             <input
               id="auth-password"
@@ -698,7 +702,9 @@ function LoginForm() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Min. 8 characters"
               className={inputClass}
-              required
+              // A hidden field that is still `required` blocks submission with
+              // a validation bubble the user cannot see or reach.
+              required={!recoveryMode}
               minLength={8}
             />
             {isRegister && password.length > 0 && (
@@ -758,16 +764,60 @@ function LoginForm() {
             </>
           )}
 
+          {recoveryMode && (
+            <div>
+              <label htmlFor="auth-recovery-code" className="block text-sm font-medium mb-1 text-[var(--text)]">
+                Recovery code
+              </label>
+              <input
+                id="auth-recovery-code"
+                name="recovery-code"
+                type="text"
+                autoComplete="one-time-code"
+                spellCheck={false}
+                value={recoveryCode}
+                onChange={(e) => setRecoveryCode(e.target.value)}
+                placeholder="XXXXX-XXXXX"
+                className={`${inputClass} tracking-widest uppercase`}
+                required
+              />
+              <p className="text-xs text-[var(--text-2)] mt-1.5">
+                One of the codes you saved when setting up single sign-on. Each works once.
+              </p>
+            </div>
+          )}
+
           <Button type="submit" disabled={loading} className="w-full" size="lg">
-            {loading ? 'Loading...' : isRegister ? 'Create Account' : 'Sign In'}
+            {loading
+              ? 'Loading...'
+              : isRegister
+                ? 'Create Account'
+                : recoveryMode
+                  ? 'Sign in with recovery code'
+                  : 'Sign In'}
           </Button>
         </form>
 
         {!isRegister && (
-          <p className="text-center text-sm mt-3">
-            <Link href="/forgot-password" className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline">
-              Forgot password?
-            </Link>
+          <p className="text-center text-sm mt-3 flex items-center justify-center gap-3">
+            {!recoveryMode && (
+              <Link href="/forgot-password" className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline">
+                Forgot password?
+              </Link>
+            )}
+            {/*
+              Always reachable, not just once a password has been refused: the
+              situation this exists for is one where the identity provider is
+              down, and an admin should not have to guess a wrong password
+              first to be offered the way in.
+            */}
+            <button
+              type="button"
+              onClick={() => { setRecoveryMode(!recoveryMode); setError(''); }}
+              className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
+            >
+              {recoveryMode ? 'Back to password sign-in' : 'Use a recovery code'}
+            </button>
           </p>
         )}
 

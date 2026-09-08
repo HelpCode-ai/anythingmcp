@@ -789,6 +789,31 @@ export const sso = {
     }),
 };
 
+export interface RecoveryCodeStatus {
+  total: number;
+  unused: number;
+  generatedAt: string | null;
+}
+
+export const recoveryCodes = {
+  status: (token: string) =>
+    request<RecoveryCodeStatus>('/api/auth/recovery-codes', { token }),
+
+  /** Returns the codes in plaintext ONCE. Any previous set stops working. */
+  generate: (token: string) =>
+    request<{ codes: string[] }>('/api/auth/recovery-codes', {
+      method: 'POST',
+      token,
+    }),
+
+  /** Break-glass sign-in for when the identity provider is unreachable. */
+  login: (email: string, code: string) =>
+    request<{ accessToken: string; user: any; recoveryCodesRemaining: number }>(
+      '/api/auth/login/recovery',
+      { method: 'POST', body: { email, code } },
+    ),
+};
+
 export const identityProviders = {
   list: (token: string) =>
     request<IdentityProvider[]>('/api/identity-providers', { token }),
@@ -803,6 +828,17 @@ export const identityProviders = {
       `/api/identity-providers/${id}/test`,
       { method: 'POST', token },
     ),
+
+  /**
+   * Enabling requires a completed sign-in through this provider and unused
+   * recovery codes on the calling account; the API rejects it otherwise.
+   */
+  setEnforceSso: (id: string, enforce: boolean, token: string) =>
+    request<IdentityProvider>(`/api/identity-providers/${id}/enforce-sso`, {
+      method: 'PUT',
+      body: { enforce },
+      token,
+    }),
 
   roleMappings: (id: string, token: string) =>
     request<RoleMapping[]>(`/api/identity-providers/${id}/role-mappings`, { token }),
