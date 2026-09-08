@@ -8,6 +8,7 @@ import {
   type RoleMapping,
 } from '@/lib/api';
 import { AppSelect } from '@/components/ui/select';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/toast';
 
@@ -76,20 +77,6 @@ export function RoleMappingsPanel({
 
   const patch = (i: number, next: Partial<RoleMapping>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...next } : r)));
-
-  const toggleRole = (i: number, roleId: string) =>
-    setRows((rs) =>
-      rs.map((r, j) =>
-        j === i
-          ? {
-              ...r,
-              mcpRoleIds: r.mcpRoleIds.includes(roleId)
-                ? r.mcpRoleIds.filter((x) => x !== roleId)
-                : [...r.mcpRoleIds, roleId],
-            }
-          : r,
-      ),
-    );
 
   const handleSave = async () => {
     // Blank rows are the natural end state of "add row then change your mind";
@@ -210,35 +197,14 @@ export function RoleMappingsPanel({
                 />
               </div>
               <div className="md:col-span-2">
-                <label className={labelClass}>
-                  MCP roles ({row.mcpRoleIds.length} selected)
-                </label>
-                {available.length === 0 ? (
-                  <p className="text-[11.5px] text-[var(--text-3)]">
-                    No MCP roles exist yet. Create one under Roles first.
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {available.map((r) => {
-                      const on = row.mcpRoleIds.includes(r.id);
-                      return (
-                        <button
-                          key={r.id}
-                          type="button"
-                          onClick={() => toggleRole(i, r.id)}
-                          aria-pressed={on}
-                          className={`text-[11.5px] rounded-full px-2.5 py-1 border transition-colors ${
-                            on
-                              ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
-                              : 'bg-[var(--surface)] text-[var(--text-2)] border-[var(--border)] hover:border-[var(--brand)]'
-                          }`}
-                        >
-                          {r.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                <label className={labelClass}>MCP roles</label>
+                <MultiSelect
+                  value={row.mcpRoleIds}
+                  onValueChange={(ids) => patch(i, { mcpRoleIds: ids })}
+                  options={available.map((r) => ({ value: r.id, label: r.name }))}
+                  placeholder="No roles — grants nothing"
+                  emptyMessage="No MCP roles exist yet — create one under Roles"
+                />
               </div>
             </div>
 
