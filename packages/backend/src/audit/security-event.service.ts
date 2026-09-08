@@ -31,6 +31,11 @@ export const SecurityEvents = {
   ROLE_CHANGED: 'ROLE_CHANGED',
   LAST_ADMIN_PROTECTION_TRIGGERED: 'LAST_ADMIN_PROTECTION_TRIGGERED',
   MEMBERSHIP_REMOVED_BY_SYNC: 'MEMBERSHIP_REMOVED_BY_SYNC',
+  /** A sign-in rewrote the user's roles from the directory's claims. */
+  ROLE_SYNC_APPLIED: 'ROLE_SYNC_APPLIED',
+  /** Claims were incomplete, so roles were deliberately left untouched. */
+  ROLE_SYNC_SKIPPED: 'ROLE_SYNC_SKIPPED',
+  ROLE_SYNC_FAILED: 'ROLE_SYNC_FAILED',
   /** Every token issued before now was invalidated for this user. */
   SESSIONS_REVOKED: 'SESSIONS_REVOKED',
   API_KEY_DEACTIVATED: 'API_KEY_DEACTIVATED',
@@ -70,6 +75,13 @@ const REDACTED_KEY_PATTERN =
   /secret|password|passwd|token|assertion|credential|code_verifier|code_challenge|authorization|cookie|private_key|api[-_]?key/i;
 
 const REDACTED = '[REDACTED]';
+/**
+ * Distinct from REDACTED on purpose. Reusing it for the depth cut-off made
+ * every over-nested value read as "a secret was removed here", which sends an
+ * investigation looking for a credential that was never there — a role id list
+ * one level too deep looked identical to a stripped password.
+ */
+const TRUNCATED_DEPTH = '[TRUNCATED:depth]';
 const MAX_DEPTH = 4;
 const MAX_STRING = 512;
 
@@ -121,7 +133,7 @@ export class SecurityEventService {
   private redact(value: unknown, depth = 0): unknown {
     if (value === null || value === undefined) return null;
 
-    if (depth >= MAX_DEPTH) return REDACTED;
+    if (depth >= MAX_DEPTH) return TRUNCATED_DEPTH;
 
     if (typeof value === 'string') {
       return value.length > MAX_STRING

@@ -13,6 +13,8 @@ interface SidebarItem {
   icon: React.ComponentType<{ size?: number }>;
   exact?: boolean;
   adminOnly?: boolean;
+  /** Hidden in cloud. The backend answers 404 there regardless. */
+  selfHostedOnly?: boolean;
 }
 
 interface SidebarSection {
@@ -35,7 +37,10 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
       { href: '/settings/organization', label: 'General', description: 'Workspace and new orgs', icon: BuildingIcon },
       { href: '/settings/users', label: 'Users', description: 'Members and invitations', icon: UsersIcon, adminOnly: true },
       { href: '/settings/roles', label: 'Roles', description: 'MCP tool access control', icon: ShieldIcon, adminOnly: true },
-      { href: '/settings/identity-providers', label: 'Single sign-on', description: 'Microsoft, Google, Okta', icon: FingerprintIcon, adminOnly: true },
+      // Self-hosted only: SSO assumes the workspace owns its own directory,
+      // tenant and operator. The backend refuses these routes in cloud, so
+      // showing the entry there would lead an admin to a page that 404s.
+      { href: '/settings/identity-providers', label: 'Single sign-on', description: 'Microsoft, Google, Okta', icon: FingerprintIcon, adminOnly: true, selfHostedOnly: true },
       { href: '/settings/license', label: 'License', description: 'Plan, features', icon: KeyIcon, adminOnly: true },
       { href: '/settings/admin', label: 'Administration', description: 'SMTP, footer links', icon: WrenchIcon, adminOnly: true },
     ],
@@ -44,8 +49,9 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, deploymentMode } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+  const isCloud = deploymentMode === 'cloud';
 
   return (
     <AppShell title="Settings">
@@ -64,6 +70,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 )}
                 {section.items.map((item) => {
                   if (item.adminOnly && !isAdmin) return null;
+                  if (item.selfHostedOnly && isCloud) return null;
                   const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href);
                   return (
                     <Link

@@ -3,6 +3,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
+import { RecoveryCodesService } from './recovery-codes.service';
+import { SsoEnforcementService } from './sso-enforcement.service';
 import { AuthController } from './auth.controller';
 import { LoginController } from './login.controller';
 import { JwtStrategy } from './jwt.strategy';
@@ -47,6 +49,8 @@ import { IdentityProvidersModule } from '../identity-providers/identity-provider
   controllers: [AuthController, LoginController],
   providers: [
     AuthService,
+    RecoveryCodesService,
+    SsoEnforcementService,
     JwtStrategy,
     McpAuthGuard,
     McpAuthMiddleware,
@@ -57,6 +61,8 @@ import { IdentityProvidersModule } from '../identity-providers/identity-provider
   ],
   exports: [
     AuthService,
+    RecoveryCodesService,
+    SsoEnforcementService,
     McpAuthGuard,
     McpAuthMiddleware,
     McpRateLimitGuard,

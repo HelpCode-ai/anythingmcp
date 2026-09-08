@@ -27,9 +27,13 @@ import {
   IsIn,
   IsObject,
   IsISO8601,
+  IsArray,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { IdentityProviderType } from '../generated/prisma/client';
 import { Roles, RolesGuard } from '../auth/roles.guard';
+import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
 import {
   IdentityProvidersService,
   IdentityProviderError,
@@ -38,6 +42,7 @@ import {
   SecurityEventService,
   SecurityEvents,
 } from '../audit/security-event.service';
+import { RecoveryCodesService } from '../auth/recovery-codes.service';
 
 // Derived from the Prisma enum rather than hand-kept: a new provider type is
 // then accepted automatically and cannot drift out of sync with the database.
@@ -118,6 +123,63 @@ class UpsertProviderDto {
   @IsOptional()
   @IsIn(['DENY_ALL', 'KEEP_EXISTING', 'DEFAULT_ROLE'])
   roleSyncFallback?: 'DENY_ALL' | 'KEEP_EXISTING' | 'DEFAULT_ROLE';
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'MCP roles granted when the fallback is DEFAULT_ROLE and nothing matched. Empty makes DEFAULT_ROLE behave like DENY_ALL.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  roleSyncDefaultRoleIds?: string[];
+}
+
+class RoleMappingDto {
+  @ApiProperty({
+    description:
+      "The Entra group's OBJECT ID or the app role's `value` — never its display name. Microsoft does not make group names unique, so matching on one would let anyone able to create a group mint one named like a privileged mapping.",
+  })
+  @IsString()
+  externalId: string;
+
+  @ApiPropertyOptional({
+    description: 'Human-readable name, shown in the admin table. Carries no authorization meaning.',
+  })
+  @IsOptional()
+  @IsString()
+  label?: string;
+
+  @ApiPropertyOptional({
+    enum: ['VIEWER', 'EDITOR', 'ADMIN'],
+    description: 'Workspace role granted. Omit to leave it untouched. Across several matching groups the MOST privileged wins.',
+  })
+  @IsOptional()
+  @IsIn(['VIEWER', 'EDITOR', 'ADMIN'])
+  userRole?: 'VIEWER' | 'EDITOR' | 'ADMIN';
+
+  @ApiPropertyOptional({ type: [String], description: 'MCP roles granted. A user in several mapped groups receives the UNION.' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  mcpRoleIds?: string[];
+}
+
+class EnforceSsoDto {
+  @ApiProperty({
+    description:
+      'Turn password sign-in off for this workspace. Enabling requires a completed sign-in through this provider and unused recovery codes on the calling account.',
+  })
+  @IsBoolean()
+  enforce: boolean;
+}
+
+class ReplaceRoleMappingsDto {
+  @ApiProperty({ type: [RoleMappingDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RoleMappingDto)
+  mappings: RoleMappingDto[];
 }
 
 /**
@@ -131,13 +193,14 @@ class UpsertProviderDto {
  */
 @ApiTags('Identity Providers')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(SelfHostedOnlyGuard, AuthGuard('jwt'), RolesGuard)
 @Roles('ADMIN')
 @Controller('api/identity-providers')
 export class IdentityProvidersController {
   constructor(
     private readonly service: IdentityProvidersService,
     private readonly securityEvents: SecurityEventService,
+    private readonly recoveryCodes: RecoveryCodesService,
   ) {}
 
   @Get()
@@ -250,6 +313,69 @@ export class IdentityProvidersController {
     return { message: 'Identity provider deleted' };
   }
 
+  @Get(':id/role-mappings')
+  @ApiOperation({ summary: 'List this provider\'s group/app-role mappings (ADMIN)' })
+  async listRoleMappings(@Req() req: any, @Param('id') id: string) {
+    const mappings = await this.service.listRoleMappings(
+      id,
+      req.user.organizationId,
+    );
+    if (mappings === null) throw new NotFoundException('Identity provider not found');
+    return mappings;
+  }
+
+  @Put(':id/role-mappings')
+  @ApiOperation({
+    summary: 'Replace this provider\'s group/app-role mappings (ADMIN)',
+  })
+  async replaceRoleMappings(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: ReplaceRoleMappingsDto,
+  ) {
+    const before = await this.service.listRoleMappings(
+      id,
+      req.user.organizationId,
+    );
+    if (before === null) throw new NotFoundException('Identity provider not found');
+
+    const after = await this.run(() =>
+      this.service.replaceRoleMappings(id, req.user.organizationId, dto.mappings),
+    );
+
+    // Before AND after: this table decides who gets which tools, so an event
+    // saying only what the rules became cannot answer "what did this change?"
+    await this.audit(req, SecurityEvents.IDP_ROLE_MAPPING_CHANGED, id, {
+      before: before.map(summariseMapping),
+      after: (after ?? []).map(summariseMapping),
+    });
+    return after;
+  }
+
+  @Put(':id/enforce-sso')
+  @ApiOperation({
+    summary: 'Require single sign-on for this workspace (ADMIN)',
+  })
+  async setEnforceSso(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: EnforceSsoDto,
+  ) {
+    const hasRecoveryCodes = await this.recoveryCodes.hasUnused(req.user.sub);
+    const updated = await this.run(() =>
+      this.service.setEnforceSso(id, req.user.organizationId, dto.enforce, {
+        userId: req.user.sub,
+        hasRecoveryCodes,
+      }),
+    );
+    if (!updated) throw new NotFoundException('Identity provider not found');
+
+    await this.audit(req, SecurityEvents.SSO_ENFORCEMENT_CHANGED, id, {
+      enforce: dto.enforce,
+    });
+    return updated;
+  }
+
   @Post(':id/test')
   @ApiOperation({
     summary:
@@ -296,4 +422,23 @@ export class IdentityProvidersController {
       userAgent: req.headers?.['user-agent'],
     });
   }
+}
+
+/** Audit projection: the fields that decide access, without the row id. */
+function summariseMapping(m: {
+  externalId: string;
+  label: string | null;
+  userRole: string | null;
+  mcpRoleIds: string[];
+}) {
+  return {
+    externalId: m.externalId,
+    label: m.label,
+    userRole: m.userRole,
+    // Joined, not an array: `metadata → after[] → {} → mcpRoleIds[] → string`
+    // is five levels, one past the redactor's depth bound, and the ids came
+    // out as a truncation marker — the audit recorded that mappings changed
+    // but not what they changed to, which is the only part worth having.
+    mcpRoleIds: [...m.mcpRoleIds].sort().join(','),
+  };
 }

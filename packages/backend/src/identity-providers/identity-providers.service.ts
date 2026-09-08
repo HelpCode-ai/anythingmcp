@@ -40,6 +40,8 @@ export interface UpsertProviderInput {
   roleSyncEnabled?: boolean;
   roleSyncSource?: RoleSyncSource;
   roleSyncFallback?: RoleSyncFallback;
+  roleSyncDefaultRoleIds?: string[];
+  enforceSso?: boolean;
 }
 
 /** Shape returned to the API. Never carries the client secret. */
@@ -57,6 +59,7 @@ const PUBLIC_SELECT = {
   roleSyncEnabled: true,
   roleSyncSource: true,
   roleSyncFallback: true,
+  roleSyncDefaultRoleIds: true,
   enforceSso: true,
   lastSuccessfulLoginAt: true,
   config: true,
@@ -150,6 +153,7 @@ export class IdentityProvidersService {
           roleSyncEnabled: input.roleSyncEnabled ?? false,
           roleSyncSource: input.roleSyncSource ?? 'GROUPS',
           roleSyncFallback: input.roleSyncFallback ?? 'DENY_ALL',
+          roleSyncDefaultRoleIds: input.roleSyncDefaultRoleIds ?? [],
           clientSecretExpiresAt: input.clientSecretExpiresAt
             ? this.parseExpiry(input.clientSecretExpiresAt)
             : null,
@@ -218,6 +222,7 @@ export class IdentityProvidersService {
         roleSyncEnabled: input.roleSyncEnabled,
         roleSyncSource: input.roleSyncSource,
         roleSyncFallback: input.roleSyncFallback,
+        roleSyncDefaultRoleIds: input.roleSyncDefaultRoleIds,
         // `null` clears it; omitting the key keeps the stored value. Without
         // the null branch a stale expiry could never be removed and the
         // renewal reminder would keep reporting a date that no longer applies
@@ -428,5 +433,165 @@ export class IdentityProvidersService {
     }
 
     return { issuer, config };
+  }
+
+  // ── Role mappings ─────────────────────────────────────────────────────────
+
+  /**
+   * The provider's group/app-role mappings, ordered by label so the admin
+   * table is stable across reloads.
+   */
+  async listRoleMappings(providerId: string, organizationId: string) {
+    const provider = await this.prisma.identityProvider.findFirst({
+      where: { id: providerId, organizationId },
+      select: { id: true },
+    });
+    if (!provider) return null;
+    return this.prisma.identityProviderRoleMapping.findMany({
+      where: { providerId },
+      select: {
+        id: true,
+        externalId: true,
+        label: true,
+        userRole: true,
+        mcpRoleIds: true,
+      },
+      orderBy: [{ label: 'asc' }, { externalId: 'asc' }],
+    });
+  }
+
+  /**
+   * Replaces the whole mapping set in one transaction.
+   *
+   * Whole-set rather than per-row CRUD on purpose: a half-applied edit to an
+   * authorization table is a state nobody can reason about, and the audit
+   * event for "these are now the rules" is far easier to read during an
+   * investigation than a stream of individual adds and removes.
+   */
+  async replaceRoleMappings(
+    providerId: string,
+    organizationId: string,
+    mappings: {
+      externalId: string;
+      label?: string | null;
+      userRole?: UserRole | null;
+      mcpRoleIds?: string[];
+    }[],
+  ) {
+    const provider = await this.prisma.identityProvider.findFirst({
+      where: { id: providerId, organizationId },
+      select: { id: true },
+    });
+    if (!provider) return null;
+
+    const seen = new Set<string>();
+    for (const m of mappings) {
+      const id = m.externalId?.trim();
+      if (!id) {
+        throw new IdentityProviderError('Every mapping needs a group or app role id');
+      }
+      // @@unique([providerId, externalId]) would reject this anyway, but as a
+      // P2002 mid-transaction rather than a message naming the duplicate.
+      if (seen.has(id)) {
+        throw new IdentityProviderError(`Duplicate mapping for "${id}"`);
+      }
+      seen.add(id);
+    }
+
+    // Roles are re-checked against the workspace here rather than only at
+    // sync time, so an admin gets a 400 while editing instead of a mapping
+    // that silently grants nothing months later.
+    const referenced = [...new Set(mappings.flatMap((m) => m.mcpRoleIds ?? []))];
+    if (referenced.length > 0) {
+      const visible = await this.prisma.role.count({
+        where: {
+          id: { in: referenced },
+          OR: [{ organizationId }, { isSystem: true }],
+        },
+      });
+      if (visible !== referenced.length) {
+        throw new IdentityProviderError(
+          'One or more MCP roles do not exist in this workspace',
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.identityProviderRoleMapping.deleteMany({ where: { providerId } });
+      if (mappings.length > 0) {
+        await tx.identityProviderRoleMapping.createMany({
+          data: mappings.map((m) => ({
+            providerId,
+            externalId: m.externalId.trim(),
+            label: m.label?.trim() || null,
+            userRole: m.userRole ?? null,
+            mcpRoleIds: m.mcpRoleIds ?? [],
+          })),
+        });
+      }
+    });
+
+    return this.listRoleMappings(providerId, organizationId);
+  }
+
+  // ── SSO enforcement ───────────────────────────────────────────────────────
+
+  /**
+   * Turns password sign-in off (or back on) for a workspace.
+   *
+   * Separate from `update()` on purpose. This is the one setting that can lock
+   * every human out of a workspace, so it does not travel in the same payload
+   * as a display-name change — and enabling it has preconditions that a general
+   * update path would have to special-case anyway.
+   *
+   * Two preconditions, both about having a way back in:
+   *
+   *  - the provider must have completed a real dashboard sign-in, so the
+   *    configuration is known to work rather than merely believed to;
+   *  - the admin flipping the switch must hold unused recovery codes, so a
+   *    directory that breaks tomorrow is an inconvenience and not an outage.
+   *
+   * Disabling is ungated: removing a lockout risk never needs permission.
+   */
+  async setEnforceSso(
+    providerId: string,
+    organizationId: string,
+    enforce: boolean,
+    actor: { userId: string; hasRecoveryCodes: boolean },
+  ) {
+    const provider = await this.prisma.identityProvider.findFirst({
+      where: { id: providerId, organizationId },
+      select: {
+        id: true,
+        isActive: true,
+        enforceSso: true,
+        lastSuccessfulLoginAt: true,
+      },
+    });
+    if (!provider) return null;
+
+    if (enforce) {
+      if (!provider.isActive) {
+        throw new IdentityProviderError(
+          'Activate this provider before requiring single sign-on — an inactive provider cannot be signed in through.',
+        );
+      }
+      if (!provider.lastSuccessfulLoginAt) {
+        throw new IdentityProviderError(
+          'Sign in through this provider at least once before requiring it. Until that succeeds there is no evidence the configuration works.',
+        );
+      }
+      if (!actor.hasRecoveryCodes) {
+        throw new IdentityProviderError(
+          'Generate recovery codes for your account first. Without them, a directory outage would leave this workspace with no way in.',
+        );
+      }
+    }
+
+    return this.prisma.identityProvider.update({
+      where: { id: providerId },
+      data: { enforceSso: enforce },
+      select: PUBLIC_SELECT,
+    });
   }
 }
