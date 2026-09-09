@@ -34,4 +34,11 @@ export const mcpStrategy = new McpStrategy({
   name: 'anythingmcp',
   version: '0.1.0',
   transports: [mcpHttpTransport],
+  // `tools/list` is filtered per caller — by organization and by MCP role —
+  // so its result must never be cached and reused for a different principal.
+  // 'private' is already the default, but it is pinned here because the
+  // consequence of changing it is invisible: a 'public' hint lets a client or
+  // proxy serve one tenant's tool inventory to another, silently undoing the
+  // scoping in McpEndpointController.attachVisibleTools.
+  cacheHints: { 'tools/list': { cacheScope: 'private', ttlMs: 0 } },
 });
