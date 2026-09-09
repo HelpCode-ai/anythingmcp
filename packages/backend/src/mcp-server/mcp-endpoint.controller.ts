@@ -166,7 +166,14 @@ export class McpEndpointController {
     // explicitly enabled anonymous mode. Both are operator credentials on a
     // single-tenant self-hosted box, so the pre-existing "everything" answer
     // is the correct one and narrowing it here would break those deployments.
-    if (!user?.sub || !user.organizationId) return null;
+    if (!user?.sub) return null;
+
+    // An identified user with NO organization is a deactivated one whose
+    // active org was cleared — not an operator. They see nothing.
+    if (!user.organizationId) {
+      user.roles = Array.isArray(user.roles) ? user.roles : [];
+      return new Set<string>();
+    }
 
     const orgTools = this.toolRegistry
       .getAllTools()

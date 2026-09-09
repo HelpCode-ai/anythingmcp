@@ -58,6 +58,12 @@ model OrganizationMember {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   role           UserRole     @default(EDITOR)
   joinedAt       DateTime     @default(now()) @map("joined_at")
+  /// null = active. Set by `UserLifecycleService.deactivateInOrganization`
+  /// (an admin's Deactivate, or `active: false` pushed by SCIM). The row is
+  /// KEPT rather than deleted so that role and joinedAt survive a
+  /// reactivation, and so the member list can say "deactivated" instead of
+  /// making a leaver indistinguishable from someone who was never here.
+  deactivatedAt  DateTime?    @map("deactivated_at")
 
   @@unique([userId, organizationId])
   @@index([userId])

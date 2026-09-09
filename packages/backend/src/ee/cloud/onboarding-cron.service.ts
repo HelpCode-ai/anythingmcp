@@ -213,7 +213,7 @@ export class OnboardingCronService {
 
       // Recipients: org admins (authoritative membership).
       const admins = await this.prisma.organizationMember.findMany({
-        where: { organizationId, role: 'ADMIN' },
+        where: { organizationId, role: 'ADMIN', deactivatedAt: null },
         select: { user: { select: { email: true, name: true } } },
       });
       if (admins.length === 0) {

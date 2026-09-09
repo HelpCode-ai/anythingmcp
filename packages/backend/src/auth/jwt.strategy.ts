@@ -31,37 +31,63 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Token is not valid for this API');
     }
 
+    // One query: the user row plus their ACTIVE memberships. The membership
+    // is the authoritative role and the only proof the user may still act in
+    // the organization; `users.role` / `users.organizationId` are caches.
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        organizationId: true,
+        sessionsValidFrom: true,
+        memberships: {
+          where: { deactivatedAt: null },
+          orderBy: { joinedAt: 'asc' },
+          select: { organizationId: true, role: true },
+        },
+      },
     });
     if (!user) {
       throw new UnauthorizedException('User no longer exists');
     }
 
     // Revocation: refuse tokens minted before the user's cutover instant (set
-    // on password change, demotion, deprovisioning or an SSO config change).
-    // Free to check — the user row is already loaded.
+    // on password change, demotion and deactivation). Free to check — the
+    // user row is already loaded.
     if (isTokenRevoked(payload, user.sessionsValidFrom)) {
       throw new UnauthorizedException('Session has been revoked');
     }
 
-    // Self-heal a NULL active org by snapping to the oldest remaining membership.
-    // This happens when an organization the user was active in was deleted while
-    // they were a member of others — schema's onDelete:SetNull leaves them dangling.
-    if (user.organizationId === null) {
-      const fallback = await this.prisma.organizationMember.findFirst({
-        where: { userId: user.id },
-        orderBy: { joinedAt: 'asc' },
-      });
-      if (fallback) {
+    const active = user.organizationId
+      ? user.memberships.find((m) => m.organizationId === user.organizationId)
+      : undefined;
+
+    if (active) {
+      // Repair cache drift in place. Rare: only after a role sync wrote the
+      // membership, or a pre-fix role change wrote the cache alone.
+      if (user.role !== active.role) {
         await this.prisma.user.update({
           where: { id: user.id },
-          data: { organizationId: fallback.organizationId, role: fallback.role },
+          data: { role: active.role },
         });
-        return { sub: user.id, email: user.email, role: fallback.role, organizationId: fallback.organizationId };
       }
+      return { sub: user.id, email: user.email, role: active.role, organizationId: active.organizationId };
     }
 
-    return { sub: user.id, email: user.email, role: user.role, organizationId: user.organizationId };
+    // The cached org is null, deleted, or the membership in it was deactivated:
+    // snap to the oldest remaining ACTIVE membership. Nothing left means the
+    // user may not act anywhere — fail closed rather than serve a workspace
+    // they were removed from.
+    const fallback = user.memberships[0];
+    if (!fallback) {
+      throw new UnauthorizedException('No active workspace');
+    }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { organizationId: fallback.organizationId, role: fallback.role },
+    });
+    return { sub: user.id, email: user.email, role: fallback.role, organizationId: fallback.organizationId };
   }
 }

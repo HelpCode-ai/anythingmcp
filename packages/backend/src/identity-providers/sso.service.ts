@@ -729,7 +729,7 @@ export class SsoService {
   /** Fails closed: a non-member is treated exactly like an unknown provider. */
   private async assertMember(userId: string, organizationId: string) {
     const member = await this.prisma.organizationMember.findFirst({
-      where: { userId, organizationId },
+      where: { userId, organizationId, deactivatedAt: null },
       select: { id: true },
     });
     if (!member) throw new SsoError('not_a_member');

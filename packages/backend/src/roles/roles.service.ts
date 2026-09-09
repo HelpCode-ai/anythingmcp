@@ -208,19 +208,23 @@ export class RolesService {
     // The authoritative per-org role lives in organization_members, so resolve
     // against the organization actually being acted on.
     const orgId = organizationId ?? user.organizationId ?? null;
-    let effectiveRole: string = user.role;
-    if (orgId) {
-      const membership = await this.prisma.organizationMember.findUnique({
-        where: {
-          userId_organizationId: { userId, organizationId: orgId },
-        },
-        select: { role: true },
-      });
-      // Not a member of this org — fail closed. The endpoint-level tenant check
-      // denies this case first; this is defense in depth, not the only gate.
-      if (!membership) return [];
-      effectiveRole = membership.role;
-    }
+    // An identified principal with no organization context gets no tools. The
+    // old fallback to the `users.role` cache is exactly what a deactivated
+    // user is left with once their active org is cleared, and it read ADMIN
+    // as "everything".
+    if (!orgId) return [];
+
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: {
+        userId_organizationId: { userId, organizationId: orgId },
+      },
+      select: { role: true, deactivatedAt: true },
+    });
+    // Not a member, or deactivated — fail closed. The endpoint-level tenant
+    // check denies the first case first; this is defense in depth, not the
+    // only gate. Deactivation is caught HERE for every MCP path at once.
+    if (!membership || membership.deactivatedAt) return [];
+    const effectiveRole: string = membership.role;
 
     // ADMIN of THIS organization always has full access
     if (effectiveRole === 'ADMIN') return null;

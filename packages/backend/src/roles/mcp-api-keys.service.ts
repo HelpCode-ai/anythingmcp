@@ -73,6 +73,17 @@ export class McpApiKeysService {
 
     if (!record || !record.isActive) return null;
 
+    // Defence in depth: a key is bound to one organization, and it must not
+    // authenticate a user who has been deactivated there — even if the key row
+    // itself somehow escaped deactivation.
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: {
+        userId_organizationId: { userId: record.userId, organizationId: record.organizationId },
+      },
+      select: { deactivatedAt: true },
+    });
+    if (!membership || membership.deactivatedAt) return null;
+
     // Update last used timestamp
     await this.prisma.mcpApiKey.update({
       where: { id: record.id },
