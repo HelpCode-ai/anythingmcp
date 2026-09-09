@@ -21,7 +21,7 @@ import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { SelfHostedOnlyGuard } from '../../common/self-hosted-only.guard';
 import { ScimAuthGuard, ScimProvider } from './scim-auth.guard';
-import { SCIM_CONTENT_TYPE, ScimError, ScimExceptionFilter } from './scim.errors';
+import { ScimError, ScimExceptionFilter } from './scim.errors';
 import { parseFilter, parsePagination } from './scim.parser';
 import { resourceTypes, schemas, serviceProviderConfig } from './scim.schemas';
 import { ScimCtx, ScimUsersService } from './scim-users.service';
@@ -154,8 +154,10 @@ export class ScimController {
   private send(res: Response, body: unknown, status = HttpStatus.OK) {
     // `res.json`, not `send(JSON.stringify(...))`: Express keeps a
     // Content-Type that is already set, so the SCIM media type survives, and
-    // the JSON encoder is what makes user-supplied strings safe to echo.
-    res.setHeader('Content-Type', SCIM_CONTENT_TYPE);
+    // the JSON encoder is what makes user-supplied strings safe to echo. The
+    // media type is a literal on purpose — CodeQL's XSS model only recognises
+    // a non-HTML response when it can read the string at the call site.
+    res.setHeader('Content-Type', 'application/scim+json');
     return res.status(status).json(body);
   }
 }
