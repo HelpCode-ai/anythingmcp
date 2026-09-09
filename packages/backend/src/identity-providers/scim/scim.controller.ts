@@ -152,7 +152,10 @@ export class ScimController {
   }
 
   private send(res: Response, body: unknown, status = HttpStatus.OK) {
+    // `res.json`, not `send(JSON.stringify(...))`: Express keeps a
+    // Content-Type that is already set, so the SCIM media type survives, and
+    // the JSON encoder is what makes user-supplied strings safe to echo.
     res.setHeader('Content-Type', SCIM_CONTENT_TYPE);
-    return res.status(status).send(JSON.stringify(body));
+    return res.status(status).json(body);
   }
 }

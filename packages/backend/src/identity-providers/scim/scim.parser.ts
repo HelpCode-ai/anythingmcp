@@ -32,11 +32,25 @@ const FILTER_ATTRS: Record<string, ScimFilter['attr']> = {
  */
 export function parseFilter(raw: string | undefined): ScimFilter | null {
   if (raw === undefined || raw === null || raw.trim() === '') return null;
-  const m = raw.trim().match(/^([A-Za-z.\[\]" =]+?)\s+eq\s+"((?:[^"\\]|\\.)*)"$/i);
-  if (!m) throw new ScimError(400, `Unsupported filter: ${raw}`, 'invalidFilter');
-  const attr = FILTER_ATTRS[m[1].trim().toLowerCase()];
-  if (!attr) throw new ScimError(400, `Unsupported filter attribute: ${m[1]}`, 'invalidFilter');
-  return { attr, value: m[2].replace(/\\"/g, '"') };
+  const text = raw.trim();
+  // Bounded and scanned with `lastIndexOf`, not matched with a regex: a
+  // pattern like `([A-Za-z =]+?)\s+eq` backtracks polynomially on a string of
+  // spaces, and this input arrives on an unauthenticated-until-proven route.
+  if (text.length > 512) throw new ScimError(400, 'Filter too long', 'invalidFilter');
+  const idx = text.toLowerCase().lastIndexOf(' eq ');
+  if (idx <= 0) throw new ScimError(400, `Unsupported filter: ${text}`, 'invalidFilter');
+  const attrRaw = text.slice(0, idx).trim();
+  const valueRaw = text.slice(idx + 4).trim();
+  if (valueRaw.length < 2 || !valueRaw.startsWith('"') || !valueRaw.endsWith('"')) {
+    throw new ScimError(400, `Unsupported filter: ${text}`, 'invalidFilter');
+  }
+  const inner = valueRaw.slice(1, -1);
+  // An unescaped quote inside the value means this was not a single
+  // `attr eq "value"` expression (e.g. `a eq "x" and b eq "y"`).
+  if (/(^|[^\\])"/.test(inner)) throw new ScimError(400, `Unsupported filter: ${text}`, 'invalidFilter');
+  const attr = FILTER_ATTRS[attrRaw.toLowerCase()];
+  if (!attr) throw new ScimError(400, `Unsupported filter attribute: ${attrRaw}`, 'invalidFilter');
+  return { attr, value: inner.replace(/\\"/g, '"') };
 }
 
 export function parsePagination(q: Record<string, string | undefined>) {
