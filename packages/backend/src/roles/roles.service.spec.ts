@@ -206,16 +206,24 @@ describe('RolesService', () => {
   });
 
   describe('getAllowedToolIds', () => {
-    it('should return null for ADMIN users (unrestricted)', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue({ role: 'ADMIN', mcpRoleId: null });
-      const result = await service.getAllowedToolIds('user-1');
-      expect(result).toBeNull();
+    it('returns null (unrestricted) for an ADMIN of the organization', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ role: 'ADMIN', organizationId: 'org-1' });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'ADMIN', deactivatedAt: null });
+      expect(await service.getAllowedToolIds('user-1')).toBeNull();
     });
 
-    it('should return null when user has no mcpRoleId (backward compat)', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue({ role: 'USER', mcpRoleId: null });
-      const result = await service.getAllowedToolIds('user-1');
-      expect(result).toBeNull();
+    // The old `users.role` fallback is exactly what a deactivated user is left
+    // with once their active org is cleared — and it read ADMIN as everything.
+    it('returns [] for an identified principal with no organization', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ role: 'ADMIN', organizationId: null });
+      expect(await service.getAllowedToolIds('user-1')).toEqual([]);
+      expect(mockPrisma.organizationMember.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('returns [] for a DEACTIVATED membership, even an admin one', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ role: 'ADMIN', organizationId: 'org-1' });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'ADMIN', deactivatedAt: new Date() });
+      expect(await service.getAllowedToolIds('user-1', 'org-1')).toEqual([]);
     });
 
     it('returns the UNION of every assigned role, deduplicated', async () => {
@@ -224,7 +232,7 @@ describe('RolesService', () => {
         role: 'EDITOR',
         organizationId: 'org-1',
       });
-      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR' });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: null });
       mockPrisma.userRoleAssignment.findMany.mockResolvedValue([
         { roleId: 'sales' },
         { roleId: 'support' },
@@ -250,7 +258,7 @@ describe('RolesService', () => {
         role: 'EDITOR',
         organizationId: 'org-1',
       });
-      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR' });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: null });
       mockPrisma.userRoleAssignment.findMany.mockResolvedValue([
         { roleId: 'empty' },
         { roleId: 'sales' },
@@ -266,7 +274,7 @@ describe('RolesService', () => {
         role: 'EDITOR',
         organizationId: 'org-1',
       });
-      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR' });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: null });
       mockPrisma.userRoleAssignment.findMany.mockResolvedValue([{ roleId: 'sys' }]);
       mockPrisma.toolRoleAccess.findMany.mockResolvedValue([{ toolId: 't9' }]);
 
@@ -308,7 +316,7 @@ describe('RolesService', () => {
             organizationId: 'org-corporate',
           },
         },
-        select: { role: true },
+        select: { role: true, deactivatedAt: true },
       });
       // Restricted to the role's whitelist — NOT null/unrestricted.
       expect(result).toEqual(['t1']);
@@ -337,14 +345,12 @@ describe('RolesService', () => {
       expect(await service.getAllowedToolIds('user-1', 'org-other')).toEqual([]);
     });
 
-    it('falls back to the cached role when no org can be resolved', async () => {
-      // Self-host / instance-level path: no org context anywhere.
-      mockPrisma.user.findUnique.mockResolvedValue({
-        role: 'ADMIN',
-        organizationId: null,
-      });
-
-      expect(await service.getAllowedToolIds('user-1')).toBeNull();
+    it('fails closed when no org can be resolved (the cache fallback is gone)', async () => {
+      // Previously the `users.role` cache decided here, and ADMIN meant
+      // everything. A deactivated user whose active org was cleared lands
+      // exactly in this state, so it must yield nothing.
+      mockPrisma.user.findUnique.mockResolvedValue({ role: 'ADMIN', organizationId: null });
+      expect(await service.getAllowedToolIds('user-1')).toEqual([]);
       expect(mockPrisma.organizationMember.findUnique).not.toHaveBeenCalled();
     });
 

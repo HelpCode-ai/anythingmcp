@@ -1,12 +1,20 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { User, UserRole } from '../generated/prisma/client';
+import { OrganizationsService } from '../organizations/organizations.service';
+import { UserLifecycleService, LifecycleContext } from './user-lifecycle.service';
+import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly organizations: OrganizationsService,
+    private readonly lifecycle: UserLifecycleService,
+    private readonly securityEvents: SecurityEventService,
+  ) {}
 
   async findByEmail(email: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { email } });
@@ -30,21 +38,46 @@ export class UsersService {
     return this.prisma.user.count();
   }
 
-  async findAll(organizationId?: string) {
-    return this.prisma.user.findMany({
-      where: organizationId ? { organizationId } : undefined,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        organizationId: true,
-        mcpRoleId: true,
-        mcpRole: { select: { id: true, name: true } },
-        createdAt: true,
-        updatedAt: true,
+  /**
+   * Members of an organization, from `organization_members`.
+   *
+   * Previously read `users.organization_id`, which is only the ACTIVE-org
+   * cache: a person who belongs to several workspaces was invisible to the
+   * admins of every workspace but the one they last switched to. `role` is
+   * the membership role — the one authorization actually uses.
+   */
+  async findAll(organizationId: string) {
+    const rows = await this.prisma.organizationMember.findMany({
+      where: { organizationId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            mcpRoleId: true,
+            mcpRole: { select: { id: true, name: true } },
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
       },
+      orderBy: { joinedAt: 'asc' },
     });
+    return rows.map((m) => ({
+      id: m.user.id,
+      email: m.user.email,
+      name: m.user.name,
+      role: m.role,
+      organizationId,
+      mcpRoleId: m.user.mcpRoleId,
+      mcpRole: m.user.mcpRole,
+      createdAt: m.user.createdAt,
+      updatedAt: m.user.updatedAt,
+      joinedAt: m.joinedAt,
+      deactivatedAt: m.deactivatedAt,
+      active: m.deactivatedAt === null,
+    }));
   }
 
   async update(userId: string, data: Partial<User>): Promise<User> {
@@ -127,13 +160,61 @@ export class UsersService {
     await this.prisma.user.delete({ where: { id: userId } });
   }
 
-  async deleteInOrg(userId: string, organizationId: string): Promise<boolean> {
-    const target = await this.prisma.user.findFirst({
-      where: { id: userId, organizationId },
+  /**
+   * Removes a user from an organization, as that organization's admin.
+   *
+   * Keyed on the membership, not on the `users.organization_id` cache, and
+   * scoped to what this admin actually owns: if the user also belongs to
+   * other workspaces, only THIS membership goes (plus its keys and roles) and
+   * the account survives. Deleting the global user row from here let the admin
+   * of one workspace destroy someone's access to every other one.
+   *
+   * Returns false when the user is not a member (the controller's 404).
+   * Throws LastAdminConflictException for the only active admin.
+   */
+  async deleteInOrg(
+    userId: string,
+    organizationId: string,
+    ctx: LifecycleContext,
+  ): Promise<boolean> {
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId, organizationId } },
       select: { id: true },
     });
-    if (!target) return false;
-    await this.prisma.user.delete({ where: { id: userId } });
+    if (!membership) return false;
+
+    await this.organizations.assertNotLastAdmin(organizationId, userId);
+
+    const otherMemberships = await this.prisma.organizationMember.count({
+      where: { userId, organizationId: { not: organizationId } },
+    });
+
+    if (otherMemberships === 0) {
+      // Sole workspace: the account has nowhere else to live. Cascade cleans
+      // memberships, roles, keys and identities.
+      await this.prisma.user.delete({ where: { id: userId } });
+      return true;
+    }
+
+    // Cut access first (sessions, keys, cache repoint), then remove the rows.
+    await this.lifecycle.deactivateInOrganization(userId, organizationId, ctx);
+    await this.prisma.$transaction([
+      this.prisma.userRoleAssignment.deleteMany({ where: { userId, organizationId } }),
+      this.prisma.mcpApiKey.deleteMany({ where: { userId, organizationId } }),
+      this.prisma.organizationMember.delete({
+        where: { userId_organizationId: { userId, organizationId } },
+      }),
+    ]);
+    await this.securityEvents.log({
+      event: SecurityEvents.MEMBERSHIP_REMOVED,
+      actorType: ctx.actor.type,
+      actorUserId: ctx.actor.userId ?? null,
+      organizationId,
+      targetUserId: userId,
+      metadata: { reason: ctx.reason, remainingMemberships: otherMemberships },
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
     return true;
   }
 
@@ -142,7 +223,7 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
 
     const adminMemberships = await this.prisma.organizationMember.findMany({
-      where: { userId, role: 'ADMIN' },
+      where: { userId, role: 'ADMIN', deactivatedAt: null },
       include: {
         organization: {
           select: {
@@ -164,7 +245,7 @@ export class UsersService {
         continue;
       }
       const otherAdmins = await this.prisma.organizationMember.count({
-        where: { organizationId: m.organizationId, role: 'ADMIN', userId: { not: userId } },
+        where: { organizationId: m.organizationId, role: 'ADMIN', deactivatedAt: null, userId: { not: userId } },
       });
       if (otherAdmins === 0) {
         blocking.push({ id: m.organization.id, name: m.organization.name });

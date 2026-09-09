@@ -31,6 +31,11 @@ export const SecurityEvents = {
   ROLE_CHANGED: 'ROLE_CHANGED',
   LAST_ADMIN_PROTECTION_TRIGGERED: 'LAST_ADMIN_PROTECTION_TRIGGERED',
   MEMBERSHIP_REMOVED_BY_SYNC: 'MEMBERSHIP_REMOVED_BY_SYNC',
+  /** An admin or a directory push removed this member's access to one workspace. */
+  USER_DEACTIVATED: 'USER_DEACTIVATED',
+  USER_REACTIVATED: 'USER_REACTIVATED',
+  /** An admin removed a multi-workspace user from ONE workspace (account kept). */
+  MEMBERSHIP_REMOVED: 'MEMBERSHIP_REMOVED',
   /** A sign-in rewrote the user's roles from the directory's claims. */
   ROLE_SYNC_APPLIED: 'ROLE_SYNC_APPLIED',
   /** Claims were incomplete, so roles were deliberately left untouched. */

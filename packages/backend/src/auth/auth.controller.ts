@@ -570,7 +570,14 @@ export class AuthController {
     if (existing) {
       const membership = await this.organizationsService.getMembership(existing.id, req.user.organizationId);
       if (membership) {
-        throw new ConflictException('This user is already a member of your organization');
+        // A deactivated member is still a member: inviting them again must
+        // not become a back door that re-creates access. Reactivation is an
+        // explicit action under Users.
+        throw new ConflictException(
+          membership.deactivatedAt
+            ? 'This user is deactivated in your organization. Reactivate them from Users instead of inviting them again.'
+            : 'This user is already a member of your organization',
+        );
       }
       // User exists but not in this org — allow invitation for multi-org membership
     }
@@ -697,7 +704,13 @@ export class AuthController {
       // Existing user — add to the new organization (multi-org)
       const alreadyMember = await this.organizationsService.getMembership(existing.id, invite.organizationId);
       if (alreadyMember) {
-        throw new ConflictException('You are already a member of this organization');
+        // Includes deactivated memberships: accepting an invite must never
+        // silently reactivate someone an admin or the directory removed.
+        throw new ConflictException(
+          alreadyMember.deactivatedAt
+            ? 'Your access to this organization was deactivated. Ask an administrator to reactivate it.'
+            : 'You are already a member of this organization',
+        );
       }
       await this.organizationsService.addMember(existing.id, invite.organizationId, invite.role);
       // Switch their active org to the newly joined one

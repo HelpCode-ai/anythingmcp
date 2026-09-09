@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Patch,
   Delete,
@@ -8,7 +9,11 @@ import {
   Param,
   Req,
   UseGuards,
+  HttpCode,
+  HttpStatus,
   UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -17,6 +22,8 @@ import { UserRole } from '../generated/prisma/client';
 import { UsersService } from './users.service';
 import { AuthService } from '../auth/auth.service';
 import { Roles, RolesGuard } from '../auth/roles.guard';
+import { OrganizationsService } from '../organizations/organizations.service';
+import { UserLifecycleService, LifecycleContext } from './user-lifecycle.service';
 
 class UpdateProfileDto {
   @ApiPropertyOptional({ description: 'Display name.' })
@@ -94,6 +101,8 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly authService: AuthService,
+    private readonly organizations: OrganizationsService,
+    private readonly lifecycle: UserLifecycleService,
   ) {}
 
   @Get('me')
@@ -238,29 +247,112 @@ export class UsersController {
     @Body() dto: UpdateUserRoleDto,
   ) {
     if (id === req.user.sub) {
-      return { error: 'Cannot change your own role' };
+      throw new BadRequestException('Cannot change your own role');
     }
 
-    const updated = await this.usersService.updateInOrg(
+    // Writes the MEMBERSHIP role (what authorization reads), refreshes the
+    // cache, and revokes sessions on a demotion. The previous implementation
+    // wrote only `users.role`, so a demoted admin kept unrestricted MCP
+    // tools.
+    const result = await this.organizations.updateMemberRole(
       id,
       req.user.organizationId,
-      { role: dto.role },
+      dto.role,
+      this.actionContext(req),
     );
-    if (!updated) return { error: 'User not found' };
-    return { message: `User role updated to ${dto.role}` };
+    if (!result) throw new NotFoundException('User not found');
+    return {
+      message: `User role updated to ${dto.role}`,
+      sessionsRevoked: result.sessionsRevoked,
+    };
+  }
+
+  @Post(':id/deactivate')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary:
+      'Deactivate a member (ADMIN only): ends their sessions, revokes their MCP keys and removes their access to this workspace. Reversible.',
+  })
+  async deactivateUser(@Req() req: any, @Param('id') id: string) {
+    if (id === req.user.sub) {
+      throw new BadRequestException('Cannot deactivate your own account');
+    }
+    const result = await this.lifecycle.deactivateInOrganization(
+      id,
+      req.user.organizationId,
+      { reason: 'admin', ...this.lifecycleContext(req) },
+    );
+    switch (result.status) {
+      case 'not_a_member':
+        throw new NotFoundException('User not found');
+      case 'already_inactive':
+        return { message: 'User is already deactivated' };
+      case 'last_admin_retained':
+        // Unreachable for reason 'admin' (the service throws instead), kept
+        // so the switch is exhaustive if that policy ever changes.
+        return { message: 'Sessions and keys revoked; the last administrator was kept active' };
+      default:
+        return {
+          message: 'User deactivated',
+          keysDeactivated: result.keysDeactivated,
+        };
+    }
+  }
+
+  @Post(':id/reactivate')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary:
+      'Reactivate a member (ADMIN only). Restores the membership only — revoked MCP keys stay revoked.',
+  })
+  async reactivateUser(@Req() req: any, @Param('id') id: string) {
+    const result = await this.lifecycle.reactivateInOrganization(
+      id,
+      req.user.organizationId,
+      { reason: 'admin', ...this.lifecycleContext(req) },
+    );
+    if (result.status === 'not_a_member') throw new NotFoundException('User not found');
+    if (result.status === 'already_active') return { message: 'User is already active' };
+    return { message: 'User reactivated' };
   }
 
   @Delete(':id')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Delete a user (ADMIN only)' })
+  @ApiOperation({
+    summary:
+      'Remove a user from this workspace (ADMIN only). Deletes the account only when this was their sole workspace.',
+  })
   async deleteUser(@Req() req: any, @Param('id') id: string) {
     if (id === req.user.sub) {
-      return { error: 'Cannot delete your own account' };
+      throw new BadRequestException('Cannot delete your own account');
     }
 
-    const ok = await this.usersService.deleteInOrg(id, req.user.organizationId);
-    if (!ok) return { error: 'User not found' };
-    return { message: 'User deleted' };
+    const ok = await this.usersService.deleteInOrg(id, req.user.organizationId, {
+      reason: 'admin',
+      ...this.lifecycleContext(req),
+    });
+    if (!ok) throw new NotFoundException('User not found');
+    return { message: 'User removed' };
+  }
+
+  private actionContext(req: any) {
+    return {
+      actorUserId: req.user.sub as string,
+      ip: req.ip as string | undefined,
+      userAgent: req.headers?.['user-agent'] as string | undefined,
+    };
+  }
+
+  private lifecycleContext(req: any): Omit<LifecycleContext, 'reason'> {
+    return {
+      actor: { type: 'USER', userId: req.user.sub },
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    };
   }
 }

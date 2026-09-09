@@ -138,6 +138,12 @@ export const users = {
     request(`/api/users/${id}/role`, { method: 'PUT', body: { role }, token }),
   delete: (id: string, token: string) =>
     request(`/api/users/${id}`, { method: 'DELETE', token }),
+  /** Ends sessions, revokes MCP keys and removes access to this workspace. Reversible. */
+  deactivate: (id: string, token: string) =>
+    request<{ message: string; keysDeactivated?: number }>(`/api/users/${id}/deactivate`, { method: 'POST', token }),
+  /** Restores the membership only — revoked keys stay revoked. */
+  reactivate: (id: string, token: string) =>
+    request<{ message: string }>(`/api/users/${id}/reactivate`, { method: 'POST', token }),
   deleteSelf: (data: { password: string; confirm: 'DELETE' }, token: string) =>
     request<{ message: string }>('/api/users/me', {
       method: 'DELETE',

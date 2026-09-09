@@ -53,7 +53,7 @@ export class McpServersService {
   ): Promise<boolean> {
     if (!userId || !organizationId) return false;
     const count = await this.prisma.organizationMember.count({
-      where: { userId, organizationId },
+      where: { userId, organizationId, deactivatedAt: null },
     });
     return count > 0;
   }

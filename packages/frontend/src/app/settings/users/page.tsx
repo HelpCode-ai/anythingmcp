@@ -67,8 +67,40 @@ export default function SettingsUsersPage() {
     }
   };
 
+  const handleDeactivate = async (userId: string, email: string) => {
+    if (
+      !token ||
+      !confirm(
+        `Deactivate ${email}?\n\nTheir sessions end now, their MCP keys stop working and they lose access to this workspace. You can reactivate them later.`,
+      )
+    )
+      return;
+    try {
+      await users.deactivate(userId, token);
+      setUserList((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, active: false, deactivatedAt: new Date().toISOString() } : u)),
+      );
+      setMsg('User deactivated');
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const handleReactivate = async (userId: string) => {
+    if (!token) return;
+    try {
+      await users.reactivate(userId, token);
+      setUserList((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, active: true, deactivatedAt: null } : u)),
+      );
+      setMsg('User reactivated. Revoked MCP keys stay revoked — they can create a new one.');
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    }
+  };
+
   const handleDelete = async (userId: string, email: string) => {
-    if (!token || !confirm(`Delete user ${email}? This cannot be undone.`)) return;
+    if (!token || !confirm(`Remove ${email} from this workspace? If this is their only workspace the account is deleted. This cannot be undone.`)) return;
     try {
       await users.delete(userId, token);
       setUserList((prev) => prev.filter((u) => u.id !== userId));
@@ -225,7 +257,7 @@ export default function SettingsUsersPage() {
       {loading ? (
         <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
       ) : (
-        <Card className="overflow-hidden">
+        <Card className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-[var(--surface-2)]">
               <tr className="text-[var(--text-2)]">
@@ -249,7 +281,11 @@ export default function SettingsUsersPage() {
                   </td>
                   <td className="px-4 py-3 text-[var(--text)]">{u.name || '—'}</td>
                   <td className="px-4 py-3">
-                    <StatusPill tone="success" dot="var(--ok)">Active</StatusPill>
+                    {u.deactivatedAt ? (
+                      <StatusPill tone="danger" dot="var(--danger, #dc2626)">Deactivated</StatusPill>
+                    ) : (
+                      <StatusPill tone="success" dot="var(--ok)">Active</StatusPill>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {u.id === currentUser?.id ? (
@@ -257,6 +293,7 @@ export default function SettingsUsersPage() {
                     ) : (
                       <AppSelect
                         value={u.role}
+                        disabled={Boolean(u.deactivatedAt)}
                         onValueChange={(v) => handleRoleChange(u.id, v)}
                         className="h-8 rounded-[9px] border border-[var(--border)] px-2 text-xs bg-[var(--surface)] text-[var(--text)]"
                         options={ROLES.map((r) => ({ value: r, label: r }))}
@@ -275,11 +312,22 @@ export default function SettingsUsersPage() {
                   <td className="px-4 py-3 text-[var(--text-3)]">
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
                     {u.id !== currentUser?.id && (
-                      <Button variant="danger" size="sm" onClick={() => handleDelete(u.id, u.email)}>
-                        Delete
-                      </Button>
+                      <div className="inline-flex gap-2">
+                        {u.deactivatedAt ? (
+                          <Button variant="secondary" size="sm" onClick={() => handleReactivate(u.id)}>
+                            Reactivate
+                          </Button>
+                        ) : (
+                          <Button variant="secondary" size="sm" onClick={() => handleDeactivate(u.id, u.email)}>
+                            Deactivate
+                          </Button>
+                        )}
+                        <Button variant="danger" size="sm" onClick={() => handleDelete(u.id, u.email)}>
+                          Delete
+                        </Button>
+                      </div>
                     )}
                   </td>
                 </tr>
