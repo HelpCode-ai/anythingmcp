@@ -709,6 +709,9 @@ export interface IdentityProvider {
   roleSyncSource: 'APP_ROLES' | 'GROUPS';
   roleSyncFallback: 'DENY_ALL' | 'KEEP_EXISTING' | 'DEFAULT_ROLE';
   roleSyncDefaultRoleIds: string[];
+  scimEnabled: boolean;
+  scimTokenIssuedAt: string | null;
+  scimLastRequestAt: string | null;
   enforceSso: boolean;
   lastSuccessfulLoginAt: string | null;
   config: Record<string, string>;
@@ -734,6 +737,18 @@ export interface IdentityProviderInput {
   roleSyncSource?: string;
   roleSyncFallback?: string;
   roleSyncDefaultRoleIds?: string[];
+}
+
+export interface ScimStatus {
+  enabled: boolean;
+  /** False for provider types we have no SCIM client for. */
+  supported: boolean;
+  issuedAt: string | null;
+  lastRequestAt: string | null;
+  tenantUrl: string;
+  userCount: number;
+  /** Members with no identity at this provider: Entra will 409 on them. */
+  unlinkedMemberCount: number;
 }
 
 /**
@@ -845,6 +860,23 @@ export const identityProviders = {
       body: { enforce },
       token,
     }),
+
+  scimStatus: (id: string, token: string) =>
+    request<ScimStatus>(`/api/identity-providers/${id}/scim`, { token }),
+  /** First enable returns `bearerToken` once; later calls do not. */
+  setScim: (id: string, enabled: boolean, token: string) =>
+    request<ScimStatus & { bearerToken?: string }>(`/api/identity-providers/${id}/scim`, {
+      method: 'PUT',
+      body: { enabled },
+      token,
+    }),
+  rotateScimToken: (id: string, token: string) =>
+    request<ScimStatus & { bearerToken: string }>(`/api/identity-providers/${id}/scim/rotate`, {
+      method: 'POST',
+      token,
+    }),
+  disableScim: (id: string, token: string) =>
+    request<{ message: string }>(`/api/identity-providers/${id}/scim`, { method: 'DELETE', token }),
 
   roleMappings: (id: string, token: string) =>
     request<RoleMapping[]>(`/api/identity-providers/${id}/role-mappings`, { token }),

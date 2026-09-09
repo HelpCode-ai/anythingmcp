@@ -174,6 +174,12 @@ class EnforceSsoDto {
   enforce: boolean;
 }
 
+class ScimSettingsDto {
+  @ApiProperty({ description: 'Turn SCIM provisioning on or off. Enabling for the first time returns the bearer token ONCE.' })
+  @IsBoolean()
+  enabled: boolean;
+}
+
 class ReplaceRoleMappingsDto {
   @ApiProperty({ type: [RoleMappingDto] })
   @IsArray()
@@ -374,6 +380,59 @@ export class IdentityProvidersController {
       enforce: dto.enforce,
     });
     return updated;
+  }
+
+  @Get(':id/scim')
+  @ApiOperation({ summary: 'SCIM provisioning status for this provider (ADMIN)' })
+  async scimStatus(@Req() req: any, @Param('id') id: string) {
+    const status = await this.service.getScimStatus(id, req.user.organizationId, this.publicBaseUrl(req));
+    if (!status) throw new NotFoundException('Identity provider not found');
+    return status;
+  }
+
+  @Put(':id/scim')
+  @ApiOperation({ summary: 'Enable or disable SCIM provisioning (ADMIN). First enable returns the bearer token once.' })
+  async setScim(@Req() req: any, @Param('id') id: string, @Body() dto: ScimSettingsDto) {
+    const result = await this.run(() =>
+      this.service.setScimEnabled(id, req.user.organizationId, dto.enabled, this.publicBaseUrl(req)),
+    );
+    if (!result) throw new NotFoundException('Identity provider not found');
+    await this.audit(req, dto.enabled ? SecurityEvents.SCIM_ENABLED : SecurityEvents.SCIM_DISABLED, id, {
+      // `issued`, never `token*`: the redactor blanks any key naming a token.
+      issued: Boolean(result.bearerToken),
+    });
+    return { ...result.status, ...(result.bearerToken ? { bearerToken: result.bearerToken } : {}) };
+  }
+
+  @Post(':id/scim/rotate')
+  @ApiOperation({ summary: 'Rotate the SCIM bearer token (ADMIN). The old token stops working immediately.' })
+  async rotateScim(@Req() req: any, @Param('id') id: string) {
+    const result = await this.run(() =>
+      this.service.rotateScimToken(id, req.user.organizationId, this.publicBaseUrl(req)),
+    );
+    if (!result) throw new NotFoundException('Identity provider not found');
+    await this.audit(req, SecurityEvents.SCIM_TOKEN_ROTATED, id, {
+      issuedAt: result.status.issuedAt ? new Date(result.status.issuedAt).toISOString() : null,
+    });
+    return { ...result.status, bearerToken: result.bearerToken };
+  }
+
+  @Delete(':id/scim')
+  @ApiOperation({ summary: 'Disable SCIM provisioning and discard the token (ADMIN)' })
+  async removeScim(@Req() req: any, @Param('id') id: string) {
+    const ok = await this.service.disableScim(id, req.user.organizationId);
+    if (!ok) throw new NotFoundException('Identity provider not found');
+    await this.audit(req, SecurityEvents.SCIM_DISABLED, id, { issued: false, removed: true });
+    return { message: 'SCIM provisioning disabled' };
+  }
+
+  /** Same precedence as the SSO redirect URI; the admin pastes this into Entra. */
+  private publicBaseUrl(req: any): string {
+    const configured = process.env.FRONTEND_URL || process.env.SERVER_URL;
+    if (configured) return configured.replace(/\/$/, '');
+    const proto = String(req.headers?.['x-forwarded-proto'] ?? req.protocol ?? 'https').split(',')[0];
+    const host = String(req.headers?.['x-forwarded-host'] ?? req.headers?.host ?? '').split(',')[0];
+    return `${proto}://${host}`;
   }
 
   @Post(':id/test')

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import type {
   IdentityProviderType,
@@ -60,6 +60,9 @@ const PUBLIC_SELECT = {
   roleSyncSource: true,
   roleSyncFallback: true,
   roleSyncDefaultRoleIds: true,
+  scimEnabled: true,
+  scimTokenIssuedAt: true,
+  scimLastRequestAt: true,
   enforceSso: true,
   lastSuccessfulLoginAt: true,
   config: true,
@@ -594,4 +597,97 @@ export class IdentityProvidersService {
       select: PUBLIC_SELECT,
     });
   }
+
+  // ── SCIM provisioning ─────────────────────────────────────────────────────
+
+  /** Providers whose SCIM client we have tested against. */
+  static readonly SCIM_CAPABLE_TYPES: readonly IdentityProviderType[] = ['ENTRA'];
+
+  async getScimStatus(id: string, organizationId: string, baseUrl: string) {
+    const p = await this.prisma.identityProvider.findFirst({
+      where: { id, organizationId },
+      select: { id: true, type: true, scimEnabled: true, scimTokenIssuedAt: true, scimLastRequestAt: true },
+    });
+    if (!p) return null;
+    const [userCount, unlinkedMemberCount] = await Promise.all([
+      this.prisma.userIdentity.count({ where: { providerId: id, scimManagedAt: { not: null } } }),
+      // Members this SCIM client will 409 on: they exist locally but have no
+      // identity at this provider yet. Shown so the admin knows who to link.
+      this.prisma.organizationMember.count({
+        where: { organizationId, user: { identities: { none: { providerId: id } } } },
+      }),
+    ]);
+    return {
+      enabled: p.scimEnabled,
+      supported: IdentityProvidersService.SCIM_CAPABLE_TYPES.includes(p.type),
+      issuedAt: p.scimTokenIssuedAt,
+      lastRequestAt: p.scimLastRequestAt,
+      tenantUrl: `${baseUrl.replace(/\/$/, '')}/api/scim/v2`,
+      userCount,
+      unlinkedMemberCount,
+    };
+  }
+
+  /**
+   * Turns SCIM on or off. Enabling on a provider without a token mints one and
+   * returns the PLAINTEXT — the only time it is ever visible. Disabling keeps
+   * the hash so a later re-enable does not force Entra to be reconfigured.
+   */
+  async setScimEnabled(id: string, organizationId: string, enabled: boolean, baseUrl: string) {
+    const p = await this.prisma.identityProvider.findFirst({
+      where: { id, organizationId },
+      select: { id: true, type: true, scimTokenHash: true },
+    });
+    if (!p) return null;
+    if (enabled && !IdentityProvidersService.SCIM_CAPABLE_TYPES.includes(p.type)) {
+      throw new IdentityProviderError(`SCIM provisioning is only supported for ${IdentityProvidersService.SCIM_CAPABLE_TYPES.join(', ')} providers`);
+    }
+    let bearerToken: string | undefined;
+    const data: Record<string, unknown> = { scimEnabled: enabled };
+    if (enabled && !p.scimTokenHash) {
+      bearerToken = mintScimToken();
+      data.scimTokenHash = scimDigest(bearerToken);
+      data.scimTokenIssuedAt = new Date();
+    }
+    await this.prisma.identityProvider.update({ where: { id }, data });
+    const status = await this.getScimStatus(id, organizationId, baseUrl);
+    return { status: status!, bearerToken };
+  }
+
+  /** Mints a new token; the old one stops working with this write. */
+  async rotateScimToken(id: string, organizationId: string, baseUrl: string) {
+    const p = await this.prisma.identityProvider.findFirst({
+      where: { id, organizationId },
+      select: { id: true, type: true },
+    });
+    if (!p) return null;
+    if (!IdentityProvidersService.SCIM_CAPABLE_TYPES.includes(p.type)) {
+      throw new IdentityProviderError('SCIM provisioning is not supported for this provider type');
+    }
+    const bearerToken = mintScimToken();
+    await this.prisma.identityProvider.update({
+      where: { id },
+      data: { scimEnabled: true, scimTokenHash: scimDigest(bearerToken), scimTokenIssuedAt: new Date() },
+    });
+    const status = await this.getScimStatus(id, organizationId, baseUrl);
+    return { status: status!, bearerToken };
+  }
+
+  /** Off, and the credential gone: a leaked token from before is worthless. */
+  async disableScim(id: string, organizationId: string): Promise<boolean> {
+    const r = await this.prisma.identityProvider.updateMany({
+      where: { id, organizationId },
+      data: { scimEnabled: false, scimTokenHash: null, scimTokenIssuedAt: null },
+    });
+    return r.count > 0;
+  }
+}
+
+/** `scim_` + 256 random bits. The prefix lets secret scanners recognise it. */
+function mintScimToken(): string {
+  return `scim_${randomBytes(32).toString('base64url')}`;
+}
+
+function scimDigest(token: string): string {
+  return createHash('sha256').update(token, 'utf8').digest('hex');
 }
