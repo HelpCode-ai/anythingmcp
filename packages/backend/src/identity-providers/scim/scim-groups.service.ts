@@ -199,9 +199,18 @@ export class ScimGroupsService {
     return this.get(provider, id, new Set(), ctx);
   }
 
-  /** A deleted group takes its memberships with it; every former member is re-synced. */
+  /**
+   * A deleted group takes its memberships with it; every former member is
+   * re-synced.
+   *
+   * Deleting a group that is already gone is success, not an error: Entra
+   * retries a delete it did not see acknowledged, and the second attempt must
+   * not surface in the provisioning log as a failure. This matches the user
+   * path, where DELETE is idempotent because the identity row survives.
+   */
   async remove(provider: ScimProvider, id: string, ctx: ScimCtx): Promise<void> {
-    const group = await this.find(provider, id);
+    const group = await this.findOrNull(provider, id);
+    if (!group) return;
     const former = group.members.map((m) => m.userId);
     await this.prisma.identityProviderGroup.delete({ where: { id } });
     await this.securityEvents.log({
@@ -218,12 +227,18 @@ export class ScimGroupsService {
   // ── Internals ─────────────────────────────────────────────────────────────
 
   private async find(provider: ScimProvider, id: string): Promise<GroupRow> {
+    const row = await this.findOrNull(provider, id);
+    if (!row) throw new ScimError(404, 'Group not found', 'noTarget');
+    return row;
+  }
+
+  /** A group of another provider is indistinguishable from nonexistent. */
+  private async findOrNull(provider: ScimProvider, id: string): Promise<GroupRow | null> {
     const row = await this.prisma.identityProviderGroup.findFirst({
       where: { id, providerId: provider.id },
       include: GROUP_INCLUDE,
     });
-    if (!row) throw new ScimError(404, 'Group not found', 'noTarget');
-    return row as GroupRow;
+    return (row as GroupRow | null) ?? null;
   }
 
   private whereFor(filter: ScimFilter | null) {

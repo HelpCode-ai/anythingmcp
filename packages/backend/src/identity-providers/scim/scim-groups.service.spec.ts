@@ -99,6 +99,17 @@ describe('ScimGroupsService', () => {
     expect(events.map((e) => e.event)).toContain('SCIM_GROUP_DELETED');
   });
 
+  // Entra repeats a delete it did not see acknowledged. The retry has to read
+  // as success, or the provisioning log fills with failures for groups that
+  // are already gone.
+  it('DELETE of a group that is already gone succeeds quietly', async () => {
+    prisma.identityProviderGroup.findFirst.mockResolvedValue(null);
+    await expect(service.remove(provider, 'g-1', ctx)).resolves.toBeUndefined();
+    expect(prisma.identityProviderGroup.delete).not.toHaveBeenCalled();
+    expect(roleSync.resyncUsers).not.toHaveBeenCalled();
+    expect(events.map((e) => e.event)).not.toContain('SCIM_GROUP_DELETED');
+  });
+
   it('lists by case-insensitive displayName and honours excludedAttributes=members', async () => {
     prisma.identityProviderGroup.findMany.mockResolvedValue([group(['u1'])]);
     prisma.identityProviderGroup.count.mockResolvedValue(1);
