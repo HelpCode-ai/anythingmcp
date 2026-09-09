@@ -1,4 +1,6 @@
+import { BadRequestException } from '@nestjs/common';
 import { IdentityProvidersController } from './identity-providers.controller';
+import { IdentityProviderError } from './identity-providers.service';
 import { SecurityEventService } from '../audit/security-event.service';
 import { PrismaService } from '../common/prisma.service';
 
@@ -53,6 +55,7 @@ describe('IdentityProvidersController audit trail', () => {
       service,
       new SecurityEventService(prisma as unknown as PrismaService),
       { hasUnused: jest.fn(async () => true) } as any,
+      { resyncProvider: jest.fn(async () => ({ total: 0 })) } as any,
     );
   });
 
@@ -95,5 +98,39 @@ describe('IdentityProvidersController audit trail', () => {
     await controller.update(req, 'p1', dto({ clientSecret: 'SUPER-SECRET' }));
 
     expect(JSON.stringify(created)).not.toContain('SUPER-SECRET');
+  });
+
+  describe('SCIM provisioning', () => {
+    const status = { enabled: true, supported: true, issuedAt: new Date('2026-09-09'), lastRequestAt: null, tenantUrl: 'https://x/api/scim/v2', userCount: 0, unlinkedMemberCount: 0 };
+
+    it('returns the bearer token ONCE on first enable and never persists it in the audit row', async () => {
+      service.setScimEnabled = jest.fn().mockResolvedValue({ status, bearerToken: 'scim_' + 'x'.repeat(43) });
+      const out = await controller.setScim(req, 'idp-1', { enabled: true } as any);
+      expect(out.bearerToken).toMatch(/^scim_/);
+      const row = created.find((r: any) => r.event === 'SCIM_ENABLED');
+      expect(row.metadata).toEqual({ providerId: 'idp-1', issued: true });
+      expect(JSON.stringify(created)).not.toContain('scim_x');
+      expect(JSON.stringify(created)).not.toContain('[REDACTED]');
+    });
+
+    it('does not return a token when SCIM is merely re-enabled', async () => {
+      service.setScimEnabled = jest.fn().mockResolvedValue({ status, bearerToken: undefined });
+      const out = await controller.setScim(req, 'idp-1', { enabled: true } as any);
+      expect(out.bearerToken).toBeUndefined();
+    });
+
+    it('rotation audits the issue time only', async () => {
+      service.rotateScimToken = jest.fn().mockResolvedValue({ status, bearerToken: 'scim_' + 'y'.repeat(43) });
+      const out = await controller.rotateScim(req, 'idp-1');
+      expect(out.bearerToken).toMatch(/^scim_/);
+      const row = created.find((r: any) => r.event === 'SCIM_TOKEN_ROTATED');
+      expect(row.metadata).toEqual({ providerId: 'idp-1', issuedAt: status.issuedAt.toISOString() });
+      expect(JSON.stringify(created)).not.toContain('[REDACTED]');
+    });
+
+    it('maps an unsupported provider type to a 400', async () => {
+      service.setScimEnabled = jest.fn().mockRejectedValue(new IdentityProviderError('SCIM provisioning is only supported for ENTRA providers'));
+      await expect(controller.setScim(req, 'idp-1', { enabled: true } as any)).rejects.toThrow(BadRequestException);
+    });
   });
 });

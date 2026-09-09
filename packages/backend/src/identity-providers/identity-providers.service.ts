@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import type {
   IdentityProviderType,
@@ -60,6 +60,9 @@ const PUBLIC_SELECT = {
   roleSyncSource: true,
   roleSyncFallback: true,
   roleSyncDefaultRoleIds: true,
+  scimEnabled: true,
+  scimTokenIssuedAt: true,
+  scimLastRequestAt: true,
   enforceSso: true,
   lastSuccessfulLoginAt: true,
   config: true,
@@ -447,17 +450,46 @@ export class IdentityProvidersService {
       select: { id: true },
     });
     if (!provider) return null;
-    return this.prisma.identityProviderRoleMapping.findMany({
-      where: { providerId },
-      select: {
-        id: true,
-        externalId: true,
-        label: true,
-        userRole: true,
-        mcpRoleIds: true,
-      },
-      orderBy: [{ label: 'asc' }, { externalId: 'asc' }],
+    const [mappings, groups] = await Promise.all([
+      this.prisma.identityProviderRoleMapping.findMany({
+        where: { providerId },
+        select: { id: true, externalId: true, label: true, userRole: true, mcpRoleIds: true },
+      }),
+      this.prisma.identityProviderGroup.findMany({
+        where: { providerId, externalId: { not: null } },
+        select: { externalId: true, displayName: true, _count: { select: { members: true } } },
+      }),
+    ]);
+
+    // Groups the directory pushed appear as rows even before an admin has
+    // assigned roles, so nobody has to paste object ids by hand. A row with
+    // no roles is display-only until saved with some; see replaceRoleMappings.
+    const byExternal = new Map(groups.map((g) => [g.externalId!, g]));
+    const rows = mappings.map((m) => {
+      const g = byExternal.get(m.externalId);
+      return {
+        ...m,
+        scimManaged: Boolean(g),
+        scimDisplayName: g?.displayName ?? null,
+        scimMemberCount: g?._count.members ?? null,
+      };
     });
+    const mapped = new Set(mappings.map((m) => m.externalId));
+    for (const g of groups) {
+      if (mapped.has(g.externalId!)) continue;
+      rows.push({
+        id: null as unknown as string,
+        externalId: g.externalId!,
+        label: g.displayName,
+        userRole: null,
+        mcpRoleIds: [],
+        scimManaged: true,
+        scimDisplayName: g.displayName,
+        scimMemberCount: g._count.members,
+      });
+    }
+    rows.sort((a, b) => (a.label ?? '').localeCompare(b.label ?? '') || a.externalId.localeCompare(b.externalId));
+    return rows;
   }
 
   /**
@@ -516,17 +548,24 @@ export class IdentityProvidersService {
       }
     }
 
+    // Rows that grant nothing are NOT persisted. A mapping that matches a user
+    // and carries no roles is a "matched, grant nothing" outcome; the sync
+    // now treats that as a fallback, but keeping such rows out of the table
+    // means there is nothing for a future change to get wrong. SCIM-pushed
+    // groups still appear in the list (see listRoleMappings) whether or not a
+    // row exists for them.
+    const effective = mappings.filter((m) => (m.mcpRoleIds?.length ?? 0) > 0 || m.userRole);
     await this.prisma.$transaction(async (tx) => {
-      await tx.identityProviderRoleMapping.deleteMany({ where: { providerId } });
-      if (mappings.length > 0) {
-        await tx.identityProviderRoleMapping.createMany({
-          data: mappings.map((m) => ({
-            providerId,
-            externalId: m.externalId.trim(),
-            label: m.label?.trim() || null,
-            userRole: m.userRole ?? null,
-            mcpRoleIds: m.mcpRoleIds ?? [],
-          })),
+      await tx.identityProviderRoleMapping.deleteMany({
+        where: { providerId, externalId: { notIn: effective.map((m) => m.externalId.trim()) } },
+      });
+      for (const m of effective) {
+        const externalId = m.externalId.trim();
+        const data = { label: m.label?.trim() || null, userRole: m.userRole ?? null, mcpRoleIds: m.mcpRoleIds ?? [] };
+        await tx.identityProviderRoleMapping.upsert({
+          where: { providerId_externalId: { providerId, externalId } },
+          create: { providerId, externalId, ...data },
+          update: data,
         });
       }
     });
@@ -594,4 +633,103 @@ export class IdentityProvidersService {
       select: PUBLIC_SELECT,
     });
   }
+
+  // ── SCIM provisioning ─────────────────────────────────────────────────────
+
+  /** Providers whose SCIM client we have tested against. */
+  static readonly SCIM_CAPABLE_TYPES: readonly IdentityProviderType[] = ['ENTRA'];
+
+  async getScimStatus(id: string, organizationId: string, baseUrl: string) {
+    const p = await this.prisma.identityProvider.findFirst({
+      where: { id, organizationId },
+      select: { id: true, type: true, scimEnabled: true, scimTokenIssuedAt: true, scimLastRequestAt: true },
+    });
+    if (!p) return null;
+    const [userCount, groupCount, unlinkedMemberCount] = await Promise.all([
+      this.prisma.userIdentity.count({ where: { providerId: id, scimManagedAt: { not: null } } }),
+      this.prisma.identityProviderGroup.count({ where: { providerId: id } }),
+      // Members this SCIM client will 409 on: they exist locally but have no
+      // identity at this provider yet. Shown so the admin knows who to link.
+      this.prisma.organizationMember.count({
+        where: { organizationId, user: { identities: { none: { providerId: id } } } },
+      }),
+    ]);
+    return {
+      enabled: p.scimEnabled,
+      supported: IdentityProvidersService.SCIM_CAPABLE_TYPES.includes(p.type),
+      issuedAt: p.scimTokenIssuedAt,
+      lastRequestAt: p.scimLastRequestAt,
+      tenantUrl: `${baseUrl.replace(/\/$/, '')}/api/scim/v2`,
+      userCount,
+      groupCount,
+      unlinkedMemberCount,
+    };
+  }
+
+  /**
+   * Turns SCIM on or off. Enabling on a provider without a token mints one and
+   * returns the PLAINTEXT — the only time it is ever visible. Disabling keeps
+   * the hash so a later re-enable does not force Entra to be reconfigured.
+   */
+  async setScimEnabled(id: string, organizationId: string, enabled: boolean, baseUrl: string) {
+    const p = await this.prisma.identityProvider.findFirst({
+      where: { id, organizationId },
+      select: { id: true, type: true, scimTokenHash: true },
+    });
+    if (!p) return null;
+    if (enabled && !IdentityProvidersService.SCIM_CAPABLE_TYPES.includes(p.type)) {
+      throw new IdentityProviderError(`SCIM provisioning is only supported for ${IdentityProvidersService.SCIM_CAPABLE_TYPES.join(', ')} providers`);
+    }
+    let bearerToken: string | undefined;
+    const data: Record<string, unknown> = { scimEnabled: enabled };
+    if (enabled && !p.scimTokenHash) {
+      bearerToken = mintScimToken();
+      data.scimTokenHash = scimDigest(bearerToken);
+      data.scimTokenIssuedAt = new Date();
+    }
+    await this.prisma.identityProvider.update({ where: { id }, data });
+    const status = await this.getScimStatus(id, organizationId, baseUrl);
+    return { status: status!, bearerToken };
+  }
+
+  /** Mints a new token; the old one stops working with this write. */
+  async rotateScimToken(id: string, organizationId: string, baseUrl: string) {
+    const p = await this.prisma.identityProvider.findFirst({
+      where: { id, organizationId },
+      select: { id: true, type: true },
+    });
+    if (!p) return null;
+    if (!IdentityProvidersService.SCIM_CAPABLE_TYPES.includes(p.type)) {
+      throw new IdentityProviderError('SCIM provisioning is not supported for this provider type');
+    }
+    const bearerToken = mintScimToken();
+    await this.prisma.identityProvider.update({
+      where: { id },
+      data: { scimEnabled: true, scimTokenHash: scimDigest(bearerToken), scimTokenIssuedAt: new Date() },
+    });
+    const status = await this.getScimStatus(id, organizationId, baseUrl);
+    return { status: status!, bearerToken };
+  }
+
+  /** Off, and the credential gone: a leaked token from before is worthless. */
+  async disableScim(id: string, organizationId: string): Promise<boolean> {
+    const r = await this.prisma.identityProvider.updateMany({
+      where: { id, organizationId },
+      data: { scimEnabled: false, scimTokenHash: null, scimTokenIssuedAt: null },
+    });
+    if (r.count === 0) return false;
+    // Stored memberships would otherwise keep outranking the token's claims
+    // at sign-in for a channel that no longer receives updates.
+    await this.prisma.identityProviderGroup.deleteMany({ where: { providerId: id } });
+    return true;
+  }
+}
+
+/** `scim_` + 256 random bits. The prefix lets secret scanners recognise it. */
+function mintScimToken(): string {
+  return `scim_${randomBytes(32).toString('base64url')}`;
+}
+
+function scimDigest(token: string): string {
+  return createHash('sha256').update(token, 'utf8').digest('hex');
 }

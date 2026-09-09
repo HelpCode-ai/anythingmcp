@@ -17,6 +17,9 @@ export const SecurityEvents = {
   SSO_ENFORCEMENT_CHANGED: 'SSO_ENFORCEMENT_CHANGED',
   RECOVERY_CODES_GENERATED: 'RECOVERY_CODES_GENERATED',
   RECOVERY_CODE_USED: 'RECOVERY_CODE_USED',
+  SCIM_ENABLED: 'SCIM_ENABLED',
+  SCIM_DISABLED: 'SCIM_DISABLED',
+  SCIM_TOKEN_ROTATED: 'SCIM_TOKEN_ROTATED',
 
   // ── Auth plane: who got in, and who failed to ───────────────────────────
   SSO_LOGIN_SUCCESS: 'SSO_LOGIN_SUCCESS',
@@ -26,11 +29,24 @@ export const SecurityEvents = {
   JIT_PROVISIONED: 'JIT_PROVISIONED',
   /** A bearer token was refused — e.g. an MCP-issued token sent to the dashboard API. */
   TOKEN_REJECTED: 'TOKEN_REJECTED',
+  /** A request to /api/scim/v2 carried no valid bearer. */
+  SCIM_AUTH_FAILED: 'SCIM_AUTH_FAILED',
+
+  // ── Provisioning plane: what the directory pushed ───────────────────────
+  SCIM_USER_PROVISIONED: 'SCIM_USER_PROVISIONED',
+  SCIM_USER_UPDATED: 'SCIM_USER_UPDATED',
+  SCIM_USER_DEPROVISIONED: 'SCIM_USER_DEPROVISIONED',
+  SCIM_USER_REACTIVATED: 'SCIM_USER_REACTIVATED',
+  SCIM_GROUP_CREATED: 'SCIM_GROUP_CREATED',
+  SCIM_GROUP_DELETED: 'SCIM_GROUP_DELETED',
+  SCIM_GROUP_MEMBERSHIP_CHANGED: 'SCIM_GROUP_MEMBERSHIP_CHANGED',
 
   // ── Authorization plane: what they were allowed to do ───────────────────
   ROLE_CHANGED: 'ROLE_CHANGED',
   LAST_ADMIN_PROTECTION_TRIGGERED: 'LAST_ADMIN_PROTECTION_TRIGGERED',
   MEMBERSHIP_REMOVED_BY_SYNC: 'MEMBERSHIP_REMOVED_BY_SYNC',
+  /** One summary row per batch re-sync (mapping edit, SCIM enable, group delete). */
+  ROLE_SYNC_BATCH_COMPLETED: 'ROLE_SYNC_BATCH_COMPLETED',
   /** An admin or a directory push removed this member's access to one workspace. */
   USER_DEACTIVATED: 'USER_DEACTIVATED',
   USER_REACTIVATED: 'USER_REACTIVATED',

@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import * as client from 'openid-client';
 import { PrismaService } from '../common/prisma.service';
-import { RoleSyncService } from './role-sync.service';
+import { ROLE_SYNC_PROVIDER_SELECT, RoleSyncService } from './role-sync.service';
 import { DeploymentService } from '../common/deployment.service';
 import { AuthService } from '../auth/auth.service';
 import { assertSafeOutboundUrl } from '../common/ssrf.util';
@@ -324,18 +324,13 @@ export class SsoService {
       include: {
         provider: {
           select: {
-            id: true,
+            ...ROLE_SYNC_PROVIDER_SELECT,
             type: true,
             issuer: true,
             clientId: true,
-            organizationId: true,
             jitProvisioning: true,
             jitDefaultRole: true,
             config: true,
-            roleSyncEnabled: true,
-            roleSyncSource: true,
-            roleSyncFallback: true,
-            roleSyncDefaultRoleIds: true,
           },
         },
       },

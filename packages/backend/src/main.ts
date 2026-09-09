@@ -46,7 +46,11 @@ async function bootstrap() {
   expressApp.set('trust proxy', true);
 
   // Increase body size limit for large API spec imports (Postman, OpenAPI, etc.)
-  app.use(json({ limit: '10mb' }));
+  // `application/scim+json` is what Entra ID sends to the SCIM endpoint.
+  // body-parser's default `type` matches only application/json, so without
+  // this every SCIM POST/PATCH would arrive as an empty body and fail in ways
+  // that look nothing like a content-type problem.
+  app.use(json({ limit: '10mb', type: ['application/json', 'application/scim+json'] }));
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   const configService = app.get(ConfigService);

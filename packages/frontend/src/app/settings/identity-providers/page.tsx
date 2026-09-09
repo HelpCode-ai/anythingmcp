@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/toast';
 import { RoleMappingsPanel } from './role-mappings';
 import { RecoveryCodesCard } from './recovery-codes';
+import { ScimPanel } from './scim-panel';
 
 /**
  * Per-type configuration fields.
@@ -132,6 +133,7 @@ export default function IdentityProvidersPage() {
   const [testing, setTesting] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [mappingsFor, setMappingsFor] = useState<string | null>(null);
+  const [scimFor, setScimFor] = useState<string | null>(null);
   const [enforcing, setEnforcing] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
@@ -578,6 +580,7 @@ export default function IdentityProvidersPage() {
                       <Badge tone="neutral">{PROVIDER_TYPES[p.type]?.label ?? p.type}</Badge>
                       {!p.isActive && <Badge tone="warn">Inactive</Badge>}
                       {p.enforceSso && <Badge tone="danger">SSO required</Badge>}
+                      {p.scimEnabled && <Badge tone="neutral">SCIM</Badge>}
                       {expiringSoon(p) && <Badge tone="danger">Secret expiring</Badge>}
                     </div>
                     <p className="text-[12px] text-[var(--text-3)] mt-1 truncate">{p.issuer}</p>
@@ -636,6 +639,15 @@ export default function IdentityProvidersPage() {
                    >
                      {mappingsFor === p.id ? 'Hide role mappings' : 'Role mappings'}
                    </button>
+                   {p.type === 'ENTRA' && (
+                     <button
+                       type="button"
+                       className="text-[11.5px] text-[var(--brand)] hover:underline"
+                       onClick={() => setScimFor(scimFor === p.id ? null : p.id)}
+                     >
+                       {scimFor === p.id ? 'Hide provisioning' : 'Provisioning (SCIM)'}
+                     </button>
+                   )}
                    <label className="flex items-center gap-2 text-[11.5px] text-[var(--text-2)]">
                      <input
                        type="checkbox"
@@ -649,6 +661,9 @@ export default function IdentityProvidersPage() {
                  </div>
                  {mappingsFor === p.id && token && (
                    <RoleMappingsPanel provider={p} token={token} />
+                 )}
+                 {scimFor === p.id && token && (
+                   <ScimPanel provider={p} token={token} onChanged={loadData} />
                  )}
                 </div>
               ))}

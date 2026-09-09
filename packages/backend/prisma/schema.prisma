@@ -166,6 +166,7 @@ model User {
   mcpApiKeys               McpApiKey[]
   emailVerificationTokens  EmailVerificationToken[]
   recoveryCodes            RecoveryCode[]
+  scimGroupMemberships     IdentityProviderGroupMember[]
 
   @@index([organizationId])
   @@map("users")
@@ -782,6 +783,20 @@ model IdentityProvider {
   /// through this provider has succeeded.
   lastSuccessfulLoginAt DateTime? @map("last_successful_login_at")
 
+  // ── SCIM 2.0 inbound provisioning ──────────────────────────────────────
+  /// Entra pushes users and groups to /api/scim/v2 with a long-lived bearer.
+  scimEnabled       Boolean   @default(false) @map("scim_enabled")
+  /// sha256 hex of the bearer token. The plaintext is shown once at issue and
+  /// never stored. This is the schema's first sha256 credential and differs
+  /// from the bcrypt used for passwords on purpose: the token is 256 random
+  /// bits, so stretching adds nothing, while verification has to be a single
+  /// indexed lookup on every request of an Entra provisioning burst.
+  scimTokenHash     String?   @unique @map("scim_token_hash")
+  scimTokenIssuedAt DateTime? @map("scim_token_issued_at")
+  /// Bumped at most once a minute by the SCIM guard — "is Entra still talking
+  /// to us". Entra has no end-of-cycle call, so this is the only honest signal.
+  scimLastRequestAt DateTime? @map("scim_last_request_at")
+
   /// Per-type settings, validated by a Zod schema keyed on `type` — the same
   /// shape-in-Json approach as connector engines. ENTRA: { tenantId }.
   /// OKTA: { authorizationServerId? }. AUTH0: { rolesClaimNamespace }.
@@ -794,6 +809,7 @@ model IdentityProvider {
   roleMappings  IdentityProviderRoleMapping[]
   identities    UserIdentity[]
   loginAttempts SsoLoginAttempt[]
+  scimGroups    IdentityProviderGroup[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -826,6 +842,48 @@ model IdentityProviderRoleMapping {
   @@map("identity_provider_role_mappings")
 }
 
+/// A directory group pushed over SCIM, with its members.
+///
+/// Deliberately NOT a row of `IdentityProviderRoleMapping`. A mapping that
+/// matches a user and carries no roles is a real "matched, grant nothing"
+/// outcome, which `RoleSyncService` turns into an empty synced set — and a
+/// user holding no role at all is UNRESTRICTED. Auto-creating an empty mapping
+/// for every pushed group would therefore hand every SCIM user in any group
+/// full tool access. Groups live here; mappings join on `(providerId,
+/// externalId)` and are created only when an admin assigns roles.
+model IdentityProviderGroup {
+  id         String           @id @default(cuid())
+  providerId String           @map("provider_id")
+  provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  /// Entra group OBJECT ID (SCIM `externalId`). Nullable defensively: a group
+  /// without one can never match a mapping and is ignored by role sync.
+  externalId  String? @map("external_id")
+  displayName String  @map("display_name")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members IdentityProviderGroupMember[]
+
+  @@unique([providerId, externalId])
+  @@index([providerId])
+  @@map("identity_provider_groups")
+}
+
+model IdentityProviderGroupMember {
+  groupId String                @map("group_id")
+  group   IdentityProviderGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId  String                @map("user_id")
+  user    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([groupId, userId])
+  @@index([userId])
+  @@map("identity_provider_group_members")
+}
+
 /// Links a local user to an identity at an external provider.
 ///
 /// SECURITY: the key is (provider, externalSubject) — NEVER the email. Entra's
@@ -840,8 +898,16 @@ model UserIdentity {
   providerId String           @map("provider_id")
   provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
-  /// The provider's immutable subject. Entra: the `oid` claim.
+  /// The provider's immutable subject. Entra: the `oid` claim. SCIM sends the
+  /// same object id as `externalId`, so a SCIM-created identity and a later
+  /// SSO sign-in converge on this one row.
   externalSubject String  @map("external_subject")
+  /// Set when SCIM has described this user — on create, or on the first
+  /// PUT/PATCH that touches an identity SSO created. Distinguishes "SCIM says
+  /// this user is in no group" (authoritative) from "SCIM has never mentioned
+  /// them" (fall back to the token's groups claim). Without it a token that
+  /// arrives without a groups claim would wipe SCIM-derived roles.
+  scimManagedAt DateTime? @map("scim_managed_at")
   /// Entra: the `tid` claim. Stored so a tenant change becomes detectable.
   externalTid     String? @map("external_tid")
 
