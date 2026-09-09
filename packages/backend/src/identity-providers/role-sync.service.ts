@@ -100,6 +100,13 @@ export interface ResyncSummary {
 
 type SyncCtx = { ip?: string | null; userAgent?: string | null; actorUserId?: string | null };
 
+/** Order- and duplicate-insensitive comparison of two role-id lists. */
+const sameSet = (a: string[], b: string[]): boolean => {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((id) => right.has(id));
+};
+
 const NOTHING = (trigger: RoleSyncTrigger, reason: RoleSyncReason, membershipSource: MembershipSource = 'none'): RoleSyncOutcome => ({
   applied: false,
   reason,
@@ -343,32 +350,37 @@ export class RoleSyncService {
       return this.applyFallback(provider, userId, presentedIds.length, ctx, trigger, membershipSource);
     }
 
-    const granted = await this.writeAssignments(provider, userId, desiredMcpRoleIds);
+    const { granted, changed } = await this.writeAssignments(provider, userId, desiredMcpRoleIds);
     const org = await this.writeOrgRole(provider, userId, desiredOrgRole, ctx);
 
-    await this.securityEvents.log({
-      event: SecurityEvents.ROLE_SYNC_APPLIED,
-      actorType: 'SYSTEM',
-      organizationId: provider.organizationId,
-      targetUserId: userId,
-      metadata: {
-        providerId: provider.id,
-        source: provider.roleSyncSource,
-        trigger,
-        membershipSource,
-        presented: presentedIds.length,
-        matched: matches.length,
-        grantedRoleIds: granted,
-        orgRoleBefore: org.before,
-        orgRoleAfter: org.after,
-        lastAdminProtected: org.lastAdminProtected,
-      },
-      ip: ctx.ip,
-      userAgent: ctx.userAgent,
-    });
+    // A refused demotion is not a no-op: the directory asked for a change and
+    // was denied, which is precisely what an auditor needs to see.
+    const applied = changed || org.before !== org.after || Boolean(org.lastAdminProtected);
+    if (applied) {
+      await this.securityEvents.log({
+        event: SecurityEvents.ROLE_SYNC_APPLIED,
+        actorType: 'SYSTEM',
+        organizationId: provider.organizationId,
+        targetUserId: userId,
+        metadata: {
+          providerId: provider.id,
+          source: provider.roleSyncSource,
+          trigger,
+          membershipSource,
+          presented: presentedIds.length,
+          matched: matches.length,
+          grantedRoleIds: granted,
+          orgRoleBefore: org.before,
+          orgRoleAfter: org.after,
+          lastAdminProtected: org.lastAdminProtected,
+        },
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+      });
+    }
 
     return {
-      applied: true,
+      applied,
       reason: 'matched',
       trigger,
       membershipSource,
@@ -477,7 +489,7 @@ export class RoleSyncService {
     provider: RoleSyncProvider,
     userId: string,
     roleIds: string[],
-  ): Promise<string[]> {
+  ): Promise<{ granted: string[]; changed: boolean }> {
     const valid =
       roleIds.length === 0
         ? []
@@ -496,6 +508,21 @@ export class RoleSyncService {
         `Role sync for provider ${provider.id} dropped ${roleIds.length - valid.length} mapped role id(s) not visible to org ${provider.organizationId}`,
       );
     }
+
+    // A directory that has not moved must not look like one that has. Compare
+    // the synced set we already hold against the one we are about to write:
+    // equal sets mean no rows change, so the write is skipped and the caller
+    // reports `applied: false`. Without this every re-run of a batch resync
+    // would emit one ROLE_SYNC_APPLIED per user and report them all as
+    // changed — noise that buries the syncs that did move someone's access.
+    const existing = (
+      await this.prisma.userRoleAssignment.findMany({
+        where: { userId, source: SYNC_SOURCE, organizationId: provider.organizationId },
+        select: { roleId: true },
+      })
+    ).map((a) => a.roleId);
+    const changed = !sameSet(existing, valid);
+    if (!changed) return { granted: valid, changed };
 
     await this.prisma.$transaction(async (tx) => {
       await tx.userRoleAssignment.deleteMany({
@@ -524,7 +551,7 @@ export class RoleSyncService {
     // where a sync produces N, and it is dropped in the contract migration; a
     // release rolled back to before role sync existed should see no synced
     // roles, which is exactly what leaving it alone produces.
-    return valid;
+    return { granted: valid, changed };
   }
 
   /**
@@ -615,14 +642,14 @@ export class RoleSyncService {
     }
 
     if (provider.roleSyncFallback === 'DEFAULT_ROLE') {
-      const granted = await this.writeAssignments(provider, userId, provider.roleSyncDefaultRoleIds);
-      await this.audit(provider, userId, 'fallback_default_role', base, granted, ctx);
-      return { ...base, applied: true, reason: 'fallback_default_role', grantedRoleIds: granted };
+      const { granted, changed } = await this.writeAssignments(provider, userId, provider.roleSyncDefaultRoleIds);
+      if (changed) await this.audit(provider, userId, 'fallback_default_role', base, granted, ctx);
+      return { ...base, applied: changed, reason: 'fallback_default_role', grantedRoleIds: granted };
     }
 
-    const granted = await this.applyDenyAll(provider, userId);
-    await this.audit(provider, userId, 'fallback_deny_all', base, granted, ctx);
-    return { ...base, applied: true, reason: 'fallback_deny_all', grantedRoleIds: granted };
+    const { granted, changed } = await this.applyDenyAll(provider, userId);
+    if (changed) await this.audit(provider, userId, 'fallback_deny_all', base, granted, ctx);
+    return { ...base, applied: changed, reason: 'fallback_deny_all', grantedRoleIds: granted };
   }
 
   /**
@@ -638,7 +665,10 @@ export class RoleSyncService {
    * does the right thing with it, and an admin can see in the roles UI why
    * someone has no tools rather than having to infer it from an absence.
    */
-  private async applyDenyAll(provider: RoleSyncProvider, userId: string): Promise<string[]> {
+  private async applyDenyAll(
+    provider: RoleSyncProvider,
+    userId: string,
+  ): Promise<{ granted: string[]; changed: boolean }> {
     const role = await this.prisma.role.upsert({
       where: {
         organizationId_name: {

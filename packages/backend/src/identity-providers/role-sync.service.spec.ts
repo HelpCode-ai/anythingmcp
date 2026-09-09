@@ -31,6 +31,9 @@ describe('RoleSyncService', () => {
         upsert: jest.fn(async () => ({ id: 'role_deny' })),
       },
       userRoleAssignment: {
+        // What the user already holds from a previous sync. Empty by default,
+        // so every test below writes a genuine change; the no-op tests set it.
+        findMany: jest.fn(async () => [] as { roleId: string }[]),
         deleteMany: jest.fn(async () => ({ count: 0 })),
         createMany: jest.fn(async () => ({ count: 0 })),
       },
@@ -91,6 +94,57 @@ describe('RoleSyncService', () => {
     expect([...out.grantedRoleIds].sort()).toEqual(['r1', 'r2', 'r3']);
     // r9 is never granted: the user is not in g9.
     expect(out.grantedRoleIds).not.toContain('r9');
+  });
+
+  // A resync that finds the directory exactly where it left it must write
+  // nothing and say so — otherwise re-running a batch over a large provider
+  // reports every user as changed and buries the real changes in audit noise.
+  it('a directory state that has not moved is neither written nor audited', async () => {
+    prisma.identityProviderRoleMapping.findMany.mockResolvedValue([
+      { externalId: 'g1', userRole: null, mcpRoleIds: ['r1', 'r2'] },
+    ]);
+    prisma.userRoleAssignment.findMany.mockResolvedValue([{ roleId: 'r2' }, { roleId: 'r1' }]);
+
+    const out = await service.syncOnLogin(makeProvider(), USER, { groups: ['g1'] });
+
+    expect(out).toMatchObject({ applied: false, reason: 'matched', matched: 1 });
+    expect([...out.grantedRoleIds].sort()).toEqual(['r1', 'r2']);
+    expect(prisma.userRoleAssignment.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.userRoleAssignment.createMany).not.toHaveBeenCalled();
+    expect(securityEvents.log).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'ROLE_SYNC_APPLIED' }),
+    );
+  });
+
+  it('a fallback the user already sits on is not re-applied', async () => {
+    prisma.identityProviderRoleMapping.findMany.mockResolvedValue([]);
+    prisma.userRoleAssignment.findMany.mockResolvedValue([{ roleId: 'role_deny' }]);
+
+    const out = await service.syncOnLogin(makeProvider(), USER, { groups: ['unmapped'] });
+
+    expect(out).toMatchObject({ applied: false, reason: 'fallback_deny_all' });
+    expect(prisma.userRoleAssignment.deleteMany).not.toHaveBeenCalled();
+    expect(securityEvents.log).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'ROLE_SYNC_APPLIED' }),
+    );
+  });
+
+  // The counter-case: a refused demotion changes nothing in the database, but
+  // the directory did ask for one and an auditor has to be able to see it.
+  it('audits a refused demotion even though no role row moved', async () => {
+    prisma.identityProviderRoleMapping.findMany.mockResolvedValue([
+      { externalId: 'g1', userRole: 'VIEWER', mcpRoleIds: ['r1'] },
+    ]);
+    prisma.userRoleAssignment.findMany.mockResolvedValue([{ roleId: 'r1' }]);
+    prisma.organizationMember.findUnique.mockResolvedValue({ role: 'ADMIN', deactivatedAt: null });
+    prisma.organizationMember.count.mockResolvedValue(1);
+
+    const out = await service.syncOnLogin(makeProvider(), USER, { groups: ['g1'] });
+
+    expect(out).toMatchObject({ applied: true, lastAdminProtected: true });
+    expect(securityEvents.log).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'ROLE_SYNC_APPLIED' }),
+    );
   });
 
   it('never matches on a group display name', async () => {
