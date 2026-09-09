@@ -92,6 +92,23 @@ export function ScimPanel({
     return run(() => identityProviders.rotateScimToken(provider.id, token), 'Token rotated');
   };
 
+  const handleResync = async () => {
+    setBusy(true);
+    try {
+      const r = await identityProviders.resyncRoles(provider.id, token);
+      toast.show({
+        tone: 'success',
+        title: `Resynced ${r.total} member${r.total === 1 ? '' : 's'}`,
+        description: `${r.applied} changed, ${r.unchanged} unchanged${r.failed ? `, ${r.failed} failed` : ''}${r.lastAdminProtected ? `, ${r.lastAdminProtected} last-admin protected` : ''}.`,
+      });
+      await load();
+    } catch (err: any) {
+      toast.show({ tone: 'error', title: 'Resync failed', description: err.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleDisable = () => {
     if (
       !confirm(
@@ -194,10 +211,26 @@ export function ScimPanel({
               {stale && <Badge tone="warn" className="ml-1">stale</Badge>}
             </span>
             <span>Users provisioned {status.userCount}</span>
+            <span>Groups synced {status.groupCount}</span>
           </div>
           <div className="flex gap-2 pt-1">
             <Button size="sm" variant="secondary" onClick={handleRotate} disabled={busy}>
               Rotate token
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleResync}
+              disabled={busy || !provider.roleSyncEnabled || provider.roleSyncSource !== 'GROUPS'}
+              title={
+                !provider.roleSyncEnabled
+                  ? 'Turn on role sync under Edit first'
+                  : provider.roleSyncSource !== 'GROUPS'
+                    ? 'Only applies when roles are read from groups'
+                    : undefined
+              }
+            >
+              Resync roles now
             </Button>
             <Button size="sm" variant="danger" onClick={handleDisable} disabled={busy}>
               Disable

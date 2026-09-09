@@ -166,6 +166,7 @@ model User {
   mcpApiKeys               McpApiKey[]
   emailVerificationTokens  EmailVerificationToken[]
   recoveryCodes            RecoveryCode[]
+  scimGroupMemberships     IdentityProviderGroupMember[]
 
   @@index([organizationId])
   @@map("users")
@@ -808,6 +809,7 @@ model IdentityProvider {
   roleMappings  IdentityProviderRoleMapping[]
   identities    UserIdentity[]
   loginAttempts SsoLoginAttempt[]
+  scimGroups    IdentityProviderGroup[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -838,6 +840,48 @@ model IdentityProviderRoleMapping {
   @@unique([providerId, externalId])
   @@index([providerId])
   @@map("identity_provider_role_mappings")
+}
+
+/// A directory group pushed over SCIM, with its members.
+///
+/// Deliberately NOT a row of `IdentityProviderRoleMapping`. A mapping that
+/// matches a user and carries no roles is a real "matched, grant nothing"
+/// outcome, which `RoleSyncService` turns into an empty synced set — and a
+/// user holding no role at all is UNRESTRICTED. Auto-creating an empty mapping
+/// for every pushed group would therefore hand every SCIM user in any group
+/// full tool access. Groups live here; mappings join on `(providerId,
+/// externalId)` and are created only when an admin assigns roles.
+model IdentityProviderGroup {
+  id         String           @id @default(cuid())
+  providerId String           @map("provider_id")
+  provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  /// Entra group OBJECT ID (SCIM `externalId`). Nullable defensively: a group
+  /// without one can never match a mapping and is ignored by role sync.
+  externalId  String? @map("external_id")
+  displayName String  @map("display_name")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members IdentityProviderGroupMember[]
+
+  @@unique([providerId, externalId])
+  @@index([providerId])
+  @@map("identity_provider_groups")
+}
+
+model IdentityProviderGroupMember {
+  groupId String                @map("group_id")
+  group   IdentityProviderGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId  String                @map("user_id")
+  user    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([groupId, userId])
+  @@index([userId])
+  @@map("identity_provider_group_members")
 }
 
 /// Links a local user to an identity at an external provider.

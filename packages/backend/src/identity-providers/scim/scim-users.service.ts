@@ -200,9 +200,10 @@ export class ScimUsersService {
     }
 
     // A brand-new member with no role is UNRESTRICTED under getAllowedToolIds.
-    // Run the sync with nothing presented so the provider's fallback (DENY_ALL
-    // by default) applies from the first request, not from the first login.
-    await this.roleSync.syncOnLogin(provider, created.id, {}, { ip: ctx.ip, userAgent: ctx.userAgent });
+    // The identity is SCIM-managed and in no group yet, so this applies the
+    // provider's fallback (DENY_ALL by default) from the first request, not
+    // from the first login.
+    await this.roleSync.syncFromScim(provider, created.id, { ip: ctx.ip, userAgent: ctx.userAgent });
 
     return this.get(provider, created.id, ctx);
   }
@@ -400,7 +401,7 @@ export class ScimUsersService {
         ip: ctx.ip,
         userAgent: ctx.userAgent,
       });
-      await this.roleSync.syncOnLogin(provider, row.userId, {}, { ip: ctx.ip, userAgent: ctx.userAgent });
+      await this.roleSync.syncFromScim(provider, row.userId, { ip: ctx.ip, userAgent: ctx.userAgent });
       return;
     }
 

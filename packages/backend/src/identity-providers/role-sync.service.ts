@@ -10,6 +10,14 @@ import type { RoleSyncFallback, RoleSyncSource, UserRole } from '../generated/pr
  * `source` written on every assignment this service owns. It is part of the
  * unique key on `user_roles`, which is what keeps a sync from ever deleting a
  * grant an admin made by hand — and vice versa.
+ *
+ * ONE source for both the sign-in path and the SCIM path, deliberately. Both
+ * project the same directory; `writeAssignments` rewrites the whole synced set
+ * on every run, so the last writer wins and that is correct. Two sources would
+ * be two independent projections merged by union in `getAllowedToolIds`: the
+ * more permissive one would always win, and neither writer could ever revoke
+ * what the other granted — a SCIM removal would leave the last login's grant
+ * in place, which is precisely the leaver problem SCIM exists to close.
  */
 export const SYNC_SOURCE = 'entra';
 
@@ -30,7 +38,24 @@ export interface RoleSyncProvider {
   roleSyncSource: RoleSyncSource;
   roleSyncFallback: RoleSyncFallback;
   roleSyncDefaultRoleIds: string[];
+  /** When true, stored SCIM memberships outrank the token's groups claim. */
+  scimEnabled: boolean;
 }
+
+/** The provider projection every caller of this service should select. */
+export const ROLE_SYNC_PROVIDER_SELECT = {
+  id: true,
+  organizationId: true,
+  roleSyncEnabled: true,
+  roleSyncSource: true,
+  roleSyncFallback: true,
+  roleSyncDefaultRoleIds: true,
+  scimEnabled: true,
+} as const;
+
+export type RoleSyncTrigger = 'login' | 'scim' | 'resync';
+/** Which statement of the user's groups decided the outcome. */
+export type MembershipSource = 'claims' | 'scim' | 'none';
 
 export type RoleSyncReason =
   | 'disabled'
@@ -39,13 +64,19 @@ export type RoleSyncReason =
   | 'matched'
   | 'fallback_deny_all'
   | 'fallback_keep_existing'
-  | 'fallback_default_role';
+  | 'fallback_default_role'
+  /** A SCIM trigger while the provider reads APP_ROLES — groups mean nothing. */
+  | 'source_not_groups'
+  /** A SCIM trigger for a user SCIM has never described. */
+  | 'no_directory_state';
 
 export interface RoleSyncOutcome {
   /** False means nothing was written. */
   applied: boolean;
   reason: RoleSyncReason;
-  /** How many ids the token presented. */
+  trigger: RoleSyncTrigger;
+  membershipSource: MembershipSource;
+  /** How many ids were presented. */
   presented: number;
   /** How many mappings those ids hit. */
   matched: number;
@@ -56,9 +87,40 @@ export interface RoleSyncOutcome {
   lastAdminProtected?: boolean;
 }
 
+export interface ResyncSummary {
+  providerId: string;
+  trigger: RoleSyncTrigger;
+  total: number;
+  applied: number;
+  unchanged: number;
+  failed: number;
+  lastAdminProtected: number;
+  durationMs: number;
+}
+
+type SyncCtx = { ip?: string | null; userAgent?: string | null; actorUserId?: string | null };
+
+const NOTHING = (trigger: RoleSyncTrigger, reason: RoleSyncReason, membershipSource: MembershipSource = 'none'): RoleSyncOutcome => ({
+  applied: false,
+  reason,
+  trigger,
+  membershipSource,
+  presented: 0,
+  matched: 0,
+  grantedRoleIds: [],
+});
+
 /**
  * Projects an external directory's groups (or application roles) onto
- * AnythingMCP roles, on every sign-in.
+ * AnythingMCP roles.
+ *
+ * Two entry points, one core. `syncOnLogin` reads the token's claims;
+ * `syncFromScim` reads the memberships the directory pushed over SCIM. When
+ * SCIM is enabled the stored memberships win even at sign-in: they are fresher
+ * for removals (a token's groups claim is minted at sign-in and lives as long
+ * as the session), and a token that arrives WITHOUT a groups claim — an MCP
+ * surface token, a claim that stopped after an app-registration edit — must
+ * not be read as "member of nothing" and wipe what SCIM granted.
  *
  * Three properties this service is built around:
  *
@@ -77,11 +139,15 @@ export interface RoleSyncOutcome {
 @Injectable()
 export class RoleSyncService {
   private readonly logger = new Logger(RoleSyncService.name);
+  /** Single-flight per provider: a second resync during a run joins it. */
+  private readonly inflight = new Map<string, Promise<ResyncSummary>>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly securityEvents: SecurityEventService,
   ) {}
+
+  // ── Entry points ──────────────────────────────────────────────────────────
 
   /**
    * Runs a sync for one sign-in. Never throws: a directory that returns
@@ -93,61 +159,164 @@ export class RoleSyncService {
     provider: RoleSyncProvider,
     userId: string,
     claims: Record<string, any>,
-    ctx: { ip?: string | null; userAgent?: string | null } = {},
+    ctx: SyncCtx = {},
   ): Promise<RoleSyncOutcome> {
-    try {
-      return await this.run(provider, userId, claims, ctx);
-    } catch (e: any) {
-      this.logger.error(
-        `Role sync failed for provider ${provider.id}: ${e?.message}`,
+    return this.guarded(provider, userId, ctx, 'login', async () => {
+      if (!provider.roleSyncEnabled) return NOTHING('login', 'disabled');
+
+      if (provider.roleSyncSource === 'GROUPS' && provider.scimEnabled) {
+        const stored = await this.scimPresentedIds(provider.id, userId);
+        // null: SCIM has never described this user — the claims are all we
+        // have. [] or more: SCIM is authoritative, the claim is not consulted.
+        if (stored !== null) {
+          return this.syncFromDirectoryState(provider, userId, stored, ctx, 'login', 'scim');
+        }
+      }
+
+      // Entra replaces the claim with a Graph URL past ~150 groups (~200 for
+      // SAML). The list we would read is then simply absent, and every mapping
+      // would miss. Acting on that would silently strip the roles of the most
+      // heavily-grouped users in the directory — so we do nothing at all and
+      // say so loudly. Resolving the overage needs Graph `GroupMember.Read.All`,
+      // which this product deliberately does not ask for. (SCIM has no such
+      // cap: Entra pushes membership per group, not a bounded list per user.)
+      if (this.hasOverage(provider.roleSyncSource, claims)) {
+        this.logger.warn(
+          `Role sync skipped: token from provider ${provider.id} signalled a groups overage`,
+        );
+        await this.securityEvents.log({
+          event: SecurityEvents.ROLE_SYNC_SKIPPED,
+          actorType: 'SYSTEM',
+          organizationId: provider.organizationId,
+          targetUserId: userId,
+          metadata: { providerId: provider.id, reason: 'overage' },
+          ip: ctx.ip,
+          userAgent: ctx.userAgent,
+        });
+        return NOTHING('login', 'overage', 'claims');
+      }
+
+      return this.syncFromDirectoryState(
+        provider,
+        userId,
+        this.extractIds(provider.roleSyncSource, claims),
+        ctx,
+        'login',
+        'claims',
       );
-      await this.securityEvents.log({
-        event: SecurityEvents.ROLE_SYNC_FAILED,
-        actorType: 'SYSTEM',
-        organizationId: provider.organizationId,
-        targetUserId: userId,
-        metadata: { providerId: provider.id, error: String(e?.message ?? e) },
-        ip: ctx.ip,
-        userAgent: ctx.userAgent,
-      });
-      return { applied: false, reason: 'disabled', presented: 0, matched: 0, grantedRoleIds: [] };
-    }
+    });
   }
 
-  private async run(
+  /**
+   * Re-derives one user's roles from the group memberships SCIM has stored.
+   * Called after every membership change Entra pushes, and by `resyncUsers`.
+   * Never throws.
+   */
+  async syncFromScim(
     provider: RoleSyncProvider,
     userId: string,
-    claims: Record<string, any>,
-    ctx: { ip?: string | null; userAgent?: string | null },
+    ctx: SyncCtx = {},
+    trigger: 'scim' | 'resync' = 'scim',
   ): Promise<RoleSyncOutcome> {
-    if (!provider.roleSyncEnabled) {
-      return { applied: false, reason: 'disabled', presented: 0, matched: 0, grantedRoleIds: [] };
-    }
+    return this.guarded(provider, userId, ctx, trigger, async () => {
+      if (!provider.roleSyncEnabled) return NOTHING(trigger, 'disabled');
+      // SCIM groups only ever describe groups. Under APP_ROLES the roles come
+      // from the token's `roles` claim at sign-in, exactly as before.
+      if (provider.roleSyncSource !== 'GROUPS') return NOTHING(trigger, 'source_not_groups');
+      const stored = await this.scimPresentedIds(provider.id, userId);
+      if (stored === null) return NOTHING(trigger, 'no_directory_state');
+      return this.syncFromDirectoryState(provider, userId, stored, ctx, trigger, 'scim');
+    });
+  }
 
-    // Entra replaces the claim with a Graph URL past ~150 groups (~200 for
-    // SAML). The list we would read is then simply absent, and every mapping
-    // would miss. Acting on that would silently strip the roles of the most
-    // heavily-grouped users in the directory — so we do nothing at all and say
-    // so loudly. Resolving the overage needs Graph `GroupMember.Read.All`,
-    // which this product deliberately does not ask for.
-    if (this.hasOverage(provider.roleSyncSource, claims)) {
-      this.logger.warn(
-        `Role sync skipped: token from provider ${provider.id} signalled a groups overage`,
+  /**
+   * Re-syncs every SCIM-managed user of a provider. Used after a mapping edit
+   * (with SCIM the memberships are known, so there is no reason to wait for
+   * each user's next login) and after role sync is switched on.
+   */
+  async resyncProvider(providerId: string, ctx: SyncCtx = {}, opts: { concurrency?: number } = {}): Promise<ResyncSummary> {
+    const running = this.inflight.get(providerId);
+    if (running) return running;
+
+    const job = (async () => {
+      const started = Date.now();
+      const provider = await this.prisma.identityProvider.findUnique({
+        where: { id: providerId },
+        select: ROLE_SYNC_PROVIDER_SELECT,
+      });
+      const empty: ResyncSummary = {
+        providerId, trigger: 'resync', total: 0, applied: 0, unchanged: 0, failed: 0, lastAdminProtected: 0, durationMs: 0,
+      };
+      if (!provider || !provider.roleSyncEnabled || provider.roleSyncSource !== 'GROUPS' || !provider.scimEnabled) {
+        return empty;
+      }
+      const identities = await this.prisma.userIdentity.findMany({
+        where: { providerId, scimManagedAt: { not: null } },
+        select: { userId: true },
+      });
+      const summary = await this.resyncUsers(provider, identities.map((i) => i.userId), ctx, 'resync', opts);
+      return { ...summary, durationMs: Date.now() - started };
+    })().finally(() => this.inflight.delete(providerId));
+
+    this.inflight.set(providerId, job);
+    return job;
+  }
+
+  /** Re-syncs an explicit set of users — e.g. the former members of a deleted group. */
+  async resyncUsers(
+    provider: RoleSyncProvider,
+    userIds: string[],
+    ctx: SyncCtx = {},
+    trigger: RoleSyncTrigger = 'resync',
+    opts: { concurrency?: number } = {},
+  ): Promise<ResyncSummary> {
+    const started = Date.now();
+    const concurrency = Math.max(1, opts.concurrency ?? 4);
+    const summary: ResyncSummary = {
+      providerId: provider.id, trigger, total: userIds.length, applied: 0, unchanged: 0, failed: 0, lastAdminProtected: 0, durationMs: 0,
+    };
+    const unique = [...new Set(userIds)];
+    for (let i = 0; i < unique.length; i += concurrency) {
+      const results = await Promise.allSettled(
+        unique.slice(i, i + concurrency).map((u) => this.syncFromScim(provider, u, ctx, trigger === 'login' ? 'scim' : trigger)),
       );
+      for (const r of results) {
+        if (r.status !== 'fulfilled') { summary.failed++; continue; }
+        if (r.value.applied) summary.applied++; else summary.unchanged++;
+        if (r.value.lastAdminProtected) summary.lastAdminProtected++;
+      }
+    }
+    summary.durationMs = Date.now() - started;
+
+    if (unique.length > 0) {
       await this.securityEvents.log({
-        event: SecurityEvents.ROLE_SYNC_SKIPPED,
-        actorType: 'SYSTEM',
+        event: SecurityEvents.ROLE_SYNC_BATCH_COMPLETED,
+        actorType: ctx.actorUserId ? 'USER' : 'SYSTEM',
+        actorUserId: ctx.actorUserId ?? null,
         organizationId: provider.organizationId,
-        targetUserId: userId,
-        metadata: { providerId: provider.id, reason: 'overage' },
+        metadata: { ...summary },
         ip: ctx.ip,
         userAgent: ctx.userAgent,
       });
-      return { applied: false, reason: 'overage', presented: 0, matched: 0, grantedRoleIds: [] };
     }
+    return summary;
+  }
 
-    const presented = this.extractIds(provider.roleSyncSource, claims);
+  // ── The core ──────────────────────────────────────────────────────────────
 
+  /**
+   * `presentedIds` is the directory's complete statement of the user's groups
+   * (or app roles). Matches them against the provider's mappings and writes
+   * the result.
+   */
+  private async syncFromDirectoryState(
+    provider: RoleSyncProvider,
+    userId: string,
+    presentedIds: string[],
+    ctx: SyncCtx,
+    trigger: RoleSyncTrigger,
+    membershipSource: MembershipSource,
+  ): Promise<RoleSyncOutcome> {
     const mappings = await this.prisma.identityProviderRoleMapping.findMany({
       where: { providerId: provider.id },
       select: { externalId: true, userRole: true, mcpRoleIds: true },
@@ -155,27 +324,26 @@ export class RoleSyncService {
 
     // Set membership rather than a nested loop: a Führungskreis member can
     // easily present a hundred groups against a few dozen mappings.
-    const presentedSet = new Set(presented);
+    const presentedSet = new Set(presentedIds);
     const matches = mappings.filter((m) => presentedSet.has(m.externalId));
 
-    if (matches.length === 0) {
-      return this.applyFallback(provider, userId, presented.length, ctx);
-    }
-
-    const desiredMcpRoleIds = [
-      ...new Set(matches.flatMap((m) => m.mcpRoleIds)),
-    ];
+    const desiredMcpRoleIds = [...new Set(matches.flatMap((m) => m.mcpRoleIds))];
     // Being in more groups can only ever widen access, so the org role is the
     // most privileged of the matches — not the last one read.
     const desiredOrgRole = this.highestOrgRole(
       matches.map((m) => m.userRole).filter((r): r is UserRole => r != null),
     );
 
-    const granted = await this.writeAssignments(
-      provider,
-      userId,
-      desiredMcpRoleIds,
-    );
+    // A match that grants nothing is treated as no match. Writing an empty
+    // synced set would leave the user with no role at all — which
+    // `getAllowedToolIds` reads as UNRESTRICTED. A mapping row an admin has
+    // not finished (or a SCIM group nobody has assigned roles to yet) must
+    // land the user on the fallback, not on full access.
+    if (matches.length === 0 || (desiredMcpRoleIds.length === 0 && desiredOrgRole === null)) {
+      return this.applyFallback(provider, userId, presentedIds.length, ctx, trigger, membershipSource);
+    }
+
+    const granted = await this.writeAssignments(provider, userId, desiredMcpRoleIds);
     const org = await this.writeOrgRole(provider, userId, desiredOrgRole, ctx);
 
     await this.securityEvents.log({
@@ -186,7 +354,9 @@ export class RoleSyncService {
       metadata: {
         providerId: provider.id,
         source: provider.roleSyncSource,
-        presented: presented.length,
+        trigger,
+        membershipSource,
+        presented: presentedIds.length,
         matched: matches.length,
         grantedRoleIds: granted,
         orgRoleBefore: org.before,
@@ -200,13 +370,67 @@ export class RoleSyncService {
     return {
       applied: true,
       reason: 'matched',
-      presented: presented.length,
+      trigger,
+      membershipSource,
+      presented: presentedIds.length,
       matched: matches.length,
       grantedRoleIds: granted,
       orgRoleBefore: org.before,
       orgRoleAfter: org.after,
       lastAdminProtected: org.lastAdminProtected,
     };
+  }
+
+  /** The never-throws wrapper shared by every entry point. */
+  private async guarded(
+    provider: RoleSyncProvider,
+    userId: string,
+    ctx: SyncCtx,
+    trigger: RoleSyncTrigger,
+    fn: () => Promise<RoleSyncOutcome>,
+  ): Promise<RoleSyncOutcome> {
+    try {
+      return await fn();
+    } catch (e: any) {
+      this.logger.error(`Role sync failed for provider ${provider.id}: ${e?.message}`);
+      await this.securityEvents.log({
+        event: SecurityEvents.ROLE_SYNC_FAILED,
+        actorType: 'SYSTEM',
+        organizationId: provider.organizationId,
+        targetUserId: userId,
+        metadata: { providerId: provider.id, trigger, error: String(e?.message ?? e) },
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+      });
+      return NOTHING(trigger, 'disabled');
+    }
+  }
+
+  // ── Directory state ───────────────────────────────────────────────────────
+
+  /**
+   * The group object ids SCIM has placed this user in.
+   *
+   *   null  → SCIM has never described this user at this provider. The
+   *           caller must fall back to the token's claims.
+   *   []    → SCIM manages this user and they are in no group. Authoritative.
+   *   [...] → the group object ids.
+   *
+   * The null/[] distinction rests on `user_identities.scim_managed_at`, set
+   * by the SCIM layer on create and on first touch. Without it a user in no
+   * group would be indistinguishable from one SCIM has never seen.
+   */
+  private async scimPresentedIds(providerId: string, userId: string): Promise<string[] | null> {
+    const identity = await this.prisma.userIdentity.findUnique({
+      where: { userId_providerId: { userId, providerId } },
+      select: { scimManagedAt: true },
+    });
+    if (!identity?.scimManagedAt) return null;
+    const rows = await this.prisma.identityProviderGroupMember.findMany({
+      where: { userId, group: { providerId, externalId: { not: null } } },
+      select: { group: { select: { externalId: true } } },
+    });
+    return rows.map((r) => r.group.externalId).filter((id): id is string => Boolean(id));
   }
 
   // ── Claim reading ─────────────────────────────────────────────────────────
@@ -223,10 +447,7 @@ export class RoleSyncService {
    * rather than coerced, because a directory that suddenly sends a different
    * shape is a reason to grant nothing, not to guess.
    */
-  private extractIds(
-    source: RoleSyncSource,
-    claims: Record<string, any>,
-  ): string[] {
+  private extractIds(source: RoleSyncSource, claims: Record<string, any>): string[] {
     const raw = source === 'APP_ROLES' ? claims.roles : claims.groups;
     if (!Array.isArray(raw)) return [];
     return raw.filter((v): v is string => typeof v === 'string' && v.length > 0);
@@ -308,13 +529,14 @@ export class RoleSyncService {
 
   /**
    * Moves the user's organization role, refusing any change that would leave
-   * the workspace with no administrator.
+   * the workspace with no ACTIVE administrator. A deactivated membership is
+   * left alone entirely: its role is inert and comes back on reactivation.
    */
   private async writeOrgRole(
     provider: RoleSyncProvider,
     userId: string,
     desired: UserRole | null,
-    ctx: { ip?: string | null; userAgent?: string | null },
+    ctx: SyncCtx,
   ): Promise<{ before?: UserRole; after?: UserRole; lastAdminProtected?: boolean }> {
     if (desired === null) return {};
 
@@ -322,9 +544,9 @@ export class RoleSyncService {
       where: {
         userId_organizationId: { userId, organizationId: provider.organizationId },
       },
-      select: { role: true },
+      select: { role: true, deactivatedAt: true },
     });
-    if (!membership) return {};
+    if (!membership || membership.deactivatedAt) return {};
     if (membership.role === desired) return { before: membership.role, after: desired };
 
     // A directory edit must not be able to lock every human out of a
@@ -332,7 +554,7 @@ export class RoleSyncService {
     // guarded — promotion is always allowed.
     if (membership.role === 'ADMIN' && desired !== 'ADMIN') {
       const admins = await this.prisma.organizationMember.count({
-        where: { organizationId: provider.organizationId, role: 'ADMIN' },
+        where: { organizationId: provider.organizationId, role: 'ADMIN', deactivatedAt: null },
       });
       if (admins <= 1) {
         this.logger.warn(
@@ -351,11 +573,18 @@ export class RoleSyncService {
       }
     }
 
-    await this.prisma.organizationMember.update({
-      where: {
-        userId_organizationId: { userId, organizationId: provider.organizationId },
-      },
-      data: { role: desired },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.organizationMember.update({
+        where: {
+          userId_organizationId: { userId, organizationId: provider.organizationId },
+        },
+        data: { role: desired },
+      });
+      // Keep the active-org cache honest, as the admin path does.
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { organizationId: true } });
+      if (user?.organizationId === provider.organizationId) {
+        await tx.user.update({ where: { id: userId }, data: { role: desired } });
+      }
     });
     await this.securityEvents.log({
       event: SecurityEvents.ROLE_CHANGED,
@@ -375,43 +604,25 @@ export class RoleSyncService {
     provider: RoleSyncProvider,
     userId: string,
     presented: number,
-    ctx: { ip?: string | null; userAgent?: string | null },
+    ctx: SyncCtx,
+    trigger: RoleSyncTrigger,
+    membershipSource: MembershipSource,
   ): Promise<RoleSyncOutcome> {
+    const base = { trigger, membershipSource, presented, matched: 0 };
+
     if (provider.roleSyncFallback === 'KEEP_EXISTING') {
-      return {
-        applied: false,
-        reason: 'fallback_keep_existing',
-        presented,
-        matched: 0,
-        grantedRoleIds: [],
-      };
+      return { ...base, applied: false, reason: 'fallback_keep_existing', grantedRoleIds: [] };
     }
 
     if (provider.roleSyncFallback === 'DEFAULT_ROLE') {
-      const granted = await this.writeAssignments(
-        provider,
-        userId,
-        provider.roleSyncDefaultRoleIds,
-      );
-      await this.audit(provider, userId, 'fallback_default_role', presented, granted, ctx);
-      return {
-        applied: true,
-        reason: 'fallback_default_role',
-        presented,
-        matched: 0,
-        grantedRoleIds: granted,
-      };
+      const granted = await this.writeAssignments(provider, userId, provider.roleSyncDefaultRoleIds);
+      await this.audit(provider, userId, 'fallback_default_role', base, granted, ctx);
+      return { ...base, applied: true, reason: 'fallback_default_role', grantedRoleIds: granted };
     }
 
     const granted = await this.applyDenyAll(provider, userId);
-    await this.audit(provider, userId, 'fallback_deny_all', presented, granted, ctx);
-    return {
-      applied: true,
-      reason: 'fallback_deny_all',
-      presented,
-      matched: 0,
-      grantedRoleIds: granted,
-    };
+    await this.audit(provider, userId, 'fallback_deny_all', base, granted, ctx);
+    return { ...base, applied: true, reason: 'fallback_deny_all', grantedRoleIds: granted };
   }
 
   /**
@@ -427,10 +638,7 @@ export class RoleSyncService {
    * does the right thing with it, and an admin can see in the roles UI why
    * someone has no tools rather than having to infer it from an absence.
    */
-  private async applyDenyAll(
-    provider: RoleSyncProvider,
-    userId: string,
-  ): Promise<string[]> {
+  private async applyDenyAll(provider: RoleSyncProvider, userId: string): Promise<string[]> {
     const role = await this.prisma.role.upsert({
       where: {
         organizationId_name: {
@@ -454,23 +662,16 @@ export class RoleSyncService {
     provider: RoleSyncProvider,
     userId: string,
     reason: RoleSyncReason,
-    presented: number,
+    base: { trigger: RoleSyncTrigger; membershipSource: MembershipSource; presented: number; matched: number },
     grantedRoleIds: string[],
-    ctx: { ip?: string | null; userAgent?: string | null },
+    ctx: SyncCtx,
   ) {
     await this.securityEvents.log({
       event: SecurityEvents.ROLE_SYNC_APPLIED,
       actorType: 'SYSTEM',
       organizationId: provider.organizationId,
       targetUserId: userId,
-      metadata: {
-        providerId: provider.id,
-        source: provider.roleSyncSource,
-        reason,
-        presented,
-        matched: 0,
-        grantedRoleIds,
-      },
+      metadata: { providerId: provider.id, source: provider.roleSyncSource, reason, ...base, grantedRoleIds },
       ip: ctx.ip,
       userAgent: ctx.userAgent,
     });

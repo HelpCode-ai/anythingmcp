@@ -69,7 +69,7 @@ describe('ScimUsersService', () => {
       deactivateInOrganization: jest.fn(async () => ({ status: 'deactivated', keysDeactivated: 1 })),
       reactivateInOrganization: jest.fn(async () => ({ status: 'reactivated', role: 'VIEWER' })),
     };
-    roleSync = { syncOnLogin: jest.fn(async () => ({ applied: true, reason: 'fallback_deny_all' })) };
+    roleSync = { syncFromScim: jest.fn(async () => ({ applied: true, reason: 'fallback_deny_all' })) };
     service = new ScimUsersService(prisma, new SecurityEventService(prisma as unknown as PrismaService), lifecycle, roleSync);
   });
 
@@ -102,7 +102,7 @@ describe('ScimUsersService', () => {
         data: { userId: 'u-new', providerId: 'idp-1', externalSubject: 'oid-new', scimManagedAt: expect.any(Date) },
       });
       // A member with no role is UNRESTRICTED; the fallback must apply now.
-      expect(roleSync.syncOnLogin).toHaveBeenCalledWith(provider, 'u-new', {}, expect.anything());
+      expect(roleSync.syncFromScim).toHaveBeenCalledWith(provider, 'u-new', expect.anything());
       expect(lifecycle.deactivateInOrganization).not.toHaveBeenCalled();
       expect(eventNames()).toEqual(['SCIM_USER_PROVISIONED']);
       expect(JSON.stringify(events)).not.toContain('[REDACTED]');
@@ -166,7 +166,7 @@ describe('ScimUsersService', () => {
         .mockResolvedValueOnce(identity());
       await service.patch(provider, 'u1', patch([{ op: 'replace', value: { active: true } }]), ctx);
       expect(lifecycle.reactivateInOrganization).toHaveBeenCalled();
-      expect(roleSync.syncOnLogin).toHaveBeenCalledWith(provider, 'u1', {}, expect.anything());
+      expect(roleSync.syncFromScim).toHaveBeenCalledWith(provider, 'u1', expect.anything());
       expect(eventNames()).toEqual(['SCIM_USER_REACTIVATED']);
     });
 

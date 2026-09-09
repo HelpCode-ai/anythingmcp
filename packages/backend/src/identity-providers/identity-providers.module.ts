@@ -7,6 +7,7 @@ import { RoleSyncService } from './role-sync.service';
 import { ScimController } from './scim/scim.controller';
 import { ScimAuthGuard } from './scim/scim-auth.guard';
 import { ScimUsersService } from './scim/scim-users.service';
+import { ScimGroupsService } from './scim/scim-groups.service';
 import { UsersModule } from '../users/users.module';
 
 // `DeploymentService` and `PrismaService` come from the @Global() PrismaModule,
@@ -16,7 +17,7 @@ import { UsersModule } from '../users/users.module';
   // UsersModule exports UserLifecycleService, which SCIM `active: false` calls.
   imports: [UsersModule],
   controllers: [IdentityProvidersController, SsoController, ScimController],
-  providers: [IdentityProvidersService, SsoService, RoleSyncService, ScimAuthGuard, ScimUsersService],
+  providers: [IdentityProvidersService, SsoService, RoleSyncService, ScimAuthGuard, ScimUsersService, ScimGroupsService],
   exports: [IdentityProvidersService, SsoService, RoleSyncService],
 })
 export class IdentityProvidersModule {}

@@ -747,6 +747,7 @@ export interface ScimStatus {
   lastRequestAt: string | null;
   tenantUrl: string;
   userCount: number;
+  groupCount: number;
   /** Members with no identity at this provider: Entra will 409 on them. */
   unlinkedMemberCount: number;
 }
@@ -758,11 +759,26 @@ export interface ScimStatus {
  * group names unique. `label` exists only so the admin table is readable.
  */
 export interface RoleMapping {
-  id?: string;
+  id?: string | null;
   externalId: string;
   label: string | null;
   userRole: 'VIEWER' | 'EDITOR' | 'ADMIN' | null;
   mcpRoleIds: string[];
+  /** True when the directory pushed this group over SCIM. */
+  scimManaged?: boolean;
+  scimDisplayName?: string | null;
+  scimMemberCount?: number | null;
+}
+
+export interface ResyncSummary {
+  providerId: string;
+  trigger: string;
+  total: number;
+  applied: number;
+  unchanged: number;
+  failed: number;
+  lastAdminProtected: number;
+  durationMs: number;
 }
 
 export interface SsoProviderButton {
@@ -877,6 +893,9 @@ export const identityProviders = {
     }),
   disableScim: (id: string, token: string) =>
     request<{ message: string }>(`/api/identity-providers/${id}/scim`, { method: 'DELETE', token }),
+  /** Re-derives every SCIM-managed member's roles from stored group membership. */
+  resyncRoles: (id: string, token: string) =>
+    request<ResyncSummary>(`/api/identity-providers/${id}/resync-roles`, { method: 'POST', token }),
 
   roleMappings: (id: string, token: string) =>
     request<RoleMapping[]>(`/api/identity-providers/${id}/role-mappings`, { token }),

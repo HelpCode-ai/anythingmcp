@@ -43,6 +43,7 @@ import {
   SecurityEvents,
 } from '../audit/security-event.service';
 import { RecoveryCodesService } from '../auth/recovery-codes.service';
+import { RoleSyncService } from './role-sync.service';
 
 // Derived from the Prisma enum rather than hand-kept: a new provider type is
 // then accepted automatically and cannot drift out of sync with the database.
@@ -207,6 +208,7 @@ export class IdentityProvidersController {
     private readonly service: IdentityProvidersService,
     private readonly securityEvents: SecurityEventService,
     private readonly recoveryCodes: RecoveryCodesService,
+    private readonly roleSync: RoleSyncService,
   ) {}
 
   @Get()
@@ -355,6 +357,11 @@ export class IdentityProvidersController {
       before: before.map(summariseMapping),
       after: (after ?? []).map(summariseMapping),
     });
+    // With SCIM the memberships are known, so there is no reason to wait for
+    // each user's next login. Fire-and-forget: an admin's PUT must not block
+    // on N users behind a proxy; the batch reports itself in the audit trail
+    // and the panel's "Resync now" awaits when someone wants to watch.
+    void this.roleSync.resyncProvider(id, this.syncCtx(req));
     return after;
   }
 
@@ -382,6 +389,18 @@ export class IdentityProvidersController {
     return updated;
   }
 
+  @Post(':id/resync-roles')
+  @ApiOperation({ summary: 'Re-derive every SCIM-managed member\'s roles from stored group membership (ADMIN)' })
+  async resyncRoles(@Req() req: any, @Param('id') id: string) {
+    const provider = await this.service.findByIdForOrg(id, req.user.organizationId);
+    if (!provider) throw new NotFoundException('Identity provider not found');
+    return this.roleSync.resyncProvider(id, this.syncCtx(req));
+  }
+
+  private syncCtx(req: any) {
+    return { actorUserId: req.user.sub as string, ip: req.ip as string, userAgent: req.headers?.['user-agent'] as string };
+  }
+
   @Get(':id/scim')
   @ApiOperation({ summary: 'SCIM provisioning status for this provider (ADMIN)' })
   async scimStatus(@Req() req: any, @Param('id') id: string) {
@@ -401,6 +420,7 @@ export class IdentityProvidersController {
       // `issued`, never `token*`: the redactor blanks any key naming a token.
       issued: Boolean(result.bearerToken),
     });
+    if (dto.enabled) void this.roleSync.resyncProvider(id, this.syncCtx(req));
     return { ...result.status, ...(result.bearerToken ? { bearerToken: result.bearerToken } : {}) };
   }
 

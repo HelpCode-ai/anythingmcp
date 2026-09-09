@@ -22,9 +22,10 @@ import { Request } from 'express';
 import { SelfHostedOnlyGuard } from '../../common/self-hosted-only.guard';
 import { ScimAuthGuard, ScimProvider } from './scim-auth.guard';
 import { SCIM_CONTENT_TYPE, ScimError, ScimExceptionFilter } from './scim.errors';
-import { parseFilter, parsePagination } from './scim.parser';
+import { parseExcluded, parseFilter, parsePagination } from './scim.parser';
 import { resourceTypes, schemas, serviceProviderConfig } from './scim.schemas';
 import { ScimCtx, ScimUsersService } from './scim-users.service';
+import { ScimGroupsService } from './scim-groups.service';
 
 /**
  * SCIM 2.0 endpoint for Microsoft Entra ID outbound provisioning.
@@ -56,6 +57,7 @@ const ScimJson = () => Header('Content-Type', SCIM_CONTENT_TYPE);
 export class ScimController {
   constructor(
     private readonly users: ScimUsersService,
+    private readonly groups: ScimGroupsService,
     private readonly config: ConfigService,
   ) {}
 
@@ -132,6 +134,45 @@ export class ScimController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteUser(@Req() req: Request, @Param('id') id: string): Promise<void> {
     await this.users.remove(this.provider(req), id, this.ctx(req));
+  }
+
+  // ── Groups ────────────────────────────────────────────────────────────────
+
+  @Get('Groups')
+  @ScimJson()
+  listGroups(@Req() req: Request, @Query() q: Record<string, string>) {
+    return this.groups.list(this.provider(req), parseFilter(q.filter), parsePagination(q), parseExcluded(q), this.ctx(req));
+  }
+
+  @Get('Groups/:id')
+  @ScimJson()
+  getGroup(@Req() req: Request, @Param('id') id: string, @Query() q: Record<string, string>) {
+    return this.groups.get(this.provider(req), id, parseExcluded(q), this.ctx(req));
+  }
+
+  @Post('Groups')
+  @HttpCode(HttpStatus.CREATED)
+  @ScimJson()
+  createGroup(@Req() req: Request, @Body() body: unknown) {
+    return this.groups.create(this.provider(req), body, this.ctx(req));
+  }
+
+  @Put('Groups/:id')
+  @ScimJson()
+  replaceGroup(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {
+    return this.groups.replace(this.provider(req), id, body, this.ctx(req));
+  }
+
+  @Patch('Groups/:id')
+  @ScimJson()
+  patchGroup(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {
+    return this.groups.patch(this.provider(req), id, body, this.ctx(req));
+  }
+
+  @Delete('Groups/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteGroup(@Req() req: Request, @Param('id') id: string): Promise<void> {
+    await this.groups.remove(this.provider(req), id, this.ctx(req));
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

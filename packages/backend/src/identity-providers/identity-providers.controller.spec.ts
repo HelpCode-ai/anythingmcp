@@ -55,6 +55,7 @@ describe('IdentityProvidersController audit trail', () => {
       service,
       new SecurityEventService(prisma as unknown as PrismaService),
       { hasUnused: jest.fn(async () => true) } as any,
+      { resyncProvider: jest.fn(async () => ({ total: 0 })) } as any,
     );
   });
 
