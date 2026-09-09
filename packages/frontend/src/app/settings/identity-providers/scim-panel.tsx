@@ -250,13 +250,35 @@ export function ScimPanel({
           </button>
           {showSteps && (
             <ol className="mt-2 space-y-1 text-[11.5px] text-[var(--text-2)] list-decimal pl-5 max-w-2xl">
-              <li>Entra admin center → <strong>Enterprise applications</strong> → your AnythingMCP app → <strong>Provisioning</strong>.</li>
-              <li><strong>Get started</strong> → Provisioning Mode: <strong>Automatic</strong>.</li>
-              <li>Admin Credentials: paste the <strong>Tenant URL</strong> and the <strong>Secret Token</strong> above → <strong>Test Connection</strong>.</li>
-              <li>Mappings: keep the defaults. <code>userName</code> ← <code>userPrincipalName</code>, <code>externalId</code> ← <code>objectId</code>, and <code>active</code> must stay mapped.</li>
+              <li>
+                Entra admin center → <strong>Enterprise applications</strong> → <strong>New application</strong> →
+                <strong> Create your own application</strong> → <em>Integrate any other application you don&apos;t find
+                in the gallery</em>. Name it something like <em>AnythingMCP provisioning</em>.
+                <br />
+                This has to be a <strong>second, non-gallery app</strong>: the app you registered for sign-in came from
+                <em> App registrations</em>, and Entra leaves <strong>Get started</strong> greyed out on those with
+                &ldquo;automatic provisioning … is not supported&rdquo;.
+              </li>
+              <li>
+                <strong>Users and groups → Add user/group</strong>: assign the same groups you assigned to the sign-in
+                app. Assignment does not carry over between the two apps, and only assigned groups are provisioned.
+              </li>
+              <li><strong>Provisioning</strong> → Provisioning Mode: <strong>Automatic</strong>.</li>
+              <li>
+                <strong>Connectivity</strong> (older tenants show this inline as <em>Admin Credentials</em>):
+                authentication method <strong>Bearer authentication</strong>, then paste the{' '}
+                <strong>Tenant URL</strong> and the <strong>Secret Token</strong> above → <strong>Test connection</strong>.
+                Entra refuses to save until the test passes.
+              </li>
+              <li>
+                <strong>Attribute mapping</strong>: leave <code>userName</code> ← <code>userPrincipalName</code> and
+                <code> active</code> as they are, but <strong>change <code>externalId</code></strong> — its stock source
+                is <code>mailNickname</code>, it must be <code>objectId</code>. Otherwise the same person ends up with
+                one account from SCIM and another from sign-in.
+              </li>
               <li>Settings → Scope: <em>Sync only assigned users and groups</em>. Only groups assigned under <strong>Users and groups</strong> are provisioned — the same rule as the groups claim.</li>
-              <li><strong>Save</strong>, then <strong>Start provisioning</strong>. The first cycle runs within minutes; later ones about every 40 minutes.</li>
-              <li>To test one user without waiting: <strong>Provisioning → Provision on demand</strong>. Use it again after disabling the user in Entra.</li>
+              <li><strong>Save</strong>, then <strong>Start provisioning</strong>. The first cycle creates <em>every</em> assigned user; later ones run about every 40 minutes.</li>
+              <li>To test one user without waiting: <strong>Provision on demand</strong>. Use it again after disabling the user in Entra.</li>
             </ol>
           )}
         </div>

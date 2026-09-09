@@ -104,6 +104,7 @@ The interactive setup handles everything: deployment mode, domain & HTTPS (autom
 - **Audit logging** — every tool call logged with input, output, duration, status
 - **Roles &amp; access control** — tool-level whitelisting per custom role, per-user MCP API keys
 - **[Single sign-on](docs/sso.md)** — Microsoft Entra ID, Google, Okta, Auth0 and generic OIDC; AnythingMCP roles synced from your directory groups on every sign-in, so joiners and leavers are handled where they already are (self-hosted only)
+- **[SCIM provisioning](docs/scim-entra-setup.md)** — Entra ID creates, updates and deactivates accounts on its own. Disable someone in the directory and their workspace access and MCP API keys die with it, without waiting for a sign-in (self-hosted only)
 - **Environment variables** — per-connector `{{VAR}}` interpolation, hidden from the AI
 - **Docker ready** — `docker compose up` and you're running
 
