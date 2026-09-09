@@ -189,9 +189,35 @@ describe('ScimUsersService', () => {
       expect(eventNames()).toEqual(['SCIM_USER_UPDATED']);
     });
 
-    it('refuses an externalId change', async () => {
+    // Entra's stock mapping for a non-gallery app sends `mailNickname` as
+    // externalId, and it packs every attribute into a single PatchOp. Refusing
+    // the operation used to 400 the whole request, throwing away the name, the
+    // department and `active` — while Entra's provision-on-demand view still
+    // showed four green ticks. Keep our anchor, apply the rest, say so.
+    it('ignores a mismatched externalId instead of failing the whole patch', async () => {
       prisma.userIdentity.findUnique.mockResolvedValue(identity());
-      await expect(service.patch(provider, 'u1', patch([{ op: 'replace', path: 'externalId', value: 'other' }]), ctx)).rejects.toMatchObject({ status: 400 });
+      await service.patch(provider, 'u1', patch([
+        { op: 'Replace', path: 'externalId', value: 'mmr' },
+        { op: 'Replace', path: 'displayName', value: 'Morelli Matteo' },
+      ]), ctx);
+
+      expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: 'u1' }, data: { name: 'Morelli Matteo' } });
+      expect(prisma.userIdentity.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ externalSubject: 'mmr' }) }),
+      );
+      expect(events[events.length - 1]).toMatchObject({
+        event: 'SCIM_USER_UPDATED',
+        metadata: expect.objectContaining({ externalIdIgnored: 'mmr' }),
+      });
+    });
+
+    it('does not flag an externalId that matches the anchor', async () => {
+      prisma.userIdentity.findUnique.mockResolvedValue(identity());
+      await service.patch(provider, 'u1', patch([
+        { op: 'Replace', path: 'externalId', value: 'oid-1' },
+        { op: 'Replace', path: 'displayName', value: 'A' },
+      ]), ctx);
+      expect(events[events.length - 1].metadata).not.toHaveProperty('externalIdIgnored');
     });
 
     it('marks an SSO-created identity as SCIM-managed on first touch', async () => {

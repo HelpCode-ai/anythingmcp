@@ -124,8 +124,11 @@ export class ScimUsersService {
   async create(provider: ScimProvider, body: unknown, ctx: ScimCtx) {
     const parsed = readUser(body);
 
-    // The identity key. Entra maps objectId → externalId by default; without
-    // it there is nothing immutable to anchor the account to.
+    // The identity key, and the one attribute the admin MUST re-map by hand:
+    // a non-gallery Entra app ships `externalId ← mailNickname`, which is
+    // neither unique nor immutable. Mapped to `objectId` it matches the `oid`
+    // an SSO sign-in stores, so the same person keeps one account whichever
+    // path reaches us first.
     if (!parsed.externalId) {
       throw new ScimError(400, 'externalId is required (map it to objectId in Entra)', 'invalidValue');
     }
@@ -329,8 +332,21 @@ export class ScimUsersService {
     const isActive = Boolean(membership) && membership!.deactivatedAt === null;
     const metadata: Record<string, unknown> = { providerId: provider.id, oid: row.externalSubject };
 
+    // A directory that reports a different externalId is misconfigured, not
+    // malicious: Entra's stock mapping for a non-gallery app sends
+    // `mailNickname`, so the value rarely matches the objectId we anchored the
+    // identity to at sign-in. Refusing the request would be worse than useless
+    // — Entra packs the whole user into ONE PatchOp, so a 400 here throws away
+    // the name, the department and, critically, `active`, and its
+    // provision-on-demand view still reports the step as a success. Keep our
+    // anchor, apply everything else, and record the mismatch so an admin can
+    // find it.
     if (changes.externalId !== undefined && changes.externalId !== row.externalSubject) {
-      throw new ScimError(400, 'externalId is immutable', 'mutability');
+      metadata.externalIdIgnored = changes.externalId;
+      this.logger.warn(
+        `SCIM sent externalId "${changes.externalId}" for a user anchored to "${row.externalSubject}" ` +
+          `(provider ${provider.id}). Map externalId to objectId in Entra; the value was ignored.`,
+      );
     }
 
     // Mark the identity as SCIM-managed on first touch, so the role sync can
