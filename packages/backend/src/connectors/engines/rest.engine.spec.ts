@@ -492,8 +492,97 @@ describe('RestEngine', () => {
           {},
         ),
       ).rejects.toBeInstanceOf(AxiosError);
-      // 1 initial + 2 retries
-      expect(mockedAxios).toHaveBeenCalledTimes(3);
+      // 1 initial + 3 retries
+      expect(mockedAxios).toHaveBeenCalledTimes(4);
+    });
+
+    // Origins that reject a handshake keep rejecting for a few seconds. The
+    // old two-delay budget (1.2 s) regularly gave up just short of recovery.
+    it('still succeeds when the origin only recovers on the last retry', async () => {
+      mockedAxios
+        .mockRejectedValueOnce(err(undefined, 'EPROTO'))
+        .mockRejectedValueOnce(err(undefined, 'EPROTO'))
+        .mockRejectedValueOnce(err(undefined, 'EPROTO'))
+        .mockResolvedValueOnce({ data: { ok: true } });
+
+      const result = await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'GET', path: '/' },
+        {},
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(mockedAxios).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  /**
+   * A connection-level failure used to surface to the model as the raw OpenSSL
+   * dump, which reads like a credentials problem and tells nobody that trying
+   * again is the right move.
+   */
+  describe('connection-error messages', () => {
+    const err = (status?: number, code?: string) =>
+      new AxiosError(
+        'boom',
+        code,
+        undefined,
+        {},
+        status ? ({ status, data: {} } as any) : undefined,
+      );
+
+    it('restates a TLS handshake rejection in plain language', async () => {
+      mockedAxios.mockRejectedValue(err(undefined, 'EPROTO'));
+
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          { method: 'GET', path: '/' },
+          {},
+        ),
+      ).rejects.toThrow(
+        /Could not reach the API after 4 attempts: the TLS handshake was rejected .* \(EPROTO\)/,
+      );
+    });
+
+    it('keeps the original error as `cause` and carries the code', async () => {
+      const original = err(undefined, 'ECONNRESET');
+      mockedAxios.mockRejectedValue(original);
+
+      const thrown = (await engine
+        .execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          { method: 'GET', path: '/' },
+          {},
+        )
+        .catch((e: unknown) => e)) as Error & { code?: string };
+
+      expect(thrown.cause).toBe(original);
+      expect(thrown.code).toBe('ECONNRESET');
+    });
+
+    it('leaves an error that carries an HTTP status untouched', async () => {
+      mockedAxios.mockRejectedValue(err(503));
+
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          { method: 'GET', path: '/' },
+          {},
+        ),
+      ).rejects.toBeInstanceOf(AxiosError);
+    });
+
+    it('leaves an unrecognised connection code untouched', async () => {
+      mockedAxios.mockRejectedValue(err(undefined, 'ESOMETHINGELSE'));
+
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          { method: 'GET', path: '/' },
+          {},
+        ),
+      ).rejects.toBeInstanceOf(AxiosError);
     });
   });
 

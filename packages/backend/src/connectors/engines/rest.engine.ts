@@ -281,17 +281,72 @@ export class RestEngine {
     ].includes(error.code ?? '');
   }
 
+  /**
+   * Human-readable replacements for connection-level failures. Without these
+   * the caller — and the model reading the tool result — gets the raw OpenSSL
+   * dump, e.g.
+   *   write EPROTO 40032A705A780000:error:0A000438:SSL routines:
+   *   ssl3_read_bytes:tlsv1 alert internal error:../deps/openssl/...
+   * which says nothing about whose fault it is or whether trying again helps.
+   */
+  private static readonly CONNECTION_ERROR_HINTS: Record<string, string> = {
+    EPROTO:
+      'the TLS handshake was rejected by the API (or something in front of it). This is usually temporary and not a credentials problem',
+    ECONNRESET: 'the API closed the connection before responding',
+    ETIMEDOUT: 'the API did not respond in time',
+    ECONNABORTED: 'the request was aborted before the API responded',
+    EAI_AGAIN: 'the API hostname could not be resolved (temporary DNS failure)',
+    ECONNREFUSED: 'the API refused the connection',
+    ENOTFOUND: 'the API hostname does not resolve — check the base URL',
+  };
+
+  /**
+   * Restate a connection-level failure in terms the caller can act on, keeping
+   * the original as `cause` and the code in the text for support. Only touches
+   * errors that never reached the application (no HTTP response), so nothing
+   * that carries a status — and therefore an API-level meaning — is reworded.
+   */
+  private describeConnectionError(error: unknown, attempts: number): unknown {
+    if (!(error instanceof AxiosError) || error.response) return error;
+    const hint = RestEngine.CONNECTION_ERROR_HINTS[error.code ?? ''];
+    if (!hint) return error;
+
+    const tried =
+      attempts > 1 ? ` after ${attempts} attempts` : '';
+    const wrapped = new Error(
+      `Could not reach the API${tried}: ${hint} (${error.code}).`,
+      { cause: error },
+    );
+    (wrapped as { code?: string }).code = error.code;
+    return wrapped;
+  }
+
   /** Execute the request with a small bounded backoff on transient errors. */
   private async requestWithRetry(
     axiosConfig: AxiosRequestConfig,
   ): Promise<AxiosResponse> {
-    const delaysMs = [300, 900];
+    // Three delays rather than two: origins that reject a handshake tend to do
+    // so for a few seconds, and the old 1.2 s total often gave up just short of
+    // recovery. 3.7 s worst case still sits well inside any MCP client timeout.
+    const delaysMs = [300, 900, 2500];
     for (let attempt = 0; ; attempt++) {
       try {
         return await axios(axiosConfig);
       } catch (error) {
-        if (attempt >= delaysMs.length || !this.isTransientError(error)) {
-          throw error;
+        const transient = this.isTransientError(error);
+        if (attempt >= delaysMs.length || !transient) {
+          // Warn, not debug: production runs at info, so a call that burned
+          // every retry used to look identical to one that failed outright —
+          // there was no way to tell a flaky upstream from a broken connector.
+          if (transient) {
+            this.logger.warn(
+              `Gave up after ${attempt + 1} attempts on a transient upstream failure: ${
+                (error as AxiosError).code ??
+                (error as AxiosError).response?.status
+              } ${axiosConfig.method?.toUpperCase()} ${axiosConfig.url}`,
+            );
+          }
+          throw this.describeConnectionError(error, attempt + 1);
         }
         this.logger.debug(
           `Transient error (attempt ${attempt + 1}), retrying in ${delaysMs[attempt]}ms`,
