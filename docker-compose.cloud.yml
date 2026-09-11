@@ -37,6 +37,12 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=4000
+      # V8 old-space cap for the backend, read by start.sh. Left unset it
+      # defaults to 2048, which suits a 4 GB host; the tool registry outgrew
+      # that and crash-looped the instance on 10 Sep. Raise it in the server
+      # .env when the host has the RAM to back it — roughly half of total is a
+      # safe ceiling, since postgres, redis, db-rest and caddy share the box.
+      - NODE_MAX_OLD_SPACE_MB=${NODE_MAX_OLD_SPACE_MB:-2048}
       - DEPLOYMENT_MODE=cloud
       - NEXT_PUBLIC_API_URL=https://${DOMAIN}
       - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
