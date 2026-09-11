@@ -135,6 +135,23 @@ describe('validateBaseUrl', () => {
       );
     });
 
+    // The placeholder check used to be /\{\{[^}]+\}\}/, which backtracks
+    // quadratically on a run of '{' (CodeQL js/polynomial-redos) — and this
+    // value arrives straight from a request body.
+    it('handles a pathological run of braces without stalling', () => {
+      const started = Date.now();
+      expect(validateBaseUrl('{'.repeat(50_000), cloud)).toBeTruthy();
+      expect(Date.now() - started).toBeLessThan(500);
+    });
+
+    it('still treats a real placeholder as templated', () => {
+      expect(validateBaseUrl('{{X}}/v1', cloud)).toBeNull();
+    });
+
+    it('does not treat an empty placeholder as one', () => {
+      expect(validateBaseUrl('{{}}', cloud)).toBeTruthy();
+    });
+
     it('truncates a long offending value instead of echoing all of it', () => {
       const problem = validateBaseUrl(`https://${'x'.repeat(200)}`, cloud);
       expect(problem!.length).toBeLessThan(260);

@@ -39,7 +39,13 @@ const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
  * is not a literal one and cannot be parsed here.
  */
 function isTemplated(baseUrl: string): boolean {
-  return /\{\{[^}]+\}\}/.test(baseUrl);
+  // Two indexOf scans rather than /\{\{[^}]+\}\}/. The regex backtracks
+  // quadratically on an input of many '{' — CodeQL js/polynomial-redos — and
+  // this value comes straight from a request body. Same question either way:
+  // is there an opening '{{' with a non-empty run before a closing '}}'.
+  const open = baseUrl.indexOf('{{');
+  if (open === -1) return false;
+  return baseUrl.indexOf('}}', open + 2) > open + 2;
 }
 
 /**
