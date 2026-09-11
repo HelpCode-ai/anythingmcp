@@ -44,6 +44,7 @@ model Organization {
   securityEvents   SecurityEvent[]
   userRoleAssignments UserRoleAssignment[]
   identityProviders   IdentityProvider[]
+  mcpConnectionGrants McpConnectionGrant[]
 
   @@map("organizations")
 }
@@ -167,6 +168,7 @@ model User {
   emailVerificationTokens  EmailVerificationToken[]
   recoveryCodes            RecoveryCode[]
   scimGroupMemberships     IdentityProviderGroupMember[]
+  mcpConnectionGrants      McpConnectionGrant[]
 
   @@index([organizationId])
   @@map("users")
@@ -603,6 +605,46 @@ model McpServerConnector {
 
   @@unique([mcpServerId, connectorId])
   @@map("mcp_server_connectors")
+}
+
+// ── MCP Connection Grant ────────────────────────────────────────────────────
+
+/// What an OAuth client is allowed to SEE through the shared `/mcp` endpoint,
+/// chosen by the user while authorizing it.
+///
+/// A filter, never a source of authority. Resolution re-checks organization
+/// membership for every target on every request and fails closed, because a
+/// grant is written when the token is issued and membership can be revoked long
+/// afterwards. A grant naming another organization's server therefore concedes
+/// nothing — the target is simply dropped.
+///
+/// Keyed on (clientId, userId): one live selection per client per user, so
+/// re-authorizing overwrites it and the user can revoke it from the dashboard.
+model McpConnectionGrant {
+  id String @id @default(cuid())
+
+  /// `client_id` claim of the access token. Present on every token mcp-nest
+  /// issues, which is what lets the selection live server-side instead of
+  /// having to be carried in the token.
+  clientId String @map("client_id")
+  userId   String @map("user_id")
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Set for a whole-workspace grant: every tool of this organization, which is
+  /// what `/mcp` served before grants existed. Null when `serverIds` is used.
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// Chosen MCP servers. Ids only — the owning organization is read back from
+  /// `mcp_server_configs` at resolution time and never trusted from here.
+  serverIds String[] @map("server_ids")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([clientId, userId])
+  @@index([userId])
+  @@map("mcp_connection_grants")
 }
 
 // ── Audit Log ───────────────────────────────────────────────────────────────
