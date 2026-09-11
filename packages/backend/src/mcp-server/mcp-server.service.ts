@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { z } from 'zod';
 import { McpStrategy, MCP_STRATEGY } from '@rekog/mcp-nest';
+import type { Connector, McpTool } from '../generated/prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
@@ -65,64 +66,105 @@ export class McpServerService implements OnModuleInit {
     );
   }
 
+  /**
+   * How many connectors to pull from the database at a time in
+   * {@link loadAllTools}. Small enough that the raw Prisma rows for a page are
+   * garbage in between pages; large enough that a full boot is a few dozen
+   * round trips, not hundreds.
+   */
+  private static readonly LOAD_PAGE_SIZE = 25;
+
+  /**
+   * Register every enabled tool of every active connector, across all tenants.
+   *
+   * Read in pages rather than as one `findMany`. The registry itself is
+   * unavoidably large — on the cloud instance it holds ~22k tools, ~118 MB of
+   * raw JSON before V8 object overhead — but loading every connector in a
+   * single query ALSO materialised the whole result set at once, so peak heap
+   * at boot was roughly twice the steady state. That is what pushed the
+   * process past --max-old-space-size and crash-looped it nine times on
+   * 10 Sep. Paging keeps the transient half bounded to one page.
+   */
   async loadAllTools(): Promise<void> {
-    const connectors = await this.prisma.connector.findMany({
-      where: { isActive: true },
-      include: { tools: { where: { isEnabled: true } } },
-    });
+    let cursor: string | undefined;
 
-    for (const connector of connectors) {
-      for (const tool of connector.tools) {
-        const toolDef = {
-          id: tool.id,
-          connectorId: connector.id,
-          organizationId: connector.organizationId,
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters as Record<string, unknown>,
-          connectorType: connector.type,
-          useProxy: tool.useProxy,
-          connectorConfig: {
-            baseUrl: connector.baseUrl,
-            authType: connector.authType,
-            authConfig: this.decryptAuthConfig(connector.authConfig),
-            headers: connector.headers as Record<string, string> | undefined,
-            envVars: connector.envVars as Record<string, string> | undefined,
-            specUrl: connector.specUrl ?? undefined,
-            config: connector.config as Record<string, unknown> | undefined,
-          },
-          endpointMapping: tool.endpointMapping as any,
-          responseMapping: tool.responseMapping as
-            | Record<string, unknown>
-            | undefined,
-          outputSchema: tool.outputSchema as unknown,
-          annotations: tool.annotations as unknown,
-        };
+    for (;;) {
+      const page = await this.prisma.connector.findMany({
+        where: { isActive: true },
+        include: { tools: { where: { isEnabled: true } } },
+        orderBy: { id: 'asc' },
+        take: McpServerService.LOAD_PAGE_SIZE,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
 
-        // Register in our internal registry (for execution lookup)
-        this.toolRegistry.registerTool(toolDef);
+      if (page.length === 0) break;
 
-        // Strip params covered by env vars so the AI doesn't need to provide them
-        const envVars = connector.envVars as Record<string, string> | undefined;
-        const effectiveSchema = this.stripEnvVarParams(
-          tool.parameters as Record<string, unknown>,
-          envVars,
+      for (const connector of page) {
+        this.registerConnectorTools(connector);
+      }
+
+      cursor = page[page.length - 1].id;
+      if (page.length < McpServerService.LOAD_PAGE_SIZE) break;
+    }
+  }
+
+  /**
+   * Register one connector's enabled tools in both registries. Shared by the
+   * boot-time load and by {@link reloadConnectorTools} so the two can't drift.
+   */
+  private registerConnectorTools(
+    connector: Connector & { tools: McpTool[] },
+  ): void {
+    for (const tool of connector.tools) {
+      const toolDef = {
+        id: tool.id,
+        connectorId: connector.id,
+        organizationId: connector.organizationId,
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters as Record<string, unknown>,
+        connectorType: connector.type,
+        useProxy: tool.useProxy,
+        connectorConfig: {
+          baseUrl: connector.baseUrl,
+          authType: connector.authType,
+          authConfig: this.decryptAuthConfig(connector.authConfig),
+          headers: connector.headers as Record<string, string> | undefined,
+          envVars: connector.envVars as Record<string, string> | undefined,
+          specUrl: connector.specUrl ?? undefined,
+          config: connector.config as Record<string, unknown> | undefined,
+        },
+        endpointMapping: tool.endpointMapping as any,
+        responseMapping: tool.responseMapping as
+          | Record<string, unknown>
+          | undefined,
+        outputSchema: tool.outputSchema as unknown,
+        annotations: tool.annotations as unknown,
+      };
+
+      // Register in our internal registry (for execution lookup)
+      this.toolRegistry.registerTool(toolDef);
+
+      // Strip params covered by env vars so the AI doesn't need to provide them
+      const envVars = connector.envVars as Record<string, string> | undefined;
+      const effectiveSchema = this.stripEnvVarParams(
+        tool.parameters as Record<string, unknown>,
+        envVars,
+      );
+
+      // Register as a native MCP tool so it appears directly in tools/list,
+      // but only the first time we see this name. The upstream library's
+      // McpRegistryService is single-tenant (one tool per name); our
+      // ToolRegistry resolves cross-org collisions at handler-dispatch
+      // time via getToolForOrg/getTool, so the second+ registration with
+      // the same name would just overwrite and emit a warning.
+      if (this.toolRegistry.countByName(tool.name) === 1) {
+        this.registerMcpTool(
+          tool.name,
+          tool.description,
+          effectiveSchema,
+          deriveToolAnnotations(toolDef),
         );
-
-        // Register as a native MCP tool so it appears directly in tools/list,
-        // but only the first time we see this name. The upstream library's
-        // McpRegistryService is single-tenant (one tool per name); our
-        // ToolRegistry resolves cross-org collisions at handler-dispatch
-        // time via getToolForOrg/getTool, so the second+ registration with
-        // the same name would just overwrite and emit a warning.
-        if (this.toolRegistry.countByName(tool.name) === 1) {
-          this.registerMcpTool(
-            tool.name,
-            tool.description,
-            effectiveSchema,
-            deriveToolAnnotations(toolDef),
-          );
-        }
       }
     }
   }
@@ -149,52 +191,7 @@ export class McpServerService implements OnModuleInit {
     });
 
     if (connector && connector.isActive) {
-      for (const tool of connector.tools) {
-        const toolDef = {
-          id: tool.id,
-          connectorId: connector.id,
-          organizationId: connector.organizationId,
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters as Record<string, unknown>,
-          connectorType: connector.type,
-          useProxy: tool.useProxy,
-          connectorConfig: {
-            baseUrl: connector.baseUrl,
-            authType: connector.authType,
-            authConfig: this.decryptAuthConfig(connector.authConfig),
-            headers: connector.headers as Record<string, string> | undefined,
-            envVars: connector.envVars as Record<string, string> | undefined,
-            specUrl: connector.specUrl ?? undefined,
-            config: connector.config as Record<string, unknown> | undefined,
-          },
-          endpointMapping: tool.endpointMapping as any,
-          responseMapping: tool.responseMapping as
-            | Record<string, unknown>
-            | undefined,
-          outputSchema: tool.outputSchema as unknown,
-          annotations: tool.annotations as unknown,
-        };
-
-        this.toolRegistry.registerTool(toolDef);
-
-        const envVars = connector.envVars as Record<string, string> | undefined;
-        const effectiveSchema = this.stripEnvVarParams(
-          tool.parameters as Record<string, unknown>,
-          envVars,
-        );
-        // Same dedup rule as loadAllTools — register on the upstream
-        // single-tenant MCP registry only when this is the first tool
-        // with this name across all orgs/connectors.
-        if (this.toolRegistry.countByName(tool.name) === 1) {
-          this.registerMcpTool(
-            tool.name,
-            tool.description,
-            effectiveSchema,
-            deriveToolAnnotations(toolDef),
-          );
-        }
-      }
+      this.registerConnectorTools(connector);
     }
 
     this.logger.log(

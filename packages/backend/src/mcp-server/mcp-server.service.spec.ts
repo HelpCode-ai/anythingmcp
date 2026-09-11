@@ -108,3 +108,79 @@ describe('McpServerService.jsonSchemaToZod', () => {
     expect(schema.parse({ q: 'Domoferm' })).toEqual({ q: 'Domoferm' });
   });
 });
+
+/**
+ * `loadAllTools` pages through the connector table instead of pulling every
+ * tenant's connectors in one query — the single query materialised the whole
+ * result set alongside the registry it was filling, roughly doubling peak heap
+ * at boot. These lock in that the paging actually terminates, covers every
+ * connector exactly once, and never holds more than one page.
+ */
+describe('McpServerService.loadAllTools paging', () => {
+  const PAGE = (McpServerService as any).LOAD_PAGE_SIZE as number;
+
+  /** A service with just enough wired up to run the paging loop. */
+  function makeService(connectorIds: string[]) {
+    const svc: any = Object.create(McpServerService.prototype);
+    const calls: Array<Record<string, any>> = [];
+    const registered: string[] = [];
+
+    svc.prisma = {
+      connector: {
+        findMany: jest.fn(async (args: Record<string, any>) => {
+          calls.push(args);
+          const start = args.cursor
+            ? connectorIds.indexOf(args.cursor.id) + (args.skip ?? 0)
+            : 0;
+          return connectorIds
+            .slice(start, start + args.take)
+            .map((id) => ({ id, tools: [] }));
+        }),
+      },
+    };
+    svc.registerConnectorTools = (c: { id: string }) => registered.push(c.id);
+
+    return { svc, calls, registered };
+  }
+
+  it('visits every connector exactly once, in order', async () => {
+    const ids = Array.from({ length: PAGE * 2 + 7 }, (_, i) => `c${i}`);
+    const { svc, registered } = makeService(ids);
+
+    await svc.loadAllTools();
+
+    expect(registered).toEqual(ids);
+  });
+
+  it('never asks for more than one page at a time', async () => {
+    const ids = Array.from({ length: PAGE * 3 }, (_, i) => `c${i}`);
+    const { svc, calls } = makeService(ids);
+
+    await svc.loadAllTools();
+
+    expect(calls.every((c) => c.take === PAGE)).toBe(true);
+    // First page has no cursor; every later one skips past the previous last id.
+    expect(calls[0].cursor).toBeUndefined();
+    expect(calls.slice(1).every((c) => c.skip === 1 && c.cursor)).toBe(true);
+  });
+
+  it('stops on an exact multiple of the page size instead of looping forever', async () => {
+    const ids = Array.from({ length: PAGE * 2 }, (_, i) => `c${i}`);
+    const { svc, calls, registered } = makeService(ids);
+
+    await svc.loadAllTools();
+
+    expect(registered).toHaveLength(PAGE * 2);
+    // Two full pages, then one more that comes back empty and ends the loop.
+    expect(calls).toHaveLength(3);
+  });
+
+  it('does nothing when there are no active connectors', async () => {
+    const { svc, calls, registered } = makeService([]);
+
+    await svc.loadAllTools();
+
+    expect(registered).toEqual([]);
+    expect(calls).toHaveLength(1);
+  });
+});
