@@ -187,8 +187,16 @@ export const connectors = {
     request<any[]>('/api/connectors', { token }),
   proxyAvailability: (token: string) =>
     request<{ available: boolean }>('/api/connectors/proxy-availability', { token }),
+  /**
+   * `attachedToServer` is the MCP server the backend put the connector on, or
+   * null when the workspace has none yet. Attaching used to be a separate step
+   * the caller had to remember.
+   */
   create: (data: unknown, token: string) =>
-    request<any>('/api/connectors', { method: 'POST', body: data, token }),
+    request<any & { attachedToServer: { id: string; name: string } | null }>(
+      '/api/connectors',
+      { method: 'POST', body: data, token },
+    ),
   get: (id: string, token: string) =>
     request<any>(`/api/connectors/${id}`, { token }),
   update: (id: string, data: unknown, token: string) =>

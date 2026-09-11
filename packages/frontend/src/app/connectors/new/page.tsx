@@ -156,10 +156,19 @@ export default function NewConnectorPage() {
       const full = await connectors.get(created.id, token);
       const hasTools = (full.tools?.length || 0) > 0;
 
-      if (hasTools) {
-        setCreatedConnector({ id: created.id, name: name || created.name });
-      } else {
+      if (!hasTools) {
         router.push(`/connectors/${created.id}`);
+      } else if (created.attachedToServer) {
+        // Already on a server, so there is no choice left to make here. Go
+        // straight to that server: its page carries the URL to paste into
+        // Claude, which is the next thing anyone needs. The modal this
+        // replaces offered "Skip for now", and most people took it — 49 of the
+        // 84 workspaces that imported a working connector in the fortnight to
+        // 11 Sep 2026 left it attached to nothing, reachable by no agent.
+        // Reassigning is still one click from the connector page.
+        router.push(`/mcp-server/${created.attachedToServer.id}`);
+      } else {
+        setCreatedConnector({ id: created.id, name: name || created.name });
       }
     } catch (err: any) {
       setError(err.message);

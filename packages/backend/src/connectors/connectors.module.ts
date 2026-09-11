@@ -21,6 +21,7 @@ import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
 import { CatalogResyncService } from './catalog-resync.service';
 import { CatalogReconciler } from './catalog-reconciler.service';
 import { LicenseModule } from '../license/license.module';
+import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 
 const ENGINES = [
   RestEngine,
@@ -33,7 +34,7 @@ const ENGINES = [
 const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlParser];
 
 @Module({
-  imports: [McpServerModule, LicenseModule],
+  imports: [McpServerModule, McpServersModule, LicenseModule],
   controllers: [ConnectorsController, McpOAuthCallbackController, ToolsController],
   providers: [
     ConnectorsService,
