@@ -138,6 +138,53 @@ export class McpServersService {
       );
   }
 
+  /**
+   * Attach one connector to the user's default server, additively.
+   *
+   * Distinct from {@link assignConnectors}, which replaces the whole set — the
+   * caller here is connector creation, and a new connector must never silently
+   * detach the ones already on the server.
+   *
+   * Returns the server it attached to, or null when there is nothing sensible
+   * to attach to. Never throws: a connector that exists but is not wired up is
+   * recoverable in the UI, a failed creation is not.
+   */
+  async attachToDefaultServer(
+    userId: string,
+    organizationId: string,
+    connectorId: string,
+  ): Promise<{ id: string; name: string } | null> {
+    try {
+      const server = await this.prisma.mcpServerConfig.findFirst({
+        where: { userId, organizationId, isActive: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, name: true },
+      });
+      if (!server) return null;
+
+      await this.prisma.mcpServerConnector.create({
+        data: { mcpServerId: server.id, connectorId },
+      });
+
+      this.sessionManager
+        .notifyToolsChanged()
+        .catch((e) =>
+          this.logger.warn(`MCP session notify failed: ${e.message}`),
+        );
+
+      return server;
+    } catch (e: any) {
+      // P2002 = already attached. Creation is retried often enough (import,
+      // re-import, catalog resync) that this is expected, not a fault.
+      if (e?.code !== 'P2002') {
+        this.logger.warn(
+          `Could not attach connector ${connectorId} to a default server: ${e?.message}`,
+        );
+      }
+      return null;
+    }
+  }
+
   async getConnectorIds(serverId: string): Promise<string[]> {
     const rows = await this.prisma.mcpServerConnector.findMany({
       where: { mcpServerId: serverId },
