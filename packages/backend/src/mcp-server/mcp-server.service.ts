@@ -26,6 +26,19 @@ export function toolVisibilityRole(toolName: string): string {
   return `tool:${toolName}`;
 }
 
+/** The shape an MCP tool handler returns when it declines to run. */
+type ToolCallRefusal = {
+  content: { type: 'text'; text: string }[];
+  isError: true;
+};
+
+function refuse(error: string): ToolCallRefusal {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify({ error }) }],
+    isError: true,
+  };
+}
+
 @Injectable()
 export class McpServerService implements OnModuleInit {
   private readonly logger = new Logger(McpServerService.name);
@@ -260,76 +273,12 @@ export class McpServerService implements OnModuleInit {
         // merge that drops the option — is still not freely callable. Defence
         // in depth, not the only gate.
         const user = request?.user;
-        // Set when the caller's credential is pinned to one MCP server, so the
-        // executor resolves the tool in that server's scope rather than the
-        // whole organization's.
-        let serverConnectorIds: string[] | undefined;
-        if (user?.sub) {
-          // Global /mcp registry: there is no server-scoped org here, so the
-          // caller's active org is the relevant one — same org used by
-          // getToolForOrg below.
-          const allowedToolIds = await this.rolesService.getAllowedToolIds(
-            user.sub,
-            user.organizationId,
-          );
-          if (allowedToolIds !== null) {
-            // User has restricted access — check if this tool is allowed.
-            // Resolve by org first so we don't read the wrong org's tool
-            // when two orgs registered the same tool name.
-            const tool = user.organizationId
-              ? this.toolRegistry.getToolForOrg(name, user.organizationId)
-              : this.toolRegistry.getTool(name);
-            if (tool && !allowedToolIds.includes(tool.id)) {
-              return {
-                content: [{ type: 'text' as const, text: JSON.stringify({ error: `Access denied: you do not have permission to use '${name}'.` }) }],
-                isError: true,
-              };
-            }
-          }
 
-          // Check MCP server scoping — if the API key is tied to a server,
-          // only allow tools from connectors assigned to that server.
-          //
-          // The refusal used to sit inside `if (tool)`, so a name that matched
-          // NO connector on this server fell straight through the guard and was
-          // then resolved in a wider scope by the executor. Refuse on the
-          // absence, which is the case that mattered.
-          if (user.mcpServerId) {
-            serverConnectorIds = await this.mcpServersService.getConnectorIds(
-              user.mcpServerId,
-            );
-            const tool = this.toolRegistry.getTool(name, serverConnectorIds);
-            if (!tool) {
-              return {
-                content: [{ type: 'text' as const, text: JSON.stringify({ error: `Tool '${name}' is not available on this MCP server.` }) }],
-                isError: true,
-              };
-            }
-          } else if (user.organizationId) {
-            // Authenticated user without MCP-server scoping: the global
-            // /mcp endpoint must still refuse to invoke a same-named tool
-            // from a different organization. Reject if no tool exists for
-            // this org (an unscoped lookup would otherwise silently fall
-            // back to whichever org registered the name first).
-            const orgTool = this.toolRegistry.getToolForOrg(
-              name,
-              user.organizationId,
-            );
-            if (!orgTool) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: JSON.stringify({
-                      error: `Tool '${name}' is not available for your organization.`,
-                    }),
-                  },
-                ],
-                isError: true,
-              };
-            }
-          }
-        }
+        // Which connectors this call may reach, or a refusal. Everything that
+        // decides scope lives in one place so the branches cannot drift.
+        const scope = await this.resolveCallScope(user, name);
+        if ('error' in scope) return scope.error;
+        const serverConnectorIds = scope.connectorIds;
 
         // OAuth JWTs store email inside user_data, app JWTs have it top-level
         const invocationContext = {
@@ -345,6 +294,96 @@ export class McpServerService implements OnModuleInit {
         return this.toolExecutor.executeTool(name, args, invocationContext);
       },
     });
+  }
+
+  /**
+   * The connector scope a `tools/call` on the GLOBAL `/mcp` may use, or the
+   * refusal to send back instead.
+   *
+   * Three mutually exclusive cases, narrowest first. None of them widens when
+   * its own scope has no match — the whole point is that a miss is a refusal,
+   * not a reason to look somewhere bigger.
+   *
+   *  1. A CONNECTION GRANT. The user chose what this client may reach while
+   *     authorizing it; `attachVisibleTools` resolved it for this request,
+   *     re-checking organization membership. Narrower than the caller's active
+   *     organization — and possibly in a DIFFERENT one, when they belong to
+   *     several — so roles are read from the organization that owns the tool,
+   *     not from whichever org happens to be active.
+   *  2. A CREDENTIAL PINNED TO ONE SERVER (`user.mcpServerId`).
+   *  3. NO GRANT — every token issued before grants existed. Unchanged
+   *     behaviour: the caller's active organization.
+   *
+   * `undefined` connectorIds means "no connector filter", which the executor
+   * only honours for an instance-level static credential on a single-tenant
+   * box. An identified user always ends up with either a filter or a refusal.
+   */
+  private async resolveCallScope(
+    user: any,
+    name: string,
+  ): Promise<{ connectorIds?: string[] } | { error: ToolCallRefusal }> {
+    if (!user?.sub) return {};
+
+    const granted: string[] | undefined = user.grantedConnectorIds;
+    if (granted) {
+      const tool = this.toolRegistry.getTool(name, granted);
+      if (!tool) {
+        return { error: refuse(`Tool '${name}' is not available on this connection.`) };
+      }
+      const allowedToolIds = await this.rolesService.getAllowedToolIds(
+        user.sub,
+        tool.organizationId,
+      );
+      if (allowedToolIds !== null && !allowedToolIds.includes(tool.id)) {
+        return { error: refuse(`Access denied: you do not have permission to use '${name}'.`) };
+      }
+      return { connectorIds: granted };
+    }
+
+    // Role check, kept as a SECOND layer. The transport refuses a disallowed
+    // call before the handler runs, because `requiredRoles` gates `tools/call`
+    // as well as `tools/list`. This stays so that a tool registered without a
+    // visibility role — a future code path, a merge that drops the option — is
+    // still not freely callable. Defence in depth, not the only gate.
+    const allowedToolIds = await this.rolesService.getAllowedToolIds(
+      user.sub,
+      user.organizationId,
+    );
+    if (allowedToolIds !== null) {
+      // Resolve by org first so we don't read the wrong org's tool when two
+      // orgs registered the same tool name.
+      const tool = user.organizationId
+        ? this.toolRegistry.getToolForOrg(name, user.organizationId)
+        : this.toolRegistry.getTool(name);
+      if (tool && !allowedToolIds.includes(tool.id)) {
+        return { error: refuse(`Access denied: you do not have permission to use '${name}'.`) };
+      }
+    }
+
+    // The refusal used to sit inside `if (tool)`, so a name that matched NO
+    // connector on this server fell straight through the guard and was then
+    // resolved in a wider scope by the executor. Refuse on the absence, which
+    // is the case that mattered.
+    if (user.mcpServerId) {
+      const serverConnectorIds = await this.mcpServersService.getConnectorIds(
+        user.mcpServerId,
+      );
+      if (!this.toolRegistry.getTool(name, serverConnectorIds)) {
+        return { error: refuse(`Tool '${name}' is not available on this MCP server.`) };
+      }
+      return { connectorIds: serverConnectorIds };
+    }
+
+    if (user.organizationId) {
+      // The global endpoint must refuse a same-named tool from a different
+      // organization; an unscoped lookup would otherwise silently fall back to
+      // whichever org registered the name first.
+      if (!this.toolRegistry.getToolForOrg(name, user.organizationId)) {
+        return { error: refuse(`Tool '${name}' is not available for your organization.`) };
+      }
+    }
+
+    return {};
   }
 
   /**
