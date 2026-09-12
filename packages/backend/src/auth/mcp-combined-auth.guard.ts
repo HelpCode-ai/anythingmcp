@@ -192,15 +192,24 @@ export class McpCombinedAuthGuard implements CanActivate {
       (req.headers['x-forwarded-host'] as string) || req.headers.host;
     const baseUrl = host ? `${proto}://${host}` : (this.configService.get<string>('SERVER_URL') || 'http://localhost:4000');
     // RFC 9728: the protected-resource metadata URL appends the resource path
-    // (e.g. /mcp/<serverId>) to the well-known prefix, so each per-server
-    // resource advertises its own metadata. Falls back to the root document.
-    const resourceMetadataUrl = reqPath.startsWith('/mcp/')
+    // (/mcp or /mcp/<serverId>) to the well-known prefix, so each resource
+    // advertises its own metadata. Falls back to the root document.
+    const resourceMetadataUrl = reqPath.startsWith('/mcp')
       ? `${baseUrl}/.well-known/oauth-protected-resource${reqPath}`
       : `${baseUrl}/.well-known/oauth-protected-resource`;
 
+    // RFC 6750 §3.1: `error="invalid_token"` tells the client its token is
+    // expired or revoked and it must re-authorize, rather than retry. A request
+    // that carried no token at all gets no error code — the RFC says so, and a
+    // client's first unauthenticated probe should not be told its token is bad.
+    const presentedToken = (req.headers['authorization'] as string | undefined)
+      ?.toLowerCase()
+      .startsWith('bearer ');
+    const errorAttr = presentedToken ? 'error="invalid_token", ' : '';
+
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer realm="AnythingMCP MCP Server", resource_metadata="${resourceMetadataUrl}"`,
+      `Bearer realm="AnythingMCP MCP Server", ${errorAttr}resource_metadata="${resourceMetadataUrl}"`,
     );
     res.status(401).json({
       jsonrpc: '2.0',

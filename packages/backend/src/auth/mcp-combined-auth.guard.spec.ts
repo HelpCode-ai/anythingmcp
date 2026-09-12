@@ -315,4 +315,66 @@ describe('McpCombinedAuthGuard', () => {
       expect(result).toBe(false);
     });
   });
+
+  describe('401 WWW-Authenticate (RFC 6750 / RFC 9728)', () => {
+    const ctxFor = (path: string, headers: Record<string, string> = {}) => {
+      const request = {
+        headers: { host: 'cloud.test', 'x-forwarded-proto': 'https', ...headers },
+        path,
+        user: undefined as any,
+      };
+      const response = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+      return {
+        switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
+      } as any;
+    };
+    const strict = () =>
+      mockConfig.get.mockImplementation((key: string) =>
+        key === 'MCP_AUTH_MODE' ? 'legacy' : undefined,
+      );
+    const header = (ctx: any) =>
+      ctx.switchToHttp().getResponse().setHeader.mock.calls.find(
+        ([name]: [string]) => name === 'WWW-Authenticate',
+      )?.[1] as string;
+
+    it('points the shared /mcp endpoint at its own metadata document', async () => {
+      strict();
+      const ctx = ctxFor('/mcp');
+      await guard.canActivate(ctx);
+      expect(header(ctx)).toContain(
+        'resource_metadata="https://cloud.test/.well-known/oauth-protected-resource/mcp"',
+      );
+    });
+
+    it('points a per-server endpoint at its own metadata document', async () => {
+      strict();
+      const ctx = ctxFor('/mcp/srv1');
+      await guard.canActivate(ctx);
+      expect(header(ctx)).toContain(
+        'resource_metadata="https://cloud.test/.well-known/oauth-protected-resource/mcp/srv1"',
+      );
+    });
+
+    it('omits error= when no token was presented', async () => {
+      strict();
+      const ctx = ctxFor('/mcp');
+      await guard.canActivate(ctx);
+      expect(header(ctx)).not.toContain('error=');
+    });
+
+    it('says invalid_token when a bearer token was presented and rejected', async () => {
+      strict();
+      mockAuth.verifyToken.mockImplementation(() => {
+        throw new Error('expired');
+      });
+      const ctx = ctxFor('/mcp', { authorization: 'Bearer stale' });
+      const result = await guard.canActivate(ctx);
+      expect(result).toBe(false);
+      expect(header(ctx)).toContain('error="invalid_token"');
+    });
+  });
 });
