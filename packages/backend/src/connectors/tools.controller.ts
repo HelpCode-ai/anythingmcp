@@ -21,7 +21,9 @@ import {
   IsBoolean,
   IsArray,
   ValidateNested,
+  MaxLength,
 } from 'class-validator';
+import { MAX_TOOL_NAME_LENGTH } from './parsers/tool-name.util';
 import { Type } from 'class-transformer';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
@@ -78,6 +80,7 @@ class CreateToolDto {
     example: 'list_invoices',
   })
   @IsString()
+  @MaxLength(MAX_TOOL_NAME_LENGTH)
   name: string;
 
   @ApiProperty({
@@ -125,6 +128,7 @@ class UpdateToolDto {
   @ApiPropertyOptional({ description: 'Tool name.' })
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_TOOL_NAME_LENGTH)
   name?: string;
 
   @ApiPropertyOptional({ description: 'One-line description.' })
