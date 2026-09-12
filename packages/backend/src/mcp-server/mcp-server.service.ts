@@ -260,6 +260,10 @@ export class McpServerService implements OnModuleInit {
         // merge that drops the option — is still not freely callable. Defence
         // in depth, not the only gate.
         const user = request?.user;
+        // Set when the caller's credential is pinned to one MCP server, so the
+        // executor resolves the tool in that server's scope rather than the
+        // whole organization's.
+        let serverConnectorIds: string[] | undefined;
         if (user?.sub) {
           // Global /mcp registry: there is no server-scoped org here, so the
           // caller's active org is the relevant one — same org used by
@@ -284,17 +288,22 @@ export class McpServerService implements OnModuleInit {
           }
 
           // Check MCP server scoping — if the API key is tied to a server,
-          // only allow tools from connectors assigned to that server
+          // only allow tools from connectors assigned to that server.
+          //
+          // The refusal used to sit inside `if (tool)`, so a name that matched
+          // NO connector on this server fell straight through the guard and was
+          // then resolved in a wider scope by the executor. Refuse on the
+          // absence, which is the case that mattered.
           if (user.mcpServerId) {
-            const allowedConnectorIds = await this.mcpServersService.getConnectorIds(user.mcpServerId);
-            const tool = this.toolRegistry.getTool(name, allowedConnectorIds);
-            if (tool) {
-              if (!allowedConnectorIds.includes(tool.connectorId)) {
-                return {
-                  content: [{ type: 'text' as const, text: JSON.stringify({ error: `Tool '${name}' is not available on this MCP server.` }) }],
-                  isError: true,
-                };
-              }
+            serverConnectorIds = await this.mcpServersService.getConnectorIds(
+              user.mcpServerId,
+            );
+            const tool = this.toolRegistry.getTool(name, serverConnectorIds);
+            if (!tool) {
+              return {
+                content: [{ type: 'text' as const, text: JSON.stringify({ error: `Tool '${name}' is not available on this MCP server.` }) }],
+                isError: true,
+              };
             }
           } else if (user.organizationId) {
             // Authenticated user without MCP-server scoping: the global
@@ -330,6 +339,7 @@ export class McpServerService implements OnModuleInit {
           authMethod: user?.authMethod || 'none',
           apiKeyName: user?.apiKeyName,
           mcpServerId: user?.mcpServerId,
+          connectorIds: serverConnectorIds,
         };
 
         return this.toolExecutor.executeTool(name, args, invocationContext);
@@ -409,10 +419,21 @@ export class McpServerService implements OnModuleInit {
         case 'string':
           if (prop.enum) {
             zodType = z.enum(prop.enum as [string, ...string[]]);
-          } else if (prop.format === 'date-time' || prop.format === 'date') {
-            // Accept ISO date strings and Date-coercible inputs.
-            zodType = z.coerce.date();
           } else {
+            // A date stays a STRING. This used to be `z.coerce.date()`, which
+            // produces a ZodDate — and the global /mcp advertises its tools by
+            // serialising these zod schemas back to JSON Schema, where a Date
+            // has no representation. The serialiser threw, so `tools/list`
+            // failed for the WHOLE workspace with
+            // `-32603 Date cannot be represented in JSON Schema`, not just for
+            // the offending tool: 91 tools across 9 workspaces on the cloud
+            // instance, which could not use the shared endpoint at all.
+            //
+            // Nothing is lost. The value is on its way into a query string or a
+            // request body, so it has to end up as text regardless, and
+            // `format` is documentation for the caller either way. The
+            // per-server endpoint has always mapped strings this way
+            // (`jsonSchemaToZodShape`); the two paths now agree.
             zodType = z.string();
           }
           break;

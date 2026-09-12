@@ -76,14 +76,19 @@ describe('McpServerService.jsonSchemaToZod', () => {
     expect(() => schema.parse({ mode: 'unknown' })).toThrow();
   });
 
-  it('coerces date-time strings to Date instances', () => {
+  // Was 'coerces date-time strings to Date instances'. That is exactly what
+  // broke the shared /mcp: a ZodDate cannot be serialised back to JSON Schema,
+  // and the endpoint advertises its tools by doing precisely that. See the
+  // dedicated describe block below.
+  it('leaves a date-time string as a string', () => {
     const schema = makeSchema({
       type: 'object',
       properties: { from: { type: 'string', format: 'date-time' } },
       required: ['from'],
     });
     const parsed: any = schema.parse({ from: '2026-05-12T09:00:00Z' });
-    expect(parsed.from).toBeInstanceOf(Date);
+    expect(parsed.from).toBe('2026-05-12T09:00:00Z');
+    expect(parsed.from).not.toBeInstanceOf(Date);
   });
 
   it('marks non-required fields as optional', () => {
@@ -182,5 +187,52 @@ describe('McpServerService.loadAllTools paging', () => {
 
     expect(registered).toEqual([]);
     expect(calls).toHaveLength(1);
+  });
+});
+
+/**
+ * The global `/mcp` advertises its tools by serialising these zod schemas back
+ * to JSON Schema. A `ZodDate` has no representation there, so `z.coerce.date()`
+ * made `tools/list` fail for the whole workspace with
+ * `-32603 Date cannot be represented in JSON Schema` — 91 tools across 9
+ * workspaces on the cloud instance, which could not use the shared endpoint at
+ * all. Verified against production on 12 Sep 2026.
+ */
+describe('McpServerService.jsonSchemaToZod — dates stay serialisable', () => {
+  const dateSchema = (format: string) => ({
+    type: 'object',
+    properties: { since: { type: 'string', format } },
+    required: ['since'],
+  });
+
+  it.each(['date', 'date-time'])(
+    'keeps a %s parameter representable in JSON Schema',
+    (format) => {
+      const schema = makeSchema(dateSchema(format));
+      const field = (schema as any).shape.since;
+      expect(field._def.type ?? field._def.typeName).not.toMatch(/date/i);
+    },
+  );
+
+  it('accepts an ISO string and hands it on unchanged', () => {
+    const schema = makeSchema(dateSchema('date-time'));
+    expect(schema.parse({ since: '2026-09-12T08:00:00Z' })).toEqual({
+      since: '2026-09-12T08:00:00Z',
+    });
+  });
+
+  it('accepts a plain date', () => {
+    const schema = makeSchema(dateSchema('date'));
+    expect(schema.parse({ since: '2026-09-12' })).toEqual({ since: '2026-09-12' });
+  });
+
+  it('still honours an enum on a string', () => {
+    const schema = makeSchema({
+      type: 'object',
+      properties: { status: { type: 'string', enum: ['a', 'b'] } },
+      required: ['status'],
+    });
+    expect(schema.parse({ status: 'a' })).toEqual({ status: 'a' });
+    expect(() => schema.parse({ status: 'zzz' })).toThrow();
   });
 });
