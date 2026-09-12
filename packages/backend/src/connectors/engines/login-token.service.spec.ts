@@ -6,6 +6,7 @@ import {
   jsonPath,
   interpolateDeep,
   extractSetCookieValue,
+  extractLoginRefusal,
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { encrypt } from '../../common/crypto/encryption.util';
@@ -259,7 +260,10 @@ describe('LoginTokenService', () => {
     expect(bundle.token).toBe('jwt-plain');
   });
 
-  it('throws a clear error when tokenJsonPath does not resolve', async () => {
+  it("surfaces the service's own refusal rather than our json path", async () => {
+    // This body is what a rejected sign-in actually looks like: HTTP 200, no
+    // token, and the reason in `errors`. Reporting the missing json path here
+    // describes our configuration and hides theirs.
     (mockedAxios as unknown as jest.Mock).mockImplementation(async (config: any) => {
       if (config.url.includes('/users/')) {
         return { data: { salt: bcrypt.genSaltSync(4) } };
@@ -268,7 +272,22 @@ describe('LoginTokenService', () => {
     });
 
     await expect(service.getToken(baseAuth, 'conn-8')).rejects.toThrow(
-      /token not found/,
+      /refused the login — bad creds/,
+    );
+  });
+
+  it('still names tokenJsonPath when the response explains nothing', async () => {
+    (mockedAxios as unknown as jest.Mock).mockImplementation(async (config: any) => {
+      if (config.url.includes('/users/')) {
+        return { data: { salt: bcrypt.genSaltSync(4) } };
+      }
+      // A 200 with a plausible-looking body and the token somewhere else:
+      // nothing to quote, so the json path is the most useful thing to say.
+      return { data: { data: { signIn: { currentUser: { slug: 'me' } } } } };
+    });
+
+    await expect(service.getToken(baseAuth, 'conn-9')).rejects.toThrow(
+      /token not found at "data.signIn.token"/,
     );
   });
 });
@@ -367,5 +386,55 @@ describe('LoginTokenService — tokenSource=cookie (SAP B1 pattern)', () => {
     await expect(service.getToken(cookieAuth, 'conn-x')).rejects.toThrow(
       /B1SESSION/,
     );
+  });
+});
+
+/**
+ * A login that is refused answers 200 with the reason in the body. Reporting
+ * "token not found at <our json path>" describes our own configuration and
+ * hides theirs, which is what thirteen Sorare failures looked like.
+ */
+describe('extractLoginRefusal', () => {
+  it('reads a GraphQL errors array nested under the mutation payload', () => {
+    expect(
+      extractLoginRefusal({
+        data: { signIn: { errors: [{ message: 'Invalid email or password' }] } },
+      }),
+    ).toBe('Invalid email or password');
+  });
+
+  it('reads a root-level GraphQL errors array', () => {
+    expect(
+      extractLoginRefusal({ errors: [{ message: 'Rate limited' }] }),
+    ).toBe('Rate limited');
+  });
+
+  it('joins several messages', () => {
+    expect(
+      extractLoginRefusal({ errors: [{ message: 'a' }, { message: 'b' }] }),
+    ).toBe('a; b');
+  });
+
+  it('reads plain-string error shapes', () => {
+    expect(extractLoginRefusal({ error_description: 'bad creds' })).toBe(
+      'bad creds',
+    );
+    expect(extractLoginRefusal({ error: 'unauthorized' })).toBe('unauthorized');
+    expect(extractLoginRefusal({ detail: { message: 'nope' } })).toBe('nope');
+  });
+
+  it('returns null when there is nothing to report', () => {
+    // The caller must then fall back to naming the json path — saying
+    // "the service refused the login — null" would be worse than either.
+    expect(extractLoginRefusal({ data: { signIn: { currentUser: {} } } })).toBeNull();
+    expect(extractLoginRefusal(null)).toBeNull();
+    expect(extractLoginRefusal('a string')).toBeNull();
+    expect(extractLoginRefusal({ errors: [] })).toBeNull();
+  });
+
+  it('survives a cyclic body without recursing forever', () => {
+    const body: Record<string, unknown> = { a: {} };
+    (body.a as Record<string, unknown>).self = body;
+    expect(extractLoginRefusal(body)).toBeNull();
   });
 });

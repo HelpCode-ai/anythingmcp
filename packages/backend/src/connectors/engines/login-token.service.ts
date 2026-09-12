@@ -226,8 +226,17 @@ export class LoginTokenService {
     } else {
       token = jsonPath(response.data, authConfig.tokenJsonPath);
       if (!token || typeof token !== 'string') {
+        // Far and away the commonest reason the token is missing is that the
+        // login itself was refused — wrong password, 2FA, a locked account.
+        // The endpoint answers 200 and puts the reason in the body, so saying
+        // "token not found at data.signIn.jwtToken.token" describes our own
+        // JSON path and hides the vendor's explanation. Sorare accounted for
+        // thirteen failures reported that way.
+        const refusal = extractLoginRefusal(response.data);
         throw new Error(
-          `LOGIN_TOKEN: token not found at "${authConfig.tokenJsonPath}" in login response`,
+          refusal
+            ? `LOGIN_TOKEN: the service refused the login — ${refusal}`
+            : `LOGIN_TOKEN: token not found at "${authConfig.tokenJsonPath}" in login response`,
         );
       }
     }
@@ -517,4 +526,47 @@ export function interpolateDeep(
     return out;
   }
   return value;
+}
+
+/**
+ * Pull a human-readable refusal out of a login response that returned 200
+ * without a token. Covers the two shapes vendors actually use: a GraphQL-style
+ * `errors: [{ message }]` (at the root or nested under the mutation payload),
+ * and a flat `error` / `message` / `error_description` string.
+ */
+export function extractLoginRefusal(body: unknown): string | null {
+  const seen = new Set<unknown>();
+  const walk = (node: unknown, depth: number): string | null => {
+    if (!node || typeof node !== 'object' || depth > 4 || seen.has(node)) {
+      return null;
+    }
+    seen.add(node);
+    const obj = node as Record<string, unknown>;
+
+    const errors = obj.errors;
+    if (Array.isArray(errors) && errors.length > 0) {
+      const messages = errors
+        .map((e) =>
+          typeof e === 'string'
+            ? e
+            : typeof (e as Record<string, unknown>)?.message === 'string'
+              ? ((e as Record<string, unknown>).message as string)
+              : null,
+        )
+        .filter((m): m is string => !!m);
+      if (messages.length > 0) return messages.join('; ');
+    }
+
+    for (const key of ['error_description', 'error', 'message']) {
+      const v = obj[key];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+
+    for (const v of Object.values(obj)) {
+      const found = walk(v, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(body, 0);
 }
