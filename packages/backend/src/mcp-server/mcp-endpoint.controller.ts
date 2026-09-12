@@ -148,6 +148,7 @@ export class McpEndpointController {
   async handleGlobalPost(@Req() req: Request, @Res() res: Response) {
     const visible = await this.attachVisibleTools(req);
     if (this.refuseHiddenToolCall(req, res, visible)) return;
+    if (this.answerToolsList(req, res, visible)) return;
     await mcpHttpTransport.httpHandlers.handlePost(req, res);
   }
 
@@ -258,6 +259,10 @@ export class McpEndpointController {
       ? [...new Set(visible.map((t) => t.connectorId))]
       : undefined;
 
+    // The full entries, not just the names: `answerToolsList` builds this
+    // caller's tools/list from them.
+    (req as { visibleTools?: RegisteredTool[] }).visibleTools = visible;
+
     const visibleNames = new Set(visible.map((t) => t.name));
     user.roles = [
       ...[...visibleNames].map(toolVisibilityRole),
@@ -311,6 +316,81 @@ export class McpEndpointController {
         message: `Tool '${name}' is not available to you. It belongs to another workspace, or your MCP role does not grant it.`,
       },
     });
+    return true;
+  }
+
+  /**
+   * Answers `tools/list` on the shared endpoint from THIS caller's tools.
+   *
+   * Left to the transport, the answer comes from the upstream registry, which
+   * holds one entry per NAME for the whole deployment: whichever connector
+   * registered a name first at boot supplies the description, input schema
+   * and annotations that every other tenant then sees for their own tool of
+   * that name. Seen live on 12 Sep: a workspace whose
+   * `bundesbank_get_timeseries` takes `flow` + `key` was listed with another
+   * tenant's `seriesId` version, and a read-only override on `vies_check_vat`
+   * showed up as a write tool. Claude calls what it was shown, so the call
+   * then fails against the real schema. It is also a disclosure: a tenant's
+   * customised description reaches whoever shares the name.
+   *
+   * Visibility was narrowed to this caller's connectors just above, so the
+   * definitions are taken from those very registry entries, shaped as the
+   * per-server endpoint shapes them (env-var parameters stripped, annotations
+   * derived plus overrides). Operator credentials (`visible === null`) keep
+   * the transport's answer, as everywhere else on this endpoint.
+   */
+  private answerToolsList(
+    req: Request,
+    res: Response,
+    visible: Set<string> | null,
+  ): boolean {
+    if (visible === null) return false;
+
+    const body = (req as any).body;
+    // Single requests only; a batch goes to the transport unchanged.
+    if (!body || Array.isArray(body) || body.method !== 'tools/list') return false;
+
+    const tools =
+      (req as { visibleTools?: RegisteredTool[] }).visibleTools ?? [];
+    const seen = new Set<string>();
+    const listed: Array<Record<string, unknown>> = [];
+    for (const tool of tools) {
+      // Two reachable connectors may expose the same name (a grant spanning
+      // two configs of one provider). One entry per name, like the per-server
+      // endpoint; the call path resolves within the same connector scope.
+      if (seen.has(tool.name)) continue;
+      seen.add(tool.name);
+
+      const schema = this.stripEnvVarParams(
+        (tool.parameters as Record<string, unknown>) ?? {},
+        tool.connectorConfig?.envVars,
+      );
+      listed.push({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: {
+          type: 'object',
+          ...schema,
+          properties: (schema.properties as Record<string, unknown>) ?? {},
+        },
+        annotations: deriveToolAnnotations(tool),
+      });
+    }
+
+    const payload = {
+      jsonrpc: '2.0',
+      id: body.id ?? null,
+      result: { tools: listed },
+    };
+    // Same framing the transport would use for this deployment.
+    if (this.jsonResponseEnabled()) {
+      res.status(200).json(payload);
+    } else {
+      res.status(200);
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.end(`event: message\ndata: ${JSON.stringify(payload)}\n\n`);
+    }
     return true;
   }
 
