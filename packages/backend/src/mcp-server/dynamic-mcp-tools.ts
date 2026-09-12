@@ -570,8 +570,22 @@ export class DynamicMcpTools {
     params: Record<string, unknown>,
     extra?: { connectorConfig?: Record<string, unknown> },
   ): Promise<unknown> {
-    // Static response tools — return text immediately without engine dispatch
-    if (endpointMapping.method === 'static' && endpointMapping.staticResponse) {
+    // Static response tools — return text immediately without engine dispatch.
+    //
+    // The `method` alone decides this, not `method && staticResponse`. With the
+    // old `&&`, a static tool whose staticResponse was missing fell through to
+    // the engine below, which built a URL from an endpointMapping that has no
+    // `path` and died with "Cannot read properties of undefined (reading
+    // 'replace')" — a message naming neither the tool nor the real problem.
+    // api-football's af_analysis_playbook spent six weeks failing that way.
+    if (endpointMapping.method === 'static') {
+      if (!endpointMapping.staticResponse) {
+        throw new Error(
+          'This tool is configured to return a fixed text response, but that ' +
+            'response is empty. Set it under the tool\'s endpoint mapping, or ' +
+            'change the method to a real HTTP verb.',
+        );
+      }
       return { text: endpointMapping.staticResponse };
     }
 

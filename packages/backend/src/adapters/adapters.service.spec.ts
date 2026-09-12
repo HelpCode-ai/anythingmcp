@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { AdaptersService } from './adapters.service';
 
 /**
@@ -80,6 +81,90 @@ describe('AdaptersService placeholder resolution', () => {
       n: 42,
       b: true,
       nil: null,
+    });
+  });
+
+  /**
+   * baseUrl is the one place where keeping the placeholder is fatal rather
+   * than merely deferred: the connector gets created, looks fine in the UI,
+   * and every call dies in the SSRF guard against a literal `{{VAR}}` host.
+   */
+  describe('assertBaseUrlFullyResolved', () => {
+    // (slug, the adapter's template, the URL after substitution)
+    const assertResolved = (slug: string, template: string, resolved = template) =>
+      (service as any).assertBaseUrlFullyResolved(slug, template, resolved);
+
+    it('accepts a fully resolved URL', () => {
+      expect(() =>
+        assertResolved('weclapp', 'https://acme.weclapp.com/webapp/api/v1'),
+      ).not.toThrow();
+    });
+
+    it('rejects a bare placeholder and names the variable', () => {
+      expect(() => assertResolved('amazon-seller', '{{SPAPI_ENDPOINT}}')).toThrow(
+        BadRequestException,
+      );
+      expect(() => assertResolved('amazon-seller', '{{SPAPI_ENDPOINT}}')).toThrow(
+        /SPAPI_ENDPOINT is required to install "amazon-seller"/,
+      );
+    });
+
+    it('rejects a placeholder embedded in a path', () => {
+      expect(() =>
+        assertResolved('magento', '{{MAGENTO_BASE_URL}}/rest/default/V1'),
+      ).toThrow(/MAGENTO_BASE_URL/);
+    });
+
+    it('names every missing variable once, and reads as a plural', () => {
+      let message = '';
+      try {
+        assertResolved('x', 'https://{{A}}.example.com/{{B}}/{{A}}');
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      expect(message).toContain('A and B are required');
+      expect(message).toContain('they form');
+    });
+
+    it('rejects a whole URL pasted into a fragment variable', () => {
+      // What actually happened to insightly in production: the pod name field
+      // got a full URL, the result parsed as a valid URL with host "api.https",
+      // and every call failed with "cannot resolve 'api.https'".
+      expect(() =>
+        assertResolved(
+          'insightly',
+          'https://api.{{INSIGHTLY_POD}}.insightly.com/v3.1',
+          'https://api.https://api.na1.insightly.com/v3.1.insightly.com/v3.1',
+        ),
+      ).toThrow(/looks like a full URL/);
+    });
+
+    it('leaves a correctly-filled templated URL alone', () => {
+      expect(() =>
+        assertResolved(
+          'insightly',
+          'https://api.{{INSIGHTLY_POD}}.insightly.com/v3.1',
+          'https://api.na1.insightly.com/v3.1',
+        ),
+      ).not.toThrow();
+    });
+
+    it('does not echo a resolved secret back in the message', () => {
+      // telegram-bot templates the bot token straight into the path, so the
+      // hint has to show the shape of the URL without the parts that resolved.
+      let message = '';
+      try {
+        assertResolved(
+          'telegram-bot',
+          'https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/{{CHAT_ID}}',
+          'https://api.telegram.org/bot12345:SECRET/{{CHAT_ID}}',
+        );
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      expect(message).toContain('CHAT_ID');
+      expect(message).not.toContain('SECRET');
+      expect(message).not.toContain('12345');
     });
   });
 });

@@ -46,7 +46,10 @@ export class RestEngine {
     },
     endpointMapping: {
       method: string;
-      path: string;
+      // Optional, because the stored mapping genuinely may not have one: a
+      // tool saved as `method: "static"` carries only its staticResponse.
+      // Declaring it required is what let an undefined path reach `.replace`.
+      path?: string;
       queryParams?: Record<string, unknown>;
       bodyMapping?: Record<string, unknown>;
       bodyTemplate?: string;
@@ -56,7 +59,20 @@ export class RestEngine {
     params: Record<string, unknown>,
   ): Promise<unknown> {
     // Interpolate path parameters: /users/{id} → /users/123
-    let path = endpointMapping.path;
+    //
+    // `path` is optional on the stored mapping — tools saved as `method:
+    // "static"` carry no path at all — so read it defensively. It used to be
+    // dereferenced straight away, and any mapping that reached here without
+    // one failed with "Cannot read properties of undefined (reading
+    // 'replace')": an error that points at this line rather than at the tool
+    // whose configuration is wrong.
+    let path = endpointMapping.path ?? '';
+    if (typeof path !== 'string') {
+      throw new Error(
+        `This tool's path is ${typeof path}, not a string. Check the tool's ` +
+          'endpoint mapping — it should be a path like /users/{id}.',
+      );
+    }
     for (const [key, value] of Object.entries(params)) {
       path = path.replace(`{${key}}`, String(value));
     }
