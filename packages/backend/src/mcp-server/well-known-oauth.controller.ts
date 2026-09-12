@@ -7,6 +7,7 @@ import type { Request } from 'express';
  * @rekog/mcp-nest does not expose at these paths:
  *   - GET /.well-known/openid-configuration                          (+ per-server)
  *   - GET /.well-known/oauth-authorization-server/mcp/:serverId      (per-server)
+ *   - GET /.well-known/oauth-protected-resource/mcp                  (shared /mcp)
  *   - GET /.well-known/oauth-protected-resource/mcp/:serverId        (per-server)
  *
  * Background: per RFC 8414 / RFC 9728 and the MCP authorization spec, a protected
@@ -112,6 +113,14 @@ export class WellKnownOAuthController {
   @Get('oauth-authorization-server/mcp/:serverId')
   authorizationServerScoped(@Req() req: Request) {
     return this.authServerMetadata(this.baseUrl(req));
+  }
+
+  // Protected-resource metadata for the shared /mcp endpoint. @rekog serves
+  // the same document at the root path; a client that appends the resource
+  // path per RFC 9728 lands here, and the 401 for /mcp points at this URL.
+  @Get('oauth-protected-resource/mcp')
+  protectedResourceShared(@Req() req: Request) {
+    return this.protectedResourceMetadata(this.baseUrl(req), '/mcp');
   }
 
   // Per-server protected-resource metadata. `resource` is the specific MCP URL.
