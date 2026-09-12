@@ -25,6 +25,26 @@ import { toolVisibilityRole } from './mcp-server.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { ToolRegistry, RegisteredTool } from './tool-registry';
+import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
+
+/**
+ * The OAuth client an access token was issued to.
+ *
+ * @rekog/mcp-nest puts it under `azp` on the ACCESS token and under `client_id`
+ * on the REFRESH token — the two payloads in `generateTokenPair` genuinely
+ * differ. Reading `client_id` alone therefore found nothing on every request
+ * that matters, and a connection grant silently never applied. Caught only by
+ * decoding a token from a real authorize flow; no amount of mocking would have
+ * shown it. Both names are accepted so a future token shape cannot break this
+ * quietly again.
+ */
+function oauthClientId(user: {
+  azp?: unknown;
+  client_id?: unknown;
+}): string | undefined {
+  const value = user?.azp ?? user?.client_id;
+  return typeof value === 'string' && value ? value : undefined;
+}
 import { DynamicMcpTools } from './dynamic-mcp-tools';
 import { RolesService } from '../roles/roles.service';
 import { registerDemoTools } from './mcp-demo.tools';
@@ -96,6 +116,7 @@ export class McpEndpointController {
     private readonly rolesService: RolesService,
     private readonly kgService: KgService,
     private readonly sessionManager: McpSessionManager,
+    private readonly grants: McpConnectionGrantService,
   ) {}
 
   // Streamable-HTTP response framing. Default: SSE-framed responses
@@ -156,8 +177,14 @@ export class McpEndpointController {
    * organization and refuses a mismatch. This closes the listing side.
    *
    * Two scopes are applied, in this order:
-   *   1. ORGANIZATION — only tools owned by the caller's active org.
-   *   2. ROLE — of those, only the ones the caller's MCP roles allow.
+   *   1. REACH — which connectors this connection may see at all. A connection
+   *      grant when the user chose one while authorizing the client (and only
+   *      the targets whose organization membership still validates); otherwise
+   *      the caller's active organization, unchanged, so tokens issued before
+   *      grants existed behave exactly as before.
+   *   2. ROLE — of those, only the ones the caller's MCP roles allow, read from
+   *      the organization that owns each tool rather than from whichever org
+   *      happens to be active. Under a grant those can differ.
    */
   private async attachVisibleTools(req: Request): Promise<Set<string> | null> {
     const user = (req as any).user;
@@ -175,21 +202,61 @@ export class McpEndpointController {
       return new Set<string>();
     }
 
-    const orgTools = this.toolRegistry
-      .getAllTools()
-      .filter((t) => t.organizationId === user.organizationId);
+    // `null` here means the client has no grant at all, which is every token
+    // issued before grants existed — keep the previous answer. `{ mode: 'none' }`
+    // means it HAS one and nothing in it validated any more, which is no tools.
+    // Collapsing the two would turn a revoked membership into full access.
+    const grant = await this.grants.resolve(oauthClientId(user), user.sub);
 
-    const allowedToolIds = await this.rolesService.getAllowedToolIds(
-      user.sub,
-      user.organizationId,
-    );
+    let reachable: RegisteredTool[];
+    if (!grant) {
+      reachable = this.toolRegistry
+        .getAllTools()
+        .filter((t) => t.organizationId === user.organizationId);
+    } else if (grant.mode === 'organization') {
+      reachable = this.toolRegistry
+        .getAllTools()
+        .filter((t) => t.organizationId === grant.organizationId);
+    } else if (grant.mode === 'servers') {
+      const connectorIds = new Set(
+        (
+          await Promise.all(
+            grant.servers.map((srv) =>
+              this.mcpServersService.getConnectorIds(srv.id),
+            ),
+          )
+        ).flat(),
+      );
+      reachable = this.toolRegistry
+        .getAllTools()
+        .filter((t) => connectorIds.has(t.connectorId));
+    } else {
+      reachable = [];
+    }
 
-    // `null` means unrestricted — an ADMIN, or a user holding no MCP role at
-    // all. The organization scope still applies.
-    const visible =
-      allowedToolIds === null
-        ? orgTools
-        : orgTools.filter((t) => allowedToolIds.includes(t.id));
+    // Roles are per organization, and a grant may span more than one, so the
+    // allow-list is fetched once per organization actually in reach.
+    const allowedByOrg = new Map<string, string[] | null>();
+    for (const orgId of new Set(reachable.map((t) => t.organizationId))) {
+      allowedByOrg.set(
+        orgId,
+        await this.rolesService.getAllowedToolIds(user.sub, orgId),
+      );
+    }
+
+    // `null` from getAllowedToolIds means unrestricted — an ADMIN, or a user
+    // holding no MCP role at all. The reach scope still applies.
+    const visible = reachable.filter((t) => {
+      const allowed = allowedByOrg.get(t.organizationId);
+      return allowed === null || (allowed?.includes(t.id) ?? false);
+    });
+
+    // Handed to the call path so it resolves in exactly the scope that was
+    // listed here. Only set under a grant; without one the executor keeps
+    // using the caller's active organization, as before.
+    (user as { grantedConnectorIds?: string[] }).grantedConnectorIds = grant
+      ? [...new Set(visible.map((t) => t.connectorId))]
+      : undefined;
 
     const visibleNames = new Set(visible.map((t) => t.name));
     user.roles = [
