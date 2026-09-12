@@ -1,0 +1,174 @@
+{
+  "slug": "sentry",
+  "name": "Sentry",
+  "description": "Inspect Sentry projects, issues, and error events.",
+  "instructions": "Connect to Sentry's hosted REST API to investigate projects, issues, and error events using four read-only tools.\n\nSetup: Create a Sentry personal authentication token under User settings > Personal Tokens with org:read and event:read scopes. Supply it as SENTRY_AUTH_TOKEN when configuring this connector. org:read permits listing organization projects; event:read permits reading issues and their events. Access remains limited by the token owner's permissions. Authentication uses the Authorization: Bearer header. This adapter targets https://sentry.io/api/0.\n\nWorkflow: Supply your organization ID or URL slug, such as acme. Use sentry_list_projects to discover project IDs and slugs, then sentry_list_issues to find issues. Pass the returned issue id, rather than shortId, to sentry_get_issue or sentry_list_issue_events. An issue groups related errors; events are individual occurrences. Set full=true when listing events to include full event bodies and stack traces; Sentry then caps the page size at 10.\n\nFiltering: sentry_list_issues defaults to unresolved issues when query is omitted. Use project to select one project and statsPeriod to narrow the time range, for example 24h or 14d.\n\nPagination: List tools return one page. Sentry supplies pagination cursors in HTTP Link headers, but AnythingMCP's REST engine returns only the response body. These tools cannot discover the next cursor. The cursor input accepts an externally obtained value; do not invent cursors or assume a returned page contains every result.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "sentry",
+  "docsUrl": "https://docs.sentry.io/api/",
+  "requiredEnvVars": ["SENTRY_AUTH_TOKEN"],
+  "connector": {
+    "name": "Sentry API",
+    "type": "REST",
+    "baseUrl": "https://sentry.io/api/0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SENTRY_AUTH_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "sentry_list_projects",
+      "description": "List one page of projects in a Sentry organization. Returns project IDs, slugs, names, and platforms. Optionally filter by project name or slug.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id_or_slug": {
+            "type": "string",
+            "description": "Organization ID or URL slug, for example 'acme'."
+          },
+          "query": {
+            "type": "string",
+            "description": "Filter projects by name or slug, for example 'backend'."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Number of projects per page. Sentry defaults to 100; maximum 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Externally supplied Sentry pagination cursor. Omit for the first page; this connector does not return pagination headers."
+          }
+        },
+        "required": ["organization_id_or_slug"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id_or_slug}/projects/",
+        "queryParams": {
+          "query": "$query",
+          "per_page": "$per_page",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "sentry_list_issues",
+      "description": "List one page of issues in a Sentry organization. Returns issue IDs, titles, statuses, and occurrence counts. Use an issue ID with sentry_get_issue to investigate further.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id_or_slug": {
+            "type": "string",
+            "description": "Organization ID or URL slug, for example 'acme'."
+          },
+          "project": {
+            "type": "string",
+            "description": "Filter to one project ID or slug from sentry_list_projects. Omit for all accessible projects."
+          },
+          "query": {
+            "type": "string",
+            "description": "Sentry issue search, for example 'is:unresolved'. Omit to use Sentry's default unresolved-issue filter."
+          },
+          "statsPeriod": {
+            "type": "string",
+            "description": "Relative time range, for example '24h' or '14d'."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Maximum number of issues to return, up to 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Externally supplied Sentry pagination cursor. Omit for the first page; this connector does not return pagination headers."
+          }
+        },
+        "required": ["organization_id_or_slug"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id_or_slug}/issues/",
+        "queryParams": {
+          "project": "$project",
+          "query": "$query",
+          "statsPeriod": "$statsPeriod",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "sentry_get_issue",
+      "description": "Retrieve details for a Sentry issue, including status, occurrence statistics, and a summary of the latest event.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id_or_slug": {
+            "type": "string",
+            "description": "Organization ID or URL slug, for example 'acme'."
+          },
+          "issue_id": {
+            "type": "string",
+            "description": "Issue ID from the 'id' field returned by sentry_list_issues, for example '123456'. Use the ID, not the shortId such as 'BACKEND-42'."
+          }
+        },
+        "required": ["organization_id_or_slug", "issue_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id_or_slug}/issues/{issue_id}/"
+      }
+    },
+    {
+      "name": "sentry_list_issue_events",
+      "description": "List one page of error events belonging to a Sentry issue. Set full to true to include full event bodies and stack traces.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id_or_slug": {
+            "type": "string",
+            "description": "Organization ID or URL slug, for example 'acme'."
+          },
+          "issue_id": {
+            "type": "string",
+            "description": "Issue ID from sentry_list_issues, for example '123456'."
+          },
+          "statsPeriod": {
+            "type": "string",
+            "description": "Relative time range, for example '24h' or '14d'."
+          },
+          "full": {
+            "type": "boolean",
+            "description": "Include full event bodies and stack traces. When true, Sentry caps the page size at 10."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Events per page. Default and maximum 100, capped at 10 when full is true."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Externally supplied Sentry pagination cursor. Omit for the first page; this connector does not return pagination headers."
+          }
+        },
+        "required": ["organization_id_or_slug", "issue_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id_or_slug}/issues/{issue_id}/events/",
+        "queryParams": {
+          "statsPeriod": "$statsPeriod",
+          "full": "$full",
+          "per_page": "$per_page",
+          "cursor": "$cursor"
+        }
+      }
+    }
+  ]
+}
