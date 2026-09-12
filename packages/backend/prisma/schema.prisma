@@ -639,6 +639,12 @@ model McpConnectionGrant {
   /// `mcp_server_configs` at resolution time and never trusted from here.
   serverIds String[] @map("server_ids")
 
+  /// Set when the user revoked this connection from the dashboard. The row is
+  /// KEPT rather than deleted, because deleting it means "no grant", and no
+  /// grant means the pre-grant behaviour — the caller's whole organization. A
+  /// revoke that widens access is the opposite of a revoke.
+  revokedAt DateTime? @map("revoked_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
