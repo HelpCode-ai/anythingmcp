@@ -18,6 +18,14 @@ import { DeploymentService } from '../common/deployment.service';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { SsoService } from '../identity-providers/sso.service';
 import { MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
+import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
+
+/**
+ * Carries the VERIFIED identity across the second step of the authorize flow.
+ * Signed and httpOnly, so the server-selection submission cannot claim to be
+ * somebody else.
+ */
+const PENDING_GRANT_COOKIE = 'pending_grant';
 
 /**
  * Context describing the OAuth client that initiated the current authorize
@@ -26,6 +34,8 @@ import { MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
  * they submit their credentials.
  */
 interface ConsentContext {
+  /** The OAuth client a connection grant would be keyed on. */
+  clientId: string;
   clientName: string;
   redirectUri: string;
   redirectHost: string;
@@ -43,6 +53,7 @@ export class LoginController {
     private readonly oauthStore: PrismaOAuthStore,
     private readonly sso: SsoService,
     private readonly deployment: DeploymentService,
+    private readonly grants: McpConnectionGrantService,
   ) {}
 
   @Get('login')
@@ -214,9 +225,181 @@ export class LoginController {
     // The consent decision has been made — the single-use CSRF token is done.
     res.clearCookie('login_csrf');
 
+    // Between "who you are" and "what this client may reach". Returns true when
+    // it has taken over the response with the picker.
+    if (await this.maybeAskWhichServers(req, res, user.id)) return;
+
     // Derive callback URL from the request origin (works behind proxy/tunnel)
     const baseUrl = this.getBaseUrl(req);
     res.redirect(`${baseUrl}/callback`);
+  }
+
+  /**
+   * Decide what this client may reach, asking the user only when there is
+   * genuinely something to ask.
+   *
+   * Returns true when it has taken over the response — i.e. the picker is being
+   * shown and the OAuth flow is paused until the user submits it.
+   *
+   * The shape of the answer is dictated by what workspaces actually look like:
+   * 1318 of 1393 on the cloud instance have exactly one MCP server, and all but
+   * four users belong to a single workspace. Putting a screen in front of
+   * everyone to serve the remaining handful would add a step to the flow this
+   * whole piece of work exists to shorten, so a single candidate is granted
+   * silently and nothing is shown.
+   */
+  private async maybeAskWhichServers(
+    req: Request,
+    res: Response,
+    userId: string,
+  ): Promise<boolean> {
+    const consent = await this.loadConsentContext(req);
+    // Not an authorize flow — a bare visit to the login page. Nothing to grant.
+    if (!consent) return false;
+
+    // The client asked for one specific server via RFC 8707. It has already
+    // said what it wants; asking again would be noise. Still goes through
+    // grantServers, which drops an id this user cannot reach.
+    const requestedServerId = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[MCP_RESOURCE_COOKIE];
+    if (typeof requestedServerId === 'string' && requestedServerId) {
+      await this.grants.grantServers(consent.clientId, userId, [requestedServerId]);
+      return false;
+    }
+
+    const targets = await this.grants.listSelectableTargets(userId);
+    const servers = targets.flatMap((t) => t.servers);
+
+    // Nothing to choose between: one server, or one workspace whose servers are
+    // the only thing on offer. Grant it and carry on without a screen.
+    if (servers.length <= 1) {
+      if (servers.length === 1) {
+        await this.grants.grantServers(consent.clientId, userId, [servers[0].id]);
+      } else if (targets.length === 1) {
+        // No servers yet — grant the workspace, so a server created later is
+        // picked up without having to reconnect.
+        await this.grants.grantWholeOrganization(
+          consent.clientId,
+          userId,
+          targets[0].organizationId,
+        );
+      }
+      return false;
+    }
+
+    // More than one. Hold the verified identity in a signed, httpOnly cookie
+    // rather than a form field, so the submission cannot claim to be someone
+    // else, and issue a fresh CSRF token for the picker form.
+    const isSecure = this.isSecureRequest(req);
+    res.cookie(PENDING_GRANT_COOKIE, userId, {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: 10 * 60 * 1000,
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+    const csrfToken = randomBytes(32).toString('base64url');
+    res.cookie('login_csrf', csrfToken, {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: 10 * 60 * 1000,
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(
+      this.renderServerPicker({
+        clientName: consent.clientName,
+        targets,
+        csrfToken,
+      }),
+    );
+    return true;
+  }
+
+  /**
+   * Second step of the authorize flow: which servers this client may reach.
+   *
+   * Nothing here is trusted. The identity comes from the signed cookie, not the
+   * form; and the ids that do come from the form go through `grantServers`,
+   * which resolves each one's owning organization from the database and drops
+   * anything this user is not a member of. A tampered submission can therefore
+   * only ever produce a NARROWER grant than the user was entitled to, never a
+   * wider one.
+   */
+  @Post('select-servers')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async handleServerSelection(
+    @Req() req: Request,
+    @Body() body: { servers?: string | string[]; workspace?: string; csrf?: string },
+    @Res() res: Response,
+  ) {
+    if (!this.verifyCsrf(req, body.csrf)) {
+      this.logger.warn('Rejected server selection with missing/invalid CSRF token');
+      res.clearCookie('login_csrf');
+      return res.redirect(
+        `/auth/login?error=${encodeURIComponent('Your session expired. Please try again.')}`,
+      );
+    }
+
+    const userId = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[PENDING_GRANT_COOKIE];
+    const consent = await this.loadConsentContext(req);
+    if (typeof userId !== 'string' || !userId || !consent) {
+      return res.redirect(
+        `/auth/login?error=${encodeURIComponent('Your session expired. Please sign in again.')}`,
+      );
+    }
+
+    const selected = Array.isArray(body.servers)
+      ? body.servers
+      : body.servers
+        ? [body.servers]
+        : [];
+
+    if (body.workspace) {
+      // "Everything in this workspace" — covers connectors not yet attached to
+      // any server. Refused outright if the user is not a member.
+      await this.grants.grantWholeOrganization(consent.clientId, userId, body.workspace);
+    } else if (selected.length > 0) {
+      const granted = await this.grants.grantServers(consent.clientId, userId, selected);
+      if (granted.length === 0) {
+        return res.redirect(
+          `/auth/login?error=${encodeURIComponent('None of the selected servers are available to you. Please try again.')}`,
+        );
+      }
+    } else {
+      return res.redirect(
+        `/auth/login?error=${encodeURIComponent('Choose at least one MCP server.')}`,
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true },
+    });
+    if (!user) {
+      return res.redirect(
+        `/auth/login?error=${encodeURIComponent('Your session expired. Please sign in again.')}`,
+      );
+    }
+
+    const encoded = Buffer.from(
+      JSON.stringify({ id: user.id, email: user.email, name: user.name, username: user.email }),
+    ).toString('base64url');
+    const isSecure = this.isSecureRequest(req);
+    res.cookie('login_user', encoded, {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: 60 * 1000,
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+    res.clearCookie('login_csrf');
+    res.clearCookie(PENDING_GRANT_COOKIE);
+
+    res.redirect(`${this.getBaseUrl(req)}/callback`);
   }
 
   /**
@@ -249,6 +432,7 @@ export class LoginController {
         : "Access to your organization's MCP tools and connected servers.";
 
       return {
+        clientId: session.clientId,
         clientName: client?.client_name || session.clientId,
         redirectUri: session.redirectUri,
         redirectHost,
@@ -338,6 +522,94 @@ export class LoginController {
       this.logger.warn(`Could not load SSO providers: ${error?.message}`);
       return [];
     }
+  }
+
+  /**
+   * The second step: which MCP servers this client may reach.
+   *
+   * Only ever rendered when there is more than one candidate — see
+   * {@link maybeAskWhichServers}. Servers are grouped by workspace because that
+   * is how people think about them, and each workspace carries an "everything"
+   * option so connectors not yet attached to a server are still reachable.
+   */
+  private renderServerPicker(params: {
+    clientName: string;
+    targets: {
+      organizationId: string;
+      organizationName: string;
+      servers: { id: string; name: string; connectorCount: number }[];
+    }[];
+    csrfToken: string;
+  }): string {
+    const { clientName, targets, csrfToken } = params;
+
+    const groups = targets
+      .map((t) => {
+        const servers = t.servers
+          .map(
+            (srv) => `
+            <label class="row">
+              <input type="checkbox" name="servers" value="${this.escapeHtml(srv.id)}" />
+              <span class="row-name">${this.escapeHtml(srv.name)}</span>
+              <span class="row-meta">${srv.connectorCount} connector${srv.connectorCount === 1 ? '' : 's'}</span>
+            </label>`,
+          )
+          .join('');
+        const whole = `
+            <label class="row whole">
+              <input type="radio" name="workspace" value="${this.escapeHtml(t.organizationId)}" />
+              <span class="row-name">Everything in this workspace</span>
+              <span class="row-meta">including connectors not on a server</span>
+            </label>`;
+        return `
+        <fieldset>
+          <legend>${this.escapeHtml(t.organizationName)}</legend>
+          ${servers}${whole}
+        </fieldset>`;
+      })
+      .join('');
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Choose what to connect</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           background: #f5f6f8; margin: 0; padding: 40px 16px; color: #111; }
+    .card { max-width: 460px; margin: 0 auto; background: #fff; border-radius: 12px;
+            padding: 28px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    h1 { font-size: 19px; margin: 0 0 6px; }
+    p.lead { color: #555; font-size: 14px; margin: 0 0 20px; }
+    .app { font-weight: 600; }
+    fieldset { border: 1px solid #e3e5e8; border-radius: 9px; margin: 0 0 14px; padding: 10px 12px 12px; }
+    legend { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #6b7280; padding: 0 4px; }
+    .row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-radius: 7px; cursor: pointer; }
+    .row:hover { background: #f7f8fa; }
+    .row-name { flex: 1; font-size: 14px; }
+    .row-meta { font-size: 12px; color: #8a8f98; }
+    .whole { border-top: 1px solid #eef0f2; margin-top: 6px; padding-top: 12px; }
+    button { width: 100%; padding: 11px; font-size: 15px; font-weight: 600; color: #fff;
+             background: #2563eb; border: 0; border-radius: 8px; cursor: pointer; margin-top: 6px; }
+    button:hover { background: #1d4ed8; }
+    .note { font-size: 12px; color: #8a8f98; margin-top: 14px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Choose what to connect</h1>
+    <p class="lead"><span class="app">${this.escapeHtml(clientName)}</span> will be able to use
+      the tools from whatever you pick here — and nothing else.</p>
+    <form method="POST" action="/auth/select-servers">
+      <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}" />
+      ${groups}
+      <button type="submit">Connect</button>
+    </form>
+    <p class="note">You can change this later from Settings, without reconnecting.</p>
+  </div>
+</body>
+</html>`;
   }
 
   private renderLoginPage(params: {

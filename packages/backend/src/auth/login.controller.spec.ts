@@ -73,6 +73,11 @@ describe('LoginController', () => {
   >;
 
   let sso: { startMcp: jest.Mock };
+  let grants: {
+    grantServers: jest.Mock;
+    grantWholeOrganization: jest.Mock;
+    listSelectableTargets: jest.Mock;
+  };
 
   beforeEach(() => {
     authService = { comparePassword: jest.fn() };
@@ -80,6 +85,11 @@ describe('LoginController', () => {
     config = { get: jest.fn().mockReturnValue(undefined) };
     store = { getOAuthSession: jest.fn(), getClient: jest.fn() };
     sso = { startMcp: jest.fn() };
+    grants = {
+      grantServers: jest.fn().mockResolvedValue([]),
+      grantWholeOrganization: jest.fn().mockResolvedValue(true),
+      listSelectableTargets: jest.fn().mockResolvedValue([]),
+    };
 
     controller = new LoginController(
       authService as unknown as AuthService,
@@ -88,6 +98,7 @@ describe('LoginController', () => {
       store as unknown as PrismaOAuthStore,
       sso as unknown as SsoService,
       { mode: 'self-hosted', isCloud: () => false, isSelfHosted: () => true } as any,
+      grants as any,
     );
   });
 
