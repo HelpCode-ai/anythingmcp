@@ -10,11 +10,17 @@ function buildController() {
   const licenseGuard = {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
   };
+  const mcpServers = {
+    attachToDefaultServer: jest
+      .fn()
+      .mockResolvedValue({ id: 's1', name: 'Default' }),
+  };
   const controller = new AdaptersController(
     adaptersService as any,
     licenseGuard as any,
+    mcpServers as any,
   );
-  return { controller, adaptersService, licenseGuard };
+  return { controller, adaptersService, licenseGuard, mcpServers };
 }
 
 const req = (role: string) => ({
@@ -40,6 +46,24 @@ describe('AdaptersController role enforcement', () => {
       await controller.importAdapter(req(role), 'some-slug', {});
 
       expect(adaptersService.importAdapter).toHaveBeenCalledTimes(1);
+    });
+
+    it('puts the imported connector on the default server and says which', async () => {
+      const { controller, mcpServers } = buildController();
+
+      const result = await controller.importAdapter(req('ADMIN'), 'some-slug', {});
+
+      expect(mcpServers.attachToDefaultServer).toHaveBeenCalledWith('u1', 'org1', 'c1');
+      expect(result.attachedToServer).toEqual({ id: 's1', name: 'Default' });
+    });
+
+    it('reports no server when there was none to attach to', async () => {
+      const { controller, mcpServers } = buildController();
+      mcpServers.attachToDefaultServer.mockResolvedValue(null);
+
+      const result = await controller.importAdapter(req('ADMIN'), 'some-slug', {});
+
+      expect(result.attachedToServer).toBeNull();
     });
   });
 });
