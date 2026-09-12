@@ -19,7 +19,11 @@ import {
  */
 function build(
   overrides: {
-    grant?: { organizationId: string | null; serverIds: string[] } | null;
+    grant?: {
+      organizationId: string | null;
+      serverIds: string[];
+      revokedAt?: Date | null;
+    } | null;
     memberCount?: number;
     servers?: { id: string; organizationId: string }[];
   } = {},
@@ -29,10 +33,15 @@ function build(
     countMembers: [],
     upsert: [],
     del: [],
+    update: [],
   };
 
   const prisma: any = {
     mcpConnectionGrant: {
+      updateMany: jest.fn(async (args: any) => {
+        calls.update.push(args);
+        return { count: overrides.grant ? 1 : 0 };
+      }),
       findUnique: jest
         .fn()
         .mockResolvedValue(
@@ -150,6 +159,25 @@ describe('McpConnectionGrantService.resolve', () => {
       mode: 'servers',
       servers: [{ id: 'srv-mine', organizationId: 'org-A' }],
     });
+  });
+
+  it('shows nothing for a revoked connection, without re-reading its targets', async () => {
+    const { svc, calls } = build({
+      grant: {
+        organizationId: 'org-A',
+        serverIds: ['srv-1'],
+        revokedAt: new Date(),
+      },
+      memberCount: 1,
+      servers: [{ id: 'srv-1', organizationId: 'org-A' }],
+    });
+
+    await expect(svc.resolve('client-1', 'user-1')).resolves.toEqual({
+      mode: 'none',
+    });
+    // Short-circuits: no point validating targets nobody may use.
+    expect(calls.findManyServers).toHaveLength(0);
+    expect(calls.countMembers).toHaveLength(0);
   });
 
   it('fails closed on a grant that is empty on both sides', async () => {
@@ -270,6 +298,7 @@ describe('McpConnectionGrantService writing a grant', () => {
     expect(calls.upsert[0].update).toEqual({
       organizationId: null,
       serverIds: ['srv-mine'],
+      revokedAt: null,
     });
   });
 
@@ -285,13 +314,35 @@ describe('McpConnectionGrantService writing a grant', () => {
     expect(calls.upsert).toHaveLength(0);
   });
 
-  it('revokes by (client, user) and tolerates a missing row', async () => {
-    const { svc, calls } = build();
-
-    await svc.revoke('client-1', 'user-1');
-
-    expect(calls.del[0].where).toEqual({
-      clientId_userId: { clientId: 'client-1', userId: 'user-1' },
+  // Deleting the row would read back as "no grant", which is the pre-grant
+  // behaviour — the caller's whole organization. A revoke that widens access is
+  // the opposite of a revoke.
+  it('stamps the row instead of deleting it', async () => {
+    const { svc, calls } = build({
+      grant: { organizationId: 'org-A', serverIds: [] },
     });
+
+    await expect(svc.revoke('client-1', 'user-1')).resolves.toBe(true);
+
+    expect(calls.del).toHaveLength(0);
+    expect(calls.update[0].where).toEqual({
+      clientId: 'client-1',
+      userId: 'user-1',
+      revokedAt: null,
+    });
+    expect(calls.update[0].data.revokedAt).toBeInstanceOf(Date);
+  });
+
+  it('reports that there was nothing to revoke', async () => {
+    const { svc } = build({ grant: null });
+    await expect(svc.revoke('client-1', 'user-1')).resolves.toBe(false);
+  });
+
+  it('un-revokes when the user chooses again', async () => {
+    const { svc, calls } = build({ memberCount: 1 });
+
+    await svc.grantWholeOrganization('client-1', 'user-1', 'org-A');
+
+    expect(calls.upsert[0].update.revokedAt).toBeNull();
   });
 });

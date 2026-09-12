@@ -57,9 +57,14 @@ export class McpConnectionGrantService {
 
     const grant = await this.prisma.mcpConnectionGrant.findUnique({
       where: { clientId_userId: { clientId, userId } },
-      select: { organizationId: true, serverIds: true },
+      select: { organizationId: true, serverIds: true, revokedAt: true },
     });
     if (!grant) return null;
+
+    // Revoked from the dashboard. Not the same as absent: absent means the
+    // client was connected before grants existed and keeps the old behaviour,
+    // revoked means the user asked for this connection to stop seeing things.
+    if (grant.revokedAt) return { mode: 'none' };
 
     if (grant.organizationId) {
       const stillAMember = await this.isMember(userId, grant.organizationId);
@@ -120,11 +125,21 @@ export class McpConnectionGrantService {
     return valid.map((s) => s.id);
   }
 
-  /** Drop a client's grant. Idempotent. */
-  async revoke(clientId: string, userId: string): Promise<void> {
-    await this.prisma.mcpConnectionGrant
-      .delete({ where: { clientId_userId: { clientId, userId } } })
-      .catch(() => undefined);
+  /**
+   * Stop a client seeing anything, without deleting the row.
+   *
+   * Deleting would read back as "no grant", which is the pre-grant behaviour —
+   * the caller's whole organization. A revoke has to narrow, so it stamps
+   * `revokedAt` and leaves the rest in place; choosing again clears it.
+   *
+   * Returns false when there was nothing to revoke.
+   */
+  async revoke(clientId: string, userId: string): Promise<boolean> {
+    const { count } = await this.prisma.mcpConnectionGrant.updateMany({
+      where: { clientId, userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return count > 0;
   }
 
   /**
@@ -187,6 +202,7 @@ export class McpConnectionGrantService {
         clientId: true,
         organizationId: true,
         serverIds: true,
+        revokedAt: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -239,7 +255,9 @@ export class McpConnectionGrantService {
     await this.prisma.mcpConnectionGrant.upsert({
       where: { clientId_userId: { clientId, userId } },
       create: { clientId, userId, ...data },
-      update: data,
+      // Choosing again un-revokes: the user is explicitly saying what this
+      // client may reach, which is the opposite of having revoked it.
+      update: { ...data, revokedAt: null },
     });
   }
 }
