@@ -706,7 +706,13 @@ export class ConnectorsController {
     if (dto.baseUrl !== undefined) {
       this.assertUsableBaseUrl(dto.baseUrl, connector.type);
     }
-    return this.connectorsService.update(id, dto);
+    const updated = await this.connectorsService.update(id, dto);
+    // The registry keeps its own copy of the connector — base URL, headers,
+    // auth — and reads it on every call. Without this, a changed base URL
+    // showed in the form and was ignored by every tool until the next
+    // restart; the env-vars and tool routes already reload, this one did not.
+    await this.mcpServer.reloadConnectorTools(id);
+    return updated;
   }
 
   @Get(':id/oauth-config')
