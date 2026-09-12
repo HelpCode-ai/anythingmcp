@@ -65,7 +65,10 @@ async function visible(controller: McpEndpointController, user: any) {
 }
 
 describe('grant-scoped visibility on the shared /mcp', () => {
-  const caller = () => ({ sub: 'u1', organizationId: 'org-A', client_id: 'client-1' });
+  // `azp` is what an ACCESS token actually carries. mcp-nest only writes
+  // `client_id` on the REFRESH token — reading that name alone found nothing on
+  // every request that matters, and the grant silently never applied.
+  const caller = () => ({ sub: 'u1', organizationId: 'org-A', azp: 'client-1' });
 
   // Every token issued before grants existed resolves to null. Their surface
   // must not move by a single tool.
@@ -156,6 +159,26 @@ describe('grant-scoped visibility on the shared /mcp', () => {
     const { names } = await visible(controller, caller());
 
     expect([...names!]).toEqual(['gamma']);
+  });
+
+  it('reads the client from `azp`, which is what an access token carries', async () => {
+    const controller = build({ mode: 'organization', organizationId: 'org-B' });
+
+    await visible(controller, { sub: 'u1', organizationId: 'org-A', azp: 'client-1' });
+
+    expect((controller as any).grants.resolve).toHaveBeenCalledWith('client-1', 'u1');
+  });
+
+  it('still accepts `client_id`, so a different token shape cannot break it quietly', async () => {
+    const controller = build({ mode: 'organization', organizationId: 'org-B' });
+
+    await visible(controller, {
+      sub: 'u1',
+      organizationId: 'org-A',
+      client_id: 'client-1',
+    });
+
+    expect((controller as any).grants.resolve).toHaveBeenCalledWith('client-1', 'u1');
   });
 
   it('confines the call path to exactly what it listed', async () => {

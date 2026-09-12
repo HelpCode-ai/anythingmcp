@@ -26,6 +26,25 @@ import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { ToolRegistry, RegisteredTool } from './tool-registry';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
+
+/**
+ * The OAuth client an access token was issued to.
+ *
+ * @rekog/mcp-nest puts it under `azp` on the ACCESS token and under `client_id`
+ * on the REFRESH token — the two payloads in `generateTokenPair` genuinely
+ * differ. Reading `client_id` alone therefore found nothing on every request
+ * that matters, and a connection grant silently never applied. Caught only by
+ * decoding a token from a real authorize flow; no amount of mocking would have
+ * shown it. Both names are accepted so a future token shape cannot break this
+ * quietly again.
+ */
+function oauthClientId(user: {
+  azp?: unknown;
+  client_id?: unknown;
+}): string | undefined {
+  const value = user?.azp ?? user?.client_id;
+  return typeof value === 'string' && value ? value : undefined;
+}
 import { DynamicMcpTools } from './dynamic-mcp-tools';
 import { RolesService } from '../roles/roles.service';
 import { registerDemoTools } from './mcp-demo.tools';
@@ -187,7 +206,7 @@ export class McpEndpointController {
     // issued before grants existed — keep the previous answer. `{ mode: 'none' }`
     // means it HAS one and nothing in it validated any more, which is no tools.
     // Collapsing the two would turn a revoked membership into full access.
-    const grant = await this.grants.resolve(user.client_id, user.sub);
+    const grant = await this.grants.resolve(oauthClientId(user), user.sub);
 
     let reachable: RegisteredTool[];
     if (!grant) {
