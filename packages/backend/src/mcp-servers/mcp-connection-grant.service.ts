@@ -127,6 +127,57 @@ export class McpConnectionGrantService {
       .catch(() => undefined);
   }
 
+  /**
+   * The workspaces this user belongs to and the MCP servers in each — what a
+   * picker may offer, and nothing else.
+   *
+   * Membership is the query, not a filter applied afterwards, for the same
+   * reason as {@link validateServers}: a workspace the user does not belong to
+   * cannot appear in the result at all, so it cannot be offered and then
+   * accidentally accepted.
+   */
+  async listSelectableTargets(userId: string): Promise<
+    {
+      organizationId: string;
+      organizationName: string;
+      servers: { id: string; name: string; connectorCount: number }[];
+    }[]
+  > {
+    if (!userId) return [];
+
+    const memberships = await this.prisma.organizationMember.findMany({
+      where: { userId, deactivatedAt: null },
+      select: {
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            mcpServers: {
+              where: { isActive: true },
+              orderBy: { createdAt: 'asc' },
+              select: {
+                id: true,
+                name: true,
+                _count: { select: { connectors: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { joinedAt: 'asc' },
+    });
+
+    return memberships.map((m) => ({
+      organizationId: m.organization.id,
+      organizationName: m.organization.name,
+      servers: m.organization.mcpServers.map((s) => ({
+        id: s.id,
+        name: s.name,
+        connectorCount: s._count.connectors,
+      })),
+    }));
+  }
+
   /** Everything this user has granted, for the dashboard's revoke list. */
   async listForUser(userId: string) {
     return this.prisma.mcpConnectionGrant.findMany({
