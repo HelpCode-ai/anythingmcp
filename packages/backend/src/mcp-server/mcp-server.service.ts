@@ -419,10 +419,21 @@ export class McpServerService implements OnModuleInit {
         case 'string':
           if (prop.enum) {
             zodType = z.enum(prop.enum as [string, ...string[]]);
-          } else if (prop.format === 'date-time' || prop.format === 'date') {
-            // Accept ISO date strings and Date-coercible inputs.
-            zodType = z.coerce.date();
           } else {
+            // A date stays a STRING. This used to be `z.coerce.date()`, which
+            // produces a ZodDate — and the global /mcp advertises its tools by
+            // serialising these zod schemas back to JSON Schema, where a Date
+            // has no representation. The serialiser threw, so `tools/list`
+            // failed for the WHOLE workspace with
+            // `-32603 Date cannot be represented in JSON Schema`, not just for
+            // the offending tool: 91 tools across 9 workspaces on the cloud
+            // instance, which could not use the shared endpoint at all.
+            //
+            // Nothing is lost. The value is on its way into a query string or a
+            // request body, so it has to end up as text regardless, and
+            // `format` is documentation for the caller either way. The
+            // per-server endpoint has always mapped strings this way
+            // (`jsonSchemaToZodShape`); the two paths now agree.
             zodType = z.string();
           }
           break;
