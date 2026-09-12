@@ -122,6 +122,11 @@ export class AdaptersService {
           adapterSlug: slug,
           adapterVersion: adapter.version,
           instructionsBaseline: hashInstructions(adapter.instructions),
+          // What the catalog's baseUrl resolved to at install. Later, when the
+          // catalog moves, this is the only way to tell "we fixed a wrong
+          // hostname" from "the operator deliberately pointed this at their
+          // own region or sandbox" — the two look identical without it.
+          baseUrlBaseline: resolvedBaseUrl,
         },
       },
     });

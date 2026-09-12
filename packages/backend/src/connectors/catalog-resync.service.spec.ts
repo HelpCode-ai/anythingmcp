@@ -1,4 +1,4 @@
-import { CatalogResyncService } from './catalog-resync.service';
+import { CatalogResyncService, diffBaseUrl } from './catalog-resync.service';
 import { getAdapter } from '../adapters/catalog';
 import {
   computeAdapterVersion,
@@ -150,3 +150,197 @@ describe('CatalogResyncService.computeDiff', () => {
 function tools0Name(): string {
   return getAdapter(SLUG)!.tools[0].name;
 }
+
+
+/**
+ * Base URL drift.
+ *
+ * Correcting a hostname in the catalog does not reach connectors already
+ * installed — NINA kept calling nina.api.proxy.bund.dev, which has no DNS
+ * record, for a day after the catalog was fixed. The obvious repair, copying
+ * the catalog value over, would also have repointed the two connectors whose
+ * operators had deliberately chosen a different host: datadog at the us3
+ * region, DATEV at the sandbox. Hence a proposal rather than an overwrite.
+ */
+describe('diffBaseUrl', () => {
+  const CAT = 'https://warnung.bund.de/api31';
+
+  it('reports nothing when they agree', () => {
+    expect(diffBaseUrl(CAT, CAT, CAT)).toBeNull();
+  });
+
+  it('ignores a trailing slash', () => {
+    expect(diffBaseUrl(CAT, `${CAT}/`, CAT)).toBeNull();
+  });
+
+  it('never compares a templated catalog URL', () => {
+    // The connector holds the resolved form, so every templated adapter would
+    // otherwise report a change on every single diff.
+    expect(
+      diffBaseUrl(
+        'https://{{TENANT}}.weclapp.com/webapp/api/v1',
+        'https://acme.weclapp.com/webapp/api/v1',
+        null,
+      ),
+    ).toBeNull();
+  });
+
+  it('calls it catalog-moved when the connector still holds what it was given', () => {
+    const old = 'https://nina.api.proxy.bund.dev/api31';
+    expect(diffBaseUrl(CAT, old, old)).toEqual({
+      from: old,
+      to: CAT,
+      provenance: 'catalog-moved',
+    });
+  });
+
+  it('calls it user-edited when the operator moved it themselves', () => {
+    // datadog: installed against api.datadoghq.com, pointed at us3 on purpose.
+    const change = diffBaseUrl(
+      'https://api.datadoghq.com',
+      'https://api.us3.datadoghq.com',
+      'https://api.datadoghq.com',
+    );
+    expect(change?.provenance).toBe('user-edited');
+  });
+
+  it('calls it unknown when no baseline was recorded', () => {
+    // Everything installed before baseUrlBaseline existed. Indistinguishable,
+    // so it is shown and left to a human.
+    const change = diffBaseUrl(CAT, 'https://old.example.com', null);
+    expect(change?.provenance).toBe('unknown');
+  });
+});
+
+describe('CatalogResyncService.computeDiff — baseUrl', () => {
+  const NINA = 'nina-warnung';
+
+  function ninaConnector(baseUrl: string, baseline?: string | null) {
+    const adapter = getAdapter(NINA)!;
+    return {
+      id: 'c-nina',
+      name: adapter.connector.name,
+      baseUrl,
+      instructions: adapter.instructions ?? null,
+      config: {
+        adapterSlug: NINA,
+        adapterVersion: adapter.version,
+        instructionsBaseline: hashInstructions(adapter.instructions),
+        ...(baseline === undefined ? {} : { baseUrlBaseline: baseline }),
+      },
+      tools: adapter.tools.map((t: any, i: number) => ({
+        id: `t${i}`,
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+        endpointMapping: t.endpointMapping,
+        responseMapping: t.responseMapping ?? null,
+        useProxy: t.useProxy === true,
+        isEnabled: true,
+        deprecatedAt: null,
+      })),
+    };
+  }
+
+  it('is up to date when the base URL matches', async () => {
+    const adapter = getAdapter(NINA)!;
+    const svc = serviceFor(ninaConnector(adapter.connector.baseUrl));
+    const diff = await svc.computeDiff('c-nina');
+    expect(diff!.baseUrl).toBeNull();
+    expect(diff!.isUpToDate).toBe(true);
+  });
+
+  it('reports a drifted base URL and is no longer up to date', async () => {
+    const stale = 'https://nina.api.proxy.bund.dev/api31';
+    const svc = serviceFor(ninaConnector(stale, stale));
+    const diff = await svc.computeDiff('c-nina');
+    expect(diff!.baseUrl).toEqual({
+      from: stale,
+      to: getAdapter(NINA)!.connector.baseUrl,
+      provenance: 'catalog-moved',
+    });
+    expect(diff!.isUpToDate).toBe(false);
+  });
+
+  it('keeps a base-URL change out of the safe class', async () => {
+    // The boot-time reconciler applies safe-class diffs unattended. It must
+    // never be able to repoint a customer's connector at a different host.
+    const stale = 'https://nina.api.proxy.bund.dev/api31';
+    const svc = serviceFor(ninaConnector(stale, stale));
+    const diff = await svc.computeDiff('c-nina');
+    expect(diff!.isSafeClass).toBe(false);
+  });
+});
+
+describe('CatalogResyncService.resync — baseUrl is never applied unasked', () => {
+  const NINA = 'nina-warnung';
+  const STALE = 'https://nina.api.proxy.bund.dev/api31';
+
+  function setup() {
+    const adapter = getAdapter(NINA)!;
+    const connector = {
+      id: 'c-nina',
+      name: adapter.connector.name,
+      baseUrl: STALE,
+      instructions: adapter.instructions ?? null,
+      config: {
+        adapterSlug: NINA,
+        adapterVersion: adapter.version,
+        instructionsBaseline: hashInstructions(adapter.instructions),
+        baseUrlBaseline: STALE,
+      },
+      tools: adapter.tools.map((t: any, i: number) => ({
+        id: `t${i}`,
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+        endpointMapping: t.endpointMapping,
+        responseMapping: t.responseMapping ?? null,
+        useProxy: t.useProxy === true,
+        isEnabled: true,
+        deprecatedAt: null,
+      })),
+    };
+    const connectorUpdate = jest.fn().mockResolvedValue({});
+    const tx = {
+      connector: {
+        findUnique: jest.fn().mockResolvedValue(connector),
+        update: connectorUpdate,
+      },
+      mcpTool: {
+        update: jest.fn().mockResolvedValue({}),
+        create: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const prisma = {
+      connector: { findUnique: jest.fn().mockResolvedValue(connector) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    } as any;
+    return { service: new CatalogResyncService(prisma), connectorUpdate, adapter };
+  }
+
+  it('leaves the base URL alone by default, even in full mode', async () => {
+    const { service, connectorUpdate } = setup();
+    const { applied } = await service.resync('c-nina', 'full');
+    expect(applied).toBe(true);
+    expect(connectorUpdate).toHaveBeenCalledTimes(1);
+    expect(connectorUpdate.mock.calls[0][0].data.baseUrl).toBeUndefined();
+  });
+
+  it('moves it when the caller explicitly asks, and re-baselines', async () => {
+    const { service, connectorUpdate, adapter } = setup();
+    await service.resync('c-nina', 'full', { applyBaseUrl: true });
+    const data = connectorUpdate.mock.calls[0][0].data;
+    expect(data.baseUrl).toBe(adapter.connector.baseUrl);
+    // Without re-baselining, the next diff would read our own fix as an
+    // operator edit and stop offering anything ever again.
+    expect(data.config.baseUrlBaseline).toBe(adapter.connector.baseUrl);
+  });
+
+  it('refuses in safe mode even when asked', async () => {
+    // Safe mode is what the unattended boot-time reconciler uses.
+    const { service, connectorUpdate } = setup();
+    await service.resync('c-nina', 'safe', { applyBaseUrl: true });
+    expect(connectorUpdate).not.toHaveBeenCalled();
+  });
+});
