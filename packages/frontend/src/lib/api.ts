@@ -181,6 +181,50 @@ export const organizations = {
     }>('/api/organizations/current', { method: 'DELETE', body: data, token }),
 };
 
+/**
+ * The AI clients connected to the shared `/mcp` endpoint, and what each may
+ * reach. Lives here rather than in the client itself because a client cannot be
+ * relied on to ask again — Claude holds a refresh token for 30 days and reuses
+ * cached credentials, so "disconnect and reconnect" does not reliably re-open
+ * the choice. Changes here take effect on the connection's next request.
+ */
+export const mcpConnections = {
+  list: (token: string) =>
+    request<
+      {
+        clientId: string;
+        clientName: string;
+        revoked: boolean;
+        servers: { id: string; name: string }[];
+        wholeWorkspace: { id: string; name: string } | null;
+        connectedAt: string;
+        updatedAt: string;
+      }[]
+    >('/api/mcp-connections', { token }),
+  targets: (token: string) =>
+    request<
+      {
+        organizationId: string;
+        organizationName: string;
+        servers: { id: string; name: string; connectorCount: number }[];
+      }[]
+    >('/api/mcp-connections/targets', { token }),
+  update: (
+    clientId: string,
+    body: { organizationId?: string; serverIds?: string[] },
+    token: string,
+  ) =>
+    request<{ ok: boolean; reason?: string }>(
+      `/api/mcp-connections/${clientId}`,
+      { method: 'PUT', body, token },
+    ),
+  revoke: (clientId: string, token: string) =>
+    request<{ ok: boolean }>(`/api/mcp-connections/${clientId}`, {
+      method: 'DELETE',
+      token,
+    }),
+};
+
 // Connectors
 export const connectors = {
   list: (token: string) =>

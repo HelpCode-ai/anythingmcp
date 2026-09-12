@@ -21,6 +21,14 @@ export const SecurityEvents = {
   SCIM_DISABLED: 'SCIM_DISABLED',
   SCIM_TOKEN_ROTATED: 'SCIM_TOKEN_ROTATED',
 
+  // ── Connection grants: what a client may reach through the shared /mcp ──
+  /** A user chose what an OAuth client may reach, while authorizing it. */
+  MCP_GRANT_CREATED: 'MCP_GRANT_CREATED',
+  /** The choice was changed from the dashboard, without reconnecting. */
+  MCP_GRANT_CHANGED: 'MCP_GRANT_CHANGED',
+  /** The connection was revoked; it now reaches nothing. */
+  MCP_GRANT_REVOKED: 'MCP_GRANT_REVOKED',
+
   // ── Auth plane: who got in, and who failed to ───────────────────────────
   SSO_LOGIN_SUCCESS: 'SSO_LOGIN_SUCCESS',
   SSO_LOGIN_FAILED: 'SSO_LOGIN_FAILED',
