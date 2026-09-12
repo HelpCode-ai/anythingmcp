@@ -16,7 +16,7 @@
   "tools": [
     {
       "name": "bundesbank_get_exchange_rates",
-      "description": "Get current and historical euro exchange rates from the Bundesbank. Returns daily exchange rates for major currencies (USD, GBP, CHF, JPY, etc.).",
+      "description": "Daily euro foreign exchange reference rates (ECB/Bundesbank) for one currency against EUR. Pass startPeriod to limit the range — the full history is very large.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -43,7 +43,8 @@
         "queryParams": {
           "startPeriod": "$startPeriod",
           "endPeriod": "$endPeriod",
-          "detail": "dataonly"
+          "detail": "dataonly",
+          "format": "json"
         },
         "headers": {
           "Accept": "application/json"
@@ -51,98 +52,83 @@
       }
     },
     {
-      "name": "bundesbank_get_interest_rates",
-      "description": "Get key interest rate data from the Bundesbank and ECB, including the main refinancing rate, deposit facility rate, and marginal lending rate.",
+      "name": "bundesbank_get_bund_yields",
+      "description": "Daily yield of German federal securities (Bunds) for a given residual maturity, from the Bundesbank term-structure statistics (BBSIS). Use as the risk-free EUR rate. Returns SDMX-JSON.",
       "parameters": {
         "type": "object",
         "properties": {
+          "maturityYears": {
+            "type": "string",
+            "description": "Residual maturity in years, two digits: 01, 02, 05, 10 or 30.",
+            "enum": [
+              "01",
+              "02",
+              "05",
+              "10",
+              "30"
+            ],
+            "default": "10"
+          },
           "startPeriod": {
             "type": "string",
-            "description": "Start date in YYYY-MM-DD format"
+            "description": "First period, e.g. 2026-01-01 (daily) or 2026-01 (monthly). Omit for the full history — can be large."
           },
           "endPeriod": {
             "type": "string",
-            "description": "End date in YYYY-MM-DD format"
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/data/BBK01/SU0202",
-        "queryParams": {
-          "startPeriod": "$startPeriod",
-          "endPeriod": "$endPeriod",
-          "detail": "dataonly"
-        },
-        "headers": {
-          "Accept": "application/json"
-        }
-      }
-    },
-    {
-      "name": "bundesbank_search_statistics",
-      "description": "Search for available statistical series in the Bundesbank database by keyword. Returns matching time series with their IDs, titles, and metadata.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Search keyword (e.g. 'inflation', 'GDP', 'money supply', 'Geldmenge')"
-          },
-          "limit": {
-            "type": "number",
-            "description": "Maximum number of results to return (default: 10, max: 100)"
+            "description": "Last period, same format as startPeriod."
           }
         },
         "required": [
-          "query"
+          "maturityYears"
         ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/metadata/series",
+        "path": "/data/BBSIS/D.I.ZAR.ZI.EUR.S1311.B.A604.R{maturityYears}XX.R.A.A._Z._Z.A",
         "queryParams": {
-          "q": "$query",
-          "limit": "$limit"
-        },
-        "headers": {
-          "Accept": "application/json"
+          "startPeriod": "$startPeriod",
+          "endPeriod": "$endPeriod",
+          "detail": "dataonly",
+          "format": "json"
         }
       }
     },
     {
       "name": "bundesbank_get_timeseries",
-      "description": "Retrieve data for a specific Bundesbank time series by its ID. Use bundesbank_search_statistics first to find the series ID.",
+      "description": "Fetch any Bundesbank time series by SDMX dataflow and series key. Examples: flow BBEX3 + key D.USD.EUR.BB.AC.000 (EUR/USD reference rate, daily); flow BBSIS + key D.I.ZAR.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A (10-year Bund yield, daily). Returns SDMX-JSON; observations are under data.dataSets[0].series.",
       "parameters": {
         "type": "object",
         "properties": {
-          "seriesId": {
+          "flow": {
             "type": "string",
-            "description": "The Bundesbank time series ID (e.g. 'BBEX3.D.USD.EUR.BB.AC.000')"
+            "description": "Dataflow id, e.g. BBEX3, BBSIS, BBAF3, BBFI1."
+          },
+          "key": {
+            "type": "string",
+            "description": "Dot-separated series key within the flow, e.g. D.USD.EUR.BB.AC.000."
           },
           "startPeriod": {
             "type": "string",
-            "description": "Start date in YYYY-MM-DD format"
+            "description": "First period, e.g. 2026-01-01 (daily) or 2026-01 (monthly). Omit for the full history — can be large."
           },
           "endPeriod": {
             "type": "string",
-            "description": "End date in YYYY-MM-DD format"
+            "description": "Last period, same format as startPeriod."
           }
         },
         "required": [
-          "seriesId"
+          "flow",
+          "key"
         ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/data/{seriesId}",
+        "path": "/data/{flow}/{key}",
         "queryParams": {
           "startPeriod": "$startPeriod",
           "endPeriod": "$endPeriod",
-          "detail": "dataonly"
-        },
-        "headers": {
-          "Accept": "application/json"
+          "detail": "dataonly",
+          "format": "json"
         }
       }
     }

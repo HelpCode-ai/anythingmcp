@@ -10,20 +10,37 @@
   "connector": {
     "name": "NINA Warnungen",
     "type": "REST",
-    "baseUrl": "https://nina.api.proxy.bund.dev/api31",
+    "baseUrl": "https://warnung.bund.de/api31",
     "authType": "NONE"
   },
   "tools": [
     {
-      "name": "nina_get_dashboard",
-      "description": "Get the current overview of all active emergency warnings across Germany. Returns a summary dashboard with warning counts and categories.",
+      "name": "nina_get_active_warnings",
+      "description": "All currently active warnings of one source, nationwide: mowas (civil protection / MoWaS), katwarn, biwapp, dwd (severe weather), lhp (flood), police. Each item has an id (pass it to nina_get_warning_detail), headline, severity, sent time and affected areas. An empty list means no active warning from that source.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "mowas",
+              "katwarn",
+              "biwapp",
+              "dwd",
+              "lhp",
+              "police"
+            ],
+            "description": "Warning source.",
+            "default": "mowas"
+          }
+        },
+        "required": [
+          "source"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/dashboard/overview.json"
+        "path": "/{source}/mapData.json"
       }
     },
     {

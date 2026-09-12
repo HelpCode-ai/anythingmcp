@@ -12,6 +12,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AdaptersService } from './adapters.service';
 import { LicenseGuardService } from '../license/license-guard.service';
+import { McpServersService } from '../mcp-servers/mcp-servers.service';
 
 // Public endpoints (no auth required) — used by the marketing website
 @ApiTags('Adapters')
@@ -39,6 +40,7 @@ export class AdaptersController {
   constructor(
     private readonly adaptersService: AdaptersService,
     private readonly licenseGuard: LicenseGuardService,
+    private readonly mcpServers: McpServersService,
   ) {}
 
   @Get(':slug')
@@ -73,10 +75,19 @@ export class AdaptersController {
       req.user.organizationId,
       body?.credentials,
     );
+    // Same as a hand-made connector (connectors.controller): put it on a
+    // server straight away. A marketplace install that reaches no server is
+    // exactly the connector nobody's client ever sees.
+    const attachedTo = await this.mcpServers.attachToDefaultServer(
+      req.user.sub,
+      req.user.organizationId,
+      result.connectorId,
+    );
     return {
       message: `Adapter "${slug}" imported successfully with ${result.toolsCreated} tools.`,
       connectorId: result.connectorId,
       toolsCreated: result.toolsCreated,
+      attachedToServer: attachedTo ? { id: attachedTo.id, name: attachedTo.name } : null,
     };
   }
 }
