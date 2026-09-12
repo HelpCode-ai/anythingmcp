@@ -25,6 +25,29 @@ import {
 
 export type ToolChangeKind = 'safe' | 'structural';
 
+/**
+ * Where the connector's current baseUrl came from, which decides whether the
+ * catalog's value is an improvement or an unwanted overwrite.
+ *
+ *   catalog-moved — the connector still holds exactly what the catalog gave it
+ *                   at install, and the catalog has since changed. Our fix.
+ *   user-edited   — the operator changed it. Deliberate, and the reason we do
+ *                   not overwrite: of the five live connectors whose baseUrl
+ *                   differs from the catalog, datadog points at the us3 region
+ *                   and DATEV at the sandbox. Both work; both would break.
+ *   unknown       — installed before the baseline was recorded, so the two are
+ *                   indistinguishable. Shown, never applied without a say-so.
+ */
+export type BaseUrlProvenance = 'catalog-moved' | 'user-edited' | 'unknown';
+
+export interface BaseUrlChange {
+  /** What the connector calls today. */
+  from: string;
+  /** What the catalog says it should call. */
+  to: string;
+  provenance: BaseUrlProvenance;
+}
+
 export interface CatalogDiff {
   connectorId: string;
   slug: string;
@@ -35,6 +58,13 @@ export interface CatalogDiff {
   removed: string[];
   /** instructions changed upstream AND the user has not edited theirs. */
   instructionsRefreshable: boolean;
+  /**
+   * Set when the catalog's baseUrl differs from the connector's. Always a
+   * proposal: `resync` applies it only when explicitly asked, whatever the
+   * provenance says, because a base URL is the whole address of the API and
+   * getting it wrong takes every tool down at once.
+   */
+  baseUrl: BaseUrlChange | null;
   isUpToDate: boolean;
   /** Has changes, and every change is safe (no structural). */
   isSafeClass: boolean;
@@ -127,15 +157,26 @@ export class CatalogResyncService {
       baseline !== hashInstructions(connector.instructions);
     const instructionsRefreshable = instructionsChanged && !userEditedInstructions;
 
+    const baseUrl = diffBaseUrl(
+      adapter.connector.baseUrl,
+      connector.baseUrl,
+      typeof cfg.baseUrlBaseline === 'string' ? cfg.baseUrlBaseline : null,
+    );
+
     const isUpToDate =
       updated.length === 0 &&
       added.length === 0 &&
       removed.length === 0 &&
-      !instructionsRefreshable;
+      !instructionsRefreshable &&
+      baseUrl === null;
+    // A baseUrl change is never safe-class. The boot-time reconciler applies
+    // safe-class diffs on its own, and it must not be able to repoint a
+    // customer's connector at a different host while nobody is looking.
     const isSafeClass =
       !isUpToDate &&
       added.length === 0 &&
       removed.length === 0 &&
+      baseUrl === null &&
       updated.every((u) => u.kind === 'safe');
 
     return {
@@ -147,6 +188,7 @@ export class CatalogResyncService {
       added,
       removed,
       instructionsRefreshable,
+      baseUrl,
       isUpToDate,
       isSafeClass,
     };
@@ -159,11 +201,20 @@ export class CatalogResyncService {
    * including endpoint changes, new tools, and soft-deprecating removed tools.
    *
    * Always preserves responseMapping, role access, manual enable/disable and
-   * useProxy. Never touches auth/baseUrl/envVars/headers.
+   * useProxy. Never touches auth/envVars/headers.
+   *
+   * `opts.applyBaseUrl` is the one way a base URL can change, and it is
+   * deliberately not implied by `mode: 'full'`. Fixing a wrong hostname in the
+   * catalog does not reach connectors already installed — NINA kept calling a
+   * host with no DNS record for a day after the catalog was corrected — but
+   * the same overwrite would have repointed a DATEV connector from the
+   * sandbox it was deliberately set to. So the diff proposes and the caller
+   * decides, per connector.
    */
   async resync(
     connectorId: string,
     mode: 'safe' | 'full' = 'full',
+    opts: { applyBaseUrl?: boolean } = {},
   ): Promise<{ applied: boolean; diff: CatalogDiff; snapshot: unknown }> {
     const diff = await this.computeDiff(connectorId);
     if (!diff) {
@@ -203,6 +254,8 @@ export class CatalogResyncService {
           isEnabled: t.isEnabled,
         })),
         instructions: connector.instructions,
+        // Part of the pre-image since resync can now move it.
+        baseUrl: connector.baseUrl,
         config: connector.config,
       };
 
@@ -272,6 +325,11 @@ export class CatalogResyncService {
         newInstructions = adapter.instructions ?? null;
       }
 
+      // The base URL moves only when the caller asked for this specific
+      // change, and only in full mode.
+      const applyBaseUrl =
+        mode === 'full' && opts.applyBaseUrl === true && diff.baseUrl !== null;
+
       // Bump the stored version only when the connector is now fully in sync
       // with the catalog (full mode, or safe mode on a pure safe-class diff).
       const fullySynced = mode === 'full' || diff.isSafeClass;
@@ -280,6 +338,9 @@ export class CatalogResyncService {
         ...cfg,
         ...(fullySynced ? { adapterVersion: adapter.version } : {}),
         instructionsBaseline: hashInstructions(newInstructions),
+        // Re-baseline so the next diff reads this value as ours rather than
+        // as an operator edit.
+        ...(applyBaseUrl ? { baseUrlBaseline: diff.baseUrl!.to } : {}),
       };
 
       await tx.connector.update({
@@ -287,18 +348,62 @@ export class CatalogResyncService {
         data: {
           instructions: newInstructions,
           config: newConfig as any,
+          ...(applyBaseUrl ? { baseUrl: diff.baseUrl!.to } : {}),
         },
       });
 
-      return { snapshot, updatedCount, createdCount, deprecatedCount };
+      return {
+        snapshot,
+        updatedCount,
+        createdCount,
+        deprecatedCount,
+        baseUrlApplied: applyBaseUrl,
+      };
     });
 
     this.logger.log(
       `Re-synced connector ${connectorId} (${diff.slug}, mode=${mode}): ` +
         `${result.updatedCount} updated, ${result.createdCount} added, ` +
-        `${result.deprecatedCount} deprecated → ${adapter.version}`,
+        `${result.deprecatedCount} deprecated` +
+        (result.baseUrlApplied
+          ? `, baseUrl → ${diff.baseUrl!.to} (was ${diff.baseUrl!.from})`
+          : '') +
+        ` → ${adapter.version}`,
     );
 
     return { applied: true, diff, snapshot: result.snapshot };
   }
+}
+
+/**
+ * Compare the catalog's baseUrl with the connector's, and say which way to
+ * read the difference.
+ *
+ * A templated catalog value (`https://{{TENANT}}.weclapp.com`) is never
+ * comparable: the connector holds the resolved form, so every such adapter
+ * would report a change on every diff. Those return null.
+ */
+export function diffBaseUrl(
+  catalogBaseUrl: string,
+  connectorBaseUrl: string,
+  baseline: string | null,
+): BaseUrlChange | null {
+  if (catalogBaseUrl.includes('{{')) return null;
+  const from = (connectorBaseUrl ?? '').trim();
+  const to = (catalogBaseUrl ?? '').trim();
+  if (!to || normaliseUrl(from) === normaliseUrl(to)) return null;
+
+  const provenance: BaseUrlProvenance =
+    baseline === null
+      ? 'unknown'
+      : normaliseUrl(baseline) === normaliseUrl(from)
+        ? 'catalog-moved'
+        : 'user-edited';
+
+  return { from, to, provenance };
+}
+
+/** A trailing slash is not a difference worth telling anyone about. */
+function normaliseUrl(value: string): string {
+  return (value ?? '').trim().replace(/\/+$/, '');
 }

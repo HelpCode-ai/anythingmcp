@@ -226,6 +226,32 @@ export const mcpConnections = {
 };
 
 // Connectors
+
+export interface CatalogBaseUrlChange {
+  from: string;
+  to: string;
+  /**
+   * catalog-moved — the connector still holds what the catalog gave it.
+   * user-edited   — the operator changed it; do not overwrite silently.
+   * unknown       — installed before baselines were recorded.
+   */
+  provenance: 'catalog-moved' | 'user-edited' | 'unknown';
+}
+
+export interface CatalogDiff {
+  catalogManaged: boolean;
+  slug?: string;
+  catalogVersion?: string;
+  connectorVersion?: string | null;
+  updated?: Array<{ name: string; kind: 'safe' | 'structural' }>;
+  added?: string[];
+  removed?: string[];
+  instructionsRefreshable?: boolean;
+  baseUrl?: CatalogBaseUrlChange | null;
+  isUpToDate?: boolean;
+  isSafeClass?: boolean;
+}
+
 export const connectors = {
   list: (token: string) =>
     request<any[]>('/api/connectors', { token }),
@@ -243,6 +269,20 @@ export const connectors = {
     ),
   get: (id: string, token: string) =>
     request<any>(`/api/connectors/${id}`, { token }),
+  /**
+   * What the catalog has changed since this connector was installed. Tool
+   * descriptions, parameters and endpoints — and, separately, the base URL,
+   * which is reported but never applied by `resyncCatalog` unless asked:
+   * a different host takes every tool down at once, and the operator may have
+   * pointed it at their own region or sandbox on purpose.
+   */
+  catalogDiff: (id: string, token: string) =>
+    request<CatalogDiff>(`/api/connectors/${id}/catalog-diff`, { token }),
+  resyncCatalog: (id: string, token: string, opts?: { applyBaseUrl?: boolean }) =>
+    request<CatalogDiff & { applied: boolean }>(
+      `/api/connectors/${id}/resync-catalog${opts?.applyBaseUrl ? '?applyBaseUrl=true' : ''}`,
+      { method: 'POST', token },
+    ),
   update: (id: string, data: unknown, token: string) =>
     request(`/api/connectors/${id}`, { method: 'PUT', body: data, token }),
   /** Non-secret OAuth2 settings, for pre-filling the edit form. */

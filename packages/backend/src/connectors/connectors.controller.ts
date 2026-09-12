@@ -1316,12 +1316,21 @@ export class ConnectorsController {
       'Re-sync a catalog-installed connector with the current catalog. ' +
       'Updates tool descriptions/parameters/endpoints from the catalog while ' +
       'preserving response customisations, role access and manual disables. ' +
-      'Never touches credentials, base URL or env vars.',
+      'Never touches credentials or env vars. The base URL moves only when ' +
+      'applyBaseUrl=true, and only when catalog-diff reported a change: a ' +
+      'different host takes every tool down at once, and the operator may ' +
+      'have pointed it at their own region or sandbox on purpose.',
   })
-  async resyncCatalog(@Req() req: any, @Param('id') id: string) {
+  async resyncCatalog(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('applyBaseUrl') applyBaseUrl?: string,
+  ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
-    const { applied, diff } = await this.catalogResync.resync(id, 'full');
+    const { applied, diff } = await this.catalogResync.resync(id, 'full', {
+      applyBaseUrl: applyBaseUrl === 'true',
+    });
     if (applied) {
       await this.mcpServer.reloadConnectorTools(id);
     }
