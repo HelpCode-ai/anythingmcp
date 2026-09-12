@@ -165,13 +165,32 @@ export class DynamicMcpTools {
       };
     }
 
-    // Resolve the tool with the most specific scope available so cross-org
-    // collisions on the global /mcp endpoint don't leak. connectorIds is set
-    // when invoked through /mcp/:serverId; organizationId is set whenever
-    // we have a JWT.
-    let tool = this.toolRegistry.getTool(toolName, context?.connectorIds);
-    if (!tool && context?.organizationId) {
+    // Resolve the tool in the ONE scope this caller is entitled to, and never
+    // widen when that scope has no match.
+    //
+    // This used to try `getTool(toolName, context?.connectorIds)` first and
+    // fall back to the organization only `if (!tool)`. On the global /mcp
+    // endpoint `connectorIds` is undefined, and `getTool` with no connector
+    // filter returns `candidates[0]` — whichever connector registered that
+    // name FIRST, in ANY organization. The fallback then never ran, because a
+    // tool had already been found. So a caller whose own workspace had a tool
+    // of the same name executed somebody else's connector, with that tenant's
+    // stored credentials and base URL. 610 tool names are shared across more
+    // than one organization on the cloud instance today; one is shared by 76.
+    //
+    // The scopes are mutually exclusive, in decreasing specificity:
+    //   - connectorIds — invoked through /mcp/:serverId, or by an API key
+    //     pinned to a server. Only that server's connectors, never wider.
+    //   - organizationId — any JWT on the global /mcp. Only the caller's org.
+    //   - neither — an instance-level static credential on a single-tenant
+    //     self-hosted box, where "any tool" is the correct answer.
+    let tool: RegisteredTool | undefined;
+    if (context?.connectorIds) {
+      tool = this.toolRegistry.getTool(toolName, context.connectorIds);
+    } else if (context?.organizationId) {
       tool = this.toolRegistry.getToolForOrg(toolName, context.organizationId);
+    } else {
+      tool = this.toolRegistry.getTool(toolName);
     }
     if (!tool) {
       return {

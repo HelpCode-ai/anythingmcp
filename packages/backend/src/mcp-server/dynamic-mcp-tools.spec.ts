@@ -184,3 +184,141 @@ describe('DynamicMcpTools — response cache', () => {
     expect(redis.set).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Which tool a name resolves to, when two tenants have registered the same one.
+ *
+ * This is the multi-tenant boundary of the shared `/mcp` endpoint. Until
+ * 12 Sep 2026 resolution ran `getTool(name, context.connectorIds)` first and
+ * only fell back to the organization `if (!tool)`. On `/mcp` there are no
+ * `connectorIds`, and an unfiltered `getTool` returns whichever connector
+ * registered the name FIRST across the whole deployment — so the fallback never
+ * ran and the caller executed somebody else's connector, with that tenant's
+ * credentials. Verified on production: two fresh tenants both invoked a third,
+ * unrelated workspace's connector. 610 tool names were shared across more than
+ * one organization at the time; one was shared by 76.
+ */
+describe('DynamicMcpTools — tool resolution is scoped to the caller', () => {
+  // Distinct base URLs, so "which connector ran" is something the test can
+  // actually see — the same way the production reproduction identified it.
+  const mine: RegisteredTool = {
+    ...makeTool(),
+    id: 'tool-mine',
+    connectorId: 'conn-mine',
+    organizationId: 'org-mine',
+    connectorConfig: { baseUrl: 'https://mine.example.com', authType: 'NONE' },
+  };
+  const theirs: RegisteredTool = {
+    ...makeTool(),
+    id: 'tool-theirs',
+    connectorId: 'conn-theirs',
+    organizationId: 'org-theirs',
+    connectorConfig: { baseUrl: 'https://theirs.example.com', authType: 'NONE' },
+  };
+
+  /** A registry that behaves like the real one: same name, two owners. */
+  function registry() {
+    const calls: string[] = [];
+    return {
+      calls,
+      // Unfiltered → first registered wins, exactly as ToolRegistry does.
+      getTool: (name: string, connectorIds?: string[]) => {
+        calls.push(connectorIds ? `getTool(${connectorIds.join()})` : 'getTool(unscoped)');
+        const candidates = [theirs, mine].filter((t) => t.name === name);
+        if (!connectorIds) return candidates[0];
+        return candidates.find((t) => connectorIds.includes(t.connectorId));
+      },
+      getToolForOrg: (name: string, organizationId: string) => {
+        calls.push(`getToolForOrg(${organizationId})`);
+        return [theirs, mine].find(
+          (t) => t.name === name && t.organizationId === organizationId,
+        );
+      },
+    };
+  }
+
+  function executorWith(reg: ReturnType<typeof registry>) {
+    const restEngine = { execute: jest.fn().mockResolvedValue(RAW) };
+    const executor = new DynamicMcpTools(
+      reg as any,
+      { logInvocation: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: jest.fn().mockResolvedValue(null), set: jest.fn(), incr: jest.fn(), expire: jest.fn(), ttl: jest.fn() } as any,
+      { checkLicenseActive: jest.fn().mockResolvedValue(undefined) } as any,
+      { isCloud: () => true } as any,
+      {} as any,
+      restEngine as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { scheduleObservationalIngest: jest.fn() } as any,
+    );
+    return { executor, restEngine };
+  }
+
+  it('runs MY connector, not the one that registered the name first', async () => {
+    const reg = registry();
+    const { executor, restEngine } = executorWith(reg);
+
+    await executor.executeTool('list_devices', {}, { organizationId: 'org-mine' });
+
+    expect(restEngine.execute).toHaveBeenCalledTimes(1);
+    const [config] = restEngine.execute.mock.calls[0];
+    expect(config.baseUrl).toBe('https://mine.example.com');
+    // The scoped lookup is the one that must have been consulted.
+    expect(reg.calls).toContain('getToolForOrg(org-mine)');
+    expect(reg.calls).not.toContain('getTool(unscoped)');
+  });
+
+  it('refuses rather than widening when my organization has no such tool', async () => {
+    const reg = registry();
+    const { executor, restEngine } = executorWith(reg);
+
+    const res = await executor.executeTool('list_devices', {}, {
+      organizationId: 'org-with-nothing',
+    });
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('not found');
+    expect(restEngine.execute).not.toHaveBeenCalled();
+    expect(reg.calls).not.toContain('getTool(unscoped)');
+  });
+
+  it('uses the server scope when the call came through /mcp/:serverId', async () => {
+    const reg = registry();
+    const { executor } = executorWith(reg);
+
+    await executor.executeTool('list_devices', {}, {
+      organizationId: 'org-mine',
+      connectorIds: ['conn-mine'],
+    });
+
+    expect(reg.calls).toContain('getTool(conn-mine)');
+    expect(reg.calls).not.toContain('getToolForOrg(org-mine)');
+  });
+
+  it('does not fall back to the organization when the server has no such tool', async () => {
+    const reg = registry();
+    const { executor, restEngine } = executorWith(reg);
+
+    const res = await executor.executeTool('list_devices', {}, {
+      organizationId: 'org-mine',
+      connectorIds: ['conn-unrelated'],
+    });
+
+    expect(res.isError).toBe(true);
+    expect(restEngine.execute).not.toHaveBeenCalled();
+  });
+
+  // A self-hosted box with an instance-level MCP_API_KEY has no tenant to scope
+  // to, and "any tool" is the right answer there.
+  it('still resolves unscoped for an instance credential with no organization', async () => {
+    const reg = registry();
+    const { executor, restEngine } = executorWith(reg);
+
+    await executor.executeTool('list_devices', {}, {});
+
+    expect(reg.calls).toContain('getTool(unscoped)');
+    expect(restEngine.execute).toHaveBeenCalled();
+  });
+});
