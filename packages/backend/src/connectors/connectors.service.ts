@@ -432,7 +432,11 @@ export class ConnectorsService {
             endpointMapping,
             mergedParams,
           );
-          return attachResponseMeta(out.body, { headers: out.headers });
+          return attachResponseMeta(
+            out.body,
+            { headers: out.headers },
+            endpointMapping.queryParams,
+          );
         }
         return this.restEngine.execute(config, endpointMapping, mergedParams);
       }

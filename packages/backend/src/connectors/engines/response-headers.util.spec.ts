@@ -65,6 +65,13 @@ describe('describePagination', () => {
     expect(describePagination({})).toBeUndefined();
   });
 
+  it('prefers the parameter the tool maps when the link carries several (GitHub: after + page)', () => {
+    const link =
+      '<https://api.github.com/repositories/1/issues?per_page=2&after=Y3Vyc29y&page=2>; rel="next"';
+    expect(describePagination({ link }, ['page'])).toMatchObject({ nextCursor: '2', cursorParam: 'page' });
+    expect(describePagination({ link })).toMatchObject({ nextCursor: 'Y3Vyc29y', cursorParam: 'after' });
+  });
+
   it('still returns nextUrl when the URL has no recognisable cursor', () => {
     const p = describePagination({ link: '<https://x/feed/abc123>; rel="next"' });
     expect(p).toEqual({ nextUrl: 'https://x/feed/abc123' });

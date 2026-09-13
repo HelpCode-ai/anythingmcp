@@ -225,7 +225,13 @@ export class DynamicMcpTools {
           // Entries written with response meta are wrapped; older ones are
           // the bare body. Both must keep rendering.
           if (raw && typeof raw === 'object' && raw.__amcpEnvelope === 1) {
-            return this.renderResult(raw.body, responseMapping, toolName, raw.meta);
+            return this.renderResult(
+              raw.body,
+              responseMapping,
+              toolName,
+              raw.meta,
+              tool.endpointMapping?.queryParams,
+            );
           }
           return this.renderResult(raw, responseMapping, toolName);
         } catch {
@@ -336,7 +342,13 @@ export class DynamicMcpTools {
         }
       }
 
-      return this.renderResult(result, responseMapping, toolName, meta);
+      return this.renderResult(
+        result,
+        responseMapping,
+        toolName,
+        meta,
+        tool.endpointMapping?.queryParams,
+      );
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
       const errorDetail = this.extractErrorDetail(error);
@@ -399,6 +411,7 @@ export class DynamicMcpTools {
     responseMapping: ResponseMapping | undefined,
     toolName: string,
     meta?: ResponseMeta,
+    queryParams?: Record<string, unknown>,
   ): {
     content: { type: 'text'; text: string }[];
     isError?: boolean;
@@ -429,7 +442,9 @@ export class DynamicMcpTools {
 
     // Response headers the tool opted into ride along with the (shaped)
     // body, after the transform so a `select` cannot drop them by accident.
-    const value = meta ? attachResponseMeta(outcome.value, meta) : outcome.value;
+    const value = meta
+      ? attachResponseMeta(outcome.value, meta, queryParams)
+      : outcome.value;
 
     let resultText = JSON.stringify(value, null, 2) ?? 'null';
     if (responseMapping?.followUp) {

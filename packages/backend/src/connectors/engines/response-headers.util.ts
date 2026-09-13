@@ -77,6 +77,7 @@ export interface Pagination {
  */
 export function describePagination(
   headers: Record<string, string>,
+  preferredParams: string[] = [],
 ): Pagination | undefined {
   const link = headers['link'];
   if (!link) return undefined;
@@ -87,7 +88,11 @@ export function describePagination(
   if (rels.prev) page.prevUrl = rels.prev;
   try {
     const params = new URL(rels.next).searchParams;
-    for (const name of CURSOR_PARAMS) {
+    // A next link can carry more than one candidate (GitHub sends both
+    // `after=` and `page=`). The parameter the tool actually maps wins, so
+    // the model can feed the value straight back; the generic list is the
+    // fallback for tools that map none of them.
+    for (const name of [...preferredParams, ...CURSOR_PARAMS]) {
       const v = params.get(name);
       if (v !== null && v !== '') {
         page.nextCursor = v;
@@ -113,15 +118,27 @@ export interface ResponseMeta {
  * somewhere to live. `_pagination` is absent on the last page on purpose:
  * absence is the signal.
  */
-export function attachResponseMeta(value: unknown, meta: ResponseMeta): unknown {
+export function attachResponseMeta(
+  value: unknown,
+  meta: ResponseMeta,
+  queryParams?: Record<string, unknown>,
+): unknown {
   const extras: { _headers: Record<string, string>; _pagination?: Pagination } = {
     _headers: meta.headers,
   };
-  const pagination = describePagination(meta.headers);
+  const pagination = describePagination(meta.headers, mappedQueryParams(queryParams));
   if (pagination) extras._pagination = pagination;
 
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return { ...(value as Record<string, unknown>), ...extras };
   }
   return { data: value, ...extras };
+}
+
+/** Query parameter names a tool feeds from its own inputs (`page: "$page"`). */
+function mappedQueryParams(queryParams?: Record<string, unknown>): string[] {
+  if (!queryParams) return [];
+  return Object.entries(queryParams)
+    .filter(([, v]) => typeof v === 'string' && (v as string).startsWith('$'))
+    .map(([k]) => k);
 }
