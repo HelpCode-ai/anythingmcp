@@ -59,6 +59,39 @@ describe('RestEngine', () => {
     );
   });
 
+  it('hands back only the response headers the mapping asked for, lower-cased', async () => {
+    mockedAxios.mockResolvedValue({
+      data: [{ id: 1 }],
+      headers: {
+        Link: '<https://api.example.com/items?cursor=n>; rel="next"',
+        'X-RateLimit-Remaining': '9',
+        'Set-Cookie': 'secret=1',
+      },
+    });
+
+    const out = await engine.executeWithMeta(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' },
+      { method: 'GET', path: '/items', exposeHeaders: ['link', 'x-ratelimit-remaining'] },
+      {},
+    );
+
+    expect(out.body).toEqual([{ id: 1 }]);
+    expect(out.headers).toEqual({
+      link: '<https://api.example.com/items?cursor=n>; rel="next"',
+      'x-ratelimit-remaining': '9',
+    });
+  });
+
+  it('returns no headers at all when the mapping did not opt in', async () => {
+    mockedAxios.mockResolvedValue({ data: {}, headers: { Link: '<u>; rel="next"' } });
+    const out = await engine.executeWithMeta(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' },
+      { method: 'GET', path: '/items' },
+      {},
+    );
+    expect(out.headers).toEqual({});
+  });
+
   it('expands __rawquery into flat query params with dynamic keys (weclapp filter)', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
 

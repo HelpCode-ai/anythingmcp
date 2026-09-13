@@ -322,3 +322,102 @@ describe('DynamicMcpTools — tool resolution is scoped to the caller', () => {
     expect(restEngine.execute).toHaveBeenCalled();
   });
 });
+
+describe('DynamicMcpTools — exposed response headers (pagination)', () => {
+  const LINK =
+    '<https://api.example.com/devices?cursor=abc>; rel="next", <https://api.example.com/devices?cursor=000>; rel="prev"';
+  const PAGE = { items: [{ id: 1 }] };
+
+  function pagedTool(exposeHeaders?: string[], responseMapping?: Record<string, unknown>) {
+    const tool = makeTool(responseMapping);
+    tool.endpointMapping = { method: 'GET', path: '/devices', ...(exposeHeaders ? { exposeHeaders } : {}) };
+    return tool;
+  }
+
+  function buildPaged(tool: RegisteredTool, headers: Record<string, string>, cached?: string) {
+    const built = build(tool, { engineResult: PAGE, cached });
+    (built.restEngine as any).executeWithMeta = jest
+      .fn()
+      .mockResolvedValue({ body: PAGE, headers });
+    return built;
+  }
+
+  it('does not touch the engine\'s header path, nor the output, for a tool that did not opt in', async () => {
+    const { executor, restEngine } = buildPaged(pagedTool(), { link: LINK });
+    const res = await executor.executeTool('list_devices', {});
+    expect((restEngine as any).executeWithMeta).not.toHaveBeenCalled();
+    expect(restEngine.execute).toHaveBeenCalled();
+    expect(res.structured).toEqual(PAGE);
+  });
+
+  it('puts the asked-for headers and the next cursor next to the body', async () => {
+    const { executor } = buildPaged(pagedTool(['link']), { link: LINK });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.structured).toEqual({
+      items: [{ id: 1 }],
+      _headers: { link: LINK },
+      _pagination: {
+        nextUrl: 'https://api.example.com/devices?cursor=abc',
+        nextCursor: 'abc',
+        cursorParam: 'cursor',
+        prevUrl: 'https://api.example.com/devices?cursor=000',
+      },
+    });
+    expect(JSON.parse(res.content[0].text)._pagination.nextCursor).toBe('abc');
+  });
+
+  it('omits _pagination on the last page, so its absence is the signal', async () => {
+    const { executor } = buildPaged(pagedTool(['link', 'x-ratelimit-remaining']), {
+      link: '<https://api.example.com/devices?cursor=000>; rel="prev"',
+      'x-ratelimit-remaining': '41',
+    });
+    const res = await executor.executeTool('list_devices', {});
+    const out = res.structured as any;
+    expect(out._pagination).toBeUndefined();
+    expect(out._headers['x-ratelimit-remaining']).toBe('41');
+  });
+
+  it('wraps a non-object body as data instead of losing the extras', async () => {
+    const built = buildPaged(pagedTool(['link']), { link: LINK });
+    (built.restEngine as any).executeWithMeta.mockResolvedValue({ body: [1, 2], headers: { link: LINK } });
+    const res = await built.executor.executeTool('list_devices', {});
+    expect((res.structured as any).data).toEqual([1, 2]);
+    expect((res.structured as any)._pagination.nextCursor).toBe('abc');
+  });
+
+  it('applies the response transform to the body first, then attaches the extras', async () => {
+    const built = buildPaged(
+      pagedTool(['link'], { transform: { select: { first: '$.items[0].id' } } }),
+      { link: LINK },
+    );
+    const res = await built.executor.executeTool('list_devices', {});
+    expect(res.structured).toMatchObject({ first: 1, _pagination: { nextCursor: 'abc' } });
+  });
+
+  it('audits the bare body: headers never reach the log', async () => {
+    const { executor, audit } = buildPaged(pagedTool(['link']), { link: LINK });
+    await executor.executeTool('list_devices', {});
+    expect(audit.logInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({ output: PAGE, status: 'SUCCESS' }),
+    );
+  });
+
+  it('caches body and headers together, and a cache hit still carries the cursor', async () => {
+    const { executor, redis } = buildPaged(pagedTool(['link'], { cacheTtl: 60 }), { link: LINK });
+    await executor.executeTool('list_devices', {});
+    const stored = JSON.parse(redis.set.mock.calls[0][1]);
+    expect(stored).toEqual({ __amcpEnvelope: 1, body: PAGE, meta: { headers: { link: LINK } } });
+
+    const hit = buildPaged(pagedTool(['link'], { cacheTtl: 60 }), {}, redis.set.mock.calls[0][1]);
+    const res = await hit.executor.executeTool('list_devices', {});
+    expect((hit.restEngine as any).executeWithMeta).not.toHaveBeenCalled();
+    expect((res.structured as any)._pagination.nextCursor).toBe('abc');
+  });
+
+  it('still reads a cache entry written before envelopes existed', async () => {
+    const hit = buildPaged(pagedTool(['link'], { cacheTtl: 60 }), {}, JSON.stringify(PAGE));
+    const res = await hit.executor.executeTool('list_devices', {});
+    expect(res.structured).toEqual(PAGE);
+  });
+});
+

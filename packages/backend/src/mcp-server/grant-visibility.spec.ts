@@ -194,4 +194,70 @@ describe('grant-scoped visibility on the shared /mcp', () => {
     // must not be handed it either.
     expect(user.grantedConnectorIds).toEqual(['conn-A1']);
   });
+
+  // The transport answers tools/list from the upstream registry, which keeps
+  // ONE entry per name for the whole deployment — the first tenant to register
+  // a name at boot defines what every other tenant is shown for it. The shared
+  // endpoint must answer from the caller's own entries instead.
+  describe('tools/list is built from the caller\'s own tool definitions', () => {
+    const shared = [
+      // org-B registered first and has the OLD shape of a catalog tool.
+      {
+        ...tool('t-b9', 'bundesbank_get_timeseries', 'org-B', 'conn-B1'),
+        description: 'old: by series ID',
+        parameters: { type: 'object', properties: { seriesId: { type: 'string' } }, required: ['seriesId'] },
+      },
+      {
+        ...tool('t-a9', 'bundesbank_get_timeseries', 'org-A', 'conn-A1'),
+        description: 'new: by dataflow and key',
+        parameters: { type: 'object', properties: { flow: { type: 'string' }, key: { type: 'string' } }, required: ['flow', 'key'] },
+        annotations: { readOnlyHint: true },
+        connectorConfig: { baseUrl: 'https://example.com', authType: 'NONE', envVars: { API_KEY: 'x' } },
+      },
+      tool('t-b1', 'gamma', 'org-B', 'conn-B1'),
+    ];
+
+    const controllerFor = () =>
+      new McpEndpointController(
+        { getConnectorIds: jest.fn(async () => []) } as any,
+        { getAllTools: () => shared, countByName: () => 1 } as any,
+        {} as any,
+        { getAllowedToolIds: jest.fn(async () => null) } as any,
+        {} as any,
+        {} as any,
+        { resolve: jest.fn().mockResolvedValue(null) } as any,
+      );
+
+    const listFor = async (user: any) => {
+      process.env.MCP_STREAMABLE_JSON_RESPONSE = 'true';
+      const req: any = { user, body: { jsonrpc: '2.0', id: 7, method: 'tools/list', params: {} } };
+      const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn(), setHeader: jest.fn(), end: jest.fn() };
+      await controllerFor().handleGlobalPost(req, res);
+      return res.json.mock.calls[0]?.[0];
+    };
+
+    it('lists the caller\'s own schema, description and annotations for a shared name', async () => {
+      const out = await listFor({ sub: 'u1', organizationId: 'org-A', azp: 'c' });
+      expect(out.id).toBe(7);
+      expect(out.result.tools.map((t: any) => t.name)).toEqual(['bundesbank_get_timeseries']);
+      const t = out.result.tools[0];
+      expect(t.description).toBe('new: by dataflow and key');
+      expect(Object.keys(t.inputSchema.properties).sort()).toEqual(['flow', 'key']);
+      expect(t.annotations.readOnlyHint).toBe(true);
+    });
+
+    it('strips parameters that an env var already supplies', async () => {
+      const out = await listFor({ sub: 'u1', organizationId: 'org-A', azp: 'c' });
+      expect(out.result.tools[0].inputSchema.properties.API_KEY).toBeUndefined();
+    });
+
+    it('shows the other tenant its own version, and nothing of the first', async () => {
+      const out = await listFor({ sub: 'u2', organizationId: 'org-B', azp: 'c' });
+      const names = out.result.tools.map((t: any) => t.name).sort();
+      expect(names).toEqual(['bundesbank_get_timeseries', 'gamma']);
+      const t = out.result.tools.find((x: any) => x.name === 'bundesbank_get_timeseries');
+      expect(t.description).toBe('old: by series ID');
+      expect(Object.keys(t.inputSchema.properties)).toEqual(['seriesId']);
+    });
+  });
 });

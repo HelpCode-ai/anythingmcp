@@ -15,6 +15,7 @@ import {
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { pickExposedHeaders } from './response-headers.util';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -31,7 +32,25 @@ export class RestEngine {
     private readonly loginTokenService: LoginTokenService,
   ) {}
 
+  /**
+   * The body alone. What every caller wanted until list endpoints that
+   * paginate through headers came along; see `executeWithMeta`.
+   */
   async execute(
+    config: Parameters<RestEngine['executeWithMeta']>[0],
+    endpointMapping: Parameters<RestEngine['executeWithMeta']>[1],
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    return (await this.executeWithMeta(config, endpointMapping, params)).body;
+  }
+
+  /**
+   * The body plus the response headers the mapping asked to see
+   * (`exposeHeaders`, matched case-insensitively, lower-cased on the way out).
+   * `headers` is empty unless the tool opted in, so nothing leaks by default
+   * and the audit log never sees them.
+   */
+  async executeWithMeta(
     config: {
       baseUrl: string;
       authType: string;
@@ -55,9 +74,19 @@ export class RestEngine {
       bodyTemplate?: string;
       bodyEncoding?: string;
       headers?: Record<string, string>;
+      // Response headers to hand back alongside the body, e.g. ["link"] for
+      // cursor pagination. Opt-in per tool; see response-headers.util.ts.
+      exposeHeaders?: string[];
     },
     params: Record<string, unknown>,
-  ): Promise<unknown> {
+  ): Promise<{ body: unknown; headers: Record<string, string> }> {
+    const withMeta = (response: AxiosResponse) => ({
+      body: response.data,
+      headers: pickExposedHeaders(
+        response.headers as Record<string, unknown>,
+        endpointMapping.exposeHeaders,
+      ),
+    });
     // Interpolate path parameters: /users/{id} → /users/123
     //
     // `path` is optional on the stored mapping — tools saved as `method:
@@ -223,7 +252,7 @@ export class RestEngine {
 
     try {
       const response = await this.requestWithRetry(axiosConfig);
-      return response.data;
+      return withMeta(response);
     } catch (error) {
       // OAuth2 auto-refresh: retry once on 401
       if (
@@ -244,7 +273,7 @@ export class RestEngine {
             ...buildOauth2TokenHeader(config.authConfig, newToken),
           };
           const retryResponse = await axios(axiosConfig);
-          return retryResponse.data;
+          return withMeta(retryResponse);
         }
       }
       // LOGIN_TOKEN auto-relogin: retry once on 401 when refreshOn401 is enabled
@@ -262,7 +291,7 @@ export class RestEngine {
         );
         injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
         const retryResponse = await axios(axiosConfig);
-        return retryResponse.data;
+        return withMeta(retryResponse);
       }
       throw error;
     }
