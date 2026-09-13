@@ -100,3 +100,28 @@ export function describePagination(
   }
   return page;
 }
+
+/** What the engine hands back besides the body, when a tool asked for it. */
+export interface ResponseMeta {
+  headers: Record<string, string>;
+}
+
+/**
+ * Puts the exposed headers, and the pagination read out of `Link`, next to
+ * the body the model already gets. An object body is extended in place;
+ * anything else (an array, a string) is wrapped as `data` so the extras have
+ * somewhere to live. `_pagination` is absent on the last page on purpose:
+ * absence is the signal.
+ */
+export function attachResponseMeta(value: unknown, meta: ResponseMeta): unknown {
+  const extras: { _headers: Record<string, string>; _pagination?: Pagination } = {
+    _headers: meta.headers,
+  };
+  const pagination = describePagination(meta.headers);
+  if (pagination) extras._pagination = pagination;
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>), ...extras };
+  }
+  return { data: value, ...extras };
+}

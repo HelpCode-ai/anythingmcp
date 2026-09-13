@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
 import { RestEngine } from './engines/rest.engine';
+import { attachResponseMeta } from './engines/response-headers.util';
 import { SoapEngine } from './engines/soap.engine';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
@@ -421,8 +422,20 @@ export class ConnectorsService {
     }
 
     switch (connector.type) {
-      case 'REST':
+      case 'REST': {
+        // The in-app "Run Test" must show what a model will see, so a tool
+        // that asked for response headers gets them here as well.
+        const wanted = (endpointMapping as { exposeHeaders?: string[] }).exposeHeaders;
+        if (Array.isArray(wanted) && wanted.length > 0) {
+          const out = await this.restEngine.executeWithMeta(
+            config,
+            endpointMapping,
+            mergedParams,
+          );
+          return attachResponseMeta(out.body, { headers: out.headers });
+        }
         return this.restEngine.execute(config, endpointMapping, mergedParams);
+      }
       case 'SOAP':
         return this.soapEngine.execute(config, endpointMapping, mergedParams);
       case 'GRAPHQL':
