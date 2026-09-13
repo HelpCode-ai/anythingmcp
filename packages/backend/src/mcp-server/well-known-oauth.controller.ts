@@ -67,10 +67,14 @@ export class WellKnownOAuthController {
       // and NO `iss` in the response MUST reject that response — so this flag
       // and the middleware have to ship together, and stay together.
       authorization_response_iss_parameter_supported: true,
-      // MCP 2026-07-28: resource servers SHOULD NOT advertise `offline_access`
-      // here, because refresh tokens are a client concern and not a
-      // requirement of the resource. Clients that want one still request it.
-      scopes_supported: [],
+      // `offline_access` is deliberately absent (MCP 2026-07-28: refresh
+      // tokens are a client concern, not a requirement of the resource).
+      // `openid` and `email` are what an OIDC relying party needs to call
+      // /userinfo; ChatGPT requests them by default when it sees them here
+      // and uses the verified e-mail for Enterprise domain restrictions.
+      scopes_supported: ['openid', 'email'],
+      userinfo_endpoint: `${base}/userinfo`,
+      claims_supported: ['sub', 'email', 'email_verified', 'name'],
       // Minimal OIDC fields so clients that probe openid-configuration accept
       // the document. Tokens are HS256-signed (symmetric), so there is no jwks_uri.
       subject_types_supported: ['public'],

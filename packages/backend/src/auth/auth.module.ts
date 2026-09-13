@@ -7,6 +7,7 @@ import { RecoveryCodesService } from './recovery-codes.service';
 import { SsoEnforcementService } from './sso-enforcement.service';
 import { AuthController } from './auth.controller';
 import { LoginController } from './login.controller';
+import { UserInfoController } from './userinfo.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { McpAuthGuard } from './mcp-auth.guard';
 import { McpAuthMiddleware } from './mcp-auth.middleware';
@@ -46,7 +47,7 @@ import { IdentityProvidersModule } from '../identity-providers/identity-provider
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController, LoginController],
+  controllers: [AuthController, LoginController, UserInfoController],
   providers: [
     AuthService,
     RecoveryCodesService,

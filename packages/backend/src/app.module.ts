@@ -72,6 +72,12 @@ if (useOAuth) {
           'refresh_token',
           'client_credentials',
         ],
+        // OpenID Connect, the minimum of it: lets a relying party (ChatGPT
+        // Enterprise, for one) ask who the user is via /userinfo and restrict
+        // a connector to the company's e-mail domain. The scope policy only
+        // grants scopes listed here, so without this line a request for
+        // `openid email` is silently narrowed to nothing.
+        scopesSupported: ['openid', 'email'],
       },
     }),
   );
