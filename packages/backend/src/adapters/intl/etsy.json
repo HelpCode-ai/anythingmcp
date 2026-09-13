@@ -32,7 +32,6 @@
     {
       "name": "etsy_get_authenticated_user",
       "description": "Return the user the OAuth token belongs to. Returns user_id, login_name, primary_email.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {}
@@ -45,7 +44,6 @@
     {
       "name": "etsy_get_user_shops",
       "description": "List shops owned by the user. Returns shop_id, shop_name, currency_code, languages, login_name, last_updated_tsz, listing_active_count.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -66,7 +64,6 @@
     {
       "name": "etsy_get_shop",
       "description": "Fetch one shop by shop_id with full details (announcement, sale message, etc.).",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -87,7 +84,6 @@
     {
       "name": "etsy_get_shop_listings_active",
       "description": "List active listings in a shop.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -135,7 +131,6 @@
     {
       "name": "etsy_get_listing",
       "description": "Fetch one listing by listing_id with full details.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -163,7 +158,6 @@
     {
       "name": "etsy_get_shop_receipts",
       "description": "List orders (receipts) for the shop.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -236,7 +230,6 @@
     {
       "name": "etsy_get_shop_receipt",
       "description": "Fetch one receipt with buyer info, transactions[], shipping address.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -262,7 +255,6 @@
     {
       "name": "etsy_get_shop_reviews",
       "description": "List reviews (transactions with feedback) for the shop.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -300,7 +292,6 @@
     {
       "name": "etsy_get_listings_by_shop_section",
       "description": "List listings filtered by a shop section.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
