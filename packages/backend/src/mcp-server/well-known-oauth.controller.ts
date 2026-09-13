@@ -1,6 +1,6 @@
-import { Controller, Get, Param, Req } from '@nestjs/common';
+import { Controller, Get, Param, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 /**
  * Serves OAuth/OIDC discovery documents that some MCP clients require but
@@ -98,6 +98,26 @@ export class WellKnownOAuthController {
 
   // OIDC discovery (root). Some MCP clients fetch this instead of
   // oauth-authorization-server; we return the same authorization-server doc.
+  /**
+   * Domain-verification challenge for the OpenAI plugin directory.
+   *
+   * The portal generates a token per plugin draft and expects it, as plain
+   * text, at the origin root under this exact name before it will let the
+   * server be submitted. The value lives in the environment
+   * (`OPENAI_APPS_CHALLENGE_TOKEN`) so rotating it is a config change, and the
+   * route is a plain 404 when nothing is set, so a self-hosted deployment
+   * that never submits anything advertises nothing.
+   */
+  @Get('openai-apps-challenge')
+  openaiAppsChallenge(@Res() res: Response) {
+    const token = this.config.get<string>('OPENAI_APPS_CHALLENGE_TOKEN');
+    if (!token) {
+      res.status(404).type('text/plain').send('Not Found');
+      return;
+    }
+    res.status(200).type('text/plain').send(token);
+  }
+
   @Get('openid-configuration')
   openidConfiguration(@Req() req: Request) {
     return this.authServerMetadata(this.baseUrl(req));

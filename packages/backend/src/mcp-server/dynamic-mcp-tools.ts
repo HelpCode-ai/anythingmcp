@@ -161,7 +161,7 @@ export class DynamicMcpTools {
           {
             type: 'text' as const,
             text: JSON.stringify({
-              error: err.message || 'Your license has expired. Please purchase a license at anythingmcp.com/pricing',
+              error: err.message || 'This workspace\'s license is not active. Ask a workspace administrator to renew it.',
             }),
           },
         ],
