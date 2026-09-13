@@ -38,6 +38,10 @@ export interface RegisteredTool {
     queryParams?: Record<string, unknown>;
     bodyMapping?: Record<string, unknown>;
     headers?: Record<string, string>;
+    // Response headers the tool wants back with the body (REST only). The
+    // usual reason is `["link"]`: cursor pagination lives in that header,
+    // and without it every list tool is exactly one page long.
+    exposeHeaders?: string[];
   };
   responseMapping?: Record<string, unknown>;
   // JSON Schema of the response, served to clients as the tool's outputSchema.
