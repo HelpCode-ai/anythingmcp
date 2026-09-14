@@ -293,7 +293,7 @@ export class RestEngine {
         const retryResponse = await axios(axiosConfig);
         return withMeta(retryResponse);
       }
-      throw error;
+      throw restateProxyError(error);
     }
   }
 
@@ -819,3 +819,59 @@ function assertNoPrototypePollution(value: unknown): void {
     assertNoPrototypePollution((value as Record<string, unknown>)[key]);
   }
 }
+
+/**
+ * When a request goes through the web-unblocker, a failure can come from the
+ * target or from the unblocker itself, and the two need different responses:
+ * one is the customer's credentials or the vendor being down, the other is
+ * ours.
+ *
+ * Proxy mode says which, but only in headers — the body is always the same
+ * sentence, "There is a downloading problem which might be temporary. Retry in
+ * N seconds from 'Retry-After' header." We were discarding the headers, so
+ * every proxy-side failure reached the operator as an unattributed 520.
+ *
+ * That cost real time: deutsche-bahn and etsy both showed up as "520 Server
+ * Error" for weeks. The headers said `/download/website-ban` all along, and
+ * calling /v1/extract directly with the same key added the part that actually
+ * mattered — residential IPs need the account to pass KYC.
+ *
+ * zyte-request-id is included because it is the first thing Zyte support asks
+ * for, and it is not recoverable after the fact.
+ */
+export function restateProxyError(error: unknown): unknown {
+  if (!(error instanceof AxiosError) || !error.response) return error;
+  const headers = error.response.headers as Record<string, unknown> | undefined;
+  const get = (name: string): string | undefined => {
+    const v = headers?.[name] ?? headers?.[name.toLowerCase()];
+    return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+  };
+  const type = get('zyte-error-type');
+  if (!type) return error;
+
+  const title = get('zyte-error-title') ?? 'Proxy error';
+  const requestId = get('zyte-request-id');
+  const hint = PROXY_ERROR_HINTS[type];
+
+  error.message =
+    `Web-unblocker: ${title} (${type})` +
+    (hint ? ` — ${hint}` : '') +
+    (requestId ? ` [zyte-request-id ${requestId}]` : '');
+  return error;
+}
+
+/**
+ * Only the types we have actually seen in production, each said in terms of
+ * what to do about it. An unknown type still gets its name and request id,
+ * which is enough to look up.
+ */
+const PROXY_ERROR_HINTS: Record<string, string> = {
+  '/download/website-ban':
+    'the unblocker could not get past the site from a datacenter IP. This is the unblocker, not your credentials',
+  '/download/temporary-error':
+    'the unblocker could not fetch the page. It reports this as temporary, so check whether it persists before treating it as a block',
+  '/auth/account-suspended':
+    'the web-unblocker account is suspended — this is an operator problem, not a connector one',
+  '/limits/over-user-limit':
+    'the web-unblocker account is over its limit',
+};
