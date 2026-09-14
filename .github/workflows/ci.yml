@@ -125,3 +125,37 @@ jobs:
 
       - name: Build unified image
         run: docker build -t anythingmcp:ci .
+
+      # Building proves the image assembles, not that it runs. v0.8.0 shipped a
+      # backend that threw MODULE_NOT_FOUND at import time because a relative
+      # require resolved differently under dist/ than under src/: the image
+      # built clean, every test passed, and the container crash-looped. Boot it.
+      - name: Boot the image and wait for /health
+        run: |
+          set -euo pipefail
+          docker network create amcp-ci
+          docker run -d --name amcp-ci-db --network amcp-ci \
+            -e POSTGRES_USER=amcp -e POSTGRES_PASSWORD=amcp -e POSTGRES_DB=anythingmcp \
+            postgres:17-alpine
+          docker run -d --name amcp-ci-app --network amcp-ci -p 4000:4000 \
+            -e DATABASE_URL=postgresql://amcp:amcp@amcp-ci-db:5432/anythingmcp \
+            -e JWT_SECRET="$(openssl rand -hex 32)" \
+            -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
+            -e NODE_ENV=production -e PORT=4000 \
+            anythingmcp:ci
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:4000/health > /dev/null; then
+              echo "backend healthy after ${i}0s"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::the image built but the backend never became healthy"
+          docker logs amcp-ci-app 2>&1 | tail -80
+          exit 1
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker rm -f amcp-ci-app amcp-ci-db 2>/dev/null || true
+          docker network rm amcp-ci 2>/dev/null || true
