@@ -38,7 +38,7 @@ if (!chrome) {
 }
 
 // Real catalog count — same source as scripts/adapter-count.mjs.
-const { adapters } = JSON.parse(
+const { adapters, keyless } = JSON.parse(
   execFileSync(process.execPath, [join(ROOT, 'scripts/adapter-count.mjs')], {
     encoding: 'utf8',
   }),
@@ -49,6 +49,7 @@ const icon = (name) =>
 
 const html = readFileSync(join(ASSETS, 'banner.html'), 'utf8')
   .replace(/\{\{ADAPTERS\}\}/g, String(adapters))
+  .replace(/\{\{KEYLESS\}\}/g, String(keyless))
   .replace(/\{\{ICON_CLAUDE\}\}/g, icon('claude'))
   .replace(/\{\{ICON_CHATGPT\}\}/g, icon('chatgpt'))
   .replace(/\{\{ICON_COPILOT\}\}/g, icon('copilot'))
@@ -69,7 +70,7 @@ execFileSync(
     '--disable-gpu',
     '--hide-scrollbars',
     '--force-device-scale-factor=' + SCALE,
-    `--window-size=1600,640`,
+    `--window-size=1600,500`,
     `--screenshot=${shot}`,
     '--virtual-time-budget=6000',
     'file://' + page,
@@ -79,8 +80,10 @@ execFileSync(
 
 const magick = (args) => execFileSync('magick', args, { stdio: 'inherit' });
 
-// README banner: 1600x640.
-magick([shot, '-resize', '1600x640', '-strip', join(ASSETS, 'banner.png')]);
+// README banner: 1600x500 (3.2:1). Wider than 2.5:1 on purpose — at
+// GitHub's ~830px column every 100px of banner height is 100px the demo GIF
+// below it does not get.
+magick([shot, '-resize', '1600x500', '-strip', join(ASSETS, 'banner.png')]);
 
 // Social preview / OG: 1280x640 (GitHub's 2:1 slot). Scale the whole 2.5:1
 // banner down and letterbox it — cropping to 2:1 would cut the headline on one
@@ -88,7 +91,7 @@ magick([shot, '-resize', '1600x640', '-strip', join(ASSETS, 'banner.png')]);
 // needs to show.
 magick([
   shot,
-  '-resize', '1280x512',
+  '-resize', '1280x400',
   '-background', '#05070f',
   '-gravity', 'center',
   '-extent', '1280x640',
@@ -97,5 +100,5 @@ magick([
 ]);
 
 console.log(
-  `banner.png (1600x640) and social-preview.png (1280x640) written with "${adapters} connectors".`,
+  `banner.png (1600x500) and social-preview.png (1280x640) written with "${adapters} connectors, ${keyless} keyless".`,
 );

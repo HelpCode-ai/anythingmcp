@@ -26,7 +26,8 @@ services:
     # The published image is amd64 only (arm64 is blocked upstream by a Prisma
     # bug — see .github/workflows/docker-publish.yml). Pinning the platform
     # makes this file work on Apple Silicon too, through Docker Desktop's
-    # emulation: first boot takes a couple of minutes instead of seconds.
+    # emulation. Measured at 24 s to a healthy API on an M-series laptop; older
+    # hardware emulating amd64 will be slower.
     platform: linux/amd64
     container_name: ${COMPOSE_PROJECT_NAME:-amcp}-app
     # Loopback only, and deliberately not configurable here: the quickstart has

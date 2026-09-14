@@ -9,7 +9,7 @@
 
       node scripts/generate-banner.mjs
 
-  which re-renders banner.png (1600x640) and social-preview.png (1280x640) with
+  which re-renders banner.png (1600x500) and social-preview.png (1280x640) with
   headless Chrome. `{{ADAPTERS}}` is substituted from the real catalog count.
 -->
 <html lang="en">
@@ -43,7 +43,7 @@
       }
       body {
         width: 1600px;
-        height: 640px;
+        height: 500px;
         overflow: hidden;
         background: var(--ink-deep);
         font-family: Geist, system-ui, sans-serif;
@@ -52,9 +52,9 @@
       }
       .banner {
         width: 1600px;
-        height: 640px;
+        height: 500px;
         display: grid;
-        grid-template-columns: 660px 1fr;
+        grid-template-columns: 600px 1fr;
         background: radial-gradient(
             120% 120% at 12% 0%,
             #101a2e 0%,
@@ -65,16 +65,16 @@
 
       /* ---------- left: the claim ---------- */
       .claim {
-        padding: 68px 56px 60px 72px;
+        padding: 56px 48px 56px 64px;
         display: flex;
         flex-direction: column;
         justify-content: center;
-        gap: 26px;
+        gap: 22px;
         border-right: 1px solid var(--line);
       }
       .kicker {
         font-family: "Geist Mono", ui-monospace, monospace;
-        font-size: 13px;
+        font-size: 22px;
         font-weight: 500;
         letter-spacing: 0.1em;
         text-transform: uppercase;
@@ -85,8 +85,8 @@
         white-space: nowrap;
       }
       .kicker .dot {
-        width: 7px;
-        height: 7px;
+        width: 11px;
+        height: 11px;
         border-radius: 999px;
         background: #34d399;
         flex: none;
@@ -94,9 +94,9 @@
       h1 {
         font-family: Fraunces, Georgia, serif;
         font-weight: 400;
-        font-size: 54px;
-        line-height: 1.08;
-        letter-spacing: -0.015em;
+        font-size: 78px;
+        line-height: 1.02;
+        letter-spacing: -0.02em;
       }
       h1 em {
         font-style: italic;
@@ -104,10 +104,10 @@
         color: var(--signal-lift);
       }
       .sub {
-        font-size: 17px;
-        line-height: 1.5;
+        font-size: 30px;
+        line-height: 1.4;
         color: var(--muted);
-        max-width: 30ch;
+        max-width: 22ch;
       }
       .sub b {
         color: var(--fg);
@@ -116,20 +116,20 @@
       .wordmark {
         display: flex;
         align-items: center;
-        gap: 11px;
-        font-size: 17px;
+        gap: 14px;
+        font-size: 30px;
         font-weight: 600;
-        letter-spacing: -0.01em;
+        letter-spacing: -0.015em;
       }
       .wordmark svg {
-        width: 26px;
-        height: 26px;
+        width: 40px;
+        height: 40px;
       }
 
       /* ---------- right: the diagram ---------- */
       .diagram {
         position: relative;
-        padding: 54px 40px 54px 46px;
+        padding: 40px 36px 40px 40px;
         display: grid;
         grid-template-columns: 1fr auto 1fr;
         align-items: center;
@@ -139,18 +139,18 @@
       .col {
         display: flex;
         flex-direction: column;
-        gap: 11px;
+        gap: 10px;
         position: relative;
         z-index: 2;
       }
       .col-label {
         font-family: "Geist Mono", ui-monospace, monospace;
-        font-size: 11px;
+        font-size: 20px;
         font-weight: 500;
         letter-spacing: 0.14em;
         text-transform: uppercase;
         color: var(--label);
-        margin-bottom: 5px;
+        margin-bottom: 8px;
       }
       .col.right .col-label {
         text-align: right;
@@ -158,29 +158,29 @@
       .node {
         display: flex;
         align-items: center;
-        gap: 11px;
-        height: 52px;
-        padding: 0 16px;
+        gap: 14px;
+        height: 56px;
+        padding: 0 20px;
         background: var(--card);
         border: 1px solid var(--line);
         border-radius: 12px;
-        font-size: 15px;
+        font-size: 26px;
         font-weight: 500;
         letter-spacing: -0.005em;
         white-space: nowrap;
       }
       .node .glyph {
-        width: 30px;
-        height: 30px;
-        border-radius: 8px;
+        width: 36px;
+        height: 36px;
+        border-radius: 9px;
         background: rgba(255, 255, 255, 0.06);
         display: grid;
         place-items: center;
         flex: none;
       }
       .node .glyph svg {
-        width: 17px;
-        height: 17px;
+        width: 21px;
+        height: 21px;
       }
 
       /* centre core */
@@ -188,13 +188,13 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 10px;
+        gap: 14px;
         position: relative;
         z-index: 3;
       }
       .core {
-        width: 150px;
-        height: 116px;
+        width: 210px;
+        height: 140px;
         border-radius: 16px;
         background: linear-gradient(160deg, #2f6bf0 0%, var(--signal) 100%);
         box-shadow: 0 16px 34px -18px rgba(0, 0, 0, 0.75);
@@ -205,25 +205,18 @@
         gap: 7px;
       }
       .core svg {
-        width: 28px;
-        height: 28px;
+        width: 38px;
+        height: 38px;
       }
       .core .name {
-        font-size: 15px;
+        font-size: 26px;
         font-weight: 600;
         letter-spacing: -0.01em;
       }
       .core .path {
         font-family: "Geist Mono", ui-monospace, monospace;
-        font-size: 11px;
+        font-size: 19px;
         color: rgba(255, 255, 255, 0.72);
-      }
-      .core-cap {
-        font-family: "Geist Mono", ui-monospace, monospace;
-        font-size: 11px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: var(--label);
       }
       .wires {
         position: absolute;
@@ -236,16 +229,11 @@
     <div class="banner">
       <div class="claim">
         <div class="kicker">
-          <span class="dot"></span>Open source (AGPL-3.0) · Self-hosted or EU
-          cloud · {{ADAPTERS}} connectors
+          <span class="dot"></span>Open source · AGPL-3.0
         </div>
-        <h1>
-          Give your AI safe access to <em>the software your company already
-          runs</em>
-        </h1>
+        <h1><em>{{ADAPTERS}}</em> connectors</h1>
         <p class="sub">
-          REST, SOAP, GraphQL and SQL systems become MCP tools for Claude,
-          ChatGPT and Copilot — <b>without writing code</b>.
+          {{KEYLESS}} of them need no API key. Self-hosted or EU cloud.
         </p>
         <div class="wordmark">
           <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -284,10 +272,6 @@
             SQL / NoSQL
           </div>
           <div class="node">
-            <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M10 21v-5h4v5"/><path d="M9 11h1.5M13.5 11H15"/></svg></span>
-            Business software
-          </div>
-          <div class="node">
             <span class="glyph"><svg viewBox="0 0 52 52" fill="none"><line x1="26" y1="26" x2="26" y2="9" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity=".6"/><line x1="26" y1="26" x2="10" y2="40" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity=".6"/><line x1="26" y1="26" x2="42" y2="40" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity=".6"/><circle cx="26" cy="9" r="5" fill="#93c5fd"/><circle cx="10" cy="40" r="5" fill="#93c5fd"/><circle cx="42" cy="40" r="5" fill="#93c5fd"/><circle cx="26" cy="26" r="8" fill="#93c5fd"/></svg></span>
             Another MCP server
           </div>
@@ -308,7 +292,7 @@
             <div class="name">AnythingMCP</div>
             <div class="path">/mcp</div>
           </div>
-          <div class="core-cap">Your infrastructure</div>
+
         </div>
 
         <div class="col right">
@@ -320,8 +304,7 @@
             <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 1.6c.5 5.4 4.5 9.4 9.9 9.9v.99c-5.4.5-9.4 4.5-9.9 9.91h-.99c-.5-5.41-4.5-9.41-9.91-9.91v-.99c5.41-.5 9.41-4.5 9.91-9.9Z" fill="#7aa7ff"/></svg></span>
             Gemini
           </div>
-          <div class="node"><span class="glyph">{{ICON_CURSOR}}</span>Cursor</div>
-        </div>
+                  </div>
       </div>
     </div>
     <script>
