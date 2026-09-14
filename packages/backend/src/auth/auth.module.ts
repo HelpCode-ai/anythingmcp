@@ -15,6 +15,7 @@ import { McpRateLimitGuard } from './mcp-rate-limit.guard';
 import { RolesGuard } from './roles.guard';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { ClientCredentialsMiddleware } from './client-credentials.middleware';
+import { RefreshTokenRevocationMiddleware } from './refresh-token-revocation.middleware';
 import { UsersModule } from '../users/users.module';
 import { SettingsModule } from '../settings/settings.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
@@ -59,6 +60,7 @@ import { IdentityProvidersModule } from '../identity-providers/identity-provider
     RolesGuard,
     PrismaOAuthStore,
     ClientCredentialsMiddleware,
+    RefreshTokenRevocationMiddleware,
   ],
   exports: [
     AuthService,
@@ -70,6 +72,7 @@ import { IdentityProvidersModule } from '../identity-providers/identity-provider
     RolesGuard,
     PrismaOAuthStore,
     ClientCredentialsMiddleware,
+    RefreshTokenRevocationMiddleware,
     JwtModule,
   ],
 })
