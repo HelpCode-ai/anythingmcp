@@ -127,7 +127,7 @@ const emptyForm = (): IdentityProviderInput & { config: Record<string, string> }
 });
 
 export default function IdentityProvidersPage() {
-  const { token, user: currentUser, deploymentMode } = useAuth();
+  const { token, user: currentUser, deploymentMode, deploymentModeLoaded } = useAuth();
   const toast = useToast();
   // Identity providers are a self-hosted feature: in cloud the API answers
   // 404, so do not even ask — render the explanation instead.
@@ -148,7 +148,10 @@ export default function IdentityProvidersPage() {
   const [form, setForm] = useState(emptyForm());
 
   const loadData = async () => {
-    if (!token) return;
+    // The token is restored from localStorage synchronously, the deployment
+    // mode arrives with /health/server-info: wait for it, or cloud would fire
+    // the self-hosted-only request (and its error toast) before knowing.
+    if (!token || !deploymentModeLoaded) return;
     if (isCloud) {
       setLoading(false);
       return;
@@ -170,7 +173,7 @@ export default function IdentityProvidersPage() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, isCloud]);
+  }, [token, isCloud, deploymentModeLoaded]);
 
   const openCreate = () => {
     setForm(emptyForm());
