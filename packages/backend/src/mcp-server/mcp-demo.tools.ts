@@ -4,7 +4,9 @@ import { listAdapters } from '../adapters/catalog';
 
 const ADAPTERS = listAdapters();
 const ADAPTER_COUNT = ADAPTERS.length;
-const KEYLESS_COUNT = ADAPTERS.filter((a) => a.connector?.authType === 'NONE').length;
+// listAdapters() returns AdapterMeta, which surfaces authType directly;
+// `connector` only exists on the full AdapterDefinition.
+const KEYLESS_COUNT = ADAPTERS.filter((a) => a.authType === 'NONE').length;
 
 /**
  * Static, self-describing tools for the PUBLIC demo MCP server (`/mcp/demo`).
