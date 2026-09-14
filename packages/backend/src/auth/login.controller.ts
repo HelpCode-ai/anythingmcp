@@ -18,6 +18,7 @@ import { DeploymentService } from '../common/deployment.service';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { SsoService } from '../identity-providers/sso.service';
 import { MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
+import { providerMarkSvg } from './provider-marks';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 
 /**
@@ -496,7 +497,7 @@ export class LoginController {
    */
   private async loadSsoProviders(
     req: Request,
-  ): Promise<{ id: string; name: string }[]> {
+  ): Promise<{ id: string; name: string; type: string }[]> {
     // SIGNED cookie, so it lives in `signedCookies` — reading `req.cookies`
     // here silently yields undefined and the buttons never render.
     // Self-hosted only, like the rest of SSO. Cloud has no providers to find,
@@ -514,7 +515,7 @@ export class LoginController {
       if (!server?.organizationId) return [];
       return await this.prisma.identityProvider.findMany({
         where: { organizationId: server.organizationId, isActive: true },
-        select: { id: true, name: true },
+        select: { id: true, name: true, type: true },
         orderBy: { createdAt: 'asc' },
       });
     } catch (error: any) {
@@ -617,7 +618,7 @@ export class LoginController {
     serverName: string;
     consent: ConsentContext | null;
     csrfToken: string;
-    ssoProviders: { id: string; name: string }[];
+    ssoProviders: { id: string; name: string; type: string }[];
   }): string {
     const { error, serverName, consent, csrfToken, ssoProviders } = params;
 
@@ -627,11 +628,19 @@ export class LoginController {
 
     // `formnovalidate` matters: without it the browser blocks the submit
     // because the still-empty email and password inputs are `required`.
+    //
+    // The provider mark is trusted SVG and is concatenated UNESCAPED; the
+    // provider name is admin-supplied free text and MUST be escaped. They are
+    // deliberately kept as two separate pieces rather than one template so
+    // nobody later "fixes" the wrong half.
     const ssoHtml = ssoProviders.length
       ? ssoProviders
           .map(
             (p) =>
-              `<button type="submit" name="action" value="sso:${this.escapeHtml(p.id)}" formnovalidate class="sso">${this.escapeHtml(p.name)}</button>`,
+              `<button type="submit" name="action" value="sso:${this.escapeHtml(p.id)}" formnovalidate class="sso">` +
+              providerMarkSvg(p.type) +
+              `<span>${this.escapeHtml(p.name)}</span>` +
+              `</button>`,
           )
           .join('') + '<div class="divider"><span>or</span></div>'
       : '';
@@ -774,8 +783,14 @@ export class LoginController {
       color: #0f172a;
       border: 1px solid #cbd5e1;
       margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
     }
     button.sso:hover { background: #f8fafc; }
+    .sso-mark { display: inline-flex; flex: none; width: 18px; height: 18px; }
+    .sso-mark svg { width: 100%; height: 100%; }
     .divider {
       display: flex;
       align-items: center;

@@ -901,7 +901,7 @@ export interface ResyncSummary {
 
 export interface SsoProviderButton {
   name: string;
-  type: string;
+  type: IdentityProvider['type'];
   startUrl: string;
 }
 

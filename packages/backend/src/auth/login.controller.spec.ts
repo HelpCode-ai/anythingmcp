@@ -134,6 +134,35 @@ describe('LoginController', () => {
       expect(res._sent).toContain(`name="csrf" value="${csrf.value}"`);
     });
 
+    it('renders the provider mark unescaped and the provider name escaped', async () => {
+      // Locks the new markup and the escaping invariant together: the SVG
+      // must reach the page intact, the admin-supplied name must not.
+      (prisma as any).mcpServerConfig = {
+        findUnique: jest.fn().mockResolvedValue({ organizationId: 'org-1' }),
+      };
+      (prisma as any).identityProvider = {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'idp-1', name: '<script>x</script>', type: 'ENTRA' },
+        ]),
+      };
+
+      const res = makeRes();
+      await controller.showLoginPage(
+        undefined as unknown as string,
+        makeReq({ cookies: {}, signedCookies: { mcp_resource: 'srv-1' } } as any),
+        res,
+      );
+
+      expect(res._sent).toContain('value="sso:idp-1"');
+      // The Microsoft mark, unmodified: all four official colours present.
+      expect(res._sent).toContain('class="sso-mark"');
+      for (const colour of ['#F25022', '#7FBA00', '#00A4EF', '#FFB900']) {
+        expect(res._sent).toContain(colour);
+      }
+      expect(res._sent).toContain('&lt;script&gt;x&lt;/script&gt;');
+      expect(res._sent).not.toContain('<script>x</script>');
+    });
+
     it('falls back to a generic form (no consent block) without a session', async () => {
       const res = makeRes();
       await controller.showLoginPage(

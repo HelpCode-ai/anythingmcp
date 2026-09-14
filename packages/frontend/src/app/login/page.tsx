@@ -7,6 +7,7 @@ import { auth, license, server, sso, type SsoProviderButton, recoveryCodes as re
 import { useAuth } from '@/lib/auth-context';
 import { buildPricingUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/logo-icon';
+import { ProviderMark } from '@/components/provider-mark';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -642,9 +643,10 @@ function LoginForm() {
               <a
                 key={p.startUrl}
                 href={p.startUrl}
-                className="flex items-center justify-center w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text)] hover:border-[var(--brand)] transition-colors"
+                className="flex items-center justify-center gap-2.5 w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text)] hover:border-[var(--brand)] transition-colors"
               >
-                {p.name}
+                <ProviderMark type={p.type} />
+                <span>{p.name}</span>
               </a>
             ))}
             <div className="flex items-center gap-3 pt-1">
