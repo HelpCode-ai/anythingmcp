@@ -15,7 +15,16 @@ trap cleanup TERM INT
 
 echo "==> Running database migrations..."
 cd /app/backend
-npx prisma migrate deploy
+# A failed migration used to be ignored: the backend started anyway, against a
+# schema that was empty or half-applied, and the first query died with a
+# confusing "relation does not exist" a dozen lines later. Fail here instead,
+# where the error still says what actually went wrong. Docker's restart policy
+# retries, which is also the right behaviour when the database is simply not
+# accepting connections yet.
+if ! npx prisma migrate deploy; then
+  echo "==> Migrations failed — refusing to start against an unknown schema." >&2
+  exit 1
+fi
 
 echo "==> Starting backend (port 4000)..."
 # Cap the V8 heap so a runaway allocation fails *this* process (caught by the
