@@ -5,10 +5,12 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import {
   identityProviders,
+  roles,
   type IdentityProvider,
   type IdentityProviderInput,
 } from '@/lib/api';
 import { AppSelect } from '@/components/ui/select';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -121,13 +123,18 @@ const emptyForm = (): IdentityProviderInput & { config: Record<string, string> }
   roleSyncEnabled: false,
   roleSyncSource: 'GROUPS',
   roleSyncFallback: 'DENY_ALL',
+  roleSyncDefaultRoleIds: [],
 });
 
 export default function IdentityProvidersPage() {
-  const { token, user: currentUser } = useAuth();
+  const { token, user: currentUser, deploymentMode } = useAuth();
   const toast = useToast();
+  // Identity providers are a self-hosted feature: in cloud the API answers
+  // 404, so do not even ask — render the explanation instead.
+  const isCloud = deploymentMode === 'cloud';
 
   const [providers, setProviders] = useState<IdentityProvider[]>([]);
+  const [mcpRoles, setMcpRoles] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
@@ -142,8 +149,17 @@ export default function IdentityProvidersPage() {
 
   const loadData = async () => {
     if (!token) return;
+    if (isCloud) {
+      setLoading(false);
+      return;
+    }
     try {
-      setProviders(await identityProviders.list(token));
+      const [list, roleList] = await Promise.all([
+        identityProviders.list(token),
+        roles.list(token).catch(() => []),
+      ]);
+      setProviders(list);
+      setMcpRoles(roleList);
     } catch (err: any) {
       toast.show({ tone: 'error', title: 'Could not load providers', description: err.message });
     } finally {
@@ -154,7 +170,7 @@ export default function IdentityProvidersPage() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, isCloud]);
 
   const openCreate = () => {
     setForm(emptyForm());
@@ -309,6 +325,29 @@ export default function IdentityProvidersPage() {
       </div>
     );
   }
+
+  if (isCloud) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="text-center max-w-md">
+          <h2 className="text-xl font-bold text-[var(--text)] mb-2">Not available on AnythingMCP Cloud</h2>
+          <p className="text-[var(--text-2)] mb-4">
+            Single sign-on, SCIM provisioning and role sync are part of the self-hosted edition,
+            where the instance belongs to one company. On Cloud, members sign in with their
+            email and password.
+          </p>
+          <Link href="/settings" className="text-[var(--brand)] hover:underline">Back to Settings</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // "Grant a default role" with nothing selected is a trap: the backend
+  // silently degrades it to "grant no tools". Refuse to save that.
+  const defaultRoleMissing =
+    Boolean(form.roleSyncEnabled) &&
+    form.roleSyncFallback === 'DEFAULT_ROLE' &&
+    (form.roleSyncDefaultRoleIds ?? []).length === 0;
 
   const inputClass =
     'w-full max-w-sm h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]';
@@ -528,11 +567,28 @@ export default function IdentityProvidersPage() {
                         ]}
                       />
                       <p className={helpClass}>
-                        &ldquo;Grant no tools&rdquo; is the default deliberately: a user
-                        holding no MCP role at all is treated as unrestricted, so the
-                        alternative to denying is granting everything.
+                        &ldquo;Grant no tools&rdquo; is the default deliberately: it assigns an
+                        explicit no-tools role, so the outcome does not depend on whether this
+                        workspace has set up tool whitelists yet.
                       </p>
                     </div>
+                    {form.roleSyncFallback === 'DEFAULT_ROLE' && (
+                      <div className="md:col-span-2">
+                        <label className={labelClass}>Default MCP roles</label>
+                        <MultiSelect
+                          value={form.roleSyncDefaultRoleIds ?? []}
+                          onValueChange={(ids) => setForm({ ...form, roleSyncDefaultRoleIds: ids })}
+                          options={mcpRoles.map((r) => ({ value: r.id, label: r.name }))}
+                          placeholder="Pick at least one role"
+                          emptyMessage="No MCP roles exist yet — create one under Roles"
+                          className="max-w-sm"
+                        />
+                        <p className={helpClass}>
+                          Granted to anyone whose groups match no mapping. Leave it empty and
+                          the fallback behaves exactly like &ldquo;Grant no tools&rdquo;.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -547,11 +603,17 @@ export default function IdentityProvidersPage() {
                 Active
               </label>
 
+              {defaultRoleMissing && (
+                <p className="text-[12.5px] text-[var(--danger)]">
+                  &ldquo;Grant a default role&rdquo; needs at least one default MCP role. Pick one
+                  above, or choose a different fallback.
+                </p>
+              )}
               <div className="flex gap-2 pt-1">
                 <Button
                   size="sm"
                   onClick={handleSave}
-                  disabled={saving || !form.name.trim() || !form.clientId.trim()}
+                  disabled={saving || !form.name.trim() || !form.clientId.trim() || defaultRoleMissing}
                 >
                   {saving ? 'Saving...' : editingId ? 'Save changes' : 'Create provider'}
                 </Button>
