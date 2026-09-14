@@ -342,6 +342,31 @@ make them a workspace admin.
 
 ---
 
+## Signing people out
+
+Two admin actions force a fresh sign-in without touching anyone's roles:
+
+- **Per member** — *Settings → Users → Sign out everywhere*. The member's
+  dashboard sessions and every AI-client connection (including clients that
+  hold a refresh token) stop working; they simply sign in again. Recorded as
+  `SESSIONS_REVOKED`.
+- **Whole workspace** — *Settings → General → Security → Sign everyone out*.
+  Typed confirmation; includes you unless you untick *Also sign me out*.
+  Recorded as a single `WORKSPACE_SESSIONS_REVOKED` entry whose metadata
+  carries the counts.
+
+Both work by moving the member's `sessions_valid_from` watermark, which every
+token path honours — including the OAuth **refresh grant**, so a client cannot
+silently mint a new access token from an old refresh token. Because the
+watermark is per user, a member who also belongs to other workspaces is signed
+out there too; the response says how many.
+
+**MCP API keys (`mcp_…`) are not sessions** and are left alone by default.
+Tick *Also deactivate MCP API keys* in either dialog to revoke them as well;
+deactivated keys cannot be restored.
+
+---
+
 ## Security notes
 
 - Identities are keyed on the provider's **immutable subject** (`oid` for
