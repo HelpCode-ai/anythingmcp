@@ -16,15 +16,13 @@
   <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/docker/pulls/helpcodeai/anythingmcp?logo=docker&logoColor=white&color=2563eb&labelColor=0b1220" alt="Docker pulls"></a>
 </p>
 
-**See it work in 20 seconds, without installing anything.** In Claude, open *Settings → Connectors → Add custom connector* and paste `https://cloud.anythingmcp.com/mcp/demo`, then ask:
-
-> *"What's the next ICE from Freiburg to Berlin, is it delayed, and which Bundesland is postal code 79211 in?"*
+**Claude answering a question no chatbot could answer**, because the data lives in a field-service system that speaks REST, not MCP:
 
 <p align="center">
-  <img src="docs/assets/demo-claude.gif" alt="Claude answering a question about field-service visits by calling tools served by AnythingMCP" width="100%" />
+  <img src="docs/assets/demo-claude.gif" alt="Claude asked which companies a technician visited last week, calling tools served by AnythingMCP against a live field-service system" width="100%" />
 </p>
 
-**Then run your own** — three lines, no clone, [details below](#run-it-yourself):
+**Run it yourself** — three lines, no clone, [details below](#run-it-yourself):
 
 ```bash
 mkdir anythingmcp && cd anythingmcp
@@ -45,20 +43,6 @@ Three words appear throughout and mean three different things:
 Everything runs on your infrastructure, so you decide what leaves it. Per-tool response mapping declares which fields ever reach the model; credentials are AES-256-GCM at rest; the audit log keeps the full upstream response on your side. OAuth2, RBAC, SSO and SCIM are in the self-hosted build, not held back for a paid tier.
 
 **In production at [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**, where it connects AI assistants to 15+ internal systems — ERP, CRM, SOAP services and on-prem databases. AnythingMCP was extracted from that system by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany, and open-sourced because an adapter catalog grows faster as a community than as a product.
-
----
-
-## Try it in Claude right now
-
-No install, no signup. In Claude: **Settings → Connectors → Add custom connector**, and paste:
-
-```
-https://cloud.anythingmcp.com/mcp/demo
-```
-
-Then ask it about a train, or a German postal code, or an ECB exchange rate. The answers come from live public APIs — Deutsche Bahn, OpenPLZ, the Bundesbank — served through a real AnythingMCP instance.
-
-The demo endpoint is **read-only and rate-limited**, it holds no customer data, and every tool on it is one of the adapters that needs no API key. It exists so you can see the thing work before you install anything.
 
 ---
 
