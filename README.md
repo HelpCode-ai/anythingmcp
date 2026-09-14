@@ -5,6 +5,10 @@
 <h1 align="center">AnythingMCP</h1>
 
 <p align="center">
+  <a href="README.md">English</a> · <a href="README.de.md">Deutsch</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a>
+</p>
+
+<p align="center">
   <strong>Give Claude, ChatGPT and Copilot safe access to the software your company already runs.</strong><br/>
   188 ready adapters, any REST/SOAP/GraphQL/SQL system without code, on your own infrastructure — and it learns how your systems connect.
 </p>
