@@ -1,54 +1,60 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — turn any API, database or MCP server into custom connectors for Claude, ChatGPT, Gemini, Copilot and Cursor." width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP — give your AI safe access to the software your company already runs." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
 
 <p align="center">
-  <strong>Turn any API, database or MCP server into custom connectors for Claude, ChatGPT and more — no code.</strong><br/>
-  The self-hosted, <strong>AI-empowered MCP gateway</strong> that converts REST, SOAP/WSDL, GraphQL, SQL/NoSQL databases and other MCP servers into AI tools — then learns how their data connects and teaches your agents to use them, with auth and full audit.
+  <strong>Give Claude, ChatGPT and Copilot safe access to the software your company already runs.</strong><br/>
+  188 ready connectors, any REST/SOAP/GraphQL/SQL system without code, self-hosted — and it learns how your systems connect.
+</p>
+
+<p align="center">
+  <a href="https://cloud.anythingmcp.com"><img src="docs/assets/cloud-button.svg" alt="Try on Cloud" height="40"></a>
+</p>
+
+<p align="center">
+  <a href="#try-it-in-claude-right-now">Try it in Claude now</a> &nbsp;·&nbsp;
+  <a href="#run-it-yourself">Run it yourself</a> &nbsp;·&nbsp;
+  <a href="https://anythingmcp.com/guides">Setup guides</a>
 </p>
 
 <p align="center">
   <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=flat&logo=github&logoColor=white&color=2563eb&labelColor=0b1220" alt="GitHub Stars"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
-  <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2563eb?labelColor=0b1220" alt="License"></a>
-  <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/badge/docker-ready-2563eb?logo=docker&logoColor=white&labelColor=0b1220" alt="Docker Ready"></a>
-  <a href="https://github.com/HelpCode-ai/anythingmcp/commits/main"><img src="https://img.shields.io/github/last-commit/HelpCode-ai/anythingmcp?color=2563eb&labelColor=0b1220" alt="Last Commit"></a>
-  <a href="https://glama.ai/mcp/servers/HelpCode-ai/anythingmcp"><img src="https://glama.ai/mcp/servers/HelpCode-ai/anythingmcp/badges/score.svg" alt="anythingmcp MCP server"></a>
+  <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/open%20source-AGPL--3.0-2563eb?labelColor=0b1220" alt="Open source, AGPL-3.0"></a>
+  <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/docker/pulls/helpcodeai/anythingmcp?logo=docker&logoColor=white&color=2563eb&labelColor=0b1220" alt="Docker pulls"></a>
 </p>
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docker-compose.quickstart.yml -o docker-compose.yml
+printf 'JWT_SECRET=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
+docker compose up -d   # → http://localhost:3000
+```
 
 <p align="center">
-  <a href="https://cloud.anythingmcp.com"><strong>Try on Cloud →</strong></a> &nbsp;·&nbsp;
-  <a href="https://anythingmcp.com/en/video-promo"><strong>Watch 90-sec demo →</strong></a> &nbsp;·&nbsp;
-  <a href="https://anythingmcp.com/guides"><strong>Setup guides →</strong></a>
+  <img src="docs/assets/demo-claude.gif" alt="Claude answering a question about field-service visits by calling tools served by AnythingMCP" width="100%" />
 </p>
 
-**AnythingMCP** is a self-hosted, open-source **smart, AI-empowered MCP gateway** and **MCP server** that turns the systems you already run into [Model Context Protocol](https://modelcontextprotocol.io/) tools — **REST and SOAP APIs, GraphQL, SQL & NoSQL databases, and even other MCP servers**. Import a spec or point it at a database, and expose it as a **custom connector** to **Claude**, **ChatGPT**, **Gemini**, **Copilot**, **Cursor** and any MCP-compatible client. No SDK, no code changes — point, configure, connect.
+- **188 connectors ship with it** — Deutsche Bahn, DATEV, weclapp, DHL, Shopware, Personio, Handelsregister and 181 more. **26 need no API key at all**; the rest ask for your credentials at import.
+- **Anything else takes minutes, not weeks.** Point it at an OpenAPI spec, a Postman collection, a WSDL, a GraphQL endpoint, a cURL command or a database, and the tools exist. No SDK, no MCP server to write.
+- **It runs on your infrastructure, so you decide what leaves it.** Per-tool response mapping drops PII and secrets before the model ever sees them; the audit log keeps the full upstream response on your side. OAuth2, RBAC, SSO and SCIM included.
 
-It ships with **188 ready-to-use adapters** — including **Deutsche Bahn**, **weclapp ERP**, **Etsy**, **Shopware**, **DHL** and **Sendcloud** — so the most common integrations work in one click, while the visual editor and import tools (OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL) let you wrap any other API or database in minutes.
-
-What makes it **smart**, not just a pipe: AnythingMCP builds a per-workspace **Knowledge Graph** of how your connectors' data relates, serves it back to the agent over MCP so it chains tools correctly across systems, and turns how your tools are actually used into reusable **AI skills**. A plain gateway forwards calls; AnythingMCP gives your agents the context to use them well. *(All AI features are optional and opt-in — the gateway works fully without them.)*
-
-And because every call runs through your own infrastructure, you decide what leaves it: **per-tool response mapping** declares which fields ever reach the model, so PII and secrets can be dropped before the answer goes out, while the audit log keeps the full upstream response on your side.
-
-https://github.com/user-attachments/assets/2ae92f90-7012-4c00-8836-bae5a6422ca6
-
-<p align="center">
-  <em>90-second demo — <a href="https://anythingmcp.com/demo.mp4">direct link</a> if the player doesn't load.</em>
-</p>
+**In production at [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**, where it connects AI assistants to 15+ internal systems — ERP, CRM, SOAP services and on-prem databases. AnythingMCP was extracted from that system by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany, and open-sourced because a connector catalog grows faster as a community than as a product.
 
 <details>
 <summary><strong>📖 Table of contents</strong></summary>
 
-- [Get started in 60 seconds](#get-started-in-60-seconds)
+- [Try it in Claude right now](#try-it-in-claude-right-now)
+- [Run it yourself](#run-it-yourself)
 - [Key features](#key-features)
+- [How AnythingMCP compares](#how-anythingmcp-compares)
 - [Knowledge Graph &amp; AI skills](#knowledge-graph--ai-skills)
 - [Control what the model sees](#control-what-the-model-sees)
 - [Build custom Claude connectors — no code](#build-custom-claude-connectors--no-code)
 - [Turn your API into a ChatGPT app](#turn-your-api-into-a-chatgpt-app)
 - [Why AnythingMCP](#why-anythingmcp)
-- [Pre-configured MCP connectors](#pre-configured-mcp-connectors)
+- [Pre-built adapters](#pre-built-adapters)
 - [Guides, client setup &amp; FAQ](#guides-client-setup--faq)
 - [Community &amp; support](#community--support)
 - [Contributing](#contributing)
@@ -58,20 +64,35 @@ https://github.com/user-attachments/assets/2ae92f90-7012-4c00-8836-bae5a6422ca6
 
 ---
 
-## Get started in 60 seconds
+## Try it in Claude right now
 
-> **Requires** Docker 24+, `bash`, `openssl`. On macOS, start Docker Desktop first.
+No install, no signup. In Claude, go to **Settings → Connectors → Add custom connector** and paste:
 
-```bash
-git clone https://github.com/HelpCode-ai/anythingmcp.git
-cd anythingmcp && ./setup.sh
-# When setup finishes, open http://localhost:3000 and register
-# the first user — they automatically become the admin.
+```
+https://cloud.anythingmcp.com/mcp/demo
 ```
 
-The interactive setup handles everything: deployment mode, domain & HTTPS (automatic Let's Encrypt via Caddy), secrets, MCP auth mode, optional SMTP/Redis.
+Then ask:
 
-> ⚠️ **Register immediately after setup.** The first account to register becomes Admin. If your instance is reachable from the internet during setup, configure firewall rules or bind the UI to `127.0.0.1` until you've created the admin account.
+> *"What's the next ICE from Freiburg to Berlin, is it delayed, and which Bundesland is postal code 79211 in?"*
+
+Both answers come from live public APIs — Deutsche Bahn and OpenPLZ — served through a real AnythingMCP instance. The demo endpoint is read-only, rate-limited and holds no customer data; it exists so you can see the thing work before you install anything.
+
+---
+
+## Run it yourself
+
+> **Requires** Docker 24+ and `openssl`. On macOS, start Docker Desktop first.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docker-compose.quickstart.yml -o docker-compose.yml
+printf 'JWT_SECRET=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
+docker compose up -d
+```
+
+Open <http://localhost:3000> and register — **the first account becomes admin**. Keep the generated `.env`: `ENCRYPTION_KEY` is what decrypts the credentials you store, so losing it means re-entering every one of them.
+
+*Measured on a fresh MacBook (Apple Silicon, Docker Desktop): 31 s to pull the image, 24 s to a healthy API and a login page. The published image is amd64 only for now — on Apple Silicon the compose file pins the platform and Docker runs it under emulation.*
 
 | Service | Default URL |
 |---|---|
@@ -79,7 +100,9 @@ The interactive setup handles everything: deployment mode, domain & HTTPS (autom
 | MCP endpoint | `http://localhost:4000/mcp` |
 | Swagger docs | `http://localhost:4000/api/docs` |
 
-**Or one-click deploy:**
+**For an instance that other people or a cloud AI client can reach**, clone the repo and run `./setup.sh` instead. It asks for a domain, gets HTTPS certificates through Caddy, generates the secrets, and sets the MCP auth mode and optional SMTP/Redis — see the [Deployment Guide](docs/deployment.md). The quickstart above binds to `127.0.0.1` on purpose: it has no TLS in front of it.
+
+**Or deploy it in one click:**
 
 [![Try on Cloud](docs/assets/cloud-button.svg)](https://cloud.anythingmcp.com)
 &nbsp;
@@ -87,26 +110,48 @@ The interactive setup handles everything: deployment mode, domain & HTTPS (autom
 &nbsp;
 [![Install on DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://marketplace.digitalocean.com/apps/anythingmcp)
 
-> **Prefer manual setup?** Copy `.env.example` to `.env` and run `docker compose up -d` — see the [Deployment Guide](docs/deployment.md).
-
 ---
 
 ## Key features
 
+### Connect
+
 - **5 connector types** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Database](docs/connectors/database.md) (PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite), [MCP-to-MCP bridge](docs/connectors/mcp-bridge.md)
-- **6 import formats + live discovery** — OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL introspection, custom JSON, plus tool discovery straight from a running MCP server
-- **188 pre-built adapters** — logistics, ERP, HR, e-commerce, payments, public data — [see catalog](#pre-configured-mcp-connectors)
-- **Visual tool editor** — map parameters to path, query, body, headers; rename and describe tools for the AI
-- **Dynamic MCP server** — tools registered at runtime, no restart
-- **[Knowledge Graph &amp; AI skills](docs/knowledge-graph.md)** — a per-workspace, PII-safe map of how your connectors' data relates, served to the agent via an MCP tool, plus reusable AI skills composed into the server's instructions (optional, opt-in)
-- **[Response shaping &amp; data governance](#control-what-the-model-sees)** — declare per tool exactly which fields reach the model; drop PII, secrets and noise before they leave your network, with a live before/after preview
-- **Full auth** — OAuth2 (PKCE + Client Credentials), Bearer, API Key, Basic, WS-Security, client certificates, [LOGIN_TOKEN](docs/connectors/login-token-auth.md) and OAuth 1.0a handshakes
-- **Audit logging** — every tool call logged with input, output, duration, status
-- **Roles &amp; access control** — tool-level whitelisting per custom role, per-user MCP API keys
-- **[Single sign-on](docs/sso.md)** — Microsoft Entra ID, Google, Okta, Auth0 and generic OIDC; AnythingMCP roles synced from your directory groups on every sign-in, so joiners and leavers are handled where they already are (self-hosted only)
-- **[SCIM provisioning](docs/scim-entra-setup.md)** — Entra ID creates, updates and deactivates accounts on its own. Disable someone in the directory and their workspace access and MCP API keys die with it, without waiting for a sign-in (self-hosted only)
+- **5 import formats + live discovery** — OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL introspection, plus tool discovery straight from a running MCP server
+- **188 pre-built adapters** — logistics, ERP, HR, e-commerce, payments, public data — [see the catalog](#pre-built-adapters)
+- **Visual tool editor** — map parameters to path, query, body and headers; rename and describe tools so the AI reads them the way you meant
+- **Dynamic MCP server** — tools register at runtime, no restart
 - **Environment variables** — per-connector `{{VAR}}` interpolation, hidden from the AI
-- **Docker ready** — `docker compose up` and you're running
+
+### Govern
+
+- **[Response shaping](#control-what-the-model-sees)** — declare per tool exactly which fields reach the model; drop PII, secrets and noise before they leave your network, with a live before/after preview
+- **Full auth** — OAuth2 (PKCE + Client Credentials), Bearer, API Key, Basic, WS-Security, client certificates, [LOGIN_TOKEN](docs/connectors/login-token-auth.md) and OAuth 1.0a handshakes
+- **Audit logging** — every tool call recorded with input, output, duration and status
+- **Roles &amp; access control** — tool-level whitelisting per custom role, per-user MCP API keys
+- **[Single sign-on](docs/sso.md)** — Microsoft Entra ID, Google, Okta, Auth0 and generic OIDC; roles synced from your directory groups on every sign-in, so joiners and leavers are handled where they already are (self-hosted only)
+- **[SCIM provisioning](docs/scim-entra-setup.md)** — Entra ID creates, updates and deactivates accounts on its own. Disable someone in the directory and their workspace access and MCP API keys die with it, without waiting for a sign-in (self-hosted only)
+
+### Learn
+
+- **[Knowledge Graph](docs/knowledge-graph.md)** — a per-workspace, PII-safe map of how your connectors' data relates, served back to the agent as an MCP tool so it chains calls across systems correctly
+- **[AI skills](docs/knowledge-graph.md)** — recurring usage turned into small reusable rules and composed into the server's instructions, so they guide the agent without adding a tool call (optional, opt-in)
+
+---
+
+## How AnythingMCP compares
+
+The projects AnythingMCP gets compared with are mostly MCP gateways: they federate, scope and secure MCP servers you already have. AnythingMCP starts one step earlier, because most companies have no MCP servers at all — they have a REST API, a SOAP service from 2009 and a database nobody wants to expose. Every project below solves a real problem; they just don't solve the same one.
+
+| | What it is | Choose it instead if… |
+|---|---|---|
+| **[ContextForge](https://github.com/IBM/mcp-context-forge)** (IBM) | A federating gateway and registry in front of MCP servers you already have | Your tools are already MCP servers and what you need is federation, virtual servers and a registry |
+| **[Docker MCP Gateway](https://github.com/docker/mcp-gateway)** | Runs catalog MCP servers as containers behind one endpoint, with secret handling | You want vendor-published MCP servers sandboxed in Docker and you're happy with the catalog as it stands |
+| **[MetaMCP](https://github.com/metatool-ai/metamcp)** | Aggregates MCP servers into namespaced endpoints with a middleware layer | You mainly need to group and re-scope existing MCP servers per client |
+| **[Composio](https://github.com/ComposioHQ/composio)** | A hosted catalog of 250+ managed integrations with auth handled for you | You want someone else to host it and hold the credentials, and the apps you need are already in their catalog |
+| **AnythingMCP** | Turns the APIs, SOAP services and databases you already run into MCP tools, on your own infrastructure | Your systems are **not** MCP servers yet — they're REST, SOAP/WSDL, GraphQL or SQL — and the credentials have to stay with you |
+
+Side-by-side pages with the full feature tables: [anythingmcp.com/vs](https://anythingmcp.com/vs).
 
 ---
 
@@ -206,7 +251,7 @@ Your credentials stay on your infrastructure (AES-256-GCM at rest), every tool c
 
 ## Turn your API into a ChatGPT app
 
-**Apps in ChatGPT — what OpenAI renamed connectors to in December 2025 — are built on MCP**, and AnythingMCP gives you that MCP backend without writing one. Point it at your REST, SOAP, GraphQL or database endpoint and you get a ChatGPT-ready connector: add it in ChatGPT's settings (or use it as the tool layer of an Apps SDK app) and ChatGPT can read and act on your business data.
+**Apps in ChatGPT are built on MCP**, and AnythingMCP gives you that MCP backend without writing one. Point it at your REST, SOAP, GraphQL or database endpoint and you get a ChatGPT-ready connector: add it in ChatGPT's settings (or use it as the tool layer of an Apps SDK app) and ChatGPT can read and act on your business data.
 
 The same connector works simultaneously in **Claude, ChatGPT, Gemini, Copilot and Cursor** — build once, connect everywhere. [ChatGPT setup guide →](docs/integrations/chatgpt.md)
 
@@ -221,10 +266,10 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 | You have REST APIs but AI clients speak MCP | **REST → MCP** conversion with OpenAPI / Swagger import |
 | You have legacy SOAP/WSDL services | **SOAP → MCP** bridge with automatic WSDL parsing |
 | You need to query databases from AI agents | **DB → MCP** with auto-generated query tools (7 engines) |
-| You want one MCP gateway for all your APIs | **MCP middleware** that aggregates multiple connectors |
-| You need an MCP server for Deutsche Bahn / DHL / weclapp / … | **188 pre-built adapters** — install in one click |
+| You want one endpoint for all your APIs | **MCP middleware** that aggregates multiple connectors |
+| You need an MCP server for Deutsche Bahn / DHL / weclapp / … | **188 pre-built adapters** — 26 of them need no API key |
 | You can't ship credentials to a SaaS gateway | **Runs on your infrastructure** — credentials AES-256-GCM at rest |
-| You need auth, audit logs, and RBAC | Built-in **OAuth2, audit log, and role-based access** — no DIY |
+| You need auth, audit logs and RBAC | Built-in **OAuth2, audit log and role-based access** — no DIY |
 | A third-party model would see every field your API returns | **[Per-tool response mapping](#control-what-the-model-sees)** — drop or reshape fields before they leave your network |
 | Your agent calls tools in the wrong order, or misses how two systems connect | **[Knowledge Graph &amp; AI skills](#knowledge-graph--ai-skills)** — chaining hints and learned business rules, served as context |
 
@@ -232,15 +277,15 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 
 ---
 
-## Pre-configured MCP connectors
+## Pre-built adapters
 
-AnythingMCP ships with **188 ready-to-use adapters** — provide your API credentials at import time and the tools become available immediately. Every adapter has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+AnythingMCP ships **188 pre-built adapters**, exposing 1,800+ tools. **26 of them need no API key**; the rest ask for your credentials at import time and the tools become available immediately. Every adapter has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Examples |
 |---|---|
 | 📦 Logistics &amp; shipping | Deutsche Bahn, DHL, DPD, GLS, Shipcloud, Sendcloud |
-| 💼 ERP, accounting &amp; invoicing | weclapp, Xentral, Scopevisio, Billomat, FastBill |
-| 🛍️ E-commerce | Etsy, Shopware 6, WooCommerce, Mercado Libre 🌎, ImmobilienScout24, Oxomi |
+| 💼 ERP, accounting &amp; invoicing | weclapp, Xentral, DATEV, Scopevisio, Billomat, FastBill |
+| 🛍️ E-commerce | Amazon Seller, Etsy, Shopware 6, WooCommerce, Mercado Libre 🌎, Oxomi |
 | 👥 HR &amp; field service | Personio, HRWorks, Kenjo, MFR Mobile Field Report |
 | 🏛️ Government &amp; public data | VIES VAT, Handelsregister, UK Companies House 🇬🇧, DESTATIS, Bundesbank, OpenPLZ, NINA |
 | 🏦 Banking &amp; payments | N26, Wise 🇬🇧, PAYONE, Razorpay 🇮🇳, Paystack 🇳🇬 |
@@ -248,13 +293,15 @@ AnythingMCP ships with **188 ready-to-use adapters** — provide your API creden
 | 🎾 Sports &amp; Web3 | Playtomic, Sorare |
 | 🏗️ Construction &amp; mapping | PlanRadar, HERE Geocoding |
 
+Missing one? [Request an adapter](https://github.com/HelpCode-ai/anythingmcp/issues/new?template=adapter_request.yml) — we prioritise by 👍 — or [build it yourself](CONTRIBUTING.md): an adapter is a single JSON file.
+
 ---
 
 ## Guides, client setup &amp; FAQ
 
-Connecting an AI client, the connector types you can build, full documentation and the FAQ now live in one place:
+Connecting an AI client, the connector types you can build, full documentation and the FAQ all live in one place:
 
-➡️ **[docs/guides.md](docs/guides.md)** — Claude / ChatGPT / Gemini / Copilot / Cursor setup · REST / SOAP / GraphQL / Database / MCP-bridge connector guides · API reference & deployment docs · FAQ.
+➡️ **[docs/guides.md](docs/guides.md)** — Claude / ChatGPT / Gemini / Copilot / Cursor setup · REST / SOAP / GraphQL / Database / MCP-bridge connector guides · API reference &amp; deployment docs · FAQ.
 
 Looking for a specific service? Every adapter has a step-by-step guide at **[anythingmcp.com/guides](https://anythingmcp.com/guides)**.
 
@@ -264,9 +311,21 @@ Looking for a specific service? Every adapter has a step-by-step guide at **[any
 
 - 💬 **Questions &amp; discussions** — [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions) — vote on the next adapter, share what you've built
 - 🐛 **Bugs / 💡 features** — [Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · 🆘 [SUPPORT.md](SUPPORT.md)
-- 🏢 Built by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany — AnythingMCP was extracted from a production system connecting AI agents to 15+ legacy systems (ERP, CRM, SOAP, on-prem databases) in a German industrial group, and open-sourced because the catalog grows faster as a community. AI-assisted development, human-reviewed: see [AUTHORS.md](AUTHORS.md).
+- 🏢 Built by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany. AI-assisted development, human-reviewed: see [AUTHORS.md](AUTHORS.md).
 
 > ⭐ **Like what you see?** [Star this repo](https://github.com/HelpCode-ai/anythingmcp/stargazers) — every star helps another developer discover AnythingMCP.
+
+<p align="center">
+  <a href="https://star-history.com/#HelpCode-ai/anythingmcp&Date">
+    <img src="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date" alt="Star history" width="70%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/HelpCode-ai/anythingmcp/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=HelpCode-ai/anythingmcp" alt="Contributors">
+  </a>
+</p>
 
 ## Contributing
 

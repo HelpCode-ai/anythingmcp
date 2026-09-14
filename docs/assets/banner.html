@@ -1,0 +1,360 @@
+<!doctype html>
+<!--
+  Source of truth for docs/assets/banner.png (and the GitHub social preview).
+
+  The old banner had its claims baked into a PNG: it still said
+  "SOURCE-AVAILABLE · 36+ CONNECTORS" four months after both had changed, and
+  nobody could tell without opening an image editor. This file is the editable
+  original — change the kicker below and run:
+
+      node scripts/generate-banner.mjs
+
+  which re-renders banner.png (1600x640) and social-preview.png (1280x640) with
+  headless Chrome. `{{ADAPTERS}}` is substituted from the real catalog count.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,500&family=Geist+Mono:wght@400;500&family=Geist:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Design tokens from the website's DESIGN.md: one signal blue, instrument
+         black for the panels where the machine is the subject, serif display
+         against sans body. */
+      :root {
+        --signal: #2159e0;
+        --signal-lift: #60a5fa;
+        --ink: #0b1220;
+        --ink-deep: #05070f;
+        --line: rgba(255, 255, 255, 0.09);
+        --card: rgba(255, 255, 255, 0.045);
+        --fg: #f2f5fa;
+        --muted: rgba(226, 232, 240, 0.62);
+        --label: rgba(226, 232, 240, 0.68);
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        width: 1600px;
+        height: 640px;
+        overflow: hidden;
+        background: var(--ink-deep);
+        font-family: Geist, system-ui, sans-serif;
+        color: var(--fg);
+        -webkit-font-smoothing: antialiased;
+      }
+      .banner {
+        width: 1600px;
+        height: 640px;
+        display: grid;
+        grid-template-columns: 660px 1fr;
+        background: radial-gradient(
+            120% 120% at 12% 0%,
+            #101a2e 0%,
+            var(--ink) 42%,
+            var(--ink-deep) 100%
+          );
+      }
+
+      /* ---------- left: the claim ---------- */
+      .claim {
+        padding: 68px 56px 60px 72px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 26px;
+        border-right: 1px solid var(--line);
+      }
+      .kicker {
+        font-family: "Geist Mono", ui-monospace, monospace;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--label);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        white-space: nowrap;
+      }
+      .kicker .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: #34d399;
+        flex: none;
+      }
+      h1 {
+        font-family: Fraunces, Georgia, serif;
+        font-weight: 400;
+        font-size: 54px;
+        line-height: 1.08;
+        letter-spacing: -0.015em;
+      }
+      h1 em {
+        font-style: italic;
+        font-weight: 500;
+        color: var(--signal-lift);
+      }
+      .sub {
+        font-size: 17px;
+        line-height: 1.5;
+        color: var(--muted);
+        max-width: 30ch;
+      }
+      .sub b {
+        color: var(--fg);
+        font-weight: 500;
+      }
+      .wordmark {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .wordmark svg {
+        width: 26px;
+        height: 26px;
+      }
+
+      /* ---------- right: the diagram ---------- */
+      .diagram {
+        position: relative;
+        padding: 54px 40px 54px 46px;
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        justify-items: center;
+        gap: 0;
+      }
+      .col {
+        display: flex;
+        flex-direction: column;
+        gap: 11px;
+        position: relative;
+        z-index: 2;
+      }
+      .col-label {
+        font-family: "Geist Mono", ui-monospace, monospace;
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--label);
+        margin-bottom: 5px;
+      }
+      .col.right .col-label {
+        text-align: right;
+      }
+      .node {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        height: 52px;
+        padding: 0 16px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 500;
+        letter-spacing: -0.005em;
+        white-space: nowrap;
+      }
+      .node .glyph {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.06);
+        display: grid;
+        place-items: center;
+        flex: none;
+      }
+      .node .glyph svg {
+        width: 17px;
+        height: 17px;
+      }
+
+      /* centre core */
+      .core-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        position: relative;
+        z-index: 3;
+      }
+      .core {
+        width: 150px;
+        height: 116px;
+        border-radius: 16px;
+        background: linear-gradient(160deg, #2f6bf0 0%, var(--signal) 100%);
+        box-shadow: 0 16px 34px -18px rgba(0, 0, 0, 0.75);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+      }
+      .core svg {
+        width: 28px;
+        height: 28px;
+      }
+      .core .name {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .core .path {
+        font-family: "Geist Mono", ui-monospace, monospace;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.72);
+      }
+      .core-cap {
+        font-family: "Geist Mono", ui-monospace, monospace;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--label);
+      }
+      .wires {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="banner">
+      <div class="claim">
+        <div class="kicker">
+          <span class="dot"></span>Open source (AGPL-3.0) · Self-hosted or EU
+          cloud · {{ADAPTERS}} connectors
+        </div>
+        <h1>
+          Give your AI safe access to <em>the software your company already
+          runs</em>
+        </h1>
+        <p class="sub">
+          REST, SOAP, GraphQL and SQL systems become MCP tools for Claude,
+          ChatGPT and Copilot — <b>without writing code</b>.
+        </p>
+        <div class="wordmark">
+          <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <line x1="26" y1="26" x2="26" y2="9" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
+            <line x1="26" y1="26" x2="10" y2="40" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
+            <line x1="26" y1="26" x2="42" y2="40" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
+            <circle cx="26" cy="9" r="5" fill="#60a5fa" opacity=".65"/>
+            <circle cx="10" cy="40" r="5" fill="#60a5fa" opacity=".65"/>
+            <circle cx="42" cy="40" r="5" fill="#60a5fa" opacity=".65"/>
+            <circle cx="26" cy="26" r="10" fill="#60a5fa"/>
+            <circle cx="26" cy="26" r="5.5" fill="#05070f"/>
+          </svg>
+          AnythingMCP
+        </div>
+      </div>
+
+      <div class="diagram">
+        <svg class="wires" fill="none"></svg>
+
+        <div class="col left">
+          <div class="col-label">Your systems</div>
+          <div class="node">
+            <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg></span>
+            REST API
+          </div>
+          <div class="node">
+            <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7 4 12l5 5M15 7l5 5-5 5"/></svg></span>
+            SOAP / WSDL
+          </div>
+          <div class="node">
+            <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#f0abfc" stroke-width="1.6"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="M12 3 4 16.5h16L12 3Z"/><circle cx="12" cy="3" r="1.9" fill="#f0abfc" stroke="none"/><circle cx="20" cy="7.5" r="1.9" fill="#f0abfc" stroke="none"/><circle cx="20" cy="16.5" r="1.9" fill="#f0abfc" stroke="none"/><circle cx="12" cy="21" r="1.9" fill="#f0abfc" stroke="none"/><circle cx="4" cy="16.5" r="1.9" fill="#f0abfc" stroke="none"/><circle cx="4" cy="7.5" r="1.9" fill="#f0abfc" stroke="none"/></svg></span>
+            GraphQL
+          </div>
+          <div class="node">
+            <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#5eead4" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="6" rx="8" ry="3.2"/><path d="M4 6v12c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V6M4 12c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2"/></svg></span>
+            SQL / NoSQL
+          </div>
+          <div class="node">
+            <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M10 21v-5h4v5"/><path d="M9 11h1.5M13.5 11H15"/></svg></span>
+            Business software
+          </div>
+          <div class="node">
+            <span class="glyph"><svg viewBox="0 0 52 52" fill="none"><line x1="26" y1="26" x2="26" y2="9" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity=".6"/><line x1="26" y1="26" x2="10" y2="40" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity=".6"/><line x1="26" y1="26" x2="42" y2="40" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity=".6"/><circle cx="26" cy="9" r="5" fill="#93c5fd"/><circle cx="10" cy="40" r="5" fill="#93c5fd"/><circle cx="42" cy="40" r="5" fill="#93c5fd"/><circle cx="26" cy="26" r="8" fill="#93c5fd"/></svg></span>
+            Another MCP server
+          </div>
+        </div>
+
+        <div class="core-wrap">
+          <div class="core">
+            <svg viewBox="0 0 52 52" fill="none">
+              <line x1="26" y1="26" x2="26" y2="9" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".62"/>
+              <line x1="26" y1="26" x2="10" y2="40" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".62"/>
+              <line x1="26" y1="26" x2="42" y2="40" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".62"/>
+              <circle cx="26" cy="9" r="5" fill="#fff" opacity=".72"/>
+              <circle cx="10" cy="40" r="5" fill="#fff" opacity=".72"/>
+              <circle cx="42" cy="40" r="5" fill="#fff" opacity=".72"/>
+              <circle cx="26" cy="26" r="10" fill="#fff"/>
+              <circle cx="26" cy="26" r="5.5" fill="#2159e0"/>
+            </svg>
+            <div class="name">AnythingMCP</div>
+            <div class="path">/mcp</div>
+          </div>
+          <div class="core-cap">Your infrastructure</div>
+        </div>
+
+        <div class="col right">
+          <div class="col-label">Your AI clients</div>
+          <div class="node"><span class="glyph">{{ICON_CLAUDE}}</span>Claude</div>
+          <div class="node"><span class="glyph">{{ICON_CHATGPT}}</span>ChatGPT</div>
+          <div class="node"><span class="glyph">{{ICON_COPILOT}}</span>GitHub Copilot</div>
+          <div class="node">
+            <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 1.6c.5 5.4 4.5 9.4 9.9 9.9v.99c-5.4.5-9.4 4.5-9.9 9.91h-.99c-.5-5.41-4.5-9.41-9.91-9.91v-.99c5.41-.5 9.41-4.5 9.91-9.9Z" fill="#7aa7ff"/></svg></span>
+            Gemini
+          </div>
+          <div class="node"><span class="glyph">{{ICON_CURSOR}}</span>Cursor</div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // The wires are drawn after layout from the real element boxes, so they
+      // always meet the cards no matter how the copy or the node list changes.
+      const diagram = document.querySelector('.diagram');
+      const wires = document.querySelector('.wires');
+      const core = document.querySelector('.core');
+      const box = (el) => {
+        const d = diagram.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        return { x: r.left - d.left, y: r.top - d.top, w: r.width, h: r.height };
+      };
+      const c = box(core);
+      const paths = [];
+      const wire = (x1, y1, x2, y2) => {
+        const dx = Math.max(24, (x2 - x1) * 0.55);
+        paths.push(`M${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
+      };
+      for (const n of document.querySelectorAll('.col.left .node')) {
+        const b = box(n);
+        wire(b.x + b.w, b.y + b.h / 2, c.x, c.y + c.h / 2);
+      }
+      for (const n of document.querySelectorAll('.col.right .node')) {
+        const b = box(n);
+        wire(c.x + c.w, c.y + c.h / 2, b.x, b.y + b.h / 2);
+      }
+      const d = diagram.getBoundingClientRect();
+      wires.setAttribute('viewBox', `0 0 ${d.width} ${d.height}`);
+      wires.innerHTML =
+        `<g stroke="rgba(148,163,184,.42)" stroke-width="1.1" stroke-dasharray="3 4">` +
+        paths.map((p) => `<path d="${p}" />`).join('') +
+        `</g>`;
+    </script>
+  </body>
+</html>

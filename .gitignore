@@ -48,3 +48,9 @@ packages/frontend/playwright/.cache/
 
 # Misc
 *.tsbuildinfo
+
+# Claude Code local permissions (per developer)
+.claude/settings.local.json
+
+# Impeccable local hook cache
+.impeccable/hook.cache.json

@@ -48,6 +48,9 @@ jobs:
       - name: Validate adapter catalog
         run: node scripts/validate-adapters.mjs
 
+      - name: Verify the quoted adapter count and license wording
+        run: node scripts/adapter-count.mjs --check
+
       - name: Verify catalog.ts is up-to-date with adapter JSONs
         run: |
           node scripts/regenerate-catalog.mjs

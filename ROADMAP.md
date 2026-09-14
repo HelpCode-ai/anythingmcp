@@ -41,4 +41,4 @@ For the current shipped state, see the [latest release](https://github.com/HelpC
 
 ## Suggest a feature
 
-Open a [feature request](https://github.com/HelpCode-ai/anythingmcp/issues/new?labels=enhancement&template=feature_request.md) or start a thread in [Discussions → Ideas](https://github.com/HelpCode-ai/anythingmcp/discussions/categories/ideas).
+Open a [feature request](https://github.com/HelpCode-ai/anythingmcp/issues/new?labels=enhancement&template=feature_request.yml) or start a thread in [Discussions → Ideas](https://github.com/HelpCode-ai/anythingmcp/discussions/categories/ideas).

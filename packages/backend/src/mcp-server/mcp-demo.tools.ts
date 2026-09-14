@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/server';
+import { listAdapters } from '../adapters/catalog';
+
+const ADAPTERS = listAdapters();
+const ADAPTER_COUNT = ADAPTERS.length;
+const KEYLESS_COUNT = ADAPTERS.filter((a) => a.connector?.authType === 'NONE').length;
 
 /**
  * Static, self-describing tools for the PUBLIC demo MCP server (`/mcp/demo`).
@@ -15,7 +20,7 @@ const SITE = 'https://anythingmcp.com';
 const REPO = 'https://github.com/HelpCode-ai/anythingmcp';
 const CLOUD = 'https://cloud.anythingmcp.com';
 
-const OVERVIEW = `AnythingMCP is a self-hosted, open-source MCP gateway that turns any API, database or MCP server into custom connectors for Claude, ChatGPT, Gemini, Copilot and Cursor — no code.
+const OVERVIEW = `AnythingMCP gives Claude, ChatGPT and Copilot safe access to the software a company already runs: ${ADAPTER_COUNT} ready connectors plus any REST, SOAP, GraphQL or SQL system, without code. Self-hosted, open source (AGPL-3.0), and it learns how your systems connect.
 
 This is a PUBLIC, READ-ONLY demo endpoint: it only describes the product and exposes no customer data. To do real work, run your own instance (it's free, AGPL-3.0) or use the managed cloud.
 
@@ -24,14 +29,16 @@ This is a PUBLIC, READ-ONLY demo endpoint: it only describes the product and exp
 • Cloud:   ${CLOUD}
 
 Next steps — call:
-• "anythingmcp_get_started" to install your own gateway in ~60 seconds
+• "anythingmcp_get_started" to install your own instance
 • "anythingmcp_connect_client" to connect Claude / ChatGPT / Gemini / Copilot / Cursor
-• "anythingmcp_list_connectors" to see the 175+ pre-built connectors`;
+• "anythingmcp_list_connectors" to see the ${ADAPTER_COUNT} pre-built connectors`;
 
-const GET_STARTED = `Run your own AnythingMCP in ~60 seconds:
+const GET_STARTED = `Run your own AnythingMCP (Docker required):
 
-  git clone ${REPO}.git
-  cd anythingmcp && ./setup.sh
+  curl -fsSL https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docker-compose.yml -o docker-compose.yml
+  docker compose up -d
+
+For a production install with HTTPS and real secrets, clone the repo and run ./setup.sh instead.
 
 Then open http://localhost:3000 and register the first user (it becomes admin).
 Import an API spec (OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL) or pick a
@@ -49,7 +56,7 @@ const CONNECT: Record<string, string> = {
   cursor: `Cursor: add your AnythingMCP server URL as an MCP server (Streamable HTTP) in Cursor's MCP settings. Guide: ${SITE}/guides`,
 };
 
-const CONNECTORS = `AnythingMCP ships 175+ pre-built, ready-to-use connectors. Highlights by category:
+const CONNECTORS = `AnythingMCP ships ${ADAPTER_COUNT} pre-built connectors (${KEYLESS_COUNT} of them need no API key). Highlights by category:
 
 • Logistics & shipping — Deutsche Bahn, DHL, DPD, GLS, Sendcloud
 • ERP, accounting & invoicing — weclapp, Xentral, Scopevisio, Billomat
@@ -85,7 +92,7 @@ export function registerDemoTools(server: McpServer): void {
     'anythingmcp_get_started',
     {
       description:
-        'How to install and run your own AnythingMCP gateway in ~60 seconds.',
+        'How to install and run your own AnythingMCP instance with Docker.',
     },
     async () => ({ content: [{ type: 'text' as const, text: GET_STARTED }] }),
   );
@@ -110,7 +117,7 @@ export function registerDemoTools(server: McpServer): void {
     'anythingmcp_list_connectors',
     {
       description:
-        'Overview of the 175+ pre-built connectors and the connector types you can build.',
+        `Overview of the ${ADAPTER_COUNT} pre-built connectors and the connector types you can build.`,
     },
     async () => ({ content: [{ type: 'text' as const, text: CONNECTORS }] }),
   );
