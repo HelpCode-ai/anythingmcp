@@ -14,6 +14,47 @@ Every MCP tool in AnythingMCP is defined by three JSON objects:
 2. **`endpointMapping`** — How parameters map to the API request
 3. **`responseMapping`** — (Optional) How to transform the API response
 
+## Adapter envelope
+
+The catalog validator requires each adapter to provide `slug`, `name`,
+`description`, `region`, `category`, `icon`, `docsUrl`, `requiredEnvVars`,
+`connector`, and a non-empty `tools` array. The filename must match `slug`.
+Optional environment variables use the same array-of-strings shape and must
+not duplicate a required variable.
+
+### Adapter fields
+
+Keep the required envelope fields above at the adapter root; use arrays for
+`requiredEnvVars` and `optionalEnvVars`, and do not list one variable in both.
+
+### Tools
+
+Each entry in `tools` needs a string `name`, a useful `description`, and its
+JSON-Schema `parameters` when it accepts input. Parameter properties should
+include descriptions for the model.
+
+See [connector configuration](#connector)
+and [authentication](#authentication) for the nested connector fields.
+
+### Connector
+
+Set `connector.type` to `REST`, `GRAPHQL`, `SOAP`, `MCP`, `DATABASE`, or
+`LOGIN_TOKEN`. Set `connector.authType` to a supported authentication scheme
+listed below; these values are validated before an adapter can pass.
+
+### Authentication
+
+Use `NONE`, `API_KEY`, `BEARER_TOKEN`, `BASIC`, `BASIC_AUTH`, `OAUTH2`,
+`OAUTH1`, `LOGIN_TOKEN`, or `QUERY_AUTH` as `connector.authType`. Keep the
+corresponding credentials in `authConfig` and reference environment variables
+with `{{VAR}}` where the connector injects them.
+
+### Adapter file errors
+
+If an adapter file cannot be read, check that its path exists and that the
+validator process has permission to read it. This is distinct from invalid JSON
+syntax, which requires fixing the file contents.
+
 ---
 
 ## 1. Parameters (JSON Schema)

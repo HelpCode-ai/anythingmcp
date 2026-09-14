@@ -5,276 +5,211 @@
  *
  * Exits with code 0 if all adapters pass, 1 if any fail.
  *
- * Run locally:  node scripts/validate-adapters.mjs
- * Run in CI:    same — wired in .github/workflows/ci.yml.
+ * Hard gates (fail CI): required fields, filename/slug agreement, supported
+ * connector and authentication types, and a non-empty tools array.
  *
- * Hard gates (fail CI):
- *  1. Required top-level fields present (slug, name, description, region,
- *     category, icon, docsUrl, requiredEnvVars, connector, tools).
- *  2. `slug` matches the filename (so the codegen importer finds it).
- *  3. `connector.type` is one of REST, GRAPHQL, SOAP, MCP, DATABASE,
- *     LOGIN_TOKEN.
- *  4. `connector.authType` is one of NONE, API_KEY, BEARER_TOKEN, BASIC,
- *     BASIC_AUTH, OAUTH2, LOGIN_TOKEN.
- *  5. `requiredEnvVars` are referenced somewhere as {{VAR}} (otherwise the
- *     env var is unused metadata and won't actually be injected).
- *  6. `tools` is a non-empty array.
- *
- * Soft warnings (printed, do NOT fail CI):
- *  - `instructions` shorter than 800 chars.
- *  - Tool name not prefixed with `{slug_underscored}_`.
- *  - Tool `description` shorter than 60 chars.
- *  - Tool parameter property missing `description`.
- *  - Tool `endpointMapping` missing method/path (text-only "skill" tools
- *    that return guidance are a known valid pattern — see WordPress adapter).
+ * Soft warnings (printed with --warn, but do not fail CI): short instructions,
+ * unprefixed tool names, short tool descriptions, and missing parameter
+ * descriptions. Environment-reference checks are also informational because
+ * some adapters document values supplied as tool parameters.
  */
-
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
-const ADAPTERS_DIR = join(REPO_ROOT, 'packages/backend/src/adapters');
+const DEFAULT_ADAPTERS_DIR = join(REPO_ROOT, 'packages/backend/src/adapters');
 const REGIONS = ['de', 'gb', 'intl', 'br', 'in', 'jp', 'ng'];
-
-const ALLOWED_CONNECTOR_TYPES = new Set([
-  'REST',
-  'GRAPHQL',
-  'SOAP',
-  'MCP',
-  'DATABASE',
-  'LOGIN_TOKEN',
-]);
-const ALLOWED_AUTH_TYPES = new Set([
-  'NONE',
-  'API_KEY',
-  'BEARER_TOKEN',
-  'BASIC',
-  'BASIC_AUTH',
-  'OAUTH2',
-  'OAUTH1', // OAuth 1.0a HMAC-SHA1 request signing (e.g. ImmobilienScout24)
-  'LOGIN_TOKEN',
-  'QUERY_AUTH', // existing adapters (here-geocoding, oxomi) pass the API key as a query string parameter
-]);
-
-const REQUIRED_TOP_LEVEL = [
-  'slug',
-  'name',
-  'description',
-  'region',
-  'category',
-  'icon',
-  'docsUrl',
-  'requiredEnvVars',
-  'connector',
-  'tools',
-];
-
+const ALLOWED_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'DATABASE', 'LOGIN_TOKEN']);
+const ALLOWED_AUTH_TYPES = new Set(['NONE', 'API_KEY', 'BEARER_TOKEN', 'BASIC', 'BASIC_AUTH', 'OAUTH2', 'OAUTH1', 'LOGIN_TOKEN', 'QUERY_AUTH']);
+const REQUIRED_TOP_LEVEL = ['slug', 'name', 'description', 'region', 'category', 'icon', 'docsUrl', 'requiredEnvVars', 'connector', 'tools'];
 const MIN_INSTRUCTIONS_LEN = 800;
 const MIN_TOOL_DESCRIPTION_LEN = 60;
 
-function collectAdapters() {
-  const out = [];
-  for (const region of REGIONS) {
-    const regionPath = join(ADAPTERS_DIR, region);
+const error = (rule, path, message, fix, docs) => ({ rule, path, message, fix, docs });
+const warning = (rule, path, message) => ({ rule, path, message });
+
+export function collectAdapters(root = DEFAULT_ADAPTERS_DIR, stat = statSync) {
+  return REGIONS.flatMap((region) => {
+    const regionPath = join(root, region);
     let entries;
     try {
       entries = readdirSync(regionPath);
     } catch {
-      continue;
+      return [];
     }
-    for (const file of entries) {
-      if (!file.endsWith('.json')) continue;
-      const fullPath = join(regionPath, file);
-      if (!statSync(fullPath).isFile()) continue;
-      out.push({ region, file, fullPath });
-    }
+    return entries
+      .filter((file) => file.endsWith('.json'))
+      .map((file) => ({ region, file, fullPath: join(regionPath, file) }))
+      .filter(({ fullPath }) => {
+        try {
+          return stat(fullPath).isFile();
+        } catch {
+          return true;
+        }
+      });
+  });
+}
+
+/** Read and parse one adapter, keeping filesystem and syntax failures distinct. */
+export function loadAdapter(file, readFile = readFileSync) {
+  let raw;
+  try {
+    raw = readFile(file, 'utf8');
+  } catch (e) {
+    return {
+      ok: false,
+      error: error('json-read', '$', `unable to read adapter file — ${e.message}`, 'Check that the file path exists and that file permissions allow it to be read.', 'adapter-file-errors'),
+      errors: [error('json-read', '$', `unable to read adapter file — ${e.message}`, 'Check that the file path exists and that file permissions allow it to be read.', 'adapter-file-errors')],
+      warnings: [],
+    };
   }
-  return out;
+  try {
+    return { ok: true, adapter: JSON.parse(raw), errors: [], warnings: [] };
+  } catch (e) {
+    const parseError = error('json-parse', '$', `invalid JSON — ${e.message}`, 'Fix the JSON syntax and validate it before running the catalog gate.', 'adapter-file-errors');
+    return {
+      ok: false,
+      error: parseError,
+      errors: [parseError],
+      warnings: [],
+    };
+  }
+}
+
+export function adapterResult(loaded, file, region) {
+  if (!loaded.ok) return { region, file, errors: [loaded.error], warnings: loaded.warnings };
+  if (!loaded.adapter || typeof loaded.adapter !== 'object' || Array.isArray(loaded.adapter)) {
+    return {
+      region, file,
+      errors: [error('adapter-envelope', '$', 'adapter JSON must be a JSON object', 'Wrap the adapter definition in a JSON object with the required fields.', 'adapter-envelope')],
+      warnings: [],
+    };
+  }
+  return { region, file, ...validateAdapter(loaded.adapter, file, region) };
 }
 
 function isPlaceholderReferenced(envVar, adapter) {
-  const placeholder = `{{${envVar}}}`;
-  const haystack = JSON.stringify(adapter);
-  return haystack.includes(placeholder);
+  return JSON.stringify(adapter).includes(`{{${envVar}}}`);
 }
 
-function validateAdapter(adapter, file, region) {
+export function validateAdapter(adapter, file, region) {
   const errors = [];
   const warnings = [];
   const expectedSlug = file.replace(/\.json$/, '');
 
+  if (!adapter || typeof adapter !== 'object' || Array.isArray(adapter)) {
+    return { errors: [error('adapter-envelope', '$', 'adapter JSON must be a JSON object', 'Wrap the adapter definition in a JSON object with the required fields.', 'adapter-envelope')], warnings };
+  }
+
+  // Required envelope fields must exist before nested validation can proceed.
   for (const key of REQUIRED_TOP_LEVEL) {
     if (adapter[key] === undefined || adapter[key] === null) {
-      errors.push(`missing required field: ${key}`);
+      errors.push(error('required-field', key, `missing required field: ${key}`, `Add the ${key} field to the adapter object.`, 'adapter-fields'));
     }
   }
   if (errors.length) return { errors, warnings };
 
-  if (adapter.slug !== expectedSlug) {
-    errors.push(
-      `slug "${adapter.slug}" does not match filename "${expectedSlug}"`,
-    );
-  }
-  // region mismatch is informational only — some adapters live under a
-  // region directory but declare a wider region (e.g. eu under de/).
-  if (adapter.region !== region) {
-    warnings.push(
-      `region "${adapter.region}" does not match directory "${region}"`,
-    );
-  }
+  if (adapter.slug !== expectedSlug) errors.push(error('slug', 'slug', `"${adapter.slug}" does not match filename "${expectedSlug}"`, `Rename slug to "${expectedSlug}" (or rename the file).`, 'adapter-fields'));
+  // A directory can be broader than the declared adapter region, so this is informational.
+  if (adapter.region !== region) warnings.push(warning('region-mismatch', 'region', `region "${adapter.region}" does not match directory "${region}"`));
+  if (!ALLOWED_CONNECTOR_TYPES.has(adapter.connector?.type)) errors.push(error('connector-type', 'connector.type', `connector.type "${adapter.connector?.type}" is not supported`, `Set connector.type to one of: ${[...ALLOWED_CONNECTOR_TYPES].join(', ')}.`, 'connector'));
+  if (!ALLOWED_AUTH_TYPES.has(adapter.connector?.authType)) errors.push(error('auth-type', 'connector.authType', `connector.authType "${adapter.connector?.authType}" is not supported`, 'Set connector.authType to one of the documented authentication types.', 'authentication'));
 
-  if (!ALLOWED_CONNECTOR_TYPES.has(adapter.connector?.type)) {
-    errors.push(
-      `connector.type "${adapter.connector?.type}" not in [${[...ALLOWED_CONNECTOR_TYPES].join(', ')}]`,
-    );
+  for (const [i, envVar] of (adapter.requiredEnvVars || []).entries()) {
+    if (!isPlaceholderReferenced(envVar, adapter)) warnings.push(warning('required-env-reference', `requiredEnvVars[${i}]`, `requiredEnvVars contains "${envVar}" but it's not auto-injected via {{${envVar}}} (operator must set it for documentation, agent passes it as a tool param)`));
   }
-  if (!ALLOWED_AUTH_TYPES.has(adapter.connector?.authType)) {
-    errors.push(
-      `connector.authType "${adapter.connector?.authType}" not in [${[...ALLOWED_AUTH_TYPES].join(', ')}]`,
-    );
-  }
-
-  // requiredEnvVars that aren't referenced as {{VAR}} are typically env vars
-  // documented for the operator (e.g. an account ID the agent passes as a
-  // per-call tool parameter rather than something the connector auto-injects).
-  // Treat as a soft warning.
-  for (const envVar of adapter.requiredEnvVars || []) {
-    if (!isPlaceholderReferenced(envVar, adapter)) {
-      warnings.push(
-        `requiredEnvVars contains "${envVar}" but it's not auto-injected via {{${envVar}}} (operator must set it for documentation, agent passes it as a tool param)`,
-      );
-    }
-  }
-
-  // optionalEnvVars is prompted for in the install modal but never blocks
-  // submission. It must still be a real, referenced placeholder: an optional
-  // var nobody references is dead UI, and one that overlaps requiredEnvVars
-  // would render twice with contradictory labels.
   if (adapter.optionalEnvVars !== undefined) {
-    if (
-      !Array.isArray(adapter.optionalEnvVars) ||
-      adapter.optionalEnvVars.some((v) => typeof v !== 'string')
-    ) {
-      errors.push('optionalEnvVars must be an array of strings');
+    if (!Array.isArray(adapter.optionalEnvVars) || adapter.optionalEnvVars.some((v) => typeof v !== 'string')) {
+      errors.push(error('optional-env-shape', 'optionalEnvVars', 'optionalEnvVars must be an array of strings', 'Use an array containing only environment-variable name strings.', 'adapter-fields'));
     } else {
-      for (const envVar of adapter.optionalEnvVars) {
-        if ((adapter.requiredEnvVars || []).includes(envVar)) {
-          errors.push(
-            `"${envVar}" appears in both requiredEnvVars and optionalEnvVars`,
-          );
-        }
-        if (!isPlaceholderReferenced(envVar, adapter)) {
-          warnings.push(
-            `optionalEnvVars contains "${envVar}" but it's not referenced via {{${envVar}}}`,
-          );
-        }
+      for (const [i, envVar] of adapter.optionalEnvVars.entries()) {
+        if ((adapter.requiredEnvVars || []).includes(envVar)) errors.push(error('optional-env-overlap', `optionalEnvVars[${i}]`, `"${envVar}" appears in both requiredEnvVars and optionalEnvVars`, 'Keep the variable in exactly one of requiredEnvVars or optionalEnvVars.', 'adapter-fields'));
+        if (!isPlaceholderReferenced(envVar, adapter)) warnings.push(warning('optional-env-reference', `optionalEnvVars[${i}]`, `optionalEnvVars contains "${envVar}" but it is not referenced via {{${envVar}}}`));
       }
     }
   }
 
   const slugUnderscored = adapter.slug.replace(/-/g, '_');
   if (!Array.isArray(adapter.tools) || adapter.tools.length === 0) {
-    errors.push('tools array is empty');
+    errors.push(error('tools', 'tools', 'tools array is empty', 'Add at least one tool definition to the tools array.', 'tools'));
     return { errors, warnings };
   }
-
-  // --- Soft warnings ---
-  if (!adapter.instructions || adapter.instructions.length < MIN_INSTRUCTIONS_LEN) {
-    warnings.push(
-      `instructions field is ${adapter.instructions?.length || 0} chars (recommend ≥ ${MIN_INSTRUCTIONS_LEN})`,
-    );
-  }
-
-  for (const tool of adapter.tools) {
-    if (!tool.name || typeof tool.name !== 'string') {
-      errors.push(`tool with no name: ${JSON.stringify(tool).slice(0, 80)}`);
+  if (!adapter.instructions || adapter.instructions.length < MIN_INSTRUCTIONS_LEN) warnings.push(warning('instructions', 'instructions', `instructions field is ${adapter.instructions?.length || 0} chars (recommend ≥ ${MIN_INSTRUCTIONS_LEN})`));
+  for (const [i, tool] of adapter.tools.entries()) {
+    const base = `tools[${i}]`;
+    if (!tool || typeof tool !== 'object' || Array.isArray(tool) || !tool.name || typeof tool.name !== 'string') {
+      errors.push(error('tool-name', `${base}.name`, 'tool has no name', 'Give the tool a string name using the adapter slug prefix.', 'tools'));
       continue;
     }
-    if (!tool.name.startsWith(`${slugUnderscored}_`)) {
-      warnings.push(
-        `tool "${tool.name}" not prefixed with "${slugUnderscored}_"`,
-      );
-    }
-    if (!tool.description || tool.description.length < MIN_TOOL_DESCRIPTION_LEN) {
-      warnings.push(
-        `tool "${tool.name}" description is ${tool.description?.length || 0} chars (recommend ≥ ${MIN_TOOL_DESCRIPTION_LEN})`,
-      );
-    }
-    // endpointMapping is omitted on text-only "skill" tools that return
-    // guidance instead of calling an API — that's a valid pattern, skip the
-    // check.
+    if (!tool.name.startsWith(`${slugUnderscored}_`)) warnings.push(warning('tool-prefix', `${base}.name`, `tool "${tool.name}" not prefixed with "${slugUnderscored}_"`));
+    if (!tool.description || tool.description.length < MIN_TOOL_DESCRIPTION_LEN) warnings.push(warning('tool-description', `${base}.description`, `tool "${tool.name}" description is ${tool.description?.length || 0} chars (recommend ≥ ${MIN_TOOL_DESCRIPTION_LEN})`));
     const props = tool.parameters?.properties;
     if (props && typeof props === 'object') {
       for (const [pname, pdef] of Object.entries(props)) {
-        if (!pdef || typeof pdef !== 'object' || !pdef.description) {
-          warnings.push(
-            `tool "${tool.name}" parameter "${pname}" missing description`,
-          );
-        }
+        if (!pdef || typeof pdef !== 'object' || !pdef.description) warnings.push(warning('parameter-description', `${base}.parameters.properties.${pname}`, `tool "${tool.name}" parameter "${pname}" missing description`));
       }
     }
   }
-
   return { errors, warnings };
 }
 
-function main() {
-  const adapters = collectAdapters();
-  if (adapters.length === 0) {
-    console.error('No adapters found.');
-    process.exit(1);
-  }
-
-  const showWarnings = process.argv.includes('--warn');
-
-  let failed = 0;
-  let passed = 0;
-  let totalWarnings = 0;
-  for (const { region, file, fullPath } of adapters) {
-    let raw;
-    try {
-      raw = readFileSync(fullPath, 'utf8');
-    } catch (e) {
-      console.error(`✗ ${region}/${file}: cannot read — ${e.message}`);
-      failed++;
-      continue;
-    }
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      console.error(`✗ ${region}/${file}: invalid JSON — ${e.message}`);
-      failed++;
-      continue;
-    }
-    const { errors, warnings } = validateAdapter(parsed, file, region);
-    totalWarnings += warnings.length;
-    if (errors.length === 0) {
-      passed++;
-      if (showWarnings && warnings.length) {
-        console.warn(`⚠ ${region}/${file}: ${warnings.length} warning(s)`);
-        for (const w of warnings) console.warn(`    - ${w}`);
-      }
-      continue;
-    }
-    failed++;
-    console.error(`✗ ${region}/${file}:`);
-    for (const err of errors) console.error(`    - ${err}`);
-    if (showWarnings && warnings.length) {
-      console.warn(`  ⚠ also ${warnings.length} warning(s)`);
-      for (const w of warnings) console.warn(`    - ${w}`);
-    }
-  }
-
-  console.log(
-    `\nValidated ${adapters.length} adapters: ${passed} passed, ${failed} failed${showWarnings ? `, ${totalWarnings} total warnings` : ''}.`,
-  );
-  if (!showWarnings && totalWarnings > 0) {
-    console.log(`(${totalWarnings} non-blocking warnings hidden — re-run with --warn to see them)`);
-  }
-  process.exit(failed === 0 ? 0 : 1);
+function detail(region, file, item) {
+  const suffix = item.fix ? ` Fix: ${item.fix} See docs/tool-definition.md#${item.docs}.` : '';
+  return `${region}/${file} [${item.rule}] path: ${item.path} — ${item.message}${suffix}`;
 }
 
-main();
+export function warningSummary(counts) {
+  return Object.entries(counts)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([rule, count]) => `  - ${rule}: ${count}`)
+    .join('\n');
+}
+
+export function renderReport(results, showWarnings) {
+  const details = [];
+  const summary = [];
+  const counts = {};
+  let passed = 0;
+  let failed = 0;
+  let totalWarnings = 0;
+
+  for (const result of results) {
+    const { region, file, errors, warnings } = result;
+    warnings.forEach((item) => { counts[item.rule] = (counts[item.rule] || 0) + 1; });
+    totalWarnings += warnings.length;
+    if (!errors.length) {
+      passed++;
+      if (showWarnings) warnings.forEach((item) => details.push(`⚠ ${detail(region, file, item)}`));
+    } else {
+      failed++;
+      details.push(`✗ ${region}/${file}:`);
+      errors.forEach((item) => details.push(`    - ${detail(region, file, item)}`));
+      if (showWarnings) warnings.forEach((item) => details.push(`    - ⚠ ${detail(region, file, item)}`));
+    }
+  }
+
+  summary.push(`Validated ${results.length} adapters: ${passed} passed, ${failed} failed${showWarnings ? `, ${totalWarnings} total warnings` : ''}.`);
+  if (totalWarnings) summary.push(`Warnings by rule:\n${warningSummary(counts)}`);
+  if (!showWarnings && totalWarnings) summary.push(`(${totalWarnings} non-blocking warnings hidden — re-run with --warn to see them)`);
+  return { stdout: `${summary.join('\n')}\n`, stderr: details.length ? `${details.join('\n')}\n` : '', passed, failed, totalWarnings };
+}
+
+export function main() {
+  const adapters = collectAdapters();
+  if (!adapters.length) {
+    console.error('No adapters found.');
+    return 1;
+  }
+  const results = adapters.map(({ region, file, fullPath }) => {
+    const loaded = loadAdapter(fullPath);
+    return adapterResult(loaded, file, region);
+  });
+  const report = renderReport(results, process.argv.includes('--warn'));
+  process.stdout.write(report.stdout);
+  process.stderr.write(report.stderr);
+  return report.failed ? 1 : 0;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) process.exitCode = main();
