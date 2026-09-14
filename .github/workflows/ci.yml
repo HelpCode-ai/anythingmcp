@@ -142,6 +142,9 @@ jobs:
             -e JWT_SECRET="$(openssl rand -hex 32)" \
             -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
             -e NODE_ENV=production -e PORT=4000 \
+            -e CORS_ORIGIN=http://localhost:3000 \
+            -e SERVER_URL=http://localhost:4000 \
+            -e FRONTEND_URL=http://localhost:3000 \
             anythingmcp:ci
           for i in $(seq 1 60); do
             if curl -sf http://localhost:4000/health > /dev/null; then
