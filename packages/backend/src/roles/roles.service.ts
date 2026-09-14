@@ -171,12 +171,19 @@ export class RolesService {
   /**
    * Tool IDs a user may use in the given organization.
    *
-   *   null = unrestricted (ADMIN of that org, or no role assigned)
-   *   []   = the assigned role(s) grant nothing, or the caller is unknown /
-   *          not a member — always fail closed, never `null`
+   *   null = unrestricted (ADMIN of that org, or no role assigned in an
+   *          organization that does not use tool whitelists at all)
+   *   []   = the assigned role(s) grant nothing, the caller is unknown / not a
+   *          member, or the caller has no role in an organization that DOES
+   *          use tool whitelists — always fail closed, never `null`
    *
    * With many-to-many roles the result is the UNION of every assigned role's
    * whitelist.
+   *
+   * The "no role" case is decided per organization (see the branch below):
+   * a workspace that has never created a whitelist keeps the legacy
+   * everything-allowed behaviour, while one that governs access with roles
+   * treats a user nobody has granted anything as having nothing.
    */
   async getAllowedToolIds(
     userId: string,
@@ -245,10 +252,25 @@ export class RolesService {
     // non-unique column is emulated client-side anyway — a Set is clearer.
     const roleIds = [...new Set(assignments.map((a) => a.roleId))];
 
-    // No role assigned = unrestricted. Preserved from the single-FK behaviour:
-    // tightening it here would silently revoke access from every user who has
-    // simply never been given a role, which is currently everyone.
-    if (roleIds.length === 0) return null;
+    // No role assigned. Historically this meant "unrestricted", which fails
+    // OPEN: a user nobody has granted anything received EVERY tool, and it
+    // went unnoticed because `null` also legitimately means "ADMIN". Observed
+    // in production on a self-hosted instance.
+    //
+    // The rule is now decided per organization, with no configuration:
+    //   - the org has at least one tool whitelist → it governs access with
+    //     roles, so "no role" means "no tools" (fail closed);
+    //   - the org has never created a whitelist → nothing to enforce, keep
+    //     returning `null` so workspaces that do not use RBAC are untouched.
+    // The probe lives INSIDE this branch so anyone holding a role pays nothing.
+    if (roleIds.length === 0) {
+      if (!(await this.organizationUsesToolWhitelists(orgId))) return null;
+      this.logger.warn(
+        `User ${userId} has no role in organization ${orgId}, which uses tool whitelists — ` +
+          'denying every tool. Assign them a role, or make them an ADMIN of the organization.',
+      );
+      return [];
+    }
 
     // UNION of the assigned roles' whitelists: being in more groups can only
     // ever widen access, never narrow it.
@@ -258,6 +280,24 @@ export class RolesService {
     });
 
     return [...new Set(access.map((a) => a.toolId))];
+  }
+
+  /**
+   * Whether any role OWNED BY this organization has a tool whitelist row.
+   *
+   * Deliberately scoped to the org's own roles and NOT widened to `isSystem`
+   * roles: a single whitelist row on a global role would flip every
+   * organization on the instance to fail-closed at once. Both sides are
+   * index-covered (`roles` by organizationId, `tool_role_access` by roleId).
+   */
+  private async organizationUsesToolWhitelists(
+    organizationId: string,
+  ): Promise<boolean> {
+    const row = await this.prisma.toolRoleAccess.findFirst({
+      where: { role: { organizationId } },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   // ── User role assignment ──────────────────────────────────────────────────
@@ -364,9 +404,10 @@ export class RolesService {
   //
   // It was never called outside its own spec, which is the only reason it never
   // bit. Removed rather than repaired because the product already has a "full
-  // access" state and it is the ABSENCE of a role — `getAllowedToolIds` returns
-  // null (unrestricted) when a user has no assignment. A role that has to be
-  // assigned in order to grant everything would be strictly worse than that.
+  // access" state: being an ADMIN of the organization, or — in an organization
+  // that has never created a tool whitelist — simply having no role. Once an
+  // organization uses whitelists, `getAllowedToolIds` fails closed for a user
+  // with no role, so "full access" there is the ADMIN membership, not a role.
   //
   // The lockout shape itself still exists for any hand-made empty role, which
   // is why `setUserRoles` warns about it — see `warnOnEmptyRoles`.
@@ -375,9 +416,11 @@ export class RolesService {
    * Logs when a user is given a role that grants no tools at all.
    *
    * Not blocked: an admin may legitimately create a role and populate it
-   * afterwards. But an empty role denies EVERYTHING rather than allowing
-   * everything, which reads backwards to most people, so it should not happen
-   * silently. Production currently holds four such roles, all leftovers.
+   * afterwards. But an empty role denies EVERYTHING, which reads backwards to
+   * most people, so it should not happen silently. Note that removing the
+   * assignment does not necessarily help either: in an organization that uses
+   * tool whitelists a user with no role is denied everything as well (see
+   * `getAllowedToolIds`), so the remedy is to add tools to the role.
    */
   private async warnOnEmptyRoles(roleIds: string[], userId: string) {
     if (roleIds.length === 0) return;
@@ -391,8 +434,7 @@ export class RolesService {
     if (empty.length > 0) {
       this.logger.warn(
         `User ${userId} assigned role(s) with an empty tool whitelist (${empty.join(', ')}) — ` +
-          'an empty role grants NO tools. Add tools to it, or remove the assignment ' +
-          'to restore unrestricted access.',
+          'an empty role grants NO tools. Add tools to it, or assign a role that has some.',
       );
     }
   }

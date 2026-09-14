@@ -343,9 +343,11 @@ export class RoleSyncService {
 
     // A match that grants nothing is treated as no match. Writing an empty
     // synced set would leave the user with no role at all — which
-    // `getAllowedToolIds` reads as UNRESTRICTED. A mapping row an admin has
-    // not finished (or a SCIM group nobody has assigned roles to yet) must
-    // land the user on the fallback, not on full access.
+    // `getAllowedToolIds` reads as UNRESTRICTED in any organization that has
+    // not created a tool whitelist yet (the normal first-week state). A
+    // mapping row an admin has not finished (or a SCIM group nobody has
+    // assigned roles to yet) must land the user on the fallback, not on full
+    // access.
     if (matches.length === 0 || (desiredMcpRoleIds.length === 0 && desiredOrgRole === null)) {
       return this.applyFallback(provider, userId, presentedIds.length, ctx, trigger, membershipSource);
     }
@@ -655,10 +657,13 @@ export class RoleSyncService {
   /**
    * DENY_ALL cannot be implemented by deleting the user's grants.
    *
-   * `RolesService.getAllowedToolIds` returns `null` — meaning UNRESTRICTED —
-   * for a user with no role at all, which is the behaviour inherited from the
-   * single-FK era. So "revoke everything" written the obvious way produces
-   * full access: the precise failure this fallback exists to prevent.
+   * `RolesService.getAllowedToolIds` only fails closed for a user with no role
+   * once the organization has at least one tool whitelist row. In an org
+   * with `DENY_ALL` but no whitelists yet — the normal first-week state —
+   * deleting the grants would make that probe answer "no whitelists", so
+   * "revoke everything" written the obvious way would produce full access:
+   * the precise failure this fallback exists to prevent. The sentinel role is
+   * what makes DENY_ALL correct regardless of the org's whitelist state.
    *
    * Instead the user is given a real role that whitelists nothing. The union
    * of an empty whitelist is empty, so every existing access check already

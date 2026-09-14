@@ -25,6 +25,9 @@ describe('RolesService', () => {
       },
       toolRoleAccess: {
         findMany: jest.fn().mockResolvedValue([]),
+        // The "does this org use whitelists" probe. `null` keeps every
+        // existing case on the legacy path (no role = unrestricted).
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
         deleteMany: jest.fn(),
         upsert: jest.fn(),
@@ -376,6 +379,73 @@ describe('RolesService', () => {
       mockPrisma.user.findUnique.mockResolvedValue(null);
       const result = await service.getAllowedToolIds('ghost');
       expect(result).toEqual([]);
+    });
+
+    describe('a member with no role', () => {
+      // The fail-open fix. A user nobody has granted anything used to receive
+      // EVERY tool, because `null` is also what an ADMIN gets. Now the org
+      // decides: whitelists in use → nothing; no whitelists → legacy null.
+      const memberWithNoRole = () => {
+        mockPrisma.user.findUnique.mockResolvedValue({ role: 'VIEWER', organizationId: 'org-1' });
+        mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'VIEWER', deactivatedAt: null });
+        mockPrisma.userRoleAssignment.findMany.mockResolvedValue([]);
+      };
+
+      it('is denied every tool when the organization uses tool whitelists', async () => {
+        memberWithNoRole();
+        mockPrisma.toolRoleAccess.findFirst.mockResolvedValue({ id: 'tra-1' });
+
+        expect(await service.getAllowedToolIds('user-1', 'org-1')).toEqual([]);
+        expect(mockPrisma.toolRoleAccess.findMany).not.toHaveBeenCalled();
+      });
+
+      it('stays unrestricted when the organization has no tool whitelist at all', async () => {
+        memberWithNoRole();
+        mockPrisma.toolRoleAccess.findFirst.mockResolvedValue(null);
+
+        expect(await service.getAllowedToolIds('user-1', 'org-1')).toBeNull();
+      });
+
+      it('probes only whitelists on roles OWNED by that organization', async () => {
+        // Never widened to `isSystem` roles: one whitelist row on a global role
+        // would flip every organization on the instance to fail-closed at once.
+        memberWithNoRole();
+        mockPrisma.toolRoleAccess.findFirst.mockResolvedValue(null);
+
+        await service.getAllowedToolIds('user-1', 'org-1');
+
+        expect(mockPrisma.toolRoleAccess.findFirst).toHaveBeenCalledTimes(1);
+        expect(mockPrisma.toolRoleAccess.findFirst).toHaveBeenCalledWith({
+          where: { role: { organizationId: 'org-1' } },
+          select: { id: true },
+        });
+      });
+
+      it('does not probe when the user holds a role', async () => {
+        mockPrisma.user.findUnique.mockResolvedValue({ role: 'VIEWER', organizationId: 'org-1' });
+        mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'VIEWER', deactivatedAt: null });
+        mockPrisma.userRoleAssignment.findMany.mockResolvedValue([{ roleId: 'r1' }]);
+        mockPrisma.toolRoleAccess.findMany.mockResolvedValue([{ toolId: 't1' }]);
+
+        expect(await service.getAllowedToolIds('user-1', 'org-1')).toEqual(['t1']);
+        expect(mockPrisma.toolRoleAccess.findFirst).not.toHaveBeenCalled();
+      });
+
+      it('does not probe for an ADMIN of the organization', async () => {
+        mockPrisma.user.findUnique.mockResolvedValue({ role: 'ADMIN', organizationId: 'org-1' });
+        mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'ADMIN', deactivatedAt: null });
+
+        expect(await service.getAllowedToolIds('user-1', 'org-1')).toBeNull();
+        expect(mockPrisma.toolRoleAccess.findFirst).not.toHaveBeenCalled();
+      });
+
+      it('does not probe when the caller already failed closed', async () => {
+        mockPrisma.user.findUnique.mockResolvedValue({ role: 'ADMIN', organizationId: 'org-personal' });
+        mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
+
+        expect(await service.getAllowedToolIds('user-1', 'org-other')).toEqual([]);
+        expect(mockPrisma.toolRoleAccess.findFirst).not.toHaveBeenCalled();
+      });
     });
   });
 

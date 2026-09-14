@@ -136,12 +136,15 @@ Resolution rules:
 | Leave existing roles alone | Write nothing at all |
 | Grant a default role | Assign the configured default MCP roles |
 
-**Grant no tools is the default deliberately.** A user holding *no* MCP role at
-all is treated as **unrestricted** — that is inherited behaviour, and it means
-"revoke everything" written the obvious way would grant full access. The
-fallback therefore assigns a real role with an empty whitelist instead. You will
-see `No access (SSO)` appear under **Settings → Roles**; do not add tool access
-to it.
+**Grant no tools is the default deliberately.** What a user holding *no* MCP
+role at all gets depends on the workspace: in a workspace that has never
+created a tool whitelist they are **unrestricted**; once any role in the
+workspace has a tool whitelist, a user with no role is **denied every tool**.
+"Revoke everything" written the obvious way would therefore grant full access
+in a workspace that is still setting up its roles. The fallback assigns a real
+role with an empty whitelist instead, which denies everything regardless. You
+will see `No access (SSO)` appear under **Settings → Roles**; do not add tool
+access to it.
 
 ### Tokens that carry too many groups
 
@@ -330,8 +333,12 @@ refuse `tools/call` for anything else:
 | `/mcp` (global) | Filtered to the user's tools, within their organization | Denied if not allowed |
 
 A tool that has **no** role assigned to it at all is visible only to users whose
-access is unrestricted — an admin, or someone holding no MCP role. Once a user
-holds any MCP role, they see exactly what their roles grant.
+access is unrestricted — an admin, or (in a workspace with no tool whitelists
+at all) someone holding no MCP role. Once a user holds any MCP role, they see
+exactly what their roles grant. Once the workspace has any tool whitelist, a
+member with no MCP role sees nothing; the backend logs a warning naming the
+user and the workspace when that happens, and the fix is to assign a role or
+make them a workspace admin.
 
 ---
 
