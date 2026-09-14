@@ -67,6 +67,12 @@ export const SecurityEvents = {
   ROLE_SYNC_FAILED: 'ROLE_SYNC_FAILED',
   /** Every token issued before now was invalidated for this user. */
   SESSIONS_REVOKED: 'SESSIONS_REVOKED',
+  /**
+   * An admin forced every member of a workspace to sign in again. One summary
+   * row per action (the per-member breakdown lives in its metadata), so a
+   * 500-member workspace does not write 500 rows.
+   */
+  WORKSPACE_SESSIONS_REVOKED: 'WORKSPACE_SESSIONS_REVOKED',
   API_KEY_DEACTIVATED: 'API_KEY_DEACTIVATED',
 
   // ── Consent plane: which AI client was authorized, by whom ──────────────

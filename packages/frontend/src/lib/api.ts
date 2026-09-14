@@ -144,6 +144,16 @@ export const users = {
   /** Restores the membership only — revoked keys stay revoked. */
   reactivate: (id: string, token: string) =>
     request<{ message: string }>(`/api/users/${id}/reactivate`, { method: 'POST', token }),
+  /**
+   * Forces one member to sign in again on every client: dashboard sessions
+   * and AI-client connections, including ones holding a refresh token. MCP
+   * API keys are NOT sessions and are untouched unless `revokeApiKeys` is set.
+   */
+  revokeSessions: (id: string, data: { revokeApiKeys?: boolean }, token: string) =>
+    request<{ message: string; self: boolean; apiKeysRevoked: number; crossOrgMemberships: number }>(
+      `/api/users/${id}/revoke-sessions`,
+      { method: 'POST', body: data, token },
+    ),
   deleteSelf: (data: { password: string; confirm: 'DELETE' }, token: string) =>
     request<{ message: string }>('/api/users/me', {
       method: 'DELETE',
@@ -179,6 +189,22 @@ export const organizations = {
       organization: { id: string; name: string };
       autoCreated: boolean;
     }>('/api/organizations/current', { method: 'DELETE', body: data, token }),
+  /**
+   * Forces every member to sign in again. Includes the caller unless
+   * `excludeSelf` is set, so pass `skipAutoLogout` semantics from the page:
+   * the response itself succeeds, the NEXT request is what gets a 401.
+   */
+  revokeSessions: (
+    data: { confirmName: string; excludeSelf?: boolean; revokeApiKeys?: boolean },
+    token: string,
+  ) =>
+    request<{
+      message: string;
+      selfIncluded: boolean;
+      membersAffected: number;
+      crossOrgMembersAffected: number;
+      apiKeysRevoked: number;
+    }>('/api/organizations/current/revoke-sessions', { method: 'POST', body: data, token }),
 };
 
 /**

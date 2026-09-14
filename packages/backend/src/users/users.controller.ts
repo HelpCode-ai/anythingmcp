@@ -25,6 +25,17 @@ import { Roles, RolesGuard } from '../auth/roles.guard';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { UserLifecycleService, LifecycleContext } from './user-lifecycle.service';
 
+class RevokeSessionsDto {
+  @ApiPropertyOptional({
+    description:
+      'Also deactivate the member\'s MCP API keys in this workspace. Off by default: API keys are not sessions and are never touched by a plain revocation.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  revokeApiKeys?: boolean;
+}
+
 class UpdateProfileDto {
   @ApiPropertyOptional({ description: 'Display name.' })
   @IsOptional()
@@ -264,6 +275,33 @@ export class UsersController {
     return {
       message: `User role updated to ${dto.role}`,
       sessionsRevoked: result.sessionsRevoked,
+    };
+  }
+
+  @Post(':id/revoke-sessions')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary:
+      'Force a member to sign in again (ADMIN only): every dashboard session and every AI-client connection (including ones holding a refresh token) is invalidated. MCP API keys are unaffected unless revokeApiKeys is set. Acting on yourself is allowed.',
+  })
+  async revokeUserSessions(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: RevokeSessionsDto,
+  ) {
+    const result = await this.organizations.revokeMemberSessions(
+      id,
+      req.user.organizationId,
+      { revokeApiKeys: dto.revokeApiKeys === true },
+      this.actionContext(req),
+    );
+    if (!result) throw new NotFoundException('User not found');
+    return {
+      message: 'Sessions revoked. The user must sign in again.',
+      self: id === req.user.sub,
+      ...result,
     };
   }
 
