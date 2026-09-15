@@ -7,6 +7,12 @@
   "icon": "bundesbank",
   "docsUrl": "https://api.statistiken.bundesbank.de/doc/index.html",
   "requiredEnvVars": [],
+  "probe": {
+    "tool": "bundesbank_get_exchange_rates",
+    "params": {
+      "currency": "USD"
+    }
+  },
   "connector": {
     "name": "Bundesbank Statistics",
     "type": "REST",

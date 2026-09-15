@@ -1,17 +1,11 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.keysersoft/anythingmcp",
-  "description": "188 pre-built connectors plus any REST, SOAP, GraphQL or SQL system as MCP tools for Claude, ChatGPT and Copilot. Self-hosted, no code, open source (AGPL-3.0).",
+  "name": "io.github.HelpCode-ai/anythingmcp",
+  "description": "189 connectors + any REST/SOAP/GraphQL/SQL as MCP tools for Claude & ChatGPT. Self-hosted, AGPL.",
   "repository": {
     "url": "https://github.com/HelpCode-ai/anythingmcp",
     "source": "github"
   },
-  "version": "0.8.1",
-  "websiteUrl": "https://anythingmcp.com",
-  "remotes": [
-    {
-      "type": "streamable-http",
-      "url": "https://cloud.anythingmcp.com/mcp/demo"
-    }
-  ]
+  "version": "0.9.0",
+  "websiteUrl": "https://anythingmcp.com"
 }

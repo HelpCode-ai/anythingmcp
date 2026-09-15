@@ -11,6 +11,14 @@ import { ConfigService } from '@nestjs/config';
 import { listAdapters, getAdapter, AdapterMeta, AdapterDefinition } from './catalog';
 import { hashInstructions } from './catalog-fingerprint';
 import { getRequiredSecret } from '../common/secrets.util';
+import {
+  withOperatorProvided,
+  withoutOperatorProvided,
+} from './cloud-managed-env';
+import { pickProbe } from './probe.util';
+import { ConnectorsService } from '../connectors/connectors.service';
+import { classifyToolExecutionError } from '../connectors/connector-error.util';
+import { applyResponseTransform } from '../connectors/response-transform.util';
 
 @Injectable()
 export class AdaptersService {
@@ -21,6 +29,7 @@ export class AdaptersService {
     private readonly prisma: PrismaService,
     private readonly mcpServer: McpServerService,
     private readonly configService: ConfigService,
+    private readonly connectors: ConnectorsService,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -29,15 +38,34 @@ export class AdaptersService {
   }
 
   listAll(): AdapterMeta[] {
-    return listAdapters();
+    return listAdapters()
+      .filter((a) => this.isInstallableHere(a))
+      .map((a) => ({
+        ...a,
+        requiredEnvVars: withoutOperatorProvided(a.requiredEnvVars) ?? [],
+      }));
   }
 
   getBySlug(slug: string): AdapterDefinition {
     const adapter = getAdapter(slug);
-    if (!adapter) {
+    if (!adapter || !this.isInstallableHere(adapter)) {
       throw new NotFoundException(`Adapter "${slug}" not found`);
     }
-    return adapter;
+    return {
+      ...adapter,
+      requiredEnvVars: withoutOperatorProvided(adapter.requiredEnvVars) ?? [],
+    };
+  }
+
+  /**
+   * Adapters that only work from a residential IP (upstreams behind Cloudflare
+   * or Akamai bot walls, session-token scrapers) are marked `selfHostOnly` in
+   * the catalog. From the cloud's datacenter address they fail every call, so
+   * the cloud does not list them at all. Self-host shows them as usual.
+   */
+  private isInstallableHere(adapter: { selfHostOnly?: boolean }): boolean {
+    if (!adapter.selfHostOnly) return true;
+    return this.configService.get<string>('DEPLOYMENT_MODE') !== 'cloud';
   }
 
   async importAdapter(
@@ -45,8 +73,16 @@ export class AdaptersService {
     userId: string,
     organizationId: string,
     credentials?: Record<string, string>,
-  ): Promise<{ connectorId: string; toolsCreated: number }> {
+  ): Promise<{
+    connectorId: string;
+    toolsCreated: number;
+    probe: ImportProbeResult | null;
+  }> {
     const adapter = this.getBySlug(slug);
+
+    // Values the operator provides for everyone (e.g. the cloud's own MOTIS
+    // URL) go in here, and override anything the request carried.
+    credentials = withOperatorProvided(credentials);
 
     // Credentials arrive from the UI verbatim — a stray leading/trailing
     // space (easy to pick up when pasting) would otherwise be encrypted into
@@ -163,7 +199,69 @@ export class AdaptersService {
       `Imported adapter "${slug}" as connector ${connector.id} with ${toolsCreated} tools`,
     );
 
-    return { connectorId: connector.id, toolsCreated };
+    const probe = await this.runImportProbe(adapter, connector.id);
+
+    return { connectorId: connector.id, toolsCreated, probe };
+  }
+
+  /**
+   * Call one read-only tool of the connector just created, with the
+   * credentials just entered, and report the outcome to the install form.
+   *
+   * Never blocks or undoes the import: a slow or unreachable upstream is
+   * reported, not treated as a failed install (the connector may need an
+   * allow-listed IP, or the user may fix a value in the editor). The result is
+   * whatever the agent would have got, run through the same engine and the
+   * same response mapping, so "green" here means the first real call will
+   * work and "red" carries the upstream's own words.
+   */
+  private async runImportProbe(
+    adapter: AdapterDefinition,
+    connectorId: string,
+  ): Promise<ImportProbeResult | null> {
+    const call = pickProbe(adapter);
+    if (!call) return null;
+    const started = Date.now();
+    try {
+      const connector = await this.prisma.connector.findUnique({
+        where: { id: connectorId },
+        include: { tools: { where: { name: call.toolName } } },
+      });
+      const tool = connector?.tools[0];
+      if (!connector || !tool) return null;
+      const raw = await this.connectors.executeConnectorCall(
+        connector,
+        tool.endpointMapping as any,
+        call.params,
+      );
+      const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
+      return {
+        ok: true,
+        toolName: call.toolName,
+        durationMs: Date.now() - started,
+        sample: truncateSample(shaped),
+      };
+    } catch (err: any) {
+      const status: number | undefined =
+        typeof err?.status === 'number'
+          ? err.status
+          : typeof err?.response?.status === 'number'
+            ? err.response.status
+            : undefined;
+      const upstream = String(err?.message ?? err ?? 'unknown error').slice(0, 400);
+      const { hint } = classifyToolExecutionError({
+        status,
+        authType: adapter.connector.authType,
+        message: upstream,
+      });
+      return {
+        ok: false,
+        toolName: call.toolName,
+        durationMs: Date.now() - started,
+        status: status ?? null,
+        message: `${upstream} ${hint}`.trim(),
+      };
+    }
   }
 
   /** Replace {{VAR}} placeholders in a string with credential values */
@@ -258,4 +356,26 @@ export class AdaptersService {
     }
     return obj;
   }
+}
+
+export type ImportProbeResult =
+  | { ok: true; toolName: string; durationMs: number; sample: string }
+  | {
+      ok: false;
+      toolName: string;
+      durationMs: number;
+      status: number | null;
+      message: string;
+    };
+
+/** A short, printable slice of the probe's response for the install form. */
+function truncateSample(value: unknown, max = 600): string {
+  let text: string;
+  try {
+    text = typeof value === 'string' ? value : JSON.stringify(value);
+  } catch {
+    text = String(value);
+  }
+  if (!text) return '';
+  return text.length > max ? `${text.slice(0, max)}…` : text;
 }

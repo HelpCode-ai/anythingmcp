@@ -18,6 +18,46 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/**
+ * Counted from the catalog at startup, not typed in.
+ *
+ * This script hardcoded "175+" and a version of "1.0.0". Glama builds it from
+ * a pinned commit and shows the result as our listing, so those two strings
+ * were what the directory told the world for months after both stopped being
+ * true. Reading the adapter JSONs means the listing cannot drift again — the
+ * container has the whole repo checked out, so they are right there.
+ */
+function catalogStats() {
+  try {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+    const dir = join(root, 'packages/backend/src/adapters');
+    const adapters = [];
+    for (const region of readdirSync(dir)) {
+      const sub = join(dir, region);
+      if (!statSync(sub).isDirectory()) continue;
+      for (const f of readdirSync(sub)) {
+        if (f.endsWith('.json')) adapters.push(JSON.parse(readFileSync(join(sub, f), 'utf8')));
+      }
+    }
+    if (!adapters.length) throw new Error('no adapters found');
+    return {
+      total: adapters.length,
+      keyless: adapters.filter((a) => a.connector?.authType === 'NONE').length,
+      version: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version ?? '0.0.0',
+    };
+  } catch {
+    // A directory listing is not worth crashing an introspection run over.
+    return { total: 0, keyless: 0, version: '0.0.0' };
+  }
+}
+
+const CATALOG = catalogStats();
+const COUNT = CATALOG.total ? String(CATALOG.total) : 'many';
+const KEYLESS = CATALOG.keyless;
 
 const SITE = 'https://anythingmcp.com';
 const REPO = 'https://github.com/HelpCode-ai/anythingmcp';
@@ -52,7 +92,7 @@ const CONNECT = {
   cursor: `Cursor: add your AnythingMCP server URL as an MCP server (Streamable HTTP) in Cursor's MCP settings. Guide: ${SITE}/guides`,
 };
 
-const CONNECTORS = `AnythingMCP ships 175+ pre-built connectors. Highlights:
+const CONNECTORS = `AnythingMCP ships ${COUNT} pre-built connectors (${KEYLESS} of them need no API key). Highlights:
 • Logistics & shipping — Deutsche Bahn, DHL, DPD, GLS, Sendcloud
 • ERP & invoicing — weclapp, Xentral, Scopevisio, Billomat
 • E-commerce — Etsy, Shopware 6, WooCommerce, Mercado Libre, ImmobilienScout24
@@ -67,7 +107,7 @@ Database (Postgres/MySQL/MSSQL/Oracle/MongoDB/SQLite), MCP-to-MCP bridge.
 Browse all: ${SITE}/guides`;
 
 const server = new McpServer(
-  { name: 'AnythingMCP', version: '1.0.0' },
+  { name: 'AnythingMCP', version: CATALOG.version },
   {
     instructions:
       'Read-only demo of AnythingMCP. These tools describe the product and how ' +
@@ -98,7 +138,7 @@ server.tool(
 );
 server.tool(
   'anythingmcp_list_connectors',
-  'Read-only, no side effects. Returns a plain-text catalog of AnythingMCP\'s 175+ pre-built connectors grouped by category (logistics, ERP, e-commerce, HR, public data, banking, messaging, sports), plus the 5 connector types you can build with no code (REST, SOAP/WSDL, GraphQL, Database, MCP-bridge), with a link to the full list. Use this to discover available integrations before connecting a client.',
+  `Read-only, no side effects. Returns a plain-text catalog of AnythingMCP's ${COUNT} pre-built connectors grouped by category (logistics, ERP, e-commerce, HR, public data, banking, messaging, sports), plus the 5 connector types you can build with no code (REST, SOAP/WSDL, GraphQL, Database, MCP-bridge), with a link to the full list. Use this to discover available integrations before connecting a client.`,
   {},
   { title: 'List AnythingMCP connectors', readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async () => ({ content: [{ type: 'text', text: CONNECTORS }] }),

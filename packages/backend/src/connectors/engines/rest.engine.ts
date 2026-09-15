@@ -7,7 +7,6 @@ import axios, {
 } from 'axios';
 import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
-import { resolveDbRestProfile } from '../../common/db-rest.util';
 import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
 import {
@@ -15,6 +14,7 @@ import {
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 
 /**
@@ -81,7 +81,7 @@ export class RestEngine {
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
     const withMeta = (response: AxiosResponse) => ({
-      body: response.data,
+      body: parseXmlBody(response),
       headers: pickExposedHeaders(
         response.headers as Record<string, unknown>,
         endpointMapping.exposeHeaders,
@@ -160,13 +160,9 @@ export class RestEngine {
           mappedQuery[k] = v;
         }
       }
-      // Cloud-only Deutsche Bahn profile override (see resolveDbRestProfile):
-      // in cloud the internal db-rest egresses via the Zyte unblocker where DB's
-      // `dbnav` endpoints reject the request, so swap to `dbweb`. Strict no-op
-      // off-cloud and for every non-db-rest target.
       axiosConfig.params = {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
-        ...resolveDbRestProfile(url, mappedQuery),
+        ...mappedQuery,
       };
     }
 
@@ -875,3 +871,44 @@ const PROXY_ERROR_HINTS: Record<string, string> = {
   '/limits/over-user-limit':
     'the web-unblocker account is over its limit',
 };
+
+/**
+ * Turn an XML response body into a plain object so response mapping and the
+ * MCP client get structured data rather than a string of markup.
+ *
+ * Deutsche Bahn's official Timetables API answers only in XML, and it is not
+ * alone among German public-sector APIs. Attributes are hoisted next to child
+ * elements without a prefix (`<s id="1"><tl c="ICE"/></s>` → `{ s: { id: "1",
+ * tl: { c: "ICE" } } }`), which is what a JMESPath mapping wants to address.
+ * Anything that is not declared as XML, or fails to parse, is returned as
+ * axios delivered it — a JSON API is never touched.
+ */
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '',
+  removeNSPrefix: true,
+  parseTagValue: false,
+  parseAttributeValue: false,
+  trimValues: true,
+});
+
+export function parseXmlBody(response: {
+  data: unknown;
+  headers?: Record<string, unknown>;
+}): unknown {
+  const { data } = response;
+  if (typeof data !== 'string') return data;
+  const contentType = String(response.headers?.['content-type'] ?? '').toLowerCase();
+  const declaredXml = /(^|[/+])xml([;\s]|$)/.test(contentType);
+  if (!declaredXml) return data;
+  try {
+    const parsed = xmlParser.parse(data);
+    // fast-xml-parser hands back an empty object for non-XML text; keep the
+    // original so a mislabelled body is still visible to the caller.
+    return parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0
+      ? parsed
+      : data;
+  } catch {
+    return data;
+  }
+}
