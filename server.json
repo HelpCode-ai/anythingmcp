@@ -7,11 +7,5 @@
     "source": "github"
   },
   "version": "0.8.1",
-  "websiteUrl": "https://anythingmcp.com",
-  "remotes": [
-    {
-      "type": "streamable-http",
-      "url": "https://cloud.anythingmcp.com/mcp/demo"
-    }
-  ]
+  "websiteUrl": "https://anythingmcp.com"
 }
