@@ -64,20 +64,23 @@ export class ProductEventService {
 }
 
 /**
- * Keep only flat string/number/boolean values and cap the size. These events
- * carry a client name or a server id, nothing that should ever be a secret,
- * and nothing large enough to matter.
+ * Metadata keys a page may send. Anything else is dropped: the events carry
+ * a client name or a server id, nothing that should ever be a secret, and a
+ * fixed key set is what keeps an untrusted body from choosing property names.
  */
+const METADATA_KEYS = ['client', 'serverId', 'connectorId', 'adapterSlug'] as const;
+
 function boundMetadata(
   metadata: Record<string, unknown> | null | undefined,
 ): Record<string, string | number | boolean> | null {
   if (!metadata || typeof metadata !== 'object') return null;
-  const out: Record<string, string | number | boolean> = {};
-  for (const [k, v] of Object.entries(metadata)) {
-    if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
-    if (typeof v === 'string') out[k] = v.slice(0, 200);
-    else if (typeof v === 'number' || typeof v === 'boolean') out[k] = v;
+  const entries: Array<[string, string | number | boolean]> = [];
+  for (const key of METADATA_KEYS) {
+    const v = metadata[key];
+    if (typeof v === 'string') entries.push([key, v.slice(0, 200)]);
+    else if (typeof v === 'number' || typeof v === 'boolean') entries.push([key, v]);
   }
-  if (Object.keys(out).length === 0) return null;
+  if (entries.length === 0) return null;
+  const out = Object.fromEntries(entries);
   return JSON.stringify(out).length > MAX_METADATA_BYTES ? null : out;
 }

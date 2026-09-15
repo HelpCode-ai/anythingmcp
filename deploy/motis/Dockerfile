@@ -24,5 +24,9 @@ RUN chmod 0755 /entrypoint.sh && mkdir -p /data && chown motis:motis /data
 USER motis
 WORKDIR /data
 EXPOSE 8080
+# The first boot downloads and imports the feeds before the server listens;
+# the compose healthchecks give that a longer start_period.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1
 ENTRYPOINT ["/entrypoint.sh"]
 CMD []
