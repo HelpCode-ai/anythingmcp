@@ -33,6 +33,7 @@ describe('McpEndpointController — tenant isolation', () => {
     mcpServersService = {
       findById: jest.fn().mockResolvedValue(SERVER),
       getConnectorIds: jest.fn().mockResolvedValue([]),
+      getResourcesForServer: jest.fn().mockResolvedValue([]),
       getComposedInstructions: jest.fn().mockResolvedValue(''),
       isUserInOrganization: jest.fn().mockResolvedValue(false),
     };
@@ -275,5 +276,48 @@ describe('McpEndpointController — structuredContent', () => {
     expect(result.structuredContent).toBeUndefined();
     expect(result).not.toHaveProperty('structured');
     expect(result.isError).toBe(true);
+  });
+});
+
+describe('McpEndpointController — native resources', () => {
+  it('plans server and connector instruction resources plus persisted content', async () => {
+    const controller = new McpEndpointController(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const entries = (controller as any).planResources(
+      'srv-1',
+      [
+        {
+          id: 'conn-1',
+          name: 'CRM',
+          instructions: 'Use the CRM connector',
+          resources: [
+            {
+              uri: 'anythingmcp://crm/enums',
+              name: 'CRM enums',
+              description: 'Reference values',
+              mimeType: 'application/json',
+              fetchConfig: { data: { status: ['open', 'closed'] } },
+            },
+          ],
+        },
+      ],
+      'Prefer read-only calls',
+    );
+    expect(entries.map((entry: any) => entry.uri)).toEqual([
+      'anythingmcp://server/srv-1/instructions',
+      'anythingmcp://connector/conn-1/instructions',
+      'anythingmcp://crm/enums',
+    ]);
+    await expect(entries[2].read()).resolves.toMatchObject({
+      mimeType: 'application/json',
+      text: expect.stringContaining('open'),
+    });
   });
 });
