@@ -7,6 +7,12 @@
   "icon": "nina",
   "docsUrl": "https://nina.api.bund.dev/",
   "requiredEnvVars": [],
+  "probe": {
+    "tool": "nina_get_active_warnings",
+    "params": {
+      "source": "mowas"
+    }
+  },
   "connector": {
     "name": "NINA Warnungen",
     "type": "REST",

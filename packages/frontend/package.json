@@ -1,6 +1,6 @@
 {
   "name": "@anythingmcp/frontend",
-  "version": "0.7.3",
+  "version": "0.9.0",
   "description": "AnythingMCP — Next.js Admin UI",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -21,7 +21,7 @@
     "@radix-ui/react-slot": "^1.3.3",
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-toast": "^1.2.23",
-    "@sentry/nextjs": "^10.73.0",
+    "@sentry/nextjs": "^10.74.0",
     "@tailwindcss/postcss": "^4.3.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -36,7 +36,7 @@
     "vanilla-cookieconsent": "^3.1.0"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.5",
+    "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.62.1",
     "@types/node": "^22.20.2",
     "@types/react": "^19.2.17",
@@ -44,7 +44,7 @@
     "autoprefixer": "^10.5.4",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.4",
-    "postcss": "^8.5.26",
+    "postcss": "^8.5.28",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.9.3"
   }

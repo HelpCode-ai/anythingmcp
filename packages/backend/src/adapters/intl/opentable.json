@@ -7,9 +7,20 @@
   "category": "food",
   "icon": "opentable",
   "docsUrl": "https://www.opentable.com",
+  "selfHostOnly": true,
   "featured": true,
   "priority": 85,
   "requiredEnvVars": [],
+  "probe": {
+    "tool": "opentable_search_restaurants",
+    "params": {
+      "latitude": 51.5074,
+      "longitude": -0.1278,
+      "covers": 2,
+      "leadTime": 14,
+      "size": 5
+    }
+  },
   "connector": {
     "name": "OpenTable Mobile API",
     "type": "REST",

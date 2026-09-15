@@ -7,7 +7,6 @@ import axios, {
 } from 'axios';
 import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
-import { resolveDbRestProfile } from '../../common/db-rest.util';
 import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
 import {
@@ -15,6 +14,7 @@ import {
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 
 /**
@@ -81,7 +81,7 @@ export class RestEngine {
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
     const withMeta = (response: AxiosResponse) => ({
-      body: response.data,
+      body: parseXmlBody(response),
       headers: pickExposedHeaders(
         response.headers as Record<string, unknown>,
         endpointMapping.exposeHeaders,
@@ -160,13 +160,9 @@ export class RestEngine {
           mappedQuery[k] = v;
         }
       }
-      // Cloud-only Deutsche Bahn profile override (see resolveDbRestProfile):
-      // in cloud the internal db-rest egresses via the Zyte unblocker where DB's
-      // `dbnav` endpoints reject the request, so swap to `dbweb`. Strict no-op
-      // off-cloud and for every non-db-rest target.
       axiosConfig.params = {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
-        ...resolveDbRestProfile(url, mappedQuery),
+        ...mappedQuery,
       };
     }
 
@@ -293,7 +289,7 @@ export class RestEngine {
         const retryResponse = await axios(axiosConfig);
         return withMeta(retryResponse);
       }
-      throw error;
+      throw restateProxyError(error);
     }
   }
 
@@ -817,5 +813,102 @@ function assertNoPrototypePollution(value: unknown): void {
       );
     }
     assertNoPrototypePollution((value as Record<string, unknown>)[key]);
+  }
+}
+
+/**
+ * When a request goes through the web-unblocker, a failure can come from the
+ * target or from the unblocker itself, and the two need different responses:
+ * one is the customer's credentials or the vendor being down, the other is
+ * ours.
+ *
+ * Proxy mode says which, but only in headers — the body is always the same
+ * sentence, "There is a downloading problem which might be temporary. Retry in
+ * N seconds from 'Retry-After' header." We were discarding the headers, so
+ * every proxy-side failure reached the operator as an unattributed 520.
+ *
+ * That cost real time: deutsche-bahn and etsy both showed up as "520 Server
+ * Error" for weeks. The headers said `/download/website-ban` all along, and
+ * calling /v1/extract directly with the same key added the part that actually
+ * mattered — residential IPs need the account to pass KYC.
+ *
+ * zyte-request-id is included because it is the first thing Zyte support asks
+ * for, and it is not recoverable after the fact.
+ */
+export function restateProxyError(error: unknown): unknown {
+  if (!(error instanceof AxiosError) || !error.response) return error;
+  const headers = error.response.headers as Record<string, unknown> | undefined;
+  const get = (name: string): string | undefined => {
+    const v = headers?.[name] ?? headers?.[name.toLowerCase()];
+    return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+  };
+  const type = get('zyte-error-type');
+  if (!type) return error;
+
+  const title = get('zyte-error-title') ?? 'Proxy error';
+  const requestId = get('zyte-request-id');
+  const hint = PROXY_ERROR_HINTS[type];
+
+  error.message =
+    `Web-unblocker: ${title} (${type})` +
+    (hint ? ` — ${hint}` : '') +
+    (requestId ? ` [zyte-request-id ${requestId}]` : '');
+  return error;
+}
+
+/**
+ * Only the types we have actually seen in production, each said in terms of
+ * what to do about it. An unknown type still gets its name and request id,
+ * which is enough to look up.
+ */
+const PROXY_ERROR_HINTS: Record<string, string> = {
+  '/download/website-ban':
+    'the unblocker could not get past the site from a datacenter IP. This is the unblocker, not your credentials',
+  '/download/temporary-error':
+    'the unblocker could not fetch the page. It reports this as temporary, so check whether it persists before treating it as a block',
+  '/auth/account-suspended':
+    'the web-unblocker account is suspended — this is an operator problem, not a connector one',
+  '/limits/over-user-limit':
+    'the web-unblocker account is over its limit',
+};
+
+/**
+ * Turn an XML response body into a plain object so response mapping and the
+ * MCP client get structured data rather than a string of markup.
+ *
+ * Deutsche Bahn's official Timetables API answers only in XML, and it is not
+ * alone among German public-sector APIs. Attributes are hoisted next to child
+ * elements without a prefix (`<s id="1"><tl c="ICE"/></s>` → `{ s: { id: "1",
+ * tl: { c: "ICE" } } }`), which is what a JMESPath mapping wants to address.
+ * Anything that is not declared as XML, or fails to parse, is returned as
+ * axios delivered it — a JSON API is never touched.
+ */
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '',
+  removeNSPrefix: true,
+  parseTagValue: false,
+  parseAttributeValue: false,
+  trimValues: true,
+});
+
+export function parseXmlBody(response: {
+  data: unknown;
+  headers?: Record<string, unknown>;
+}): unknown {
+  const { data } = response;
+  if (typeof data !== 'string') return data;
+  const contentType = String(response.headers?.['content-type'] ?? '').toLowerCase();
+  const declaredXml = /(^|[/+])xml([;\s]|$)/.test(contentType);
+  if (!declaredXml) return data;
+  try {
+    const parsed = xmlParser.parse(data);
+    // fast-xml-parser hands back an empty object for non-XML text; keep the
+    // original so a mislabelled body is still visible to the caller.
+    return parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0
+      ? parsed
+      : data;
+  } catch {
+    return data;
   }
 }

@@ -10,7 +10,6 @@ import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
-import { resolveInternalDbRestUrl } from '../common/db-rest.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
@@ -232,10 +231,7 @@ export class ConnectorsService {
           const path = connector.healthcheckPath || '/';
           await this.restEngine.execute(
             {
-              // Apply the same cloud db-rest host swap as tool execution, so
-              // "Test connection" exercises the real (internal) endpoint
-              // instead of the public base URL stored on the connector.
-              baseUrl: resolveInternalDbRestUrl(connector.baseUrl),
+              baseUrl: connector.baseUrl,
               authType: connector.authType,
               authConfig,
               headers: connector.headers as Record<string, string>,
@@ -383,10 +379,7 @@ export class ConnectorsService {
       : undefined;
 
     const config = {
-      // Apply the cloud db-rest host swap so the in-app "Run Test" hits the
-      // real (internal) endpoint, same as MCP tool execution — otherwise it
-      // calls the public base URL and hangs/times out.
-      baseUrl: resolveInternalDbRestUrl(connector.baseUrl),
+      baseUrl: connector.baseUrl,
       authType: connector.authType,
       authConfig,
       headers: connector.headers as Record<string, string>,

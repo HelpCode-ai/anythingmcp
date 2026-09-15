@@ -253,11 +253,19 @@ function derive(tool: AnnotationSource): ToolAnnotations {
   }
 
   if (readOnly !== undefined) annotations.readOnlyHint = readOnly;
-  // destructive/idempotent are meaningful only for writes — emitting them
-  // alongside readOnlyHint:true would be noise the spec tells clients to ignore.
-  if (readOnly === false) {
-    if (destructive !== undefined) annotations.destructiveHint = destructive;
-    if (idempotent !== undefined) annotations.idempotentHint = idempotent;
+  // Once we know whether the tool writes, spell out both write hints rather
+  // than leaving them to the spec defaults: directory reviewers (OpenAI's
+  // plugin portal, for one) reject a tool whose destructiveHint is missing,
+  // even a read-only one. A read-only tool is trivially non-destructive and
+  // idempotent; for a write we fall back to the spec defaults (destructive,
+  // non-idempotent) when nothing better is known. An unknown verb stays
+  // silent — asserting either way would be a guess.
+  if (readOnly === true) {
+    annotations.destructiveHint = false;
+    annotations.idempotentHint = true;
+  } else if (readOnly === false) {
+    annotations.destructiveHint = destructive ?? true;
+    annotations.idempotentHint = idempotent ?? false;
   }
 
   return annotations;
@@ -272,11 +280,16 @@ export function deriveToolAnnotations(tool: AnnotationSource): ToolAnnotations {
   const derived = derive(tool);
   if (!explicit) return derived;
   const merged = { ...derived, ...explicit };
-  // An override that flips the tool to read-only must not leave stale
-  // write-only hints behind.
   if (merged.readOnlyHint === true) {
-    delete merged.destructiveHint;
-    delete merged.idempotentHint;
+    // A read-only tool cannot be destructive or non-idempotent, whatever the
+    // derived (or upstream) write hints said.
+    merged.destructiveHint = false;
+    merged.idempotentHint = true;
+  } else if (merged.readOnlyHint === false && derived.readOnlyHint !== false) {
+    // Flipped to a write by the override: the derived hints described a read
+    // (or nothing), so use the override's values or the spec defaults.
+    merged.destructiveHint = explicit.destructiveHint ?? true;
+    merged.idempotentHint = explicit.idempotentHint ?? false;
   }
   return merged;
 }

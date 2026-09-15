@@ -18,12 +18,12 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
           # Issues
-          days-before-issue-stale: 60
+          days-before-issue-stale: 120
           days-before-issue-close: 14
           stale-issue-label: "stale"
-          exempt-issue-labels: "pinned,security,roadmap,help wanted,good first issue"
+          exempt-issue-labels: "pinned,security,roadmap,help wanted,good first issue,adapter-request"
           stale-issue-message: >
-            This issue has been quiet for 60 days. We're marking it `stale`
+            This issue has been quiet for 120 days. We're marking it `stale`
             so it stays visible. If it's still relevant, drop a comment and
             we'll keep it open — otherwise it will close in 14 days.
           close-issue-message: >

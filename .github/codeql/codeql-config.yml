@@ -1,0 +1,9 @@
+name: AnythingMCP CodeQL config
+
+paths-ignore:
+  # Calls one real tool of every keyless adapter, with the URL taken from the
+  # adapter JSON in this repo. CodeQL reads that as "file data flows into an
+  # outbound request" (js/file-access-to-http), which is precisely the job of
+  # the script: the file is our own catalog, not user input, and the script
+  # runs only in CI and from an operator's shell.
+  - scripts/probe-keyless.mjs

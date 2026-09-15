@@ -119,7 +119,7 @@ class UpsertProviderDto {
   @ApiPropertyOptional({
     enum: ['DENY_ALL', 'KEEP_EXISTING', 'DEFAULT_ROLE'],
     description:
-      'What to do when no mapping matches. DENY_ALL by default, because the alternatives fail open: a user holding NO MCP role is unrestricted, so granting nothing is safer than granting a default.',
+      'What to do when no mapping matches. DENY_ALL by default: it assigns an explicit no-tools role, so the outcome does not depend on whether the workspace has created tool whitelists yet (a user holding NO MCP role is unrestricted until it has).',
   })
   @IsOptional()
   @IsIn(['DENY_ALL', 'KEEP_EXISTING', 'DEFAULT_ROLE'])

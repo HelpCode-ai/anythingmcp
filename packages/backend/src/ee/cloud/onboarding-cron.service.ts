@@ -43,6 +43,7 @@ export class OnboardingCronService {
     trialWarn3: number;
     trialWarn1: number;
     trialExpired: number;
+    trialsMarkedExpired: number;
     skipped: number;
   }> {
     const now = Date.now();
@@ -54,6 +55,7 @@ export class OnboardingCronService {
       trialWarn3: 0,
       trialWarn1: 0,
       trialExpired: 0,
+      trialsMarkedExpired: 0,
       skipped: 0,
     };
 
@@ -158,12 +160,13 @@ export class OnboardingCronService {
 
     await this.runActivationPass(now, out);
     await this.runTrialLifecyclePass(now, out);
+    out.trialsMarkedExpired = await this.markExpiredTrials(now);
 
     this.logger.log(
       `Onboarding drip: examined=${out.examined} first=${out.firstReminders} ` +
         `second=${out.secondReminders} activation=${out.activationReminders} ` +
         `trialWarn3=${out.trialWarn3} trialWarn1=${out.trialWarn1} trialExpired=${out.trialExpired} ` +
-        `skipped=${out.skipped}`,
+        `trialsMarkedExpired=${out.trialsMarkedExpired} skipped=${out.skipped}`,
     );
     return out;
   }
@@ -254,6 +257,31 @@ export class OnboardingCronService {
   }
 
   /**
+   * Flip trials past their `expiresAt` to `status = 'expired'`.
+   *
+   * Access was never the issue: the licence guard checks `expiresAt` at
+   * request time, so an expired trial is blocked whether or not its status
+   * says so. The column was simply never transitioned, and by September 2026
+   * 1,021 of 1,094 "active" trials had in fact ended — every funnel query,
+   * dashboard and export that grouped by status was wrong, and the count of
+   * live trials was overstated by more than an order of magnitude. Runs after
+   * the lifecycle pass, which selects on `status: 'active'`, so the "your
+   * trial has ended" email still goes out before the flip.
+   */
+  private async markExpiredTrials(now: number): Promise<number> {
+    const { count } = await this.prisma.license.updateMany({
+      where: {
+        plan: 'trial',
+        status: 'active',
+        expiresAt: { not: null, lt: new Date(now) },
+      },
+      data: { status: 'expired' },
+    });
+    if (count > 0) this.logger.log(`Marked ${count} trial(s) as expired`);
+    return count;
+  }
+
+  /**
    * Activation pass — the cohort that builds a connector but never lands a
    * successful tool call (the biggest single drop-off). One email only,
    * 24h-14d after signup, linking straight to their connector's playground.
@@ -289,17 +317,32 @@ export class OnboardingCronService {
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
+        mcpServers: {
+          select: { id: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
       },
     });
 
     for (const u of stuck) {
       out.examined++;
+      // Median attach → first call is 12 minutes; a day of silence after
+      // attaching means no client was ever connected (183 of the 246 stuck
+      // workspaces never sent a request). Send those to the page that shows
+      // their endpoint and the client instructions, not to the tool tester.
+      const serverId = u.mcpServers[0]?.id;
       const connectorId = u.connectors[0]?.id;
-      const path = connectorId ? `/connectors/${connectorId}` : '/connectors';
+      const path = serverId
+        ? `/mcp-server/${serverId}`
+        : connectorId
+          ? `/connectors/${connectorId}`
+          : '/connectors';
       const ok = await this.email.sendActivationReminderEmail(
         u.email,
         u.name || 'there',
         path,
+        serverId ? 'connect-client' : 'test-connector',
       );
       if (ok) {
         await this.prisma.user.update({

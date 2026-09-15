@@ -144,6 +144,16 @@ export const users = {
   /** Restores the membership only — revoked keys stay revoked. */
   reactivate: (id: string, token: string) =>
     request<{ message: string }>(`/api/users/${id}/reactivate`, { method: 'POST', token }),
+  /**
+   * Forces one member to sign in again on every client: dashboard sessions
+   * and AI-client connections, including ones holding a refresh token. MCP
+   * API keys are NOT sessions and are untouched unless `revokeApiKeys` is set.
+   */
+  revokeSessions: (id: string, data: { revokeApiKeys?: boolean }, token: string) =>
+    request<{ message: string; self: boolean; apiKeysRevoked: number; crossOrgMemberships: number }>(
+      `/api/users/${id}/revoke-sessions`,
+      { method: 'POST', body: data, token },
+    ),
   deleteSelf: (data: { password: string; confirm: 'DELETE' }, token: string) =>
     request<{ message: string }>('/api/users/me', {
       method: 'DELETE',
@@ -179,6 +189,22 @@ export const organizations = {
       organization: { id: string; name: string };
       autoCreated: boolean;
     }>('/api/organizations/current', { method: 'DELETE', body: data, token }),
+  /**
+   * Forces every member to sign in again. Includes the caller unless
+   * `excludeSelf` is set, so pass `skipAutoLogout` semantics from the page:
+   * the response itself succeeds, the NEXT request is what gets a 401.
+   */
+  revokeSessions: (
+    data: { confirmName: string; excludeSelf?: boolean; revokeApiKeys?: boolean },
+    token: string,
+  ) =>
+    request<{
+      message: string;
+      selfIncluded: boolean;
+      membersAffected: number;
+      crossOrgMembersAffected: number;
+      apiKeysRevoked: number;
+    }>('/api/organizations/current/revoke-sessions', { method: 'POST', body: data, token }),
 };
 
 /**
@@ -365,10 +391,37 @@ export const adapters = {
   get: (slug: string, token: string) =>
     request<any>(`/api/adapters/${slug}`, { token }),
   import: (slug: string, token: string, credentials?: Record<string, string>) =>
-    request<{ message: string; connectorId: string; toolsCreated: number }>(
+    request<{
+      message: string;
+      connectorId: string;
+      toolsCreated: number;
+      attachedToServer?: { id: string; name: string } | null;
+      probe?: ImportProbeResult | null;
+    }>(
       `/api/adapters/${slug}/import`,
       { method: 'POST', token, body: credentials ? { credentials } : undefined },
     ),
+};
+
+/** Outcome of the read-only call the backend makes right after an import. */
+export type ImportProbeResult =
+  | { ok: true; toolName: string; durationMs: number; sample: string }
+  | { ok: false; toolName: string; durationMs: number; status: number | null; message: string };
+
+// Product-usage events (activation funnel). Fire-and-forget: a lost event
+// must never surface to the user, so nothing here throws. `keepalive` lets a
+// beacon sent from a pagehide handler outlive the page.
+export const productEvents = {
+  track: (event: string, token: string, metadata?: Record<string, string | number | boolean>) => {
+    try {
+      void fetch(`${API_BASE}/api/product-events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ event, metadata }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  },
 };
 
 // Tools
@@ -875,7 +928,7 @@ export interface ResyncSummary {
 
 export interface SsoProviderButton {
   name: string;
-  type: string;
+  type: IdentityProvider['type'];
   startUrl: string;
 }
 

@@ -48,6 +48,9 @@ jobs:
       - name: Validate adapter catalog
         run: node scripts/validate-adapters.mjs
 
+      - name: Verify the quoted adapter count and license wording
+        run: node scripts/adapter-count.mjs --check
+
       - name: Verify catalog.ts is up-to-date with adapter JSONs
         run: |
           node scripts/regenerate-catalog.mjs
@@ -122,3 +125,51 @@ jobs:
 
       - name: Build unified image
         run: docker build -t anythingmcp:ci .
+
+      # Building proves the image assembles, not that it runs. v0.8.0 shipped a
+      # backend that threw MODULE_NOT_FOUND at import time because a relative
+      # require resolved differently under dist/ than under src/: the image
+      # built clean, every test passed, and the container crash-looped. Boot it.
+      - name: Boot the image and wait for /health
+        run: |
+          set -euo pipefail
+          docker network create amcp-ci
+          docker run -d --name amcp-ci-db --network amcp-ci \
+            -e POSTGRES_USER=amcp -e POSTGRES_PASSWORD=amcp -e POSTGRES_DB=anythingmcp \
+            postgres:17-alpine
+          # The entrypoint runs migrations and then starts the backend whether or
+          # not they succeeded, so starting both containers at once just means the
+          # app comes up against an empty schema. docker-compose gates on
+          # service_healthy; a bare docker run has to do it by hand.
+          for i in $(seq 1 30); do
+            docker exec amcp-ci-db pg_isready -U amcp -d anythingmcp -q && break
+            sleep 2
+          done
+          docker exec amcp-ci-db pg_isready -U amcp -d anythingmcp
+          docker run -d --name amcp-ci-app --network amcp-ci -p 4000:4000 \
+            -e DATABASE_URL=postgresql://amcp:amcp@amcp-ci-db:5432/anythingmcp \
+            -e JWT_SECRET="$(openssl rand -hex 32)" \
+            -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
+            -e NODE_ENV=production -e PORT=4000 \
+            -e CORS_ORIGIN=http://localhost:3000 \
+            -e SERVER_URL=http://localhost:4000 \
+            -e FRONTEND_URL=http://localhost:3000 \
+            anythingmcp:ci
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:4000/health > /dev/null; then
+              echo "backend healthy after ${i}0s"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::the image built but the backend never became healthy"
+          docker logs amcp-ci-app 2>&1 | head -120
+          echo '--- last 60 lines ---'
+          docker logs amcp-ci-app 2>&1 | tail -60
+          exit 1
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker rm -f amcp-ci-app amcp-ci-db 2>/dev/null || true
+          docker network rm amcp-ci 2>/dev/null || true

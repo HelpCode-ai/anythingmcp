@@ -72,6 +72,122 @@ describe('OrganizationsService', () => {
     });
   });
 
+  describe('revokeMemberSessions', () => {
+    beforeEach(() => {
+      prisma.mcpApiKey = { updateMany: jest.fn(async () => ({ count: 2 })) };
+    });
+
+    it('returns null for a non-member and writes nothing', async () => {
+      prisma.organizationMember.findUnique.mockResolvedValue(null);
+      expect(await service.revokeMemberSessions('u1', ORG, {}, ctx)).toBeNull();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(events).toHaveLength(0);
+    });
+
+    it('moves ONLY the watermark and leaves API keys alone by default', async () => {
+      prisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: null });
+      prisma.organizationMember.count.mockResolvedValue(1);
+
+      const result = await service.revokeMemberSessions('u1', ORG, {}, ctx);
+
+      expect(result).toEqual({ apiKeysRevoked: 0, crossOrgMemberships: 1 });
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: { sessionsValidFrom: expect.any(Date) },
+      });
+      expect(prisma.mcpApiKey.updateMany).not.toHaveBeenCalled();
+      expect(events.map((e) => e.event)).toEqual(['SESSIONS_REVOKED']);
+      expect(events[0].targetUserId).toBe('u1');
+      expect(events[0].metadata).toMatchObject({
+        reason: 'admin_force_reauth',
+        self: false,
+        keysDeactivated: 0,
+        crossOrgMemberships: 1,
+      });
+    });
+
+    it('deactivates the member\'s keys IN THIS WORKSPACE when asked', async () => {
+      prisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: null });
+
+      const result = await service.revokeMemberSessions('u1', ORG, { revokeApiKeys: true }, ctx);
+
+      expect(result).toEqual({ apiKeysRevoked: 2, crossOrgMemberships: 0 });
+      // Org-scoped, like deactivation: keys used in other workspaces survive.
+      expect(prisma.mcpApiKey.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'u1', organizationId: ORG, isActive: true },
+        data: { isActive: false },
+      });
+    });
+
+    it('allows an admin to act on themselves and records it', async () => {
+      prisma.organizationMember.findUnique.mockResolvedValue({ role: 'ADMIN', deactivatedAt: null });
+      const result = await service.revokeMemberSessions('admin-1', ORG, {}, ctx);
+      expect(result).not.toBeNull();
+      expect(events[0].metadata).toMatchObject({ self: true });
+    });
+  });
+
+  describe('revokeWorkspaceSessions', () => {
+    beforeEach(() => {
+      prisma.user.updateMany = jest.fn(async () => ({ count: 5 }));
+      prisma.mcpApiKey = { updateMany: jest.fn(async () => ({ count: 3 })) };
+      prisma.organizationMember.findMany.mockResolvedValue([{ userId: 'u2' }, { userId: 'u3' }]);
+    });
+
+    it('raises every active member\'s watermark in one write, including the actor', async () => {
+      const result = await service.revokeWorkspaceSessions(ORG, {}, ctx);
+
+      expect(result).toEqual({ membersAffected: 5, crossOrgMembersAffected: 2, apiKeysRevoked: 0 });
+      expect(prisma.user.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: { memberships: { some: { organizationId: ORG, deactivatedAt: null } } },
+        data: { sessionsValidFrom: expect.any(Date) },
+      });
+      expect(prisma.mcpApiKey.updateMany).not.toHaveBeenCalled();
+      // ONE summary row, not one per member.
+      expect(events.map((e) => e.event)).toEqual(['WORKSPACE_SESSIONS_REVOKED']);
+      expect(events[0].targetUserId).toBeNull();
+      expect(events[0].metadata).toEqual({
+        reason: 'admin_force_reauth',
+        organizationId: ORG,
+        excludeSelf: false,
+        membersAffected: 5,
+        crossOrgMembersAffected: 2,
+        keysDeactivated: 0,
+      });
+    });
+
+    it('spares the acting admin when excludeSelf is set, for keys too', async () => {
+      const result = await service.revokeWorkspaceSessions(ORG, { excludeSelf: true, revokeApiKeys: true }, ctx);
+
+      expect(result).toEqual({ membersAffected: 5, crossOrgMembersAffected: 2, apiKeysRevoked: 3 });
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: {
+          memberships: { some: { organizationId: ORG, deactivatedAt: null, userId: { not: 'admin-1' } } },
+        },
+        data: { sessionsValidFrom: expect.any(Date) },
+      });
+      expect(prisma.mcpApiKey.updateMany).toHaveBeenCalledWith({
+        where: { organizationId: ORG, isActive: true, userId: { not: 'admin-1' } },
+        data: { isActive: false },
+      });
+      expect(events[0].metadata).toMatchObject({ excludeSelf: true, keysDeactivated: 3 });
+    });
+
+    it('counts cross-workspace members from the same member set it revoked', async () => {
+      await service.revokeWorkspaceSessions(ORG, {}, ctx);
+      expect(prisma.organizationMember.findMany).toHaveBeenCalledWith({
+        where: {
+          organizationId: { not: ORG },
+          deactivatedAt: null,
+          user: { memberships: { some: { organizationId: ORG, deactivatedAt: null } } },
+        },
+        select: { userId: true },
+        distinct: ['userId'],
+      });
+    });
+  });
+
   describe('updateMemberRole', () => {
     it('returns null for a non-member', async () => {
       prisma.organizationMember.findUnique.mockResolvedValue(null);

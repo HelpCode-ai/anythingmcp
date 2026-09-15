@@ -296,7 +296,7 @@ You normally do not set these. AnythingMCP derives them from what the connector 
 
 | Connector | Signal | Result |
 |---|---|---|
-| REST | `GET` / `HEAD` / `OPTIONS` | `readOnlyHint: true` |
+| REST | `GET` / `HEAD` / `OPTIONS` | read-only |
 | REST | `POST` | write, additive, non-idempotent |
 | REST | `PUT` / `DELETE` | write, destructive, idempotent |
 | REST | `PATCH` | write, destructive, non-idempotent |
@@ -309,6 +309,11 @@ You normally do not set these. AnythingMCP derives them from what the connector 
 An unambiguous tool name (`delete_…`, `create_…`) refines `destructiveHint`, but **name heuristics never
 assert `readOnlyHint`**: wrongly claiming read-only would invite an agent to call a mutating tool freely,
 whereas omitting the hint only makes it more careful.
+
+Once the read/write verdict is known, all three of `readOnlyHint`, `destructiveHint` and `idempotentHint`
+are emitted explicitly. A read-only tool gets `destructiveHint: false` and `idempotentHint: true`; a write
+with nothing better known gets the spec defaults. Some directory reviewers (OpenAI's plugin portal, for
+one) reject a tool whose `destructiveHint` is missing, even a read-only one, so nothing is left implicit.
 
 ### Overriding
 
