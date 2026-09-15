@@ -89,6 +89,18 @@ if (args.includes('--check')) {
       }
     }
   }
+  // The MCP registry rejects a server.json description over 100 characters with
+  // a 422, which is invisible until someone actually runs mcp-publisher. Ours
+  // sat at 158 for a while, so every publish silently failed and the registry
+  // kept serving a description from an older release.
+  const serverJson = JSON.parse(readFileSync(join(ROOT, 'server.json'), 'utf8'));
+  if ((serverJson.description ?? '').length > 100) {
+    console.error(
+      `::error file=server.json::description is ${serverJson.description.length} characters; the MCP registry rejects anything over 100`,
+    );
+    failed = true;
+  }
+
   for (const [file, re] of banned) {
     const text = readFileSync(join(ROOT, file), 'utf8');
     const m = text.match(re);
