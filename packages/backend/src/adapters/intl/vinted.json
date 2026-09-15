@@ -7,6 +7,7 @@
   "category": "e-commerce",
   "icon": "vinted",
   "docsUrl": "https://www.vinted.com",
+  "selfHostOnly": true,
   "featured": true,
   "priority": 80,
   "requiredEnvVars": [],

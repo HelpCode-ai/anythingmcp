@@ -14,6 +14,9 @@ describe('McpApiKeysService', () => {
         deleteMany: jest.fn(),
         update: jest.fn(),
       },
+      organizationMember: {
+        findUnique: jest.fn().mockResolvedValue({ deactivatedAt: null }),
+      },
     };
     service = new McpApiKeysService(mockPrisma);
   });
@@ -144,6 +147,37 @@ describe('McpApiKeysService', () => {
       const result = await service.resolveUserByKey('mcp_abc');
       expect(result).toBeDefined();
       expect(result!.id).toBe('u1');
+    });
+  });
+
+  describe('resolveUserByKey — membership guard', () => {
+    const record = {
+      id: 'k1', key: 'mcp_x', isActive: true, userId: 'u1', organizationId: 'org-1', name: 'n', mcpServerId: null,
+      user: { id: 'u1', email: 'a@x', role: 'VIEWER', organizationId: 'org-1', mcpRoleId: null },
+    };
+
+    it('resolves a key whose owner is an active member', async () => {
+      mockPrisma.mcpApiKey.findUnique.mockResolvedValue(record);
+      mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      expect(await service.resolveUserByKey('mcp_x')).toMatchObject({ id: 'u1' });
+      expect(mockPrisma.organizationMember.findUnique).toHaveBeenCalledWith({
+        where: { userId_organizationId: { userId: 'u1', organizationId: 'org-1' } },
+        select: { deactivatedAt: true },
+      });
+    });
+
+    // Defence in depth: even a key row that escaped deactivation must not
+    // authenticate a member who was deactivated in the key's organization.
+    it('refuses a key whose owner is deactivated in that organization', async () => {
+      mockPrisma.mcpApiKey.findUnique.mockResolvedValue(record);
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ deactivatedAt: new Date() });
+      expect(await service.resolveUserByKey('mcp_x')).toBeNull();
+    });
+
+    it('refuses a key whose owner is no longer a member', async () => {
+      mockPrisma.mcpApiKey.findUnique.mockResolvedValue(record);
+      mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
+      expect(await service.resolveUserByKey('mcp_x')).toBeNull();
     });
   });
 });

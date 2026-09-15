@@ -7,6 +7,7 @@
   "category": "logistics",
   "icon": "dpd",
   "docsUrl": "https://www.dpd.com/de/de/hilfe-service/entwickler-api/",
+  "selfHostOnly": true,
   "requiredEnvVars": [],
   "connector": {
     "name": "DPD Germany Tracking",
@@ -30,7 +31,9 @@
             "description": "Locale for event descriptions: 'de_DE', 'en_DE', 'fr_FR', 'it_IT', etc. Defaults to 'en_DE'."
           }
         },
-        "required": ["parcelNumber"]
+        "required": [
+          "parcelNumber"
+        ]
       },
       "endpointMapping": {
         "method": "GET",

@@ -7,9 +7,21 @@
   "category": "travel",
   "icon": "trenitalia",
   "docsUrl": "https://www.trenitalia.com",
+  "selfHostOnly": true,
   "featured": true,
   "priority": 78,
   "requiredEnvVars": [],
+  "probe": {
+    "tool": "trenitalia_search_trips",
+    "params": {
+      "from_name": "Milano Centrale",
+      "to_name": "Roma Termini",
+      "departure_date": "__TOMORROW__T08:00:00",
+      "adults": 1,
+      "children": 0,
+      "page": 1
+    }
+  },
   "connector": {
     "name": "Trenitalia Le Frecce Mobile BFF",
     "type": "REST",

@@ -40,11 +40,19 @@ export class McpAuthExceptionFilter implements ExceptionFilter {
         ? `${proto}://${host}`
         : process.env.SERVER_URL || 'http://localhost:4000';
 
-      const resourceMetadataUrl = `${baseUrl}/.well-known/oauth-protected-resource`;
+      // RFC 9728: the metadata document lives under the resource's own path.
+      const resourcePath = request.path.replace(/\/+$/, '');
+      const resourceMetadataUrl = `${baseUrl}/.well-known/oauth-protected-resource${resourcePath}`;
+      const presentedToken = (
+        request.headers['authorization'] as string | undefined
+      )
+        ?.toLowerCase()
+        .startsWith('bearer ');
+      const errorAttr = presentedToken ? 'error="invalid_token", ' : '';
 
       response.setHeader(
         'WWW-Authenticate',
-        `Bearer resource_metadata="${resourceMetadataUrl}"`,
+        `Bearer ${errorAttr}resource_metadata="${resourceMetadataUrl}"`,
       );
       response.status(401).json({
         jsonrpc: '2.0',

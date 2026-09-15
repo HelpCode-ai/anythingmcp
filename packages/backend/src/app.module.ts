@@ -23,6 +23,7 @@ import { RedisModule } from './common/redis.module';
 import { McpAuthMiddleware } from './auth/mcp-auth.middleware';
 import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
 import { ClientCredentialsMiddleware } from './auth/client-credentials.middleware';
+import { RefreshTokenRevocationMiddleware } from './auth/refresh-token-revocation.middleware';
 import { OAuthRegisterGuardMiddleware } from './auth/oauth-register-guard.middleware';
 import { AuthorizePkceMiddleware } from './auth/authorize-pkce.middleware';
 import { ResourceIndicatorMiddleware } from './auth/resource-indicator.middleware';
@@ -72,6 +73,12 @@ if (useOAuth) {
           'refresh_token',
           'client_credentials',
         ],
+        // OpenID Connect, the minimum of it: lets a relying party (ChatGPT
+        // Enterprise, for one) ask who the user is via /userinfo and restrict
+        // a connector to the company's e-mail domain. The scope policy only
+        // grants scopes listed here, so without this line a request for
+        // `openid email` is silently narrowed to nothing.
+        scopesSupported: ['openid', 'email'],
       },
     }),
   );
@@ -150,10 +157,16 @@ export class AppModule implements NestModule {
     const mode = this.configService.get<string>('MCP_AUTH_MODE') || 'none';
     this.logger.log(`MCP Auth Mode: ${mode}`);
 
-    // Apply client credentials middleware on /token for OAuth2 mode
+    // Pre-process POST /token for OAuth2 mode. The two middlewares match
+    // disjoint `grant_type` values (client_credentials vs refresh_token), so
+    // their order is immaterial; declaring them together makes it explicit
+    // that both must run before the upstream @rekog/mcp-nest-auth controller.
+    // RefreshTokenRevocationMiddleware is what makes `sessionsValidFrom`
+    // actually revoke a session: without it a refresh grant mints a fresh
+    // access token whose `iat` sits above the watermark.
     if (mode === 'oauth2' || mode === 'both') {
       consumer
-        .apply(ClientCredentialsMiddleware)
+        .apply(ClientCredentialsMiddleware, RefreshTokenRevocationMiddleware)
         .forRoutes('token');
     }
 

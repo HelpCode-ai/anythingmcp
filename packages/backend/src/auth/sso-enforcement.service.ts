@@ -25,8 +25,10 @@ export class SsoEnforcementService {
     // password sign-in in the deployment.
     if (this.deployment.isCloud()) return [];
 
+    // Deactivated memberships do not count: an inert membership should
+    // neither grant access nor constrain how the user signs in elsewhere.
     const memberships = await this.prisma.organizationMember.findMany({
-      where: { userId },
+      where: { userId, deactivatedAt: null },
       select: { organizationId: true },
     });
     if (memberships.length === 0) return [];

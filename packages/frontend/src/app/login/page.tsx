@@ -7,6 +7,7 @@ import { auth, license, server, sso, type SsoProviderButton, recoveryCodes as re
 import { useAuth } from '@/lib/auth-context';
 import { buildPricingUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/logo-icon';
+import { ProviderMark } from '@/components/provider-mark';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -429,7 +430,8 @@ function LoginForm() {
             How will you use Anything<span className="text-[var(--brand)]">MCP</span>?
           </h2>
           <p className="text-sm text-[var(--text-2)] mb-6 text-center">
-            Commercial use requires a license from anythingmcp.com
+            AnythingMCP is open source under AGPL-3.0 and nothing here is locked
+            — this only records which licence this instance runs under.
           </p>
 
           {error && <div className={alertDanger}>{error}</div>}
@@ -440,9 +442,10 @@ function LoginForm() {
               disabled={loading}
               className="w-full border border-[var(--border)] rounded-[9px] p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors disabled:opacity-50"
             >
-              <div className="font-medium text-sm text-[var(--text)]">Personal / Non-commercial</div>
+              <div className="font-medium text-sm text-[var(--text)]">Open source (AGPL-3.0)</div>
               <div className="text-xs text-[var(--text-2)] mt-1">
-                Free community license — unlimited connectors and users
+                Personal, internal company or evaluation use. We email you a free
+                community key so you get security and release notices.
               </div>
             </button>
 
@@ -451,23 +454,22 @@ function LoginForm() {
               disabled={loading}
               className="w-full border border-[var(--border)] rounded-[9px] p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors disabled:opacity-50"
             >
-              <div className="font-medium text-sm text-[var(--text)]">Commercial</div>
+              <div className="font-medium text-sm text-[var(--text)]">Commercial licence</div>
               <div className="text-xs text-[var(--text-2)] mt-1">
-                For businesses — purchase a license to unlock all features
+                Same software, without the AGPL copyleft obligation — for
+                redistributing it or building it into a product you ship.
               </div>
             </button>
           </div>
 
-          {error && (
-            <div className="mt-4 text-center">
-              <button
-                onClick={handleSkip}
-                className="text-sm text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
-              >
-                Skip for now
-              </button>
-            </div>
-          )}
+          <div className="mt-4 text-center">
+            <button
+              onClick={handleSkip}
+              className="text-sm text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
+            >
+              Skip for now
+            </button>
+          </div>
         </Card>
       </div>
     );
@@ -490,7 +492,8 @@ function LoginForm() {
           </div>
 
           <p className="text-sm text-[var(--text-2)] mb-4">
-            Enter the license key from the email to activate your instance.
+            Enter the key from that email to record it on this instance. It is
+            already fully usable either way.
           </p>
 
           {error && <div className={alertDanger}>{error}</div>}
@@ -550,7 +553,9 @@ function LoginForm() {
           </div>
 
           <p className="text-sm text-[var(--text-2)] mb-4">
-            Purchase a license at{' '}
+            A commercial licence only matters if the AGPL copyleft obligation is
+            a problem for you — running AnythingMCP inside your own company never
+            needs one. Details and keys at{' '}
             <a
               href={buildPricingUrl()}
               target="_blank"
@@ -559,7 +564,7 @@ function LoginForm() {
             >
               anythingmcp.com
             </a>
-            , then enter your key below.
+            .
           </p>
 
           {error && <div className={alertDanger}>{error}</div>}
@@ -642,9 +647,10 @@ function LoginForm() {
               <a
                 key={p.startUrl}
                 href={p.startUrl}
-                className="flex items-center justify-center w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text)] hover:border-[var(--brand)] transition-colors"
+                className="flex items-center justify-center gap-2.5 w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text)] hover:border-[var(--brand)] transition-colors"
               >
-                {p.name}
+                <ProviderMark type={p.type} />
+                <span>{p.name}</span>
               </a>
             ))}
             <div className="flex items-center gap-3 pt-1">

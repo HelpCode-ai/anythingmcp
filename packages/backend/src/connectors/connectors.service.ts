@@ -3,13 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
 import { RestEngine } from './engines/rest.engine';
+import { attachResponseMeta } from './engines/response-headers.util';
 import { SoapEngine } from './engines/soap.engine';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
-import { resolveInternalDbRestUrl } from '../common/db-rest.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
@@ -231,10 +231,7 @@ export class ConnectorsService {
           const path = connector.healthcheckPath || '/';
           await this.restEngine.execute(
             {
-              // Apply the same cloud db-rest host swap as tool execution, so
-              // "Test connection" exercises the real (internal) endpoint
-              // instead of the public base URL stored on the connector.
-              baseUrl: resolveInternalDbRestUrl(connector.baseUrl),
+              baseUrl: connector.baseUrl,
               authType: connector.authType,
               authConfig,
               headers: connector.headers as Record<string, string>,
@@ -382,10 +379,7 @@ export class ConnectorsService {
       : undefined;
 
     const config = {
-      // Apply the cloud db-rest host swap so the in-app "Run Test" hits the
-      // real (internal) endpoint, same as MCP tool execution — otherwise it
-      // calls the public base URL and hangs/times out.
-      baseUrl: resolveInternalDbRestUrl(connector.baseUrl),
+      baseUrl: connector.baseUrl,
       authType: connector.authType,
       authConfig,
       headers: connector.headers as Record<string, string>,
@@ -401,14 +395,44 @@ export class ConnectorsService {
         ) }
       : params;
 
-    // Static response tools — return text immediately without engine dispatch
-    if (endpointMapping.method === 'static' && endpointMapping.staticResponse) {
+    // Static response tools — return text immediately without engine dispatch.
+    //
+    // The `method` alone decides this, not `method && staticResponse`. With the
+    // old `&&`, a static tool whose staticResponse was missing fell through to
+    // the engine below, which built a URL from an endpointMapping that has no
+    // `path` and died with "Cannot read properties of undefined (reading
+    // 'replace')" — a message naming neither the tool nor the real problem.
+    // api-football's af_analysis_playbook spent six weeks failing that way.
+    if (endpointMapping.method === 'static') {
+      if (!endpointMapping.staticResponse) {
+        throw new Error(
+          'This tool is configured to return a fixed text response, but that ' +
+            'response is empty. Set it under the tool\'s endpoint mapping, or ' +
+            'change the method to a real HTTP verb.',
+        );
+      }
       return { text: endpointMapping.staticResponse };
     }
 
     switch (connector.type) {
-      case 'REST':
+      case 'REST': {
+        // The in-app "Run Test" must show what a model will see, so a tool
+        // that asked for response headers gets them here as well.
+        const wanted = (endpointMapping as { exposeHeaders?: string[] }).exposeHeaders;
+        if (Array.isArray(wanted) && wanted.length > 0) {
+          const out = await this.restEngine.executeWithMeta(
+            config,
+            endpointMapping,
+            mergedParams,
+          );
+          return attachResponseMeta(
+            out.body,
+            { headers: out.headers },
+            endpointMapping.queryParams,
+          );
+        }
         return this.restEngine.execute(config, endpointMapping, mergedParams);
+      }
       case 'SOAP':
         return this.soapEngine.execute(config, endpointMapping, mergedParams);
       case 'GRAPHQL':

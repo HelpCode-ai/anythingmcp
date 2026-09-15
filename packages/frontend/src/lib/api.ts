@@ -138,6 +138,22 @@ export const users = {
     request(`/api/users/${id}/role`, { method: 'PUT', body: { role }, token }),
   delete: (id: string, token: string) =>
     request(`/api/users/${id}`, { method: 'DELETE', token }),
+  /** Ends sessions, revokes MCP keys and removes access to this workspace. Reversible. */
+  deactivate: (id: string, token: string) =>
+    request<{ message: string; keysDeactivated?: number }>(`/api/users/${id}/deactivate`, { method: 'POST', token }),
+  /** Restores the membership only — revoked keys stay revoked. */
+  reactivate: (id: string, token: string) =>
+    request<{ message: string }>(`/api/users/${id}/reactivate`, { method: 'POST', token }),
+  /**
+   * Forces one member to sign in again on every client: dashboard sessions
+   * and AI-client connections, including ones holding a refresh token. MCP
+   * API keys are NOT sessions and are untouched unless `revokeApiKeys` is set.
+   */
+  revokeSessions: (id: string, data: { revokeApiKeys?: boolean }, token: string) =>
+    request<{ message: string; self: boolean; apiKeysRevoked: number; crossOrgMemberships: number }>(
+      `/api/users/${id}/revoke-sessions`,
+      { method: 'POST', body: data, token },
+    ),
   deleteSelf: (data: { password: string; confirm: 'DELETE' }, token: string) =>
     request<{ message: string }>('/api/users/me', {
       method: 'DELETE',
@@ -173,18 +189,126 @@ export const organizations = {
       organization: { id: string; name: string };
       autoCreated: boolean;
     }>('/api/organizations/current', { method: 'DELETE', body: data, token }),
+  /**
+   * Forces every member to sign in again. Includes the caller unless
+   * `excludeSelf` is set, so pass `skipAutoLogout` semantics from the page:
+   * the response itself succeeds, the NEXT request is what gets a 401.
+   */
+  revokeSessions: (
+    data: { confirmName: string; excludeSelf?: boolean; revokeApiKeys?: boolean },
+    token: string,
+  ) =>
+    request<{
+      message: string;
+      selfIncluded: boolean;
+      membersAffected: number;
+      crossOrgMembersAffected: number;
+      apiKeysRevoked: number;
+    }>('/api/organizations/current/revoke-sessions', { method: 'POST', body: data, token }),
+};
+
+/**
+ * The AI clients connected to the shared `/mcp` endpoint, and what each may
+ * reach. Lives here rather than in the client itself because a client cannot be
+ * relied on to ask again — Claude holds a refresh token for 30 days and reuses
+ * cached credentials, so "disconnect and reconnect" does not reliably re-open
+ * the choice. Changes here take effect on the connection's next request.
+ */
+export const mcpConnections = {
+  list: (token: string) =>
+    request<
+      {
+        clientId: string;
+        clientName: string;
+        revoked: boolean;
+        servers: { id: string; name: string }[];
+        wholeWorkspace: { id: string; name: string } | null;
+        connectedAt: string;
+        updatedAt: string;
+      }[]
+    >('/api/mcp-connections', { token }),
+  targets: (token: string) =>
+    request<
+      {
+        organizationId: string;
+        organizationName: string;
+        servers: { id: string; name: string; connectorCount: number }[];
+      }[]
+    >('/api/mcp-connections/targets', { token }),
+  update: (
+    clientId: string,
+    body: { organizationId?: string; serverIds?: string[] },
+    token: string,
+  ) =>
+    request<{ ok: boolean; reason?: string }>(
+      `/api/mcp-connections/${clientId}`,
+      { method: 'PUT', body, token },
+    ),
+  revoke: (clientId: string, token: string) =>
+    request<{ ok: boolean }>(`/api/mcp-connections/${clientId}`, {
+      method: 'DELETE',
+      token,
+    }),
 };
 
 // Connectors
+
+export interface CatalogBaseUrlChange {
+  from: string;
+  to: string;
+  /**
+   * catalog-moved — the connector still holds what the catalog gave it.
+   * user-edited   — the operator changed it; do not overwrite silently.
+   * unknown       — installed before baselines were recorded.
+   */
+  provenance: 'catalog-moved' | 'user-edited' | 'unknown';
+}
+
+export interface CatalogDiff {
+  catalogManaged: boolean;
+  slug?: string;
+  catalogVersion?: string;
+  connectorVersion?: string | null;
+  updated?: Array<{ name: string; kind: 'safe' | 'structural' }>;
+  added?: string[];
+  removed?: string[];
+  instructionsRefreshable?: boolean;
+  baseUrl?: CatalogBaseUrlChange | null;
+  isUpToDate?: boolean;
+  isSafeClass?: boolean;
+}
+
 export const connectors = {
   list: (token: string) =>
     request<any[]>('/api/connectors', { token }),
   proxyAvailability: (token: string) =>
     request<{ available: boolean }>('/api/connectors/proxy-availability', { token }),
+  /**
+   * `attachedToServer` is the MCP server the backend put the connector on, or
+   * null when the workspace has none yet. Attaching used to be a separate step
+   * the caller had to remember.
+   */
   create: (data: unknown, token: string) =>
-    request<any>('/api/connectors', { method: 'POST', body: data, token }),
+    request<any & { attachedToServer: { id: string; name: string } | null }>(
+      '/api/connectors',
+      { method: 'POST', body: data, token },
+    ),
   get: (id: string, token: string) =>
     request<any>(`/api/connectors/${id}`, { token }),
+  /**
+   * What the catalog has changed since this connector was installed. Tool
+   * descriptions, parameters and endpoints — and, separately, the base URL,
+   * which is reported but never applied by `resyncCatalog` unless asked:
+   * a different host takes every tool down at once, and the operator may have
+   * pointed it at their own region or sandbox on purpose.
+   */
+  catalogDiff: (id: string, token: string) =>
+    request<CatalogDiff>(`/api/connectors/${id}/catalog-diff`, { token }),
+  resyncCatalog: (id: string, token: string, opts?: { applyBaseUrl?: boolean }) =>
+    request<CatalogDiff & { applied: boolean }>(
+      `/api/connectors/${id}/resync-catalog${opts?.applyBaseUrl ? '?applyBaseUrl=true' : ''}`,
+      { method: 'POST', token },
+    ),
   update: (id: string, data: unknown, token: string) =>
     request(`/api/connectors/${id}`, { method: 'PUT', body: data, token }),
   /** Non-secret OAuth2 settings, for pre-filling the edit form. */
@@ -267,10 +391,37 @@ export const adapters = {
   get: (slug: string, token: string) =>
     request<any>(`/api/adapters/${slug}`, { token }),
   import: (slug: string, token: string, credentials?: Record<string, string>) =>
-    request<{ message: string; connectorId: string; toolsCreated: number }>(
+    request<{
+      message: string;
+      connectorId: string;
+      toolsCreated: number;
+      attachedToServer?: { id: string; name: string } | null;
+      probe?: ImportProbeResult | null;
+    }>(
       `/api/adapters/${slug}/import`,
       { method: 'POST', token, body: credentials ? { credentials } : undefined },
     ),
+};
+
+/** Outcome of the read-only call the backend makes right after an import. */
+export type ImportProbeResult =
+  | { ok: true; toolName: string; durationMs: number; sample: string }
+  | { ok: false; toolName: string; durationMs: number; status: number | null; message: string };
+
+// Product-usage events (activation funnel). Fire-and-forget: a lost event
+// must never surface to the user, so nothing here throws. `keepalive` lets a
+// beacon sent from a pagehide handler outlive the page.
+export const productEvents = {
+  track: (event: string, token: string, metadata?: Record<string, string | number | boolean>) => {
+    try {
+      void fetch(`${API_BASE}/api/product-events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ event, metadata }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  },
 };
 
 // Tools
@@ -703,6 +854,9 @@ export interface IdentityProvider {
   roleSyncSource: 'APP_ROLES' | 'GROUPS';
   roleSyncFallback: 'DENY_ALL' | 'KEEP_EXISTING' | 'DEFAULT_ROLE';
   roleSyncDefaultRoleIds: string[];
+  scimEnabled: boolean;
+  scimTokenIssuedAt: string | null;
+  scimLastRequestAt: string | null;
   enforceSso: boolean;
   lastSuccessfulLoginAt: string | null;
   config: Record<string, string>;
@@ -730,6 +884,19 @@ export interface IdentityProviderInput {
   roleSyncDefaultRoleIds?: string[];
 }
 
+export interface ScimStatus {
+  enabled: boolean;
+  /** False for provider types we have no SCIM client for. */
+  supported: boolean;
+  issuedAt: string | null;
+  lastRequestAt: string | null;
+  tenantUrl: string;
+  userCount: number;
+  groupCount: number;
+  /** Members with no identity at this provider: Entra will 409 on them. */
+  unlinkedMemberCount: number;
+}
+
 /**
  * One directory group (or application role) projected onto AnythingMCP roles.
  *
@@ -737,16 +904,31 @@ export interface IdentityProviderInput {
  * group names unique. `label` exists only so the admin table is readable.
  */
 export interface RoleMapping {
-  id?: string;
+  id?: string | null;
   externalId: string;
   label: string | null;
   userRole: 'VIEWER' | 'EDITOR' | 'ADMIN' | null;
   mcpRoleIds: string[];
+  /** True when the directory pushed this group over SCIM. */
+  scimManaged?: boolean;
+  scimDisplayName?: string | null;
+  scimMemberCount?: number | null;
+}
+
+export interface ResyncSummary {
+  providerId: string;
+  trigger: string;
+  total: number;
+  applied: number;
+  unchanged: number;
+  failed: number;
+  lastAdminProtected: number;
+  durationMs: number;
 }
 
 export interface SsoProviderButton {
   name: string;
-  type: string;
+  type: IdentityProvider['type'];
   startUrl: string;
 }
 
@@ -839,6 +1021,26 @@ export const identityProviders = {
       body: { enforce },
       token,
     }),
+
+  scimStatus: (id: string, token: string) =>
+    request<ScimStatus>(`/api/identity-providers/${id}/scim`, { token }),
+  /** First enable returns `bearerToken` once; later calls do not. */
+  setScim: (id: string, enabled: boolean, token: string) =>
+    request<ScimStatus & { bearerToken?: string }>(`/api/identity-providers/${id}/scim`, {
+      method: 'PUT',
+      body: { enabled },
+      token,
+    }),
+  rotateScimToken: (id: string, token: string) =>
+    request<ScimStatus & { bearerToken: string }>(`/api/identity-providers/${id}/scim/rotate`, {
+      method: 'POST',
+      token,
+    }),
+  disableScim: (id: string, token: string) =>
+    request<{ message: string }>(`/api/identity-providers/${id}/scim`, { method: 'DELETE', token }),
+  /** Re-derives every SCIM-managed member's roles from stored group membership. */
+  resyncRoles: (id: string, token: string) =>
+    request<ResyncSummary>(`/api/identity-providers/${id}/resync-roles`, { method: 'POST', token }),
 
   roleMappings: (id: string, token: string) =>
     request<RoleMapping[]>(`/api/identity-providers/${id}/role-mappings`, { token }),

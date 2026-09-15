@@ -1,0 +1,55 @@
+name: 🔌 Adapter request
+description: Ask for a pre-built adapter for a SaaS, API or public data source.
+title: "[Adapter] "
+labels: ["adapter-request", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Adapter requests are how the catalog grows. 👍 this issue if you want the same adapter; we prioritise by reactions.
+  - type: input
+    id: service
+    attributes:
+      label: Service
+      description: Name and website of the software or API.
+      placeholder: "e.g. sevDesk, https://sevdesk.de"
+    validations:
+      required: true
+  - type: input
+    id: api-docs
+    attributes:
+      label: API documentation
+      description: Link to the REST/SOAP/GraphQL docs, OpenAPI spec, Postman collection or WSDL.
+      placeholder: "https://…"
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Authentication
+      options:
+        - API key
+        - Bearer token
+        - OAuth2
+        - Basic auth
+        - No auth (public API)
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: What would you ask your AI assistant to do with it?
+      description: Two or three example prompts. They become the tool descriptions.
+      placeholder: |
+        "Show me today's unpaid invoices"
+        "Create a contact for …"
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I can test the adapter against a real account
+        - label: I would like to build it myself (see the good-first-issue guide in #150)

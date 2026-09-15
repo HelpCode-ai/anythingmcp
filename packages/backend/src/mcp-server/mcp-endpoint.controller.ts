@@ -25,6 +25,26 @@ import { toolVisibilityRole } from './mcp-server.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { ToolRegistry, RegisteredTool } from './tool-registry';
+import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
+
+/**
+ * The OAuth client an access token was issued to.
+ *
+ * @rekog/mcp-nest puts it under `azp` on the ACCESS token and under `client_id`
+ * on the REFRESH token — the two payloads in `generateTokenPair` genuinely
+ * differ. Reading `client_id` alone therefore found nothing on every request
+ * that matters, and a connection grant silently never applied. Caught only by
+ * decoding a token from a real authorize flow; no amount of mocking would have
+ * shown it. Both names are accepted so a future token shape cannot break this
+ * quietly again.
+ */
+function oauthClientId(user: {
+  azp?: unknown;
+  client_id?: unknown;
+}): string | undefined {
+  const value = user?.azp ?? user?.client_id;
+  return typeof value === 'string' && value ? value : undefined;
+}
 import { DynamicMcpTools } from './dynamic-mcp-tools';
 import { RolesService } from '../roles/roles.service';
 import { registerDemoTools } from './mcp-demo.tools';
@@ -34,6 +54,45 @@ import {
   annotationsSignature,
   deriveToolAnnotations,
 } from './tool-annotations';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+/**
+ * Backend version, reported as the demo server's version (was a hardcoded 1.0.0).
+ *
+ * Resolved by walking up from this file rather than with a fixed relative path:
+ * tsc emits to `dist/src/...`, so the package.json sits one level further up in
+ * the build than in the source tree, and the runtime image moves it again
+ * (`/app/backend/package.json` against `/app/backend/dist/src/mcp-server/`).
+ * A hardcoded `../../package.json` is correct in exactly one of those three
+ * layouts, and being wrong throws MODULE_NOT_FOUND at import time — which takes
+ * the whole backend down for a string that appears in one handshake field.
+ * Hence also the try/catch: this can degrade, it cannot fail to boot.
+ */
+function readAppVersion(): string {
+  let dir = __dirname;
+  for (let i = 0; i < 6; i++) {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(join(dir, 'package.json'), 'utf8'),
+      ) as { name?: string; version?: string };
+      if (pkg.name && pkg.version) return pkg.version;
+    } catch {
+      /* keep walking */
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return '0.0.0';
+}
+
+const APP_VERSION: string = readAppVersion();
+
+/** Trailer appended to every live demo tool result. */
+const DEMO_RESULT_FOOTER =
+  '— served by AnythingMCP (public demo, read-only). Self-host it: ' +
+  'https://github.com/HelpCode-ai/anythingmcp';
 
 /** Minimal handle returned by McpServer.tool()/registerTool() that we keep so a
  * live (stateful) session can drop a tool when its surface changes. */
@@ -59,6 +118,9 @@ interface ToolSetParams {
   captureIntent: boolean;
   kgEnabled: boolean;
   invocationContext: InvocationContext;
+  /** Optional text appended as a trailing content block to every successful
+   *  tool result (used by the public demo to say where the answer came from). */
+  resultFooter?: string;
 }
 
 interface InvocationContext {
@@ -96,6 +158,7 @@ export class McpEndpointController {
     private readonly rolesService: RolesService,
     private readonly kgService: KgService,
     private readonly sessionManager: McpSessionManager,
+    private readonly grants: McpConnectionGrantService,
   ) {}
 
   // Streamable-HTTP response framing. Default: SSE-framed responses
@@ -127,6 +190,7 @@ export class McpEndpointController {
   async handleGlobalPost(@Req() req: Request, @Res() res: Response) {
     const visible = await this.attachVisibleTools(req);
     if (this.refuseHiddenToolCall(req, res, visible)) return;
+    if (this.answerToolsList(req, res, visible)) return;
     await mcpHttpTransport.httpHandlers.handlePost(req, res);
   }
 
@@ -156,8 +220,14 @@ export class McpEndpointController {
    * organization and refuses a mismatch. This closes the listing side.
    *
    * Two scopes are applied, in this order:
-   *   1. ORGANIZATION — only tools owned by the caller's active org.
-   *   2. ROLE — of those, only the ones the caller's MCP roles allow.
+   *   1. REACH — which connectors this connection may see at all. A connection
+   *      grant when the user chose one while authorizing the client (and only
+   *      the targets whose organization membership still validates); otherwise
+   *      the caller's active organization, unchanged, so tokens issued before
+   *      grants existed behave exactly as before.
+   *   2. ROLE — of those, only the ones the caller's MCP roles allow, read from
+   *      the organization that owns each tool rather than from whichever org
+   *      happens to be active. Under a grant those can differ.
    */
   private async attachVisibleTools(req: Request): Promise<Set<string> | null> {
     const user = (req as any).user;
@@ -166,23 +236,74 @@ export class McpEndpointController {
     // explicitly enabled anonymous mode. Both are operator credentials on a
     // single-tenant self-hosted box, so the pre-existing "everything" answer
     // is the correct one and narrowing it here would break those deployments.
-    if (!user?.sub || !user.organizationId) return null;
+    if (!user?.sub) return null;
 
-    const orgTools = this.toolRegistry
-      .getAllTools()
-      .filter((t) => t.organizationId === user.organizationId);
+    // An identified user with NO organization is a deactivated one whose
+    // active org was cleared — not an operator. They see nothing.
+    if (!user.organizationId) {
+      user.roles = Array.isArray(user.roles) ? user.roles : [];
+      return new Set<string>();
+    }
 
-    const allowedToolIds = await this.rolesService.getAllowedToolIds(
-      user.sub,
-      user.organizationId,
-    );
+    // `null` here means the client has no grant at all, which is every token
+    // issued before grants existed — keep the previous answer. `{ mode: 'none' }`
+    // means it HAS one and nothing in it validated any more, which is no tools.
+    // Collapsing the two would turn a revoked membership into full access.
+    const grant = await this.grants.resolve(oauthClientId(user), user.sub);
 
-    // `null` means unrestricted — an ADMIN, or a user holding no MCP role at
-    // all. The organization scope still applies.
-    const visible =
-      allowedToolIds === null
-        ? orgTools
-        : orgTools.filter((t) => allowedToolIds.includes(t.id));
+    let reachable: RegisteredTool[];
+    if (!grant) {
+      reachable = this.toolRegistry
+        .getAllTools()
+        .filter((t) => t.organizationId === user.organizationId);
+    } else if (grant.mode === 'organization') {
+      reachable = this.toolRegistry
+        .getAllTools()
+        .filter((t) => t.organizationId === grant.organizationId);
+    } else if (grant.mode === 'servers') {
+      const connectorIds = new Set(
+        (
+          await Promise.all(
+            grant.servers.map((srv) =>
+              this.mcpServersService.getConnectorIds(srv.id),
+            ),
+          )
+        ).flat(),
+      );
+      reachable = this.toolRegistry
+        .getAllTools()
+        .filter((t) => connectorIds.has(t.connectorId));
+    } else {
+      reachable = [];
+    }
+
+    // Roles are per organization, and a grant may span more than one, so the
+    // allow-list is fetched once per organization actually in reach.
+    const allowedByOrg = new Map<string, string[] | null>();
+    for (const orgId of new Set(reachable.map((t) => t.organizationId))) {
+      allowedByOrg.set(
+        orgId,
+        await this.rolesService.getAllowedToolIds(user.sub, orgId),
+      );
+    }
+
+    // `null` from getAllowedToolIds means unrestricted — an ADMIN, or a user
+    // holding no MCP role at all. The reach scope still applies.
+    const visible = reachable.filter((t) => {
+      const allowed = allowedByOrg.get(t.organizationId);
+      return allowed === null || (allowed?.includes(t.id) ?? false);
+    });
+
+    // Handed to the call path so it resolves in exactly the scope that was
+    // listed here. Only set under a grant; without one the executor keeps
+    // using the caller's active organization, as before.
+    (user as { grantedConnectorIds?: string[] }).grantedConnectorIds = grant
+      ? [...new Set(visible.map((t) => t.connectorId))]
+      : undefined;
+
+    // The full entries, not just the names: `answerToolsList` builds this
+    // caller's tools/list from them.
+    (req as { visibleTools?: RegisteredTool[] }).visibleTools = visible;
 
     const visibleNames = new Set(visible.map((t) => t.name));
     user.roles = [
@@ -237,6 +358,81 @@ export class McpEndpointController {
         message: `Tool '${name}' is not available to you. It belongs to another workspace, or your MCP role does not grant it.`,
       },
     });
+    return true;
+  }
+
+  /**
+   * Answers `tools/list` on the shared endpoint from THIS caller's tools.
+   *
+   * Left to the transport, the answer comes from the upstream registry, which
+   * holds one entry per NAME for the whole deployment: whichever connector
+   * registered a name first at boot supplies the description, input schema
+   * and annotations that every other tenant then sees for their own tool of
+   * that name. Seen live on 12 Sep: a workspace whose
+   * `bundesbank_get_timeseries` takes `flow` + `key` was listed with another
+   * tenant's `seriesId` version, and a read-only override on `vies_check_vat`
+   * showed up as a write tool. Claude calls what it was shown, so the call
+   * then fails against the real schema. It is also a disclosure: a tenant's
+   * customised description reaches whoever shares the name.
+   *
+   * Visibility was narrowed to this caller's connectors just above, so the
+   * definitions are taken from those very registry entries, shaped as the
+   * per-server endpoint shapes them (env-var parameters stripped, annotations
+   * derived plus overrides). Operator credentials (`visible === null`) keep
+   * the transport's answer, as everywhere else on this endpoint.
+   */
+  private answerToolsList(
+    req: Request,
+    res: Response,
+    visible: Set<string> | null,
+  ): boolean {
+    if (visible === null) return false;
+
+    const body = (req as any).body;
+    // Single requests only; a batch goes to the transport unchanged.
+    if (!body || Array.isArray(body) || body.method !== 'tools/list') return false;
+
+    const tools =
+      (req as { visibleTools?: RegisteredTool[] }).visibleTools ?? [];
+    const seen = new Set<string>();
+    const listed: Array<Record<string, unknown>> = [];
+    for (const tool of tools) {
+      // Two reachable connectors may expose the same name (a grant spanning
+      // two configs of one provider). One entry per name, like the per-server
+      // endpoint; the call path resolves within the same connector scope.
+      if (seen.has(tool.name)) continue;
+      seen.add(tool.name);
+
+      const schema = this.stripEnvVarParams(
+        (tool.parameters as Record<string, unknown>) ?? {},
+        tool.connectorConfig?.envVars,
+      );
+      listed.push({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: {
+          type: 'object',
+          ...schema,
+          properties: (schema.properties as Record<string, unknown>) ?? {},
+        },
+        annotations: deriveToolAnnotations(tool),
+      });
+    }
+
+    const payload = {
+      jsonrpc: '2.0',
+      id: body.id ?? null,
+      result: { tools: listed },
+    };
+    // Same framing the transport would use for this deployment.
+    if (this.jsonResponseEnabled()) {
+      res.status(200).json(payload);
+    } else {
+      res.status(200);
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.end(`event: message\ndata: ${JSON.stringify(payload)}\n\n`);
+    }
     return true;
   }
 
@@ -313,34 +509,94 @@ export class McpEndpointController {
   }
 
   /**
-   * Handle the public demo MCP server. Builds a per-request McpServer with only
-   * the static info tools (see registerDemoTools) — no DB, no connectors, no
-   * tenant resolution. Never reaches any of the per-server logic below.
+   * Handle the public demo MCP server.
+   *
+   * Always serves the static info tools (see registerDemoTools). When the
+   * operator sets MCP_DEMO_SERVER_ID, it ALSO serves the read-only tools of
+   * that one designated server, anonymously and rate-limited, so a visitor can
+   * paste the URL into Claude and get a live answer (train departures, postal
+   * codes, ECB rates…) without installing anything. Only tools whose derived
+   * annotations say readOnlyHint=true are exposed; every write tool of that
+   * server stays invisible here. No other server is ever reachable this way.
    */
   private async handleDemoRequest(
     req: Request,
     res: Response,
     body: unknown,
   ) {
+    const liveEntries = await this.planDemoLiveTools();
+    const instructions = liveEntries.length
+      ? 'Public, read-only demo of AnythingMCP. The anythingmcp_* tools describe ' +
+        'the product; the other tools are live, read-only connectors served by a ' +
+        'real AnythingMCP instance (no customer data, rate-limited). Try them, ' +
+        'then call anythingmcp_get_started to run your own.'
+      : 'Public, read-only demo of AnythingMCP. These tools describe the ' +
+        'product and how to use it; they expose no customer data. Start with ' +
+        'anythingmcp_overview.';
     await this.serveStateless(
       req,
       res,
       body,
       () => {
         const mcpServer = new McpServer(
-          { name: 'AnythingMCP Demo', version: '1.0.0' },
-          {
-            instructions:
-              'Public, read-only demo of AnythingMCP. These tools describe the ' +
-              'product and how to use it; they expose no customer data. Start with ' +
-              'anythingmcp_overview.',
-          },
+          { name: 'AnythingMCP Demo', version: APP_VERSION },
+          { instructions },
         );
         registerDemoTools(mcpServer);
+        this.registerAll(mcpServer, liveEntries, 'demo');
         return mcpServer;
       },
       'demo',
     );
+  }
+
+  /**
+   * Read-only tool set of the operator-designated demo server (MCP_DEMO_SERVER_ID),
+   * or an empty list when unset, inactive, missing or on any error. Fail closed:
+   * a misconfiguration degrades the demo to the static tools, never to another
+   * server's tools.
+   */
+  private async planDemoLiveTools(): Promise<ToolEntry[]> {
+    const demoServerId = (process.env.MCP_DEMO_SERVER_ID || '').trim();
+    if (!demoServerId) return [];
+    try {
+      const cfg = await this.mcpServersService.findById(demoServerId);
+      if (!cfg || !cfg.isActive) {
+        this.logger.warn(
+          `MCP_DEMO_SERVER_ID=${demoServerId} is not an active MCP server; serving static demo tools only`,
+        );
+        return [];
+      }
+      const connectorIds = await this.mcpServersService.getConnectorIds(demoServerId);
+      const readOnlyTools = this.toolRegistry
+        .getAllTools()
+        .filter(
+          (t) =>
+            connectorIds.includes(t.connectorId) &&
+            deriveToolAnnotations(t).readOnlyHint === true,
+        );
+      const invocationContext: InvocationContext = {
+        organizationId: cfg.organizationId,
+        authMethod: 'demo',
+        mcpServerId: cfg.id,
+        mcpServerName: cfg.name,
+        connectorIds,
+      };
+      const kgEnabled =
+        process.env.KG_MCP_TOOL !== 'off' &&
+        (await this.kgService.isEnabled(cfg.organizationId));
+      return this.planToolSet({
+        serverTools: readOnlyTools,
+        allowedToolIds: null,
+        captureIntent: false,
+        kgEnabled,
+        invocationContext,
+        resultFooter: DEMO_RESULT_FOOTER,
+      });
+    } catch (err: any) {
+      this.logger.warn(`Demo live tools unavailable: ${err?.message ?? err}`);
+      return [];
+    }
   }
 
   private async handleMcpRequest(
@@ -804,8 +1060,13 @@ export class McpEndpointController {
    * registration thunks but does not touch any McpServer.
    */
   private planToolSet(params: ToolSetParams): ToolEntry[] {
-    const { serverTools, allowedToolIds, captureIntent, invocationContext } =
-      params;
+    const {
+      serverTools,
+      allowedToolIds,
+      captureIntent,
+      invocationContext,
+      resultFooter,
+    } = params;
     const entries: ToolEntry[] = [];
     const registeredNames = new Set<string>();
 
@@ -858,6 +1119,13 @@ export class McpEndpointController {
         name: tool.name,
         sig,
         register: (mcpServer: McpServer) => {
+          const withFooter = (r: any) => {
+            if (!resultFooter || r?.isError || !Array.isArray(r?.content)) return r;
+            return {
+              ...r,
+              content: [...r.content, { type: 'text' as const, text: resultFooter }],
+            };
+          };
           const handler = async (args: any) => {
             let ctx = invocationContext;
             let toolArgs = args;
@@ -895,9 +1163,9 @@ export class McpEndpointController {
                   /* keep {} */
                 }
               }
-              return { ...rest, structuredContent: structured };
+              return withFooter({ ...rest, structuredContent: structured });
             }
-            return rest;
+            return withFooter(rest);
           };
 
           // registerTool for both branches: the legacy tool() overload has no

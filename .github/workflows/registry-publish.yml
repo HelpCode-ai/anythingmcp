@@ -1,0 +1,86 @@
+name: Publish to MCP Registry
+
+# The registry listed us at "1.0.0" for three months — a version that never
+# existed — because publishing was a manual step and the saved credential had
+# quietly expired back in June. Nothing catches that: the registry just keeps
+# serving whatever it was last told.
+#
+# This publishes on every GitHub Release, authenticating with GitHub Actions
+# OIDC. There is no token to store and none to expire; the registry trusts the
+# workflow because it runs in HelpCode-ai/anythingmcp, which is what the
+# io.github.HelpCode-ai namespace means.
+#
+# That namespace is CASE-SENSITIVE and must match the GitHub organisation
+# exactly. `mcp-publisher validate` accepts the wrong casing without a word — it
+# checks the schema, not whether the name is one you may publish — and the
+# registry then rejects the publish itself with a 403.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or ref to publish (defaults to the triggering ref)"
+        required: false
+        type: string
+
+jobs:
+  publish:
+    name: Publish server.json
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for OIDC
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Install mcp-publisher
+        run: |
+          set -euo pipefail
+          VERSION=$(curl -fsSL https://api.github.com/repos/modelcontextprotocol/registry/releases/latest | jq -r .tag_name)
+          echo "mcp-publisher from registry $VERSION"
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/${VERSION}/mcp-publisher_linux_amd64.tar.gz" \
+            | tar -xz mcp-publisher
+          ./mcp-publisher --help > /dev/null
+
+      # The release tag and server.json must agree, or we would publish a
+      # version string that does not match the artefacts anyone can download.
+      - name: Check server.json matches the release
+        if: github.event_name == 'release'
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          JSON=$(jq -r .version server.json)
+          if [ "$TAG" != "$JSON" ]; then
+            echo "::error::release tag is $TAG but server.json says $JSON"
+            exit 1
+          fi
+          echo "both say $JSON"
+
+      - name: Validate
+        run: ./mcp-publisher validate
+
+      - name: Authenticate with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish
+
+      - name: Confirm the registry actually updated
+        run: |
+          set -euo pipefail
+          EXPECTED=$(jq -r .version server.json)
+          for i in $(seq 1 10); do
+            LIVE=$(curl -fsSL "https://registry.modelcontextprotocol.io/v0/servers?search=anythingmcp" \
+              | jq -r '[.servers[].server | select(.name=="io.github.HelpCode-ai/anythingmcp") | .version] | last // "none"')
+            if [ "$LIVE" = "$EXPECTED" ]; then
+              echo "registry now serves $LIVE"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::published but the registry still serves '$LIVE', expected '$EXPECTED'"
+          exit 1

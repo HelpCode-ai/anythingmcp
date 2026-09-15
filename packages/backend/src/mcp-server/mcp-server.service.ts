@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { z } from 'zod';
 import { McpStrategy, MCP_STRATEGY } from '@rekog/mcp-nest';
+import type { Connector, McpTool } from '../generated/prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
@@ -23,6 +24,19 @@ import {
  */
 export function toolVisibilityRole(toolName: string): string {
   return `tool:${toolName}`;
+}
+
+/** The shape an MCP tool handler returns when it declines to run. */
+type ToolCallRefusal = {
+  content: { type: 'text'; text: string }[];
+  isError: true;
+};
+
+function refuse(error: string): ToolCallRefusal {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify({ error }) }],
+    isError: true,
+  };
 }
 
 @Injectable()
@@ -65,64 +79,105 @@ export class McpServerService implements OnModuleInit {
     );
   }
 
+  /**
+   * How many connectors to pull from the database at a time in
+   * {@link loadAllTools}. Small enough that the raw Prisma rows for a page are
+   * garbage in between pages; large enough that a full boot is a few dozen
+   * round trips, not hundreds.
+   */
+  private static readonly LOAD_PAGE_SIZE = 25;
+
+  /**
+   * Register every enabled tool of every active connector, across all tenants.
+   *
+   * Read in pages rather than as one `findMany`. The registry itself is
+   * unavoidably large — on the cloud instance it holds ~22k tools, ~118 MB of
+   * raw JSON before V8 object overhead — but loading every connector in a
+   * single query ALSO materialised the whole result set at once, so peak heap
+   * at boot was roughly twice the steady state. That is what pushed the
+   * process past --max-old-space-size and crash-looped it nine times on
+   * 10 Sep. Paging keeps the transient half bounded to one page.
+   */
   async loadAllTools(): Promise<void> {
-    const connectors = await this.prisma.connector.findMany({
-      where: { isActive: true },
-      include: { tools: { where: { isEnabled: true } } },
-    });
+    let cursor: string | undefined;
 
-    for (const connector of connectors) {
-      for (const tool of connector.tools) {
-        const toolDef = {
-          id: tool.id,
-          connectorId: connector.id,
-          organizationId: connector.organizationId,
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters as Record<string, unknown>,
-          connectorType: connector.type,
-          useProxy: tool.useProxy,
-          connectorConfig: {
-            baseUrl: connector.baseUrl,
-            authType: connector.authType,
-            authConfig: this.decryptAuthConfig(connector.authConfig),
-            headers: connector.headers as Record<string, string> | undefined,
-            envVars: connector.envVars as Record<string, string> | undefined,
-            specUrl: connector.specUrl ?? undefined,
-            config: connector.config as Record<string, unknown> | undefined,
-          },
-          endpointMapping: tool.endpointMapping as any,
-          responseMapping: tool.responseMapping as
-            | Record<string, unknown>
-            | undefined,
-          outputSchema: tool.outputSchema as unknown,
-          annotations: tool.annotations as unknown,
-        };
+    for (;;) {
+      const page = await this.prisma.connector.findMany({
+        where: { isActive: true },
+        include: { tools: { where: { isEnabled: true } } },
+        orderBy: { id: 'asc' },
+        take: McpServerService.LOAD_PAGE_SIZE,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
 
-        // Register in our internal registry (for execution lookup)
-        this.toolRegistry.registerTool(toolDef);
+      if (page.length === 0) break;
 
-        // Strip params covered by env vars so the AI doesn't need to provide them
-        const envVars = connector.envVars as Record<string, string> | undefined;
-        const effectiveSchema = this.stripEnvVarParams(
-          tool.parameters as Record<string, unknown>,
-          envVars,
+      for (const connector of page) {
+        this.registerConnectorTools(connector);
+      }
+
+      cursor = page[page.length - 1].id;
+      if (page.length < McpServerService.LOAD_PAGE_SIZE) break;
+    }
+  }
+
+  /**
+   * Register one connector's enabled tools in both registries. Shared by the
+   * boot-time load and by {@link reloadConnectorTools} so the two can't drift.
+   */
+  private registerConnectorTools(
+    connector: Connector & { tools: McpTool[] },
+  ): void {
+    for (const tool of connector.tools) {
+      const toolDef = {
+        id: tool.id,
+        connectorId: connector.id,
+        organizationId: connector.organizationId,
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters as Record<string, unknown>,
+        connectorType: connector.type,
+        useProxy: tool.useProxy,
+        connectorConfig: {
+          baseUrl: connector.baseUrl,
+          authType: connector.authType,
+          authConfig: this.decryptAuthConfig(connector.authConfig),
+          headers: connector.headers as Record<string, string> | undefined,
+          envVars: connector.envVars as Record<string, string> | undefined,
+          specUrl: connector.specUrl ?? undefined,
+          config: connector.config as Record<string, unknown> | undefined,
+        },
+        endpointMapping: tool.endpointMapping as any,
+        responseMapping: tool.responseMapping as
+          | Record<string, unknown>
+          | undefined,
+        outputSchema: tool.outputSchema as unknown,
+        annotations: tool.annotations as unknown,
+      };
+
+      // Register in our internal registry (for execution lookup)
+      this.toolRegistry.registerTool(toolDef);
+
+      // Strip params covered by env vars so the AI doesn't need to provide them
+      const envVars = connector.envVars as Record<string, string> | undefined;
+      const effectiveSchema = this.stripEnvVarParams(
+        tool.parameters as Record<string, unknown>,
+        envVars,
+      );
+
+      // Register as a native MCP tool so it appears directly in tools/list,
+      // but only the first time we see this name. The upstream library's
+      // McpRegistryService is single-tenant (one tool per name); our
+      // ToolRegistry resolves cross-org collisions at handler-dispatch
+      // time via getToolForOrg/getTool, so the second+ registration with
+      // the same name would just overwrite and emit a warning.
+      if (this.toolRegistry.countByName(tool.name) === 1) {
+        this.registerMcpTool(
+          tool.name,
+          tool.description,
+          effectiveSchema,
+          deriveToolAnnotations(toolDef),
         );
-
-        // Register as a native MCP tool so it appears directly in tools/list,
-        // but only the first time we see this name. The upstream library's
-        // McpRegistryService is single-tenant (one tool per name); our
-        // ToolRegistry resolves cross-org collisions at handler-dispatch
-        // time via getToolForOrg/getTool, so the second+ registration with
-        // the same name would just overwrite and emit a warning.
-        if (this.toolRegistry.countByName(tool.name) === 1) {
-          this.registerMcpTool(
-            tool.name,
-            tool.description,
-            effectiveSchema,
-            deriveToolAnnotations(toolDef),
-          );
-        }
       }
     }
   }
@@ -149,52 +204,7 @@ export class McpServerService implements OnModuleInit {
     });
 
     if (connector && connector.isActive) {
-      for (const tool of connector.tools) {
-        const toolDef = {
-          id: tool.id,
-          connectorId: connector.id,
-          organizationId: connector.organizationId,
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters as Record<string, unknown>,
-          connectorType: connector.type,
-          useProxy: tool.useProxy,
-          connectorConfig: {
-            baseUrl: connector.baseUrl,
-            authType: connector.authType,
-            authConfig: this.decryptAuthConfig(connector.authConfig),
-            headers: connector.headers as Record<string, string> | undefined,
-            envVars: connector.envVars as Record<string, string> | undefined,
-            specUrl: connector.specUrl ?? undefined,
-            config: connector.config as Record<string, unknown> | undefined,
-          },
-          endpointMapping: tool.endpointMapping as any,
-          responseMapping: tool.responseMapping as
-            | Record<string, unknown>
-            | undefined,
-          outputSchema: tool.outputSchema as unknown,
-          annotations: tool.annotations as unknown,
-        };
-
-        this.toolRegistry.registerTool(toolDef);
-
-        const envVars = connector.envVars as Record<string, string> | undefined;
-        const effectiveSchema = this.stripEnvVarParams(
-          tool.parameters as Record<string, unknown>,
-          envVars,
-        );
-        // Same dedup rule as loadAllTools — register on the upstream
-        // single-tenant MCP registry only when this is the first tool
-        // with this name across all orgs/connectors.
-        if (this.toolRegistry.countByName(tool.name) === 1) {
-          this.registerMcpTool(
-            tool.name,
-            tool.description,
-            effectiveSchema,
-            deriveToolAnnotations(toolDef),
-          );
-        }
-      }
+      this.registerConnectorTools(connector);
     }
 
     this.logger.log(
@@ -263,67 +273,12 @@ export class McpServerService implements OnModuleInit {
         // merge that drops the option — is still not freely callable. Defence
         // in depth, not the only gate.
         const user = request?.user;
-        if (user?.sub) {
-          // Global /mcp registry: there is no server-scoped org here, so the
-          // caller's active org is the relevant one — same org used by
-          // getToolForOrg below.
-          const allowedToolIds = await this.rolesService.getAllowedToolIds(
-            user.sub,
-            user.organizationId,
-          );
-          if (allowedToolIds !== null) {
-            // User has restricted access — check if this tool is allowed.
-            // Resolve by org first so we don't read the wrong org's tool
-            // when two orgs registered the same tool name.
-            const tool = user.organizationId
-              ? this.toolRegistry.getToolForOrg(name, user.organizationId)
-              : this.toolRegistry.getTool(name);
-            if (tool && !allowedToolIds.includes(tool.id)) {
-              return {
-                content: [{ type: 'text' as const, text: JSON.stringify({ error: `Access denied: you do not have permission to use '${name}'.` }) }],
-                isError: true,
-              };
-            }
-          }
 
-          // Check MCP server scoping — if the API key is tied to a server,
-          // only allow tools from connectors assigned to that server
-          if (user.mcpServerId) {
-            const allowedConnectorIds = await this.mcpServersService.getConnectorIds(user.mcpServerId);
-            const tool = this.toolRegistry.getTool(name, allowedConnectorIds);
-            if (tool) {
-              if (!allowedConnectorIds.includes(tool.connectorId)) {
-                return {
-                  content: [{ type: 'text' as const, text: JSON.stringify({ error: `Tool '${name}' is not available on this MCP server.` }) }],
-                  isError: true,
-                };
-              }
-            }
-          } else if (user.organizationId) {
-            // Authenticated user without MCP-server scoping: the global
-            // /mcp endpoint must still refuse to invoke a same-named tool
-            // from a different organization. Reject if no tool exists for
-            // this org (an unscoped lookup would otherwise silently fall
-            // back to whichever org registered the name first).
-            const orgTool = this.toolRegistry.getToolForOrg(
-              name,
-              user.organizationId,
-            );
-            if (!orgTool) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: JSON.stringify({
-                      error: `Tool '${name}' is not available for your organization.`,
-                    }),
-                  },
-                ],
-                isError: true,
-              };
-            }
-          }
-        }
+        // Which connectors this call may reach, or a refusal. Everything that
+        // decides scope lives in one place so the branches cannot drift.
+        const scope = await this.resolveCallScope(user, name);
+        if ('error' in scope) return scope.error;
+        const serverConnectorIds = scope.connectorIds;
 
         // OAuth JWTs store email inside user_data, app JWTs have it top-level
         const invocationContext = {
@@ -333,11 +288,102 @@ export class McpServerService implements OnModuleInit {
           authMethod: user?.authMethod || 'none',
           apiKeyName: user?.apiKeyName,
           mcpServerId: user?.mcpServerId,
+          connectorIds: serverConnectorIds,
         };
 
         return this.toolExecutor.executeTool(name, args, invocationContext);
       },
     });
+  }
+
+  /**
+   * The connector scope a `tools/call` on the GLOBAL `/mcp` may use, or the
+   * refusal to send back instead.
+   *
+   * Three mutually exclusive cases, narrowest first. None of them widens when
+   * its own scope has no match — the whole point is that a miss is a refusal,
+   * not a reason to look somewhere bigger.
+   *
+   *  1. A CONNECTION GRANT. The user chose what this client may reach while
+   *     authorizing it; `attachVisibleTools` resolved it for this request,
+   *     re-checking organization membership. Narrower than the caller's active
+   *     organization — and possibly in a DIFFERENT one, when they belong to
+   *     several — so roles are read from the organization that owns the tool,
+   *     not from whichever org happens to be active.
+   *  2. A CREDENTIAL PINNED TO ONE SERVER (`user.mcpServerId`).
+   *  3. NO GRANT — every token issued before grants existed. Unchanged
+   *     behaviour: the caller's active organization.
+   *
+   * `undefined` connectorIds means "no connector filter", which the executor
+   * only honours for an instance-level static credential on a single-tenant
+   * box. An identified user always ends up with either a filter or a refusal.
+   */
+  private async resolveCallScope(
+    user: any,
+    name: string,
+  ): Promise<{ connectorIds?: string[] } | { error: ToolCallRefusal }> {
+    if (!user?.sub) return {};
+
+    const granted: string[] | undefined = user.grantedConnectorIds;
+    if (granted) {
+      const tool = this.toolRegistry.getTool(name, granted);
+      if (!tool) {
+        return { error: refuse(`Tool '${name}' is not available on this connection.`) };
+      }
+      const allowedToolIds = await this.rolesService.getAllowedToolIds(
+        user.sub,
+        tool.organizationId,
+      );
+      if (allowedToolIds !== null && !allowedToolIds.includes(tool.id)) {
+        return { error: refuse(`Access denied: you do not have permission to use '${name}'.`) };
+      }
+      return { connectorIds: granted };
+    }
+
+    // Role check, kept as a SECOND layer. The transport refuses a disallowed
+    // call before the handler runs, because `requiredRoles` gates `tools/call`
+    // as well as `tools/list`. This stays so that a tool registered without a
+    // visibility role — a future code path, a merge that drops the option — is
+    // still not freely callable. Defence in depth, not the only gate.
+    const allowedToolIds = await this.rolesService.getAllowedToolIds(
+      user.sub,
+      user.organizationId,
+    );
+    if (allowedToolIds !== null) {
+      // Resolve by org first so we don't read the wrong org's tool when two
+      // orgs registered the same tool name.
+      const tool = user.organizationId
+        ? this.toolRegistry.getToolForOrg(name, user.organizationId)
+        : this.toolRegistry.getTool(name);
+      if (tool && !allowedToolIds.includes(tool.id)) {
+        return { error: refuse(`Access denied: you do not have permission to use '${name}'.`) };
+      }
+    }
+
+    // The refusal used to sit inside `if (tool)`, so a name that matched NO
+    // connector on this server fell straight through the guard and was then
+    // resolved in a wider scope by the executor. Refuse on the absence, which
+    // is the case that mattered.
+    if (user.mcpServerId) {
+      const serverConnectorIds = await this.mcpServersService.getConnectorIds(
+        user.mcpServerId,
+      );
+      if (!this.toolRegistry.getTool(name, serverConnectorIds)) {
+        return { error: refuse(`Tool '${name}' is not available on this MCP server.`) };
+      }
+      return { connectorIds: serverConnectorIds };
+    }
+
+    if (user.organizationId) {
+      // The global endpoint must refuse a same-named tool from a different
+      // organization; an unscoped lookup would otherwise silently fall back to
+      // whichever org registered the name first.
+      if (!this.toolRegistry.getToolForOrg(name, user.organizationId)) {
+        return { error: refuse(`Tool '${name}' is not available for your organization.`) };
+      }
+    }
+
+    return {};
   }
 
   /**
@@ -412,10 +458,21 @@ export class McpServerService implements OnModuleInit {
         case 'string':
           if (prop.enum) {
             zodType = z.enum(prop.enum as [string, ...string[]]);
-          } else if (prop.format === 'date-time' || prop.format === 'date') {
-            // Accept ISO date strings and Date-coercible inputs.
-            zodType = z.coerce.date();
           } else {
+            // A date stays a STRING. This used to be `z.coerce.date()`, which
+            // produces a ZodDate — and the global /mcp advertises its tools by
+            // serialising these zod schemas back to JSON Schema, where a Date
+            // has no representation. The serialiser threw, so `tools/list`
+            // failed for the WHOLE workspace with
+            // `-32603 Date cannot be represented in JSON Schema`, not just for
+            // the offending tool: 91 tools across 9 workspaces on the cloud
+            // instance, which could not use the shared endpoint at all.
+            //
+            // Nothing is lost. The value is on its way into a query string or a
+            // request body, so it has to end up as text regardless, and
+            // `format` is documentation for the caller either way. The
+            // per-server endpoint has always mapped strings this way
+            // (`jsonSchemaToZodShape`); the two paths now agree.
             zodType = z.string();
           }
           break;

@@ -11,6 +11,7 @@ describe('McpEndpointController — tenant isolation', () => {
   let toolRegistry: any;
   let toolExecutor: any;
   let rolesService: any;
+  let grants: any;
 
   const SERVER = {
     id: 'srv-A',
@@ -50,6 +51,7 @@ describe('McpEndpointController — tenant isolation', () => {
       remove: jest.fn().mockResolvedValue(undefined),
       notifyToolsChanged: jest.fn().mockResolvedValue(undefined),
     };
+    grants = { resolve: jest.fn().mockResolvedValue(null) };
     controller = new McpEndpointController(
       mcpServersService,
       toolRegistry,
@@ -57,6 +59,7 @@ describe('McpEndpointController — tenant isolation', () => {
       rolesService,
       kgService as any,
       sessionManager as any,
+      grants as any,
     );
   });
 
@@ -206,6 +209,7 @@ describe('McpEndpointController — structuredContent', () => {
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
       { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
+      { resolve: jest.fn().mockResolvedValue(null) } as any,
     );
 
     const entries = (controller as any).planToolSet({

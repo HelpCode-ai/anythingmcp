@@ -7,6 +7,7 @@
   "category": "real-estate",
   "icon": "idealista",
   "docsUrl": "https://www.idealista.com",
+  "selfHostOnly": true,
   "featured": false,
   "priority": 75,
   "requiredEnvVars": [],

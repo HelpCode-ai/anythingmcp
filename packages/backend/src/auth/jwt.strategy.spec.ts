@@ -18,11 +18,15 @@ describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
   let prisma: { user: { findUnique: jest.Mock; update: jest.Mock }; organizationMember: { findFirst: jest.Mock } };
 
+  // The strategy now loads the user WITH their active memberships; the
+  // membership is the authoritative role.
   const dbUser = {
     id: 'user-cuid-1',
     email: 'alice@example.com',
     role: 'EDITOR',
     organizationId: 'org-1',
+    sessionsValidFrom: null,
+    memberships: [{ organizationId: 'org-1', role: 'EDITOR' }],
   };
 
   beforeEach(() => {
@@ -170,6 +174,51 @@ describe('JwtStrategy', () => {
           organizationId: null,
         } as any),
       ).rejects.toThrow('User no longer exists');
+    });
+  });
+
+  describe('membership is authoritative', () => {
+    const dashboard = { sub: 'user-cuid-1', email: 'alice@example.com', tokenUse: 'dashboard' } as any;
+
+    it('returns the MEMBERSHIP role and repairs a stale cache', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...dbUser,
+        role: 'ADMIN', // stale cache
+        memberships: [{ organizationId: 'org-1', role: 'VIEWER' }],
+      });
+      const result = await strategy.validate(dashboard);
+      expect(result.role).toBe('VIEWER');
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-cuid-1' },
+        data: { role: 'VIEWER' },
+      });
+    });
+
+    // A deactivated member must not keep a working session for that workspace.
+    it('repoints to another ACTIVE membership when the cached one is deactivated', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...dbUser,
+        organizationId: 'org-1',
+        // org-1 is absent from the active list: deactivated there
+        memberships: [{ organizationId: 'org-2', role: 'VIEWER' }],
+      });
+      const result = await strategy.validate(dashboard);
+      expect(result).toMatchObject({ organizationId: 'org-2', role: 'VIEWER' });
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-cuid-1' },
+        data: { organizationId: 'org-2', role: 'VIEWER' },
+      });
+    });
+
+    it('fails closed when no active membership remains', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...dbUser, memberships: [] });
+      await expect(strategy.validate(dashboard)).rejects.toThrow('No active workspace');
+    });
+
+    it('only queries ACTIVE memberships', async () => {
+      await strategy.validate(dashboard);
+      const arg = prisma.user.findUnique.mock.calls[0][0];
+      expect(arg.select.memberships.where).toEqual({ deactivatedAt: null });
     });
   });
 });

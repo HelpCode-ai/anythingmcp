@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService, isTokenRevoked } from './auth.service';
 import { McpApiKeysService } from '../roles/mcp-api-keys.service';
 import { PrismaService } from '../common/prisma.service';
+import { resolveUserIdFromTokenPayload } from './resolve-user-id.util';
 
 /**
  * Combined auth guard for per-server MCP endpoints (/mcp/:serverId).
@@ -30,11 +31,12 @@ export class McpCombinedAuthGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     const res = context.switchToHttp().getResponse();
 
-    // Public demo MCP server: a static, tenant-less, anonymous endpoint at the
-    // EXACT path /mcp/demo. Its handler exposes only self-describing info tools
-    // and never resolves a serverId or touches the database, so allowing
-    // anonymous access here cannot expose any tenant data. Match the exact path
-    // only — every other /mcp/:serverId stays fail-closed below.
+    // Public demo MCP server: an anonymous endpoint at the EXACT path /mcp/demo.
+    // Its handler exposes self-describing info tools and, only when the operator
+    // sets MCP_DEMO_SERVER_ID, the READ-ONLY tools of that one designated server
+    // (see McpEndpointController.planDemoLiveTools). It never resolves a
+    // serverId from the request, so no other tenant's server is reachable.
+    // Match the exact path only — every /mcp/:serverId stays fail-closed below.
     const reqPath = (req.path || req.url || '').split('?')[0].replace(/\/+$/, '');
     if (reqPath === '/mcp/demo') {
       req.user = { authMethod: 'none' };
@@ -192,15 +194,24 @@ export class McpCombinedAuthGuard implements CanActivate {
       (req.headers['x-forwarded-host'] as string) || req.headers.host;
     const baseUrl = host ? `${proto}://${host}` : (this.configService.get<string>('SERVER_URL') || 'http://localhost:4000');
     // RFC 9728: the protected-resource metadata URL appends the resource path
-    // (e.g. /mcp/<serverId>) to the well-known prefix, so each per-server
-    // resource advertises its own metadata. Falls back to the root document.
-    const resourceMetadataUrl = reqPath.startsWith('/mcp/')
+    // (/mcp or /mcp/<serverId>) to the well-known prefix, so each resource
+    // advertises its own metadata. Falls back to the root document.
+    const resourceMetadataUrl = reqPath.startsWith('/mcp')
       ? `${baseUrl}/.well-known/oauth-protected-resource${reqPath}`
       : `${baseUrl}/.well-known/oauth-protected-resource`;
 
+    // RFC 6750 §3.1: `error="invalid_token"` tells the client its token is
+    // expired or revoked and it must re-authorize, rather than retry. A request
+    // that carried no token at all gets no error code — the RFC says so, and a
+    // client's first unauthenticated probe should not be told its token is bad.
+    const presentedToken = (req.headers['authorization'] as string | undefined)
+      ?.toLowerCase()
+      .startsWith('bearer ');
+    const errorAttr = presentedToken ? 'error="invalid_token", ' : '';
+
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer realm="AnythingMCP MCP Server", resource_metadata="${resourceMetadataUrl}"`,
+      `Bearer realm="AnythingMCP MCP Server", ${errorAttr}resource_metadata="${resourceMetadataUrl}"`,
     );
     res.status(401).json({
       jsonrpc: '2.0',
@@ -212,41 +223,11 @@ export class McpCombinedAuthGuard implements CanActivate {
 
   /**
    * Resolves the `users.id` cuid a token belongs to, WITHOUT ever trusting an
-   * email claim.
-   *
-   * Tokens minted after LocalOAuthProvider started mapping the profile
-   * `username` to the cuid carry it directly in `sub`.
-   *
-   * Tokens minted BEFORE that carry the user's email in `sub` — but they also
-   * carry `user_profile_id`, and `oauth_user_profiles.external_id` has always
-   * stored the cuid (PrismaOAuthStore.upsertUserProfile writes
-   * `externalId: profile.id`, and `profile.id` comes from the login cookie's
-   * `user.id`). So the cuid is recoverable from authoritative server state,
-   * keyed by an opaque identifier that is bound to the signed token.
-   *
-   * That is why no legacy email fallback is needed: previously-issued sessions
-   * keep working, and the mutable, IdP-supplied `email` claim never takes part
-   * in identity resolution.
+   * email claim. The logic lives in `resolveUserIdFromTokenPayload` so the MCP
+   * request guard and the refresh-grant middleware can never disagree — see
+   * that function for why no email fallback exists (nOAuth).
    */
   private async resolveUserId(payload: any): Promise<string | undefined> {
-    const sub: string | undefined = payload?.sub;
-
-    // Modern tokens: `sub` is already the cuid. Emails are the only other
-    // shape we have ever put there, so an '@' is a reliable discriminator.
-    if (sub && !sub.includes('@')) return sub;
-
-    const profileId: string | undefined = payload?.user_profile_id;
-    if (profileId) {
-      const profile = await this.prisma.oAuthUserProfile.findUnique({
-        where: { profileId },
-        select: { externalId: true },
-      });
-      if (profile?.externalId) return profile.externalId;
-    }
-
-    // Legacy token with no recoverable profile → fail closed. Returning the
-    // email here would reintroduce the email-keyed lookup this method exists
-    // to remove.
-    return undefined;
+    return resolveUserIdFromTokenPayload(this.prisma, payload);
   }
 }

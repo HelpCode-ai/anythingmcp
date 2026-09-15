@@ -1,0 +1,42 @@
+# MOTIS import/server configuration, templated by entrypoint.sh:
+#   __FEEDS__   directory holding the downloaded GTFS zips
+#   __RT_URL__  GTFS-RT feed (TripUpdates + ServiceAlerts)
+#
+# Two datasets rather than gtfs.de's single "full" feed: fv (long-distance:
+# ICE, IC, EC, ECE, EN, railjet, night trains) and rv (regional rail and
+# S-Bahn). Together they are every train in Germany and about 12 MB; the full
+# feed adds every bus and tram and needs 7 GB of RAM to import.
+#
+# No OpenStreetMap file on purpose. MOTIS only needs OSM for street routing,
+# map tiles and address geocoding; station-name geocoding works from the
+# timetable alone (adr_extend), and that is all the connector asks for.
+timetable:
+  first_day: TODAY
+  # The free feeds cover the next 30 days; anything beyond that is simply
+  # absent, so a large window costs nothing and never truncates a feed.
+  num_days: 365
+  railviz: false
+  with_shapes: false
+  # The GTFS-RT feed is ~55 MB (it carries every bus in the country); the
+  # default 30 s download timeout truncated it and MOTIS logged parser errors.
+  http_timeout: 180
+  # Seconds between GTFS-RT polls. The upstream file updates every 10 s, but
+  # each poll is a 55 MB download, so this is a bandwidth courtesy to gtfs.de
+  # more than a freshness choice.
+  update_interval: 120
+  datasets:
+    fv:
+      path: __FEEDS__/fv.zip
+      rt:
+        - url: __RT_URL__
+          protocol: gtfsrt
+    rv:
+      path: __FEEDS__/rv.zip
+      rt:
+        - url: __RT_URL__
+          protocol: gtfsrt
+geocoding: true
+reverse_geocoding: false
+street_routing: false
+osr_footpath: false
+elevators: false

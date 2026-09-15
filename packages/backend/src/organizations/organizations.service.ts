@@ -1,10 +1,42 @@
 import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
-import { UserRole } from '../generated/prisma/client';
+import { Prisma, UserRole } from '../generated/prisma/client';
+import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
+import { LastAdminConflictException } from './last-admin.exception';
+
+/** Ordered least- to most-privileged; used to tell a demotion from a promotion. */
+const ORG_ROLE_RANK: Record<UserRole, number> = { VIEWER: 1, EDITOR: 2, ADMIN: 3 };
+
+export interface MemberActionContext {
+  actorUserId: string;
+  ip?: string | null;
+  userAgent?: string | null;
+}
+
+export interface RevokeSessionsOptions {
+  /**
+   * Also deactivate the target's MCP API keys in this workspace. Off by
+   * default: `mcp_…` keys carry no `iat`, so the watermark alone never touches
+   * them — the UI says so, and this is the explicit remedy.
+   */
+  revokeApiKeys?: boolean;
+}
+
+export interface RevokeWorkspaceSessionsOptions extends RevokeSessionsOptions {
+  /**
+   * Leave the acting admin's own sessions alone. Off by default: if the
+   * compromised session is theirs, excluding it defeats the point. Routine
+   * offboarding can turn it on.
+   */
+  excludeSelf?: boolean;
+}
 
 @Injectable()
 export class OrganizationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly securityEvents: SecurityEventService,
+  ) {}
 
   async create(name: string) {
     return this.prisma.organization.create({
@@ -21,8 +53,11 @@ export class OrganizationsService {
   }
 
   async listUserOrgs(userId: string) {
+    // Deactivated memberships are not offered as switch targets: the switch
+    // would be refused anyway, and listing them would advertise a workspace
+    // the user can no longer enter.
     const memberships = await this.prisma.organizationMember.findMany({
-      where: { userId },
+      where: { userId, deactivatedAt: null },
       include: {
         organization: { select: { id: true, name: true, createdAt: true } },
       },
@@ -45,7 +80,7 @@ export class OrganizationsService {
 
   async switchOrg(userId: string, organizationId: string) {
     const membership = await this.getMembership(userId, organizationId);
-    if (!membership) {
+    if (!membership || membership.deactivatedAt) {
       throw new ForbiddenException('Not a member of this organization');
     }
 
@@ -62,40 +97,287 @@ export class OrganizationsService {
     });
   }
 
+  /**
+   * Removes ONE membership. Refuses to remove the last active admin.
+   *
+   * Callers wanting "the user loses access" should prefer
+   * `UserLifecycleService.deactivateInOrganization`, which also revokes
+   * sessions and MCP keys; this is the destructive follow-up.
+   */
   async removeMember(userId: string, organizationId: string) {
+    await this.assertNotLastAdmin(organizationId, userId);
     await this.prisma.organizationMember.delete({
       where: { userId_organizationId: { userId, organizationId } },
     });
 
-    // If this was the user's active org, switch to another
+    // If this was the user's active org, point the cache at another ACTIVE
+    // membership — or at nothing. Leaving it at the removed org would keep a
+    // fully working dashboard session for a workspace the user is no longer in,
+    // because the JWT strategy reads the active org from this column.
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (user?.organizationId === organizationId) {
       const remaining = await this.prisma.organizationMember.findFirst({
-        where: { userId },
+        where: { userId, deactivatedAt: null },
         orderBy: { joinedAt: 'asc' },
       });
-      if (remaining) {
-        await this.switchOrg(userId, remaining.organizationId);
-      }
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: remaining
+          ? { organizationId: remaining.organizationId, role: remaining.role }
+          : { organizationId: null },
+      });
     }
   }
 
-  async updateMemberRole(userId: string, organizationId: string, role: UserRole) {
-    const membership = await this.prisma.organizationMember.update({
+  /**
+   * Throws `LastAdminConflictException` if `userId` is currently an ACTIVE
+   * admin of the organization and no other active admin exists. A no-op for
+   * anyone who is not an active admin. Accepts a transaction client so callers
+   * can hold the row inside their own transaction.
+   *
+   * Deactivated admins do not count: a workspace whose only other admin has
+   * been deactivated has, for every practical purpose, no other admin.
+   */
+  async assertNotLastAdmin(
+    organizationId: string,
+    userId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<void> {
+    const target = await db.organizationMember.findUnique({
       where: { userId_organizationId: { userId, organizationId } },
-      data: { role },
+      select: { role: true, deactivatedAt: true },
+    });
+    if (!target || target.role !== 'ADMIN' || target.deactivatedAt) return;
+
+    const others = await db.organizationMember.count({
+      where: { organizationId, role: 'ADMIN', deactivatedAt: null, userId: { not: userId } },
+    });
+    if (others === 0) throw new LastAdminConflictException(organizationId);
+  }
+
+  /**
+   * Changes a member's role in ONE organization.
+   *
+   * Writes the membership row — the authoritative role — and refreshes the
+   * `users.role` cache only when this is the user's active organization. The
+   * previous implementation of the admin endpoint wrote the cache alone, which
+   * left a demoted admin with membership.role = ADMIN and therefore with
+   * unrestricted MCP tool access: `getAllowedToolIds` reads the membership.
+   *
+   * A DEMOTION also revokes every existing session (`sessionsValidFrom`): a
+   * token minted while the user was an admin must not keep admin power until
+   * it expires. A promotion only widens, so it revokes nothing.
+   *
+   * Returns null when the user is not a member (the controller's 404).
+   */
+  async updateMemberRole(
+    userId: string,
+    organizationId: string,
+    role: UserRole,
+    ctx: MemberActionContext,
+  ): Promise<{ from: UserRole; to: UserRole; sessionsRevoked: boolean } | null> {
+    const membership = await this.getMembership(userId, organizationId);
+    if (!membership) return null;
+    const from = membership.role;
+    if (from === role) return { from, to: role, sessionsRevoked: false };
+
+    const demotion = ORG_ROLE_RANK[from] > ORG_ROLE_RANK[role];
+
+    await this.prisma.$transaction(async (tx) => {
+      if (from === 'ADMIN' && demotion) {
+        await this.assertNotLastAdmin(organizationId, userId, tx);
+      }
+      await tx.organizationMember.update({
+        where: { userId_organizationId: { userId, organizationId } },
+        data: { role },
+      });
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { organizationId: true },
+      });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          ...(user?.organizationId === organizationId ? { role } : {}),
+          ...(demotion ? { sessionsValidFrom: new Date() } : {}),
+        },
+      });
     });
 
-    // Sync cache if this is the user's active org
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (user?.organizationId === organizationId) {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { role },
+    await this.securityEvents.log({
+      event: SecurityEvents.ROLE_CHANGED,
+      actorType: 'USER',
+      organizationId,
+      actorUserId: ctx.actorUserId,
+      targetUserId: userId,
+      metadata: { from, to: role, via: 'admin' },
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+    if (demotion) {
+      await this.securityEvents.log({
+        event: SecurityEvents.SESSIONS_REVOKED,
+        actorType: 'USER',
+        organizationId,
+        actorUserId: ctx.actorUserId,
+        targetUserId: userId,
+        metadata: { reason: 'role_demotion', organizationId },
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
       });
     }
 
-    return membership;
+    return { from, to: role, sessionsRevoked: demotion };
+  }
+
+  // ── Force re-authentication ───────────────────────────────────────────────
+  //
+  // Both methods only move the `sessionsValidFrom` watermark. Since the
+  // refresh grant honours it (RefreshTokenRevocationMiddleware), that is
+  // sufficient: there is no fourth way to obtain a user token —
+  // `authorization_code` needs an interactive login and `client_credentials`
+  // mints `sub: "client:<id>"`, which is not a user session. What the
+  // watermark does NOT cover is per-user MCP API keys, hence `revokeApiKeys`.
+  //
+  // Acting on yourself is allowed: it is not a lockout, you sign in again.
+  // The self-protection on `updateMemberRole`/delete exists because those are
+  // irreversible from the target's side; this one is not.
+
+  /**
+   * Signs one member out of every client by raising their watermark.
+   *
+   * Resolved through the membership so an admin can only act on members of
+   * their own workspace. The watermark is global (see
+   * `UserLifecycleService.deactivateInOrganization`), so a multi-workspace
+   * member is signed out of their other workspaces too — the caller is told
+   * via `crossOrgMemberships`.
+   *
+   * Returns null when the user is not a member (the controller's 404).
+   */
+  async revokeMemberSessions(
+    userId: string,
+    organizationId: string,
+    options: RevokeSessionsOptions,
+    ctx: MemberActionContext,
+  ): Promise<{ apiKeysRevoked: number; crossOrgMemberships: number } | null> {
+    const membership = await this.getMembership(userId, organizationId);
+    if (!membership) return null;
+
+    const now = new Date();
+    const { apiKeysRevoked, crossOrgMemberships } = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { sessionsValidFrom: now },
+      });
+      const crossOrgMemberships = await tx.organizationMember.count({
+        where: { userId, organizationId: { not: organizationId }, deactivatedAt: null },
+      });
+      let apiKeysRevoked = 0;
+      if (options.revokeApiKeys) {
+        // Keys are org-scoped, like on deactivation: a multi-workspace user
+        // keeps the keys they use elsewhere.
+        const res = await tx.mcpApiKey.updateMany({
+          where: { userId, organizationId, isActive: true },
+          data: { isActive: false },
+        });
+        apiKeysRevoked = res.count;
+      }
+      return { apiKeysRevoked, crossOrgMemberships };
+    });
+
+    await this.securityEvents.log({
+      event: SecurityEvents.SESSIONS_REVOKED,
+      actorType: 'USER',
+      organizationId,
+      actorUserId: ctx.actorUserId,
+      targetUserId: userId,
+      // `keysDeactivated`, not `apiKeys…`: the audit writer redacts any key
+      // matching /api[-_]?key/, and a count is not a secret.
+      metadata: {
+        reason: 'admin_force_reauth',
+        organizationId,
+        self: ctx.actorUserId === userId,
+        keysDeactivated: apiKeysRevoked,
+        crossOrgMemberships,
+      },
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+
+    return { apiKeysRevoked, crossOrgMemberships };
+  }
+
+  /**
+   * Signs every active member of the workspace out of every client.
+   *
+   * One `updateMany` over the memberships and ONE summary audit row: the
+   * per-member detail is in its metadata. `crossOrgMembersAffected` counts
+   * the members who also belong to another workspace, because the watermark
+   * is global and they get signed out there as well.
+   */
+  async revokeWorkspaceSessions(
+    organizationId: string,
+    options: RevokeWorkspaceSessionsOptions,
+    ctx: MemberActionContext,
+  ): Promise<{ membersAffected: number; crossOrgMembersAffected: number; apiKeysRevoked: number }> {
+    const now = new Date();
+    const memberFilter: Prisma.OrganizationMemberWhereInput = {
+      organizationId,
+      deactivatedAt: null,
+      ...(options.excludeSelf ? { userId: { not: ctx.actorUserId } } : {}),
+    };
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const { count: membersAffected } = await tx.user.updateMany({
+        where: { memberships: { some: memberFilter } },
+        data: { sessionsValidFrom: now },
+      });
+
+      const crossOrg = await tx.organizationMember.findMany({
+        where: {
+          organizationId: { not: organizationId },
+          deactivatedAt: null,
+          user: { memberships: { some: memberFilter } },
+        },
+        select: { userId: true },
+        distinct: ['userId'],
+      });
+
+      let apiKeysRevoked = 0;
+      if (options.revokeApiKeys) {
+        const res = await tx.mcpApiKey.updateMany({
+          where: {
+            organizationId,
+            isActive: true,
+            ...(options.excludeSelf ? { userId: { not: ctx.actorUserId } } : {}),
+          },
+          data: { isActive: false },
+        });
+        apiKeysRevoked = res.count;
+      }
+
+      return { membersAffected, crossOrgMembersAffected: crossOrg.length, apiKeysRevoked };
+    });
+
+    await this.securityEvents.log({
+      event: SecurityEvents.WORKSPACE_SESSIONS_REVOKED,
+      actorType: 'USER',
+      organizationId,
+      actorUserId: ctx.actorUserId,
+      // See revokeMemberSessions for why the key count is not named `apiKeys…`.
+      metadata: {
+        reason: 'admin_force_reauth',
+        organizationId,
+        excludeSelf: Boolean(options.excludeSelf),
+        membersAffected: result.membersAffected,
+        crossOrgMembersAffected: result.crossOrgMembersAffected,
+        keysDeactivated: result.apiKeysRevoked,
+      },
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+
+    return result;
   }
 
   async deleteOrganization(
@@ -115,7 +397,7 @@ export class OrganizationsService {
     }
 
     const membership = await this.getMembership(userId, organizationId);
-    if (!membership || membership.role !== 'ADMIN') {
+    if (!membership || membership.role !== 'ADMIN' || membership.deactivatedAt) {
       throw new ForbiddenException('Only org admins can delete the organization');
     }
 
@@ -129,14 +411,14 @@ export class OrganizationsService {
     const nextByOrphan = new Map<string, Next>();
     for (const o of orphans) {
       const m = await this.prisma.organizationMember.findFirst({
-        where: { userId: o.id, organizationId: { not: organizationId } },
+        where: { userId: o.id, organizationId: { not: organizationId }, deactivatedAt: null },
         orderBy: { joinedAt: 'asc' },
       });
       nextByOrphan.set(o.id, m ? { organizationId: m.organizationId, role: m.role } : null);
     }
 
     const selfNext = await this.prisma.organizationMember.findFirst({
-      where: { userId, organizationId: { not: organizationId } },
+      where: { userId, organizationId: { not: organizationId }, deactivatedAt: null },
       orderBy: { joinedAt: 'asc' },
     });
 

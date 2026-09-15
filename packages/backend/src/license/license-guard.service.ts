@@ -34,20 +34,20 @@ export class LicenseGuardService {
     const license = await this.licenseService.getCurrentLicense(organizationId);
     if (!license) {
       throw new ForbiddenException(
-        'No active license. Please purchase a license at anythingmcp.com/pricing',
+        'This workspace has no active license. Ask a workspace administrator to activate one.',
       );
     }
 
     if (license.status !== 'active') {
       throw new ForbiddenException(
-        'Your license has expired. Please purchase a license at anythingmcp.com/pricing',
+        'This workspace\'s license is not active. Ask a workspace administrator to renew it.',
       );
     }
 
     if (license.plan === 'trial' && license.expiresAt) {
       if (new Date(license.expiresAt) < new Date()) {
         throw new ForbiddenException(
-          'Your trial has expired. Please purchase a license at anythingmcp.com/pricing',
+          'This workspace\'s trial has ended. Ask a workspace administrator to activate a license.',
         );
       }
     }
@@ -74,7 +74,7 @@ export class LicenseGuardService {
     });
     if (count >= maxConnectors) {
       throw new ForbiddenException(
-        `Trial limit reached (${maxConnectors} connectors). Upgrade at anythingmcp.com/pricing`,
+        `Trial limit reached (${maxConnectors} connectors). A workspace administrator can activate a license to add more.`,
       );
     }
   }
@@ -94,7 +94,7 @@ export class LicenseGuardService {
     });
     if (count >= maxMcpServers) {
       throw new ForbiddenException(
-        `Trial limit reached (${maxMcpServers} MCP servers). Upgrade at anythingmcp.com/pricing`,
+        `Trial limit reached (${maxMcpServers} MCP servers). A workspace administrator can activate a license to add more.`,
       );
     }
   }

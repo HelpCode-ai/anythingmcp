@@ -184,3 +184,240 @@ describe('DynamicMcpTools — response cache', () => {
     expect(redis.set).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Which tool a name resolves to, when two tenants have registered the same one.
+ *
+ * This is the multi-tenant boundary of the shared `/mcp` endpoint. Until
+ * 12 Sep 2026 resolution ran `getTool(name, context.connectorIds)` first and
+ * only fell back to the organization `if (!tool)`. On `/mcp` there are no
+ * `connectorIds`, and an unfiltered `getTool` returns whichever connector
+ * registered the name FIRST across the whole deployment — so the fallback never
+ * ran and the caller executed somebody else's connector, with that tenant's
+ * credentials. Verified on production: two fresh tenants both invoked a third,
+ * unrelated workspace's connector. 610 tool names were shared across more than
+ * one organization at the time; one was shared by 76.
+ */
+describe('DynamicMcpTools — tool resolution is scoped to the caller', () => {
+  // Distinct base URLs, so "which connector ran" is something the test can
+  // actually see — the same way the production reproduction identified it.
+  const mine: RegisteredTool = {
+    ...makeTool(),
+    id: 'tool-mine',
+    connectorId: 'conn-mine',
+    organizationId: 'org-mine',
+    connectorConfig: { baseUrl: 'https://mine.example.com', authType: 'NONE' },
+  };
+  const theirs: RegisteredTool = {
+    ...makeTool(),
+    id: 'tool-theirs',
+    connectorId: 'conn-theirs',
+    organizationId: 'org-theirs',
+    connectorConfig: { baseUrl: 'https://theirs.example.com', authType: 'NONE' },
+  };
+
+  /** A registry that behaves like the real one: same name, two owners. */
+  function registry() {
+    const calls: string[] = [];
+    return {
+      calls,
+      // Unfiltered → first registered wins, exactly as ToolRegistry does.
+      getTool: (name: string, connectorIds?: string[]) => {
+        calls.push(connectorIds ? `getTool(${connectorIds.join()})` : 'getTool(unscoped)');
+        const candidates = [theirs, mine].filter((t) => t.name === name);
+        if (!connectorIds) return candidates[0];
+        return candidates.find((t) => connectorIds.includes(t.connectorId));
+      },
+      getToolForOrg: (name: string, organizationId: string) => {
+        calls.push(`getToolForOrg(${organizationId})`);
+        return [theirs, mine].find(
+          (t) => t.name === name && t.organizationId === organizationId,
+        );
+      },
+    };
+  }
+
+  function executorWith(reg: ReturnType<typeof registry>) {
+    const restEngine = { execute: jest.fn().mockResolvedValue(RAW) };
+    const executor = new DynamicMcpTools(
+      reg as any,
+      { logInvocation: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: jest.fn().mockResolvedValue(null), set: jest.fn(), incr: jest.fn(), expire: jest.fn(), ttl: jest.fn() } as any,
+      { checkLicenseActive: jest.fn().mockResolvedValue(undefined) } as any,
+      { isCloud: () => true } as any,
+      {} as any,
+      restEngine as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { scheduleObservationalIngest: jest.fn() } as any,
+    );
+    return { executor, restEngine };
+  }
+
+  it('runs MY connector, not the one that registered the name first', async () => {
+    const reg = registry();
+    const { executor, restEngine } = executorWith(reg);
+
+    await executor.executeTool('list_devices', {}, { organizationId: 'org-mine' });
+
+    expect(restEngine.execute).toHaveBeenCalledTimes(1);
+    const [config] = restEngine.execute.mock.calls[0];
+    expect(config.baseUrl).toBe('https://mine.example.com');
+    // The scoped lookup is the one that must have been consulted.
+    expect(reg.calls).toContain('getToolForOrg(org-mine)');
+    expect(reg.calls).not.toContain('getTool(unscoped)');
+  });
+
+  it('refuses rather than widening when my organization has no such tool', async () => {
+    const reg = registry();
+    const { executor, restEngine } = executorWith(reg);
+
+    const res = await executor.executeTool('list_devices', {}, {
+      organizationId: 'org-with-nothing',
+    });
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('not found');
+    expect(restEngine.execute).not.toHaveBeenCalled();
+    expect(reg.calls).not.toContain('getTool(unscoped)');
+  });
+
+  it('uses the server scope when the call came through /mcp/:serverId', async () => {
+    const reg = registry();
+    const { executor } = executorWith(reg);
+
+    await executor.executeTool('list_devices', {}, {
+      organizationId: 'org-mine',
+      connectorIds: ['conn-mine'],
+    });
+
+    expect(reg.calls).toContain('getTool(conn-mine)');
+    expect(reg.calls).not.toContain('getToolForOrg(org-mine)');
+  });
+
+  it('does not fall back to the organization when the server has no such tool', async () => {
+    const reg = registry();
+    const { executor, restEngine } = executorWith(reg);
+
+    const res = await executor.executeTool('list_devices', {}, {
+      organizationId: 'org-mine',
+      connectorIds: ['conn-unrelated'],
+    });
+
+    expect(res.isError).toBe(true);
+    expect(restEngine.execute).not.toHaveBeenCalled();
+  });
+
+  // A self-hosted box with an instance-level MCP_API_KEY has no tenant to scope
+  // to, and "any tool" is the right answer there.
+  it('still resolves unscoped for an instance credential with no organization', async () => {
+    const reg = registry();
+    const { executor, restEngine } = executorWith(reg);
+
+    await executor.executeTool('list_devices', {}, {});
+
+    expect(reg.calls).toContain('getTool(unscoped)');
+    expect(restEngine.execute).toHaveBeenCalled();
+  });
+});
+
+describe('DynamicMcpTools — exposed response headers (pagination)', () => {
+  const LINK =
+    '<https://api.example.com/devices?cursor=abc>; rel="next", <https://api.example.com/devices?cursor=000>; rel="prev"';
+  const PAGE = { items: [{ id: 1 }] };
+
+  function pagedTool(exposeHeaders?: string[], responseMapping?: Record<string, unknown>) {
+    const tool = makeTool(responseMapping);
+    tool.endpointMapping = { method: 'GET', path: '/devices', ...(exposeHeaders ? { exposeHeaders } : {}) };
+    return tool;
+  }
+
+  function buildPaged(tool: RegisteredTool, headers: Record<string, string>, cached?: string) {
+    const built = build(tool, { engineResult: PAGE, cached });
+    (built.restEngine as any).executeWithMeta = jest
+      .fn()
+      .mockResolvedValue({ body: PAGE, headers });
+    return built;
+  }
+
+  it('does not touch the engine\'s header path, nor the output, for a tool that did not opt in', async () => {
+    const { executor, restEngine } = buildPaged(pagedTool(), { link: LINK });
+    const res = await executor.executeTool('list_devices', {});
+    expect((restEngine as any).executeWithMeta).not.toHaveBeenCalled();
+    expect(restEngine.execute).toHaveBeenCalled();
+    expect(res.structured).toEqual(PAGE);
+  });
+
+  it('puts the asked-for headers and the next cursor next to the body', async () => {
+    const { executor } = buildPaged(pagedTool(['link']), { link: LINK });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.structured).toEqual({
+      items: [{ id: 1 }],
+      _headers: { link: LINK },
+      _pagination: {
+        nextUrl: 'https://api.example.com/devices?cursor=abc',
+        nextCursor: 'abc',
+        cursorParam: 'cursor',
+        prevUrl: 'https://api.example.com/devices?cursor=000',
+      },
+    });
+    expect(JSON.parse(res.content[0].text)._pagination.nextCursor).toBe('abc');
+  });
+
+  it('omits _pagination on the last page, so its absence is the signal', async () => {
+    const { executor } = buildPaged(pagedTool(['link', 'x-ratelimit-remaining']), {
+      link: '<https://api.example.com/devices?cursor=000>; rel="prev"',
+      'x-ratelimit-remaining': '41',
+    });
+    const res = await executor.executeTool('list_devices', {});
+    const out = res.structured as any;
+    expect(out._pagination).toBeUndefined();
+    expect(out._headers['x-ratelimit-remaining']).toBe('41');
+  });
+
+  it('wraps a non-object body as data instead of losing the extras', async () => {
+    const built = buildPaged(pagedTool(['link']), { link: LINK });
+    (built.restEngine as any).executeWithMeta.mockResolvedValue({ body: [1, 2], headers: { link: LINK } });
+    const res = await built.executor.executeTool('list_devices', {});
+    expect((res.structured as any).data).toEqual([1, 2]);
+    expect((res.structured as any)._pagination.nextCursor).toBe('abc');
+  });
+
+  it('applies the response transform to the body first, then attaches the extras', async () => {
+    const built = buildPaged(
+      pagedTool(['link'], { transform: { select: { first: '$.items[0].id' } } }),
+      { link: LINK },
+    );
+    const res = await built.executor.executeTool('list_devices', {});
+    expect(res.structured).toMatchObject({ first: 1, _pagination: { nextCursor: 'abc' } });
+  });
+
+  it('audits the bare body: headers never reach the log', async () => {
+    const { executor, audit } = buildPaged(pagedTool(['link']), { link: LINK });
+    await executor.executeTool('list_devices', {});
+    expect(audit.logInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({ output: PAGE, status: 'SUCCESS' }),
+    );
+  });
+
+  it('caches body and headers together, and a cache hit still carries the cursor', async () => {
+    const { executor, redis } = buildPaged(pagedTool(['link'], { cacheTtl: 60 }), { link: LINK });
+    await executor.executeTool('list_devices', {});
+    const stored = JSON.parse(redis.set.mock.calls[0][1]);
+    expect(stored).toEqual({ __amcpEnvelope: 1, body: PAGE, meta: { headers: { link: LINK } } });
+
+    const hit = buildPaged(pagedTool(['link'], { cacheTtl: 60 }), {}, redis.set.mock.calls[0][1]);
+    const res = await hit.executor.executeTool('list_devices', {});
+    expect((hit.restEngine as any).executeWithMeta).not.toHaveBeenCalled();
+    expect((res.structured as any)._pagination.nextCursor).toBe('abc');
+  });
+
+  it('still reads a cache entry written before envelopes existed', async () => {
+    const hit = buildPaged(pagedTool(['link'], { cacheTtl: 60 }), {}, JSON.stringify(PAGE));
+    const res = await hit.executor.executeTool('list_devices', {});
+    expect(res.structured).toEqual(PAGE);
+  });
+});
+

@@ -28,7 +28,6 @@
     {
       "name": "mercado_libre_search_items",
       "description": "Search items in a Mercado Libre site (country marketplace). Returns matches with item id (e.g. 'MLB1234567890'), title, price, currency, condition (new/used), thumbnail, seller id, available_quantity, and permalink to the listing.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -72,7 +71,6 @@
     {
       "name": "mercado_libre_get_item",
       "description": "Fetch full details for a Mercado Libre item by id. Returns title, description, price, currency, listing type, all attributes (brand, model, condition, …), pictures, available_quantity, sold_quantity, warranty, seller_id, and shipping options.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -93,7 +91,6 @@
     {
       "name": "mercado_libre_get_user",
       "description": "Get a user's public profile (typically used to inspect a seller). Returns id, nickname, country_id, registration_date, seller_reputation (level_id, transactions completed/canceled, ratings positive/neutral/negative), and listing site.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -114,7 +111,6 @@
     {
       "name": "mercado_libre_list_orders",
       "description": "List orders for an authenticated seller. Requires an OAuth2 token belonging to the seller. Returns order id, status (paid/cancelled/confirmed), date_created, total amount, buyer summary, order items, and shipping details.",
-      "useProxy": true,
       "parameters": {
         "type": "object",
         "properties": {

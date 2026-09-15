@@ -10,6 +10,7 @@ import {
 import { AppSelect } from '@/components/ui/select';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/toast';
 
 const ORG_ROLE_OPTIONS = [
@@ -128,7 +129,13 @@ export function RoleMappingsPanel({
           {isGroups ? 'Group mappings' : 'App role mappings'}
         </h4>
         <p className="text-[11.5px] text-[var(--text-3)] mt-1 max-w-2xl">
-          {isGroups ? (
+          {isGroups && provider.scimEnabled ? (
+            <>
+              Groups assigned to the application in Entra appear here automatically once
+              provisioning has run. Assign MCP roles to each; a group with no roles grants
+              nothing. You can still add a group by object ID if it has not been pushed yet.
+            </>
+          ) : isGroups ? (
             <>
               Enter the group&apos;s <strong>object ID</strong>, not its name — Microsoft does
               not make group names unique, so matching on one would let anyone able to create
@@ -144,6 +151,14 @@ export function RoleMappingsPanel({
           )}
         </p>
       </div>
+
+      {provider.scimEnabled && !isGroups && (
+        <p className="text-[12px] text-[var(--warn,#b45309)] bg-[var(--surface-2)] rounded-[9px] px-3 py-2">
+          Roles are read from application roles at sign-in. Group changes pushed over SCIM will
+          not change anyone&apos;s roles between sign-ins — switch &ldquo;Read roles from&rdquo;
+          to groups to get that.
+        </p>
+      )}
 
       {!provider.roleSyncEnabled && (
         <p className="text-[12px] text-[var(--warn,#b45309)] bg-[var(--surface-2)] rounded-[9px] px-3 py-2">
@@ -162,10 +177,17 @@ export function RoleMappingsPanel({
               <div className="md:col-span-2">
                 <label className={labelClass}>
                   {isGroups ? 'Group object ID' : 'App role value'}
+                  {row.scimManaged && (
+                    <Badge tone="neutral" className="ml-2">from SCIM</Badge>
+                  )}
+                  {row.scimManaged && row.scimMemberCount != null && (
+                    <span className="ml-2 font-normal">{row.scimMemberCount} member{row.scimMemberCount === 1 ? '' : 's'}</span>
+                  )}
                 </label>
                 <input
                   className={inputClass}
                   value={row.externalId}
+                  readOnly={Boolean(row.scimManaged)}
                   onChange={(e) => patch(i, { externalId: e.target.value })}
                   placeholder={
                     isGroups ? '4be78614-f22d-472f-a2cb-5eb81b6e3f6f' : 'amcp.einkauf'
@@ -209,13 +231,19 @@ export function RoleMappingsPanel({
             </div>
 
             <div className="flex justify-end">
-              <button
-                type="button"
-                className="text-[11.5px] text-[var(--danger,#dc2626)] hover:underline"
-                onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
-              >
-                Remove
-              </button>
+              {row.scimManaged ? (
+                <span className="text-[11.5px] text-[var(--text-3)]">
+                  Unassign the group from the application in Entra to remove it.
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="text-[11.5px] text-[var(--danger,#dc2626)] hover:underline"
+                  onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
+                >
+                  Remove
+                </button>
+              )}
             </div>
           </div>
         ))}

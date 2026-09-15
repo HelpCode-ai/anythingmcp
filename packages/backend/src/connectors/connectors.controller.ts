@@ -41,6 +41,9 @@ import { CurlParser } from './parsers/curl.parser';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { McpOAuthService } from './mcp-oauth.service';
 import { CatalogResyncService } from './catalog-resync.service';
+import { McpServersService } from '../mcp-servers/mcp-servers.service';
+import { DeploymentService } from '../common/deployment.service';
+import { validateBaseUrl } from './base-url.util';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
@@ -441,6 +444,8 @@ export class ConnectorsController {
     private readonly mcpServer: McpServerService,
     private readonly configService: ConfigService,
     private readonly licenseGuard: LicenseGuardService,
+    private readonly mcpServers: McpServersService,
+    private readonly deployment: DeploymentService,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -487,6 +492,7 @@ export class ConnectorsController {
   @ApiOperation({ summary: 'Create a new connector' })
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
     this.assertCanCreate(req);
+    this.assertUsableBaseUrl(dto.baseUrl, dto.type);
     await this.licenseGuard.checkCanCreateConnector(req.user.sub, req.user.organizationId);
     const connector = await this.connectorsService.create(req.user.sub, req.user.organizationId, dto);
 
@@ -546,7 +552,36 @@ export class ConnectorsController {
       );
     }
 
-    return connector;
+    // Put the connector on a server straight away. Assigning it was a separate
+    // page most people never found: of the 84 workspaces that imported a
+    // working connector in the last fortnight, 49 never attached it to
+    // anything, so their tools were reachable by nobody. Additive, so an
+    // existing server keeps what it already had, and detaching is one click.
+    const attachedTo = await this.mcpServers.attachToDefaultServer(
+      req.user.sub,
+      req.user.organizationId,
+      connector.id,
+    );
+    if (attachedTo) {
+      this.logger.log(
+        `Attached connector ${connector.id} to MCP server ${attachedTo.id}`,
+      );
+    }
+
+    return { ...connector, attachedToServer: attachedTo };
+  }
+
+  /**
+   * Reject a base URL that cannot work, with a message that says what to do.
+   * Single-label hostnames are only refused on cloud — self-hosted instances
+   * legitimately reach services by Docker network name.
+   */
+  private assertUsableBaseUrl(baseUrl: string, type: string): void {
+    const problem = validateBaseUrl(baseUrl, {
+      type,
+      requirePublicHost: this.deployment.isCloud(),
+    });
+    if (problem) throw new BadRequestException(problem);
   }
 
   @Get('proxy-availability')
@@ -668,7 +703,16 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
-    return this.connectorsService.update(id, dto);
+    if (dto.baseUrl !== undefined) {
+      this.assertUsableBaseUrl(dto.baseUrl, connector.type);
+    }
+    const updated = await this.connectorsService.update(id, dto);
+    // The registry keeps its own copy of the connector — base URL, headers,
+    // auth — and reads it on every call. Without this, a changed base URL
+    // showed in the form and was ignored by every tool until the next
+    // restart; the env-vars and tool routes already reload, this one did not.
+    await this.mcpServer.reloadConnectorTools(id);
+    return updated;
   }
 
   @Get(':id/oauth-config')
@@ -1272,12 +1316,21 @@ export class ConnectorsController {
       'Re-sync a catalog-installed connector with the current catalog. ' +
       'Updates tool descriptions/parameters/endpoints from the catalog while ' +
       'preserving response customisations, role access and manual disables. ' +
-      'Never touches credentials, base URL or env vars.',
+      'Never touches credentials or env vars. The base URL moves only when ' +
+      'applyBaseUrl=true, and only when catalog-diff reported a change: a ' +
+      'different host takes every tool down at once, and the operator may ' +
+      'have pointed it at their own region or sandbox on purpose.',
   })
-  async resyncCatalog(@Req() req: any, @Param('id') id: string) {
+  async resyncCatalog(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('applyBaseUrl') applyBaseUrl?: string,
+  ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
-    const { applied, diff } = await this.catalogResync.resync(id, 'full');
+    const { applied, diff } = await this.catalogResync.resync(id, 'full', {
+      applyBaseUrl: applyBaseUrl === 'true',
+    });
     if (applied) {
       await this.mcpServer.reloadConnectorTools(id);
     }

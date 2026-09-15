@@ -42,8 +42,10 @@ model Organization {
   kgValueSeen      KgValueSeen[]
   kgSkills         KgSkillSuggestion[]
   securityEvents   SecurityEvent[]
+  productEvents    ProductEvent[]
   userRoleAssignments UserRoleAssignment[]
   identityProviders   IdentityProvider[]
+  mcpConnectionGrants McpConnectionGrant[]
 
   @@map("organizations")
 }
@@ -58,6 +60,12 @@ model OrganizationMember {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   role           UserRole     @default(EDITOR)
   joinedAt       DateTime     @default(now()) @map("joined_at")
+  /// null = active. Set by `UserLifecycleService.deactivateInOrganization`
+  /// (an admin's Deactivate, or `active: false` pushed by SCIM). The row is
+  /// KEPT rather than deleted so that role and joinedAt survive a
+  /// reactivation, and so the member list can say "deactivated" instead of
+  /// making a leaver indistinguishable from someone who was never here.
+  deactivatedAt  DateTime?    @map("deactivated_at")
 
   @@unique([userId, organizationId])
   @@index([userId])
@@ -151,6 +159,7 @@ model User {
   identities               UserIdentity[]
   securityEventsAsActor    SecurityEvent[] @relation("SecurityEventActor")
   securityEventsAsTarget   SecurityEvent[] @relation("SecurityEventTarget")
+  productEvents            ProductEvent[]
 
   memberships              OrganizationMember[]
   connectors               Connector[]
@@ -160,6 +169,8 @@ model User {
   mcpApiKeys               McpApiKey[]
   emailVerificationTokens  EmailVerificationToken[]
   recoveryCodes            RecoveryCode[]
+  scimGroupMemberships     IdentityProviderGroupMember[]
+  mcpConnectionGrants      McpConnectionGrant[]
 
   @@index([organizationId])
   @@map("users")
@@ -598,6 +609,52 @@ model McpServerConnector {
   @@map("mcp_server_connectors")
 }
 
+// ── MCP Connection Grant ────────────────────────────────────────────────────
+
+/// What an OAuth client is allowed to SEE through the shared `/mcp` endpoint,
+/// chosen by the user while authorizing it.
+///
+/// A filter, never a source of authority. Resolution re-checks organization
+/// membership for every target on every request and fails closed, because a
+/// grant is written when the token is issued and membership can be revoked long
+/// afterwards. A grant naming another organization's server therefore concedes
+/// nothing — the target is simply dropped.
+///
+/// Keyed on (clientId, userId): one live selection per client per user, so
+/// re-authorizing overwrites it and the user can revoke it from the dashboard.
+model McpConnectionGrant {
+  id String @id @default(cuid())
+
+  /// `client_id` claim of the access token. Present on every token mcp-nest
+  /// issues, which is what lets the selection live server-side instead of
+  /// having to be carried in the token.
+  clientId String @map("client_id")
+  userId   String @map("user_id")
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Set for a whole-workspace grant: every tool of this organization, which is
+  /// what `/mcp` served before grants existed. Null when `serverIds` is used.
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// Chosen MCP servers. Ids only — the owning organization is read back from
+  /// `mcp_server_configs` at resolution time and never trusted from here.
+  serverIds String[] @map("server_ids")
+
+  /// Set when the user revoked this connection from the dashboard. The row is
+  /// KEPT rather than deleted, because deleting it means "no grant", and no
+  /// grant means the pre-grant behaviour — the caller's whole organization. A
+  /// revoke that widens access is the opposite of a revoke.
+  revokedAt DateTime? @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([clientId, userId])
+  @@index([userId])
+  @@map("mcp_connection_grants")
+}
+
 // ── Audit Log ───────────────────────────────────────────────────────────────
 
 enum InvocationStatus {
@@ -776,6 +833,20 @@ model IdentityProvider {
   /// through this provider has succeeded.
   lastSuccessfulLoginAt DateTime? @map("last_successful_login_at")
 
+  // ── SCIM 2.0 inbound provisioning ──────────────────────────────────────
+  /// Entra pushes users and groups to /api/scim/v2 with a long-lived bearer.
+  scimEnabled       Boolean   @default(false) @map("scim_enabled")
+  /// sha256 hex of the bearer token. The plaintext is shown once at issue and
+  /// never stored. This is the schema's first sha256 credential and differs
+  /// from the bcrypt used for passwords on purpose: the token is 256 random
+  /// bits, so stretching adds nothing, while verification has to be a single
+  /// indexed lookup on every request of an Entra provisioning burst.
+  scimTokenHash     String?   @unique @map("scim_token_hash")
+  scimTokenIssuedAt DateTime? @map("scim_token_issued_at")
+  /// Bumped at most once a minute by the SCIM guard — "is Entra still talking
+  /// to us". Entra has no end-of-cycle call, so this is the only honest signal.
+  scimLastRequestAt DateTime? @map("scim_last_request_at")
+
   /// Per-type settings, validated by a Zod schema keyed on `type` — the same
   /// shape-in-Json approach as connector engines. ENTRA: { tenantId }.
   /// OKTA: { authorizationServerId? }. AUTH0: { rolesClaimNamespace }.
@@ -788,6 +859,7 @@ model IdentityProvider {
   roleMappings  IdentityProviderRoleMapping[]
   identities    UserIdentity[]
   loginAttempts SsoLoginAttempt[]
+  scimGroups    IdentityProviderGroup[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -820,6 +892,48 @@ model IdentityProviderRoleMapping {
   @@map("identity_provider_role_mappings")
 }
 
+/// A directory group pushed over SCIM, with its members.
+///
+/// Deliberately NOT a row of `IdentityProviderRoleMapping`. A mapping that
+/// matches a user and carries no roles is a real "matched, grant nothing"
+/// outcome, which `RoleSyncService` turns into an empty synced set — and a
+/// user holding no role at all is UNRESTRICTED. Auto-creating an empty mapping
+/// for every pushed group would therefore hand every SCIM user in any group
+/// full tool access. Groups live here; mappings join on `(providerId,
+/// externalId)` and are created only when an admin assigns roles.
+model IdentityProviderGroup {
+  id         String           @id @default(cuid())
+  providerId String           @map("provider_id")
+  provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  /// Entra group OBJECT ID (SCIM `externalId`). Nullable defensively: a group
+  /// without one can never match a mapping and is ignored by role sync.
+  externalId  String? @map("external_id")
+  displayName String  @map("display_name")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members IdentityProviderGroupMember[]
+
+  @@unique([providerId, externalId])
+  @@index([providerId])
+  @@map("identity_provider_groups")
+}
+
+model IdentityProviderGroupMember {
+  groupId String                @map("group_id")
+  group   IdentityProviderGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId  String                @map("user_id")
+  user    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([groupId, userId])
+  @@index([userId])
+  @@map("identity_provider_group_members")
+}
+
 /// Links a local user to an identity at an external provider.
 ///
 /// SECURITY: the key is (provider, externalSubject) — NEVER the email. Entra's
@@ -834,8 +948,16 @@ model UserIdentity {
   providerId String           @map("provider_id")
   provider   IdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
-  /// The provider's immutable subject. Entra: the `oid` claim.
+  /// The provider's immutable subject. Entra: the `oid` claim. SCIM sends the
+  /// same object id as `externalId`, so a SCIM-created identity and a later
+  /// SSO sign-in converge on this one row.
   externalSubject String  @map("external_subject")
+  /// Set when SCIM has described this user — on create, or on the first
+  /// PUT/PATCH that touches an identity SSO created. Distinguishes "SCIM says
+  /// this user is in no group" (authoritative) from "SCIM has never mentioned
+  /// them" (fall back to the token's groups claim). Without it a token that
+  /// arrives without a groups claim would wipe SCIM-derived roles.
+  scimManagedAt DateTime? @map("scim_managed_at")
   /// Entra: the `tid` claim. Stored so a tenant change becomes detectable.
   externalTid     String? @map("external_tid")
 
@@ -955,6 +1077,33 @@ model SecurityEvent {
   @@index([actorUserId, createdAt])
   @@index([targetUserId, createdAt])
   @@map("security_events")
+}
+
+// Product-usage events from the UI, e.g. "copied the MCP endpoint", "opened
+// the Cursor tab". Separate from security_events (an audit trail) and from
+// tool_invocations (needs a tool). Exists because 74% of workspaces that
+// attached a connector never sent a single MCP request and nothing recorded
+// what they did on the page that tells them how — without this the next
+// redesign of that page would be as blind as the last one.
+model ProductEvent {
+  id String @id @default(cuid())
+
+  // Slug, e.g. 'mcp_url_copied'. Allow-listed in ProductEventService.
+  event String
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String?       @map("user_id")
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Small, non-sensitive context: which client tab, which server id.
+  metadata Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([event, createdAt])
+  @@map("product_events")
 }
 
 // ── OAuth2 Authorization Server ─────────────────────────────────────────────

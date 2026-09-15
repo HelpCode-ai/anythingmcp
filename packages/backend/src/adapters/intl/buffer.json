@@ -11,7 +11,7 @@
   "connector": {
     "name": "Buffer GraphQL API",
     "type": "GRAPHQL",
-    "baseUrl": "https://graphql.buffer.com",
+    "baseUrl": "https://api.buffer.com/graphql",
     "authType": "BEARER_TOKEN",
     "authConfig": {
       "token": "{{BUFFER_ACCESS_TOKEN}}"

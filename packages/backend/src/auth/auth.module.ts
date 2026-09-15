@@ -7,6 +7,7 @@ import { RecoveryCodesService } from './recovery-codes.service';
 import { SsoEnforcementService } from './sso-enforcement.service';
 import { AuthController } from './auth.controller';
 import { LoginController } from './login.controller';
+import { UserInfoController } from './userinfo.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { McpAuthGuard } from './mcp-auth.guard';
 import { McpAuthMiddleware } from './mcp-auth.middleware';
@@ -14,6 +15,7 @@ import { McpRateLimitGuard } from './mcp-rate-limit.guard';
 import { RolesGuard } from './roles.guard';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { ClientCredentialsMiddleware } from './client-credentials.middleware';
+import { RefreshTokenRevocationMiddleware } from './refresh-token-revocation.middleware';
 import { UsersModule } from '../users/users.module';
 import { SettingsModule } from '../settings/settings.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
@@ -46,7 +48,7 @@ import { IdentityProvidersModule } from '../identity-providers/identity-provider
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController, LoginController],
+  controllers: [AuthController, LoginController, UserInfoController],
   providers: [
     AuthService,
     RecoveryCodesService,
@@ -58,6 +60,7 @@ import { IdentityProvidersModule } from '../identity-providers/identity-provider
     RolesGuard,
     PrismaOAuthStore,
     ClientCredentialsMiddleware,
+    RefreshTokenRevocationMiddleware,
   ],
   exports: [
     AuthService,
@@ -69,6 +72,7 @@ import { IdentityProvidersModule } from '../identity-providers/identity-provider
     RolesGuard,
     PrismaOAuthStore,
     ClientCredentialsMiddleware,
+    RefreshTokenRevocationMiddleware,
     JwtModule,
   ],
 })

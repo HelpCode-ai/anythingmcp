@@ -37,6 +37,12 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=4000
+      # V8 old-space cap for the backend, read by start.sh. Left unset it
+      # defaults to 2048, which suits a 4 GB host; the tool registry outgrew
+      # that and crash-looped the instance on 10 Sep. Raise it in the server
+      # .env when the host has the RAM to back it — roughly half of total is a
+      # safe ceiling, since postgres, redis, motis and caddy share the box.
+      - NODE_MAX_OLD_SPACE_MB=${NODE_MAX_OLD_SPACE_MB:-2048}
       - DEPLOYMENT_MODE=cloud
       - NEXT_PUBLIC_API_URL=https://${DOMAIN}
       - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
@@ -69,14 +75,15 @@ services:
       # use_proxy=true route through this; unset = feature off everywhere.
       - CONNECTOR_PROXY_URL=${CONNECTOR_PROXY_URL:-}
       - PROXY_RATE_LIMIT_DEFAULT=${PROXY_RATE_LIMIT_DEFAULT:-100}
-      # Internal self-hosted db-rest. When set (cloud), the Deutsche Bahn
-      # connector's public base URL (v6.db.transport.rest) is transparently
-      # routed here. Unset on self-host → connector uses the public API.
-      - DB_REST_INTERNAL_URL=${DB_REST_INTERNAL_URL:-http://db-rest:3000}
-      # Allow the SSRF guard to reach the internal db-rest host (it resolves to
+      # Internal MOTIS instance for the Deutsche Bahn connector. When set, the
+      # adapter's MOTIS_URL is filled in automatically at import (and hidden
+      # from the install form), so cloud users never see or choose it.
+      # Self-hosters leave it unset and enter their own MOTIS URL.
+      - MOTIS_INTERNAL_URL=${MOTIS_INTERNAL_URL:-http://motis:8080}
+      # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
       # a private docker IP, which the guard blocks by default). Harmless on
       # self-host (no such host on their network).
-      - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-db-rest}
+      - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-motis}
       # Knowledge Graph — AI (LLM) features. Off unless KG_LLM_ENABLED=true AND a
       # provider key are set; the per-workspace toggle still gates actual usage.
       - KG_LLM_ENABLED=${KG_LLM_ENABLED:-false}
@@ -84,6 +91,9 @@ services:
       - KG_LLM_MODEL=${KG_LLM_MODEL:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Domain-verification token for the OpenAI plugin directory; served at
+      # /.well-known/openai-apps-challenge. Unset = route answers 404.
+      - OPENAI_APPS_CHALLENGE_TOKEN=${OPENAI_APPS_CHALLENGE_TOKEN:-}
       - KG_LLM_REDACT_INTENTS=${KG_LLM_REDACT_INTENTS:-true}
       # System (operator) transactional-email fallback — used when a workspace
       # hasn't set its own SMTP (e.g. Resend). Read only by the email sender,
@@ -145,49 +155,40 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # db-rest — self-hosted Deutsche Bahn REST wrapper (derhuerst/db-rest).
+  # MOTIS — routing engine behind the Deutsche Bahn connector, fed by the open
+  # gtfs.de timetable (CC BY 4.0) plus its GTFS-RT feed for live delays.
+  # Replaces db-rest, which scraped bahn.de and died when Deutsche Bahn began
+  # blocking datacenter IPs (see deploy/motis/README.md).
   # INTERNAL ONLY: deliberately NO `ports:` mapping → reachable solely as
-  # http://db-rest:3000 from the app over the amcp-cloud_default network, never
-  # from the internet. The deutsche-bahn connector ships pointing at the public
-  # v6.db.transport.rest; in cloud the app rewrites the host to this service via
-  # DB_REST_INTERNAL_URL. Do NOT add a `ports:` entry or a Caddy route.
-  db-rest:
-    # Custom image: derhuerst/db-rest:6 + bumped db-vendo-client (see
-    # deploy/cloud/db-rest/Dockerfile). The tag is version-pinned so the image
-    # persists across deploys and is only rebuilt when the Dockerfile changes.
+  # http://motis:8080 from the app over the amcp-cloud_default network, never
+  # from the internet. Do NOT add a `ports:` entry or a Caddy route.
+  motis:
+    # Custom image: official MOTIS + an entrypoint that downloads and imports
+    # the feeds and refreshes them weekly (deploy/motis). The tag is pinned so
+    # the image persists across deploys and is only rebuilt when it changes.
     build:
-      context: ./deploy/cloud/db-rest
-    image: anythingmcp-db-rest:6.10.12
-    container_name: amcp-cloud-db-rest
+      context: ./deploy/motis
+    image: anythingmcp-motis:2.11.3-1
+    container_name: amcp-cloud-motis
     expose:
-      - "3000"
+      - "8080"
+    volumes:
+      - motis_data:/data
     environment:
-      - PORT=3000
-      # Reuse the shared Redis for db-rest's response cache (separate DB index).
-      - REDIS_URL=redis://redis:6379/1
-      # Route all upstream Deutsche Bahn calls through the Zyte web-unblocker.
-      # DB (Akamai) blocks datacenter IPs — dbnav/dbweb endpoints return
-      # OPS_BLOCKED / 403 Forbidden — so db-vendo-client (which reads
-      # HTTPS_PROXY) must egress via a residential/unblocker IP. Unset on
-      # self-host (CONNECTOR_PROXY_URL empty) → direct calls, as before.
-      - HTTPS_PROXY=${CONNECTOR_PROXY_URL:-}
-      # Zyte proxy-mode MITMs TLS, so its cert won't validate against the DB
-      # host. Only skip verification when a proxy is actually set. This
-      # container's only external egress is DB (via Zyte) + internal Redis.
-      - NODE_TLS_REJECT_UNAUTHORIZED=${CONNECTOR_PROXY_URL:+0}
-    depends_on:
-      redis:
-        condition: service_healthy
+      - MOTIS_REFRESH_DAYS=${MOTIS_REFRESH_DAYS:-7}
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      # First boot downloads ~12 MB of GTFS and imports it (seconds, not
+      # minutes); the margin is for a slow gtfs.de.
+      start_period: 180s
     restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
+  motis_data:
   caddy_data:
   caddy_config:

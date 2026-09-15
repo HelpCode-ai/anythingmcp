@@ -73,6 +73,43 @@ The bridge configuration that transforms MCP tool calls into API requests.
 
 The `$` prefix means "take the value from the tool input parameter with this name."
 
+### Response headers and pagination (`exposeHeaders`)
+
+By default a tool receives the response **body** and nothing else. Some APIs put
+the one thing a model needs to continue in a header instead: GitHub, GitLab,
+Sentry and Shopify paginate with `Link: <...?cursor=xyz>; rel="next"`, and most
+APIs report rate limits in `X-RateLimit-*`. Without those, every list tool is
+exactly one page long.
+
+A REST tool can opt in per header name (case-insensitive):
+
+```json
+{
+  "method": "GET",
+  "path": "/organizations/{{SENTRY_ORG}}/issues/",
+  "queryParams": { "cursor": "$cursor", "query": "$query" },
+  "exposeHeaders": ["link", "x-ratelimit-remaining"]
+}
+```
+
+The selected headers are added to the tool result next to the body, and a
+`Link` header with `rel="next"` is parsed for you:
+
+```json
+{
+  "...the body as before...": "",
+  "_headers": { "link": "<https://sentry.io/api/0/...?cursor=1568:0:0>; rel=\"next\"", "x-ratelimit-remaining": "39" },
+  "_pagination": { "nextUrl": "https://sentry.io/api/0/...?cursor=1568:0:0", "nextCursor": "1568:0:0", "cursorParam": "cursor" }
+}
+```
+
+- `_pagination` is **absent on the last page**; tell the model so in the tool description ("call again with `cursor` = `_pagination.nextCursor` until it is missing").
+- `nextCursor` is recognised for the usual parameter names (`cursor`, `page`, `offset`, `after`, `page_token`, `starting_after`, ...); otherwise only `nextUrl` is set.
+- If the body is not a JSON object (an array, a string) it is wrapped as `data` so the extras have somewhere to live.
+- A response transform (`responseMapping.transform`) runs on the body first; the extras are attached afterwards, so a `select` cannot drop them.
+- The audit log keeps storing the bare body. Headers are cached together with it when `cacheTtl` is set.
+- REST connectors only. Tools that did not set `exposeHeaders` behave exactly as before.
+
 ### By Connector Type
 
 | Connector | method | path | queryParams | bodyMapping | headers |
@@ -259,7 +296,7 @@ You normally do not set these. AnythingMCP derives them from what the connector 
 
 | Connector | Signal | Result |
 |---|---|---|
-| REST | `GET` / `HEAD` / `OPTIONS` | `readOnlyHint: true` |
+| REST | `GET` / `HEAD` / `OPTIONS` | read-only |
 | REST | `POST` | write, additive, non-idempotent |
 | REST | `PUT` / `DELETE` | write, destructive, idempotent |
 | REST | `PATCH` | write, destructive, non-idempotent |
@@ -272,6 +309,11 @@ You normally do not set these. AnythingMCP derives them from what the connector 
 An unambiguous tool name (`delete_…`, `create_…`) refines `destructiveHint`, but **name heuristics never
 assert `readOnlyHint`**: wrongly claiming read-only would invite an agent to call a mutating tool freely,
 whereas omitting the hint only makes it more careful.
+
+Once the read/write verdict is known, all three of `readOnlyHint`, `destructiveHint` and `idempotentHint`
+are emitted explicitly. A read-only tool gets `destructiveHint: false` and `idempotentHint: true`; a write
+with nothing better known gets the spec defaults. Some directory reviewers (OpenAI's plugin portal, for
+one) reject a tool whose `destructiveHint` is missing, even a read-only one, so nothing is left implicit.
 
 ### Overriding
 

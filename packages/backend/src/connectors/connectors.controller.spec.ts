@@ -8,6 +8,8 @@ function buildController(overrides: {
   prisma?: any;
   mcpServer?: any;
   licenseGuard?: any;
+  mcpServers?: any;
+  deployment?: any;
 } = {}) {
   const connectorsService = overrides.connectorsService ?? {
     create: jest.fn().mockResolvedValue({ id: 'c1', type: 'REST' }),
@@ -23,6 +25,12 @@ function buildController(overrides: {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
   };
   const configService = { get: jest.fn().mockReturnValue(VALID_ENCRYPTION_KEY) };
+  const mcpServers = overrides.mcpServers ?? {
+    attachToDefaultServer: jest
+      .fn()
+      .mockResolvedValue({ id: 's1', name: 'Default' }),
+  };
+  const deployment = overrides.deployment ?? { isCloud: () => true };
 
   const controller = new ConnectorsController(
     connectorsService as any,
@@ -38,9 +46,19 @@ function buildController(overrides: {
     mcpServer as any,
     configService as any,
     licenseGuard as any,
+    mcpServers as any,
+    deployment as any,
   );
 
-  return { controller, connectorsService, prisma, mcpServer, licenseGuard };
+  return {
+    controller,
+    connectorsService,
+    prisma,
+    mcpServer,
+    licenseGuard,
+    mcpServers,
+    deployment,
+  };
 }
 
 const req = (role: string) => ({
@@ -259,5 +277,115 @@ describe('OAuth2 config endpoints', () => {
       expect(result.clientId).toBe('');
       expect(result.tokenAuthMethod).toBe('client_secret_post');
     });
+  });
+});
+
+/**
+ * A connector that is not on any MCP server is reachable by nobody. Assigning
+ * it used to be a separate page, and in the fortnight to 11 Sep 2026, 49 of the
+ * 84 workspaces that imported a working connector never found it.
+ */
+describe('ConnectorsController attaches new connectors to a server', () => {
+  const dto = {
+    name: 'Acme',
+    type: 'REST',
+    baseUrl: 'https://api.acme.example/v1',
+  } as any;
+
+  it('attaches to the default server and reports which one', async () => {
+    const { controller, mcpServers } = buildController();
+
+    const result: any = await controller.create(req('ADMIN'), dto);
+
+    expect(mcpServers.attachToDefaultServer).toHaveBeenCalledWith(
+      'u1',
+      'org1',
+      'c1',
+    );
+    expect(result.attachedToServer).toEqual({ id: 's1', name: 'Default' });
+  });
+
+  it('still returns the connector when there is no server to attach to', async () => {
+    const { controller } = buildController({
+      mcpServers: { attachToDefaultServer: jest.fn().mockResolvedValue(null) },
+    });
+
+    const result: any = await controller.create(req('ADMIN'), dto);
+
+    expect(result.id).toBe('c1');
+    expect(result.attachedToServer).toBeNull();
+  });
+});
+
+describe('ConnectorsController base-URL validation', () => {
+  // The real row that started this: a ClickUp API key typed into the URL field,
+  // which the UI prefixed with https:// and the API stored without complaint.
+  const pastedApiKey = {
+    name: 'Click Up',
+    type: 'MCP',
+    baseUrl: 'https://pk_56532023_AZFKELRKU7FWLDAE9W9X0I9M8KYVIC64',
+  } as any;
+
+  it('refuses to create a connector whose URL is not a server address', async () => {
+    const { controller, connectorsService } = buildController();
+
+    await expect(controller.create(req('ADMIN'), pastedApiKey)).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(connectorsService.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses before consuming the licence check', async () => {
+    const { controller, licenseGuard } = buildController();
+
+    await expect(
+      controller.create(req('ADMIN'), pastedApiKey),
+    ).rejects.toThrow(BadRequestException);
+    expect(licenseGuard.checkCanCreateConnector).not.toHaveBeenCalled();
+  });
+
+  it('allows a Docker service name when self-hosted', async () => {
+    const { controller, connectorsService } = buildController({
+      deployment: { isCloud: () => false },
+    });
+
+    await controller.create(req('ADMIN'), {
+      name: 'weclapp',
+      type: 'REST',
+      baseUrl: 'http://weclapp:8080',
+    } as any);
+
+    expect(connectorsService.create).toHaveBeenCalled();
+  });
+
+  it('validates the URL on update too', async () => {
+    const { controller, connectorsService } = buildController({
+      connectorsService: {
+        findById: jest
+          .fn()
+          .mockResolvedValue({ id: 'c1', type: 'REST', organizationId: 'org1' }),
+        update: jest.fn(),
+      },
+    });
+
+    await expect(
+      controller.update(req('ADMIN'), 'c1', { baseUrl: 'https://Ahmad1' } as any),
+    ).rejects.toThrow(BadRequestException);
+    expect(connectorsService.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves an update that does not touch the URL alone', async () => {
+    const { controller, connectorsService } = buildController({
+      connectorsService: {
+        findById: jest
+          .fn()
+          .mockResolvedValue({ id: 'c1', type: 'REST', organizationId: 'org1' }),
+        update: jest.fn().mockResolvedValue({ id: 'c1' }),
+      },
+    });
+
+    await controller.update(req('ADMIN'), 'c1', { name: 'Renamed' } as any);
+
+    expect(connectorsService.update).toHaveBeenCalled();
   });
 });

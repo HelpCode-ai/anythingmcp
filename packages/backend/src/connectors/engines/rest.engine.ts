@@ -7,7 +7,6 @@ import axios, {
 } from 'axios';
 import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
-import { resolveDbRestProfile } from '../../common/db-rest.util';
 import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
 import {
@@ -15,6 +14,8 @@ import {
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { XMLParser } from 'fast-xml-parser';
+import { pickExposedHeaders } from './response-headers.util';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -31,7 +32,25 @@ export class RestEngine {
     private readonly loginTokenService: LoginTokenService,
   ) {}
 
+  /**
+   * The body alone. What every caller wanted until list endpoints that
+   * paginate through headers came along; see `executeWithMeta`.
+   */
   async execute(
+    config: Parameters<RestEngine['executeWithMeta']>[0],
+    endpointMapping: Parameters<RestEngine['executeWithMeta']>[1],
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    return (await this.executeWithMeta(config, endpointMapping, params)).body;
+  }
+
+  /**
+   * The body plus the response headers the mapping asked to see
+   * (`exposeHeaders`, matched case-insensitively, lower-cased on the way out).
+   * `headers` is empty unless the tool opted in, so nothing leaks by default
+   * and the audit log never sees them.
+   */
+  async executeWithMeta(
     config: {
       baseUrl: string;
       authType: string;
@@ -46,17 +65,43 @@ export class RestEngine {
     },
     endpointMapping: {
       method: string;
-      path: string;
+      // Optional, because the stored mapping genuinely may not have one: a
+      // tool saved as `method: "static"` carries only its staticResponse.
+      // Declaring it required is what let an undefined path reach `.replace`.
+      path?: string;
       queryParams?: Record<string, unknown>;
       bodyMapping?: Record<string, unknown>;
       bodyTemplate?: string;
       bodyEncoding?: string;
       headers?: Record<string, string>;
+      // Response headers to hand back alongside the body, e.g. ["link"] for
+      // cursor pagination. Opt-in per tool; see response-headers.util.ts.
+      exposeHeaders?: string[];
     },
     params: Record<string, unknown>,
-  ): Promise<unknown> {
+  ): Promise<{ body: unknown; headers: Record<string, string> }> {
+    const withMeta = (response: AxiosResponse) => ({
+      body: parseXmlBody(response),
+      headers: pickExposedHeaders(
+        response.headers as Record<string, unknown>,
+        endpointMapping.exposeHeaders,
+      ),
+    });
     // Interpolate path parameters: /users/{id} → /users/123
-    let path = endpointMapping.path;
+    //
+    // `path` is optional on the stored mapping — tools saved as `method:
+    // "static"` carry no path at all — so read it defensively. It used to be
+    // dereferenced straight away, and any mapping that reached here without
+    // one failed with "Cannot read properties of undefined (reading
+    // 'replace')": an error that points at this line rather than at the tool
+    // whose configuration is wrong.
+    let path = endpointMapping.path ?? '';
+    if (typeof path !== 'string') {
+      throw new Error(
+        `This tool's path is ${typeof path}, not a string. Check the tool's ` +
+          'endpoint mapping — it should be a path like /users/{id}.',
+      );
+    }
     for (const [key, value] of Object.entries(params)) {
       path = path.replace(`{${key}}`, String(value));
     }
@@ -115,13 +160,9 @@ export class RestEngine {
           mappedQuery[k] = v;
         }
       }
-      // Cloud-only Deutsche Bahn profile override (see resolveDbRestProfile):
-      // in cloud the internal db-rest egresses via the Zyte unblocker where DB's
-      // `dbnav` endpoints reject the request, so swap to `dbweb`. Strict no-op
-      // off-cloud and for every non-db-rest target.
       axiosConfig.params = {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
-        ...resolveDbRestProfile(url, mappedQuery),
+        ...mappedQuery,
       };
     }
 
@@ -207,7 +248,7 @@ export class RestEngine {
 
     try {
       const response = await this.requestWithRetry(axiosConfig);
-      return response.data;
+      return withMeta(response);
     } catch (error) {
       // OAuth2 auto-refresh: retry once on 401
       if (
@@ -228,7 +269,7 @@ export class RestEngine {
             ...buildOauth2TokenHeader(config.authConfig, newToken),
           };
           const retryResponse = await axios(axiosConfig);
-          return retryResponse.data;
+          return withMeta(retryResponse);
         }
       }
       // LOGIN_TOKEN auto-relogin: retry once on 401 when refreshOn401 is enabled
@@ -246,9 +287,9 @@ export class RestEngine {
         );
         injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
         const retryResponse = await axios(axiosConfig);
-        return retryResponse.data;
+        return withMeta(retryResponse);
       }
-      throw error;
+      throw restateProxyError(error);
     }
   }
 
@@ -281,17 +322,72 @@ export class RestEngine {
     ].includes(error.code ?? '');
   }
 
+  /**
+   * Human-readable replacements for connection-level failures. Without these
+   * the caller — and the model reading the tool result — gets the raw OpenSSL
+   * dump, e.g.
+   *   write EPROTO 40032A705A780000:error:0A000438:SSL routines:
+   *   ssl3_read_bytes:tlsv1 alert internal error:../deps/openssl/...
+   * which says nothing about whose fault it is or whether trying again helps.
+   */
+  private static readonly CONNECTION_ERROR_HINTS: Record<string, string> = {
+    EPROTO:
+      'the TLS handshake was rejected by the API (or something in front of it). This is usually temporary and not a credentials problem',
+    ECONNRESET: 'the API closed the connection before responding',
+    ETIMEDOUT: 'the API did not respond in time',
+    ECONNABORTED: 'the request was aborted before the API responded',
+    EAI_AGAIN: 'the API hostname could not be resolved (temporary DNS failure)',
+    ECONNREFUSED: 'the API refused the connection',
+    ENOTFOUND: 'the API hostname does not resolve — check the base URL',
+  };
+
+  /**
+   * Restate a connection-level failure in terms the caller can act on, keeping
+   * the original as `cause` and the code in the text for support. Only touches
+   * errors that never reached the application (no HTTP response), so nothing
+   * that carries a status — and therefore an API-level meaning — is reworded.
+   */
+  private describeConnectionError(error: unknown, attempts: number): unknown {
+    if (!(error instanceof AxiosError) || error.response) return error;
+    const hint = RestEngine.CONNECTION_ERROR_HINTS[error.code ?? ''];
+    if (!hint) return error;
+
+    const tried =
+      attempts > 1 ? ` after ${attempts} attempts` : '';
+    const wrapped = new Error(
+      `Could not reach the API${tried}: ${hint} (${error.code}).`,
+      { cause: error },
+    );
+    (wrapped as { code?: string }).code = error.code;
+    return wrapped;
+  }
+
   /** Execute the request with a small bounded backoff on transient errors. */
   private async requestWithRetry(
     axiosConfig: AxiosRequestConfig,
   ): Promise<AxiosResponse> {
-    const delaysMs = [300, 900];
+    // Three delays rather than two: origins that reject a handshake tend to do
+    // so for a few seconds, and the old 1.2 s total often gave up just short of
+    // recovery. 3.7 s worst case still sits well inside any MCP client timeout.
+    const delaysMs = [300, 900, 2500];
     for (let attempt = 0; ; attempt++) {
       try {
         return await axios(axiosConfig);
       } catch (error) {
-        if (attempt >= delaysMs.length || !this.isTransientError(error)) {
-          throw error;
+        const transient = this.isTransientError(error);
+        if (attempt >= delaysMs.length || !transient) {
+          // Warn, not debug: production runs at info, so a call that burned
+          // every retry used to look identical to one that failed outright —
+          // there was no way to tell a flaky upstream from a broken connector.
+          if (transient) {
+            this.logger.warn(
+              `Gave up after ${attempt + 1} attempts on a transient upstream failure: ${
+                (error as AxiosError).code ??
+                (error as AxiosError).response?.status
+              } ${axiosConfig.method?.toUpperCase()} ${axiosConfig.url}`,
+            );
+          }
+          throw this.describeConnectionError(error, attempt + 1);
         }
         this.logger.debug(
           `Transient error (attempt ${attempt + 1}), retrying in ${delaysMs[attempt]}ms`,
@@ -717,5 +813,102 @@ function assertNoPrototypePollution(value: unknown): void {
       );
     }
     assertNoPrototypePollution((value as Record<string, unknown>)[key]);
+  }
+}
+
+/**
+ * When a request goes through the web-unblocker, a failure can come from the
+ * target or from the unblocker itself, and the two need different responses:
+ * one is the customer's credentials or the vendor being down, the other is
+ * ours.
+ *
+ * Proxy mode says which, but only in headers — the body is always the same
+ * sentence, "There is a downloading problem which might be temporary. Retry in
+ * N seconds from 'Retry-After' header." We were discarding the headers, so
+ * every proxy-side failure reached the operator as an unattributed 520.
+ *
+ * That cost real time: deutsche-bahn and etsy both showed up as "520 Server
+ * Error" for weeks. The headers said `/download/website-ban` all along, and
+ * calling /v1/extract directly with the same key added the part that actually
+ * mattered — residential IPs need the account to pass KYC.
+ *
+ * zyte-request-id is included because it is the first thing Zyte support asks
+ * for, and it is not recoverable after the fact.
+ */
+export function restateProxyError(error: unknown): unknown {
+  if (!(error instanceof AxiosError) || !error.response) return error;
+  const headers = error.response.headers as Record<string, unknown> | undefined;
+  const get = (name: string): string | undefined => {
+    const v = headers?.[name] ?? headers?.[name.toLowerCase()];
+    return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+  };
+  const type = get('zyte-error-type');
+  if (!type) return error;
+
+  const title = get('zyte-error-title') ?? 'Proxy error';
+  const requestId = get('zyte-request-id');
+  const hint = PROXY_ERROR_HINTS[type];
+
+  error.message =
+    `Web-unblocker: ${title} (${type})` +
+    (hint ? ` — ${hint}` : '') +
+    (requestId ? ` [zyte-request-id ${requestId}]` : '');
+  return error;
+}
+
+/**
+ * Only the types we have actually seen in production, each said in terms of
+ * what to do about it. An unknown type still gets its name and request id,
+ * which is enough to look up.
+ */
+const PROXY_ERROR_HINTS: Record<string, string> = {
+  '/download/website-ban':
+    'the unblocker could not get past the site from a datacenter IP. This is the unblocker, not your credentials',
+  '/download/temporary-error':
+    'the unblocker could not fetch the page. It reports this as temporary, so check whether it persists before treating it as a block',
+  '/auth/account-suspended':
+    'the web-unblocker account is suspended — this is an operator problem, not a connector one',
+  '/limits/over-user-limit':
+    'the web-unblocker account is over its limit',
+};
+
+/**
+ * Turn an XML response body into a plain object so response mapping and the
+ * MCP client get structured data rather than a string of markup.
+ *
+ * Deutsche Bahn's official Timetables API answers only in XML, and it is not
+ * alone among German public-sector APIs. Attributes are hoisted next to child
+ * elements without a prefix (`<s id="1"><tl c="ICE"/></s>` → `{ s: { id: "1",
+ * tl: { c: "ICE" } } }`), which is what a JMESPath mapping wants to address.
+ * Anything that is not declared as XML, or fails to parse, is returned as
+ * axios delivered it — a JSON API is never touched.
+ */
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '',
+  removeNSPrefix: true,
+  parseTagValue: false,
+  parseAttributeValue: false,
+  trimValues: true,
+});
+
+export function parseXmlBody(response: {
+  data: unknown;
+  headers?: Record<string, unknown>;
+}): unknown {
+  const { data } = response;
+  if (typeof data !== 'string') return data;
+  const contentType = String(response.headers?.['content-type'] ?? '').toLowerCase();
+  const declaredXml = /(^|[/+])xml([;\s]|$)/.test(contentType);
+  if (!declaredXml) return data;
+  try {
+    const parsed = xmlParser.parse(data);
+    // fast-xml-parser hands back an empty object for non-XML text; keep the
+    // original so a mislabelled body is still visible to the caller.
+    return parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0
+      ? parsed
+      : data;
+  } catch {
+    return data;
   }
 }

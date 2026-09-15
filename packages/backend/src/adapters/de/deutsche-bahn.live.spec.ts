@@ -2,21 +2,24 @@ import * as adapter from './deutsche-bahn.json';
 import { RestEngine } from '../../connectors/engines/rest.engine';
 import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../../connectors/engines/login-token.service';
+import { applyResponseTransform } from '../../connectors/response-transform.util';
+import { compile as jmespathCompile } from '@jmespath-community/jmespath';
 
 /**
  * Two-layer verification for the deutsche-bahn adapter:
  *
- *   1. Static — always runs. Locks in the db-rest upstream schema. The connector
- *      ships pointing at the public db-rest (v6.db.transport.rest) so self-hosters
- *      use it as-is; AnythingMCP Cloud transparently rewrites the host to an
- *      internal self-hosted db-rest (see DynamicMcpTools.resolveInternalBaseUrl).
- *      This guards against a regression back to the int.bahn.de schema (Akamai
- *      403) or the bare v6 proxy without the db-rest endpoints.
+ *   1. Static — always runs. Locks in the MOTIS API contract the adapter
+ *      targets (/api/v1/geocode, /stoptimes, /plan) and that every tool ships
+ *      a compiling JMESPath response mapping. Guards against a regression to
+ *      the db-rest / bahn.de path, which Deutsche Bahn blocks from datacenter
+ *      IPs, and against a typo in a mapping silently returning raw 12 KB boards
+ *      (fallbackToRaw hides that in production).
  *
- *   2. Live — opt-in. Hits the public db-rest for real and asserts response shape.
- *      Run with:  RUN_DB_LIVE=1 npx jest src/adapters/de/deutsche-bahn.live.spec.ts
- *      (The public instance is best-effort and may return 503; cloud uses the
- *      internal instance instead.)
+ *   2. Live — opt-in. Runs the real tools against a MOTIS instance and checks
+ *      the mapped shapes, including that live data is actually flowing.
+ *      Run with:  DB_LIVE_MOTIS_URL=http://localhost:8080 npx jest src/adapters/de/deutsche-bahn.live.spec.ts
+ *      (deploy/motis builds one; the cloud's is http://motis:8080 inside the
+ *      stack.)
  */
 
 const a = adapter as unknown as {
@@ -27,6 +30,7 @@ const a = adapter as unknown as {
     baseUrl: string;
     authType: string;
     headers?: Record<string, string>;
+    healthcheckPath?: string;
   };
   tools: Array<{
     name: string;
@@ -35,114 +39,121 @@ const a = adapter as unknown as {
       method: string;
       path: string;
       queryParams?: Record<string, string>;
-      bodyMapping?: Record<string, unknown>;
     };
+    responseMapping?: { transform?: { mode?: string; expression?: string } };
   }>;
 };
 
 describe('deutsche-bahn adapter — static spec conformance', () => {
-  it('targets the db-rest schema (public default), not int.bahn.de', () => {
+  it('targets a MOTIS instance the operator provides, not bahn.de or db-rest', () => {
     expect(a.slug).toBe('deutsche-bahn');
-    expect(a.connector.baseUrl).toBe('https://v6.db.transport.rest');
-    expect(a.connector.baseUrl).not.toContain('int.bahn.de');
+    expect(a.connector.baseUrl).toBe('{{MOTIS_URL}}');
+    expect(a.requiredEnvVars).toEqual(['MOTIS_URL']);
     expect(a.connector.authType).toBe('NONE');
-    expect(a.requiredEnvVars).toEqual([]);
+    expect(a.connector.healthcheckPath).toBe('/');
+    expect(JSON.stringify(adapter)).not.toMatch(/transport\.rest|int\.bahn\.de|db-rest|IBNR/);
   });
 
-  it('does not route through the anti-bot proxy (db-rest needs no unblocker)', () => {
+  it('does not route through the anti-bot proxy (open data needs no unblocker)', () => {
     expect(a.tools.some((t) => t.useProxy === true)).toBe(false);
   });
 
-  // The shipped adapter pins `dbnav` — the profile that resolves from a normal
-  // (residential) self-host IP. AnythingMCP Cloud overrides it to `dbweb` at
-  // runtime (see resolveDbRestProfile), because over the cloud's Zyte egress
-  // Deutsche Bahn blocks the `dbnav` mobile endpoints (Method Not Allowed /
-  // OPS_BLOCKED) while the `dbweb` web-API endpoints work. Self-host must stay
-  // on `dbnav`, so this contract is locked here.
-  it('pins the dbnav profile on every tool (self-host default; cloud overrides to dbweb at runtime)', () => {
-    for (const t of a.tools) {
-      expect(t.endpointMapping.queryParams?.profile).toBe('dbnav');
-    }
-  });
-
-  it('exposes the five timetable tools', () => {
-    expect(a.tools).toHaveLength(5);
-    const names = a.tools.map((t) => t.name);
-    expect(names).toEqual([
+  it('exposes the five timetable tools against the MOTIS v1 API', () => {
+    const byName = (n: string) => a.tools.find((t) => t.name === n)!;
+    expect(a.tools.map((t) => t.name)).toEqual([
       'db_search_locations',
       'db_get_stop',
       'db_get_departures',
       'db_get_arrivals',
       'db_get_journeys',
     ]);
+    for (const t of a.tools) expect(t.endpointMapping.method).toBe('GET');
+    expect(byName('db_search_locations').endpointMapping.path).toBe('/api/v1/geocode');
+    expect(byName('db_search_locations').endpointMapping.queryParams?.type).toBe('STOP');
+    expect(byName('db_get_stop').endpointMapping.path).toBe('/api/v1/stoptimes');
+    expect(byName('db_get_departures').endpointMapping.path).toBe('/api/v1/stoptimes');
+    expect(byName('db_get_departures').endpointMapping.queryParams?.arriveBy).toBe('false');
+    expect(byName('db_get_arrivals').endpointMapping.queryParams?.arriveBy).toBe('true');
+    const j = byName('db_get_journeys');
+    expect(j.endpointMapping.path).toBe('/api/v1/plan');
+    expect(j.endpointMapping.queryParams?.fromPlace).toBe('$from');
+    expect(j.endpointMapping.queryParams?.toPlace).toBe('$to');
+    expect(j.endpointMapping.queryParams?.arriveBy).toBe('$arrive_by');
   });
 
-  it('uses the db-rest REST endpoints', () => {
-    const byName = (n: string) => a.tools.find((t) => t.name === n)!;
-    expect(byName('db_search_locations').endpointMapping.path).toBe('/locations');
-    expect(byName('db_get_stop').endpointMapping.path).toBe('/stops/{id}');
-    expect(byName('db_get_departures').endpointMapping.path).toBe(
-      '/stops/{id}/departures',
-    );
-    expect(byName('db_get_arrivals').endpointMapping.path).toBe(
-      '/stops/{id}/arrivals',
-    );
-  });
-
-  it('journeys is a GET to /journeys with from/to query params', () => {
-    const j = a.tools.find((t) => t.name === 'db_get_journeys')!;
-    expect(j.endpointMapping.method).toBe('GET');
-    expect(j.endpointMapping.path).toBe('/journeys');
-    expect(j.endpointMapping.queryParams?.from).toBe('$from');
-    expect(j.endpointMapping.queryParams?.to).toBe('$to');
-    expect(j.endpointMapping.queryParams?.departure).toBe('$departure');
-    expect(j.endpointMapping.queryParams?.arrival).toBe('$arrival');
+  it('every tool ships a JMESPath mapping that compiles', () => {
+    for (const t of a.tools) {
+      const tf = t.responseMapping?.transform;
+      expect(tf?.mode).toBe('jmespath');
+      expect(() => jmespathCompile(tf!.expression!)).not.toThrow();
+    }
   });
 });
 
-const maybe = process.env.RUN_DB_LIVE ? describe : describe.skip;
+const MOTIS_URL = process.env.DB_LIVE_MOTIS_URL;
+const maybe = MOTIS_URL ? describe : describe.skip;
 
-maybe('deutsche-bahn adapter — live smoke test (public db-rest)', () => {
+maybe('deutsche-bahn adapter — live smoke test against MOTIS', () => {
   const oauth = {} as unknown as OAuth2TokenService;
   const login = {} as unknown as LoginTokenService;
   const engine = new RestEngine(oauth, login);
 
   const cfg = {
-    baseUrl: a.connector.baseUrl,
+    baseUrl: MOTIS_URL!,
     authType: 'NONE',
     headers: a.connector.headers,
   };
+  const tool = (n: string) => a.tools.find((t) => t.name === n)!;
+  const run = async (n: string, params: Record<string, unknown>) => {
+    const raw = await engine.execute(cfg, tool(n).endpointMapping as any, params);
+    const out = applyResponseTransform(raw, tool(n).responseMapping);
+    expect(out.applied).toBe(true);
+    return out.value as any;
+  };
 
-  it('search_locations: returns Freiburg(Breisgau) Hbf with id 8000107', async () => {
-    const res = (await engine.execute(
-      cfg,
-      a.tools.find((t) => t.name === 'db_search_locations')!.endpointMapping,
-      { query: 'Freiburg(Breisgau) Hbf', limit: 3 },
-    )) as Array<{ id: string; name: string }>;
+  let freiburg: string;
+  let berlin: string;
+
+  it('search_locations: Freiburg Hbf resolves to Freiburg Hauptbahnhof first', async () => {
+    const res = await run('db_search_locations', { query: 'Freiburg Hbf' });
     expect(Array.isArray(res)).toBe(true);
-    const fr = res.find((r) => r.id === '8000107');
-    expect(fr).toBeDefined();
-    expect(fr!.name).toContain('Freiburg');
+    expect(res[0].name).toMatch(/Freiburg/);
+    expect(Object.keys(res[0]).sort()).toEqual(['id', 'lat', 'lon', 'modes', 'name']);
+    freiburg = res[0].id;
+    berlin = (await run('db_search_locations', { query: 'Berlin Hbf' }))[0].id;
   }, 30000);
 
-  it('get_departures: returns departures[] with line + direction', async () => {
-    const res = (await engine.execute(
-      cfg,
-      a.tools.find((t) => t.name === 'db_get_departures')!.endpointMapping,
-      { id: '8000107', duration: 30 },
-    )) as { departures: Array<{ line: unknown; direction: string }> };
-    expect(res.departures).toBeDefined();
+  it('get_stop: returns the station by id', async () => {
+    const res = await run('db_get_stop', { id: freiburg });
+    expect(res.id).toBe(freiburg);
+    expect(res.name).toMatch(/Freiburg/);
+  }, 30000);
+
+  it('get_departures: a compact board with live data on at least one row', async () => {
+    const res = await run('db_get_departures', { id: freiburg, n: 20 });
+    expect(res.stop).toMatch(/Freiburg/);
     expect(res.departures.length).toBeGreaterThan(0);
-    expect(res.departures[0].line).toBeDefined();
+    const row = res.departures[0];
+    expect(typeof row.line).toBe('string');
+    expect(row.scheduledDeparture).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    // The GTFS-RT feed is polled every two minutes; a board with no live rows
+    // means the feed is not being applied, which is the regression to catch.
+    expect(res.departures.some((d: any) => d.realTime === true)).toBe(true);
+    expect(JSON.stringify(res).length).toBeLessThan(8000);
   }, 30000);
 
-  it('get_journeys: Freiburg → Berlin returns at least one journey', async () => {
-    const res = (await engine.execute(
-      cfg,
-      a.tools.find((t) => t.name === 'db_get_journeys')!.endpointMapping,
-      { from: '8000107', to: '8011160', results: 2 },
-    )) as { journeys: unknown[] };
-    expect(res.journeys).toBeDefined();
-    expect(res.journeys.length).toBeGreaterThan(0);
+  it('get_arrivals: carries the origin of each train', async () => {
+    const res = await run('db_get_arrivals', { id: freiburg, n: 5 });
+    expect(res.arrivals.length).toBeGreaterThan(0);
+    expect(typeof res.arrivals[0].origin).toBe('string');
+    expect(res.arrivals[0].scheduledArrival).toMatch(/^\d{4}/);
+  }, 30000);
+
+  it('get_journeys: Freiburg → Berlin has a long-distance leg', async () => {
+    const res = await run('db_get_journeys', { from: freiburg, to: berlin, results: 2 });
+    expect(res.length).toBeGreaterThan(0);
+    const it0 = res[0];
+    expect(typeof it0.durationMinutes).toBe('number');
+    expect(it0.legs.some((l: any) => /^(ICE|IC|EC|ECE)\b/.test(l.line ?? ''))).toBe(true);
   }, 60000);
 });

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import { useAuth } from '@/lib/auth-context';
 import { users, auth, roles } from '@/lib/api';
 import { AppSelect } from '@/components/ui/select';
@@ -31,6 +32,12 @@ export default function SettingsUsersPage() {
   const [inviting, setInviting] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
   const [inviteEmailError, setInviteEmailError] = useState('');
+
+  // Force re-authentication dialog (per user)
+  const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
+  const [revokeApiKeys, setRevokeApiKeys] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const loadData = async () => {
     if (!token) return;
@@ -67,8 +74,66 @@ export default function SettingsUsersPage() {
     }
   };
 
+  const handleDeactivate = async (userId: string, email: string) => {
+    if (
+      !token ||
+      !confirm(
+        `Deactivate ${email}?\n\nTheir sessions end now, their MCP keys stop working and they lose access to this workspace. You can reactivate them later.`,
+      )
+    )
+      return;
+    try {
+      await users.deactivate(userId, token);
+      setUserList((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, active: false, deactivatedAt: new Date().toISOString() } : u)),
+      );
+      setMsg('User deactivated');
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const handleReactivate = async (userId: string) => {
+    if (!token) return;
+    try {
+      await users.reactivate(userId, token);
+      setUserList((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, active: true, deactivatedAt: null } : u)),
+      );
+      setMsg('User reactivated. Revoked MCP keys stay revoked — they can create a new one.');
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    }
+  };
+
+  const closeRevokeDialog = () => {
+    setRevokeTarget(null);
+    setRevokeApiKeys(false);
+    setRevoking(false);
+    setRevokeError(null);
+  };
+
+  const handleRevokeSessions = async () => {
+    if (!token || !revokeTarget) return;
+    setRevoking(true);
+    setRevokeError(null);
+    try {
+      const result = await users.revokeSessions(revokeTarget.id, { revokeApiKeys }, token);
+      const parts = [`${revokeTarget.email} has been signed out everywhere and must sign in again.`];
+      if (revokeApiKeys) parts.push(`${result.apiKeysRevoked} MCP API key(s) deactivated.`);
+      if (result.crossOrgMemberships > 0) {
+        parts.push(`They were also signed out of ${result.crossOrgMemberships} other workspace(s).`);
+      }
+      setMsg(parts.join(' '));
+      closeRevokeDialog();
+    } catch (err: any) {
+      setRevokeError(err?.message || 'Failed to revoke sessions');
+      setRevoking(false);
+    }
+  };
+
   const handleDelete = async (userId: string, email: string) => {
-    if (!token || !confirm(`Delete user ${email}? This cannot be undone.`)) return;
+    if (!token || !confirm(`Remove ${email} from this workspace? If this is their only workspace the account is deleted. This cannot be undone.`)) return;
     try {
       await users.delete(userId, token);
       setUserList((prev) => prev.filter((u) => u.id !== userId));
@@ -137,6 +202,48 @@ export default function SettingsUsersPage() {
 
   return (
     <div className="space-y-6">
+      <Dialog.Root open={revokeTarget !== null} onOpenChange={(open) => { if (!open) closeRevokeDialog(); }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Sign out everywhere</Dialog.Title>
+            <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
+              <strong>{revokeTarget?.email}</strong> will be signed out of the dashboard and of every
+              connected AI client (Claude, ChatGPT, Cursor, …), including clients that hold a refresh
+              token. They keep their role and access, and simply have to sign in again. If they belong
+              to other workspaces, they are signed out there too.
+            </Dialog.Description>
+
+            <div className="space-y-3">
+              <label className="flex items-start gap-2 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={revokeApiKeys}
+                  onChange={(e) => setRevokeApiKeys(e.target.checked)}
+                />
+                <span>
+                  Also deactivate their MCP API keys in this workspace
+                  <span className="block text-xs text-[var(--text-2)]">
+                    API keys are not sessions: without this, any <code className="font-mono">mcp_…</code> key
+                    they created keeps working. Deactivated keys cannot be restored.
+                  </span>
+                </span>
+              </label>
+              {revokeError && <p className="text-sm text-[var(--danger)]">{revokeError}</p>}
+            </div>
+
+            <div className="flex gap-2 justify-end mt-6">
+              <Dialog.Close asChild>
+                <Button variant="secondary">Cancel</Button>
+              </Dialog.Close>
+              <Button variant="primary" onClick={handleRevokeSessions} disabled={revoking}>
+                {revoking ? 'Signing out…' : 'Sign out everywhere'}
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-[var(--text)]">User Management</h2>
@@ -225,7 +332,7 @@ export default function SettingsUsersPage() {
       {loading ? (
         <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
       ) : (
-        <Card className="overflow-hidden">
+        <Card className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-[var(--surface-2)]">
               <tr className="text-[var(--text-2)]">
@@ -249,7 +356,11 @@ export default function SettingsUsersPage() {
                   </td>
                   <td className="px-4 py-3 text-[var(--text)]">{u.name || '—'}</td>
                   <td className="px-4 py-3">
-                    <StatusPill tone="success" dot="var(--ok)">Active</StatusPill>
+                    {u.deactivatedAt ? (
+                      <StatusPill tone="danger" dot="var(--danger, #dc2626)">Deactivated</StatusPill>
+                    ) : (
+                      <StatusPill tone="success" dot="var(--ok)">Active</StatusPill>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {u.id === currentUser?.id ? (
@@ -257,6 +368,7 @@ export default function SettingsUsersPage() {
                     ) : (
                       <AppSelect
                         value={u.role}
+                        disabled={Boolean(u.deactivatedAt)}
                         onValueChange={(v) => handleRoleChange(u.id, v)}
                         className="h-8 rounded-[9px] border border-[var(--border)] px-2 text-xs bg-[var(--surface)] text-[var(--text)]"
                         options={ROLES.map((r) => ({ value: r, label: r }))}
@@ -269,17 +381,43 @@ export default function SettingsUsersPage() {
                     ) : u.mcpRole ? (
                       <Badge tone="info">{u.mcpRole.name}</Badge>
                     ) : (
-                      <span className="text-xs text-[var(--text-3)]">Unrestricted</span>
+                      <span
+                        className="text-xs text-[var(--text-3)]"
+                        title="No MCP role assigned. Unrestricted only while this workspace has no tool whitelist; once any role restricts tools, a member without a role gets none."
+                      >
+                        No role
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-[var(--text-3)]">
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
                     {u.id !== currentUser?.id && (
-                      <Button variant="danger" size="sm" onClick={() => handleDelete(u.id, u.email)}>
-                        Delete
-                      </Button>
+                      <div className="inline-flex gap-2">
+                        {u.deactivatedAt ? (
+                          <Button variant="secondary" size="sm" onClick={() => handleReactivate(u.id)}>
+                            Reactivate
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              title="Force this member to sign in again on every client"
+                              onClick={() => setRevokeTarget({ id: u.id, email: u.email })}
+                            >
+                              Sign out everywhere
+                            </Button>
+                            <Button variant="secondary" size="sm" onClick={() => handleDeactivate(u.id, u.email)}>
+                              Deactivate
+                            </Button>
+                          </>
+                        )}
+                        <Button variant="danger" size="sm" onClick={() => handleDelete(u.id, u.email)}>
+                          Delete
+                        </Button>
+                      </div>
                     )}
                   </td>
                 </tr>
