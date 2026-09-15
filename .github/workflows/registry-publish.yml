@@ -70,7 +70,7 @@ jobs:
           EXPECTED=$(jq -r .version server.json)
           for i in $(seq 1 10); do
             LIVE=$(curl -fsSL "https://registry.modelcontextprotocol.io/v0/servers?search=anythingmcp" \
-              | jq -r '[.servers[].server | select(.name=="io.github.helpcode-ai/anythingmcp") | .version] | last // "none"')
+              | jq -r '[.servers[].server | select(.name=="io.github.HelpCode-ai/anythingmcp") | .version] | last // "none"')
             if [ "$LIVE" = "$EXPECTED" ]; then
               echo "registry now serves $LIVE"
               exit 0
