@@ -272,6 +272,15 @@ export class CatalogResyncService {
             hashContent(et.endpointMapping ?? {});
           // In safe mode never touch endpointMapping.
           if (mode === 'safe' && endpointChanged) continue;
+          // A response mapping the operator wrote is theirs and stays. One
+          // the catalog ships is only applied where the tool has none — so an
+          // adapter that gains a mapping (Deutsche Bahn's move to MOTIS cut its
+          // boards from 12 KB to 2 KB this way) reaches installed connectors,
+          // while a tool the operator has already shaped is left alone.
+          const takeCatalogMapping =
+            mode === 'full' &&
+            et.responseMapping == null &&
+            ct.responseMapping != null;
           await tx.mcpTool.update({
             where: { id: et.id },
             data: {
@@ -281,11 +290,14 @@ export class CatalogResyncService {
                 mode === 'safe'
                   ? (et.endpointMapping as any)
                   : (ct.endpointMapping as any),
+              ...(takeCatalogMapping
+                ? { responseMapping: ct.responseMapping as any }
+                : {}),
               // Un-deprecate a tool the catalog brought back; never flip a
               // user's manual disable.
               deprecatedAt: null,
               isEnabled: et.deprecatedAt ? true : et.isEnabled,
-              // responseMapping / useProxy / roleAccess preserved.
+              // useProxy / roleAccess preserved.
             },
           });
           updatedCount++;

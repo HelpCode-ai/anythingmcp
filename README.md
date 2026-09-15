@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — 188 connectors, 26 of them with no API key. Your REST, SOAP/WSDL, GraphQL, SQL and MCP systems become tools for Claude, ChatGPT, Copilot and Gemini." width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP — 189 connectors, 20 of them with no API key. Your REST, SOAP/WSDL, GraphQL, SQL and MCP systems become tools for Claude, ChatGPT, Copilot and Gemini." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
 
 <p align="center">
   <strong>Give Claude, ChatGPT and Copilot safe access to the software your company already runs.</strong><br/>
-  188 ready adapters, any REST/SOAP/GraphQL/SQL system without code, on your own infrastructure — and it learns how your systems connect.
+  189 ready adapters, any REST/SOAP/GraphQL/SQL system without code, on your own infrastructure — and it learns how your systems connect.
 </p>
 
 <p align="center">
@@ -36,7 +36,7 @@ docker compose up -d   # → http://localhost:3000
 
 Three words appear throughout and mean three different things:
 
-- an **adapter** is one of the 188 JSON definitions that ship in this repo — DATEV, weclapp, DHL, Deutsche Bahn, Shopware, Personio, Handelsregister and the rest. 26 of them need no API key at all; the others ask for your credentials at import.
+- an **adapter** is one of the 189 JSON definitions that ship in this repo — DATEV, weclapp, DHL, Deutsche Bahn, Shopware, Personio, Handelsregister and the rest. 20 of them need no API key at all; the others ask for your credentials at import.
 - a **connector** is an adapter, or your own OpenAPI spec / Postman collection / WSDL / GraphQL endpoint / database, once you have configured it in your workspace. Anything you can point at, in minutes, without writing an MCP server.
 - an **MCP server** is the URL you hand to Claude. It exposes the connectors you assign to it, and nothing else.
 
@@ -260,7 +260,7 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 
 ## The adapter catalog
 
-188 adapters, exposing 1,800+ tools. **26 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+189 adapters, exposing 1,800+ tools. **20 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Examples |
 |---|---|

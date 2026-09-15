@@ -233,7 +233,7 @@ function AdapterStoreContent() {
     try {
       const adapter = list.find((a) => a.slug === slug);
       const result = await adapters.import(slug, token, credentials);
-      setMsg(result.message);
+      setMsg(describeImport(result.message, result.probe));
       setImporting(null);
       // Show MCP assignment modal
       setImportedConnector({ id: result.connectorId, name: adapter?.name || slug });
@@ -665,6 +665,21 @@ function AdapterStoreContent() {
       )}
     </AppShell>
   );
+}
+
+/**
+ * One line for the banner: the import message, plus what the backend's
+ * test call found. A wrong token used to surface days later, from the agent;
+ * now it is on screen while the value is still in the form.
+ */
+function describeImport(
+  message: string,
+  probe: { ok: boolean; toolName: string; status?: number | null; message?: string } | null | undefined,
+): string {
+  if (!probe) return message;
+  if (probe.ok) return `${message} Test call ${probe.toolName} succeeded — the connector works.`;
+  const status = probe.status ? ` (HTTP ${probe.status})` : '';
+  return `${message} But the test call ${probe.toolName} failed${status}: ${probe.message ?? 'no details'}. Check the credentials in the connector editor.`;
 }
 
 /** Convert ENV_VAR_NAME to a human-readable label */

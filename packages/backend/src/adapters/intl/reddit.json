@@ -7,7 +7,11 @@
   "category": "social",
   "icon": "reddit",
   "docsUrl": "https://www.reddit.com/dev/api",
-  "requiredEnvVars": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"],
+  "selfHostOnly": true,
+  "requiredEnvVars": [
+    "REDDIT_CLIENT_ID",
+    "REDDIT_CLIENT_SECRET"
+  ],
   "connector": {
     "name": "Reddit API",
     "type": "REST",
@@ -30,11 +34,19 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "subreddit": { "type": "string", "description": "Subreddit name without the 'r/' prefix, e.g. 'programming'." }
+          "subreddit": {
+            "type": "string",
+            "description": "Subreddit name without the 'r/' prefix, e.g. 'programming'."
+          }
         },
-        "required": ["subreddit"]
+        "required": [
+          "subreddit"
+        ]
       },
-      "endpointMapping": { "method": "GET", "path": "/r/{subreddit}/about" }
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/r/{subreddit}/about"
+      }
     },
     {
       "name": "reddit_list_subreddit_posts",
@@ -42,14 +54,34 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "subreddit": { "type": "string", "description": "Subreddit name." },
-          "sort": { "type": "string", "description": "hot, new, top, rising, controversial." },
-          "t": { "type": "string", "description": "Time scope for top/controversial: hour, day, week, month, year, all." },
-          "limit": { "type": "integer", "description": "Per page (default 25, max 100)." },
-          "after": { "type": "string", "description": "Cursor — fullname (t3_xxx) of the post to start after." },
-          "before": { "type": "string", "description": "Cursor — fullname of the post to start before." }
+          "subreddit": {
+            "type": "string",
+            "description": "Subreddit name."
+          },
+          "sort": {
+            "type": "string",
+            "description": "hot, new, top, rising, controversial."
+          },
+          "t": {
+            "type": "string",
+            "description": "Time scope for top/controversial: hour, day, week, month, year, all."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Per page (default 25, max 100)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor — fullname (t3_xxx) of the post to start after."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor — fullname of the post to start before."
+          }
         },
-        "required": ["subreddit"]
+        "required": [
+          "subreddit"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -68,16 +100,42 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "q": { "type": "string", "description": "Search query." },
-          "subreddit": { "type": "string", "description": "Restrict to this subreddit." },
-          "sort": { "type": "string", "description": "relevance, hot, top, new, comments." },
-          "t": { "type": "string", "description": "Time scope: hour, day, week, month, year, all." },
-          "limit": { "type": "integer", "description": "Per page." },
-          "after": { "type": "string", "description": "Cursor." },
-          "restrict_sr": { "type": "boolean", "description": "If true, restrict_sr=1 (only match in subreddit, used with subreddit param)." },
-          "type": { "type": "string", "description": "sr (subreddits), user (users), link (posts only)." }
+          "q": {
+            "type": "string",
+            "description": "Search query."
+          },
+          "subreddit": {
+            "type": "string",
+            "description": "Restrict to this subreddit."
+          },
+          "sort": {
+            "type": "string",
+            "description": "relevance, hot, top, new, comments."
+          },
+          "t": {
+            "type": "string",
+            "description": "Time scope: hour, day, week, month, year, all."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Per page."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor."
+          },
+          "restrict_sr": {
+            "type": "boolean",
+            "description": "If true, restrict_sr=1 (only match in subreddit, used with subreddit param)."
+          },
+          "type": {
+            "type": "string",
+            "description": "sr (subreddits), user (users), link (posts only)."
+          }
         },
-        "required": ["q"]
+        "required": [
+          "q"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -99,12 +157,26 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "postId": { "type": "string", "description": "Post id36 (without t3_ prefix)." },
-          "limit": { "type": "integer", "description": "Max comments." },
-          "depth": { "type": "integer", "description": "Max thread depth." },
-          "sort": { "type": "string", "description": "best, top, new, controversial, old, qa." }
+          "postId": {
+            "type": "string",
+            "description": "Post id36 (without t3_ prefix)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max comments."
+          },
+          "depth": {
+            "type": "integer",
+            "description": "Max thread depth."
+          },
+          "sort": {
+            "type": "string",
+            "description": "best, top, new, controversial, old, qa."
+          }
         },
-        "required": ["postId"]
+        "required": [
+          "postId"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -122,11 +194,19 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "username": { "type": "string", "description": "Reddit username without u/." }
+          "username": {
+            "type": "string",
+            "description": "Reddit username without u/."
+          }
         },
-        "required": ["username"]
+        "required": [
+          "username"
+        ]
       },
-      "endpointMapping": { "method": "GET", "path": "/user/{username}/about" }
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/{username}/about"
+      }
     },
     {
       "name": "reddit_get_user_posts",
@@ -134,13 +214,30 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "username": { "type": "string", "description": "Username." },
-          "sort": { "type": "string", "description": "new, hot, top, controversial." },
-          "t": { "type": "string", "description": "Time scope." },
-          "limit": { "type": "integer", "description": "Per page." },
-          "after": { "type": "string", "description": "Cursor." }
+          "username": {
+            "type": "string",
+            "description": "Username."
+          },
+          "sort": {
+            "type": "string",
+            "description": "new, hot, top, controversial."
+          },
+          "t": {
+            "type": "string",
+            "description": "Time scope."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Per page."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor."
+          }
         },
-        "required": ["username"]
+        "required": [
+          "username"
+        ]
       },
       "endpointMapping": {
         "method": "GET",

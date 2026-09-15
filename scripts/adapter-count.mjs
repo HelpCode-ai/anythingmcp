@@ -30,7 +30,10 @@ for (const region of readdirSync(ADAPTERS_DIR)) {
 }
 const stats = {
   adapters: adapters.length,
-  keyless: adapters.filter((a) => a.connector?.authType === 'NONE').length,
+  // "No API key" is a promise about the cloud too, so an adapter that only
+  // answers residential IPs (selfHostOnly) does not count towards it even
+  // though it needs no key.
+  keyless: adapters.filter((a) => a.connector?.authType === 'NONE' && !a.selfHostOnly).length,
   tools: adapters.reduce((n, a) => n + (a.tools?.length ?? 0), 0),
 };
 

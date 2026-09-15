@@ -23,7 +23,7 @@ jobs:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/db-rest/Dockerfile"
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
           target: /tmp/anythingmcp-deploy
           overwrite: true
 
@@ -46,14 +46,16 @@ jobs:
             docker pull helpcodeai/anythingmcp:${{ inputs.tag }}
             docker pull helpcodeai/anythingmcp:latest
 
-            # Update compose, Caddyfile and the custom db-rest Dockerfile from
-            # checkout. The Dockerfile is the build context for the db-rest
+            # Update compose, Caddyfile and the MOTIS build context from
+            # checkout. deploy/motis is the build context for the motis
             # service; `docker compose up` builds it if the pinned image tag is
-            # missing (fresh droplet), otherwise the existing image is reused.
+            # missing (fresh droplet or a bumped tag), otherwise the existing
+            # image is reused.
             cp /tmp/anythingmcp-deploy/docker-compose.cloud.yml ./docker-compose.cloud.yml
             cp /tmp/anythingmcp-deploy/deploy/cloud/Caddyfile ./Caddyfile
-            mkdir -p ./deploy/cloud/db-rest
-            cp /tmp/anythingmcp-deploy/deploy/cloud/db-rest/Dockerfile ./deploy/cloud/db-rest/Dockerfile
+            mkdir -p ./deploy/motis
+            cp /tmp/anythingmcp-deploy/deploy/motis/* ./deploy/motis/
+            rm -rf ./deploy/cloud/db-rest
             rm -rf /tmp/anythingmcp-deploy
 
             # Keep CRON_SECRET in the server .env in sync with the repo
@@ -67,7 +69,7 @@ jobs:
             fi
 
             # Recreate ONLY the app to pick up the new image/config (postgres,
-            # redis and db-rest keep running — no data churn, no needless
+            # redis and motis keep running — no data churn, no needless
             # downtime), and wait until it reports healthy. The old command
             # force-recreated the whole stack with no health gate, so a
             # crash-on-start went unnoticed and could take the DB down with it.

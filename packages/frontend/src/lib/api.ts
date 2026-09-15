@@ -391,10 +391,37 @@ export const adapters = {
   get: (slug: string, token: string) =>
     request<any>(`/api/adapters/${slug}`, { token }),
   import: (slug: string, token: string, credentials?: Record<string, string>) =>
-    request<{ message: string; connectorId: string; toolsCreated: number }>(
+    request<{
+      message: string;
+      connectorId: string;
+      toolsCreated: number;
+      attachedToServer?: { id: string; name: string } | null;
+      probe?: ImportProbeResult | null;
+    }>(
       `/api/adapters/${slug}/import`,
       { method: 'POST', token, body: credentials ? { credentials } : undefined },
     ),
+};
+
+/** Outcome of the read-only call the backend makes right after an import. */
+export type ImportProbeResult =
+  | { ok: true; toolName: string; durationMs: number; sample: string }
+  | { ok: false; toolName: string; durationMs: number; status: number | null; message: string };
+
+// Product-usage events (activation funnel). Fire-and-forget: a lost event
+// must never surface to the user, so nothing here throws. `keepalive` lets a
+// beacon sent from a pagehide handler outlive the page.
+export const productEvents = {
+  track: (event: string, token: string, metadata?: Record<string, string | number | boolean>) => {
+    try {
+      void fetch(`${API_BASE}/api/product-events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ event, metadata }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  },
 };
 
 // Tools
