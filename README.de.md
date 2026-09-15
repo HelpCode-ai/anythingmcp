@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — 188 Connectors, 26 davon ohne API-Schlüssel. Deine REST-, SOAP/WSDL-, GraphQL-, SQL- und MCP-Systeme werden zu Tools für Claude, ChatGPT, Copilot und Gemini." width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP — 189 Connectors, 20 davon ohne API-Schlüssel. Deine REST-, SOAP/WSDL-, GraphQL-, SQL- und MCP-Systeme werden zu Tools für Claude, ChatGPT, Copilot und Gemini." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Gib Claude, ChatGPT und Copilot sicheren Zugriff auf die Software, die dein Unternehmen bereits nutzt.</strong><br/>
-  188 fertige Adapter, beliebige REST-/SOAP-/GraphQL-/SQL-Systeme ohne eigenen Code, auf deiner eigenen Infrastruktur — und ein System, das lernt, wie deine Anwendungen zusammenhängen.
+  189 fertige Adapter, beliebige REST-/SOAP-/GraphQL-/SQL-Systeme ohne eigenen Code, auf deiner eigenen Infrastruktur — und ein System, das lernt, wie deine Anwendungen zusammenhängen.
 </p>
 
 <p align="center">
@@ -40,13 +40,13 @@ docker compose up -d   # → http://localhost:3000
 
 Drei Begriffe tauchen immer wieder auf und bezeichnen unterschiedliche Dinge:
 
-- Ein **Adapter** ist eine der 188 JSON-Definitionen in diesem Repository — DATEV, weclapp, DHL, Deutsche Bahn, Shopware, Personio, Handelsregister und viele weitere. 26 davon benötigen überhaupt keinen API-Schlüssel; bei den anderen gibst du deine Zugangsdaten beim Import an.
+- Ein **Adapter** ist eine der 189 JSON-Definitionen in diesem Repository — DATEV, weclapp, DHL, Deutsche Bahn, Shopware, Personio, Handelsregister und viele weitere. 20 davon benötigen überhaupt keinen API-Schlüssel; bei den anderen gibst du deine Zugangsdaten beim Import an.
 - Ein **Connector** entsteht, wenn du einen Adapter oder deine eigene OpenAPI-Spezifikation, Postman-Collection, WSDL, einen GraphQL-Endpunkt oder eine Datenbank in deinem Workspace konfigurierst. In wenigen Minuten lässt sich so eine Verbindung einrichten, ohne einen MCP-Server zu programmieren.
 - Ein **MCP-Server** ist die URL, die du Claude übergibst. Er stellt ausschließlich die Connectors bereit, die du ihm zuweist.
 
 Alles läuft auf deiner Infrastruktur. Du entscheidest also, welche Daten sie verlassen. Das Response-Mapping legt für jedes Tool fest, welche Felder das Modell erreichen dürfen. Gespeicherte Zugangsdaten werden mit AES-256-GCM verschlüsselt; das Audit-Log bewahrt die vollständige Antwort des angebundenen Systems bei dir auf. OAuth2, RBAC, SSO und SCIM sind im selbst gehosteten Build enthalten und werden nicht einem kostenpflichtigen Tarif vorbehalten.
 
-**Im produktiven Einsatz bei [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**: Dort verbindet AnythingMCP KI-Assistenten mit mehr als 15 internen Systemen — ERP, CRM, SOAP-Diensten und lokalen Datenbanken. [helpcode.ai](https://helpcode.ai) aus Freiburg hat AnythingMCP aus diesem System herausgelöst und als Open Source veröffentlicht, weil ein Adapterkatalog in einer Community schneller wächst als als einzelnes Produkt.
+**Im produktiven Einsatz bei [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**: Dort verbindet AnythingMCP KI-Assistenten mit mehr als 15 internen Systemen — ERP, CRM, SOAP-Diensten und lokalen Datenbanken. [helpcode.ai](https://helpcode.ai) aus Freiburg hat AnythingMCP aus diesem System herausgelöst und als Open Source veröffentlicht, weil ein Adapterkatalog in einer Community schneller wächst als im Alleingang.
 
 ---
 
@@ -234,7 +234,7 @@ KI-Clients sprechen MCP, deine Systeme dagegen REST, SOAP, GraphQL und SQL. Eine
 
 ## Der Adapterkatalog
 
-188 Adapter mit mehr als 1.800 Tools. **26 benötigen keinen API-Schlüssel**. Bei den übrigen gibst du deine Zugangsdaten beim Import an; danach stehen die Tools sofort bereit. Für jeden Adapter gibt es auf [anythingmcp.com/guides](https://anythingmcp.com/guides) eine Einrichtungsanleitung in sieben Sprachen.
+189 Adapter mit mehr als 1.800 Tools. **20 benötigen keinen API-Schlüssel**. Bei den übrigen gibst du deine Zugangsdaten beim Import an; danach stehen die Tools sofort bereit. Für jeden Adapter gibt es auf [anythingmcp.com/guides](https://anythingmcp.com/guides) eine Einrichtungsanleitung in sieben Sprachen.
 
 | Kategorie | Beispiele |
 |---|---|
