@@ -571,6 +571,7 @@ export class EmailService {
     to: string,
     name: string,
     connectorPath: string,
+    variant: 'connect-client' | 'test-connector' = 'test-connector',
   ): Promise<boolean> {
     const transport = await this.createTransporter();
     if (!transport) {
@@ -585,8 +586,17 @@ export class EmailService {
     const connectorUrl = `${cloudUrl}${connectorPath}`;
     const unsubUrl = `${cloudUrl}/settings/profile`;
 
-    const subject = "You're one call away — finish setting up your connector";
-    const body = `<p>Hi ${name},</p>
+    const connectClient = variant === 'connect-client';
+    const subject = connectClient
+      ? 'Your MCP server is ready — one paste connects Claude, Cursor or ChatGPT'
+      : "You're one call away — finish setting up your connector";
+    const body = connectClient
+      ? `<p>Hi ${name},</p>
+      <p>Your connector is set up and sitting on an MCP server, but no client has talked to it yet. The last step is a copy and paste.</p>
+      <p>Open the server page, copy the endpoint, and pick your client under <strong>Quick Connect</strong> — Claude, Cursor, ChatGPT and Claude Code each have a two-line recipe there.</p>
+      <p><a href="${connectorUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Connect your client →</a></p>
+      <p style="font-size:13px;color:#666;">Stuck? Reply to this email — we read every one.</p>`
+      : `<p>Hi ${name},</p>
       <p>You created a connector in AnythingMCP but it hasn't made a successful call yet. That last step — running one tool — is where everything clicks.</p>
       <p>Open your connector and hit <strong>Run test</strong> on any tool. If it returns an error, the message now tells you exactly what to fix (a missing API key, a wrong URL, etc.).</p>
       <p><a href="${connectorUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Test your connector →</a></p>
@@ -607,7 +617,9 @@ export class EmailService {
             </p>
           </div>
         `,
-        text: `Hi ${name},\n\nYou created a connector in AnythingMCP but it hasn't made a successful call yet. Open it and hit "Run test" on any tool — error messages now tell you exactly what to fix.\n\nTest your connector: ${connectorUrl}\n\nUnsubscribe: ${unsubUrl}`,
+        text: connectClient
+          ? `Hi ${name},\n\nYour connector is set up on an MCP server, but no client has talked to it yet. Open the server page, copy the endpoint and pick your client under Quick Connect.\n\nConnect your client: ${connectorUrl}\n\nUnsubscribe: ${unsubUrl}`
+          : `Hi ${name},\n\nYou created a connector in AnythingMCP but it hasn't made a successful call yet. Open it and hit "Run test" on any tool — error messages now tell you exactly what to fix.\n\nTest your connector: ${connectorUrl}\n\nUnsubscribe: ${unsubUrl}`,
       });
       this.logger.log(`Activation-reminder email sent to ${to}`);
       return true;

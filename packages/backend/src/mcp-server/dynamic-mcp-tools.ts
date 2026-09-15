@@ -17,7 +17,6 @@ import {
   CALLER_CONTEXT_PREFIX,
   buildCallerContextVars,
 } from '../common/caller-context.util';
-import { resolveInternalDbRestUrl } from '../common/db-rest.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
 import {
   attachResponseMeta,
@@ -96,15 +95,6 @@ export class DynamicMcpTools {
     }
 
     return proxyUrl;
-  }
-
-  /**
-   * Cloud-only db-rest host swap — see resolveInternalDbRestUrl. Kept as a thin
-   * method so the host swap stays consistent with the connector "Test
-   * connection" path, which uses the same shared util.
-   */
-  private resolveInternalBaseUrl(baseUrl: string): string {
-    return resolveInternalDbRestUrl(baseUrl);
   }
 
   /**
@@ -276,7 +266,7 @@ export class DynamicMcpTools {
       usedProxy = proxyUrl != null;
 
       const engineConfig = {
-        baseUrl: this.resolveInternalBaseUrl(interpolatedConfig.baseUrl),
+        baseUrl: interpolatedConfig.baseUrl,
         authType: tool.connectorConfig.authType,
         authConfig: tool.connectorConfig.authConfig
           ? JSON.parse(tool.connectorConfig.authConfig)

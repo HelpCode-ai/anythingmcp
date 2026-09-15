@@ -54,6 +54,45 @@ import {
   annotationsSignature,
   deriveToolAnnotations,
 } from './tool-annotations';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+/**
+ * Backend version, reported as the demo server's version (was a hardcoded 1.0.0).
+ *
+ * Resolved by walking up from this file rather than with a fixed relative path:
+ * tsc emits to `dist/src/...`, so the package.json sits one level further up in
+ * the build than in the source tree, and the runtime image moves it again
+ * (`/app/backend/package.json` against `/app/backend/dist/src/mcp-server/`).
+ * A hardcoded `../../package.json` is correct in exactly one of those three
+ * layouts, and being wrong throws MODULE_NOT_FOUND at import time — which takes
+ * the whole backend down for a string that appears in one handshake field.
+ * Hence also the try/catch: this can degrade, it cannot fail to boot.
+ */
+function readAppVersion(): string {
+  let dir = __dirname;
+  for (let i = 0; i < 6; i++) {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(join(dir, 'package.json'), 'utf8'),
+      ) as { name?: string; version?: string };
+      if (pkg.name && pkg.version) return pkg.version;
+    } catch {
+      /* keep walking */
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return '0.0.0';
+}
+
+const APP_VERSION: string = readAppVersion();
+
+/** Trailer appended to every live demo tool result. */
+const DEMO_RESULT_FOOTER =
+  '— served by AnythingMCP (public demo, read-only). Self-host it: ' +
+  'https://github.com/HelpCode-ai/anythingmcp';
 
 /** Minimal handle returned by McpServer.tool()/registerTool() that we keep so a
  * live (stateful) session can drop a tool when its surface changes. */
@@ -79,6 +118,9 @@ interface ToolSetParams {
   captureIntent: boolean;
   kgEnabled: boolean;
   invocationContext: InvocationContext;
+  /** Optional text appended as a trailing content block to every successful
+   *  tool result (used by the public demo to say where the answer came from). */
+  resultFooter?: string;
 }
 
 interface InvocationContext {
@@ -467,34 +509,94 @@ export class McpEndpointController {
   }
 
   /**
-   * Handle the public demo MCP server. Builds a per-request McpServer with only
-   * the static info tools (see registerDemoTools) — no DB, no connectors, no
-   * tenant resolution. Never reaches any of the per-server logic below.
+   * Handle the public demo MCP server.
+   *
+   * Always serves the static info tools (see registerDemoTools). When the
+   * operator sets MCP_DEMO_SERVER_ID, it ALSO serves the read-only tools of
+   * that one designated server, anonymously and rate-limited, so a visitor can
+   * paste the URL into Claude and get a live answer (train departures, postal
+   * codes, ECB rates…) without installing anything. Only tools whose derived
+   * annotations say readOnlyHint=true are exposed; every write tool of that
+   * server stays invisible here. No other server is ever reachable this way.
    */
   private async handleDemoRequest(
     req: Request,
     res: Response,
     body: unknown,
   ) {
+    const liveEntries = await this.planDemoLiveTools();
+    const instructions = liveEntries.length
+      ? 'Public, read-only demo of AnythingMCP. The anythingmcp_* tools describe ' +
+        'the product; the other tools are live, read-only connectors served by a ' +
+        'real AnythingMCP instance (no customer data, rate-limited). Try them, ' +
+        'then call anythingmcp_get_started to run your own.'
+      : 'Public, read-only demo of AnythingMCP. These tools describe the ' +
+        'product and how to use it; they expose no customer data. Start with ' +
+        'anythingmcp_overview.';
     await this.serveStateless(
       req,
       res,
       body,
       () => {
         const mcpServer = new McpServer(
-          { name: 'AnythingMCP Demo', version: '1.0.0' },
-          {
-            instructions:
-              'Public, read-only demo of AnythingMCP. These tools describe the ' +
-              'product and how to use it; they expose no customer data. Start with ' +
-              'anythingmcp_overview.',
-          },
+          { name: 'AnythingMCP Demo', version: APP_VERSION },
+          { instructions },
         );
         registerDemoTools(mcpServer);
+        this.registerAll(mcpServer, liveEntries, 'demo');
         return mcpServer;
       },
       'demo',
     );
+  }
+
+  /**
+   * Read-only tool set of the operator-designated demo server (MCP_DEMO_SERVER_ID),
+   * or an empty list when unset, inactive, missing or on any error. Fail closed:
+   * a misconfiguration degrades the demo to the static tools, never to another
+   * server's tools.
+   */
+  private async planDemoLiveTools(): Promise<ToolEntry[]> {
+    const demoServerId = (process.env.MCP_DEMO_SERVER_ID || '').trim();
+    if (!demoServerId) return [];
+    try {
+      const cfg = await this.mcpServersService.findById(demoServerId);
+      if (!cfg || !cfg.isActive) {
+        this.logger.warn(
+          `MCP_DEMO_SERVER_ID=${demoServerId} is not an active MCP server; serving static demo tools only`,
+        );
+        return [];
+      }
+      const connectorIds = await this.mcpServersService.getConnectorIds(demoServerId);
+      const readOnlyTools = this.toolRegistry
+        .getAllTools()
+        .filter(
+          (t) =>
+            connectorIds.includes(t.connectorId) &&
+            deriveToolAnnotations(t).readOnlyHint === true,
+        );
+      const invocationContext: InvocationContext = {
+        organizationId: cfg.organizationId,
+        authMethod: 'demo',
+        mcpServerId: cfg.id,
+        mcpServerName: cfg.name,
+        connectorIds,
+      };
+      const kgEnabled =
+        process.env.KG_MCP_TOOL !== 'off' &&
+        (await this.kgService.isEnabled(cfg.organizationId));
+      return this.planToolSet({
+        serverTools: readOnlyTools,
+        allowedToolIds: null,
+        captureIntent: false,
+        kgEnabled,
+        invocationContext,
+        resultFooter: DEMO_RESULT_FOOTER,
+      });
+    } catch (err: any) {
+      this.logger.warn(`Demo live tools unavailable: ${err?.message ?? err}`);
+      return [];
+    }
   }
 
   private async handleMcpRequest(
@@ -958,8 +1060,13 @@ export class McpEndpointController {
    * registration thunks but does not touch any McpServer.
    */
   private planToolSet(params: ToolSetParams): ToolEntry[] {
-    const { serverTools, allowedToolIds, captureIntent, invocationContext } =
-      params;
+    const {
+      serverTools,
+      allowedToolIds,
+      captureIntent,
+      invocationContext,
+      resultFooter,
+    } = params;
     const entries: ToolEntry[] = [];
     const registeredNames = new Set<string>();
 
@@ -1012,6 +1119,13 @@ export class McpEndpointController {
         name: tool.name,
         sig,
         register: (mcpServer: McpServer) => {
+          const withFooter = (r: any) => {
+            if (!resultFooter || r?.isError || !Array.isArray(r?.content)) return r;
+            return {
+              ...r,
+              content: [...r.content, { type: 'text' as const, text: resultFooter }],
+            };
+          };
           const handler = async (args: any) => {
             let ctx = invocationContext;
             let toolArgs = args;
@@ -1049,9 +1163,9 @@ export class McpEndpointController {
                   /* keep {} */
                 }
               }
-              return { ...rest, structuredContent: structured };
+              return withFooter({ ...rest, structuredContent: structured });
             }
-            return rest;
+            return withFooter(rest);
           };
 
           // registerTool for both branches: the legacy tool() overload has no

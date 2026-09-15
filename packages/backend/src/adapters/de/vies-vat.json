@@ -8,6 +8,13 @@
   "icon": "vies",
   "docsUrl": "https://ec.europa.eu/taxation_customs/vies/",
   "requiredEnvVars": [],
+  "probe": {
+    "tool": "vies_check_vat",
+    "params": {
+      "countryCode": "DE",
+      "vatNumber": "811907980"
+    }
+  },
   "connector": {
     "name": "VIES VAT Validation",
     "type": "REST",
@@ -30,7 +37,10 @@
             "description": "VAT number without the country prefix (e.g. '123456789' for DE123456789)."
           }
         },
-        "required": ["countryCode", "vatNumber"]
+        "required": [
+          "countryCode",
+          "vatNumber"
+        ]
       },
       "endpointMapping": {
         "method": "POST",

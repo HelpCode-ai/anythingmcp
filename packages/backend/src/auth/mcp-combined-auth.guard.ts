@@ -31,11 +31,12 @@ export class McpCombinedAuthGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     const res = context.switchToHttp().getResponse();
 
-    // Public demo MCP server: a static, tenant-less, anonymous endpoint at the
-    // EXACT path /mcp/demo. Its handler exposes only self-describing info tools
-    // and never resolves a serverId or touches the database, so allowing
-    // anonymous access here cannot expose any tenant data. Match the exact path
-    // only — every other /mcp/:serverId stays fail-closed below.
+    // Public demo MCP server: an anonymous endpoint at the EXACT path /mcp/demo.
+    // Its handler exposes self-describing info tools and, only when the operator
+    // sets MCP_DEMO_SERVER_ID, the READ-ONLY tools of that one designated server
+    // (see McpEndpointController.planDemoLiveTools). It never resolves a
+    // serverId from the request, so no other tenant's server is reachable.
+    // Match the exact path only — every /mcp/:serverId stays fail-closed below.
     const reqPath = (req.path || req.url || '').split('?')[0].replace(/\/+$/, '');
     if (reqPath === '/mcp/demo') {
       req.user = { authMethod: 'none' };

@@ -8,6 +8,12 @@
   "icon": "barcode",
   "docsUrl": "https://openfoodfacts.github.io/openfoodfacts-server/api/",
   "requiredEnvVars": [],
+  "probe": {
+    "tool": "gtin_lookup_food",
+    "params": {
+      "barcode": "3017620422003"
+    }
+  },
   "connector": {
     "name": "GTIN / Barcode Lookup",
     "type": "REST",
@@ -31,7 +37,9 @@
             "description": "The product barcode (GTIN-13 / EAN-13 / UPC-A digits, keep leading zeros)."
           }
         },
-        "required": ["barcode"]
+        "required": [
+          "barcode"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -57,7 +65,9 @@
             "description": "Number of results to return (default 10, max 50)."
           }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -82,7 +92,9 @@
             "description": "The product UPC-A (12 digits) or EAN/GTIN-13 (13 digits) barcode."
           }
         },
-        "required": ["barcode"]
+        "required": [
+          "barcode"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -104,7 +116,9 @@
             "description": "Keyword search, e.g. 'logitech mouse m100'."
           }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -126,7 +140,9 @@
             "description": "The product barcode (GTIN-13 / EAN-13, keep leading zeros)."
           }
         },
-        "required": ["barcode"]
+        "required": [
+          "barcode"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -148,7 +164,9 @@
             "description": "The book's ISBN-13 (13 digits, the EAN/GTIN printed on the back cover)."
           }
         },
-        "required": ["isbn"]
+        "required": [
+          "isbn"
+        ]
       },
       "endpointMapping": {
         "method": "GET",

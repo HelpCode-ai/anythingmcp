@@ -1,0 +1,35 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "geist mono",
+        "createdAt": "2026-09-14T13:35:54.279Z",
+        "reason": "Committed design system, not a fresh choice: the website's DESIGN.md pins Fraunces for display, Geist for body and Geist Mono for labels. The banner is the same brand surface and has to match it."
+      },
+      {
+        "rule": "overused-font",
+        "value": "fraunces",
+        "createdAt": "2026-09-14T13:35:54.293Z",
+        "reason": "Committed design system, not a fresh choice: the website's DESIGN.md pins Fraunces for display, Geist for body and Geist Mono for labels. The banner is the same brand surface and has to match it."
+      },
+      {
+        "rule": "overused-font",
+        "value": "geist",
+        "createdAt": "2026-09-14T13:35:54.305Z",
+        "reason": "Committed design system, not a fresh choice: the website's DESIGN.md pins Fraunces for display, Geist for body and Geist Mono for labels. The banner is the same brand surface and has to match it."
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "docs/assets/banner.html"
+        ],
+        "createdAt": "2026-09-14T13:35:59.311Z",
+        "reason": "Measured false positive in this file only: .node is height:56px + flex align-items:center, so the label sits 13px from top and bottom (glyph 10px) despite padding:0 20px. The rule read the declared shorthand, not the rendered box."
+      }
+    ]
+  }
+}
