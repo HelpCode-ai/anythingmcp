@@ -8,7 +8,12 @@ name: Publish to MCP Registry
 # This publishes on every GitHub Release, authenticating with GitHub Actions
 # OIDC. There is no token to store and none to expire; the registry trusts the
 # workflow because it runs in HelpCode-ai/anythingmcp, which is what the
-# io.github.helpcode-ai namespace means.
+# io.github.HelpCode-ai namespace means.
+#
+# That namespace is CASE-SENSITIVE and must match the GitHub organisation
+# exactly. `mcp-publisher validate` accepts the wrong casing without a word — it
+# checks the schema, not whether the name is one you may publish — and the
+# registry then rejects the publish itself with a 403.
 on:
   release:
     types: [published]
