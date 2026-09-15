@@ -288,6 +288,7 @@ Looking for a specific service? Every adapter has a step-by-step guide at **[any
 
 - 💬 **Questions &amp; discussions** — [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions) — vote on the next adapter, share what you've built
 - 🐛 **Bugs / 💡 features** — [Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · 🆘 [SUPPORT.md](SUPPORT.md)
+- 🏢 **Adopters** — see [ADOPTERS.md](ADOPTERS.md) for who is using AnythingMCP and how to add your organization.
 - 🔐 **Security** — please do not open a public issue; follow [SECURITY.md](SECURITY.md)
 - 🏢 Built by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany. AI-assisted development, human-reviewed — [AUTHORS.md](AUTHORS.md) says which parts and how.
 
