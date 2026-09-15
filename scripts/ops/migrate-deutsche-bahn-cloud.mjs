@@ -103,8 +103,12 @@ for (const t of adapter.tools) {
   out.push(`  description = ${lit(t.description)},`);
   out.push(`  parameters = ${json(t.parameters)},`);
   out.push(`  endpoint_mapping = ${json(t.endpointMapping)},`);
-  // Only where nobody wrote one: same rule as the catalog re-sync.
-  out.push(`  response_mapping = COALESCE(response_mapping, ${json(t.responseMapping)}),`);
+  // Only where nobody wrote one: same rule as the catalog re-sync. Three of
+  // the 82 cloud connectors stored a JSON null rather than SQL NULL, which
+  // COALESCE treats as a value — hence the explicit jsonb_typeof check.
+  out.push(
+    `  response_mapping = CASE WHEN response_mapping IS NULL OR jsonb_typeof(response_mapping) = 'null' THEN ${json(t.responseMapping)} ELSE response_mapping END,`,
+  );
   out.push('  is_enabled = CASE WHEN deprecated_at IS NOT NULL THEN true ELSE is_enabled END,');
   out.push('  deprecated_at = NULL,');
   out.push('  updated_at = now()');
