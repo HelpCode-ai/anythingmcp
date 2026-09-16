@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Give Claude, ChatGPT and Copilot safe access to the software your company already runs.</strong><br/>
-  190 ready adapters, any REST/SOAP/GraphQL/SQL system without code, on your own infrastructure — and it learns how your systems connect.
+  190 ready adapters, any REST/SOAP/GraphQL/SQL system without code, on your own infrastructure and it learns how your systems connect.
 </p>
 
 <p align="center">
