@@ -25,6 +25,7 @@ import {
 import { KgService } from '../knowledge-graph/kg.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
+import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -342,6 +343,19 @@ export class DynamicMcpTools {
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
       const errorDetail = this.extractErrorDetail(error);
+
+      // One actionable line for the client, on top of the vendor's own body.
+      // Keyed on the upstream host so hand-built tools get the same help as
+      // catalog ones; see error-hints.ts for why this exists.
+      const hint = deriveErrorHint({
+        host:
+          hostFromAxiosConfig(error?.config) ??
+          hostFromUrl(tool.connectorConfig?.baseUrl),
+        status: typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
+        message: typeof error?.message === 'string' ? error.message : undefined,
+        body: errorDetail.responseBody,
+      });
+      if (hint) errorDetail.hint = hint;
 
       await this.auditService.logInvocation({
         toolId: tool.id,

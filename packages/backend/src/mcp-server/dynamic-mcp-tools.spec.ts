@@ -147,6 +147,43 @@ describe('DynamicMcpTools — response shaping', () => {
   });
 });
 
+describe('DynamicMcpTools — actionable hint on upstream errors', () => {
+  it('appends a hint for a weclapp "unknown property" 400, next to the vendor body', async () => {
+    const { AxiosError } = await import('axios');
+    const tool = makeTool();
+    tool.connectorConfig = { baseUrl: 'https://purora.weclapp.com/webapp/api/v2', authType: 'NONE' };
+    const { executor, restEngine, audit } = build(tool);
+    const err = new AxiosError('Request failed with status code 400', '400', { url: '/salesOrder', baseURL: tool.connectorConfig.baseUrl } as any, undefined, {
+      status: 400,
+      statusText: 'Bad Request',
+      headers: {},
+      config: {} as any,
+      data: { detail: 'unknown property: orderItems.articleNumber', status: 400 },
+    });
+    restEngine.execute.mockRejectedValueOnce(err);
+
+    const res = await executor.executeTool('list_devices', {});
+
+    expect(res.isError).toBe(true);
+    const detail = JSON.parse(res.content[0].text);
+    // The vendor's own message is still there, unmodified…
+    expect(detail.responseBody.detail).toBe('unknown property: orderItems.articleNumber');
+    // …and the hint sits beside it.
+    expect(detail.hint).toMatch(/fetch ONE record/);
+    // The audit row keeps the raw upstream cause, not the hint.
+    expect(audit.logInvocation.mock.calls[0][0].error).toMatch(/unknown property/);
+    expect(audit.logInvocation.mock.calls[0][0].error).not.toMatch(/fetch ONE record/);
+  });
+
+  it('adds no hint for an ordinary failure on an unknown host', async () => {
+    const { executor, restEngine } = build(makeTool());
+    restEngine.execute.mockRejectedValueOnce(new Error('boom'));
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBe(true);
+    expect(JSON.parse(res.content[0].text).hint).toBeUndefined();
+  });
+});
+
 describe('DynamicMcpTools — response cache', () => {
   it('caches the raw response, not the rendered text', async () => {
     const { executor, redis } = build(makeTool({ ...SELECT_TRANSFORM, cacheTtl: 300 }));
