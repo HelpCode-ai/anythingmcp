@@ -30,6 +30,14 @@ describe('mongodb adapter — static spec conformance', () => {
     expect(a.connector.baseUrl.startsWith('mongodb://')).toBe(true);
   });
 
+  it("names the authSource, which cannot be left empty", () => {
+    expect(a.connector.baseUrl).toContain('authSource={{MONGODB_AUTH_SOURCE}}');
+    // The driver rejects `authSource=` outright, so it has to be required
+    // rather than an optional field the install submits blank.
+    expect(a.requiredEnvVars).toContain('MONGODB_AUTH_SOURCE');
+    expect(a.optionalEnvVars ?? []).not.toContain('MONGODB_AUTH_SOURCE');
+  });
+
   it("keeps the credentials in authConfig, not in the DSN", () => {
     expect(a.connector.authConfig?.username).toBe('{{MONGODB_USER}}');
     expect(a.connector.baseUrl).not.toContain('@');
