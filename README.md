@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — 245 connectors, 20 of them with no API key. Your REST, SOAP/WSDL, GraphQL, SQL and MCP systems become tools for Claude, ChatGPT, Copilot and Gemini." width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP — 254 connectors, 20 of them with no API key. Your REST, SOAP/WSDL, GraphQL, SQL and MCP systems become tools for Claude, ChatGPT, Copilot and Gemini." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
 
 <p align="center">
   <strong>Give Claude, ChatGPT and Copilot safe access to the software your company already runs.</strong><br/>
-  245 ready adapters, any REST/SOAP/GraphQL/SQL system without code, on your own infrastructure — and it learns how your systems connect.
+  254 ready adapters, any REST/SOAP/GraphQL/SQL system without code, on your own infrastructure — and it learns how your systems connect.
 </p>
 
 <p align="center">
@@ -260,7 +260,7 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 
 ## The adapter catalog
 
-245 adapters, exposing 1,800+ tools. **20 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+254 adapters, exposing 1,800+ tools. **20 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Examples |
 |---|---|

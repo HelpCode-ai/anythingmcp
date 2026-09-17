@@ -1,0 +1,321 @@
+{
+  "slug": "mautic",
+  "name": "Mautic",
+  "description": "Mautic open-source marketing automation: contacts and their activity, segments, campaigns, e-mails with their send statistics, forms and form submissions. REST API, Basic auth against your own instance.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "mautic",
+  "docsUrl": "https://docs.mautic.org/en/5.x/rest_api/",
+  "instructions": "**Turn the API on first.** Mautic ships with it disabled.\n1. As an administrator go to **Settings → Configuration → API Settings** and set *API enabled* to Yes, and *Enable HTTP basic auth* to Yes.\n2. Create a Mautic user for the integration with a role that grants view permissions on contacts, segments, campaigns and e-mails.\n3. Set `MAUTIC_URL` to your instance root (no trailing slash), plus `MAUTIC_USERNAME` and `MAUTIC_PASSWORD`. The adapter appends `/api`.\n\n**Basic auth is the simple path; OAuth 2 is the safer one.** Mautic supports both. Basic auth sends the user's real password on every request, so give the integration its own account and rotate it like any other credential — do not reuse an admin login.\n\n**Search is one string with a small grammar.** `search=email:*@example.com` matches contacts by e-mail; `is:anonymous`, `!is:anonymous`, `segment:my-segment-alias`, `ids:1,2,3` and `gt:date_added:2026-01-01` all work, joined by spaces for AND. Bare words match names and e-mail addresses.\n\n**Contacts default to including anonymous visitors**, which on a busy site outnumber the real ones by an order of magnitude. `search=!is:anonymous` is almost always what a question about 'contacts' actually means.\n\n**Responses key the rows by id.** `{\"total\": \"42\", \"contacts\": {\"17\": {…}, \"18\": {…}}}` — an object, not an array. `total` is a string.\n\n**Paging** is `limit` and `start` (an offset, not a page number).\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`mautic.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "MAUTIC_URL",
+    "MAUTIC_USERNAME",
+    "MAUTIC_PASSWORD"
+  ],
+  "connector": {
+    "name": "Mautic REST API",
+    "type": "REST",
+    "baseUrl": "{{MAUTIC_URL}}/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{MAUTIC_USERNAME}}",
+      "password": "{{MAUTIC_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/contacts?limit=1"
+  },
+  "probe": {
+    "tool": "mautic_list_segments"
+  },
+  "tools": [
+    {
+      "name": "mautic_list_contacts",
+      "description": "List contacts with their e-mail, name, company, points and stage. Pass `!is:anonymous` in search — anonymous visitors otherwise swamp the results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Mautic search string, e.g. `!is:anonymous email:*@example.com`."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows to return (default 30)."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip — an offset, not a page number."
+          },
+          "orderBy": {
+            "type": "string",
+            "description": "Column to sort by, e.g. date_added."
+          },
+          "orderByDir": {
+            "type": "string",
+            "description": "`ASC` or `DESC`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "search": "$search",
+          "limit": "$limit",
+          "start": "$start",
+          "orderBy": "$orderBy",
+          "orderByDir": "$orderByDir"
+        }
+      }
+    },
+    {
+      "name": "mautic_get_contact",
+      "description": "Read one contact in full: every field, their points, the segments and campaigns they belong to, and their owner.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "number",
+            "description": "Numeric Mautic contact id."
+          }
+        },
+        "required": [
+          "contactId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contactId}"
+      }
+    },
+    {
+      "name": "mautic_get_contact_activity",
+      "description": "Read one contact's activity timeline: page hits, e-mail opens and clicks, form submissions and campaign steps, in order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "number",
+            "description": "Numeric Mautic contact id."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Events to return."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "search": {
+            "type": "string",
+            "description": "Filter the timeline, e.g. by event type."
+          }
+        },
+        "required": [
+          "contactId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contactId}/activity",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "mautic_list_segments",
+      "description": "List segments with their name, alias and the number of contacts in each. No parameters — the quickest check that the API is enabled and Basic auth works.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows to return."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start"
+        }
+      }
+    },
+    {
+      "name": "mautic_list_segment_contacts",
+      "description": "List the contacts in one segment — who would actually receive a send to that segment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "segmentId": {
+            "type": "number",
+            "description": "Numeric segment id."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows to return."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "segmentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "search": "segment:$segmentId",
+          "limit": "$limit",
+          "start": "$start"
+        }
+      }
+    },
+    {
+      "name": "mautic_list_campaigns",
+      "description": "List campaigns with their name, description, publish status and the number of contacts in each.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows to return."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start"
+        }
+      }
+    },
+    {
+      "name": "mautic_list_emails",
+      "description": "List e-mails with their subject, type, publish status and send statistics — sent count, read count and the resulting read rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows to return."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search fragment matched against name and subject."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "mautic_get_email",
+      "description": "Read one e-mail in full: its subject, from address, HTML body, the segments it targets and its send and read counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "emailId": {
+            "type": "number",
+            "description": "Numeric Mautic e-mail id."
+          }
+        },
+        "required": [
+          "emailId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails/{emailId}"
+      }
+    },
+    {
+      "name": "mautic_list_forms",
+      "description": "List forms with their name, alias, publish status and submission count — the capture points feeding the contact base.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows to return."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start"
+        }
+      }
+    },
+    {
+      "name": "mautic_list_form_submissions",
+      "description": "List the submissions of one form with their date, IP, referrer and the field values submitted — the raw leads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": {
+            "type": "number",
+            "description": "Numeric form id."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows to return."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "formId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/{formId}/submissions",
+        "queryParams": {
+          "limit": "$limit",
+          "start": "$start"
+        }
+      }
+    }
+  ]
+}

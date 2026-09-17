@@ -1,0 +1,315 @@
+{
+  "slug": "redmine",
+  "name": "Redmine",
+  "description": "Redmine project management: issues with their journals, projects, versions, time entries, users and the enumerations behind statuses, priorities and trackers. REST API, API-key auth against your own instance.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "redmine",
+  "docsUrl": "https://www.redmine.org/projects/redmine/wiki/Rest_api",
+  "instructions": "**Turn the REST API on first.** It is off by default.\n1. As an administrator go to **Administration → Settings → API** and tick *Enable REST web service*.\n2. Open **My account** for the user the agent should act as; the **API access key** is in the right-hand sidebar. Show it and copy it.\n3. Set `REDMINE_URL` to your instance root (no trailing slash) and `REDMINE_API_KEY` to the key.\n\n**The header is `X-Redmine-API-Key`.** Redmine also accepts the key as a `key=` query parameter, but a header keeps it out of the web server's access log.\n\n**Permissions follow the user, per project role.** A project the user is not a member of is absent from the results rather than an error, and a role without *View issues* produces an empty issue list on a project that is full of them.\n\n**Custom fields are a nested array.** `cf_5` filters on custom field 5; the values come back in a `custom_fields` array of `{id, name, value}`, not as top-level properties.\n\n**Issue filters are query parameters with Redmine's own operators**: `status_id=open|closed|*|<id>`, `assigned_to_id=me|<id>`, `created_on=><2026-01-01|2026-03-31` for a range, `>=2026-01-01` for an open-ended one. `project_id` takes the numeric id *or* the project identifier string.\n\n**`include` fetches related data in one call.** On an issue, `include=journals,attachments,relations` saves several round trips — journals are the comment history and are omitted by default because they can be long.\n\n**Paging** is `offset` and `limit` (max 100), with `total_count` in the response body.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`redmine.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n\n**Writes**: `redmine_add_issue_note` posts a real note that notifies the issue's watchers.",
+  "requiredEnvVars": [
+    "REDMINE_URL",
+    "REDMINE_API_KEY"
+  ],
+  "connector": {
+    "name": "Redmine REST API",
+    "type": "REST",
+    "baseUrl": "{{REDMINE_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Redmine-API-Key",
+      "apiKey": "{{REDMINE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/users/current.json"
+  },
+  "probe": {
+    "tool": "redmine_get_current_user"
+  },
+  "tools": [
+    {
+      "name": "redmine_get_current_user",
+      "description": "Read the user the API key belongs to, with their login, name, e-mail and project memberships. The fastest way to see which projects this connector can see.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/current.json",
+        "queryParams": {
+          "include": "memberships,groups"
+        }
+      }
+    },
+    {
+      "name": "redmine_list_projects",
+      "description": "List projects with their id, identifier, name, description and status. The identifier string is what a project_id filter can take instead of the numeric id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects.json",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "redmine_list_issues",
+      "description": "List issues with Redmine's filter operators. `status_id=open` and `assigned_to_id=me` are the two that answer most questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Numeric project id or the project identifier string."
+          },
+          "status_id": {
+            "type": "string",
+            "description": "`open`, `closed`, `*` for all, or a numeric status id."
+          },
+          "assigned_to_id": {
+            "type": "string",
+            "description": "`me` or a numeric user id."
+          },
+          "tracker_id": {
+            "type": "number",
+            "description": "Numeric tracker id, e.g. Bug or Feature."
+          },
+          "created_on": {
+            "type": "string",
+            "description": "Date filter, e.g. >=2026-01-01 or ><2026-01-01|2026-03-31."
+          },
+          "updated_on": {
+            "type": "string",
+            "description": "Date filter on the last update, same syntax."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort expression, e.g. `updated_on:desc`."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues.json",
+        "queryParams": {
+          "project_id": "$project_id",
+          "status_id": "$status_id",
+          "assigned_to_id": "$assigned_to_id",
+          "tracker_id": "$tracker_id",
+          "created_on": "$created_on",
+          "updated_on": "$updated_on",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "redmine_get_issue",
+      "description": "Read one issue in full with its journals — the comment and field-change history, which the list endpoint omits because it can be long.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issueId": {
+            "type": "number",
+            "description": "Numeric issue id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated extras: journals, attachments, relations, children, watchers."
+          }
+        },
+        "required": [
+          "issueId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues/{issueId}.json",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "redmine_list_project_versions",
+      "description": "List the versions (milestones and sprints) of one project with their name, due date, status and sharing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "description": "Numeric project id or the project identifier string."
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{projectId}/versions.json"
+      }
+    },
+    {
+      "name": "redmine_list_time_entries",
+      "description": "List logged time entries with their user, issue, project, date, hours and activity — the raw data behind any effort report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Numeric project id or the project identifier string."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "`me` or a numeric user id."
+          },
+          "spent_on": {
+            "type": "string",
+            "description": "Date filter, e.g. >=2026-09-01 or ><2026-09-01|2026-09-30."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time_entries.json",
+        "queryParams": {
+          "project_id": "$project_id",
+          "user_id": "$user_id",
+          "spent_on": "$spent_on",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "redmine_list_users",
+      "description": "List users with their login, name, e-mail and status, to resolve who an issue is assigned to. Requires an administrator key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "number",
+            "description": "1 active, 2 registered, 3 locked."
+          },
+          "name": {
+            "type": "string",
+            "description": "Fragment matched against login, name and e-mail."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users.json",
+        "queryParams": {
+          "status": "$status",
+          "name": "$name",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "redmine_list_issue_statuses",
+      "description": "List the issue statuses this instance defines, with their id and whether each closes the issue. Needed to read a status_id filter correctly.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issue_statuses.json"
+      }
+    },
+    {
+      "name": "redmine_list_trackers",
+      "description": "List the trackers (Bug, Feature, Support and any custom ones) with their id and default status, so a tracker_id filter can be composed.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/trackers.json"
+      }
+    },
+    {
+      "name": "redmine_add_issue_note",
+      "description": "Add a note to an issue. Writes to the live instance and notifies the watchers; set private_notes to keep it out of the customer's view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issueId": {
+            "type": "number",
+            "description": "Numeric issue id."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Note text. Redmine's textile or markdown, depending on the instance's setting."
+          },
+          "private_notes": {
+            "type": "boolean",
+            "description": "When true, the note is visible only to users with the view-private-notes permission."
+          }
+        },
+        "required": [
+          "issueId",
+          "notes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/issues/{issueId}.json",
+        "bodyMapping": {
+          "issue": {
+            "notes": "$notes",
+            "private_notes": "$private_notes"
+          }
+        }
+      }
+    }
+  ]
+}

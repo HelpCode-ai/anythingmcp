@@ -35,6 +35,7 @@ import * as mfrFieldservice from './de/mfr-fieldservice.json';
 import * as n26Openbanking from './de/n26-openbanking.json';
 import * as ninaWarnung from './de/nina-warnung.json';
 import * as openplz from './de/openplz.json';
+import * as openproject from './de/openproject.json';
 import * as ottoMarket from './de/otto-market.json';
 import * as oxomi from './de/oxomi.json';
 import * as paperlessNgx from './de/paperless-ngx.json';
@@ -99,8 +100,11 @@ import * as dropbox from './intl/dropbox.json';
 import * as dropboxSign from './intl/dropbox-sign.json';
 import * as ebaySell from './intl/ebay-sell.json';
 import * as ecwid from './intl/ecwid.json';
+import * as erpnext from './intl/erpnext.json';
+import * as espocrm from './intl/espocrm.json';
 import * as etsy from './intl/etsy.json';
 import * as fathom from './intl/fathom.json';
+import * as fhir from './intl/fhir.json';
 import * as fillout from './intl/fillout.json';
 import * as flutterwave from './intl/flutterwave.json';
 import * as folk from './intl/folk.json';
@@ -127,6 +131,7 @@ import * as hunter from './intl/hunter.json';
 import * as idealista from './intl/idealista.json';
 import * as insightly from './intl/insightly.json';
 import * as instantly from './intl/instantly.json';
+import * as invoiceNinja from './intl/invoice-ninja.json';
 import * as invoiced from './intl/invoiced.json';
 import * as kashflow from './intl/kashflow.json';
 import * as klaviyo from './intl/klaviyo.json';
@@ -143,6 +148,8 @@ import * as mailerlite from './intl/mailerlite.json';
 import * as mailshake from './intl/mailshake.json';
 import * as mapbox from './intl/mapbox.json';
 import * as mastodon from './intl/mastodon.json';
+import * as matomo from './intl/matomo.json';
+import * as mautic from './intl/mautic.json';
 import * as medium from './intl/medium.json';
 import * as messagebird from './intl/messagebird.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
@@ -177,6 +184,7 @@ import * as postgres from './intl/postgres.json';
 import * as proxmox from './intl/proxmox.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
+import * as redmine from './intl/redmine.json';
 import * as resy from './intl/resy.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
@@ -217,6 +225,7 @@ import * as wordpress from './intl/wordpress.json';
 import * as workable from './intl/workable.json';
 import * as wrike from './intl/wrike.json';
 import * as wufoo from './intl/wufoo.json';
+import * as youtrack from './intl/youtrack.json';
 import * as youtubeData from './intl/youtube-data.json';
 import * as zabbix from './intl/zabbix.json';
 import * as zendesk from './intl/zendesk.json';
@@ -396,6 +405,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   n26Openbanking as unknown as AdapterDefinition,
   ninaWarnung as unknown as AdapterDefinition,
   openplz as unknown as AdapterDefinition,
+  openproject as unknown as AdapterDefinition,
   ottoMarket as unknown as AdapterDefinition,
   oxomi as unknown as AdapterDefinition,
   paperlessNgx as unknown as AdapterDefinition,
@@ -460,8 +470,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   dropboxSign as unknown as AdapterDefinition,
   ebaySell as unknown as AdapterDefinition,
   ecwid as unknown as AdapterDefinition,
+  erpnext as unknown as AdapterDefinition,
+  espocrm as unknown as AdapterDefinition,
   etsy as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
+  fhir as unknown as AdapterDefinition,
   fillout as unknown as AdapterDefinition,
   flutterwave as unknown as AdapterDefinition,
   folk as unknown as AdapterDefinition,
@@ -488,6 +501,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   idealista as unknown as AdapterDefinition,
   insightly as unknown as AdapterDefinition,
   instantly as unknown as AdapterDefinition,
+  invoiceNinja as unknown as AdapterDefinition,
   invoiced as unknown as AdapterDefinition,
   kashflow as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
@@ -504,6 +518,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mailshake as unknown as AdapterDefinition,
   mapbox as unknown as AdapterDefinition,
   mastodon as unknown as AdapterDefinition,
+  matomo as unknown as AdapterDefinition,
+  mautic as unknown as AdapterDefinition,
   medium as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
   microsoftBookings as unknown as AdapterDefinition,
@@ -538,6 +554,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   proxmox as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
+  redmine as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
@@ -578,6 +595,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   workable as unknown as AdapterDefinition,
   wrike as unknown as AdapterDefinition,
   wufoo as unknown as AdapterDefinition,
+  youtrack as unknown as AdapterDefinition,
   youtubeData as unknown as AdapterDefinition,
   zabbix as unknown as AdapterDefinition,
   zendesk as unknown as AdapterDefinition,

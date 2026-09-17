@@ -1,0 +1,313 @@
+{
+  "slug": "youtrack",
+  "name": "YouTrack",
+  "description": "JetBrains YouTrack: issues with YouTrack's query language, their comments and work items, projects, agile boards, sprints and users. REST API, permanent-token auth against YouTrack Cloud or a self-hosted server.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "youtrack",
+  "docsUrl": "https://www.jetbrains.com/help/youtrack/devportal/youtrack-rest-api.html",
+  "instructions": "**Getting a token**\n1. In YouTrack open your profile → **Account Security → Authentication → New token**, give it the `YouTrack` scope, and copy it. Permanent tokens begin with `perm:`.\n2. Set `YOUTRACK_URL` to your instance root. On YouTrack Cloud that is `https://example.youtrack.cloud`; on a self-hosted server it may include a context path such as `https://yt.example.com/youtrack`. No trailing slash. The adapter appends `/api`.\n3. Set `YOUTRACK_TOKEN`. It is sent as `Authorization: Bearer perm:…`.\n\n**`fields` is mandatory, and this is the thing to understand about YouTrack's API.** Without it, YouTrack returns only `$type` and `id` for every object — technically a success, practically useless. The syntax is a nested selector: `id,idReadable,summary,customFields(name,value(name))`. Every tool below sends a useful default; override it when you need something else.\n\n**The query language is the powerful part.** `project: PROJ #Unresolved assignee: me sort by: updated desc` is a complete query. It also handles `created: {This week}`, `State: {In Progress}`, `#Bug`, `has: -attachments`. This is the same grammar as the search box in the web UI, so anything a user can type there works here.\n\n**Custom fields are a nested array**, not top-level properties. State, priority and assignee all live in `customFields` as `{name, value:{name}}` pairs. An agent looking for a top-level `state` property will not find one.\n\n**`$skip` and `$top` page**, and there is no total count — a short page means the end.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`yt.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n\n**Writes**: `youtrack_add_comment` posts a real comment that notifies the issue's watchers.",
+  "requiredEnvVars": [
+    "YOUTRACK_URL",
+    "YOUTRACK_TOKEN"
+  ],
+  "connector": {
+    "name": "YouTrack REST API",
+    "type": "REST",
+    "baseUrl": "{{YOUTRACK_URL}}/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{YOUTRACK_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/users/me?fields=id,login,fullName"
+  },
+  "probe": {
+    "tool": "youtrack_get_me"
+  },
+  "tools": [
+    {
+      "name": "youtrack_get_me",
+      "description": "Read the user the token belongs to, with their login, full name and e-mail. The fastest proof that URL and permanent token are both right.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me",
+        "queryParams": {
+          "fields": "id,login,fullName,email,guest"
+        }
+      }
+    },
+    {
+      "name": "youtrack_search_issues",
+      "description": "Search issues with YouTrack's query language — the same grammar as the web UI's search box. `project: PROJ #Unresolved assignee: me` is a complete query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "YouTrack query, e.g. `project: PROJ #Unresolved sort by: updated desc`."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Field selector. Defaults to a useful set; override for custom fields."
+          },
+          "top": {
+            "type": "number",
+            "description": "Rows to return (default 50)."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues",
+        "queryParams": {
+          "query": "$query",
+          "fields": "$fields",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "youtrack_get_issue",
+      "description": "Read one issue in full: summary, description, reporter, dates, and its custom fields — where state, priority and assignee actually live.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issueId": {
+            "type": "string",
+            "description": "Issue id, e.g. PROJ-123 (the readable id works)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Field selector. Defaults to a useful set."
+          }
+        },
+        "required": [
+          "issueId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues/{issueId}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "youtrack_list_issue_comments",
+      "description": "Read the comments on one issue in order, with their author, text and creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issueId": {
+            "type": "string",
+            "description": "Issue id, e.g. PROJ-123."
+          },
+          "top": {
+            "type": "number",
+            "description": "Comments to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Comments to skip, for paging."
+          }
+        },
+        "required": [
+          "issueId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues/{issueId}/comments",
+        "queryParams": {
+          "fields": "id,text,created,updated,author(login,fullName)",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "youtrack_list_issue_work_items",
+      "description": "Read the time logged against one issue: each entry's author, date, duration and work type — the effort behind a ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issueId": {
+            "type": "string",
+            "description": "Issue id, e.g. PROJ-123."
+          }
+        },
+        "required": [
+          "issueId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues/{issueId}/timeTracking/workItems",
+        "queryParams": {
+          "fields": "id,date,duration(minutes,presentation),author(login,fullName),type(name),text"
+        }
+      }
+    },
+    {
+      "name": "youtrack_list_projects",
+      "description": "List projects with their short name, full name, description and leader — the short name is what a query's `project:` clause needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/projects",
+        "queryParams": {
+          "fields": "id,name,shortName,description,archived,leader(login,fullName)",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "youtrack_list_agile_boards",
+      "description": "List the agile boards with their name, the projects they cover and their current sprint, for a board-level view of the work.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agiles",
+        "queryParams": {
+          "fields": "id,name,projects(shortName,name),currentSprint(id,name,start,finish),sprints(id,name,start,finish,archived)",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "youtrack_list_sprint_issues",
+      "description": "List the issues on one sprint of one agile board, with their state and assignee — the sprint contents an agent is usually asked about.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agileId": {
+            "type": "string",
+            "description": "Agile board id, from youtrack_list_agile_boards."
+          },
+          "sprintId": {
+            "type": "string",
+            "description": "Sprint id from that board."
+          },
+          "top": {
+            "type": "number",
+            "description": "Rows to return."
+          }
+        },
+        "required": [
+          "agileId",
+          "sprintId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agiles/{agileId}/sprints/{sprintId}/issues",
+        "queryParams": {
+          "fields": "id,idReadable,summary,resolved,customFields(name,value(name,login,fullName))",
+          "$top": "$top"
+        }
+      }
+    },
+    {
+      "name": "youtrack_list_users",
+      "description": "List users with their login, full name and e-mail, to resolve who an issue is assigned to. Requires a token with the low-level admin read permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search fragment matched against login, name and e-mail."
+          },
+          "top": {
+            "type": "number",
+            "description": "Rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "query": "$query",
+          "fields": "id,login,fullName,email,banned",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "youtrack_add_comment",
+      "description": "Post a comment on an issue. Writes to the live instance and notifies the issue's watchers, so it is not a draft operation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issueId": {
+            "type": "string",
+            "description": "Issue id, e.g. PROJ-123."
+          },
+          "text": {
+            "type": "string",
+            "description": "Comment text. YouTrack markdown is accepted."
+          }
+        },
+        "required": [
+          "issueId",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/issues/{issueId}/comments",
+        "queryParams": {
+          "fields": "id,text,created,author(login)"
+        },
+        "bodyMapping": {
+          "text": "$text"
+        }
+      }
+    }
+  ]
+}

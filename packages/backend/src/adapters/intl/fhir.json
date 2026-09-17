@@ -1,0 +1,378 @@
+{
+  "slug": "fhir",
+  "name": "FHIR R4",
+  "description": "Any HL7 FHIR R4 server: search and read Patients, Observations, Conditions, Encounters, MedicationRequests, DiagnosticReports and any other resource type, plus the server's own capability statement. Bearer-token auth.",
+  "region": "intl",
+  "category": "healthcare",
+  "icon": "fhir",
+  "docsUrl": "https://hl7.org/fhir/R4/",
+  "instructions": "**This is a generic FHIR R4 client, not a vendor connector.** Point it at any R4 server — a hospital's HAPI instance, a national test server, a vendor's sandbox — and it speaks the standard.\n1. Set `FHIR_BASE_URL` to the server's base, the URL that answers `/metadata`. No trailing slash.\n2. Set `FHIR_ACCESS_TOKEN` to a bearer token. Most real deployments use SMART on FHIR, whose authorisation flow issues short-lived tokens; obtain one and paste it here, or use a long-lived service token if the server offers one. A server that needs no auth still needs a placeholder here — put anything.\n\n**Start with `fhir_get_capability_statement`.** FHIR servers differ enormously in which resource types they hold and which search parameters they support, and `/metadata` is the machine-readable answer. Guessing produces a lot of confident 400s.\n\n**Search parameters are per resource type**, and modifiers matter: `name:contains=smith`, `birthdate=ge1980-01-01`, `code=http://loinc.org|85354-9`, `_lastUpdated=gt2026-09-01`. Prefixes on numbers and dates are `eq`, `ne`, `gt`, `lt`, `ge`, `le`. A token search takes `system|code`, and the pipe is significant.\n\n**Results are a Bundle.** The rows live in `entry[].resource`, the count in `total` (which some servers omit), and paging in `link[]` with `relation: \"next\"` — follow that URL rather than computing an offset. `_count` requests a page size; servers are free to ignore it.\n\n**`_include` and `_revinclude` fetch related resources in the same Bundle**: `_include=Observation:patient` brings each observation's Patient along.\n\n**This is patient data.** Anything read here is almost certainly health information under GDPR Article 9 or HIPAA. Whether an LLM may see it is a question about your legal basis and your processor agreements, not about this connector — decide it before installing, not after.\n\n**Read-only by design**: no create, no update, no delete. A clinical record is not a thing an agent should write into by accident.",
+  "requiredEnvVars": [
+    "FHIR_BASE_URL",
+    "FHIR_ACCESS_TOKEN"
+  ],
+  "connector": {
+    "name": "HL7 FHIR R4",
+    "type": "REST",
+    "baseUrl": "{{FHIR_BASE_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FHIR_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/fhir+json"
+    },
+    "healthcheckPath": "/metadata"
+  },
+  "probe": {
+    "tool": "fhir_get_capability_statement"
+  },
+  "tools": [
+    {
+      "name": "fhir_get_capability_statement",
+      "description": "Read the server's CapabilityStatement: which resource types it holds, which interactions and search parameters each supports, and its FHIR version. Start here — servers differ enormously.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metadata"
+      }
+    },
+    {
+      "name": "fhir_search",
+      "description": "Search any resource type with FHIR's standard parameters. The general-purpose tool — the capability statement tells you which parameters this particular server supports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resourceType": {
+            "type": "string",
+            "description": "FHIR resource type, e.g. Patient, Observation, Condition, Encounter, MedicationRequest."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search parameters as a query-string fragment, e.g. `name:contains=smith&birthdate=ge1980-01-01`."
+          },
+          "count": {
+            "type": "number",
+            "description": "Requested page size (_count). Servers may ignore it."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort parameter (_sort), e.g. -date for newest first."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related resources to pull into the Bundle (_include), e.g. Observation:patient."
+          }
+        },
+        "required": [
+          "resourceType"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{resourceType}",
+        "queryParams": {
+          "__rawquery": "$query",
+          "_count": "$count",
+          "_sort": "$sort",
+          "_include": "$include"
+        }
+      }
+    },
+    {
+      "name": "fhir_read_resource",
+      "description": "Read one resource instance by type and id, returning the full resource rather than a Bundle entry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resourceType": {
+            "type": "string",
+            "description": "FHIR resource type, e.g. Patient."
+          },
+          "id": {
+            "type": "string",
+            "description": "Resource logical id, as it appeared in a Bundle entry."
+          }
+        },
+        "required": [
+          "resourceType",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{resourceType}/{id}"
+      }
+    },
+    {
+      "name": "fhir_search_patients",
+      "description": "Search Patients by name, identifier, birth date or family name. Modifiers matter: `name:contains` for a partial match, `ge`/`le` prefixes on dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name search across given and family names."
+          },
+          "family": {
+            "type": "string",
+            "description": "Family name only."
+          },
+          "identifier": {
+            "type": "string",
+            "description": "Patient identifier, optionally `system|value`."
+          },
+          "birthdate": {
+            "type": "string",
+            "description": "Birth date with an optional prefix, e.g. 1980-01-01 or ge1980-01-01."
+          },
+          "count": {
+            "type": "number",
+            "description": "Requested page size (_count)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Patient",
+        "queryParams": {
+          "name": "$name",
+          "family": "$family",
+          "identifier": "$identifier",
+          "birthdate": "$birthdate",
+          "_count": "$count"
+        }
+      }
+    },
+    {
+      "name": "fhir_get_patient_observations",
+      "description": "Read the Observations recorded for one patient — vital signs, laboratory results, measurements — optionally narrowed to one LOINC code or category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Patient logical id."
+          },
+          "code": {
+            "type": "string",
+            "description": "Observation code as `system|code`, e.g. http://loinc.org|85354-9."
+          },
+          "category": {
+            "type": "string",
+            "description": "Observation category, e.g. vital-signs, laboratory, imaging."
+          },
+          "date": {
+            "type": "string",
+            "description": "Effective date with an optional prefix, e.g. ge2026-01-01."
+          },
+          "count": {
+            "type": "number",
+            "description": "Requested page size (_count)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort parameter (_sort), e.g. -date."
+          }
+        },
+        "required": [
+          "patientId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Observation",
+        "queryParams": {
+          "patient": "$patientId",
+          "code": "$code",
+          "category": "$category",
+          "date": "$date",
+          "_count": "$count",
+          "_sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "fhir_get_patient_conditions",
+      "description": "Read the Conditions recorded for one patient — the problem list — with their clinical and verification status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Patient logical id."
+          },
+          "clinical_status": {
+            "type": "string",
+            "description": "Clinical status, e.g. active, recurrence, resolved."
+          },
+          "count": {
+            "type": "number",
+            "description": "Requested page size (_count)."
+          }
+        },
+        "required": [
+          "patientId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Condition",
+        "queryParams": {
+          "patient": "$patientId",
+          "clinical-status": "$clinical_status",
+          "_count": "$count"
+        }
+      }
+    },
+    {
+      "name": "fhir_get_patient_encounters",
+      "description": "Read the Encounters for one patient — admissions, visits and consultations — with their class, period and the practitioners involved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Patient logical id."
+          },
+          "status": {
+            "type": "string",
+            "description": "Encounter status, e.g. finished, in-progress, planned."
+          },
+          "date": {
+            "type": "string",
+            "description": "Encounter period with an optional prefix, e.g. ge2026-01-01."
+          },
+          "count": {
+            "type": "number",
+            "description": "Requested page size (_count)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort parameter (_sort), e.g. -date."
+          }
+        },
+        "required": [
+          "patientId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Encounter",
+        "queryParams": {
+          "patient": "$patientId",
+          "status": "$status",
+          "date": "$date",
+          "_count": "$count",
+          "_sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "fhir_get_patient_medications",
+      "description": "Read the MedicationRequests for one patient — what has been prescribed, in what dosage, by whom and with what status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Patient logical id."
+          },
+          "status": {
+            "type": "string",
+            "description": "Request status, e.g. active, completed, stopped, on-hold."
+          },
+          "count": {
+            "type": "number",
+            "description": "Requested page size (_count)."
+          }
+        },
+        "required": [
+          "patientId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/MedicationRequest",
+        "queryParams": {
+          "patient": "$patientId",
+          "status": "$status",
+          "_count": "$count"
+        }
+      }
+    },
+    {
+      "name": "fhir_get_patient_reports",
+      "description": "Read the DiagnosticReports for one patient — laboratory panels, imaging reports and pathology — with their category, status and conclusions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Patient logical id."
+          },
+          "category": {
+            "type": "string",
+            "description": "Report category, e.g. LAB, RAD."
+          },
+          "date": {
+            "type": "string",
+            "description": "Report date with an optional prefix, e.g. ge2026-01-01."
+          },
+          "count": {
+            "type": "number",
+            "description": "Requested page size (_count)."
+          }
+        },
+        "required": [
+          "patientId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/DiagnosticReport",
+        "queryParams": {
+          "patient": "$patientId",
+          "category": "$category",
+          "date": "$date",
+          "_count": "$count"
+        }
+      }
+    },
+    {
+      "name": "fhir_get_patient_everything",
+      "description": "Run the $everything operation on one patient: every resource the server associates with them, in one Bundle. Powerful, large, and not supported by every server.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Patient logical id."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only resources changed after this instant (_since), ISO 8601."
+          },
+          "count": {
+            "type": "number",
+            "description": "Requested page size (_count)."
+          }
+        },
+        "required": [
+          "patientId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Patient/{patientId}/$everything",
+        "queryParams": {
+          "_since": "$since",
+          "_count": "$count"
+        }
+      }
+    }
+  ]
+}
