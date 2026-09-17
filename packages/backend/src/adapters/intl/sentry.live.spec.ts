@@ -3,7 +3,7 @@
  *
  * Required environment variables:
  * SENTRY_AUTH_TOKEN — personal token with org:read and event:read
- * SENTRY_TEST_ORG — organization ID or slug
+ * SENTRY_TEST_ORG — organization ID or slug, injected as the SENTRY_ORG env var
  * SENTRY_TEST_PROJECT_ID — project containing the test issue
  * SENTRY_TEST_ISSUE_ID — unresolved issue in that project
  * SENTRY_TEST_EVENT_ID — exception event with a stack trace in that issue
@@ -47,6 +47,16 @@ describeLive("Sentry adapter — live API", () => {
     }
   });
 
+  function withOrg<T extends { path: string }>(mapping: T): T {
+    return {
+      ...mapping,
+      path: mapping.path.replace(
+        /\{\{SENTRY_ORG\}\}/g,
+        String(process.env.SENTRY_TEST_ORG),
+      ),
+    };
+  }
+
   async function callTool(
     name: string,
     params: Record<string, unknown>,
@@ -60,7 +70,11 @@ describeLive("Sentry adapter — live API", () => {
           ...adapter.connector,
           authConfig: { token: process.env.SENTRY_AUTH_TOKEN },
         },
-        tool.endpointMapping,
+        // The organization lives in the path as {{SENTRY_ORG}} and is resolved
+        // from the connector's env vars at call time by DynamicMcpTools, not by
+        // the engine. These tests talk to the engine directly, so they have to
+        // do that substitution themselves.
+        withOrg(tool.endpointMapping),
         params,
       );
     } catch (error) {
@@ -75,7 +89,6 @@ describeLive("Sentry adapter — live API", () => {
 
   it("finds the configured test project", async () => {
     const result = await callTool("sentry_list_projects", {
-      organization_id_or_slug: process.env.SENTRY_TEST_ORG,
       per_page: 100,
     });
 
@@ -91,7 +104,6 @@ describeLive("Sentry adapter — live API", () => {
 
   it("finds the configured issue within its project", async () => {
     const result = await callTool("sentry_list_issues", {
-      organization_id_or_slug: process.env.SENTRY_TEST_ORG,
       project: process.env.SENTRY_TEST_PROJECT_ID,
       query: "is:unresolved",
       limit: 100,
@@ -108,7 +120,6 @@ describeLive("Sentry adapter — live API", () => {
 
   it("retrieves the configured issue and its project", async () => {
     const result = await callTool("sentry_get_issue", {
-      organization_id_or_slug: process.env.SENTRY_TEST_ORG,
       issue_id: process.env.SENTRY_TEST_ISSUE_ID,
     });
 
@@ -124,7 +135,6 @@ describeLive("Sentry adapter — live API", () => {
 
   it("retrieves the sample event with exception details", async () => {
     const result = await callTool("sentry_list_issue_events", {
-      organization_id_or_slug: process.env.SENTRY_TEST_ORG,
       issue_id: process.env.SENTRY_TEST_ISSUE_ID,
       full: true,
       per_page: 10,

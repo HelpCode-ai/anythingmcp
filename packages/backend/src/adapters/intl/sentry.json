@@ -2,12 +2,15 @@
   "slug": "sentry",
   "name": "Sentry",
   "description": "Inspect Sentry projects, issues, and error events.",
-  "instructions": "Connect to Sentry's hosted REST API to investigate projects, issues, and error events using four read-only tools.\n\nSetup: Create a Sentry personal authentication token under User settings > Personal Tokens with org:read and event:read scopes. Supply it as SENTRY_AUTH_TOKEN when configuring this connector. org:read permits listing organization projects; event:read permits reading issues and their events. Access remains limited by the token owner's permissions. Authentication uses the Authorization: Bearer header. This adapter targets https://sentry.io/api/0.\n\nWorkflow: Supply your organization ID or URL slug, such as acme. Use sentry_list_projects to discover project IDs and slugs, then sentry_list_issues to find issues. Pass the returned issue id, rather than shortId, to sentry_get_issue or sentry_list_issue_events. An issue groups related errors; events are individual occurrences. Set full=true when listing events to include full event bodies and stack traces; Sentry then caps the page size at 10.\n\nFiltering: sentry_list_issues defaults to unresolved issues when query is omitted. Use project to select one project and statsPeriod to narrow the time range, for example 24h or 14d.\n\nPagination: List tools return one page. Sentry supplies pagination cursors in HTTP Link headers, but AnythingMCP's REST engine returns only the response body. These tools cannot discover the next cursor. The cursor input accepts an externally obtained value; do not invent cursors or assume a returned page contains every result.",
+  "instructions": "Connect to Sentry's hosted REST API to investigate projects, issues, and error events using four read-only tools.\n\nSetup: Create a Sentry personal authentication token under User settings > Personal Tokens with org:read and event:read scopes. Supply it as SENTRY_AUTH_TOKEN, and your organization ID or URL slug (the `acme` in sentry.io/organizations/acme) as SENTRY_ORG, when configuring this connector. The organization goes into every path for you, so no tool asks the model for it. org:read permits listing organization projects; event:read permits reading issues and their events. Access remains limited by the token owner's permissions. Authentication uses the Authorization: Bearer header. This adapter targets https://sentry.io/api/0.\n\nWorkflow: Use sentry_list_projects to discover project IDs and slugs, then sentry_list_issues to find issues. Pass the returned issue id, rather than shortId, to sentry_get_issue or sentry_list_issue_events. An issue groups related errors; events are individual occurrences. Set full=true when listing events to include full event bodies and stack traces; Sentry then caps the page size at 10.\n\nFiltering: sentry_list_issues defaults to unresolved issues when query is omitted. Use project to select one project and statsPeriod to narrow the time range, for example 24h or 14d.\n\nPagination: the list tools ask for Sentry's Link header, so each response carries `_pagination` next to the body. Call again with cursor = `_pagination.nextCursor` and repeat until `_pagination` is absent, which means that was the last page. Never invent a cursor value.\n\nSelf-hosted Sentry: this adapter targets sentry.io. If you run your own Sentry, change the connector's base URL to your instance's /api/0 after installing; everything else is identical.",
   "region": "intl",
   "category": "monitoring",
   "icon": "sentry",
   "docsUrl": "https://docs.sentry.io/api/",
-  "requiredEnvVars": ["SENTRY_AUTH_TOKEN"],
+  "requiredEnvVars": [
+    "SENTRY_AUTH_TOKEN",
+    "SENTRY_ORG"
+  ],
   "connector": {
     "name": "Sentry API",
     "type": "REST",
@@ -24,10 +27,6 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "organization_id_or_slug": {
-            "type": "string",
-            "description": "Organization ID or URL slug, for example 'acme'."
-          },
           "query": {
             "type": "string",
             "description": "Filter projects by name or slug, for example 'backend'."
@@ -40,19 +39,22 @@
           },
           "cursor": {
             "type": "string",
-            "description": "Externally supplied Sentry pagination cursor. Omit for the first page; this connector does not return pagination headers."
+            "description": "Pagination cursor. Omit for the first page, then pass `_pagination.nextCursor` from the previous response and repeat until `_pagination` is absent, which means you are on the last page. Do not invent a cursor value."
           }
-        },
-        "required": ["organization_id_or_slug"]
+        }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/organizations/{organization_id_or_slug}/projects/",
+        "path": "/organizations/{{SENTRY_ORG}}/projects/",
         "queryParams": {
           "query": "$query",
           "per_page": "$per_page",
           "cursor": "$cursor"
-        }
+        },
+        "exposeHeaders": [
+          "link",
+          "x-sentry-rate-limit-remaining"
+        ]
       }
     },
     {
@@ -61,10 +63,6 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "organization_id_or_slug": {
-            "type": "string",
-            "description": "Organization ID or URL slug, for example 'acme'."
-          },
           "project": {
             "type": "string",
             "description": "Filter to one project ID or slug from sentry_list_projects. Omit for all accessible projects."
@@ -85,21 +83,24 @@
           },
           "cursor": {
             "type": "string",
-            "description": "Externally supplied Sentry pagination cursor. Omit for the first page; this connector does not return pagination headers."
+            "description": "Pagination cursor. Omit for the first page, then pass `_pagination.nextCursor` from the previous response and repeat until `_pagination` is absent, which means you are on the last page. Do not invent a cursor value."
           }
-        },
-        "required": ["organization_id_or_slug"]
+        }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/organizations/{organization_id_or_slug}/issues/",
+        "path": "/organizations/{{SENTRY_ORG}}/issues/",
         "queryParams": {
           "project": "$project",
           "query": "$query",
           "statsPeriod": "$statsPeriod",
           "limit": "$limit",
           "cursor": "$cursor"
-        }
+        },
+        "exposeHeaders": [
+          "link",
+          "x-sentry-rate-limit-remaining"
+        ]
       }
     },
     {
@@ -108,20 +109,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "organization_id_or_slug": {
-            "type": "string",
-            "description": "Organization ID or URL slug, for example 'acme'."
-          },
           "issue_id": {
             "type": "string",
             "description": "Issue ID from the 'id' field returned by sentry_list_issues, for example '123456'. Use the ID, not the shortId such as 'BACKEND-42'."
           }
         },
-        "required": ["organization_id_or_slug", "issue_id"]
+        "required": [
+          "issue_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/organizations/{organization_id_or_slug}/issues/{issue_id}/"
+        "path": "/organizations/{{SENTRY_ORG}}/issues/{issue_id}/"
       }
     },
     {
@@ -130,10 +129,6 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "organization_id_or_slug": {
-            "type": "string",
-            "description": "Organization ID or URL slug, for example 'acme'."
-          },
           "issue_id": {
             "type": "string",
             "description": "Issue ID from sentry_list_issues, for example '123456'."
@@ -154,20 +149,26 @@
           },
           "cursor": {
             "type": "string",
-            "description": "Externally supplied Sentry pagination cursor. Omit for the first page; this connector does not return pagination headers."
+            "description": "Pagination cursor. Omit for the first page, then pass `_pagination.nextCursor` from the previous response and repeat until `_pagination` is absent, which means you are on the last page. Do not invent a cursor value."
           }
         },
-        "required": ["organization_id_or_slug", "issue_id"]
+        "required": [
+          "issue_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/organizations/{organization_id_or_slug}/issues/{issue_id}/events/",
+        "path": "/organizations/{{SENTRY_ORG}}/issues/{issue_id}/events/",
         "queryParams": {
           "statsPeriod": "$statsPeriod",
           "full": "$full",
           "per_page": "$per_page",
           "cursor": "$cursor"
-        }
+        },
+        "exposeHeaders": [
+          "link",
+          "x-sentry-rate-limit-remaining"
+        ]
       }
     }
   ]
