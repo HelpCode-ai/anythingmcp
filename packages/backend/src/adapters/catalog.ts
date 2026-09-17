@@ -4,6 +4,7 @@ import * as billomat from './de/billomat.json';
 import * as buchhaltungsbutler from './de/buchhaltungsbutler.json';
 import * as bundesbank from './de/bundesbank.json';
 import * as casGenesisworld from './de/cas-genesisworld.json';
+import * as checkmk from './de/checkmk.json';
 import * as clockodo from './de/clockodo.json';
 import * as dVelop from './de/d-velop.json';
 import * as datev from './de/datev.json';
@@ -173,6 +174,7 @@ import * as planeSo from './intl/plane-so.json';
 import * as playtomic from './intl/playtomic.json';
 import * as playtomicPublic from './intl/playtomic-public.json';
 import * as postgres from './intl/postgres.json';
+import * as proxmox from './intl/proxmox.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as resy from './intl/resy.json';
@@ -192,6 +194,7 @@ import * as statsig from './intl/statsig.json';
 import * as streak from './intl/streak.json';
 import * as substack from './intl/substack.json';
 import * as surveymonkey from './intl/surveymonkey.json';
+import * as synology from './intl/synology.json';
 import * as tally from './intl/tally.json';
 import * as teamworkProjects from './intl/teamwork-projects.json';
 import * as telegramBot from './intl/telegram-bot.json';
@@ -215,6 +218,7 @@ import * as workable from './intl/workable.json';
 import * as wrike from './intl/wrike.json';
 import * as wufoo from './intl/wufoo.json';
 import * as youtubeData from './intl/youtube-data.json';
+import * as zabbix from './intl/zabbix.json';
 import * as zendesk from './intl/zendesk.json';
 import * as zohoCrm from './intl/zoho-crm.json';
 import * as mercadoLibre from './br/mercado-libre.json';
@@ -231,8 +235,15 @@ import * as axonaut from './fr/axonaut.json';
 import * as dolibarr from './fr/dolibarr.json';
 import * as pennylane from './fr/pennylane.json';
 import * as sellsy from './fr/sellsy.json';
+import * as afasProfit from './nl/afas-profit.json';
+import * as exactOnline from './nl/exact-online.json';
+import * as moneybird from './nl/moneybird.json';
 import * as topdesk from './nl/topdesk.json';
+import * as teamleader from './be/teamleader.json';
 import * as bexio from './ch/bexio.json';
+import * as fortnox from './se/fortnox.json';
+import * as vismaEaccounting from './se/visma-eaccounting.json';
+import * as eConomic from './dk/e-conomic.json';
 // === AUTOGEN-IMPORTS-END ===
 import { buildGraphqlBuiltinTools } from '../connectors/graphql-builtins';
 import { computeAdapterVersion } from './catalog-fingerprint';
@@ -354,6 +365,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   buchhaltungsbutler as unknown as AdapterDefinition,
   bundesbank as unknown as AdapterDefinition,
   casGenesisworld as unknown as AdapterDefinition,
+  checkmk as unknown as AdapterDefinition,
   clockodo as unknown as AdapterDefinition,
   dVelop as unknown as AdapterDefinition,
   datev as unknown as AdapterDefinition,
@@ -523,6 +535,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   playtomic as unknown as AdapterDefinition,
   playtomicPublic as unknown as AdapterDefinition,
   postgres as unknown as AdapterDefinition,
+  proxmox as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
@@ -542,6 +555,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   streak as unknown as AdapterDefinition,
   substack as unknown as AdapterDefinition,
   surveymonkey as unknown as AdapterDefinition,
+  synology as unknown as AdapterDefinition,
   tally as unknown as AdapterDefinition,
   teamworkProjects as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
@@ -565,6 +579,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wrike as unknown as AdapterDefinition,
   wufoo as unknown as AdapterDefinition,
   youtubeData as unknown as AdapterDefinition,
+  zabbix as unknown as AdapterDefinition,
   zendesk as unknown as AdapterDefinition,
   zohoCrm as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
@@ -581,8 +596,15 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   dolibarr as unknown as AdapterDefinition,
   pennylane as unknown as AdapterDefinition,
   sellsy as unknown as AdapterDefinition,
+  afasProfit as unknown as AdapterDefinition,
+  exactOnline as unknown as AdapterDefinition,
+  moneybird as unknown as AdapterDefinition,
   topdesk as unknown as AdapterDefinition,
+  teamleader as unknown as AdapterDefinition,
   bexio as unknown as AdapterDefinition,
+  fortnox as unknown as AdapterDefinition,
+  vismaEaccounting as unknown as AdapterDefinition,
+  eConomic as unknown as AdapterDefinition,
 ];
 // === AUTOGEN-ARRAY-END ===
 

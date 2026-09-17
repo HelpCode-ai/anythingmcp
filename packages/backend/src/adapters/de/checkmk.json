@@ -1,0 +1,258 @@
+{
+  "slug": "checkmk",
+  "name": "Checkmk",
+  "description": "Checkmk monitoring: hosts and their configuration, live service states, acknowledged and unhandled problems, host groups and downtimes. REST API on your own site, bearer-style automation user auth.",
+  "region": "de",
+  "category": "monitoring",
+  "icon": "checkmk",
+  "docsUrl": "https://docs.checkmk.com/latest/en/rest_api.html",
+  "instructions": "**Setup**\n1. In Checkmk create an **automation user**: Setup → Users → Add user, tick *Automation secret for machine accounts*, and copy the secret. Give it the `guest` role for read-only access, or `admin` if you want the configuration endpoints.\n2. Set `CHECKMK_URL` to your site root including the site name — `https://monitoring.example.com/mysite` — with no trailing slash. The site name is part of the path and leaving it out is the usual cause of a 404 that looks like a wrong version.\n3. Set `CHECKMK_USERNAME` to the automation user and `CHECKMK_SECRET` to its secret.\n\n**The Authorization header is `Bearer <user> <secret>`** — two space-separated values in one Bearer token, which is Checkmk's own scheme and looks wrong the first time you see it. The adapter assembles it.\n\n**Setup vs Monitoring.** Checkmk's REST API has two halves and they answer different questions. `/domain-types/host_config/…` is the *configuration* — what has been set up. `/domain-types/host/…` and `/domain-types/service/…` are the *live monitoring state* — what is happening now. A question about a red service needs the second; a question about what is monitored needs the first.\n\n**Live state is queried with a Livestatus expression.** The `query` parameter takes JSON like `{\"op\": \"=\", \"left\": \"state\", \"right\": \"2\"}` — state 0 is OK, 1 warning, 2 critical, 3 unknown. Combine with `{\"op\": \"and\", \"expr\": [...]}`.\n\n**`columns` is repeated, not comma-separated.** Checkmk wants `columns=host_name&columns=state&columns=plugin_output`. The tools below send a useful default set.\n\n**Changes need activation.** Anything written into the Setup half sits in a pending-changes queue until activated. This adapter is read-only, so it never leaves a half-applied change behind.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch, and a homelab's default certificate is exactly the case that breaks.\n- On an internal host (`monitoring.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "CHECKMK_URL",
+    "CHECKMK_USERNAME",
+    "CHECKMK_SECRET"
+  ],
+  "connector": {
+    "name": "Checkmk REST API",
+    "type": "REST",
+    "baseUrl": "{{CHECKMK_URL}}/check_mk/api/1.0",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Bearer {{CHECKMK_USERNAME}} {{CHECKMK_SECRET}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/version"
+  },
+  "probe": {
+    "tool": "checkmk_get_version"
+  },
+  "tools": [
+    {
+      "name": "checkmk_get_version",
+      "description": "Read the Checkmk version and edition of this site. No parameters and the lightest permission — the fastest proof that URL, site name and automation secret all line up.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/version"
+      }
+    },
+    {
+      "name": "checkmk_list_hosts",
+      "description": "List hosts from the *configuration*: what has been set up for monitoring, with folder, attributes and effective settings. Not the live state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "effective_attributes": {
+            "type": "boolean",
+            "description": "When true, include attributes inherited from the folder."
+          },
+          "search": {
+            "type": "string",
+            "description": "Host name fragment to filter by."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain-types/host_config/collections/all",
+        "queryParams": {
+          "effective_attributes": "$effective_attributes",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "checkmk_get_host_config",
+      "description": "Read one host's configuration: its folder, IP address, tags, labels and the attributes it inherits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hostName": {
+            "type": "string",
+            "description": "Host name as configured in Checkmk."
+          },
+          "effective_attributes": {
+            "type": "boolean",
+            "description": "When true, include inherited attributes."
+          }
+        },
+        "required": [
+          "hostName"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/objects/host_config/{hostName}",
+        "queryParams": {
+          "effective_attributes": "$effective_attributes"
+        }
+      }
+    },
+    {
+      "name": "checkmk_list_host_states",
+      "description": "Read the *live* state of hosts: up, down or unreachable, with the check output and how long each has been that way.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Livestatus filter as JSON, e.g. {\"op\": \"=\", \"left\": \"state\", \"right\": \"1\"} for hosts that are down."
+          },
+          "columns": {
+            "type": "string",
+            "description": "One column name to include beyond the defaults."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain-types/host/collections/all",
+        "queryParams": {
+          "query": "$query",
+          "columns": [
+            "name",
+            "state",
+            "last_check",
+            "plugin_output",
+            "acknowledged",
+            "scheduled_downtime_depth"
+          ]
+        }
+      }
+    },
+    {
+      "name": "checkmk_list_service_states",
+      "description": "Read the *live* state of services — the red, amber and green checks. State 0 is OK, 1 warning, 2 critical, 3 unknown.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Livestatus filter as JSON, e.g. {\"op\": \">\", \"left\": \"state\", \"right\": \"0\"} for everything not OK."
+          },
+          "host_name": {
+            "type": "string",
+            "description": "Restrict to one host's services."
+          },
+          "columns": {
+            "type": "string",
+            "description": "One column name to include beyond the defaults."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain-types/service/collections/all",
+        "queryParams": {
+          "query": "$query",
+          "host_name": "$host_name",
+          "columns": [
+            "host_name",
+            "description",
+            "state",
+            "last_check",
+            "plugin_output",
+            "acknowledged",
+            "scheduled_downtime_depth"
+          ]
+        }
+      }
+    },
+    {
+      "name": "checkmk_list_host_services",
+      "description": "Read every service on one host with its current state and check output — the drill-down after a host has been flagged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hostName": {
+            "type": "string",
+            "description": "Host name as configured in Checkmk."
+          },
+          "columns": {
+            "type": "string",
+            "description": "One column name to include beyond the defaults."
+          }
+        },
+        "required": [
+          "hostName"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/objects/host/{hostName}/collections/services",
+        "queryParams": {
+          "columns": [
+            "description",
+            "state",
+            "last_check",
+            "plugin_output",
+            "acknowledged"
+          ]
+        }
+      }
+    },
+    {
+      "name": "checkmk_list_host_groups",
+      "description": "List the host groups configured on this site with their alias, so a query can be scoped to a part of the estate.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain-types/host_group_config/collections/all"
+      }
+    },
+    {
+      "name": "checkmk_list_downtimes",
+      "description": "List scheduled downtimes with their host, service, comment, author and window — the explanation for why an alert did not fire.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "host_name": {
+            "type": "string",
+            "description": "Restrict to one host's downtimes."
+          },
+          "downtime_type": {
+            "type": "string",
+            "description": "`host` or `service`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain-types/downtime/collections/all",
+        "queryParams": {
+          "host_name": "$host_name",
+          "downtime_type": "$downtime_type"
+        }
+      }
+    },
+    {
+      "name": "checkmk_list_folders",
+      "description": "List the Checkmk folder tree with each folder's title, path and attributes — how hosts are organised and where settings are inherited from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recursive": {
+            "type": "boolean",
+            "description": "When true, return the whole tree rather than the top level."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domain-types/folder_config/collections/all",
+        "queryParams": {
+          "recursive": "$recursive"
+        }
+      }
+    }
+  ]
+}

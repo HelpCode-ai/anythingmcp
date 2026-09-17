@@ -1,0 +1,309 @@
+{
+  "slug": "visma-eaccounting",
+  "name": "Visma eAccounting",
+  "description": "Visma eAccounting — Nordic cloud bookkeeping: customers, suppliers, customer and supplier invoices, articles, and the account chart. REST API v2, OAuth 2.0.",
+  "region": "se",
+  "category": "accounting",
+  "icon": "visma-eaccounting",
+  "docsUrl": "https://developer.vismaonline.com/",
+  "instructions": "**Getting a token**\n1. Register at **developer.vismaonline.com** and create an application. You receive a client id and client secret.\n2. Run the authorization-code flow once for the customer's company, asking for the scopes you need — `ea:api`, `ea:sales`, `ea:purchase`, `ea:accounting`. Keep the **refresh token**.\n3. Set `VISMA_CLIENT_ID`, `VISMA_CLIENT_SECRET` and `VISMA_REFRESH_TOKEN`.\n\n**Sandbox and production are different hosts.** This adapter targets production at `eaccountingapi.vismaonline.com`. The sandbox lives at `eaccountingapi-sandbox.vismaonline.com` with its own client registration; a production token there fails in a way that looks like a bad secret. If you want to test first, register a sandbox app and build a custom connector against that host.\n\n**One connector, one company.** The token is bound to the company it was authorised for. A bookkeeper with several clients needs one connector per client.\n\n**Filtering is OData-flavoured** on most collections: `$filter`, `$top`, `$skip`, `$orderby`. Dates are ISO 8601. `$top` is capped server-side around 1000.\n\n**Vocabulary is Nordic.** `CustomerInvoiceDraft` is an unposted invoice; `CustomerInvoice` is posted and immutable. A draft is not revenue, and an agent summing both will over-report.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: eaccountingapi.vismaonline.com is public with a valid certificate.",
+  "requiredEnvVars": [
+    "VISMA_CLIENT_ID",
+    "VISMA_CLIENT_SECRET",
+    "VISMA_REFRESH_TOKEN"
+  ],
+  "connector": {
+    "name": "Visma eAccounting API v2",
+    "type": "REST",
+    "baseUrl": "https://eaccountingapi.vismaonline.com/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{VISMA_CLIENT_ID}}",
+      "clientSecret": "{{VISMA_CLIENT_SECRET}}",
+      "refreshToken": "{{VISMA_REFRESH_TOKEN}}",
+      "tokenUrl": "https://identity.vismaonline.com/connect/token",
+      "tokenAuthMethod": "basic"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/companysettings"
+  },
+  "probe": {
+    "tool": "visma_eaccounting_get_company_settings"
+  },
+  "tools": [
+    {
+      "name": "visma_eaccounting_get_company_settings",
+      "description": "Read the connected company's settings: name, corporate identity number, VAT number, address and base currency. The fastest proof the token works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companysettings"
+      }
+    },
+    {
+      "name": "visma_eaccounting_list_customers",
+      "description": "List customers with their number, name, corporate identity number, address and payment terms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression, e.g. IsActive eq true."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort expression, e.g. `Name asc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$orderby": "$orderby"
+        }
+      }
+    },
+    {
+      "name": "visma_eaccounting_get_customer",
+      "description": "Read one customer by id, with their addresses, delivery defaults, VAT settings and credit limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "description": "Visma customer GUID."
+          }
+        },
+        "required": [
+          "customerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customerId}"
+      }
+    },
+    {
+      "name": "visma_eaccounting_list_customer_invoices",
+      "description": "List *posted* customer invoices with their number, date, due date, customer, total and remaining amount. Drafts are a separate collection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression, e.g. InvoiceDate ge 2026-01-01."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort expression, e.g. `InvoiceDate desc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customerinvoices",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$orderby": "$orderby"
+        }
+      }
+    },
+    {
+      "name": "visma_eaccounting_get_customer_invoice",
+      "description": "Read one posted customer invoice in full: every row with article, quantity, price and VAT, the totals and the remaining amount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "string",
+            "description": "Visma invoice GUID."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customerinvoices/{invoiceId}"
+      }
+    },
+    {
+      "name": "visma_eaccounting_list_invoice_drafts",
+      "description": "List *unposted* customer invoice drafts. A draft is not revenue — keep it out of any figure that reports what was actually invoiced.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customerinvoicedrafts",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "visma_eaccounting_list_supplier_invoices",
+      "description": "List supplier invoices with their supplier, date, due date, total and remaining amount — the payables side.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort expression."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supplierinvoices",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$orderby": "$orderby"
+        }
+      }
+    },
+    {
+      "name": "visma_eaccounting_list_suppliers",
+      "description": "List suppliers with their number, name, corporate identity number and payment details, for the purchasing side of the ledger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "visma_eaccounting_list_articles",
+      "description": "List articles with their number, name, net and gross price, VAT rate and stock quantity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression, e.g. IsActive eq true."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "visma_eaccounting_list_accounts",
+      "description": "List the chart of accounts with each account's number, name, type and VAT code, for questions that need the ledger structure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top"
+        }
+      }
+    }
+  ]
+}

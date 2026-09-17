@@ -1,0 +1,275 @@
+{
+  "slug": "synology",
+  "name": "Synology DSM",
+  "description": "Synology DiskStation Manager: system and storage health, shared folders, running tasks, Download Station queue and the file station tree. Session-login auth against your own NAS.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "synology",
+  "docsUrl": "https://kb.synology.com/en-global/DG/DSM_Login_Web_API_Guide/1",
+  "instructions": "**Setup**\n1. In DSM create a user for the integration. Give it read access to the shared folders the agent should see and, if you want the system tools, membership of the administrators group — several `SYNO.Core` endpoints are admin-only.\n2. **Turn off two-factor authentication for that user**, or the login call cannot complete. This is the main reason to use a dedicated account rather than your own.\n3. Set `SYNOLOGY_URL` to your NAS (e.g. `https://nas.example.com:5001`, no trailing slash), plus `SYNOLOGY_USERNAME` and `SYNOLOGY_PASSWORD`.\n\n**DSM's session is a `sid`.** The adapter logs in at `/webapi/auth.cgi` and passes the returned `sid` back as a cookie on every call, re-logging in when DSM expires it. AnythingMCP keeps the session encrypted in `connector_auth_cache`.\n\n**Every call names an API, a version and a method.** DSM's Web API is one CGI endpoint per family with `api`, `version` and `method` as query parameters — `entry.cgi?api=SYNO.Core.System&version=1&method=info`. That is why the tools here look repetitive in the trace; the parameters are what distinguish them.\n\n**Success is in the body, not the status code.** DSM answers `{\"success\": false, \"error\": {\"code\": 105}}` with HTTP 200. Code 105 is 'insufficient permission', 119 'session expired', 400 'no such account or wrong password'. A 200 is not a result.\n\n**Valid TLS is required, and a fresh DSM does not have it.** Synology ships a self-signed certificate; this connector will refuse it. DSM has built-in Let's Encrypt support under **Control Panel → Security → Certificate** — use it.\n\n**Read-only by design**: no file writes, no share changes, no package management.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch, and a homelab's default certificate is exactly the case that breaks.\n- On an internal host (`nas.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "SYNOLOGY_URL",
+    "SYNOLOGY_USERNAME",
+    "SYNOLOGY_PASSWORD"
+  ],
+  "connector": {
+    "name": "Synology DSM Web API",
+    "type": "REST",
+    "baseUrl": "{{SYNOLOGY_URL}}/webapi",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{SYNOLOGY_URL}}/webapi/auth.cgi?api=SYNO.API.Auth&version=6&method=login&account=${username}&passwd=${password}&session=AnythingMCP&format=sid",
+      "loginMethod": "GET",
+      "username": "{{SYNOLOGY_USERNAME}}",
+      "password": "{{SYNOLOGY_PASSWORD}}",
+      "tokenJsonPath": "data.sid",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Cookie",
+      "headerTemplate": "id=${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/query.cgi?api=SYNO.API.Info&version=1&method=query&query=all"
+  },
+  "probe": {
+    "tool": "synology_list_apis"
+  },
+  "tools": [
+    {
+      "name": "synology_list_apis",
+      "description": "List the Web APIs this DSM publishes, with the version range and CGI path of each. Start here — DSM versions differ in what they expose, and this is the authority.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query.cgi",
+        "queryParams": {
+          "api": "SYNO.API.Info",
+          "version": "1",
+          "method": "query",
+          "query": "all"
+        }
+      }
+    },
+    {
+      "name": "synology_get_system_info",
+      "description": "Read the NAS's system information: model, serial number, DSM version, uptime, CPU and total memory.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entry.cgi",
+        "queryParams": {
+          "api": "SYNO.Core.System",
+          "version": "1",
+          "method": "info"
+        }
+      }
+    },
+    {
+      "name": "synology_get_system_utilization",
+      "description": "Read live utilisation: CPU load, memory in use, disk throughput and network throughput right now.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entry.cgi",
+        "queryParams": {
+          "api": "SYNO.Core.System.Utilization",
+          "version": "1",
+          "method": "get"
+        }
+      }
+    },
+    {
+      "name": "synology_list_storage",
+      "description": "Read the storage overview: every volume and disk with its size, used space, filesystem and SMART health status. Where a failing disk shows up.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entry.cgi",
+        "queryParams": {
+          "api": "SYNO.Storage.CGI.Storage",
+          "version": "1",
+          "method": "load_info"
+        }
+      }
+    },
+    {
+      "name": "synology_list_shares",
+      "description": "List the shared folders with their name, path, description and whether each is encrypted — the map of what is on the NAS.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum shares to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Shares to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entry.cgi",
+        "queryParams": {
+          "api": "SYNO.Core.Share",
+          "version": "1",
+          "method": "list",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "synology_list_files",
+      "description": "List the files and folders under one path in File Station, with their size, type and modification time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_path": {
+            "type": "string",
+            "description": "Absolute DSM path, e.g. /volume1/documents."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum entries to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Entries to skip, for paging."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field: name, size, user, group, mtime, atime, ctime or type."
+          }
+        },
+        "required": [
+          "folder_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entry.cgi",
+        "queryParams": {
+          "api": "SYNO.FileStation.List",
+          "version": "2",
+          "method": "list",
+          "folder_path": "$folder_path",
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort_by": "$sort_by",
+          "additional": "[\"size\",\"time\",\"type\"]"
+        }
+      }
+    },
+    {
+      "name": "synology_search_files",
+      "description": "Start a File Station search under one path for a filename pattern. Returns a task id — DSM's search is asynchronous by design.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_path": {
+            "type": "string",
+            "description": "Absolute DSM path to search under, e.g. /volume1."
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Filename pattern, e.g. *.pdf or invoice*."
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "When true, search subfolders too."
+          }
+        },
+        "required": [
+          "folder_path",
+          "pattern"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entry.cgi",
+        "queryParams": {
+          "api": "SYNO.FileStation.Search",
+          "version": "2",
+          "method": "start",
+          "folder_path": "$folder_path",
+          "pattern": "$pattern",
+          "recursive": "$recursive"
+        }
+      }
+    },
+    {
+      "name": "synology_list_download_tasks",
+      "description": "List the Download Station queue with each task's title, status, size, progress and speed — what the NAS is currently fetching.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum tasks to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Tasks to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entry.cgi",
+        "queryParams": {
+          "api": "SYNO.DownloadStation.Task",
+          "version": "1",
+          "method": "list",
+          "additional": "detail,transfer",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "synology_list_users",
+      "description": "List the DSM user accounts with their name, description, e-mail and whether each is expired or disabled. Requires an administrator account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum users to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Users to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entry.cgi",
+        "queryParams": {
+          "api": "SYNO.Core.User",
+          "version": "1",
+          "method": "list",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

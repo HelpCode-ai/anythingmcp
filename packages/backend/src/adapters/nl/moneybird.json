@@ -1,0 +1,259 @@
+{
+  "slug": "moneybird",
+  "name": "Moneybird",
+  "description": "Moneybird — Dutch online bookkeeping for freelancers and small companies: contacts, sales invoices, purchase invoices, estimates, products and financial mutations. REST API v2, bearer token.",
+  "region": "nl",
+  "category": "accounting",
+  "icon": "moneybird",
+  "docsUrl": "https://developer.moneybird.com/",
+  "instructions": "**Getting a token**\n1. Sign in to Moneybird and open **Instellingen → Koppelingen → API-tokens** (Settings → Integrations → API tokens).\n2. Create a personal access token and put it in `MONEYBIRD_API_TOKEN`.\n3. Set `MONEYBIRD_ADMINISTRATION_ID` to the numeric administration id. It is in the URL when you are logged in — `moneybird.com/123456789/…` — and `moneybird_list_administrations` also returns it.\n\n**Every data path carries the administration id.** A Moneybird account can hold several administrations (one per company, or a bookkeeper's client list) and each has its own id. This connector is fixed to one; add a second connector for a second administration.\n\n**Rate limit**: roughly 150 requests per five minutes per token, and Moneybird answers a burst with 429 plus a `Retry-After`. Pace bulk work rather than retrying immediately.\n\n**Filtering is a single comma-separated string**, not repeated parameters: `filter=period:this_year,state:open`. Available keys differ per resource — for sales invoices the useful ones are `period`, `state` (`draft`, `open`, `late`, `paid`, `all`) and `contact_id`.\n\n**Paging** is `page` (1-based) and `per_page` (max 100). There is no total count in the body; a short page means you have reached the end.\n\n**Amounts are strings in euros**, and `total_price_incl_tax` is not `total_price_excl_tax`. Pick the one the question actually means.\n\n**Cloud reachability**: moneybird.com is public with a valid certificate.",
+  "requiredEnvVars": [
+    "MONEYBIRD_API_TOKEN",
+    "MONEYBIRD_ADMINISTRATION_ID"
+  ],
+  "connector": {
+    "name": "Moneybird API v2",
+    "type": "REST",
+    "baseUrl": "https://moneybird.com/api/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MONEYBIRD_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/administrations.json"
+  },
+  "probe": {
+    "tool": "moneybird_list_administrations"
+  },
+  "tools": [
+    {
+      "name": "moneybird_list_administrations",
+      "description": "List the administrations this token can reach, with their id, name, language and currency. The one call that needs no administration id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/administrations.json"
+      }
+    },
+    {
+      "name": "moneybird_list_contacts",
+      "description": "List contacts — customers and suppliers — with their company name, contact person, address, VAT number and customer id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search fragment matched against name, e-mail and customer id."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{MONEYBIRD_ADMINISTRATION_ID}/contacts.json",
+        "queryParams": {
+          "query": "$query",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "moneybird_get_contact",
+      "description": "Read one contact in full: addresses, tax identifiers, payment terms, custom fields and the notes recorded against them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "string",
+            "description": "Moneybird contact id."
+          }
+        },
+        "required": [
+          "contactId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{MONEYBIRD_ADMINISTRATION_ID}/contacts/{contactId}.json"
+      }
+    },
+    {
+      "name": "moneybird_list_sales_invoices",
+      "description": "List sales invoices with their number, date, due date, contact, totals and state. Filter with `state:open` or `state:late` for the receivables question.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Comma-separated filter, e.g. period:this_year,state:open. States: draft, open, late, paid, all."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{MONEYBIRD_ADMINISTRATION_ID}/sales_invoices.json",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "moneybird_get_sales_invoice",
+      "description": "Read one sales invoice in full: every detail line with quantity, price and tax rate, the totals, the payment schedule and the payments received.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "string",
+            "description": "Moneybird sales invoice id."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{MONEYBIRD_ADMINISTRATION_ID}/sales_invoices/{invoiceId}.json"
+      }
+    },
+    {
+      "name": "moneybird_list_purchase_invoices",
+      "description": "List purchase invoices and receipts with their supplier, date, due date and total — the cost side of the ledger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Comma-separated filter, e.g. period:this_quarter."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{MONEYBIRD_ADMINISTRATION_ID}/documents/purchase_invoices.json",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "moneybird_list_estimates",
+      "description": "List estimates (offertes) with their number, date, contact, total and state, to see what is out with customers and not yet won.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Comma-separated filter, e.g. state:open."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{MONEYBIRD_ADMINISTRATION_ID}/estimates.json",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "moneybird_list_products",
+      "description": "List the products and services in the catalogue with their description, price, tax rate and ledger account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{MONEYBIRD_ADMINISTRATION_ID}/products.json",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "moneybird_list_financial_mutations",
+      "description": "List bank mutations with their date, amount, description and reconciliation state, so unpaid invoices can be matched against money that actually arrived.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Comma-separated filter, e.g. period:this_month."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{MONEYBIRD_ADMINISTRATION_ID}/financial_mutations.json",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    }
+  ]
+}
