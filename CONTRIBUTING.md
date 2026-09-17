@@ -133,6 +133,21 @@ Write clear, concise commit messages:
 - UI/UX enhancements
 - New import format parsers (OpenAPI, Postman, cURL, etc.)
 
+### Add an adapter
+
+An adapter is one JSON file; the rest is generated and checked.
+
+1. Write `packages/backend/src/adapters/<region>/<slug>.json`. Filename must
+   equal `slug`; prefix every tool `<slug_with_underscores>_`; see
+   [docs/tool-definition.md](docs/tool-definition.md) for the envelope.
+2. `node scripts/validate-adapters.mjs --warn` — clean.
+3. `node scripts/regenerate-catalog.mjs` — commit the `catalog.ts` diff.
+4. Add `<region>/<slug>.live.spec.ts` (copy `intl/todoist.live.spec.ts`):
+   static assertions always, live calls behind `RUN_<SLUG>_LIVE=1`.
+5. `node scripts/adapter-count.mjs --check` — bump the quoted counts it names.
+6. Drop the brand logo at
+   `packages/frontend/public/logos/connectors/<icon>.svg`.
+
 ### What Needs Discussion First
 
 Open an issue before starting work on:

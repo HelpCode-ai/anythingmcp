@@ -142,3 +142,22 @@ test('diagnostic docs use ordinary GitHub heading slugs', () => {
   }
   assert.doesNotMatch(docs, /\{#[^}]+\}/);
 });
+
+test('DATABASE adapters may authenticate with a connection string', () => {
+  const result = validateAdapter(adapter({
+    slug: 'postgres', icon: 'postgres', region: 'intl',
+    connector: { type: 'DATABASE', authType: 'CONNECTION_STRING' },
+  }), 'postgres.json', 'intl');
+  assert.deepEqual(result.errors, []);
+});
+
+test('the per-country region directories are scanned', () => {
+  const root = mkdtempSync(join(tmpdir(), 'adapter-validator-regions-'));
+  const regions = ['it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk'];
+  for (const region of regions) {
+    mkdirSync(join(root, region));
+    writeFileSync(join(root, region, `${region}-one.json`), '{}');
+  }
+  const found = validatorModule.collectAdapters(root).map((c) => c.region);
+  assert.deepEqual(found.sort(), [...regions].sort());
+});

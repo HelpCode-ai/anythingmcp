@@ -79,6 +79,40 @@ export class DatabaseEngine {
     return this.dispatch(config, sql, values, readOnly);
   }
 
+  /**
+   * Merge credentials held in the connector's encrypted `authConfig` into the
+   * connection URL.
+   *
+   * The mssql and oracle drivers take user/password as config fields, so they
+   * already read `authConfig` (see buildMssqlConfig / buildOracleConfig). pg,
+   * mysql2 and the Mongo driver only take a URL, which would force an adapter
+   * to carry the password in the plaintext `baseUrl` column. Splicing it in
+   * here keeps the secret in `authConfig`, which is encrypted at rest.
+   *
+   * A username already present in the URL wins: it is the more specific
+   * statement, and overriding it would silently break existing connectors.
+   */
+  private withUrlCredentials(
+    baseUrl: string,
+    authConfig?: Record<string, unknown>,
+  ): string {
+    const username = authConfig?.username;
+    if (typeof username !== 'string' || username === '') return baseUrl;
+    let url: URL;
+    try {
+      url = new URL(baseUrl);
+    } catch {
+      return baseUrl; // not a URL we can edit — hand it to the driver as-is
+    }
+    if (url.username) return baseUrl;
+    url.username = encodeURIComponent(username);
+    const password = authConfig?.password;
+    if (typeof password === 'string' && password !== '') {
+      url.password = encodeURIComponent(password);
+    }
+    return url.toString();
+  }
+
   private detectDriver(baseUrl: string): SqlDriver {
     if (this.isMssql(baseUrl)) return 'mssql';
     if (this.isMysql(baseUrl)) return 'mysql';
@@ -107,7 +141,7 @@ export class DatabaseEngine {
         this.executeSqlite(config.baseUrl, sql, values, readOnly),
       );
     }
-    return this.executePostgres(config.baseUrl, sql, values);
+    return this.executePostgres(config, sql, values);
   }
 
   /** Test connectivity — runs SELECT 1 (SQL) or ping (MongoDB) */
@@ -118,9 +152,10 @@ export class DatabaseEngine {
   }): Promise<void> {
     await this.assertSafeDbHost(config.baseUrl);
     if (this.isMongodb(config.baseUrl)) {
-      const client = new MongoClient(config.baseUrl, {
-        serverSelectionTimeoutMS: 10000,
-      });
+      const client = new MongoClient(
+        this.withUrlCredentials(config.baseUrl, config.authConfig),
+        { serverSelectionTimeoutMS: 10000 },
+      );
       try {
         await client.connect();
         await client.db().command({ ping: 1 });
@@ -136,7 +171,9 @@ export class DatabaseEngine {
         await pool.close();
       }
     } else if (this.isMysql(config.baseUrl)) {
-      const conn = await mysql.createConnection(this.mysqlUri(config.baseUrl));
+      const conn = await mysql.createConnection(
+        this.mysqlUri(config.baseUrl, config.authConfig),
+      );
       try {
         await conn.query('SELECT 1');
       } finally {
@@ -159,7 +196,12 @@ export class DatabaseEngine {
         db.close();
       }
     } else {
-      const pool = new Pool({ connectionString: config.baseUrl });
+      const pool = new Pool({
+        connectionString: this.withUrlCredentials(
+          config.baseUrl,
+          config.authConfig,
+        ),
+      });
       try {
         await pool.query('SELECT 1');
       } finally {
@@ -173,10 +215,14 @@ export class DatabaseEngine {
   /* ------------------------------------------------------------------ */
 
   private async executePostgres(
-    connectionString: string,
+    config: { baseUrl: string; authConfig?: Record<string, unknown> },
     sql: string,
     values: unknown[] = [],
   ): Promise<unknown> {
+    const connectionString = this.withUrlCredentials(
+      config.baseUrl,
+      config.authConfig,
+    );
     const safeHost = connectionString.split('@')[1] ?? 'unknown';
     this.logger.debug(`PostgreSQL query → ${safeHost}`);
 
@@ -336,9 +382,10 @@ export class DatabaseEngine {
       throw new Error('MongoDB query must specify a "collection" field');
     }
 
-    const client = new MongoClient(config.baseUrl, {
-      serverSelectionTimeoutMS: 10000,
-    });
+    const client = new MongoClient(
+      this.withUrlCredentials(config.baseUrl, config.authConfig),
+      { serverSelectionTimeoutMS: 10000 },
+    );
 
     try {
       await client.connect();
@@ -371,9 +418,10 @@ export class DatabaseEngine {
   private async getMongoSchema(
     config: { baseUrl: string; authConfig?: Record<string, unknown> },
   ): Promise<unknown> {
-    const client = new MongoClient(config.baseUrl, {
-      serverSelectionTimeoutMS: 10000,
-    });
+    const client = new MongoClient(
+      this.withUrlCredentials(config.baseUrl, config.authConfig),
+      { serverSelectionTimeoutMS: 10000 },
+    );
 
     try {
       await client.connect();
@@ -459,7 +507,7 @@ export class DatabaseEngine {
     sql: string,
     values: unknown[] = [],
   ): Promise<unknown> {
-    const uri = this.mysqlUri(config.baseUrl);
+    const uri = this.mysqlUri(config.baseUrl, config.authConfig);
     this.logger.debug(`MySQL query → ${new URL(uri).hostname}`);
 
     const conn = await mysql.createConnection(uri);
@@ -479,12 +527,18 @@ export class DatabaseEngine {
     }
   }
 
-  /** Normalize mariadb:// to mysql:// since mysql2 only understands mysql:// */
-  private mysqlUri(baseUrl: string): string {
-    if (baseUrl.startsWith('mariadb://')) {
-      return 'mysql://' + baseUrl.slice('mariadb://'.length);
-    }
-    return baseUrl;
+  /**
+   * Normalize mariadb:// to mysql:// since mysql2 only understands mysql://,
+   * and splice in any authConfig credentials.
+   */
+  private mysqlUri(
+    baseUrl: string,
+    authConfig?: Record<string, unknown>,
+  ): string {
+    const normalized = baseUrl.startsWith('mariadb://')
+      ? 'mysql://' + baseUrl.slice('mariadb://'.length)
+      : baseUrl;
+    return this.withUrlCredentials(normalized, authConfig);
   }
 
   /* ------------------------------------------------------------------ */

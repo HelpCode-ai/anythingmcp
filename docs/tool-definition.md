@@ -45,9 +45,62 @@ listed below; these values are validated before an adapter can pass.
 ### Authentication
 
 Use `NONE`, `API_KEY`, `BEARER_TOKEN`, `BASIC`, `BASIC_AUTH`, `OAUTH2`,
-`OAUTH1`, `LOGIN_TOKEN`, or `QUERY_AUTH` as `connector.authType`. Keep the
-corresponding credentials in `authConfig` and reference environment variables
-with `{{VAR}}` where the connector injects them.
+`OAUTH1`, `LOGIN_TOKEN`, `QUERY_AUTH`, or `CONNECTION_STRING` as
+`connector.authType`. Keep the corresponding credentials in `authConfig` and
+reference environment variables with `{{VAR}}` where the connector injects
+them.
+
+### DATABASE adapters
+
+A `DATABASE` adapter points at a database instead of an HTTP API, so several
+of the REST rules simply do not apply to it:
+
+- `authType` is `CONNECTION_STRING`. `baseUrl` is the DSN and carries the
+  driver (`postgres://`, `mysql://`, `mariadb://`, `mssql://`, `oracle://`,
+  `mongodb://`, `sqlite://`) — the engine picks the driver from that prefix.
+- Put the username and password in `authConfig`, not in the DSN. `authConfig`
+  is encrypted at rest; `baseUrl` is not. The engine splices them into the URL
+  (Postgres, MySQL, Mongo) or passes them as driver config (MSSQL, Oracle,
+  which also accept `authConfig.domain` for NTLM).
+- `endpointMapping.method` is `query`, `static`, or `mongo_schema` — never an
+  HTTP verb. `path` is the statement, not a URL.
+- A `path` of exactly `${query}` hands the engine the caller's raw SQL. Any
+  other `path` is a template whose `${name}` placeholders are compiled to
+  bound parameters, never string-interpolated.
+- Adapters install **read-only**; the engine rejects anything but a read until
+  the user flips the switch in the connector's settings.
+- Declare a `probe` (a listing tool with no required parameters). A DATABASE
+  adapter has no HTTP healthcheck, so without one the install reports nothing.
+
+```json
+{
+  "slug": "postgres",
+  "requiredEnvVars": ["POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DATABASE", "POSTGRES_USER", "POSTGRES_PASSWORD"],
+  "probe": { "tool": "postgres_list_tables" },
+  "connector": {
+    "name": "PostgreSQL",
+    "type": "DATABASE",
+    "authType": "CONNECTION_STRING",
+    "baseUrl": "postgres://{{POSTGRES_HOST}}:{{POSTGRES_PORT}}/{{POSTGRES_DATABASE}}",
+    "authConfig": {
+      "username": "{{POSTGRES_USER}}",
+      "password": "{{POSTGRES_PASSWORD}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "postgres_query",
+      "description": "Run a read-only SQL SELECT against the database and return up to 1000 rows.",
+      "parameters": {
+        "type": "object",
+        "properties": { "query": { "type": "string", "description": "A single SQL SELECT statement." } },
+        "required": ["query"]
+      },
+      "endpointMapping": { "method": "query", "path": "${query}" }
+    }
+  ]
+}
+```
 
 ### Adapter file errors
 
@@ -211,19 +264,26 @@ Adapter authors don't need to declare them.
 
 ### Database Example (SQL)
 
+`${name}` placeholders are compiled to the driver's bound parameters
+(`$1`, `?`, `:1`), so values are never spliced into the statement.
+
 ```json
 {
-  "method": "static",
-  "path": "SELECT * FROM orders WHERE customer_id = $customer_id AND status = $status ORDER BY created_at DESC LIMIT $limit"
+  "method": "query",
+  "path": "SELECT * FROM orders WHERE customer_id = ${customer_id} AND status = ${status} ORDER BY created_at DESC LIMIT ${limit}"
 }
 ```
 
 ### Database Example (MongoDB)
 
+The path is a JSON find spec — `collection` plus optional `filter`,
+`projection`, `sort` and `limit`. `mongo_schema` takes no path at all and
+lists the collections with a sampled field list.
+
 ```json
 {
   "method": "query",
-  "path": "db.collection('orders').find({customerId: $customer_id, status: $status}).sort({createdAt: -1}).limit($limit)"
+  "path": "{\"collection\": \"orders\", \"filter\": {\"customerId\": \"${customer_id}\"}, \"sort\": {\"createdAt\": -1}, \"limit\": ${limit}}"
 }
 ```
 
