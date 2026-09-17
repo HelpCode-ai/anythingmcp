@@ -1,0 +1,210 @@
+{
+  "slug": "docuware",
+  "name": "DocuWare",
+  "description": "DocuWare document management: search file cabinets by field, read document metadata and index fields, list cabinets, dialogs and trays. Platform REST API, cookie-session auth against DocuWare Cloud or an on-premises server.",
+  "region": "de",
+  "category": "dms",
+  "icon": "docuware",
+  "docsUrl": "https://developer.docuware.com/rest/index.html",
+  "instructions": "**Getting access**\n1. Create a DocuWare user for the integration with read rights on the file cabinets the agent should see. DocuWare enforces cabinet and field-level rights, so a restricted user sees fewer documents rather than an error.\n2. Set `DOCUWARE_URL` to your platform root — for DocuWare Cloud that is `https://<tenant>.docuware.cloud/DocuWare/Platform`; on premises it is `https://<server>/DocuWare/Platform`. No trailing slash.\n3. Set `DOCUWARE_USERNAME` and `DOCUWARE_PASSWORD`. The adapter posts them to `/Account/Logon` and reuses the returned `.DWPLATFORMAUTH` cookie, refreshing it when DocuWare expires it. AnythingMCP stores the session in the encrypted `connector_auth_cache` table.\n\n**Newer tenants may require the Identity Service instead.** DocuWare has been migrating cloud tenants from cookie logon to OAuth 2.0 via its Identity Service. If `/Account/Logon` returns 404 or a redirect to an identity host, this adapter's auth path does not apply to your tenant and you will need a custom OAuth 2.0 connector pointed at the Identity Service's token endpoint.\n\n**Everything hangs off a file cabinet id.** Call `docuware_list_file_cabinets` first; the `Id` it returns (a GUID) is the `fileCabinetId` every other tool needs. A DocuWare installation typically has several, and searching the wrong one returns a confident empty result.\n\n**Search is by index field, not full text by default.** `docuware_search_documents` takes DocuWare's `q` expression over index fields, e.g. `DOCUMENT_TYPE=Invoice`. Full-text search only works if the cabinet has a full-text index configured.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant — DocuWare does not offer a public sandbox. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. If you run this against a real system, a correction to the adapter JSON is genuinely welcome.\n\n**Read-only by design**: no upload, no index change, no delete. DocuWare cabinets are usually the company's audit-relevant archive.",
+  "requiredEnvVars": [
+    "DOCUWARE_URL",
+    "DOCUWARE_USERNAME",
+    "DOCUWARE_PASSWORD"
+  ],
+  "connector": {
+    "name": "DocuWare Platform REST API",
+    "type": "REST",
+    "baseUrl": "{{DOCUWARE_URL}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{DOCUWARE_URL}}/Account/Logon",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "UserName": "${username}",
+        "Password": "${password}",
+        "RedirectToMyselfInCaseOfError": "false",
+        "RememberMe": "false"
+      },
+      "username": "{{DOCUWARE_USERNAME}}",
+      "password": "{{DOCUWARE_PASSWORD}}",
+      "tokenSource": "cookie",
+      "cookieName": ".DWPLATFORMAUTH",
+      "tokenJsonPath": "Token",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Cookie",
+      "headerTemplate": ".DWPLATFORMAUTH=${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/FileCabinets"
+  },
+  "probe": {
+    "tool": "docuware_list_file_cabinets"
+  },
+  "tools": [
+    {
+      "name": "docuware_list_file_cabinets",
+      "description": "List the file cabinets and document trays the logged-in user can reach, with their GUID, name and whether each is a basket. Start here — every other tool needs one of these ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/FileCabinets"
+      }
+    },
+    {
+      "name": "docuware_get_file_cabinet",
+      "description": "Read one file cabinet's definition: its index fields, their types and lengths, and the dialogs configured on it. Needed before composing a search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fileCabinetId": {
+            "type": "string",
+            "description": "File cabinet GUID from docuware_list_file_cabinets."
+          }
+        },
+        "required": [
+          "fileCabinetId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/FileCabinets/{fileCabinetId}"
+      }
+    },
+    {
+      "name": "docuware_search_documents",
+      "description": "Search one file cabinet by index field, e.g. `DOCUMENT_TYPE=Invoice`. Full-text only works where the cabinet has a full-text index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fileCabinetId": {
+            "type": "string",
+            "description": "File cabinet GUID to search."
+          },
+          "q": {
+            "type": "string",
+            "description": "DocuWare query expression over index fields, e.g. COMPANY=\"Muster GmbH\"."
+          },
+          "count": {
+            "type": "number",
+            "description": "Maximum documents to return (default 50)."
+          },
+          "start": {
+            "type": "number",
+            "description": "Documents to skip, for paging."
+          },
+          "sortOrder": {
+            "type": "string",
+            "description": "Sort expression, e.g. `DWSTOREDATETIME DESC`."
+          }
+        },
+        "required": [
+          "fileCabinetId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/FileCabinets/{fileCabinetId}/Documents",
+        "queryParams": {
+          "q": "$q",
+          "count": "$count",
+          "start": "$start",
+          "sortOrder": "$sortOrder"
+        }
+      }
+    },
+    {
+      "name": "docuware_get_document",
+      "description": "Read one document's header: its id, store date, content type, page count and the section list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fileCabinetId": {
+            "type": "string",
+            "description": "File cabinet GUID."
+          },
+          "docId": {
+            "type": "number",
+            "description": "Numeric document id within that cabinet."
+          }
+        },
+        "required": [
+          "fileCabinetId",
+          "docId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/FileCabinets/{fileCabinetId}/Documents/{docId}"
+      }
+    },
+    {
+      "name": "docuware_get_document_fields",
+      "description": "Read the index fields of one document with their values — the invoice number, supplier, amount and date DocuWare has captured for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fileCabinetId": {
+            "type": "string",
+            "description": "File cabinet GUID."
+          },
+          "docId": {
+            "type": "number",
+            "description": "Numeric document id."
+          }
+        },
+        "required": [
+          "fileCabinetId",
+          "docId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/FileCabinets/{fileCabinetId}/Documents/{docId}/Fields"
+      }
+    },
+    {
+      "name": "docuware_list_dialogs",
+      "description": "List the search, store and result dialogs configured on a file cabinet. Dialogs define which fields a user may search and see.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fileCabinetId": {
+            "type": "string",
+            "description": "File cabinet GUID."
+          }
+        },
+        "required": [
+          "fileCabinetId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/FileCabinets/{fileCabinetId}/Dialogs"
+      }
+    },
+    {
+      "name": "docuware_get_organization",
+      "description": "Read the DocuWare organization the user belongs to: its name, GUID and the services available on this platform.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Organizations"
+      }
+    }
+  ]
+}
