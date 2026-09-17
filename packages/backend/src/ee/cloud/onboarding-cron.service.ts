@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
 import { EmailService } from '../../settings/email.service';
+import { LicenseService } from '../../license/license.service';
 
 const HOURS = (n: number) => n * 60 * 60 * 1000;
 const DAYS = (n: number) => n * 24 * 60 * 60 * 1000;
@@ -33,6 +34,7 @@ export class OnboardingCronService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly email: EmailService,
+    private readonly license: LicenseService,
   ) {}
 
   async run(): Promise<{
@@ -44,6 +46,7 @@ export class OnboardingCronService {
     trialWarn1: number;
     trialExpired: number;
     trialsMarkedExpired: number;
+    trialsRepaired: number;
     skipped: number;
   }> {
     const now = Date.now();
@@ -56,6 +59,7 @@ export class OnboardingCronService {
       trialWarn1: 0,
       trialExpired: 0,
       trialsMarkedExpired: 0,
+      trialsRepaired: 0,
       skipped: 0,
     };
 
@@ -162,11 +166,18 @@ export class OnboardingCronService {
     await this.runTrialLifecyclePass(now, out);
     out.trialsMarkedExpired = await this.markExpiredTrials(now);
 
+    // Before nudging anyone about their trial, make sure they actually got one.
+    // A verified user with no licence at all sees the licence wall instead of
+    // onboarding, and every drip email we send them is about something they
+    // cannot use.
+    out.trialsRepaired = (await this.license.repairMissingTrials()).repaired;
+
     this.logger.log(
       `Onboarding drip: examined=${out.examined} first=${out.firstReminders} ` +
         `second=${out.secondReminders} activation=${out.activationReminders} ` +
         `trialWarn3=${out.trialWarn3} trialWarn1=${out.trialWarn1} trialExpired=${out.trialExpired} ` +
-        `trialsMarkedExpired=${out.trialsMarkedExpired} skipped=${out.skipped}`,
+        `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
+        `skipped=${out.skipped}`,
     );
     return out;
   }

@@ -125,7 +125,12 @@ services:
     volumes:
       - motis_data:/data
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/"]
+      # 127.0.0.1, not localhost: MOTIS binds IPv4 only and localhost resolves
+      # to ::1 first inside the container, so the probe was refused every time.
+      # /metrics, not /: MOTIS answers 404 on the root, which --spider treats as
+      # a failure. Between the two, the container reported unhealthy for its
+      # whole life while serving traffic perfectly.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/metrics"]
       interval: 30s
       timeout: 5s
       retries: 3
