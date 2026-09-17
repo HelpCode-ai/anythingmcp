@@ -10,6 +10,8 @@ import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
+import { interpolateDeep } from '../common/env-interpolation.util';
+import { assertNoUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
@@ -218,9 +220,29 @@ export class ConnectorsService {
     const connector = await this.findById(id);
 
     try {
+      // Same substitution the tool path does, so Test connection exercises the
+      // credentials the workspace actually has rather than the placeholders the
+      // adapter shipped with.
+      const envVars = (connector.envVars as Record<string, string> | null) || {};
       const authConfig = connector.authConfig
-        ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
+        ? interpolateDeep(
+            JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
+            envVars,
+          )
         : undefined;
+      const baseUrl = interpolateDeep(connector.baseUrl, envVars);
+      const headers = interpolateDeep(
+        (connector.headers as Record<string, string>) || undefined,
+        envVars,
+      );
+
+      // A connector whose credentials were never filled in would otherwise send
+      // "{{MY_TOKEN}}" upstream and report the vendor's complaint about it,
+      // which tells the operator nothing about what to fix.
+      assertNoUnresolvedPlaceholders(
+        { baseUrl, headers, authConfig },
+        `the "${connector.name}" connector`,
+      );
 
       switch (connector.type) {
         case 'REST': {
@@ -231,10 +253,10 @@ export class ConnectorsService {
           const path = connector.healthcheckPath || '/';
           await this.restEngine.execute(
             {
-              baseUrl: connector.baseUrl,
+              baseUrl,
               authType: connector.authType,
               authConfig,
-              headers: connector.headers as Record<string, string>,
+              headers,
             },
             { method: 'GET', path },
             {},
