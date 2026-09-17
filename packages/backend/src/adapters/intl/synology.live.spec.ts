@@ -27,6 +27,17 @@ describe('synology adapter — static spec conformance', () => {
     expect(a.connector.authConfig?.headerTemplate).toBe('id=${token}');
   });
 
+  it("puts the credentials in loginBody, the only part that is interpolated", () => {
+    // LoginTokenService uses loginUrl verbatim, so a ${username} written
+    // there would be sent literally. loginBody is interpolated, and on a
+    // GET login it becomes the query string auth.cgi reads.
+    expect(a.connector.authConfig?.loginUrl).not.toContain('${');
+    const body = a.connector.authConfig?.loginBody as Record<string, string>;
+    expect(body.account).toBe('${username}');
+    expect(body.passwd).toBe('${password}');
+    expect(body.format).toBe('sid');
+  });
+
   it("names an api, version and method on every call", () => {
     for (const t of a.tools) {
       const qp = t.endpointMapping.queryParams as Record<string, string>;

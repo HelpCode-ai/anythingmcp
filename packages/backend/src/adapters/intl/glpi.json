@@ -6,12 +6,11 @@
   "category": "itsm",
   "icon": "glpi",
   "docsUrl": "https://github.com/glpi-project/glpi/blob/main/apirest.md",
-  "instructions": "**GLPI needs two tokens, and both are easy to confuse.**\n1. **App-Token** — identifies the *application*. In GLPI go to **Setup → General → API**, enable 'Enable Rest API', add an API client, and copy its **application token**. Put it in `GLPI_APP_TOKEN`.\n2. **User credentials** — identify the *person*. This adapter logs in with a username and password against `/initSession` and caches the session token GLPI returns. Put them in `GLPI_USERNAME` and `GLPI_PASSWORD`.\n3. Set `GLPI_URL` to the instance root (no trailing slash); the adapter appends `/apirest.php`.\n\nThe session token is sent back as `Session-Token: …` on every call and is refreshed automatically when GLPI expires it. AnythingMCP caches it in the `connector_auth_cache` table, encrypted.\n\n**Username and password must both be non-empty.** GLPI also supports logging in with a personal *user token* instead, but this connector uses the username/password path, and an empty password makes the login step fail before GLPI is ever reached.\n\n**Range, not page.** GLPI's list endpoints do not take a page number; they take a `range` header-style query of `start-end`, e.g. `0-49`. Ask for `0-49`, then `50-99`. The response carries `Content-Range` so you know when to stop.\n\n**The search engine is the powerful part.** `glpi_search` takes `criteria[0][field]`, `criteria[0][searchtype]` and `criteria[0][value]` and can express far more than the list endpoints. Field *numbers* are itemtype-specific — `glpi_list_search_options` returns the map for a given itemtype, and you will need it.\n\n**Entities scope everything.** A user restricted to one entity sees only that entity's tickets and assets, and GLPI reports the rest as simply absent.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`glpi.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "instructions": "**GLPI needs two tokens, and both are easy to confuse.**\n1. **App-Token** — identifies the *application*. In GLPI go to **Setup → General → API**, enable 'Enable Rest API' and 'Enable login with external token', add an API client, and copy its **application token**. Put it in `GLPI_APP_TOKEN`.\n2. **User-Token** — identifies the *person*. Open the GLPI user the agent should act as, go to the **API** tab of their profile, and regenerate the **remote access key** (personal API token). Put it in `GLPI_USER_TOKEN`.\n3. Set `GLPI_URL` to the instance root (no trailing slash); the adapter appends `/apirest.php`.\n\nThe adapter calls `/initSession` with `Authorization: user_token <token>` plus the App-Token, caches the session token GLPI returns, and sends it back as `Session-Token: …` on every call, refreshing it when GLPI expires it. AnythingMCP keeps the session encrypted in the `connector_auth_cache` table.\n\n**Why a user token rather than a username and password.** GLPI's initSession also accepts HTTP Basic credentials, but this connector deliberately does not use them: a login credential would have to be spelled out in the request, and a user token can be revoked on its own without changing the person's password. It is also the only one of the two that works when the GLPI user authenticates against LDAP or SSO.\n\n**Range, not page.** GLPI's list endpoints do not take a page number; they take a `range` of `start-end`, e.g. `0-49`. Ask for `0-49`, then `50-99`. The response carries `Content-Range` so you know when to stop.\n\n**The search engine is the powerful part.** `glpi_search` takes `criteria[0][field]`, `criteria[0][searchtype]` and `criteria[0][value]` and can express far more than the list endpoints. Field *numbers* are itemtype-specific — `glpi_list_search_options` returns the map for a given itemtype, and you will need it.\n\n**Entities scope everything.** A user restricted to one entity sees only that entity's tickets and assets, and GLPI reports the rest as simply absent.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`glpi.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
   "requiredEnvVars": [
     "GLPI_URL",
     "GLPI_APP_TOKEN",
-    "GLPI_USERNAME",
-    "GLPI_PASSWORD"
+    "GLPI_USER_TOKEN"
   ],
   "connector": {
     "name": "GLPI REST API",
@@ -22,11 +21,13 @@
       "loginUrl": "{{GLPI_URL}}/apirest.php/initSession",
       "loginMethod": "GET",
       "loginHeaders": {
+        "Authorization": "user_token {{GLPI_USER_TOKEN}}",
         "App-Token": "{{GLPI_APP_TOKEN}}",
         "Content-Type": "application/json"
       },
-      "username": "{{GLPI_USERNAME}}",
-      "password": "{{GLPI_PASSWORD}}",
+      "username": "{{GLPI_USER_TOKEN}}",
+      "password": "{{GLPI_APP_TOKEN}}",
+      "loginBody": {},
       "tokenJsonPath": "session_token",
       "tokenTTLSeconds": 3600,
       "proactiveRefreshSeconds": 300,

@@ -27,15 +27,23 @@ describe('glpi adapter — static spec conformance', () => {
     expect(a.connector.authConfig?.headerName).toBe('Session-Token');
   });
 
+  it("authenticates the login with a revocable user token", () => {
+    const cfg = a.connector.authConfig as Record<string, Record<string, string>>;
+    expect(cfg.loginHeaders.Authorization).toBe('user_token {{GLPI_USER_TOKEN}}');
+  });
+
   it("sends the App-Token on the login call and on every call after", () => {
     const cfg = a.connector.authConfig as Record<string, Record<string, string>>;
     expect(cfg.loginHeaders['App-Token']).toBe('{{GLPI_APP_TOKEN}}');
     expect(cfg.extraHeaders['App-Token']).toBe('{{GLPI_APP_TOKEN}}');
   });
 
-  it("carries a non-empty username and password, which the login needs", () => {
-    expect(a.connector.authConfig?.username).toBe('{{GLPI_USERNAME}}');
-    expect(a.connector.authConfig?.password).toBe('{{GLPI_PASSWORD}}');
+  it("declares an empty loginBody, so a GET login leaks nothing into the URL", () => {
+    // LoginTokenService turns templateParams into query parameters when
+    // loginMethod is GET and no loginBody is given — which would put the
+    // credential in the URL and therefore in the web server's access log.
+    expect(a.connector.authConfig?.loginMethod).toBe('GET');
+    expect(a.connector.authConfig?.loginBody).toEqual({});
   });
 
   it("ships the search-option map, without which glpi_search is unusable", () => {
