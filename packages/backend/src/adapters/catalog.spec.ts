@@ -161,6 +161,34 @@ describe('adapter catalog', () => {
       });
     }
 
+    if (adapter.connector.authType === 'LOGIN_TOKEN') {
+      /**
+       * Two LoginTokenService behaviours only bite on a GET login, and both
+       * produced a silently wrong request in shipped adapters before this
+       * existed (glpi, synology):
+       *
+       * - `loginUrl` is used verbatim and never interpolated, so a
+       *   `${username}` written there is sent as those ten characters.
+       * - With no `loginBody`, every template param — including the
+       *   password — becomes a query parameter, i.e. lands in the upstream's
+       *   access log.
+       *
+       * Credentials belong in `loginBody`, which is interpolated, or in
+       * `loginHeaders`. A GET login that genuinely needs no parameters must
+       * say so with an explicit empty `loginBody`.
+       */
+      it('login request is built from interpolated fields, not the URL', () => {
+        const cfg = adapter.connector.authConfig as Record<string, unknown>;
+        expect(String(cfg.loginUrl ?? '')).not.toMatch(/\$\{/);
+        const method = String(cfg.loginMethod ?? 'POST').toUpperCase();
+        if (method === 'GET') {
+          const hasBody =
+            cfg.loginBody !== undefined || cfg.loginBodyTemplate !== undefined;
+          expect(hasBody).toBe(true);
+        }
+      });
+    }
+
     it.each(adapter.tools.map((t) => [t.name, t]))(
       '%s has a well-formed endpointMapping',
       (_name, tool) => {
