@@ -1,5 +1,17 @@
 import { OnboardingCronService } from './onboarding-cron.service';
 
+/**
+ * The repair pass talks to the licence API, so every test here stubs it. Its
+ * own behaviour is covered in license-trial.service.spec.ts.
+ */
+function makeLicense(repaired = 0) {
+  return {
+    repairMissingTrials: jest
+      .fn()
+      .mockResolvedValue({ examined: repaired, repaired, failed: 0 }),
+  } as any;
+}
+
 describe('OnboardingCronService — activation pass', () => {
   function makeService(overrides: {
     onboardingCandidates?: any[];
@@ -29,8 +41,9 @@ describe('OnboardingCronService — activation pass', () => {
         .fn()
         .mockResolvedValue(overrides.sendOk ?? true),
     } as any;
+    const license = makeLicense();
     return {
-      service: new OnboardingCronService(prisma, email),
+      service: new OnboardingCronService(prisma, email, license),
       findMany,
       update,
       email,
@@ -147,7 +160,7 @@ describe('OnboardingCronService — trial status transition', () => {
     } as any;
     const email = {} as any;
     const { OnboardingCronService } = await import('./onboarding-cron.service');
-    const svc = new OnboardingCronService(prisma, email);
+    const svc = new OnboardingCronService(prisma, email, makeLicense());
 
     const out = await svc.run();
 
@@ -163,3 +176,22 @@ describe('OnboardingCronService — trial status transition', () => {
   });
 });
 
+describe('OnboardingCronService — trial repair', () => {
+  it('repairs workspaces left without a licence, and reports how many', async () => {
+    const prisma = {
+      user: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
+      license: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+    } as any;
+    const license = makeLicense(4);
+    const svc = new OnboardingCronService(prisma, {} as any, license);
+
+    const out = await svc.run();
+
+    // Without this the drip happily emails people about a trial they never got.
+    expect(license.repairMissingTrials).toHaveBeenCalledTimes(1);
+    expect(out.trialsRepaired).toBe(4);
+  });
+});

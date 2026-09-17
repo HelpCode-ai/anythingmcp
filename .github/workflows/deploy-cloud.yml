@@ -31,11 +31,12 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           CRON_SECRET: ${{ secrets.ONBOARDING_CRON_SECRET }}
+          LICENSE_SERVICE_TOKEN: ${{ secrets.LICENSE_SERVICE_TOKEN }}
         with:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          envs: CRON_SECRET
+          envs: CRON_SECRET,LICENSE_SERVICE_TOKEN
           script: |
             set -e
             cd /opt/anythingmcp-cloud
@@ -66,6 +67,17 @@ jobs:
               sed -i "s#^CRON_SECRET=.*#CRON_SECRET=${CRON_SECRET}#" .env
             else
               echo "CRON_SECRET=${CRON_SECRET}" >> .env
+            fi
+
+            # Same for the licence service token, which anythingmcp.com checks
+            # to tell this backend apart from the public when it asks for a
+            # trial. Must match LICENSE_SERVICE_TOKEN on the website droplet.
+            if [ -n "${LICENSE_SERVICE_TOKEN}" ]; then
+              if grep -q '^LICENSE_SERVICE_TOKEN=' .env; then
+                sed -i "s#^LICENSE_SERVICE_TOKEN=.*#LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN}#" .env
+              else
+                echo "LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN}" >> .env
+              fi
             fi
 
             # Recreate ONLY the app to pick up the new image/config (postgres,

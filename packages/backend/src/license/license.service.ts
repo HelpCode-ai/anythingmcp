@@ -10,6 +10,16 @@ const LICENSE_API_URL =
     ? 'https://anythingmcp.com'
     : 'http://localhost:3100';
 
+/**
+ * How hard we chase a trial licence before giving up. The licence API is a
+ * different machine behind its own rate limits, and a trial lost to one bad
+ * second is a customer who lands on the licence wall instead of onboarding —
+ * so a transient failure is retried rather than logged.
+ */
+const TRIAL_RETRY_ATTEMPTS = 3;
+/** Read at call time so a test (or an operator) can shrink the wait. */
+const trialRetryBaseMs = () => Number(process.env.TRIAL_RETRY_BASE_MS ?? 600);
+
 export interface LicenseInfo {
   licenseKey: string;
   plan: string;
@@ -127,6 +137,57 @@ export class LicenseService implements OnModuleInit {
 
   // ── Cloud Trial License ──────────────────────────────────────────────────
 
+  /**
+   * Headers that mark a call as coming from this server rather than from a
+   * browser. The licence API rate-limits anonymous callers per IP, and every
+   * cloud trial request leaves from the same IP, so without this header the
+   * whole cloud shares one small bucket and signups silently lose their trial.
+   * Unset in self-hosted installs, where the public limit is the right one.
+   */
+  private serviceHeaders(): Record<string, string> {
+    const token = process.env.LICENSE_SERVICE_TOKEN;
+    return token ? { 'x-amcp-service-token': token } : {};
+  }
+
+  /** Retry only what can succeed on a second try: throttling, upstream faults, no answer at all. */
+  private isRetriableLicenseError(err: any): boolean {
+    const status = err?.response?.status;
+    if (status === undefined) return true; // timeout, DNS, connection reset
+    return status === 429 || status >= 500;
+  }
+
+  private async postTrialWithRetry(payload: {
+    email: string;
+    name: string;
+    instanceId: string;
+  }): Promise<any> {
+    let lastErr: any;
+    for (let attempt = 1; attempt <= TRIAL_RETRY_ATTEMPTS; attempt++) {
+      try {
+        const { data } = await axios.post(`${this.apiBase}/api/license/trial`, payload, {
+          timeout: 10000,
+          headers: this.serviceHeaders(),
+        });
+        if (attempt > 1) {
+          this.logger.log(`Trial licence obtained for ${payload.email} on attempt ${attempt}.`);
+        }
+        return data;
+      } catch (err: any) {
+        lastErr = err;
+        if (attempt === TRIAL_RETRY_ATTEMPTS || !this.isRetriableLicenseError(err)) break;
+        // Exponential with jitter: several verifications can land together and
+        // retrying them in lockstep just rebuilds the burst that failed.
+        const base = trialRetryBaseMs();
+        const delay = base * 2 ** (attempt - 1) + Math.floor(Math.random() * (base / 2));
+        this.logger.warn(
+          `Trial licence attempt ${attempt} for ${payload.email} failed (${err?.response?.status ?? err.code ?? 'no response'}), retrying in ${delay}ms.`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+    throw lastErr;
+  }
+
   async requestTrialLicense(
     email: string,
     name: string,
@@ -135,11 +196,7 @@ export class LicenseService implements OnModuleInit {
     const instanceId = await this.getInstanceId();
 
     try {
-      const { data } = await axios.post(
-        `${this.apiBase}/api/license/trial`,
-        { email, name, instanceId },
-        { timeout: 10000 },
-      );
+      const data = await this.postTrialWithRetry({ email, name, instanceId });
 
       // Auto-activate the trial key locally
       await this.prisma.license.upsert({
@@ -188,6 +245,63 @@ export class LicenseService implements OnModuleInit {
       this.logger.warn(`Trial license request failed: ${err.message}`);
       throw new Error('Failed to start trial. Please try again later.');
     }
+  }
+
+  /**
+   * Cloud self-heal: hand a trial to every verified user whose workspace ended
+   * up with no licence at all.
+   *
+   * Activation on email verification is best-effort by design (verification
+   * must succeed even if the licence API is down), and the licence wall's
+   * "Start trial" button only helps a user who notices it. Between the two,
+   * 131 verified users had been left with no licence by 2026-09-16, most of
+   * them because the licence API rate-limited the whole cloud to three trials
+   * an hour. This pass closes that gap for good: whatever the reason a trial
+   * went missing, the next cron run picks it up.
+   *
+   * Bounded per run and paced, because it talks to a remote API and a
+   * thundering herd is what created the backlog in the first place.
+   */
+  async repairMissingTrials(
+    limit = 25,
+  ): Promise<{ examined: number; repaired: number; failed: number }> {
+    const out = { examined: 0, repaired: 0, failed: 0 };
+    if (!this.deployment.isCloud()) return out;
+
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        emailVerified: true,
+        organizationId: { not: null },
+        organization: { licenses: { none: {} } },
+      },
+      select: { id: true, email: true, name: true, organizationId: true },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    for (const user of candidates) {
+      out.examined++;
+      try {
+        await this.requestTrialLicense(
+          user.email,
+          user.name || user.email,
+          user.organizationId ?? undefined,
+        );
+        out.repaired++;
+        this.logger.log(`Repaired missing trial for org ${user.organizationId} (${user.email}).`);
+      } catch (err: any) {
+        out.failed++;
+        this.logger.warn(`Trial repair failed for ${user.email}: ${err.message}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    if (out.examined > 0) {
+      this.logger.log(
+        `Trial repair: examined=${out.examined} repaired=${out.repaired} failed=${out.failed}`,
+      );
+    }
+    return out;
   }
 
   // ── License Activation ─────────────────────────────────────────────────────
