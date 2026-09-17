@@ -7,6 +7,8 @@
  * turn resources into an SSRF primitive.
  */
 
+import { McpServer } from '@modelcontextprotocol/server';
+
 export interface ResourceDefinition {
   uri: string;
   name: string;
@@ -17,15 +19,6 @@ export interface ResourceDefinition {
 
 export interface RegisteredResource extends ResourceDefinition {
   read: () => Promise<{ text: string; mimeType: string }>;
-}
-
-function jsonText(value: unknown): string {
-  if (typeof value === 'string') return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }
 
 /** Convert a persisted fetch config into bounded, local-only content. */
@@ -40,9 +33,6 @@ export function contentFromFetchConfig(fetchConfig: unknown): {
     }
     if (typeof config.content === 'string') {
       return { text: config.content, mimeType: typeof config.mimeType === 'string' ? config.mimeType : undefined };
-    }
-    if ('data' in config) {
-      return { text: jsonText(config.data), mimeType: typeof config.mimeType === 'string' ? config.mimeType : undefined };
     }
   }
   return {
@@ -66,7 +56,7 @@ export function makeResource(
 
 /** Register resources on one per-request MCP server, deduplicating URIs. */
 export function registerResources(
-  server: any,
+  server: McpServer,
   resources: RegisteredResource[],
   warn: (message: string) => void = () => undefined,
 ): number {
@@ -78,13 +68,7 @@ export function registerResources(
       continue;
     }
     seen.add(resource.uri);
-    const register = server?.registerResource;
-    if (typeof register !== 'function') {
-      warn('MCP SDK does not expose registerResource; skipping resource registration');
-      break;
-    }
-    register.call(
-      server,
+    server.registerResource(
       resource.name,
       resource.uri,
       {
@@ -92,7 +76,7 @@ export function registerResources(
         description: resource.description ?? undefined,
         mimeType: resource.mimeType ?? undefined,
       },
-      async (requestedUri: { href?: string }) => {
+      async (requestedUri) => {
         const content = await resource.read();
         return {
           contents: [

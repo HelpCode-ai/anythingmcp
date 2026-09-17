@@ -124,6 +124,19 @@ interface ToolSetParams {
   resultFooter?: string;
 }
 
+interface ResourceConnector {
+  id: string;
+  name: string;
+  instructions: string | null;
+  resources: Array<{
+    uri: string;
+    name: string;
+    description: string | null;
+    mimeType: string;
+    fetchConfig: unknown;
+  }>;
+}
+
 interface InvocationContext {
   userId?: string;
   userEmail?: string;
@@ -696,7 +709,13 @@ export class McpEndpointController {
     // tools.  Register generated instruction resources alongside persisted
     // static resources so agents can attach setup guidance without invoking a
     // synthetic tool.
-    const resources = this.planResources(serverId, resourceConnectors, instructions);
+    const resources = this.planRoleScopedResources(
+      serverId,
+      resourceConnectors,
+      instructions,
+      serverTools,
+      allowedToolIds,
+    );
     registerResources(mcpServer, resources, (message) => this.logger.warn(message));
 
     // Build invocation context for audit logging and tool scoping
@@ -768,18 +787,7 @@ export class McpEndpointController {
 
   private planResources(
     serverId: string,
-    connectors: Array<{
-      id: string;
-      name: string;
-      instructions: string | null;
-      resources: Array<{
-        uri: string;
-        name: string;
-        description: string | null;
-        mimeType: string;
-        fetchConfig: unknown;
-      }>;
-    }>,
+    connectors: ResourceConnector[],
     instructions?: string,
   ): RegisteredResource[] {
     const planned: RegisteredResource[] = [];
@@ -817,6 +825,25 @@ export class McpEndpointController {
       }
     }
     return planned;
+  }
+
+  private planRoleScopedResources(
+    serverId: string,
+    connectors: ResourceConnector[],
+    instructions: string | undefined,
+    serverTools: RegisteredTool[],
+    allowedToolIds: string[] | null,
+  ): RegisteredResource[] {
+    const allowedConnectorIds = new Set(
+      serverTools
+        .filter((tool) => allowedToolIds === null || allowedToolIds.includes(tool.id))
+        .map((tool) => tool.connectorId),
+    );
+    return this.planResources(
+      serverId,
+      connectors.filter((connector) => allowedConnectorIds.has(connector.id)),
+      instructions,
+    );
   }
 
   /**

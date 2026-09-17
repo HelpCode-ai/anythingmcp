@@ -3,12 +3,27 @@ import {
   makeResource,
   registerResources,
 } from './resource-registry';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 describe('resource-registry', () => {
-  it('serialises static JSON data and preserves an explicit MIME type', () => {
-    expect(contentFromFetchConfig({ data: { enum: ['a', 'b'] }, mimeType: 'application/json' })).toEqual({
-      text: '{\n  "enum": [\n    "a",\n    "b"\n  ]\n}',
+  it('does not expose arbitrary data stored beside fetch metadata', () => {
+    expect(contentFromFetchConfig({
+      data: { apiKey: 'must-not-reach-model-context' },
+      url: 'https://example.test',
       mimeType: 'application/json',
+    })).toEqual({
+      text: '[resource content is not available: only local static content is supported]',
+    });
+  });
+
+  it('preserves explicitly authored static text and content', () => {
+    expect(contentFromFetchConfig({ text: 'setup notes', mimeType: 'text/markdown' })).toEqual({
+      text: 'setup notes',
+      mimeType: 'text/markdown',
+    });
+    expect(contentFromFetchConfig({ content: 'reference card' })).toEqual({
+      text: 'reference card',
+      mimeType: undefined,
     });
   });
 
@@ -37,7 +52,7 @@ describe('resource-registry', () => {
       { uri: 'anythingmcp://x', name: 'x', fetchConfig: {} },
       { text: 'hello', mimeType: 'text/plain' },
     );
-    expect(registerResources(server, [resource, resource], warn)).toBe(1);
+    expect(registerResources(server as unknown as McpServer, [resource, resource], warn)).toBe(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Duplicate MCP resource URI'));
     const callback = registrations[0][3];
     await expect(callback({ href: 'anythingmcp://x' })).resolves.toEqual({

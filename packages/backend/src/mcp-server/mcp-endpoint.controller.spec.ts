@@ -303,7 +303,7 @@ describe('McpEndpointController — native resources', () => {
               name: 'CRM enums',
               description: 'Reference values',
               mimeType: 'application/json',
-              fetchConfig: { data: { status: ['open', 'closed'] } },
+              fetchConfig: { content: '{"status":["open","closed"]}' },
             },
           ],
         },
@@ -319,5 +319,67 @@ describe('McpEndpointController — native resources', () => {
       mimeType: 'application/json',
       text: expect.stringContaining('open'),
     });
+  });
+
+  it('omits resources for a connector whose tools are denied by the caller role', () => {
+    const controller = new McpEndpointController(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const connectors = [
+      {
+        id: 'conn-allowed',
+        name: 'Allowed CRM',
+        instructions: 'Allowed instructions',
+        resources: [
+          {
+            uri: 'anythingmcp://allowed/reference',
+            name: 'Allowed reference',
+            description: null,
+            mimeType: 'text/plain',
+            fetchConfig: { text: 'allowed' },
+          },
+        ],
+      },
+      {
+        id: 'conn-denied',
+        name: 'Denied CRM',
+        instructions: 'Denied instructions',
+        resources: [
+          {
+            uri: 'anythingmcp://denied/reference',
+            name: 'Denied reference',
+            description: null,
+            mimeType: 'text/plain',
+            fetchConfig: { text: 'denied' },
+          },
+        ],
+      },
+    ];
+    const tools = [
+      { id: 'tool-allowed', connectorId: 'conn-allowed' },
+      { id: 'tool-denied', connectorId: 'conn-denied' },
+    ];
+
+    const entries = (controller as any).planRoleScopedResources(
+      'srv-1',
+      connectors,
+      undefined,
+      tools,
+      ['tool-allowed'],
+    );
+
+    expect(entries.map((entry: any) => entry.uri)).toEqual([
+      'anythingmcp://connector/conn-allowed/instructions',
+      'anythingmcp://allowed/reference',
+    ]);
+    expect(entries.map((entry: any) => entry.uri)).not.toContain(
+      'anythingmcp://denied/reference',
+    );
   });
 });
