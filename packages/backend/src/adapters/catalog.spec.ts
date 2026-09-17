@@ -60,6 +60,26 @@ describe('adapter catalog', () => {
     expect(new Set(slugs).size).toBe(slugs.length);
   });
 
+  /**
+   * `connector_auth_cache` is written by the login-token service and by nothing
+   * else: 131 OAUTH2 connectors in production, zero rows. The Etsy adapter told
+   * its users their OAuth token was persisted there, which was simply untrue —
+   * OAuth2 writes the refreshed pair back into the connector's own encrypted
+   * authConfig. Instructions are the page a customer reads when a connector
+   * misbehaves, so a wrong sentence there costs somebody an afternoon.
+   */
+  it('only LOGIN_TOKEN adapters claim the connector_auth_cache table', () => {
+    const liars = adapters
+      .map((m) => getAdapter(m.slug)!)
+      .filter(
+        (a) =>
+          a.instructions?.includes('connector_auth_cache') &&
+          a.connector.authType !== 'LOGIN_TOKEN',
+      )
+      .map((a) => a.slug);
+    expect(liars).toEqual([]);
+  });
+
   describe('GraphQL adapters get auto-injected builtin tools', () => {
     const graphqlAdapters = adapters
       .map((m) => getAdapter(m.slug)!)
