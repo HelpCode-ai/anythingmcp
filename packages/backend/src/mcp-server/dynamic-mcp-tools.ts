@@ -12,7 +12,11 @@ import { RedisService } from '../common/redis.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { DeploymentService } from '../common/deployment.service';
 import { PrismaService } from '../common/prisma.service';
-import { interpolateConnectorConfig } from '../common/env-interpolation.util';
+import {
+  interpolateConnectorConfig,
+  interpolateDeep,
+} from '../common/env-interpolation.util';
+import { assertNoUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
 import {
   CALLER_CONTEXT_PREFIX,
   buildCallerContextVars,
@@ -265,16 +269,40 @@ export class DynamicMcpTools {
       const proxyUrl = await this.resolveProxy(tool, context?.organizationId);
       usedProxy = proxyUrl != null;
 
+      // authConfig carries {{VAR}} placeholders too, and until now nothing
+      // resolved them at call time: they were substituted once, at import, from
+      // whatever the install form was given. A workspace that installed the
+      // connector first and filled its credentials afterwards therefore kept
+      // sending the placeholder text forever. Interpolating here makes the two
+      // paths agree.
+      const authConfig = tool.connectorConfig.authConfig
+        ? interpolateDeep(
+            JSON.parse(tool.connectorConfig.authConfig),
+            interpolationVars,
+            { reservedPrefix: CALLER_CONTEXT_PREFIX },
+          )
+        : undefined;
+
       const engineConfig = {
         baseUrl: interpolatedConfig.baseUrl,
         authType: tool.connectorConfig.authType,
-        authConfig: tool.connectorConfig.authConfig
-          ? JSON.parse(tool.connectorConfig.authConfig)
-          : undefined,
+        authConfig,
         headers: interpolatedConfig.headers,
         specUrl: (tool.connectorConfig as any).specUrl,
         ...(proxyUrl ? { proxyUrl } : {}),
       };
+
+      // Nothing left to substitute it with: fail here, with the variable names,
+      // rather than let the vendor answer something that reads like our bug.
+      assertNoUnresolvedPlaceholders(
+        {
+          baseUrl: engineConfig.baseUrl,
+          path: interpolatedMapping.path,
+          headers: engineConfig.headers,
+          authConfig,
+        },
+        `the connector behind ${tool.name}`,
+      );
 
       // Inject env vars as parameter defaults (env var values fill in params
       // that match by name, so they don't need to be provided by the caller)
