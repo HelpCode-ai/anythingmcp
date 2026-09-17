@@ -71,3 +71,46 @@ describe('hostFromAxiosConfig', () => {
     expect(hostFromAxiosConfig(undefined)).toBeUndefined();
   });
 });
+
+describe('deriveErrorHint — SQL-backed customer APIs', () => {
+  // Real failures from a customer connector on 2026-09-16: 16 errors in 155
+  // calls, every one of them the model inventing filter grammar.
+  it('names the boolean when SQL read a filter value as a column', () => {
+    const hint = deriveErrorHint({
+      status: 400,
+      body: { message: 'Ungültiger Spaltenname "false".', error: 'Bad Request' },
+    });
+    expect(hint).toMatch(/Booleans are the usual culprit/);
+  });
+
+  it('answers the English phrasing of the same error', () => {
+    const hint = deriveErrorHint({
+      status: 400,
+      body: { message: "Invalid column name 'false'." },
+    });
+    expect(hint).toMatch(/was not quoted/);
+  });
+
+  it('tells the model that a parenthesised IN list is the problem, not the value', () => {
+    const hint = deriveErrorHint({
+      status: 400,
+      body: {
+        message:
+          'Falsche Syntax in der Nähe von ")".\r\nUngültige Verwendung der Option NEXT in der FETCH-Anweisung.',
+      },
+    });
+    expect(hint).toMatch(/one call per value/);
+  });
+
+  it('tells the model to drop the field list rather than permute spellings', () => {
+    const hint = deriveErrorHint({
+      status: 400,
+      body: { message: 'Invalid field in selected fields: exit_date' },
+    });
+    expect(hint).toMatch(/`fields` omitted/);
+  });
+
+  it('still says nothing about an error it does not recognise', () => {
+    expect(deriveErrorHint({ status: 500, body: { message: 'boom' } })).toBeUndefined();
+  });
+});

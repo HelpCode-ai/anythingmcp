@@ -56,6 +56,28 @@ const NEW_COUNTRY_HINT =
   'must open the email the service just sent ("new country / new device") and ' +
   'confirm the login, then the tool works. Tell the user exactly that.';
 
+const SQL_COLUMN_HINT =
+  'The upstream folded your `filter` into SQL and SQL read part of it as a column ' +
+  'name, which means the value was not quoted the way this API expects. Booleans ' +
+  'are the usual culprit: `deleted eq false` becomes the column `false`. Try the ' +
+  'call again with that condition removed to confirm the rest of the filter is ' +
+  'fine, then reintroduce it using the spelling the endpoint documents (often `0` ' +
+  'and `1`, or a quoted `"false"`). Do not guess more than one variant per call.';
+
+const SQL_SYNTAX_HINT =
+  'The upstream folded your `filter` into SQL and SQL rejected the syntax, so this ' +
+  'is a filter GRAMMAR problem, not a wrong value. A parenthesised list such as ' +
+  '`client_number in (1,2)` is the common cause: most of these endpoints accept ' +
+  'only simple `field op value` conditions joined with AND. Split it into one call ' +
+  'per value, or drop the filter, read what a plain page returns, and filter on a ' +
+  'field you have seen. Retrying the same expression will fail the same way.';
+
+const SELECTED_FIELDS_HINT =
+  'One of the names in `fields` does not exist on this view, and the API rejects ' +
+  'the whole list because of it. Do not guess another spelling: repeat the call ' +
+  'with `fields` omitted, read the field names that actually come back, then ask ' +
+  'again with only those.';
+
 function bodyText(body: unknown): string {
   if (body === undefined || body === null) return '';
   if (typeof body === 'string') return body;
@@ -82,6 +104,21 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   // Login-token flows: the vendor's refusal reason is folded into our message.
   if (/authenticate_from_new_country|new_country|unrecognized_device|new_device/i.test(text)) {
     return NEW_COUNTRY_HINT;
+  }
+
+  // SQL-backed APIs (several customer connectors sit on SQL Server views) leak
+  // the database's own complaint. The model reads "Ungültiger Spaltenname" and
+  // starts permuting field names; these three say which part of the request to
+  // change. Keyed on the text, not the host, because the phrasing belongs to the
+  // database rather than to any one vendor.
+  if (/Invalid field in selected fields/i.test(text)) {
+    return SELECTED_FIELDS_HINT;
+  }
+  if (/Ungültiger Spaltenname|Invalid column name/i.test(text)) {
+    return SQL_COLUMN_HINT;
+  }
+  if (/Falsche Syntax in der Nähe von|Incorrect syntax near/i.test(text)) {
+    return SQL_SYNTAX_HINT;
   }
 
   if (hostMatches(input.host, 'weclapp.com')) {
