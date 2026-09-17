@@ -182,6 +182,7 @@ import * as wordpress from './intl/wordpress.json';
 import * as workable from './intl/workable.json';
 import * as wrike from './intl/wrike.json';
 import * as wufoo from './intl/wufoo.json';
+import * as youcom from './intl/youcom.json';
 import * as youtubeData from './intl/youtube-data.json';
 import * as zendesk from './intl/zendesk.json';
 import * as zohoCrm from './intl/zoho-crm.json';
@@ -488,6 +489,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   workable as unknown as AdapterDefinition,
   wrike as unknown as AdapterDefinition,
   wufoo as unknown as AdapterDefinition,
+  youcom as unknown as AdapterDefinition,
   youtubeData as unknown as AdapterDefinition,
   zendesk as unknown as AdapterDefinition,
   zohoCrm as unknown as AdapterDefinition,

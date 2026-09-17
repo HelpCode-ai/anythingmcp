@@ -1,0 +1,72 @@
+{
+  "slug": "youcom",
+  "name": "You.com",
+  "description": "Web and news search from any AI agent via the You.com Search API. 2 tools, API-key auth.",
+  "instructions": "This connector wraps the You.com Web Search API (ydc-index.io).\n\n**Setup**:\n1. Create an API key at https://you.com/platform/api-keys (a key scoped to Web Search).\n2. Set `YDC_API_KEY`.\n\n**Authentication**: the key is sent as the `X-API-Key` header on every call, exactly as the API reference documents for POST https://ydc-index.io/v1/search.\n\n**Two endpoints**:\n- `search` — web search across the open web. The body takes a `query` plus optional controls: `count` (max results per section, up to 100), `freshness` (recency filter: `day`, `week`, `month`, `year`, or a `YYYY-MM-DDtoYYYY-MM-DD` range), `country` (ISO 3166-1 alpha-2, e.g. `US`, `DE`), and `language` (BCP 47, e.g. `EN`, `DE`). The query supports search operators: `site:` to pin a domain, `filetype:`, `+term` / `-term` for required/excluded words, and `AND` / `OR` / `NOT` grouping.\n- `news` — news-only search. Takes the same `query`, plus `freshness` (same values) and `count`. Use it when the user explicitly wants news coverage rather than general web results.\n\n**Result shape**: both endpoints return `hits` with each result's URL, title, snippet and (on `search`) a `type` section (`web` / `semantic`). Snippets are previews — for exact values on a page, the result `url` must be fetched separately; this connector does not extract page content.\n\n**Out of scope here**: You.com also offers a hosted MCP server (https://api.you.com/mcp) and full-page extraction parameters on the POST body. This adapter sticks to the plain REST surface so it works like every other catalog adapter; users who want the richer toolset can bridge the MCP server with the built-in MCP connector type.",
+  "region": "intl",
+  "category": "data",
+  "icon": "youcom",
+  "docsUrl": "https://you.com/docs/guides/search",
+  "requiredEnvVars": ["YDC_API_KEY"],
+  "connector": {
+    "name": "You.com Search API",
+    "type": "REST",
+    "baseUrl": "https://ydc-index.io",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-Key",
+      "apiKey": "{{YDC_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "youcom_search",
+      "description": "Web search across the open web via You.com. Use when the agent needs current information, documentation, or facts not in its training data. Supports operators: site:, filetype:, +term, -term, AND/OR/NOT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query. Supports site:, filetype:, +term/-term, AND/OR/NOT operators." },
+          "count": { "type": "integer", "description": "Max results per section (web/news). Default varies; max 100." },
+          "freshness": { "type": "string", "description": "Recency filter: 'day', 'week', 'month', 'year', or 'YYYY-MM-DDtoYYYY-MM-DD' custom range." },
+          "country": { "type": "string", "description": "ISO 3166-1 alpha-2 country code (e.g. 'US', 'DE') to focus results geographically." },
+          "language": { "type": "string", "description": "BCP 47 language code (e.g. 'EN', 'DE') to filter result language." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/search",
+        "bodyMapping": {
+          "query": "$query",
+          "count": "$count",
+          "freshness": "$freshness",
+          "country": "$country",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "youcom_news",
+      "description": "News-only search via You.com. Use when the user wants news coverage of a topic, company or event rather than general web results. Same query operators as youcom_search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "News search query. Supports the same operators as youcom_search." },
+          "freshness": { "type": "string", "description": "Recency filter: 'day', 'week', 'month', 'year', or 'YYYY-MM-DDtoYYYY-MM-DD' custom range." },
+          "count": { "type": "integer", "description": "Max results to return. Default varies; max 100." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/news",
+        "bodyMapping": {
+          "query": "$query",
+          "freshness": "$freshness",
+          "count": "$count"
+        }
+      }
+    }
+  ],
+  "probe": { "tool": "youcom_search", "params": { "query": "you.com" } }
+}
