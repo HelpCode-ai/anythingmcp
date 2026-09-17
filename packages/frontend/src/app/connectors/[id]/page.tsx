@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, tools, type ToolTestResult } from '@/lib/api';
+import { connectors, tools, type ToolTestResult, type CatalogDiff } from '@/lib/api';
 import { findDemoByTool } from '@/lib/demo-connectors';
 import { ToolEditor } from '@/components/tool-editor';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -104,6 +104,13 @@ export default function ConnectorDetailPage() {
   // AI client would actually receive.
   const [testResponseView, setTestResponseView] = useState<'mapped' | 'raw'>('mapped');
 
+  // What the catalog has changed since this connector was installed.
+  const [catalogDiff, setCatalogDiff] = useState<CatalogDiff | null>(null);
+  const [applyingCatalog, setApplyingCatalog] = useState(false);
+  // Opt-in, and separate from the rest: the base URL is the whole address of
+  // the API, so it moves only when someone ticks this having read both values.
+  const [applyBaseUrl, setApplyBaseUrl] = useState(false);
+
   // Import modal
   const [showImport, setShowImport] = useState(false);
   const [importSource, setImportSource] = useState('openapi');
@@ -129,6 +136,12 @@ export default function ConnectorDetailPage() {
         .catch(() => setProxyAvailable(false));
       const c = await connectors.get(id, token);
       setConnector(c);
+      // Only catalog-installed connectors have anything to compare against;
+      // the endpoint answers catalogManaged:false for the rest.
+      connectors
+        .catalogDiff(id, token)
+        .then((d) => setCatalogDiff(d.catalogManaged && !d.isUpToDate ? d : null))
+        .catch(() => setCatalogDiff(null));
       setEditName(c.name);
       setEditBaseUrl(c.baseUrl);
       setEditHealthcheckPath(c.healthcheckPath || '');
@@ -348,6 +361,25 @@ export default function ConnectorDetailPage() {
       setMsg(`Import failed: ${err.message}`);
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleApplyCatalog = async () => {
+    if (!token) return;
+    setApplyingCatalog(true);
+    try {
+      const res = await connectors.resyncCatalog(id, token, { applyBaseUrl });
+      setMsg(
+        res.applied
+          ? `Updated from the catalog${applyBaseUrl && catalogDiff?.baseUrl ? `, base URL now ${catalogDiff.baseUrl.to}` : ''}.`
+          : 'Nothing to update.',
+      );
+      setApplyBaseUrl(false);
+      await fetchConnector();
+    } catch (err: any) {
+      setMsg(`Error: ${err.message}`);
+    } finally {
+      setApplyingCatalog(false);
     }
   };
 
@@ -667,6 +699,84 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
           </div>
+        )}
+
+        {/* ── Catalog updates ─────────────────────────────────────
+            Tool definitions are copied into the connector at install, so a
+            later catalog fix never reaches it on its own. The base URL is
+            listed apart from the rest and ticked separately: correcting a
+            wrong hostname and overwriting a deliberate one look identical
+            from here, and getting it wrong takes every tool down at once. */}
+        {catalogDiff && (
+          <Card className="p-[22px]">
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <h3 className="text-sm font-semibold">Catalog update available</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  This connector was installed from{' '}
+                  <code>{catalogDiff.slug}</code>, which has changed since.
+                </p>
+              </div>
+              <Badge tone="neutral">{catalogDiff.catalogVersion?.slice(0, 7)}</Badge>
+            </div>
+
+            <ul className="text-sm space-y-1 mb-4">
+              {!!catalogDiff.updated?.length && (
+                <li>
+                  {catalogDiff.updated.length} tool
+                  {catalogDiff.updated.length === 1 ? '' : 's'} updated
+                  {catalogDiff.updated.some((u) => u.kind === 'structural') &&
+                    ' (including endpoint changes)'}
+                </li>
+              )}
+              {!!catalogDiff.added?.length && (
+                <li>{catalogDiff.added.length} new tool(s): {catalogDiff.added.join(', ')}</li>
+              )}
+              {!!catalogDiff.removed?.length && (
+                <li>
+                  {catalogDiff.removed.length} tool(s) no longer in the catalog:{' '}
+                  {catalogDiff.removed.join(', ')}
+                </li>
+              )}
+              {catalogDiff.instructionsRefreshable && <li>Instructions refreshed</li>}
+            </ul>
+
+            {catalogDiff.baseUrl && (
+              <div className="rounded-md border border-border p-3 mb-4">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={applyBaseUrl}
+                    onChange={(e) => setApplyBaseUrl(e.target.checked)}
+                  />
+                  <span className="text-sm">
+                    <span className="font-medium">Also change the base URL</span>
+                    <span className="block text-xs text-muted-foreground mt-1 font-mono break-all">
+                      {catalogDiff.baseUrl.from} → {catalogDiff.baseUrl.to}
+                    </span>
+                    <span className="block text-xs text-muted-foreground mt-2">
+                      {catalogDiff.baseUrl.provenance === 'user-edited'
+                        ? 'This address was changed here, not by the catalog — a region, a sandbox or a self-hosted instance. Applying this will undo that.'
+                        : catalogDiff.baseUrl.provenance === 'catalog-moved'
+                          ? 'This connector still has the address the catalog gave it at install, and the catalog has since corrected it.'
+                          : 'Installed before we started recording the original address, so we cannot tell whether this was customised here. Check it before applying.'}
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <Button onClick={handleApplyCatalog} disabled={applyingCatalog}>
+                {applyingCatalog ? 'Applying…' : 'Apply update'}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Credentials, response mappings, role access and manual
+                enable/disable are preserved.
+              </span>
+            </div>
+          </Card>
         )}
 
         {/* Connector Details */}

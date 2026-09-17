@@ -1,17 +1,11 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.keysersoft/anythingmcp",
-  "description": "Self-hosted MCP gateway: turn any API, database or MCP server into AI connectors — no code.",
+  "name": "io.github.HelpCode-ai/anythingmcp",
+  "description": "190 connectors + any REST/SOAP/GraphQL/SQL as MCP tools for Claude & ChatGPT. Self-hosted, AGPL.",
   "repository": {
     "url": "https://github.com/HelpCode-ai/anythingmcp",
     "source": "github"
   },
-  "version": "1.0.0",
-  "websiteUrl": "https://anythingmcp.com",
-  "remotes": [
-    {
-      "type": "streamable-http",
-      "url": "https://cloud.anythingmcp.com/mcp/demo"
-    }
-  ]
+  "version": "0.9.0",
+  "websiteUrl": "https://anythingmcp.com"
 }

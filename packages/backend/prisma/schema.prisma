@@ -42,6 +42,7 @@ model Organization {
   kgValueSeen      KgValueSeen[]
   kgSkills         KgSkillSuggestion[]
   securityEvents   SecurityEvent[]
+  productEvents    ProductEvent[]
   userRoleAssignments UserRoleAssignment[]
   identityProviders   IdentityProvider[]
   mcpConnectionGrants McpConnectionGrant[]
@@ -158,6 +159,7 @@ model User {
   identities               UserIdentity[]
   securityEventsAsActor    SecurityEvent[] @relation("SecurityEventActor")
   securityEventsAsTarget   SecurityEvent[] @relation("SecurityEventTarget")
+  productEvents            ProductEvent[]
 
   memberships              OrganizationMember[]
   connectors               Connector[]
@@ -1075,6 +1077,33 @@ model SecurityEvent {
   @@index([actorUserId, createdAt])
   @@index([targetUserId, createdAt])
   @@map("security_events")
+}
+
+// Product-usage events from the UI, e.g. "copied the MCP endpoint", "opened
+// the Cursor tab". Separate from security_events (an audit trail) and from
+// tool_invocations (needs a tool). Exists because 74% of workspaces that
+// attached a connector never sent a single MCP request and nothing recorded
+// what they did on the page that tells them how — without this the next
+// redesign of that page would be as blind as the last one.
+model ProductEvent {
+  id String @id @default(cuid())
+
+  // Slug, e.g. 'mcp_url_copied'. Allow-listed in ProductEventService.
+  event String
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String?       @map("user_id")
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Small, non-sensitive context: which client tab, which server id.
+  metadata Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([event, createdAt])
+  @@map("product_events")
 }
 
 // ── OAuth2 Authorization Server ─────────────────────────────────────────────

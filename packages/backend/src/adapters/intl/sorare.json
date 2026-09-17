@@ -6,6 +6,7 @@
   "category": "gaming",
   "icon": "sorare",
   "docsUrl": "https://github.com/sorare/api",
+  "selfHostOnly": true,
   "featured": true,
   "priority": 100,
   "requiredEnvVars": [

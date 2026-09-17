@@ -1,0 +1,132 @@
+{
+  "slug": "deutsche-bahn-timetables",
+  "name": "Deutsche Bahn Timetables API",
+  "description": "Deutsche Bahn's official station-board API (DB API Marketplace, CC BY 4.0): find stations by name or EVA number, read the planned hourly timetable of any station, and pull the live change feed — delays, platform changes, cancellations and disruption messages — straight from DB. Free key, 60 requests per minute. Boards only; use the Deutsche Bahn Fahrplan connector for journey planning.",
+  "instructions": "This connector calls Deutsche Bahn's official **Timetables API v1** on the DB API Marketplace. It is the source of truth for what is happening at a station right now, published by DB itself (CC BY 4.0). It does not plan journeys — pair it with the *Deutsche Bahn Fahrplan* connector for that.\n\n**Getting a key**: create a free account at https://developers.deutschebahn.com, create an application, subscribe it to the *Timetables* API (free plan, 60 requests/minute) and copy the application's Client ID and API Key into `DB_CLIENT_ID` / `DB_API_KEY`.\n\n**Workflow**\n1. `dbt_search_stations` resolves a name (prefix), a DS100 code or an EVA number to the station's `eva` (e.g. `8000107` = Freiburg(Breisgau) Hbf, `8011160` = Berlin Hbf, `8000105` = Frankfurt(Main)Hbf, `8000261` = München Hbf). Umlauts in a prefix are unreliable — search 'Munchen' or 'Muenchen' as well as 'München'.\n2. `dbt_get_station_board` returns the **planned** timetable of one hour: every train with its `id`, category (`ICE`, `RE`, `S` …), number, planned arrival/departure time and platform, and the route (`from` / `to` are the stop lists as `|`-separated strings).\n3. `dbt_get_changes` returns **all known changes** for the station (updated every 30 s): per train `id`, the changed time (`ct`), changed platform (`cp`), status (`cs`: `c` = cancelled, `a` = added) and messages. `dbt_get_recent_changes` is the same feed limited to the last two minutes — poll it instead of the full feed when watching a station.\n4. Match the `id` from the plan with the `id` in the changes; delay in minutes = changed time − planned time.\n\n**Times** are `yyMMddHHmm` in **local German time** (`2609151427` = 15 Sep 2026, 14:27). The plan is sliced by hour: `date` is `yyMMdd`, `hour` is `HH` (00–23), both of the current local time in Germany.\n\n**Changes without a matching plan entry** are trains that stop at the station in another hour; fetch that hour's plan if they matter.\n\nLimits: 60 requests per minute on the free plan. Attribution: Deutsche Bahn AG, Timetables API, CC BY 4.0.",
+  "region": "de",
+  "category": "transport",
+  "icon": "db",
+  "docsUrl": "https://developers.deutschebahn.com/db-api-marketplace/apis/product/timetables",
+  "requiredEnvVars": ["DB_CLIENT_ID", "DB_API_KEY"],
+  "connector": {
+    "name": "Deutsche Bahn Timetables API",
+    "type": "REST",
+    "baseUrl": "https://apis.deutschebahn.com/db-api-marketplace/apis/timetables/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "DB-Api-Key",
+      "apiKey": "{{DB_API_KEY}}"
+    },
+    "headers": {
+      "DB-Client-Id": "{{DB_CLIENT_ID}}",
+      "Accept": "application/xml"
+    },
+    "healthcheckPath": "/station/Berlin%20Hbf"
+  },
+  "tools": [
+    {
+      "name": "dbt_search_stations",
+      "description": "Find Deutsche Bahn stations by name prefix, DS100 code or EVA number. Returns `name`, `eva` (the station number every other tool takes) and `ds100`. Prefix search: 'Freiburg' lists every station starting with Freiburg; 'Freiburg Hbf' narrows it. A trailing '*' widens the match. Umlauts are unreliable in prefixes — try 'Munchen' as well as 'München'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Station name prefix (e.g. 'Freiburg Hbf', 'Berlin Hbf'), DS100 code (e.g. 'RF') or EVA number (e.g. '8000107')."
+          }
+        },
+        "required": ["pattern"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/station/{pattern}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "stations.station && to_array(stations.station)[].{name: name, eva: eva, ds100: ds100}"
+        }
+      }
+    },
+    {
+      "name": "dbt_get_station_board",
+      "description": "Planned timetable of a station for one hour: every train with `id` (match it against dbt_get_changes), `category` (ICE, IC, EC, RE, RB, S …), `number`, `line`, planned `arrival` / `departure` (yyMMddHHmm, local time) and platforms, `from` (previous stops, '|'-separated, origin first) and `to` (next stops, destination last). `date` is yyMMdd and `hour` is HH, both local German time. This is the schedule; live delays and cancellations come from dbt_get_changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eva": {
+            "type": "string",
+            "description": "Station EVA number from dbt_search_stations, e.g. '8000107'."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date as yyMMdd in local German time, e.g. '260915' for 15 September 2026."
+          },
+          "hour": {
+            "type": "string",
+            "description": "Hour as HH (00–23) in local German time, e.g. '14'."
+          }
+        },
+        "required": ["eva", "date", "hour"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/plan/{eva}/{date}/{hour}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{station: timetable.station, trains: timetable.s && to_array(timetable.s)[].{id: id, category: tl.c, number: tl.n, line: dp.l || ar.l, arrival: ar.pt, arrivalPlatform: ar.pp, from: ar.ppth, departure: dp.pt, departurePlatform: dp.pp, to: dp.ppth}}"
+        }
+      }
+    },
+    {
+      "name": "dbt_get_changes",
+      "description": "All currently known changes at a station, straight from Deutsche Bahn (refreshed every 30 s): per train `id` (matches dbt_get_station_board), `arrival` / `departure` with `changedTime` (yyMMddHHmm local — compare with the planned time for the delay), `changedPlatform`, `status` ('c' = cancelled, 'a' = added, 'p' = planned), `changedPath`, and `messages` (disruptions and information with `category`, validity `from` / `to` and a priority). Covers every hour, so entries may refer to trains outside the plan you fetched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eva": {
+            "type": "string",
+            "description": "Station EVA number from dbt_search_stations."
+          }
+        },
+        "required": ["eva"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fchg/{eva}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{station: timetable.station, changes: timetable.s && to_array(timetable.s)[].{id: id, arrival: ar && {changedTime: ar.ct, changedPlatform: ar.cp, status: ar.cs, changedPath: ar.cpth}, departure: dp && {changedTime: dp.ct, changedPlatform: dp.cp, status: dp.cs, changedPath: dp.cpth}, messages: m && to_array(m)[].{type: t, category: cat, code: c, from: from, to: to, priority: pr}}}"
+        }
+      }
+    },
+    {
+      "name": "dbt_get_recent_changes",
+      "description": "Changes at a station from the last two minutes only — the same shape as dbt_get_changes, for polling a station you are watching without re-reading the full change feed each time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eva": {
+            "type": "string",
+            "description": "Station EVA number from dbt_search_stations."
+          }
+        },
+        "required": ["eva"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rchg/{eva}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{station: timetable.station, changes: timetable.s && to_array(timetable.s)[].{id: id, arrival: ar && {changedTime: ar.ct, changedPlatform: ar.cp, status: ar.cs, changedPath: ar.cpth}, departure: dp && {changedTime: dp.ct, changedPlatform: dp.cp, status: dp.cs, changedPath: dp.cpth}, messages: m && to_array(m)[].{type: t, category: cat, code: c, from: from, to: to, priority: pr}}}"
+        }
+      }
+    }
+  ]
+}

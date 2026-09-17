@@ -6,6 +6,7 @@ import * as datev from './de/datev.json';
 import * as datevSandbox from './de/datev-sandbox.json';
 import * as destatisGenesis from './de/destatis-genesis.json';
 import * as deutscheBahn from './de/deutsche-bahn.json';
+import * as deutscheBahnTimetables from './de/deutsche-bahn-timetables.json';
 import * as dhlTracking from './de/dhl-tracking.json';
 import * as dpdGermany from './de/dpd-germany.json';
 import * as easybill from './de/easybill.json';
@@ -40,6 +41,7 @@ import * as activecampaign from './intl/activecampaign.json';
 import * as acuityScheduling from './intl/acuity-scheduling.json';
 import * as adyen from './intl/adyen.json';
 import * as agilecrm from './intl/agilecrm.json';
+import * as airtable from './intl/airtable.json';
 import * as amadeus from './intl/amadeus.json';
 import * as amazonSeller from './intl/amazon-seller.json';
 import * as apiFootball from './intl/api-football.json';
@@ -221,6 +223,16 @@ export interface AdapterMeta {
   featured?: boolean;
   /** Higher = ranked earlier in catalog listings. Default 0. */
   priority?: number;
+  /** The upstream only answers residential IPs (bot wall, session-token
+   *  scraper). Listed on self-host, hidden on the cloud, and excluded from the
+   *  advertised "no API key" count. See scripts/probe-keyless.mjs. */
+  selfHostOnly?: boolean;
+  /** A safe, read-only call that proves the connector works: run right after
+   *  import so a wrong credential is reported on the install form instead of
+   *  by the agent days later, and by scripts/probe-keyless.mjs in CI. Params
+   *  may use the literal `__TOMORROW__` for a date. Without one, the first
+   *  GET tool with no required parameters is used. */
+  probe?: { tool: string; params?: Record<string, unknown> };
 }
 
 export interface AdapterDefinition extends AdapterMeta {
@@ -301,6 +313,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   datevSandbox as unknown as AdapterDefinition,
   destatisGenesis as unknown as AdapterDefinition,
   deutscheBahn as unknown as AdapterDefinition,
+  deutscheBahnTimetables as unknown as AdapterDefinition,
   dhlTracking as unknown as AdapterDefinition,
   dpdGermany as unknown as AdapterDefinition,
   easybill as unknown as AdapterDefinition,
@@ -335,6 +348,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   acuityScheduling as unknown as AdapterDefinition,
   adyen as unknown as AdapterDefinition,
   agilecrm as unknown as AdapterDefinition,
+  airtable as unknown as AdapterDefinition,
   amadeus as unknown as AdapterDefinition,
   amazonSeller as unknown as AdapterDefinition,
   apiFootball as unknown as AdapterDefinition,
@@ -512,6 +526,8 @@ export function listAdapters(): AdapterMeta[] {
     authType: adapter.connector.authType,
     featured: adapter.featured,
     priority: adapter.priority,
+    selfHostOnly: adapter.selfHostOnly,
+    probe: adapter.probe,
   }));
 }
 

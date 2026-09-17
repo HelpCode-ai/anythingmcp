@@ -32,6 +32,8 @@ interface AuthContextType {
   updateUser: (updates: Partial<User>) => void;
   isLoading: boolean;
   deploymentMode: string;
+  /** False until /health/server-info has answered; `deploymentMode` is a guess before that. */
+  deploymentModeLoaded: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -47,6 +49,7 @@ const AuthContext = createContext<AuthContextType>({
   updateUser: () => {},
   isLoading: true,
   deploymentMode: 'self-hosted',
+  deploymentModeLoaded: false,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -56,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [orgName, setOrgName] = useState<string | null>(null);
   const [orgs, setOrgs] = useState<OrgInfo[] | null>(null);
   const [deploymentMode, setDeploymentMode] = useState('self-hosted');
+  const [deploymentModeLoaded, setDeploymentModeLoaded] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -112,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     server.info().then((info) => {
       setDeploymentMode(info.deploymentMode || 'self-hosted');
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setDeploymentModeLoaded(true));
   }, []);
 
   // Listen for 401 events from api.ts to auto-logout
@@ -178,7 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, orgName, orgs, setOrgName, switchOrg, replaceSession, login, logout, updateUser, isLoading, deploymentMode }}>
+    <AuthContext.Provider value={{ token, user, orgName, orgs, setOrgName, switchOrg, replaceSession, login, logout, updateUser, isLoading, deploymentMode, deploymentModeLoaded }}>
       {children}
     </AuthContext.Provider>
   );

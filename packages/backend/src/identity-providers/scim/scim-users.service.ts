@@ -202,10 +202,12 @@ export class ScimUsersService {
       await this.lifecycle.deactivateInOrganization(created.id, provider.organizationId, this.lifecycleCtx(provider, ctx));
     }
 
-    // A brand-new member with no role is UNRESTRICTED under getAllowedToolIds.
-    // The identity is SCIM-managed and in no group yet, so this applies the
-    // provider's fallback (DENY_ALL by default) from the first request, not
-    // from the first login.
+    // A brand-new member with no role is UNRESTRICTED under getAllowedToolIds
+    // until the organization creates its first tool whitelist, and only then
+    // denied everything. The identity is SCIM-managed and in no group yet, so
+    // this applies the provider's fallback (DENY_ALL by default) from the
+    // first request, not from the first login — making the outcome explicit
+    // instead of dependent on the workspace's whitelist state.
     await this.roleSync.syncFromScim(provider, created.id, { ip: ctx.ip, userAgent: ctx.userAgent });
 
     return this.get(provider, created.id, ctx);

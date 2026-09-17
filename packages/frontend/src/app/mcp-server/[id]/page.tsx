@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { mcpServers, connectors as connectorsApi, mcpKeys } from '@/lib/api';
+import { mcpServers, connectors as connectorsApi, mcpKeys, productEvents } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -36,6 +36,29 @@ export default function McpServerDetailPage() {
 
   const [copied, setCopied] = useState('');
   const [connectClient, setConnectClient] = useState<string | null>(null);
+
+  // Funnel instrumentation. This is the page that stands between "attached
+  // a connector" and "sent the first MCP request", and three quarters of the
+  // workspaces that reach it never send one. Record what people actually do
+  // here (copy the URL, open a client, generate a key, or leave without
+  // touching anything) so the next change to it is informed by data.
+  const copiedAnything = useRef(false);
+  useEffect(() => {
+    if (!token || !id) return;
+    productEvents.track('post_attach_viewed', token, { serverId: id });
+    const onLeave = () => {
+      if (!copiedAnything.current) {
+        productEvents.track('left_page_without_copy', token, { serverId: id });
+        // Fire once, whether pagehide or unmount gets there first.
+        copiedAnything.current = true;
+      }
+    };
+    window.addEventListener('pagehide', onLeave);
+    return () => {
+      window.removeEventListener('pagehide', onLeave);
+      onLeave();
+    };
+  }, [token, id]);
 
   useEffect(() => {
     if (!token || !id) return;
@@ -109,6 +132,7 @@ export default function McpServerDetailPage() {
     if (!token || !newKeyName.trim()) return;
     try {
       const result = await mcpKeys.generate(newKeyName.trim(), token, id);
+      productEvents.track('api_key_generated', token, { serverId: id });
       setGeneratedKey(result.key);
       setNewKeyName('');
       setKeyMsg('Key generated! Copy it now — it will not be shown again.');
@@ -179,6 +203,14 @@ export default function McpServerDetailPage() {
     if (ok) {
       setCopied(label);
       setTimeout(() => setCopied(''), 2000);
+      copiedAnything.current = true;
+      if (token) {
+        if (label === 'endpoint') {
+          productEvents.track('mcp_url_copied', token, { serverId: id });
+        } else {
+          productEvents.track('client_config_copied', token, { serverId: id, client: label });
+        }
+      }
     }
   };
 
@@ -586,7 +618,10 @@ export default function McpServerDetailPage() {
             {aiClients.map((client) => (
               <button
                 key={client.id}
-                onClick={() => setConnectClient(client.id)}
+                onClick={() => {
+                  setConnectClient(client.id);
+                  if (token) productEvents.track('client_tab_opened', token, { serverId: id, client: client.id });
+                }}
                 className="flex items-center gap-[9px] rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-3 py-[10px] text-left transition-colors hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]"
               >
                 <span

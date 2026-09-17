@@ -72,6 +72,15 @@ services:
       - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-false}
       # Uncomment to enable Redis (optional — used for response caching and rate limiting)
       # - REDIS_URL=redis://redis:6379
+      # Deutsche Bahn connector: URL of a MOTIS instance. Set together with
+      # COMPOSE_PROFILES=motis to run the bundled one (see deploy/motis); the
+      # adapter then fills its MOTIS_URL in automatically at import. Leave
+      # unset to be asked for a URL when installing the adapter.
+      - MOTIS_INTERNAL_URL=${MOTIS_INTERNAL_URL:-}
+      # Hosts the SSRF guard may reach even though they resolve to a private
+      # address. Needed for the bundled MOTIS (`motis`) and any other API you
+      # run on the same Docker network.
+      - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-}
 
     depends_on:
       postgres:
@@ -101,6 +110,33 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # MOTIS routing engine for the Deutsche Bahn connector (optional).
+  # Activated by COMPOSE_PROFILES=motis in .env, together with
+  # MOTIS_INTERNAL_URL=http://motis:8080 and SSRF_ALLOWED_HOSTS=motis. Pulls
+  # the open gtfs.de train timetable on first boot and refreshes it weekly;
+  # about 12 MB of GTFS, a one-second import, ~100 MB of RAM at rest.
+  # Details and feed licences: deploy/motis/README.md
+  motis:
+    build:
+      context: ./deploy/motis
+    image: anythingmcp-motis:2.11.3-1
+    profiles: ["motis"]
+    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-motis
+    volumes:
+      - motis_data:/data
+    healthcheck:
+      # 127.0.0.1, not localhost: MOTIS binds IPv4 only and localhost resolves
+      # to ::1 first inside the container, so the probe was refused every time.
+      # /metrics, not /: MOTIS answers 404 on the root, which --spider treats as
+      # a failure. Between the two, the container reported unhealthy for its
+      # whole life while serving traffic perfectly.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+    restart: unless-stopped
+
   # Redis Cache (optional — uncomment to enable response caching and rate limiting)
   # redis:
   #   image: redis:7-alpine
@@ -116,6 +152,7 @@ services:
 
 volumes:
   postgres_data:
+  motis_data:     # Imported timetable for the optional MOTIS service
   caddy_data:     # Let's Encrypt certificates (used when Caddy proxy is enabled)
   caddy_config:   # Caddy configuration cache
   # redis_data:   # Uncomment if Redis is enabled

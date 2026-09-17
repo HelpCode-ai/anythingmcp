@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/badge';
 
 export default function OrganizationSettingsPage() {
-  const { token, user, orgName, orgs, setOrgName, switchOrg, replaceSession } = useAuth();
+  const { token, user, orgName, orgs, setOrgName, switchOrg, replaceSession, logout } = useAuth();
   const [name, setName] = useState('');
   const [orgId, setOrgId] = useState('');
   const [createdAt, setCreatedAt] = useState('');
@@ -26,6 +26,15 @@ export default function OrganizationSettingsPage() {
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Security: force every member to sign in again
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revokeConfirmName, setRevokeConfirmName] = useState('');
+  const [revokeIncludeSelf, setRevokeIncludeSelf] = useState(true);
+  const [revokeApiKeys, setRevokeApiKeys] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [revokeResult, setRevokeResult] = useState<string | null>(null);
 
   // Knowledge graph feature toggles
   const [kg, setKg] = useState<KgSettings | null>(null);
@@ -83,6 +92,45 @@ export default function OrganizationSettingsPage() {
     } catch (err: any) {
       setDeleteError(err?.message || 'Failed to delete organization');
       setDeleting(false);
+    }
+  };
+
+  const resetRevokeDialog = () => {
+    setRevokeOpen(false);
+    setRevokeConfirmName('');
+    setRevokeIncludeSelf(true);
+    setRevokeApiKeys(false);
+    setRevoking(false);
+    setRevokeError(null);
+  };
+
+  const handleRevokeWorkspaceSessions = async () => {
+    if (!token) return;
+    if (revokeConfirmName.trim() !== name.trim()) return;
+    setRevoking(true);
+    setRevokeError(null);
+    try {
+      const result = await organizations.revokeSessions(
+        { confirmName: revokeConfirmName.trim(), excludeSelf: !revokeIncludeSelf, revokeApiKeys },
+        token,
+      );
+      if (result.selfIncluded) {
+        // Our own token is now below the watermark; the next request would
+        // 401 anyway. Leave cleanly instead of failing on a later click.
+        logout();
+        window.location.href = '/login';
+        return;
+      }
+      const parts = [`${result.membersAffected} member(s) signed out everywhere.`];
+      if (result.crossOrgMembersAffected > 0) {
+        parts.push(`${result.crossOrgMembersAffected} of them also belong to other workspaces and were signed out there too.`);
+      }
+      if (revokeApiKeys) parts.push(`${result.apiKeysRevoked} MCP API key(s) deactivated.`);
+      setRevokeResult(parts.join(' '));
+      resetRevokeDialog();
+    } catch (err: any) {
+      setRevokeError(err?.message || 'Failed to revoke sessions');
+      setRevoking(false);
     }
   };
 
@@ -249,6 +297,95 @@ export default function OrganizationSettingsPage() {
           />
         )}
       </Card>
+
+      {/* Security — ADMIN only. Reversible actions live here, not in the Danger Zone. */}
+      {isAdmin && (
+        <Card className="p-5 space-y-3">
+          <h3 className="text-sm font-semibold text-[var(--text)]">Security</h3>
+          <p className="text-xs text-[var(--text-2)]">
+            Sign every member out of the dashboard and of every connected AI client, including
+            clients that hold a refresh token. Nobody loses their role or access; everyone simply has
+            to sign in again. Use it after a suspected credential leak or a change in your identity
+            provider. MCP API keys are not sessions and are left alone unless you say otherwise.
+          </p>
+          <Button variant="secondary" onClick={() => { setRevokeResult(null); setRevokeOpen(true); }}>
+            Sign everyone out
+          </Button>
+          {revokeResult && <p className="text-xs text-[var(--ok)]">{revokeResult}</p>}
+        </Card>
+      )}
+
+      <Dialog.Root open={revokeOpen} onOpenChange={(open) => { if (!open) resetRevokeDialog(); }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+            <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Sign everyone out</Dialog.Title>
+            <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
+              Every member of <strong>{name}</strong> will have to sign in again, on the dashboard and
+              in every AI client. Members who also belong to other workspaces are signed out there
+              too. To confirm, type the organization name below.
+            </Dialog.Description>
+
+            <div className="space-y-3">
+              <div>
+                <label className={labelClass}>Type <code className="font-mono">{name}</code> to confirm</label>
+                <input
+                  type="text"
+                  value={revokeConfirmName}
+                  onChange={(e) => setRevokeConfirmName(e.target.value)}
+                  className={inputClass}
+                  autoComplete="off"
+                  placeholder={name}
+                />
+              </div>
+              <label className="flex items-start gap-2 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={revokeIncludeSelf}
+                  onChange={(e) => setRevokeIncludeSelf(e.target.checked)}
+                />
+                <span>
+                  Also sign me out
+                  <span className="block text-xs text-[var(--text-2)]">
+                    Keep this on if the compromised session might be yours. You will be taken to the
+                    login page right away.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={revokeApiKeys}
+                  onChange={(e) => setRevokeApiKeys(e.target.checked)}
+                />
+                <span>
+                  Also deactivate every MCP API key in this workspace
+                  <span className="block text-xs text-[var(--text-2)]">
+                    API keys are not sessions: without this, every <code className="font-mono">mcp_…</code> key
+                    keeps working. Deactivated keys cannot be restored.
+                  </span>
+                </span>
+              </label>
+              {revokeError && <p className="text-sm text-[var(--danger)]">{revokeError}</p>}
+            </div>
+
+            <div className="flex gap-2 justify-end mt-6">
+              <Dialog.Close asChild>
+                <Button variant="secondary">Cancel</Button>
+              </Dialog.Close>
+              <Button
+                variant="primary"
+                onClick={handleRevokeWorkspaceSessions}
+                disabled={revoking || revokeConfirmName.trim() !== name.trim()}
+              >
+                {revoking ? 'Signing out…' : 'Sign everyone out'}
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       {/* Danger Zone — ADMIN only */}
       {isAdmin && (

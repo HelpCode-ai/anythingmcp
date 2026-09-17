@@ -181,6 +181,28 @@ export class LicenseController {
       throw new BadRequestException('User not found');
     }
 
+    // Idempotent on purpose. The login flow already activates a trial when the
+    // email is verified, and the client then calls this endpoint too, so the
+    // second call used to answer 400 "a trial already exists" on every single
+    // signup: an error shown to a user whose trial is perfectly fine. An org
+    // that already holds a licence gets that licence back, and a success.
+    const existing = await this.licenseService.getCurrentLicense(req.user.organizationId);
+    if (existing) {
+      return {
+        message: 'Trial already active',
+        trialStarted: false,
+        licenseKey: existing.licenseKey,
+        plan: existing.plan,
+        expiresAt: existing.expiresAt?.toISOString() ?? null,
+        trialDaysLeft: existing.expiresAt
+          ? Math.max(
+              0,
+              Math.ceil((existing.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)),
+            )
+          : 0,
+      };
+    }
+
     try {
       const result = await this.licenseService.requestTrialLicense(
         user.email,

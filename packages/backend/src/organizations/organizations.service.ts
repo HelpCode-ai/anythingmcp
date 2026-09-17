@@ -13,6 +13,24 @@ export interface MemberActionContext {
   userAgent?: string | null;
 }
 
+export interface RevokeSessionsOptions {
+  /**
+   * Also deactivate the target's MCP API keys in this workspace. Off by
+   * default: `mcp_…` keys carry no `iat`, so the watermark alone never touches
+   * them — the UI says so, and this is the explicit remedy.
+   */
+  revokeApiKeys?: boolean;
+}
+
+export interface RevokeWorkspaceSessionsOptions extends RevokeSessionsOptions {
+  /**
+   * Leave the acting admin's own sessions alone. Off by default: if the
+   * compromised session is theirs, excluding it defeats the point. Routine
+   * offboarding can turn it on.
+   */
+  excludeSelf?: boolean;
+}
+
 @Injectable()
 export class OrganizationsService {
   constructor(
@@ -210,6 +228,156 @@ export class OrganizationsService {
     }
 
     return { from, to: role, sessionsRevoked: demotion };
+  }
+
+  // ── Force re-authentication ───────────────────────────────────────────────
+  //
+  // Both methods only move the `sessionsValidFrom` watermark. Since the
+  // refresh grant honours it (RefreshTokenRevocationMiddleware), that is
+  // sufficient: there is no fourth way to obtain a user token —
+  // `authorization_code` needs an interactive login and `client_credentials`
+  // mints `sub: "client:<id>"`, which is not a user session. What the
+  // watermark does NOT cover is per-user MCP API keys, hence `revokeApiKeys`.
+  //
+  // Acting on yourself is allowed: it is not a lockout, you sign in again.
+  // The self-protection on `updateMemberRole`/delete exists because those are
+  // irreversible from the target's side; this one is not.
+
+  /**
+   * Signs one member out of every client by raising their watermark.
+   *
+   * Resolved through the membership so an admin can only act on members of
+   * their own workspace. The watermark is global (see
+   * `UserLifecycleService.deactivateInOrganization`), so a multi-workspace
+   * member is signed out of their other workspaces too — the caller is told
+   * via `crossOrgMemberships`.
+   *
+   * Returns null when the user is not a member (the controller's 404).
+   */
+  async revokeMemberSessions(
+    userId: string,
+    organizationId: string,
+    options: RevokeSessionsOptions,
+    ctx: MemberActionContext,
+  ): Promise<{ apiKeysRevoked: number; crossOrgMemberships: number } | null> {
+    const membership = await this.getMembership(userId, organizationId);
+    if (!membership) return null;
+
+    const now = new Date();
+    const { apiKeysRevoked, crossOrgMemberships } = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { sessionsValidFrom: now },
+      });
+      const crossOrgMemberships = await tx.organizationMember.count({
+        where: { userId, organizationId: { not: organizationId }, deactivatedAt: null },
+      });
+      let apiKeysRevoked = 0;
+      if (options.revokeApiKeys) {
+        // Keys are org-scoped, like on deactivation: a multi-workspace user
+        // keeps the keys they use elsewhere.
+        const res = await tx.mcpApiKey.updateMany({
+          where: { userId, organizationId, isActive: true },
+          data: { isActive: false },
+        });
+        apiKeysRevoked = res.count;
+      }
+      return { apiKeysRevoked, crossOrgMemberships };
+    });
+
+    await this.securityEvents.log({
+      event: SecurityEvents.SESSIONS_REVOKED,
+      actorType: 'USER',
+      organizationId,
+      actorUserId: ctx.actorUserId,
+      targetUserId: userId,
+      // `keysDeactivated`, not `apiKeys…`: the audit writer redacts any key
+      // matching /api[-_]?key/, and a count is not a secret.
+      metadata: {
+        reason: 'admin_force_reauth',
+        organizationId,
+        self: ctx.actorUserId === userId,
+        keysDeactivated: apiKeysRevoked,
+        crossOrgMemberships,
+      },
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+
+    return { apiKeysRevoked, crossOrgMemberships };
+  }
+
+  /**
+   * Signs every active member of the workspace out of every client.
+   *
+   * One `updateMany` over the memberships and ONE summary audit row: the
+   * per-member detail is in its metadata. `crossOrgMembersAffected` counts
+   * the members who also belong to another workspace, because the watermark
+   * is global and they get signed out there as well.
+   */
+  async revokeWorkspaceSessions(
+    organizationId: string,
+    options: RevokeWorkspaceSessionsOptions,
+    ctx: MemberActionContext,
+  ): Promise<{ membersAffected: number; crossOrgMembersAffected: number; apiKeysRevoked: number }> {
+    const now = new Date();
+    const memberFilter: Prisma.OrganizationMemberWhereInput = {
+      organizationId,
+      deactivatedAt: null,
+      ...(options.excludeSelf ? { userId: { not: ctx.actorUserId } } : {}),
+    };
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const { count: membersAffected } = await tx.user.updateMany({
+        where: { memberships: { some: memberFilter } },
+        data: { sessionsValidFrom: now },
+      });
+
+      const crossOrg = await tx.organizationMember.findMany({
+        where: {
+          organizationId: { not: organizationId },
+          deactivatedAt: null,
+          user: { memberships: { some: memberFilter } },
+        },
+        select: { userId: true },
+        distinct: ['userId'],
+      });
+
+      let apiKeysRevoked = 0;
+      if (options.revokeApiKeys) {
+        const res = await tx.mcpApiKey.updateMany({
+          where: {
+            organizationId,
+            isActive: true,
+            ...(options.excludeSelf ? { userId: { not: ctx.actorUserId } } : {}),
+          },
+          data: { isActive: false },
+        });
+        apiKeysRevoked = res.count;
+      }
+
+      return { membersAffected, crossOrgMembersAffected: crossOrg.length, apiKeysRevoked };
+    });
+
+    await this.securityEvents.log({
+      event: SecurityEvents.WORKSPACE_SESSIONS_REVOKED,
+      actorType: 'USER',
+      organizationId,
+      actorUserId: ctx.actorUserId,
+      // See revokeMemberSessions for why the key count is not named `apiKeys…`.
+      metadata: {
+        reason: 'admin_force_reauth',
+        organizationId,
+        excludeSelf: Boolean(options.excludeSelf),
+        membersAffected: result.membersAffected,
+        crossOrgMembersAffected: result.crossOrgMembersAffected,
+        keysDeactivated: result.apiKeysRevoked,
+      },
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+
+    return result;
   }
 
   async deleteOrganization(

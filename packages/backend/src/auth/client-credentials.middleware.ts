@@ -1,6 +1,7 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { PrismaOAuthStore } from './prisma-oauth.store';
+import { parseOAuthBody } from './oauth-body.util';
 
 /**
  * Middleware that intercepts POST /token requests with grant_type=client_credentials.
@@ -24,7 +25,7 @@ export class ClientCredentialsMiddleware implements NestMiddleware {
     }
 
     // Parse body (handle both JSON and form-urlencoded)
-    const body = this.parseBody(req);
+    const body = parseOAuthBody(req);
     if (body.grant_type !== 'client_credentials') {
       return next();
     }
@@ -121,21 +122,6 @@ export class ClientCredentialsMiddleware implements NestMiddleware {
         error_description: err.message,
       });
     }
-  }
-
-  private parseBody(req: Request): Record<string, any> {
-    if (req.body && typeof req.body === 'object') {
-      return req.body;
-    }
-    if (typeof req.body === 'string') {
-      const params = new URLSearchParams(req.body);
-      const result: Record<string, string> = {};
-      for (const [key, value] of params.entries()) {
-        result[key] = value;
-      }
-      return result;
-    }
-    return {};
   }
 
   private extractCredentials(

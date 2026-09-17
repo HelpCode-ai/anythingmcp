@@ -1,6 +1,6 @@
-import { Controller, Get, Param, Req } from '@nestjs/common';
+import { Controller, Get, Param, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 /**
  * Serves OAuth/OIDC discovery documents that some MCP clients require but
@@ -67,10 +67,14 @@ export class WellKnownOAuthController {
       // and NO `iss` in the response MUST reject that response — so this flag
       // and the middleware have to ship together, and stay together.
       authorization_response_iss_parameter_supported: true,
-      // MCP 2026-07-28: resource servers SHOULD NOT advertise `offline_access`
-      // here, because refresh tokens are a client concern and not a
-      // requirement of the resource. Clients that want one still request it.
-      scopes_supported: [],
+      // `offline_access` is deliberately absent (MCP 2026-07-28: refresh
+      // tokens are a client concern, not a requirement of the resource).
+      // `openid` and `email` are what an OIDC relying party needs to call
+      // /userinfo; ChatGPT requests them by default when it sees them here
+      // and uses the verified e-mail for Enterprise domain restrictions.
+      scopes_supported: ['openid', 'email'],
+      userinfo_endpoint: `${base}/userinfo`,
+      claims_supported: ['sub', 'email', 'email_verified', 'name'],
       // Minimal OIDC fields so clients that probe openid-configuration accept
       // the document. Tokens are HS256-signed (symmetric), so there is no jwks_uri.
       subject_types_supported: ['public'],
@@ -98,6 +102,26 @@ export class WellKnownOAuthController {
 
   // OIDC discovery (root). Some MCP clients fetch this instead of
   // oauth-authorization-server; we return the same authorization-server doc.
+  /**
+   * Domain-verification challenge for the OpenAI plugin directory.
+   *
+   * The portal generates a token per plugin draft and expects it, as plain
+   * text, at the origin root under this exact name before it will let the
+   * server be submitted. The value lives in the environment
+   * (`OPENAI_APPS_CHALLENGE_TOKEN`) so rotating it is a config change, and the
+   * route is a plain 404 when nothing is set, so a self-hosted deployment
+   * that never submits anything advertises nothing.
+   */
+  @Get('openai-apps-challenge')
+  openaiAppsChallenge(@Res() res: Response) {
+    const token = this.config.get<string>('OPENAI_APPS_CHALLENGE_TOKEN');
+    if (!token) {
+      res.status(404).type('text/plain').send('Not Found');
+      return;
+    }
+    res.status(200).type('text/plain').send(token);
+  }
+
   @Get('openid-configuration')
   openidConfiguration(@Req() req: Request) {
     return this.authServerMetadata(this.baseUrl(req));

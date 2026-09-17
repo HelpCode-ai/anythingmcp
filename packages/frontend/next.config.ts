@@ -30,6 +30,7 @@ const nextConfig: NextConfig = {
       { source: '/callback', destination: `${BACKEND_URL}/callback` },
       { source: '/token', destination: `${BACKEND_URL}/token` },
       { source: '/register', destination: `${BACKEND_URL}/register` },
+      { source: '/userinfo', destination: `${BACKEND_URL}/userinfo` },
     ];
   },
 };

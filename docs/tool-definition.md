@@ -14,6 +14,47 @@ Every MCP tool in AnythingMCP is defined by three JSON objects:
 2. **`endpointMapping`** — How parameters map to the API request
 3. **`responseMapping`** — (Optional) How to transform the API response
 
+## Adapter envelope
+
+The catalog validator requires each adapter to provide `slug`, `name`,
+`description`, `region`, `category`, `icon`, `docsUrl`, `requiredEnvVars`,
+`connector`, and a non-empty `tools` array. The filename must match `slug`.
+Optional environment variables use the same array-of-strings shape and must
+not duplicate a required variable.
+
+### Adapter fields
+
+Keep the required envelope fields above at the adapter root; use arrays for
+`requiredEnvVars` and `optionalEnvVars`, and do not list one variable in both.
+
+### Tools
+
+Each entry in `tools` needs a string `name`, a useful `description`, and its
+JSON-Schema `parameters` when it accepts input. Parameter properties should
+include descriptions for the model.
+
+See [connector configuration](#connector)
+and [authentication](#authentication) for the nested connector fields.
+
+### Connector
+
+Set `connector.type` to `REST`, `GRAPHQL`, `SOAP`, `MCP`, `DATABASE`, or
+`LOGIN_TOKEN`. Set `connector.authType` to a supported authentication scheme
+listed below; these values are validated before an adapter can pass.
+
+### Authentication
+
+Use `NONE`, `API_KEY`, `BEARER_TOKEN`, `BASIC`, `BASIC_AUTH`, `OAUTH2`,
+`OAUTH1`, `LOGIN_TOKEN`, or `QUERY_AUTH` as `connector.authType`. Keep the
+corresponding credentials in `authConfig` and reference environment variables
+with `{{VAR}}` where the connector injects them.
+
+### Adapter file errors
+
+If an adapter file cannot be read, check that its path exists and that the
+validator process has permission to read it. This is distinct from invalid JSON
+syntax, which requires fixing the file contents.
+
 ---
 
 ## 1. Parameters (JSON Schema)
@@ -72,6 +113,43 @@ The bridge configuration that transforms MCP tool calls into API requests.
 | `"$param"` in headers | HTTP headers | Sent as request header |
 
 The `$` prefix means "take the value from the tool input parameter with this name."
+
+### Response headers and pagination (`exposeHeaders`)
+
+By default a tool receives the response **body** and nothing else. Some APIs put
+the one thing a model needs to continue in a header instead: GitHub, GitLab,
+Sentry and Shopify paginate with `Link: <...?cursor=xyz>; rel="next"`, and most
+APIs report rate limits in `X-RateLimit-*`. Without those, every list tool is
+exactly one page long.
+
+A REST tool can opt in per header name (case-insensitive):
+
+```json
+{
+  "method": "GET",
+  "path": "/organizations/{{SENTRY_ORG}}/issues/",
+  "queryParams": { "cursor": "$cursor", "query": "$query" },
+  "exposeHeaders": ["link", "x-ratelimit-remaining"]
+}
+```
+
+The selected headers are added to the tool result next to the body, and a
+`Link` header with `rel="next"` is parsed for you:
+
+```json
+{
+  "...the body as before...": "",
+  "_headers": { "link": "<https://sentry.io/api/0/...?cursor=1568:0:0>; rel=\"next\"", "x-ratelimit-remaining": "39" },
+  "_pagination": { "nextUrl": "https://sentry.io/api/0/...?cursor=1568:0:0", "nextCursor": "1568:0:0", "cursorParam": "cursor" }
+}
+```
+
+- `_pagination` is **absent on the last page**; tell the model so in the tool description ("call again with `cursor` = `_pagination.nextCursor` until it is missing").
+- `nextCursor` is recognised for the usual parameter names (`cursor`, `page`, `offset`, `after`, `page_token`, `starting_after`, ...); otherwise only `nextUrl` is set.
+- If the body is not a JSON object (an array, a string) it is wrapped as `data` so the extras have somewhere to live.
+- A response transform (`responseMapping.transform`) runs on the body first; the extras are attached afterwards, so a `select` cannot drop them.
+- The audit log keeps storing the bare body. Headers are cached together with it when `cacheTtl` is set.
+- REST connectors only. Tools that did not set `exposeHeaders` behave exactly as before.
 
 ### By Connector Type
 
@@ -259,7 +337,7 @@ You normally do not set these. AnythingMCP derives them from what the connector 
 
 | Connector | Signal | Result |
 |---|---|---|
-| REST | `GET` / `HEAD` / `OPTIONS` | `readOnlyHint: true` |
+| REST | `GET` / `HEAD` / `OPTIONS` | read-only |
 | REST | `POST` | write, additive, non-idempotent |
 | REST | `PUT` / `DELETE` | write, destructive, idempotent |
 | REST | `PATCH` | write, destructive, non-idempotent |
@@ -272,6 +350,11 @@ You normally do not set these. AnythingMCP derives them from what the connector 
 An unambiguous tool name (`delete_…`, `create_…`) refines `destructiveHint`, but **name heuristics never
 assert `readOnlyHint`**: wrongly claiming read-only would invite an agent to call a mutating tool freely,
 whereas omitting the hint only makes it more careful.
+
+Once the read/write verdict is known, all three of `readOnlyHint`, `destructiveHint` and `idempotentHint`
+are emitted explicitly. A read-only tool gets `destructiveHint: false` and `idempotentHint: true`; a write
+with nothing better known gets the spec defaults. Some directory reviewers (OpenAI's plugin portal, for
+one) reject a tool whose `destructiveHint` is missing, even a read-only one, so nothing is left implicit.
 
 ### Overriding
 

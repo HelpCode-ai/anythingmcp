@@ -63,6 +63,9 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: helpcodeai/anythingmcp
           readme-filepath: ./README.md
+          # Docker Hub caps this at 100 characters and shows it in search
+          # results; the repo's was left at the truncated default.
+          short-description: "190 connectors + any REST/SOAP/GraphQL/SQL as MCP tools for Claude & ChatGPT. Self-hosted, AGPL."
 
       - name: Set Docker Hub categories
         env:

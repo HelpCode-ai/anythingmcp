@@ -22,6 +22,9 @@ export function proxy(request: NextRequest) {
     pathname.startsWith('/.well-known') ||
     pathname === '/authorize' ||
     pathname === '/token' ||
+    // OIDC UserInfo: called by relying parties with a bearer token, never by
+    // a browser session. Sending it to /login broke ChatGPT's identity check.
+    pathname === '/userinfo' ||
     pathname.includes('.')
   ) {
     return NextResponse.next();

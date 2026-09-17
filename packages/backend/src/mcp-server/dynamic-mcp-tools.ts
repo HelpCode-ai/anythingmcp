@@ -17,11 +17,15 @@ import {
   CALLER_CONTEXT_PREFIX,
   buildCallerContextVars,
 } from '../common/caller-context.util';
-import { resolveInternalDbRestUrl } from '../common/db-rest.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
+import {
+  attachResponseMeta,
+  type ResponseMeta,
+} from '../connectors/engines/response-headers.util';
 import { KgService } from '../knowledge-graph/kg.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
+import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -94,15 +98,6 @@ export class DynamicMcpTools {
   }
 
   /**
-   * Cloud-only db-rest host swap — see resolveInternalDbRestUrl. Kept as a thin
-   * method so the host swap stays consistent with the connector "Test
-   * connection" path, which uses the same shared util.
-   */
-  private resolveInternalBaseUrl(baseUrl: string): string {
-    return resolveInternalDbRestUrl(baseUrl);
-  }
-
-  /**
    * Effective hourly proxy cap for a workspace:
    * organizations.proxy_rate_limit (DB, admin-only) ?? PROXY_RATE_LIMIT_DEFAULT
    * env ?? 100. There is intentionally no API to change the per-workspace
@@ -157,7 +152,7 @@ export class DynamicMcpTools {
           {
             type: 'text' as const,
             text: JSON.stringify({
-              error: err.message || 'Your license has expired. Please purchase a license at anythingmcp.com/pricing',
+              error: err.message || 'This workspace\'s license is not active. Ask a workspace administrator to renew it.',
             }),
           },
         ],
@@ -218,6 +213,17 @@ export class DynamicMcpTools {
         try {
           const raw = JSON.parse(cached);
           this.logger.debug(`Cache hit for tool ${toolName}`);
+          // Entries written with response meta are wrapped; older ones are
+          // the bare body. Both must keep rendering.
+          if (raw && typeof raw === 'object' && raw.__amcpEnvelope === 1) {
+            return this.renderResult(
+              raw.body,
+              responseMapping,
+              toolName,
+              raw.meta,
+              tool.endpointMapping?.queryParams,
+            );
+          }
           return this.renderResult(raw, responseMapping, toolName);
         } catch {
           // Unreadable entry — fall through and re-execute.
@@ -260,7 +266,7 @@ export class DynamicMcpTools {
       usedProxy = proxyUrl != null;
 
       const engineConfig = {
-        baseUrl: this.resolveInternalBaseUrl(interpolatedConfig.baseUrl),
+        baseUrl: interpolatedConfig.baseUrl,
         authType: tool.connectorConfig.authType,
         authConfig: tool.connectorConfig.authConfig
           ? JSON.parse(tool.connectorConfig.authConfig)
@@ -277,7 +283,7 @@ export class DynamicMcpTools {
       // Apply JSON Schema defaults for missing params
       const mergedParams = this.applyDefaults(tool.parameters, paramsWithEnv);
 
-      const result = await this.executeWithEngine(
+      const { body: result, meta } = await this.executeWithEngine(
         tool.connectorType,
         engineConfig,
         interpolatedMapping,
@@ -314,7 +320,11 @@ export class DynamicMcpTools {
       // Cache the raw response if cacheTtl is set (shaping happens on read).
       if (cacheTtl && cacheTtl > 0) {
         const cacheKey = this.buildCacheKey(toolName, params);
-        const serialized = JSON.stringify(result);
+        // The audit log above got the bare body; the cache needs the headers
+        // too, or a cached page would come back without its next cursor.
+        const serialized = JSON.stringify(
+          meta ? { __amcpEnvelope: 1, body: result, meta } : result,
+        );
         if (serialized !== undefined) {
           await this.redisService.set(cacheKey, serialized, cacheTtl);
           this.logger.debug(
@@ -323,10 +333,29 @@ export class DynamicMcpTools {
         }
       }
 
-      return this.renderResult(result, responseMapping, toolName);
+      return this.renderResult(
+        result,
+        responseMapping,
+        toolName,
+        meta,
+        tool.endpointMapping?.queryParams,
+      );
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
       const errorDetail = this.extractErrorDetail(error);
+
+      // One actionable line for the client, on top of the vendor's own body.
+      // Keyed on the upstream host so hand-built tools get the same help as
+      // catalog ones; see error-hints.ts for why this exists.
+      const hint = deriveErrorHint({
+        host:
+          hostFromAxiosConfig(error?.config) ??
+          hostFromUrl(tool.connectorConfig?.baseUrl),
+        status: typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
+        message: typeof error?.message === 'string' ? error.message : undefined,
+        body: errorDetail.responseBody,
+      });
+      if (hint) errorDetail.hint = hint;
 
       await this.auditService.logInvocation({
         toolId: tool.id,
@@ -385,6 +414,8 @@ export class DynamicMcpTools {
     raw: unknown,
     responseMapping: ResponseMapping | undefined,
     toolName: string,
+    meta?: ResponseMeta,
+    queryParams?: Record<string, unknown>,
   ): {
     content: { type: 'text'; text: string }[];
     isError?: boolean;
@@ -413,14 +444,20 @@ export class DynamicMcpTools {
       );
     }
 
-    let resultText = JSON.stringify(outcome.value, null, 2) ?? 'null';
+    // Response headers the tool opted into ride along with the (shaped)
+    // body, after the transform so a `select` cannot drop them by accident.
+    const value = meta
+      ? attachResponseMeta(outcome.value, meta, queryParams)
+      : outcome.value;
+
+    let resultText = JSON.stringify(value, null, 2) ?? 'null';
     if (responseMapping?.followUp) {
       resultText += `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`;
     }
 
     return {
       content: [{ type: 'text' as const, text: resultText }],
-      structured: outcome.value,
+      structured: value,
     };
   }
 
@@ -569,7 +606,7 @@ export class DynamicMcpTools {
     endpointMapping: any,
     params: Record<string, unknown>,
     extra?: { connectorConfig?: Record<string, unknown> },
-  ): Promise<unknown> {
+  ): Promise<{ body: unknown; meta?: ResponseMeta }> {
     // Static response tools — return text immediately without engine dispatch.
     //
     // The `method` alone decides this, not `method && staticResponse`. With the
@@ -586,21 +623,45 @@ export class DynamicMcpTools {
             'change the method to a real HTTP verb.',
         );
       }
-      return { text: endpointMapping.staticResponse };
+      return { body: { text: endpointMapping.staticResponse } };
     }
 
     switch (connectorType) {
-      case 'REST':
-        return this.restEngine.execute(config, endpointMapping, params);
+      case 'REST': {
+        // Only a tool that asked for headers pays for them; every other REST
+        // call stays on the body-only path it always had.
+        const wanted = endpointMapping.exposeHeaders;
+        if (Array.isArray(wanted) && wanted.length > 0) {
+          const out = await this.restEngine.executeWithMeta(
+            config,
+            endpointMapping,
+            params,
+          );
+          return { body: out.body, meta: { headers: out.headers } };
+        }
+        return {
+          body: await this.restEngine.execute(config, endpointMapping, params),
+        };
+      }
       case 'GRAPHQL':
-        return this.graphqlEngine.execute(config, endpointMapping, params);
+        return {
+          body: await this.graphqlEngine.execute(config, endpointMapping, params),
+        };
       case 'SOAP':
-        return this.soapEngine.execute(config, endpointMapping, params);
+        return {
+          body: await this.soapEngine.execute(config, endpointMapping, params),
+        };
       case 'MCP':
-        return this.mcpClientEngine.execute(config, endpointMapping, params);
+        return {
+          body: await this.mcpClientEngine.execute(config, endpointMapping, params),
+        };
       case 'DATABASE': {
         const readOnly = (extra?.connectorConfig as any)?.readOnly !== false;
-        return this.databaseEngine.execute(config, endpointMapping, params, { readOnly });
+        return {
+          body: await this.databaseEngine.execute(config, endpointMapping, params, {
+            readOnly,
+          }),
+        };
       }
       default:
         throw new Error(`Unsupported connector type: ${connectorType}`);

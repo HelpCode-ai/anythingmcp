@@ -1,0 +1,125 @@
+{
+  "slug": "airtable",
+  "name": "Airtable",
+  "description": "Read Airtable bases, table schemas, and records from any AI agent. 4 read-only tools, Personal Access Token auth.",
+  "instructions": "This connector uses the Airtable Web API v0 and is read-only.\n\n**Setup**:\n1. Create a Personal Access Token at https://airtable.com/create/tokens.\n2. Grant only the `data.records:read` and `schema.bases:read` scopes.\n3. Restrict the token's access to only the bases this connector must read.\n4. Set `AIRTABLE_PERSONAL_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}`. Use a scoped Personal Access Token, not a legacy API key.\n\n**Discovery order**: call `airtable_list_bases`, then `airtable_list_tables` with a base ID to find table IDs, names, fields, and views. Use a table ID when possible because names can change.\n\n**Records**: `airtable_list_records` returns one page and may include an `offset`. Pass that `offset` to the next call until it is absent. `pageSize` is 1-100; `maxRecords` limits the total records Airtable returns.\n\n**Filtering**: `filterByFormula` uses Airtable formula syntax. For example, `{Status}=\"Active\"` returns records whose Status field is Active. A view can apply saved filters and sorting; combine it with a formula only when both restrictions are intended.\n\n**Out of scope here**: creating, updating, deleting, or otherwise modifying bases, tables, fields, views, or records.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "airtable",
+  "docsUrl": "https://airtable.com/developers/web/api/introduction",
+  "requiredEnvVars": ["AIRTABLE_PERSONAL_ACCESS_TOKEN"],
+  "connector": {
+    "name": "Airtable Web API v0",
+    "type": "REST",
+    "baseUrl": "https://api.airtable.com/v0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{AIRTABLE_PERSONAL_ACCESS_TOKEN}}"
+    },
+    "healthcheckPath": "/meta/bases"
+  },
+  "tools": [
+    {
+      "name": "airtable_list_bases",
+      "description": "List bases accessible to the Personal Access Token. Use this first to discover a base ID, for example `appABC123DEF456`.",
+      "parameters": { "type": "object", "properties": {} },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/meta/bases"
+      }
+    },
+    {
+      "name": "airtable_list_tables",
+      "description": "List a base's table schemas, including table IDs, names, fields, and views. Use this to discover a table ID such as `tblABC123DEF456` before reading records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "baseId": {
+            "type": "string",
+            "description": "Base ID from `airtable_list_bases`, for example `appABC123DEF456`."
+          }
+        },
+        "required": ["baseId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/meta/bases/{baseId}/tables"
+      }
+    },
+    {
+      "name": "airtable_list_records",
+      "description": "List records from a table. The response may include an `offset`; pass it to the next call until it is absent. To filter records, use Airtable formula syntax, for example `filterByFormula: {Status}=\"Active\"`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "baseId": {
+            "type": "string",
+            "description": "Base ID, for example `appABC123DEF456`."
+          },
+          "tableIdOrName": {
+            "type": "string",
+            "description": "Table ID or table name, for example `tblABC123DEF456` or `Tasks`. Prefer the table ID returned by `airtable_list_tables`."
+          },
+          "filterByFormula": {
+            "type": "string",
+            "description": "Airtable formula that records must satisfy, for example `{Status}=\"Active\"`. Field names are wrapped in braces."
+          },
+          "view": {
+            "type": "string",
+            "description": "Saved view name or ID to apply its filters and sorting, for example `Active tasks`."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Records per response page, from 1 to 100. For example, `100`."
+          },
+          "maxRecords": {
+            "type": "integer",
+            "description": "Maximum total number of records Airtable should return, for example `250`."
+          },
+          "offset": {
+            "type": "string",
+            "description": "Pagination cursor from the previous response, for example `itrABC123DEF456`. Omit for the first page."
+          }
+        },
+        "required": ["baseId", "tableIdOrName"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{baseId}/{tableIdOrName}",
+        "queryParams": {
+          "filterByFormula": "$filterByFormula",
+          "view": "$view",
+          "pageSize": "$pageSize",
+          "maxRecords": "$maxRecords",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "airtable_get_record",
+      "description": "Get one record by ID from a table, for example record ID `recABC123DEF456`. Use `airtable_list_records` to find record IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "baseId": {
+            "type": "string",
+            "description": "Base ID, for example `appABC123DEF456`."
+          },
+          "tableIdOrName": {
+            "type": "string",
+            "description": "Table ID or table name, for example `tblABC123DEF456` or `Tasks`."
+          },
+          "recordId": {
+            "type": "string",
+            "description": "Record ID, for example `recABC123DEF456`."
+          }
+        },
+        "required": ["baseId", "tableIdOrName", "recordId"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{baseId}/{tableIdOrName}/{recordId}"
+      }
+    }
+  ]
+}

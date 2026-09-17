@@ -16,12 +16,14 @@ describe('deriveToolAnnotations', () => {
       expect(deriveToolAnnotations(rest(method)).readOnlyHint).toBe(true);
     });
 
-    it('does not emit write-only hints for a read-only tool', () => {
-      // destructiveHint/idempotentHint are meaningful only when
-      // readOnlyHint is false; emitting them would be noise.
-      const a = deriveToolAnnotations(rest('GET'));
-      expect(a.destructiveHint).toBeUndefined();
-      expect(a.idempotentHint).toBeUndefined();
+    it('spells out both write hints for a read-only tool', () => {
+      // Directory reviewers reject a tool with no destructiveHint, even a
+      // read-only one; a read cannot destroy and repeats harmlessly.
+      expect(deriveToolAnnotations(rest('GET'))).toMatchObject({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
     });
 
     it('treats POST as an additive, non-idempotent write', () => {
@@ -78,6 +80,8 @@ describe('deriveToolAnnotations', () => {
     it('omits read/write hints when the verb is unknown', () => {
       const a = deriveToolAnnotations(rest('WEIRD', 'neutral_name'));
       expect(a.readOnlyHint).toBeUndefined();
+      expect(a.destructiveHint).toBeUndefined();
+      expect(a.idempotentHint).toBeUndefined();
     });
   });
 
@@ -100,6 +104,16 @@ describe('deriveToolAnnotations', () => {
           endpointMapping: { method: 'mutation', path: 'mutation { x }' },
         }),
       ).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+    });
+
+    it('falls back to the spec defaults for a mutation with a neutral name', () => {
+      expect(
+        deriveToolAnnotations({
+          name: 'process_batch',
+          connectorType: 'GRAPHQL',
+          endpointMapping: { method: 'mutation', path: 'mutation { x }' },
+        }),
+      ).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false });
     });
   });
 
@@ -218,13 +232,36 @@ describe('deriveToolAnnotations', () => {
       expect(a.readOnlyHint).toBe(true);
     });
 
-    it('drop stale write hints when flipping a tool to read-only', () => {
+    it('replace stale write hints when flipping a tool to read-only', () => {
       const a = deriveToolAnnotations({
         ...rest('DELETE', 'delete_thing'),
         annotations: { readOnlyHint: true },
       });
-      expect(a.destructiveHint).toBeUndefined();
-      expect(a.idempotentHint).toBeUndefined();
+      expect(a).toMatchObject({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
+    });
+
+    it('fall back to the spec defaults when flipping a read to a write', () => {
+      const a = deriveToolAnnotations({
+        ...rest('GET', 'get_thing'),
+        annotations: { readOnlyHint: false },
+      });
+      expect(a).toMatchObject({
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+      });
+    });
+
+    it('keep the override\'s own write hints when flipping a read to a write', () => {
+      const a = deriveToolAnnotations({
+        ...rest('GET', 'get_thing'),
+        annotations: { readOnlyHint: false, destructiveHint: false },
+      });
+      expect(a).toMatchObject({ destructiveHint: false, idempotentHint: false });
     });
 
     it('keep derived values for keys the override does not set', () => {
