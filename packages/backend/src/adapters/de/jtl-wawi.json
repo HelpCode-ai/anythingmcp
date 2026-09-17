@@ -1,0 +1,241 @@
+{
+  "slug": "jtl-wawi",
+  "name": "JTL-Wawi",
+  "description": "JTL-Wawi — the e-commerce ERP behind a large share of German online retail. Read customers, items, stock, sales orders and shipments from your on-premises JTL-Wawi via the JTL API Server. REST v1, bearer token.",
+  "region": "de",
+  "category": "erp",
+  "icon": "jtl-wawi",
+  "docsUrl": "https://developer.jtl-software.com/products/wawi/api",
+  "instructions": "**JTL-Wawi is on-premises Windows software and does not speak HTTP on its own.** The REST API is served by the separate **JTL API Server** (sometimes called the Wawi API / `JTL-Wawi API`), which you install alongside the Wawi database.\n1. Install the JTL API Server on the machine that reaches your JTL-Wawi MSSQL database, and start its service.\n2. In the API Server's admin UI create an **App** and copy the generated key. JTL issues it base64-encoded; use it exactly as given.\n3. Set `JTL_WAWI_URL` to the API server's root (e.g. `https://wawi.example.com:5883`, no trailing slash) and `JTL_WAWI_API_KEY` to the key. The adapter sends `Authorization: Bearer <key>` and `X-AppId`.\n\n**Set `JTL_WAWI_APP_ID`** to the App id shown next to the key. JTL routes and rate-limits per app.\n\n**Pagination is header-driven.** JTL's list endpoints take `$top` and `$skip` and return the total in an `X-Total-Count` response header. Ask for a page, look at the total, ask for the next — do not loop blindly.\n\n**Item vs stock.** `jtl_wawi_list_items` returns the article master (name, SKU, prices); `jtl_wawi_get_item_stock` returns the per-warehouse quantities. Availability questions need the second one — the article master's stock field is a cached roll-up and can lag.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`wawi.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "JTL_WAWI_URL",
+    "JTL_WAWI_API_KEY",
+    "JTL_WAWI_APP_ID"
+  ],
+  "connector": {
+    "name": "JTL-Wawi REST API v1",
+    "type": "REST",
+    "baseUrl": "{{JTL_WAWI_URL}}/api/eazybusiness/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{JTL_WAWI_API_KEY}}"
+    },
+    "headers": {
+      "X-AppId": "{{JTL_WAWI_APP_ID}}",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/warehouses"
+  },
+  "probe": {
+    "tool": "jtl_wawi_list_warehouses"
+  },
+  "tools": [
+    {
+      "name": "jtl_wawi_list_warehouses",
+      "description": "List the warehouses (Lager) configured in JTL-Wawi with their id, name and type. No parameters — the quickest check that the API server and the app key line up.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses"
+      }
+    },
+    {
+      "name": "jtl_wawi_list_items",
+      "description": "List articles from the item master with their SKU, name, prices, EAN and manufacturer. Use a search fragment to find one article before asking about its stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "searchKeyWord": {
+            "type": "string",
+            "description": "Search fragment matched against SKU, name and EAN."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items",
+        "queryParams": {
+          "searchKeyWord": "$searchKeyWord",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "jtl_wawi_get_item",
+      "description": "Read one article in full: its SKU, descriptions, dimensions, prices, categories and supplier links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric JTL item id (kArtikel)."
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{itemId}"
+      }
+    },
+    {
+      "name": "jtl_wawi_get_item_stock",
+      "description": "Read the per-warehouse stock of one article: quantity on hand, reserved, and available. This — not the item master's cached field — is what an availability question needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric JTL item id (kArtikel)."
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{itemId}/stocks"
+      }
+    },
+    {
+      "name": "jtl_wawi_list_customers",
+      "description": "List customers with their customer number, company, contact name, address and customer group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "searchKeyWord": {
+            "type": "string",
+            "description": "Search fragment matched against name, company and customer number."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "searchKeyWord": "$searchKeyWord",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "jtl_wawi_get_customer",
+      "description": "Read one customer in full: billing and delivery addresses, payment and shipping defaults, and the customer group they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "number",
+            "description": "Numeric JTL customer id (kKunde)."
+          }
+        },
+        "required": [
+          "customerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customerId}"
+      }
+    },
+    {
+      "name": "jtl_wawi_list_sales_orders",
+      "description": "List sales orders with their order number, customer, date, payment and shipping status and total. The core question of 'what is in the pipeline'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "searchKeyWord": {
+            "type": "string",
+            "description": "Search fragment matched against order number and customer."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/salesOrders",
+        "queryParams": {
+          "searchKeyWord": "$searchKeyWord",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "jtl_wawi_get_sales_order",
+      "description": "Read one sales order in full: its line items with SKU, quantity and price, the addresses, and the payment and shipping state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "salesOrderId": {
+            "type": "number",
+            "description": "Numeric JTL sales order id (kBestellung)."
+          }
+        },
+        "required": [
+          "salesOrderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/salesOrders/{salesOrderId}"
+      }
+    },
+    {
+      "name": "jtl_wawi_list_shipments",
+      "description": "List shipments with their tracking number, carrier, date and the sales order they belong to — the answer to 'has it gone out yet'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    }
+  ]
+}

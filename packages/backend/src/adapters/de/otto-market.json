@@ -1,0 +1,268 @@
+{
+  "slug": "otto-market",
+  "name": "OTTO Market",
+  "description": "OTTO Market partner API: orders and their positions, product variations, stock and price updates, and returns for sellers on otto.de. OAuth 2.0 with the partner's client credentials.",
+  "region": "de",
+  "category": "ecommerce",
+  "icon": "otto-market",
+  "docsUrl": "https://api.otto.market/docs",
+  "instructions": "**Getting credentials**\n1. You must already be an OTTO Market partner. In the **OTTO Partner Connect** portal open the API area and create API credentials for your account.\n2. OTTO issues a **username and password** for the token endpoint rather than a classic client id/secret pair; the token request is a password grant against `https://api.otto.market/v1/token`.\n3. Set `OTTO_USERNAME` and `OTTO_PASSWORD`. AnythingMCP exchanges them for an access token and refreshes it automatically.\n\n**Every endpoint is versioned separately.** OTTO versions per resource, not per API: orders are on `/v4/orders`, quantities on `/v1/quantities`, prices on `/v3/prices`. The tools below carry the version each resource is actually on — do not assume one prefix works everywhere.\n\n**Orders page with a cursor.** `otto_market_list_orders` returns `nextCursor`; pass it back as `nextCursor` to walk the list. Do not compute an offset; OTTO's order stream is append-only and offsets drift.\n\n**`fromOrderDate` is required and is a hard filter.** Asking without it returns the default window, which is much shorter than most people expect. State the date you mean.\n\n**Stock and price are eventually consistent.** A quantity update is accepted with a 202 and applied asynchronously; reading the value back immediately will often still show the old number. That is OTTO's design, not a failed write.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Writes**: `otto_market_update_quantity` and `otto_market_update_price` change what shoppers on otto.de see.",
+  "requiredEnvVars": [
+    "OTTO_USERNAME",
+    "OTTO_PASSWORD"
+  ],
+  "connector": {
+    "name": "OTTO Market Partner API",
+    "type": "REST",
+    "baseUrl": "https://api.otto.market",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{OTTO_USERNAME}}",
+      "clientSecret": "{{OTTO_PASSWORD}}",
+      "tokenUrl": "https://api.otto.market/v1/token"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/v4/orders?limit=1"
+  },
+  "probe": {
+    "tool": "otto_market_list_orders"
+  },
+  "tools": [
+    {
+      "name": "otto_market_list_orders",
+      "description": "List orders from a date onwards, with their positions, buyer, delivery address and fulfilment status. Page by passing back the returned nextCursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fromOrderDate": {
+            "type": "string",
+            "description": "Earliest order date, ISO 8601 with a zone, e.g. 2026-09-01T00:00:00Z. Required — omitting it silently narrows the window."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page (default 50)."
+          },
+          "nextCursor": {
+            "type": "string",
+            "description": "Cursor from the previous page's response."
+          },
+          "fulfillmentStatus": {
+            "type": "string",
+            "description": "Restrict by status, e.g. PROCESSABLE, SENT, RETURNED, CANCELLED."
+          }
+        },
+        "required": [
+          "fromOrderDate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v4/orders",
+        "queryParams": {
+          "fromOrderDate": "$fromOrderDate",
+          "limit": "$limit",
+          "nextCursor": "$nextCursor",
+          "fulfillmentStatus": "$fulfillmentStatus"
+        }
+      }
+    },
+    {
+      "name": "otto_market_get_order",
+      "description": "Read one order in full: every position with SKU, price and status, the delivery and invoice addresses, and the payment method.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderNumber": {
+            "type": "string",
+            "description": "OTTO order number."
+          }
+        },
+        "required": [
+          "orderNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v4/orders/{orderNumber}"
+      }
+    },
+    {
+      "name": "otto_market_list_products",
+      "description": "List the seller's product variations with their SKU, EAN, product reference and current market status on otto.de.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "nextCursor": {
+            "type": "string",
+            "description": "Cursor from the previous page's response."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/products/variations",
+        "queryParams": {
+          "limit": "$limit",
+          "nextCursor": "$nextCursor"
+        }
+      }
+    },
+    {
+      "name": "otto_market_get_product",
+      "description": "Read one product variation by SKU: its attributes, category, media and the current status of its listing on otto.de.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Seller-defined SKU."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/products/variations/{sku}"
+      }
+    },
+    {
+      "name": "otto_market_list_quantities",
+      "description": "Read the current stock quantities OTTO holds for the seller's SKUs, so a discrepancy with the ERP can be spotted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "nextCursor": {
+            "type": "string",
+            "description": "Cursor from the previous page's response."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/quantities",
+        "queryParams": {
+          "limit": "$limit",
+          "nextCursor": "$nextCursor"
+        }
+      }
+    },
+    {
+      "name": "otto_market_list_returns",
+      "description": "List returns with their SKU, quantity, reason and the order they belong to — the input to any returns-rate question.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fromReturnDate": {
+            "type": "string",
+            "description": "Earliest return date, ISO 8601 with a zone."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "nextCursor": {
+            "type": "string",
+            "description": "Cursor from the previous page's response."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/returns",
+        "queryParams": {
+          "fromReturnDate": "$fromReturnDate",
+          "limit": "$limit",
+          "nextCursor": "$nextCursor"
+        }
+      }
+    },
+    {
+      "name": "otto_market_update_quantity",
+      "description": "Set the available stock for one SKU. Accepted with a 202 and applied asynchronously — reading it straight back will often still show the old value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Seller-defined SKU."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "New available quantity."
+          },
+          "lastModified": {
+            "type": "string",
+            "description": "Timestamp of the change, ISO 8601 with a zone. OTTO uses it to order concurrent updates."
+          }
+        },
+        "required": [
+          "sku",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/quantities",
+        "bodyMapping": [
+          {
+            "sku": "$sku",
+            "quantity": "$quantity",
+            "lastModified": "$lastModified"
+          }
+        ]
+      }
+    },
+    {
+      "name": "otto_market_update_price",
+      "description": "Set the price for one SKU. Shoppers on otto.de see the change once OTTO has applied it, which is asynchronous.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Seller-defined SKU."
+          },
+          "amount": {
+            "type": "string",
+            "description": "New gross price as a decimal string, e.g. 29.99."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency code, normally EUR."
+          }
+        },
+        "required": [
+          "sku",
+          "amount",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/prices",
+        "bodyMapping": [
+          {
+            "sku": "$sku",
+            "standardPrice": {
+              "amount": "$amount",
+              "currency": "$currency"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

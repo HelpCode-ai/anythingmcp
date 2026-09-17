@@ -14,27 +14,35 @@ import * as deutscheBahnTimetables from './de/deutsche-bahn-timetables.json';
 import * as dhlTracking from './de/dhl-tracking.json';
 import * as docuware from './de/docuware.json';
 import * as dpdGermany from './de/dpd-germany.json';
+import * as dynamicsNav from './de/dynamics-nav.json';
 import * as easybill from './de/easybill.json';
+import * as elo from './de/elo.json';
 import * as fastbill from './de/fastbill.json';
 import * as getmyinvoices from './de/getmyinvoices.json';
 import * as glsTracking from './de/gls-tracking.json';
 import * as handelsregister from './de/handelsregister.json';
+import * as haufeX360 from './de/haufe-x360.json';
 import * as hereGeocoding from './de/here-geocoding.json';
 import * as hrworks from './de/hrworks.json';
 import * as immobilienscout24 from './de/immobilienscout24.json';
+import * as jtlWawi from './de/jtl-wawi.json';
 import * as kenjo from './de/kenjo.json';
 import * as kimai from './de/kimai.json';
 import * as lexwareOffice from './de/lexware-office.json';
+import * as matrix42 from './de/matrix42.json';
 import * as mfrFieldservice from './de/mfr-fieldservice.json';
 import * as n26Openbanking from './de/n26-openbanking.json';
 import * as ninaWarnung from './de/nina-warnung.json';
 import * as openplz from './de/openplz.json';
+import * as ottoMarket from './de/otto-market.json';
 import * as oxomi from './de/oxomi.json';
 import * as paperlessNgx from './de/paperless-ngx.json';
 import * as papershift from './de/papershift.json';
 import * as payone from './de/payone.json';
 import * as personio from './de/personio.json';
 import * as planradar from './de/planradar.json';
+import * as propstack from './de/propstack.json';
+import * as sage100 from './de/sage-100.json';
 import * as sapBusinessOne from './de/sap-business-one.json';
 import * as scopevisio from './de/scopevisio.json';
 import * as sendcloud from './de/sendcloud.json';
@@ -46,7 +54,9 @@ import * as timetac from './de/timetac.json';
 import * as viesVat from './de/vies-vat.json';
 import * as weclapp from './de/weclapp.json';
 import * as xentral from './de/xentral.json';
+import * as zalandoZds from './de/zalando-zds.json';
 import * as zammad from './de/zammad.json';
+import * as znuny from './de/znuny.json';
 import * as companiesHouse from './gb/companies-house.json';
 import * as wise from './gb/wise.json';
 import * as activecampaign from './intl/activecampaign.json';
@@ -86,6 +96,7 @@ import * as discordBot from './intl/discord-bot.json';
 import * as drip from './intl/drip.json';
 import * as dropbox from './intl/dropbox.json';
 import * as dropboxSign from './intl/dropbox-sign.json';
+import * as ebaySell from './intl/ebay-sell.json';
 import * as ecwid from './intl/ecwid.json';
 import * as etsy from './intl/etsy.json';
 import * as fathom from './intl/fathom.json';
@@ -145,6 +156,7 @@ import * as nimble from './intl/nimble.json';
 import * as nominatim from './intl/nominatim.json';
 import * as nutshellCrm from './intl/nutshell-crm.json';
 import * as oddsApi from './intl/odds-api.json';
+import * as odoo from './intl/odoo.json';
 import * as omnisend from './intl/omnisend.json';
 import * as opentable from './intl/opentable.json';
 import * as openweather from './intl/openweather.json';
@@ -204,6 +216,7 @@ import * as mercadoLibre from './br/mercado-libre.json';
 import * as razorpay from './in/razorpay.json';
 import * as lineMessaging from './jp/line-messaging.json';
 import * as paystack from './ng/paystack.json';
+import * as topdesk from './nl/topdesk.json';
 import * as bexio from './ch/bexio.json';
 // === AUTOGEN-IMPORTS-END ===
 import { buildGraphqlBuiltinTools } from '../connectors/graphql-builtins';
@@ -336,27 +349,35 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   dhlTracking as unknown as AdapterDefinition,
   docuware as unknown as AdapterDefinition,
   dpdGermany as unknown as AdapterDefinition,
+  dynamicsNav as unknown as AdapterDefinition,
   easybill as unknown as AdapterDefinition,
+  elo as unknown as AdapterDefinition,
   fastbill as unknown as AdapterDefinition,
   getmyinvoices as unknown as AdapterDefinition,
   glsTracking as unknown as AdapterDefinition,
   handelsregister as unknown as AdapterDefinition,
+  haufeX360 as unknown as AdapterDefinition,
   hereGeocoding as unknown as AdapterDefinition,
   hrworks as unknown as AdapterDefinition,
   immobilienscout24 as unknown as AdapterDefinition,
+  jtlWawi as unknown as AdapterDefinition,
   kenjo as unknown as AdapterDefinition,
   kimai as unknown as AdapterDefinition,
   lexwareOffice as unknown as AdapterDefinition,
+  matrix42 as unknown as AdapterDefinition,
   mfrFieldservice as unknown as AdapterDefinition,
   n26Openbanking as unknown as AdapterDefinition,
   ninaWarnung as unknown as AdapterDefinition,
   openplz as unknown as AdapterDefinition,
+  ottoMarket as unknown as AdapterDefinition,
   oxomi as unknown as AdapterDefinition,
   paperlessNgx as unknown as AdapterDefinition,
   papershift as unknown as AdapterDefinition,
   payone as unknown as AdapterDefinition,
   personio as unknown as AdapterDefinition,
   planradar as unknown as AdapterDefinition,
+  propstack as unknown as AdapterDefinition,
+  sage100 as unknown as AdapterDefinition,
   sapBusinessOne as unknown as AdapterDefinition,
   scopevisio as unknown as AdapterDefinition,
   sendcloud as unknown as AdapterDefinition,
@@ -368,7 +389,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   viesVat as unknown as AdapterDefinition,
   weclapp as unknown as AdapterDefinition,
   xentral as unknown as AdapterDefinition,
+  zalandoZds as unknown as AdapterDefinition,
   zammad as unknown as AdapterDefinition,
+  znuny as unknown as AdapterDefinition,
   companiesHouse as unknown as AdapterDefinition,
   wise as unknown as AdapterDefinition,
   activecampaign as unknown as AdapterDefinition,
@@ -408,6 +431,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   drip as unknown as AdapterDefinition,
   dropbox as unknown as AdapterDefinition,
   dropboxSign as unknown as AdapterDefinition,
+  ebaySell as unknown as AdapterDefinition,
   ecwid as unknown as AdapterDefinition,
   etsy as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
@@ -467,6 +491,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   nominatim as unknown as AdapterDefinition,
   nutshellCrm as unknown as AdapterDefinition,
   oddsApi as unknown as AdapterDefinition,
+  odoo as unknown as AdapterDefinition,
   omnisend as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
   openweather as unknown as AdapterDefinition,
@@ -526,6 +551,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   razorpay as unknown as AdapterDefinition,
   lineMessaging as unknown as AdapterDefinition,
   paystack as unknown as AdapterDefinition,
+  topdesk as unknown as AdapterDefinition,
   bexio as unknown as AdapterDefinition,
 ];
 // === AUTOGEN-ARRAY-END ===
