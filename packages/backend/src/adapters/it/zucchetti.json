@@ -1,0 +1,216 @@
+{
+  "slug": "zucchetti",
+  "name": "Zucchetti",
+  "description": "Zucchetti ERP and HR suites over the Zucchetti REST / Infinity API: anagrafiche, documents, items and HR records. Basic or token auth against the customer's own Infinity or Ad Hoc installation. Partner credentials required.",
+  "region": "it",
+  "category": "erp",
+  "icon": "zucchetti",
+  "docsUrl": "https://www.zucchetti.it/website/cms/prodotti/",
+  "instructions": "**Partner credentials required, and Zucchetti is not one product.** The group ships dozens of applications — Infinity Zucchetti, Ad Hoc Revolution, HR Zucchetti, Mago — each with its own API surface, versioning and documentation, distributed through the partner portal rather than publicly. There is no single `api.zucchetti.it`, and no public sandbox. This adapter therefore ships **unverified** and deliberately generic: it gives you an authenticated, paged HTTP client against a Zucchetti Infinity-style REST endpoint, and expects you to point it at the module you actually licensed.\n\n**Setup**\n1. Ask your Zucchetti partner for the REST endpoint of the installation and the API user. They will also tell you the service path prefix, which differs per module.\n2. Set `ZUCCHETTI_URL` to that endpoint root (no trailing slash), plus `ZUCCHETTI_USERNAME` and `ZUCCHETTI_PASSWORD`.\n3. Set `ZUCCHETTI_COMPANY` to the azienda code if the installation hosts several.\n\n**`resource` is a parameter, not a path.** Because the entity names differ per module, `zucchetti_list_records` and `zucchetti_get_record` take the resource name (`anagrafiche`, `documenti`, `articoli`, `dipendenti`, …) as an argument. Your partner's documentation is the authority on which names your installation exposes.\n\n**Start with `zucchetti_list_services`**, which asks the installation what it publishes. If it 404s, your endpoint prefix is different from the default and everything else will 404 too — fix that before anything else.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`zucchetti.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "ZUCCHETTI_URL",
+    "ZUCCHETTI_USERNAME",
+    "ZUCCHETTI_PASSWORD"
+  ],
+  "optionalEnvVars": [
+    "ZUCCHETTI_COMPANY"
+  ],
+  "connector": {
+    "name": "Zucchetti REST API",
+    "type": "REST",
+    "baseUrl": "{{ZUCCHETTI_URL}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{ZUCCHETTI_USERNAME}}",
+      "password": "{{ZUCCHETTI_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/services"
+  },
+  "probe": {
+    "tool": "zucchetti_list_services"
+  },
+  "tools": [
+    {
+      "name": "zucchetti_list_services",
+      "description": "Ask the installation which REST services it publishes. Start here: if this 404s your endpoint prefix is wrong and every other call will fail the same way.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services"
+      }
+    },
+    {
+      "name": "zucchetti_list_records",
+      "description": "List records of any published resource with paging and a search fragment. The resource name differs per Zucchetti module — your partner's documentation is the authority.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string",
+            "description": "Resource name, e.g. anagrafiche, documenti, articoli, dipendenti."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search fragment, where the resource supports one."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "company": {
+            "type": "string",
+            "description": "Azienda code, when the installation hosts several."
+          }
+        },
+        "required": [
+          "resource"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{resource}",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "size": "$size",
+          "company": "$company"
+        }
+      }
+    },
+    {
+      "name": "zucchetti_get_record",
+      "description": "Read one record of any published resource by its id, with every field the API user is allowed to see.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string",
+            "description": "Resource name, e.g. anagrafiche or documenti."
+          },
+          "id": {
+            "type": "string",
+            "description": "Record id within that resource."
+          }
+        },
+        "required": [
+          "resource",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{resource}/{id}"
+      }
+    },
+    {
+      "name": "zucchetti_list_anagrafiche",
+      "description": "List anagrafiche — Zucchetti's customers and suppliers — with their code, name, partita IVA and address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search fragment matched against name and VAT number."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/anagrafiche",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "zucchetti_list_documenti",
+      "description": "List documents (documenti) — invoices, orders and delivery notes — with their type, number, date, counterparty and total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "type": "string",
+            "description": "Document type code, as this installation defines it."
+          },
+          "dataDa": {
+            "type": "string",
+            "description": "Earliest document date, YYYY-MM-DD."
+          },
+          "dataA": {
+            "type": "string",
+            "description": "Latest document date, YYYY-MM-DD."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documenti",
+        "queryParams": {
+          "tipo": "$tipo",
+          "dataDa": "$dataDa",
+          "dataA": "$dataA",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "zucchetti_list_articoli",
+      "description": "List items (articoli) from the catalogue with their code, description, unit of measure and price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search fragment matched against code and description."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articoli",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "slug": "oracle",
+  "name": "Oracle Database",
+  "description": "Query an Oracle database directly: list tables, describe columns and run read-only SQL. Installs read-only; credentials are held encrypted rather than in the connection string.",
+  "region": "intl",
+  "category": "database",
+  "icon": "oracle",
+  "docsUrl": "https://docs.oracle.com/en/database/oracle/oracle-database/",
+  "instructions": "**Setup**\n1. Create a user with only CREATE SESSION and the SELECTs it needs:\n   ```sql\n   CREATE USER amcp_reader IDENTIFIED BY \"change-me\";\n   GRANT CREATE SESSION TO amcp_reader;\n   GRANT SELECT ON sales.orders TO amcp_reader;\n   -- or, for a whole schema, a read-only role you maintain\n   ```\n2. Set `ORACLE_HOST`, `ORACLE_PORT` (1521), `ORACLE_DATABASE` — the **service name** (e.g. `ORCLPDB1`), not the SID — plus `ORACLE_USER` and `ORACLE_PASSWORD`.\n\n**The node-oracledb driver needs to be in thin mode or have Instant Client available.** Thin mode covers Oracle 12.1 and newer with no client install; an older server needs Instant Client on the AnythingMCP host.\n\n**Oracle folds unquoted identifiers to UPPER CASE.** A table created as `Orders` without quotes is `ORDERS`, and `WHERE table_name = 'Orders'` matches nothing. The describe tool compares against the value you pass verbatim, so pass it upper-cased unless the table was created with quotes.\n\n**Oracle has no LIMIT.** Use `FETCH FIRST 100 ROWS ONLY` (12c and newer) or `WHERE ROWNUM <= 100`.\n\n**How a database connector behaves**\n\n- **It installs read-only.** The engine rejects anything that is not a read\n  until you flip the switch in the connector's settings. That is a guard rail,\n  not a security boundary: give the connection a database role that is itself\n  read-only, and the guard rail never has to matter.\n- **Credentials live in the encrypted `authConfig`**, not in the connection\n  string. `ORACLE_USER` and `ORACLE_PASSWORD` are stored encrypted and spliced into the\n  DSN at call time; the host and database name are stored in the plaintext\n  `baseUrl` column.\n- **Results are capped at 1000 rows.** A query that would return more comes\n  back truncated with a flag. Aggregate in SQL rather than in the agent.\n- **A statement runs exactly as written.** There is no query rewriting and no\n  automatic LIMIT — an unbounded scan on a large table is a real unbounded\n  scan on your production database. Say LIMIT.\n\n**Reachable from where?**\n\n- On **AnythingMCP Cloud** the server must accept connections from the public\n  internet, which for a production database usually means it should not. Point\n  the connector at a read replica, or self-host AnythingMCP inside the network.\n- **Self-hosted**, add the host to `SSRF_ALLOWED_HOSTS`: the outbound guard\n  blocks private address space by default, and `10.0.0.5` is exactly the shape\n  it is there to block.\n",
+  "requiredEnvVars": [
+    "ORACLE_HOST",
+    "ORACLE_PORT",
+    "ORACLE_DATABASE",
+    "ORACLE_USER",
+    "ORACLE_PASSWORD"
+  ],
+  "connector": {
+    "name": "Oracle Database",
+    "type": "DATABASE",
+    "baseUrl": "oracle://{{ORACLE_HOST}}:{{ORACLE_PORT}}/{{ORACLE_DATABASE}}",
+    "authType": "CONNECTION_STRING",
+    "authConfig": {
+      "username": "{{ORACLE_USER}}",
+      "password": "{{ORACLE_PASSWORD}}"
+    }
+  },
+  "probe": {
+    "tool": "oracle_list_tables"
+  },
+  "tools": [
+    {
+      "name": "oracle_list_tables",
+      "description": "List the tables and views in the database with their schema and, where the server tracks it, an approximate row count. Start here — it is the map of what can be queried.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT owner AS table_schema, table_name, 'TABLE' AS table_type, num_rows AS approx_rows FROM all_tables WHERE owner NOT IN ('SYS','SYSTEM','XDB','MDSYS','CTXSYS','OUTLN','DBSNMP','APPQOSSYS','AUDSYS','GSMADMIN_INTERNAL','LBACSYS','OJVMSYS','ORDSYS','WMSYS','DVSYS') ORDER BY owner, table_name"
+      }
+    },
+    {
+      "name": "oracle_describe_table",
+      "description": "Describe one table: every column with its data type, nullability and default. Read this before writing a query against a table you have not seen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_name": {
+            "type": "string",
+            "description": "Table name, without the schema prefix."
+          }
+        },
+        "required": [
+          "table_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT column_name, data_type, nullable, data_default, data_length FROM all_tab_columns WHERE table_name = ${table_name} ORDER BY column_id"
+      }
+    },
+    {
+      "name": "oracle_find_columns",
+      "description": "Find columns across every table whose name matches a pattern — the fast way to locate where customer e-mail addresses, IBANs or order numbers actually live.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "SQL LIKE pattern matched against the column name, e.g. %email% or %_id."
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT owner, table_name, column_name, data_type FROM all_tab_columns WHERE column_name LIKE ${pattern} AND owner NOT IN ('SYS','SYSTEM','XDB','MDSYS','CTXSYS','OUTLN','DBSNMP','APPQOSSYS','AUDSYS','WMSYS') ORDER BY owner, table_name, column_name"
+      }
+    },
+    {
+      "name": "oracle_query",
+      "description": "Run a read-only SQL statement against Oracle Database and return up to 1000 rows. The statement runs exactly as written — there is no automatic LIMIT, so say LIMIT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A single SQL SELECT statement. Include your own LIMIT; nothing is added for you."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "${query}"
+      }
+    },
+    {
+      "name": "oracle_query_examples",
+      "description": "Show worked example queries for Oracle Database: how to list schemas, find large tables, inspect indexes and check what is running right now. Costs nothing and touches no data.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "Oracle example queries\n\n-- The ten largest segments\nSELECT * FROM (\n  SELECT owner, segment_name, segment_type, ROUND(bytes/1024/1024, 1) AS mb\n  FROM dba_segments WHERE owner NOT IN ('SYS','SYSTEM')\n  ORDER BY bytes DESC)\nWHERE ROWNUM <= 10;\n\n-- Indexes on a table (remember: identifiers are UPPER CASE)\nSELECT index_name, uniqueness, column_name, column_position\nFROM all_ind_columns WHERE table_name = 'ORDERS'\nORDER BY index_name, column_position;\n\n-- Foreign keys out of a table\nSELECT c.constraint_name, c.r_constraint_name, cc.column_name\nFROM all_constraints c JOIN all_cons_columns cc\n  ON cc.constraint_name = c.constraint_name\nWHERE c.table_name = 'ORDERS' AND c.constraint_type = 'R';\n\n-- What is running right now, longest first\nSELECT s.sid, s.username, s.status, s.last_call_et AS seconds,\n       SUBSTR(q.sql_text, 1, 120) AS sql_text\nFROM v$session s LEFT JOIN v$sql q ON q.sql_id = s.sql_id\nWHERE s.type = 'USER' AND s.status = 'ACTIVE'\nORDER BY s.last_call_et DESC;\n\n-- Columns whose name suggests personal data\nSELECT owner, table_name, column_name FROM all_tab_columns\nWHERE REGEXP_LIKE(column_name, '(EMAIL|PHONE|IBAN|BIRTH|PASSWOR|TAX)')\n  AND owner NOT IN ('SYS','SYSTEM') ORDER BY 1, 2;\n\n-- Paging, the Oracle way\nSELECT * FROM orders ORDER BY created_at DESC\nOFFSET 0 ROWS FETCH NEXT 50 ROWS ONLY;\n"
+      }
+    }
+  ]
+}

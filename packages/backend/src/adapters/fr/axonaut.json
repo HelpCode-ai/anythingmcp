@@ -1,0 +1,237 @@
+{
+  "slug": "axonaut",
+  "name": "Axonaut",
+  "description": "Axonaut — French all-in-one CRM, invoicing and expense management for very small businesses: companies, employees, invoices, quotations, expenses, products and projects. REST API v2, API-key auth.",
+  "region": "fr",
+  "category": "erp",
+  "icon": "axonaut",
+  "docsUrl": "https://axonaut.com/api/v2/doc",
+  "instructions": "**Getting a key**\n1. Sign in to Axonaut and open **Paramètres → API** (Settings → API).\n2. Copy the key into `AXONAUT_API_KEY`. It is account-wide and carries full access; treat it as a password.\n\n**The header is `userApiKey`.** Not `Authorization`, not `X-API-Key` — Axonaut's own spelling, camel-cased, is what the server checks.\n\n**Axonaut calls customers 'companies' and people 'employees'.** A `company` is a client or prospect organisation; an `employee` is a person attached to one. This trips people up, because 'employee' sounds like your own staff and is not.\n\n**Paging is `page`, 1-based, fixed at 100 rows.** There is no page-size parameter. The response carries the total in the `X-Total-Count` header, so you can tell when to stop.\n\n**Dates are `DD/MM/YYYY`** on most filters — French format, not ISO. This is the single most common source of a filter that silently matches nothing.\n\n**Amounts are floats in euros**, pre-tax (`preTaxAmount`) and inclusive (`totalAmount`) side by side.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: axonaut.com is public with a valid certificate.",
+  "requiredEnvVars": [
+    "AXONAUT_API_KEY"
+  ],
+  "connector": {
+    "name": "Axonaut API v2",
+    "type": "REST",
+    "baseUrl": "https://axonaut.com/api/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "userApiKey",
+      "apiKey": "{{AXONAUT_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/companies"
+  },
+  "probe": {
+    "tool": "axonaut_list_companies"
+  },
+  "tools": [
+    {
+      "name": "axonaut_list_companies",
+      "description": "List companies — Axonaut's clients and prospects — with their name, SIRET, address, category and assigned user. 100 rows per page, no page size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1. Pages are fixed at 100 rows."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name fragment to filter by."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies",
+        "queryParams": {
+          "page": "$page",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "axonaut_get_company",
+      "description": "Read one company in full: its addresses, custom fields, the employees attached to it and its accounting identifiers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "number",
+            "description": "Numeric Axonaut company id."
+          }
+        },
+        "required": [
+          "companyId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{companyId}"
+      }
+    },
+    {
+      "name": "axonaut_list_employees",
+      "description": "List employees — the *people* attached to client companies, not your own staff — with their name, e-mail, phone and role.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/employees",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "axonaut_list_invoices",
+      "description": "List invoices with their number, date, company, pre-tax and total amounts and payment state. Dates in the filters are DD/MM/YYYY, not ISO.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "date_before": {
+            "type": "string",
+            "description": "Latest invoice date, DD/MM/YYYY — French format, not ISO."
+          },
+          "date_after": {
+            "type": "string",
+            "description": "Earliest invoice date, DD/MM/YYYY — French format, not ISO."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "page": "$page",
+          "date_before": "$date_before",
+          "date_after": "$date_after"
+        }
+      }
+    },
+    {
+      "name": "axonaut_get_invoice",
+      "description": "Read one invoice in full: every product line with quantity, price and VAT, the totals, and the payments recorded against it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "number",
+            "description": "Numeric Axonaut invoice id."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoiceId}"
+      }
+    },
+    {
+      "name": "axonaut_list_quotations",
+      "description": "List quotations (devis) with their number, date, company, total and whether they have been accepted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "date_after": {
+            "type": "string",
+            "description": "Earliest quotation date, DD/MM/YYYY."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quotations",
+        "queryParams": {
+          "page": "$page",
+          "date_after": "$date_after"
+        }
+      }
+    },
+    {
+      "name": "axonaut_list_expenses",
+      "description": "List expenses and supplier invoices with their date, supplier, category, pre-tax amount and VAT — the cost side of the ledger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "date_after": {
+            "type": "string",
+            "description": "Earliest expense date, DD/MM/YYYY."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses",
+        "queryParams": {
+          "page": "$page",
+          "date_after": "$date_after"
+        }
+      }
+    },
+    {
+      "name": "axonaut_list_products",
+      "description": "List catalogue products with their reference, name, pre-tax price, VAT rate and stock quantity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "axonaut_list_projects",
+      "description": "List projects with their name, company, budget, status and dates — the anchor for time and profitability questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    }
+  ]
+}

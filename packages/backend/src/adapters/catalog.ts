@@ -148,6 +148,9 @@ import * as microsoftBookings from './intl/microsoft-bookings.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mollie from './intl/mollie.json';
+import * as mongodb from './intl/mongodb.json';
+import * as mssql from './intl/mssql.json';
+import * as mysql from './intl/mysql.json';
 import * as neverbounce from './intl/neverbounce.json';
 import * as newRelic from './intl/new-relic.json';
 import * as newsapi from './intl/newsapi.json';
@@ -160,6 +163,7 @@ import * as odoo from './intl/odoo.json';
 import * as omnisend from './intl/omnisend.json';
 import * as opentable from './intl/opentable.json';
 import * as openweather from './intl/openweather.json';
+import * as oracle from './intl/oracle.json';
 import * as outreach from './intl/outreach.json';
 import * as pandadoc from './intl/pandadoc.json';
 import * as pinterest from './intl/pinterest.json';
@@ -168,6 +172,7 @@ import * as plaid from './intl/plaid.json';
 import * as planeSo from './intl/plane-so.json';
 import * as playtomic from './intl/playtomic.json';
 import * as playtomicPublic from './intl/playtomic-public.json';
+import * as postgres from './intl/postgres.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as resy from './intl/resy.json';
@@ -216,6 +221,16 @@ import * as mercadoLibre from './br/mercado-libre.json';
 import * as razorpay from './in/razorpay.json';
 import * as lineMessaging from './jp/line-messaging.json';
 import * as paystack from './ng/paystack.json';
+import * as arubaFatturazione from './it/aruba-fatturazione.json';
+import * as fattureInCloud from './it/fatture-in-cloud.json';
+import * as teamsystem from './it/teamsystem.json';
+import * as zucchetti from './it/zucchetti.json';
+import * as holded from './es/holded.json';
+import * as quipu from './es/quipu.json';
+import * as axonaut from './fr/axonaut.json';
+import * as dolibarr from './fr/dolibarr.json';
+import * as pennylane from './fr/pennylane.json';
+import * as sellsy from './fr/sellsy.json';
 import * as topdesk from './nl/topdesk.json';
 import * as bexio from './ch/bexio.json';
 // === AUTOGEN-IMPORTS-END ===
@@ -483,6 +498,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   microsoftTeams as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mollie as unknown as AdapterDefinition,
+  mongodb as unknown as AdapterDefinition,
+  mssql as unknown as AdapterDefinition,
+  mysql as unknown as AdapterDefinition,
   neverbounce as unknown as AdapterDefinition,
   newRelic as unknown as AdapterDefinition,
   newsapi as unknown as AdapterDefinition,
@@ -495,6 +513,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   omnisend as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
   openweather as unknown as AdapterDefinition,
+  oracle as unknown as AdapterDefinition,
   outreach as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
   pinterest as unknown as AdapterDefinition,
@@ -503,6 +522,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   planeSo as unknown as AdapterDefinition,
   playtomic as unknown as AdapterDefinition,
   playtomicPublic as unknown as AdapterDefinition,
+  postgres as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
@@ -551,6 +571,16 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   razorpay as unknown as AdapterDefinition,
   lineMessaging as unknown as AdapterDefinition,
   paystack as unknown as AdapterDefinition,
+  arubaFatturazione as unknown as AdapterDefinition,
+  fattureInCloud as unknown as AdapterDefinition,
+  teamsystem as unknown as AdapterDefinition,
+  zucchetti as unknown as AdapterDefinition,
+  holded as unknown as AdapterDefinition,
+  quipu as unknown as AdapterDefinition,
+  axonaut as unknown as AdapterDefinition,
+  dolibarr as unknown as AdapterDefinition,
+  pennylane as unknown as AdapterDefinition,
+  sellsy as unknown as AdapterDefinition,
   topdesk as unknown as AdapterDefinition,
   bexio as unknown as AdapterDefinition,
 ];

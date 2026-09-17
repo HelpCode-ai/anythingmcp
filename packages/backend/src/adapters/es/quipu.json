@@ -1,0 +1,229 @@
+{
+  "slug": "quipu",
+  "name": "Quipu",
+  "description": "Quipu — Spanish invoicing and bookkeeping for autónomos and small companies: issued and received invoices, contacts, items, expenses and bank accounts. REST API, OAuth 2.0 client credentials.",
+  "region": "es",
+  "category": "accounting",
+  "icon": "quipu",
+  "docsUrl": "https://developers.getquipu.com/",
+  "instructions": "**Getting credentials**\n1. Sign in to Quipu and open the developer area (developers.getquipu.com) to register an application against your account.\n2. You receive a **client id** (`app_id`) and **client secret**. Quipu's API uses the client-credentials grant, so there is no browser consent step for your own account's data.\n3. Set `QUIPU_CLIENT_ID` and `QUIPU_CLIENT_SECRET`. AnythingMCP fetches and refreshes the access token on its own.\n\n**JSON:API, not plain JSON.** Quipu follows the JSON:API specification: rows arrive as `{\"data\": [{\"id\": …, \"type\": \"invoices\", \"attributes\": {…}, \"relationships\": {…}}]}`. The interesting fields are inside `attributes`, and relationships are ids that need an `include` to resolve. This is why `include` appears on the tools below.\n\n**The Accept header is `application/vnd.api+json`**, which Quipu requires; a plain `application/json` gets a 406. The adapter sends it.\n\n**Issued vs received.** `invoices` are what you issue; `expenses` are what you receive and record. A revenue question wants invoices; a cost question wants expenses. Both carry the Spanish tax fields — IVA and IRPF retention — separately from the totals.\n\n**Paging** is `page[number]` and `page[size]`, JSON:API style, with the totals in the response's `meta`.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: getquipu.com is public with a valid certificate.",
+  "requiredEnvVars": [
+    "QUIPU_CLIENT_ID",
+    "QUIPU_CLIENT_SECRET"
+  ],
+  "connector": {
+    "name": "Quipu API",
+    "type": "REST",
+    "baseUrl": "https://getquipu.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{QUIPU_CLIENT_ID}}",
+      "clientSecret": "{{QUIPU_CLIENT_SECRET}}",
+      "tokenUrl": "https://getquipu.com/oauth/token"
+    },
+    "headers": {
+      "Accept": "application/vnd.api+json"
+    },
+    "healthcheckPath": "/contacts"
+  },
+  "probe": {
+    "tool": "quipu_list_contacts"
+  },
+  "tools": [
+    {
+      "name": "quipu_list_contacts",
+      "description": "List contacts — customers and suppliers — with their name, NIF, address and the country they invoice from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "filter_name": {
+            "type": "string",
+            "description": "Name fragment to filter by."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size",
+          "filter[name]": "$filter_name"
+        }
+      }
+    },
+    {
+      "name": "quipu_get_contact",
+      "description": "Read one contact by id, with their full tax data, address and the default payment terms recorded against them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "string",
+            "description": "Quipu contact id."
+          }
+        },
+        "required": [
+          "contactId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contactId}"
+      }
+    },
+    {
+      "name": "quipu_list_invoices",
+      "description": "List issued invoices with their number, date, contact, IVA and IRPF amounts, total and payment state — the revenue side.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "filter_since": {
+            "type": "string",
+            "description": "Earliest invoice date, YYYY-MM-DD."
+          },
+          "filter_until": {
+            "type": "string",
+            "description": "Latest invoice date, YYYY-MM-DD."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. contact,items."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size",
+          "filter[since]": "$filter_since",
+          "filter[until]": "$filter_until",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "quipu_get_invoice",
+      "description": "Read one issued invoice in full: every line with its quantity, price, IVA rate and IRPF retention, plus the totals and the payments applied.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "string",
+            "description": "Quipu invoice id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. contact,items,payments."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoiceId}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "quipu_list_expenses",
+      "description": "List received expenses and supplier invoices with their date, supplier, category, IVA and total — the cost side of the ledger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "filter_since": {
+            "type": "string",
+            "description": "Earliest expense date, YYYY-MM-DD."
+          },
+          "filter_until": {
+            "type": "string",
+            "description": "Latest expense date, YYYY-MM-DD."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. contact,items."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size",
+          "filter[since]": "$filter_since",
+          "filter[until]": "$filter_until",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "quipu_list_items",
+      "description": "List the items and services in the catalogue with their code, description, unit price and default IVA rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "quipu_list_accounting_categories",
+      "description": "List the accounting categories expenses are filed under, so a cost breakdown uses the categories the bookkeeper actually uses.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting_categories"
+      }
+    }
+  ]
+}

@@ -187,6 +187,15 @@ describe('adapter catalog', () => {
         // not ${x} (which the engine would leave literal in URLs).
         expect(em.path as string).not.toMatch(/\$\{[\w$]+\}/);
 
+        // …nor $UPPER_SNAKE. RestEngine.resolveValue honours `$VAR` in
+        // queryParams, bodyMapping and headers, but the path is interpolated
+        // by a plain `{key}` replace, so `/c/$FIC_COMPANY_ID/clients` ships
+        // the literal dollar sign to the vendor and 404s. Env vars reach the
+        // path as `{FIC_COMPANY_ID}` — they are merged into params at call
+        // time (ConnectorsService.mergedParams). Lower-case `$metadata` and
+        // `$links` are OData's own literals and are left alone.
+        expect(em.path as string).not.toMatch(/\$[A-Z][A-Z0-9_]*\b/);
+
         // queryParams / bodyMapping / headers: verify every `$x` or `${x}` reference
         // points to a parameter the tool declares (catches typos in placeholder names).
         const declaredParams = new Set(

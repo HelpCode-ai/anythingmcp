@@ -1,0 +1,207 @@
+{
+  "slug": "teamsystem",
+  "name": "TeamSystem",
+  "description": "TeamSystem — Italy's largest business-software group — over the TeamSystem Digital / Enterprise APIs: customers, invoices, items and documents. OAuth 2.0. Partner credentials required.",
+  "region": "it",
+  "category": "erp",
+  "icon": "teamsystem",
+  "docsUrl": "https://developer.teamsystem.com/",
+  "instructions": "**Partner credentials required.** TeamSystem's APIs are published through its developer portal but issued per integration partner and per product line (TeamSystem Enterprise, TS Digital, Alyante, …). You will not find a self-service key in the product UI, and there is no public sandbox — which is why this adapter ships unverified.\n\n**Setup**\n1. Register at developer.teamsystem.com and have your TeamSystem partner enable the APIs for your customer's tenant.\n2. Create an application and note the **client id** and **client secret**.\n3. Note the **tenant id** that scopes your customer's data. Set `TEAMSYSTEM_CLIENT_ID`, `TEAMSYSTEM_CLIENT_SECRET` and `TEAMSYSTEM_TENANT_ID`.\n\n**Client credentials, scoped per product.** The token endpoint is `https://auth.teamsystem.com/oauth2/token` and the scopes on your application decide which of the paths below answer. A 403 here is almost always a missing scope rather than a bad secret.\n\n**`X-Tenant-Id` on every call.** TeamSystem multiplexes many customers behind one API host; the tenant header is what picks one. A wrong tenant returns an empty result, not an error.\n\n**Italian tax vocabulary applies.** Documents carry `partitaIva` and `codiceFiscale`, and invoices going through the Sistema di Interscambio carry an e-invoice status. A rejected (`scartata`) invoice has not legally been issued.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n",
+  "requiredEnvVars": [
+    "TEAMSYSTEM_CLIENT_ID",
+    "TEAMSYSTEM_CLIENT_SECRET",
+    "TEAMSYSTEM_TENANT_ID"
+  ],
+  "connector": {
+    "name": "TeamSystem API",
+    "type": "REST",
+    "baseUrl": "https://api.teamsystem.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{TEAMSYSTEM_CLIENT_ID}}",
+      "clientSecret": "{{TEAMSYSTEM_CLIENT_SECRET}}",
+      "tokenUrl": "https://auth.teamsystem.com/oauth2/token"
+    },
+    "headers": {
+      "X-Tenant-Id": "{{TEAMSYSTEM_TENANT_ID}}",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v1/customers?size=1"
+  },
+  "probe": {
+    "tool": "teamsystem_list_customers"
+  },
+  "tools": [
+    {
+      "name": "teamsystem_list_customers",
+      "description": "List customers with their name, partita IVA, codice fiscale and address. The quickest call for checking the client credentials and the tenant header.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search fragment matched against name and VAT number."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "teamsystem_get_customer",
+      "description": "Read one customer in full: registered and billing addresses, tax data, payment terms and the e-invoice routing code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "description": "TeamSystem customer id."
+          }
+        },
+        "required": [
+          "customerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers/{customerId}"
+      }
+    },
+    {
+      "name": "teamsystem_list_suppliers",
+      "description": "List suppliers with their name, partita IVA and address, for the purchasing side of the ledger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search fragment matched against name and VAT number."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/suppliers",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "teamsystem_list_invoices",
+      "description": "List invoices in a date range with their number, date, customer, total and e-invoice status in the Sistema di Interscambio.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dateFrom": {
+            "type": "string",
+            "description": "Earliest invoice date, YYYY-MM-DD."
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "Latest invoice date, YYYY-MM-DD."
+          },
+          "status": {
+            "type": "string",
+            "description": "Restrict by document status."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/invoices",
+        "queryParams": {
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "status": "$status",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "teamsystem_get_invoice",
+      "description": "Read one invoice in full: every line with its VAT rate, the totals, the payment schedule and the e-invoice transmission record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "string",
+            "description": "TeamSystem invoice id."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/invoices/{invoiceId}"
+      }
+    },
+    {
+      "name": "teamsystem_list_items",
+      "description": "List items and services from the catalogue with their code, description, unit, price and VAT rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search fragment matched against code and description."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/items",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    }
+  ]
+}
