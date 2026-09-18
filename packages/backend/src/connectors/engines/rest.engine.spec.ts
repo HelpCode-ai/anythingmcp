@@ -880,6 +880,62 @@ describe('RestEngine', () => {
     });
   });
 
+  /**
+   * The serializer is applied to EVERY request that carries query params, so
+   * any difference from axios's own encoding silently rewrites 254 adapters'
+   * URLs. An earlier version built the string with URLSearchParams, which
+   * percent-encodes the colon — that alone re-spells every ISO 8601 filter
+   * value in the catalogue, and 150 adapters send one.
+   *
+   * So compare against real axios over a real socket rather than against a
+   * hand-copied list of escape exceptions.
+   */
+  describe('serializeRepeatedParams matches axios on scalars', () => {
+    const scalarCases: Array<[string, Record<string, unknown>]> = [
+      ['a space', { q: 'Muster GmbH' }],
+      ['an ISO timestamp', { date: '2026-09-17T00:00:00Z' }],
+      ['an eBay filter', { filter: 'creationdate:[2026-09-01T00:00:00.000Z..]' }],
+      ['an OData filter', { $filter: "InvoiceDate ge datetime'2026-01-01'" }],
+      ['base64', { b64: 'aGVsbG8+d29ybGQ/eA==' }],
+      ['reserved characters', { sym: 'a+b&c=d' }],
+      ['unreserved punctuation', { punct: 'a~b', star: 'x*y', comma: 'a,b' }],
+      ['non-ASCII and falsy values', { umlaut: 'Bevölkerung', zero: 0, bool: true }],
+      ['a FIQL query', { query: 'status==firstLine;caller.branch.name==Berlin' }],
+    ];
+
+    let server: import('node:http').Server;
+    let seen: string[] = [];
+    let port = 0;
+
+    beforeAll(async () => {
+      const http = jest.requireActual('node:http') as typeof import('node:http');
+      server = http.createServer((req, res) => {
+        seen.push(req.url ?? '');
+        res.end('{}');
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      port = (server.address() as { port: number }).port;
+    });
+
+    afterAll(async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it.each(scalarCases)('encodes %s the way axios does', async (_label, params) => {
+      const realAxios = jest.requireActual('axios').default as (
+        cfg: unknown,
+      ) => Promise<unknown>;
+      seen = [];
+      await realAxios({
+        method: 'GET',
+        url: `http://127.0.0.1:${port}/x`,
+        params,
+      });
+      expect(seen).toHaveLength(1);
+      expect(`/x?${serializeRepeatedParams(params)}`).toBe(seen[0]);
+    });
+  });
+
   describe('serializeRepeatedParams', () => {
     it('repeats array members and leaves scalars alone', () => {
       expect(

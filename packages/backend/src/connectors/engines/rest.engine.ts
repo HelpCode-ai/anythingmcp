@@ -628,27 +628,52 @@ export class RestEngine {
 }
 
 /**
+ * axios's own percent-encoding for a query component, reproduced so that
+ * swapping in a custom serializer changes ONLY the array shape and nothing
+ * else. It leaves `: $ ,` unescaped and writes a space as `+`, which is what
+ * 254 adapters' URLs have always looked like. Verified character by character
+ * against real axios in rest.engine.spec — brackets ARE escaped, and guessing
+ * otherwise was wrong.
+ *
+ * URLSearchParams is not a substitute: it percent-encodes the colon, turning
+ * every ISO 8601 filter value (`date ge 2026-09-01T00:00:00Z`, eBay's
+ * `creationdate:[…]`) into a differently-spelled string. 150 adapters send a
+ * date, time or filter query parameter, and an API that string-matches its
+ * own filter grammar is entitled to reject the re-spelled form.
+ */
+function encodeQueryComponent(value: string): string {
+  return encodeURIComponent(value)
+    .replace(/%3A/gi, ':')
+    .replace(/%24/g, '$')
+    .replace(/%2C/gi, ',')
+    .replace(/%20/g, '+');
+}
+
+/**
  * Serialize query params with the repeated-key form for arrays
  * (`columns=a&columns=b`), which is OpenAPI's `explode: true` default, rather
- * than axios's bracketed `columns[]=a`. Scalars are unchanged; null and
- * undefined are dropped rather than sent as the strings "null"/"undefined".
+ * than axios's bracketed `columns[]=a`. Scalars are encoded exactly as axios
+ * would encode them; null and undefined are dropped rather than sent as the
+ * strings "null"/"undefined".
  */
 export function serializeRepeatedParams(
   params: Record<string, unknown>,
 ): string {
-  const out = new URLSearchParams();
+  const parts: string[] = [];
+  const push = (key: string, value: unknown) => {
+    if (value === undefined || value === null) return;
+    parts.push(
+      `${encodeQueryComponent(key)}=${encodeQueryComponent(String(value))}`,
+    );
+  };
   for (const [key, value] of Object.entries(params ?? {})) {
-    if (value === undefined || value === null) continue;
     if (Array.isArray(value)) {
-      for (const v of value) {
-        if (v === undefined || v === null) continue;
-        out.append(key, String(v));
-      }
+      for (const v of value) push(key, v);
     } else {
-      out.append(key, String(value));
+      push(key, value);
     }
   }
-  return out.toString();
+  return parts.join('&');
 }
 
 /**
