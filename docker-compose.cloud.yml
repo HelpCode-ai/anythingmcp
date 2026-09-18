@@ -26,6 +26,16 @@ services:
       app:
         condition: service_healthy
     restart: unless-stopped
+    # Docker's json-file driver is unbounded by default. On 2026-09-18 MOTIS's
+    # debug log reached 32 GB and filled the droplet's 77 GB disk: every
+    # container went unhealthy, Postgres could not write, and a deploy failed
+    # at the scp step because nothing could be written to /tmp. Caps here, on
+    # every service, so one chatty container cannot do that again.
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   # NestJS Backend + Next.js Frontend (single container)
   app:
@@ -131,6 +141,11 @@ services:
       # start_period elapses it still goes unhealthy and the deploy fails for real.
       start_period: 180s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   # PostgreSQL Database
   postgres:
@@ -148,6 +163,11 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   # Redis Cache — caching & rate limiting
   redis:
@@ -161,6 +181,11 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   # MOTIS — routing engine behind the Deutsche Bahn connector, fed by the open
   # gtfs.de timetable (CC BY 4.0) plus its GTFS-RT feed for live delays.
@@ -183,6 +208,10 @@ services:
       - motis_data:/data
     environment:
       - MOTIS_REFRESH_DAYS=${MOTIS_REFRESH_DAYS:-7}
+      # info, not MOTIS's default debug — see deploy/motis/entrypoint.sh.
+      # Set to debug temporarily when diagnosing a routing problem, then
+      # put it back: debug writes ~1.5 GB an hour.
+      - MOTIS_LOG_LEVEL=${MOTIS_LOG_LEVEL:-info}
     healthcheck:
       # 127.0.0.1, not localhost: MOTIS binds IPv4 only and localhost resolves
       # to ::1 first inside the container, so the probe was refused every time.
@@ -197,6 +226,11 @@ services:
       # minutes); the margin is for a slow gtfs.de.
       start_period: 180s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
 volumes:
   postgres_data:
