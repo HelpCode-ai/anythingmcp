@@ -129,6 +129,58 @@ describe('adapter catalog', () => {
     );
   });
 
+  /**
+   * The install probe runs immediately after import with no arguments, and
+   * its result is what the install form reports. A probe tool with an
+   * unsatisfied required parameter therefore tells the user their perfectly
+   * good credential does not work.
+   */
+  it('every probe tool can run with the arguments the probe supplies', () => {
+    const broken = adapters
+      .map((m) => getAdapter(m.slug)!)
+      .filter((a) => a.probe)
+      .map((a) => {
+        const tool = a.tools.find((t) => t.name === a.probe!.tool);
+        if (!tool) return `${a.slug}: probe names unknown tool ${a.probe!.tool}`;
+        const required =
+          ((tool.parameters as { required?: string[] })?.required ?? []);
+        const supplied = new Set(Object.keys(a.probe!.params ?? {}));
+        const missing = required.filter((r) => !supplied.has(r));
+        return missing.length ? `${a.slug}: probe needs ${missing.join(', ')}` : null;
+      })
+      .filter(Boolean);
+    expect(broken).toEqual([]);
+  });
+
+  /**
+   * A `{UPPER_SNAKE}` segment in a path is filled from the connector's env
+   * vars, which ConnectorsService merges into the tool's params at call time.
+   * Undeclared, the placeholder is never filled and every call 404s against a
+   * URL containing a literal brace. Three adapters (fatture-in-cloud,
+   * exact-online, moneybird) put the tenant id in the path this way.
+   */
+  it('every env-var path placeholder is a declared env var', () => {
+    const broken: string[] = [];
+    for (const meta of adapters) {
+      const a = getAdapter(meta.slug)!;
+      const declared = new Set([
+        ...(a.requiredEnvVars ?? []),
+        ...(a.optionalEnvVars ?? []),
+      ]);
+      for (const tool of a.tools) {
+        const path = String(
+          (tool.endpointMapping as { path?: unknown }).path ?? '',
+        );
+        for (const m of path.matchAll(/\{([A-Z][A-Z0-9_]*)\}/g)) {
+          if (!declared.has(m[1])) {
+            broken.push(`${a.slug}/${tool.name}: {${m[1]}} is not declared`);
+          }
+        }
+      }
+    }
+    expect(broken).toEqual([]);
+  });
+
   describe.each(adapters)('$slug', (meta) => {
     const adapter = getAdapter(meta.slug)!;
 

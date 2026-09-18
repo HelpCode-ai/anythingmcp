@@ -28,7 +28,7 @@
     "healthcheckPath": "/v4/orders?limit=1"
   },
   "probe": {
-    "tool": "otto_market_list_orders"
+    "tool": "otto_market_list_products"
   },
   "tools": [
     {
