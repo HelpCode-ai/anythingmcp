@@ -208,6 +208,10 @@ services:
       - motis_data:/data
     environment:
       - MOTIS_REFRESH_DAYS=${MOTIS_REFRESH_DAYS:-7}
+      # info, not MOTIS's default debug — see deploy/motis/entrypoint.sh.
+      # Set to debug temporarily when diagnosing a routing problem, then
+      # put it back: debug writes ~1.5 GB an hour.
+      - MOTIS_LOG_LEVEL=${MOTIS_LOG_LEVEL:-info}
     healthcheck:
       # 127.0.0.1, not localhost: MOTIS binds IPv4 only and localhost resolves
       # to ::1 first inside the container, so the probe was refused every time.
