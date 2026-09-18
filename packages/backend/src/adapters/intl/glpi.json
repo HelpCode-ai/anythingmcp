@@ -1,0 +1,321 @@
+{
+  "slug": "glpi",
+  "name": "GLPI",
+  "description": "GLPI open-source ITSM and asset management: tickets, computers, monitors, software, users and entities, plus GLPI's search engine. REST API on your own instance, session-token auth with an App-Token.",
+  "region": "intl",
+  "category": "itsm",
+  "icon": "glpi",
+  "docsUrl": "https://github.com/glpi-project/glpi/blob/main/apirest.md",
+  "instructions": "**GLPI needs two tokens, and both are easy to confuse.**\n1. **App-Token** — identifies the *application*. In GLPI go to **Setup → General → API**, enable 'Enable Rest API' and 'Enable login with external token', add an API client, and copy its **application token**. Put it in `GLPI_APP_TOKEN`.\n2. **User-Token** — identifies the *person*. Open the GLPI user the agent should act as, go to the **API** tab of their profile, and regenerate the **remote access key** (personal API token). Put it in `GLPI_USER_TOKEN`.\n3. Set `GLPI_URL` to the instance root (no trailing slash); the adapter appends `/apirest.php`.\n\nThe adapter calls `/initSession` with `Authorization: user_token <token>` plus the App-Token, caches the session token GLPI returns, and sends it back as `Session-Token: …` on every call, refreshing it when GLPI expires it. AnythingMCP keeps the session encrypted in the `connector_auth_cache` table.\n\n**Why a user token rather than a username and password.** GLPI's initSession also accepts HTTP Basic credentials, but this connector deliberately does not use them: a login credential would have to be spelled out in the request, and a user token can be revoked on its own without changing the person's password. It is also the only one of the two that works when the GLPI user authenticates against LDAP or SSO.\n\n**Range, not page.** GLPI's list endpoints do not take a page number; they take a `range` of `start-end`, e.g. `0-49`. Ask for `0-49`, then `50-99`. The response carries `Content-Range` so you know when to stop.\n\n**The search engine is the powerful part.** `glpi_search` takes `criteria[0][field]`, `criteria[0][searchtype]` and `criteria[0][value]` and can express far more than the list endpoints. Field *numbers* are itemtype-specific — `glpi_list_search_options` returns the map for a given itemtype, and you will need it.\n\n**Entities scope everything.** A user restricted to one entity sees only that entity's tickets and assets, and GLPI reports the rest as simply absent.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`glpi.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "GLPI_URL",
+    "GLPI_APP_TOKEN",
+    "GLPI_USER_TOKEN"
+  ],
+  "connector": {
+    "name": "GLPI REST API",
+    "type": "REST",
+    "baseUrl": "{{GLPI_URL}}/apirest.php",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{GLPI_URL}}/apirest.php/initSession",
+      "loginMethod": "GET",
+      "loginHeaders": {
+        "Authorization": "user_token {{GLPI_USER_TOKEN}}",
+        "App-Token": "{{GLPI_APP_TOKEN}}",
+        "Content-Type": "application/json"
+      },
+      "username": "{{GLPI_USER_TOKEN}}",
+      "password": "{{GLPI_APP_TOKEN}}",
+      "loginBody": {},
+      "tokenJsonPath": "session_token",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Session-Token",
+      "headerTemplate": "${token}",
+      "extraHeaders": {
+        "App-Token": "{{GLPI_APP_TOKEN}}"
+      }
+    },
+    "healthcheckPath": "/getActiveEntities"
+  },
+  "probe": {
+    "tool": "glpi_get_active_entities"
+  },
+  "tools": [
+    {
+      "name": "glpi_get_active_entities",
+      "description": "Read the entities the logged-in user is currently scoped to. No parameters — the quickest proof that the App-Token, username and password all line up.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/getActiveEntities"
+      }
+    },
+    {
+      "name": "glpi_list_tickets",
+      "description": "List tickets in the active entity with their status, priority, category, requester and dates. Use `range` to page: 0-49, then 50-99.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "type": "string",
+            "description": "Row range as start-end, e.g. `0-49`. GLPI has no page number."
+          },
+          "sort": {
+            "type": "number",
+            "description": "Search-option field number to sort by."
+          },
+          "order": {
+            "type": "string",
+            "description": "`ASC` or `DESC`."
+          },
+          "expand_dropdowns": {
+            "type": "boolean",
+            "description": "When true, resolve dropdown ids to their labels."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Ticket",
+        "queryParams": {
+          "range": "$range",
+          "sort": "$sort",
+          "order": "$order",
+          "expand_dropdowns": "$expand_dropdowns"
+        }
+      }
+    },
+    {
+      "name": "glpi_get_ticket",
+      "description": "Read one ticket in full, with its description, status, urgency, impact, priority, requester, assignee and SLA dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric ticket id."
+          },
+          "expand_dropdowns": {
+            "type": "boolean",
+            "description": "When true, resolve dropdown ids to their labels."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Ticket/{id}",
+        "queryParams": {
+          "expand_dropdowns": "$expand_dropdowns"
+        }
+      }
+    },
+    {
+      "name": "glpi_get_ticket_followups",
+      "description": "Read the follow-ups (the conversation) on one ticket, in order, with author, date and whether each is private.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric ticket id."
+          },
+          "range": {
+            "type": "string",
+            "description": "Row range as start-end, e.g. `0-49`."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Ticket/{id}/ITILFollowup",
+        "queryParams": {
+          "range": "$range"
+        }
+      }
+    },
+    {
+      "name": "glpi_search",
+      "description": "Run a GLPI search with criteria. Far more expressive than the list endpoints, but the field numbers are itemtype-specific — get them from glpi_list_search_options first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemtype": {
+            "type": "string",
+            "description": "Item type to search, e.g. Ticket, Computer, User, Software."
+          },
+          "field0": {
+            "type": "number",
+            "description": "Search-option field number for the first criterion."
+          },
+          "searchtype0": {
+            "type": "string",
+            "description": "Match type: contains, equals, notequals, lessthan, morethan, under."
+          },
+          "value0": {
+            "type": "string",
+            "description": "Value to match for the first criterion."
+          },
+          "range": {
+            "type": "string",
+            "description": "Row range as start-end, e.g. `0-49`."
+          },
+          "forcedisplay": {
+            "type": "string",
+            "description": "Comma-separated field numbers to include in the output."
+          }
+        },
+        "required": [
+          "itemtype",
+          "field0",
+          "searchtype0",
+          "value0"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/{itemtype}",
+        "queryParams": {
+          "criteria[0][field]": "$field0",
+          "criteria[0][searchtype]": "$searchtype0",
+          "criteria[0][value]": "$value0",
+          "range": "$range",
+          "forcedisplay[0]": "$forcedisplay"
+        }
+      }
+    },
+    {
+      "name": "glpi_list_search_options",
+      "description": "Read the searchable field map for one item type: which field number means status, requester, serial number and so on. Needed before any glpi_search call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemtype": {
+            "type": "string",
+            "description": "Item type, e.g. Ticket, Computer, User."
+          }
+        },
+        "required": [
+          "itemtype"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listSearchOptions/{itemtype}"
+      }
+    },
+    {
+      "name": "glpi_list_computers",
+      "description": "List computers from the asset inventory with their name, serial number, model, operating system and assigned user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "type": "string",
+            "description": "Row range as start-end, e.g. `0-49`."
+          },
+          "expand_dropdowns": {
+            "type": "boolean",
+            "description": "When true, resolve dropdown ids to their labels."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Computer",
+        "queryParams": {
+          "range": "$range",
+          "expand_dropdowns": "$expand_dropdowns"
+        }
+      }
+    },
+    {
+      "name": "glpi_get_computer",
+      "description": "Read one computer in full: hardware, OS, network interfaces, contracts, location and the user it is assigned to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric computer id."
+          },
+          "expand_dropdowns": {
+            "type": "boolean",
+            "description": "When true, resolve dropdown ids to their labels."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Computer/{id}",
+        "queryParams": {
+          "expand_dropdowns": "$expand_dropdowns"
+        }
+      }
+    },
+    {
+      "name": "glpi_list_users",
+      "description": "List GLPI users with their login, name, e-mail, entity and active flag, to resolve who a ticket or an asset belongs to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "type": "string",
+            "description": "Row range as start-end, e.g. `0-49`."
+          },
+          "expand_dropdowns": {
+            "type": "boolean",
+            "description": "When true, resolve dropdown ids to their labels."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/User",
+        "queryParams": {
+          "range": "$range",
+          "expand_dropdowns": "$expand_dropdowns"
+        }
+      }
+    },
+    {
+      "name": "glpi_list_software",
+      "description": "List software items from the inventory with their publisher, category and the number of installations, for licence questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "type": "string",
+            "description": "Row range as start-end, e.g. `0-49`."
+          },
+          "expand_dropdowns": {
+            "type": "boolean",
+            "description": "When true, resolve dropdown ids to their labels."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Software",
+        "queryParams": {
+          "range": "$range",
+          "expand_dropdowns": "$expand_dropdowns"
+        }
+      }
+    }
+  ]
+}

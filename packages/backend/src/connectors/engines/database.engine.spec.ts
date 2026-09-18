@@ -1,4 +1,7 @@
+import { Pool } from 'pg';
+import { MongoClient } from 'mongodb';
 import { DatabaseEngine } from './database.engine';
+import * as mongoAdapter from '../../adapters/intl/mongodb.json';
 
 // Mock pg — use factory functions to avoid hoisting issues
 const mockQuery = jest.fn();
@@ -401,6 +404,127 @@ describe('DatabaseEngine', () => {
           {},
         ),
       ).rejects.toThrow('Only SELECT queries are allowed');
+    });
+  });
+
+  /**
+   * A DATABASE connector's baseUrl is stored in plaintext; authConfig is
+   * encrypted. The pg/mysql2/mongo drivers only take a URL, so the engine
+   * splices the credentials in at call time rather than making adapters put a
+   * password in the DSN.
+   */
+  describe('authConfig credentials', () => {
+    it('splices username and password into the Postgres URL', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      await engine.execute(
+        {
+          baseUrl: 'postgres://db.example.test:5432/sales',
+          authType: 'CONNECTION_STRING',
+          authConfig: { username: 'reader', password: 'p@ss:word' },
+        },
+        { method: 'query', path: '${query}' },
+        { query: 'SELECT 1' },
+      );
+      expect(Pool).toHaveBeenCalledWith({
+        connectionString:
+          'postgres://reader:p%40ss%3Aword@db.example.test:5432/sales',
+      });
+    });
+
+    it('leaves a URL that already names a user untouched', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      await engine.execute(
+        {
+          baseUrl: 'postgres://inurl:secret@db.example.test:5432/sales',
+          authType: 'CONNECTION_STRING',
+          authConfig: { username: 'reader', password: 'other' },
+        },
+        { method: 'query', path: '${query}' },
+        { query: 'SELECT 1' },
+      );
+      expect(Pool).toHaveBeenCalledWith({
+        connectionString: 'postgres://inurl:secret@db.example.test:5432/sales',
+      });
+    });
+
+    it('passes the URL through when authConfig carries no username', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      await engine.execute(
+        {
+          baseUrl: 'postgres://db.example.test:5432/sales',
+          authType: 'CONNECTION_STRING',
+          authConfig: { password: 'orphan' },
+        },
+        { method: 'query', path: '${query}' },
+        { query: 'SELECT 1' },
+      );
+      expect(Pool).toHaveBeenCalledWith({
+        connectionString: 'postgres://db.example.test:5432/sales',
+      });
+    });
+
+    it('splices credentials into the MongoDB URL too', async () => {
+      mockConnect.mockResolvedValue(undefined);
+      mockToArray.mockResolvedValue([]);
+      await engine.execute(
+        {
+          baseUrl: 'mongodb://mongo.example.test:27017/shop',
+          authType: 'CONNECTION_STRING',
+          authConfig: { username: 'reader', password: 'sesame' },
+        },
+        { method: 'query', path: '${query}' },
+        { query: '{"collection":"orders"}' },
+      );
+      expect(MongoClient).toHaveBeenCalledWith(
+        'mongodb://reader:sesame@mongo.example.test:27017/shop',
+        expect.objectContaining({ serverSelectionTimeoutMS: 10000 }),
+      );
+    });
+  });
+
+  /**
+   * interpolateMongoParams substitutes `${name}` with JSON.stringify(value),
+   * which means a placeholder written inside quotes in the template comes out
+   * double-quoted and the whole spec stops being JSON. The mongodb adapter's
+   * convenience tools are templates, so run them through the real engine
+   * rather than trusting that they look right.
+   */
+  describe('mongodb adapter templates survive interpolation', () => {
+    const templateCases: Array<[string, Record<string, unknown>, Record<string, unknown>]> = [
+      [
+        'mongodb_find_recent',
+        { collection: 'orders', sortField: 'createdAt', limit: 50 },
+        { collection: 'orders', sort: { createdAt: -1 }, limit: 50 },
+      ],
+      [
+        'mongodb_matching',
+        { collection: 'orders', filter: { status: 'open' }, limit: 200 },
+        { collection: 'orders', filter: { status: 'open' }, limit: 200 },
+      ],
+    ];
+
+    it.each(templateCases)('%s builds the spec it promises', async (name, params, expected) => {
+      const tool = (
+        mongoAdapter as unknown as {
+          tools: Array<{ name: string; endpointMapping: { method: string; path: string } }>;
+        }
+      ).tools.find((t) => t.name === name)!;
+      mockConnect.mockResolvedValue(undefined);
+      mockToArray.mockResolvedValue([]);
+
+      await engine.execute(
+        { baseUrl: 'mongodb://mongo.test:27017/shop', authType: 'CONNECTION_STRING' },
+        tool.endpointMapping,
+        params,
+      );
+
+      expect(mockCollection).toHaveBeenCalledWith(expected.collection);
+      expect(mockFind).toHaveBeenCalledWith(
+        expected.filter ?? {},
+        expect.anything(),
+      );
+      if (expected.sort) expect(mockSort).toHaveBeenCalledWith(expected.sort);
+      expect(mockLimit).toHaveBeenCalledWith(expected.limit);
     });
   });
 

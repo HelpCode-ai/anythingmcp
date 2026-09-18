@@ -1,0 +1,313 @@
+{
+  "slug": "kimai",
+  "name": "Kimai",
+  "description": "Kimai — the self-hosted open-source time tracker. Read and create timesheets, browse customers, projects, activities and users, and check the running clock. REST API v1 on your own Kimai instance, bearer API token.",
+  "region": "de",
+  "category": "time-tracking",
+  "icon": "kimai",
+  "docsUrl": "https://www.kimai.org/documentation/rest-api.html",
+  "instructions": "**Getting a token** (Kimai 2.x)\n1. Sign in to your Kimai instance, open your user profile and go to the **API** tab.\n2. Create an **API token** and copy it into `KIMAI_API_TOKEN`. Kimai 2.x uses a bearer token here; the older `X-AUTH-USER`/`X-AUTH-TOKEN` header pair from Kimai 1.x is deprecated and is not what this adapter sends.\n3. Set `KIMAI_URL` to the base URL of your instance *without* a trailing slash and without `/api`, e.g. `https://time.example.com`. The adapter appends `/api`.\n\n**Permissions follow the user.** A token for a normal user only sees that user's timesheets. To report across the team, issue the token for a user with the `view_other_timesheet` permission — otherwise the answers will look quietly, wrongly small.\n\n**Kimai is self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector does not offer a trust-anything switch.\n- On an internal host (`kimai.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard will refuse the call before it is made.\n\n**Dates** are ISO 8601, e.g. `2026-09-01T00:00:00`. `begin` and `end` on the timesheet list filter the entry's start time.\n\n**Writes**: `kimai_create_timesheet` books real time. `kimai_stop_timesheet` closes a running entry, which is not undoable from the API.",
+  "requiredEnvVars": [
+    "KIMAI_URL",
+    "KIMAI_API_TOKEN"
+  ],
+  "connector": {
+    "name": "Kimai API v1",
+    "type": "REST",
+    "baseUrl": "{{KIMAI_URL}}/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{KIMAI_API_TOKEN}}"
+    },
+    "healthcheckPath": "/version"
+  },
+  "probe": {
+    "tool": "kimai_get_version"
+  },
+  "tools": [
+    {
+      "name": "kimai_get_version",
+      "description": "Read the Kimai version and copyright of the connected instance. No parameters and no permissions needed — the fastest proof that URL and token are both right.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/version"
+      }
+    },
+    {
+      "name": "kimai_list_timesheets",
+      "description": "Read timesheet entries in a date range with their project, activity, duration, rate and billable flag. The core reporting query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin": {
+            "type": "string",
+            "description": "Earliest entry start, ISO 8601, e.g. 2026-09-01T00:00:00."
+          },
+          "end": {
+            "type": "string",
+            "description": "Latest entry start, ISO 8601, e.g. 2026-09-30T23:59:59."
+          },
+          "user": {
+            "type": "string",
+            "description": "User id to filter by, or `all` to include everyone (needs view_other_timesheet)."
+          },
+          "customer": {
+            "type": "number",
+            "description": "Restrict to one customer id."
+          },
+          "project": {
+            "type": "number",
+            "description": "Restrict to one project id."
+          },
+          "activity": {
+            "type": "number",
+            "description": "Restrict to one activity id."
+          },
+          "exported": {
+            "type": "number",
+            "description": "0 for not yet exported, 1 for exported."
+          },
+          "billable": {
+            "type": "number",
+            "description": "0 for non-billable, 1 for billable."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timesheets",
+        "queryParams": {
+          "begin": "$begin",
+          "end": "$end",
+          "user": "$user",
+          "customer": "$customer",
+          "project": "$project",
+          "activity": "$activity",
+          "exported": "$exported",
+          "billable": "$billable",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "kimai_get_active_timesheets",
+      "description": "Read the entries that are running right now for the authenticated user — Kimai's live clock, answering 'am I still tracking something'.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timesheets/active"
+      }
+    },
+    {
+      "name": "kimai_list_customers",
+      "description": "List customers with their number, country, currency and visible flag. Customers are the top of Kimai's customer → project → activity hierarchy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "visible": {
+            "type": "number",
+            "description": "1 visible, 2 hidden, 3 both."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "visible": "$visible",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "kimai_list_projects",
+      "description": "List projects, optionally for one customer, with their budget, time budget and start and end dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": {
+            "type": "number",
+            "description": "Restrict to one customer id."
+          },
+          "visible": {
+            "type": "number",
+            "description": "1 visible, 2 hidden, 3 both."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "customer": "$customer",
+          "visible": "$visible",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "kimai_list_activities",
+      "description": "List activities — the task types time is booked against — either global or attached to one project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Restrict to one project id, or `null` for global activities only."
+          },
+          "visible": {
+            "type": "number",
+            "description": "1 visible, 2 hidden, 3 both."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/activities",
+        "queryParams": {
+          "project": "$project",
+          "visible": "$visible",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "kimai_list_users",
+      "description": "List Kimai users with their username, alias, e-mail and roles. Needs the view_user permission on the token's account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "visible": {
+            "type": "number",
+            "description": "1 visible, 2 hidden, 3 both."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "visible": "$visible"
+        }
+      }
+    },
+    {
+      "name": "kimai_create_timesheet",
+      "description": "Book a timesheet entry against a project and activity. Writes to the live instance; omit `end` to start a running entry instead of a closed one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin": {
+            "type": "string",
+            "description": "Entry start, ISO 8601, e.g. 2026-09-17T09:00:00."
+          },
+          "project": {
+            "type": "number",
+            "description": "Numeric project id."
+          },
+          "activity": {
+            "type": "number",
+            "description": "Numeric activity id."
+          },
+          "end": {
+            "type": "string",
+            "description": "Entry end, ISO 8601. Leave empty to start a running entry."
+          },
+          "description": {
+            "type": "string",
+            "description": "What was done."
+          },
+          "billable": {
+            "type": "boolean",
+            "description": "Whether the entry is billable."
+          },
+          "user": {
+            "type": "number",
+            "description": "User id the entry belongs to. Defaults to the token's own user."
+          }
+        },
+        "required": [
+          "begin",
+          "project",
+          "activity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/timesheets",
+        "bodyMapping": {
+          "begin": "$begin",
+          "end": "$end",
+          "project": "$project",
+          "activity": "$activity",
+          "description": "$description",
+          "billable": "$billable",
+          "user": "$user"
+        }
+      }
+    },
+    {
+      "name": "kimai_stop_timesheet",
+      "description": "Stop a running timesheet entry, setting its end to now. Not undoable through the API — the entry then has to be edited in the Kimai UI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric id of the running timesheet entry."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/timesheets/{id}/stop"
+      }
+    }
+  ]
+}

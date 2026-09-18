@@ -1,0 +1,395 @@
+{
+  "slug": "bexio",
+  "name": "bexio",
+  "description": "bexio — the Swiss SMB business suite used by 100,000+ companies: contacts, invoices, quotes, orders, articles, projects and timesheets. REST API, bearer token, amounts in CHF.",
+  "region": "ch",
+  "category": "accounting",
+  "icon": "bexio",
+  "docsUrl": "https://docs.bexio.com/",
+  "instructions": "**Getting a token**\n1. Sign in to bexio and open **Einstellungen → Apps & Tools → API-Zugriff**.\n2. Create an **API token** (for a single company) and copy it into `BEXIO_API_TOKEN`. The token inherits the permissions of the user it was created under, so a read-only agent should get a read-only bexio user.\n3. For a multi-tenant integration bexio also offers OAuth 2.0 with per-scope consent; this adapter uses the simpler API token, which is what a single company needs.\n\n**Mixed API versions.** bexio has migrated its resources one at a time, so the path segment differs per object: contacts and articles live under `/2.0/`, invoices under `/2.0/kb_invoice`, and newer resources under `/3.0/` or `/4.0/`. The tools below carry the correct version in each path — do not assume one prefix works for everything.\n\n**Searching**: bexio's list endpoints accept `order_by`, `limit` and `offset`, and each resource has a sibling `/search` endpoint that takes a POST body of `[{field, value, criteria}]`. This adapter exposes the list endpoints; for a precise field match use `bexio_search_contacts`.\n\n**Currency**: bexio is Swiss and most companies book in CHF. Amounts come back as decimal strings — parse, do not round in the prompt.\n\n**Writes**: `bexio_create_contact` writes to the live company. Invoices are not creatable here: bexio requires positions to be posted separately and a half-created invoice is worse than none.\n\n**Cloud reachability**: api.bexio.com is public with a valid certificate; AnythingMCP Cloud reaches it directly.",
+  "requiredEnvVars": [
+    "BEXIO_API_TOKEN"
+  ],
+  "connector": {
+    "name": "bexio API",
+    "type": "REST",
+    "baseUrl": "https://api.bexio.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{BEXIO_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/2.0/company_profile"
+  },
+  "probe": {
+    "tool": "bexio_get_company_profile"
+  },
+  "tools": [
+    {
+      "name": "bexio_get_company_profile",
+      "description": "Read the company profile of the connected bexio account: legal name, address, VAT number and country. Fast call with no parameters — use it to verify the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2.0/company_profile"
+      }
+    },
+    {
+      "name": "bexio_list_contacts",
+      "description": "List contacts (customers, suppliers, private persons) with paging and sorting. Contact type 1 is a company, 2 a private person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 500, max 2000)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by, e.g. `id_desc`, `name_1`, `nr`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2.0/contact",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "bexio_search_contacts",
+      "description": "Find contacts by an exact or partial field match — the right tool when you know a name, customer number or e-mail and need the bexio contact id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Field to match: `name_1`, `name_2`, `mail`, `nr`, `contact_group_ids` or `contact_type_id`."
+          },
+          "value": {
+            "type": "string",
+            "description": "Value to match against that field."
+          },
+          "criteria": {
+            "type": "string",
+            "description": "Match mode: `=`, `like`, `not_like`, `is_null` or `not_null`. Defaults to `like`."
+          }
+        },
+        "required": [
+          "field",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2.0/contact/search",
+        "bodyMapping": [
+          {
+            "field": "$field",
+            "value": "$value",
+            "criteria": "$criteria"
+          }
+        ]
+      }
+    },
+    {
+      "name": "bexio_get_contact",
+      "description": "Read one contact by its bexio id, including both name lines, address, contact group membership and the assigned user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric bexio contact id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2.0/contact/{id}"
+      }
+    },
+    {
+      "name": "bexio_list_invoices",
+      "description": "List invoices (Rechnungen) with their document number, total, currency and payment state. Sort by `id_desc` for the most recent first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 500, max 2000)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by, e.g. `id_desc` or `is_valid_from`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2.0/kb_invoice",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "bexio_get_invoice",
+      "description": "Read one invoice in full, including every position with its article, quantity, unit price, discount and tax, plus the totals and the due date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric invoice id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2.0/kb_invoice/{id}"
+      }
+    },
+    {
+      "name": "bexio_list_quotes",
+      "description": "List quotes (Offerten) with their number, addressee, total and status, to see what is out with customers and not yet won.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 500, max 2000)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by, e.g. `id_desc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2.0/kb_offer",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "bexio_list_orders",
+      "description": "List orders (Aufträge) with their number, customer, total and whether they have already been invoiced.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 500, max 2000)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by, e.g. `id_desc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2.0/kb_order",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "bexio_list_articles",
+      "description": "List articles from the bexio product catalogue with their internal code, purchase and sale price, stock level and unit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 500, max 2000)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by, e.g. `intern_code`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2.0/article",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "bexio_list_projects",
+      "description": "List projects with their client, responsible user, start and end date and current status — the anchor for any timesheet question.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 500, max 2000)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2.0/pr_project",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "bexio_list_timesheets",
+      "description": "List tracked time entries with their user, date, duration, project and billability — the raw data behind 'how much did we spend on this client'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 500, max 2000)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by, e.g. `date_desc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2.0/timesheet",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "bexio_create_contact",
+      "description": "Create a contact in the live bexio company. Search with bexio_search_contacts first — bexio does not deduplicate, and a second 'Muster AG' is painful to unwind.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_type_id": {
+            "type": "number",
+            "description": "1 for a company, 2 for a private person."
+          },
+          "name_1": {
+            "type": "string",
+            "description": "Company name, or family name for a private person."
+          },
+          "name_2": {
+            "type": "string",
+            "description": "Second name line: given name, or a department."
+          },
+          "address": {
+            "type": "string",
+            "description": "Street and house number."
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "country_id": {
+            "type": "number",
+            "description": "bexio country id; 1 is Switzerland."
+          },
+          "mail": {
+            "type": "string",
+            "description": "Primary e-mail address."
+          },
+          "phone_fixed": {
+            "type": "string",
+            "description": "Landline phone number."
+          },
+          "user_id": {
+            "type": "number",
+            "description": "bexio user id the contact is assigned to."
+          }
+        },
+        "required": [
+          "contact_type_id",
+          "name_1",
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2.0/contact",
+        "bodyMapping": {
+          "contact_type_id": "$contact_type_id",
+          "name_1": "$name_1",
+          "name_2": "$name_2",
+          "address": "$address",
+          "postcode": "$postcode",
+          "city": "$city",
+          "country_id": "$country_id",
+          "mail": "$mail",
+          "phone_fixed": "$phone_fixed",
+          "user_id": "$user_id",
+          "owner_id": "$user_id"
+        }
+      }
+    }
+  ]
+}

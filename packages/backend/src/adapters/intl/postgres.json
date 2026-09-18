@@ -1,0 +1,117 @@
+{
+  "slug": "postgres",
+  "name": "PostgreSQL",
+  "description": "Query a PostgreSQL database directly: list tables, describe columns and run read-only SQL. Installs read-only; credentials are held encrypted rather than in the connection string.",
+  "region": "intl",
+  "category": "database",
+  "icon": "postgres",
+  "docsUrl": "https://www.postgresql.org/docs/current/",
+  "instructions": "**Setup**\n1. Create a dedicated role for the agent and grant it only what it needs:\n   ```sql\n   CREATE ROLE amcp_reader LOGIN PASSWORD 'change-me';\n   GRANT CONNECT ON DATABASE sales TO amcp_reader;\n   GRANT USAGE ON SCHEMA public TO amcp_reader;\n   GRANT SELECT ON ALL TABLES IN SCHEMA public TO amcp_reader;\n   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO amcp_reader;\n   ```\n   The last line matters: without it, tables created tomorrow are invisible.\n2. Set `POSTGRES_HOST`, `POSTGRES_PORT` (5432), `POSTGRES_DATABASE`, `POSTGRES_USER` and `POSTGRES_PASSWORD`.\n\n**`search_path` is not set for you.** Unqualified table names resolve against the role's default search path, which on a fresh role is `\"$user\", public`. Schema-qualify (`analytics.orders`) when in doubt.\n\n**How a database connector behaves**\n\n- **It installs read-only.** The engine rejects anything that is not a read\n  until you flip the switch in the connector's settings. That is a guard rail,\n  not a security boundary: give the connection a database role that is itself\n  read-only, and the guard rail never has to matter.\n- **Credentials live in the encrypted `authConfig`**, not in the connection\n  string. `POSTGRES_USER` and `POSTGRES_PASSWORD` are stored encrypted and spliced into the\n  DSN at call time; the host and database name are stored in the plaintext\n  `baseUrl` column.\n- **Results are capped at 1000 rows.** A query that would return more comes\n  back truncated with a flag. Aggregate in SQL rather than in the agent.\n- **A statement runs exactly as written.** There is no query rewriting and no\n  automatic LIMIT — an unbounded scan on a large table is a real unbounded\n  scan on your production database. Say LIMIT.\n\n**Reachable from where?**\n\n- On **AnythingMCP Cloud** the server must accept connections from the public\n  internet, which for a production database usually means it should not. Point\n  the connector at a read replica, or self-host AnythingMCP inside the network.\n- **Self-hosted**, add the host to `SSRF_ALLOWED_HOSTS`: the outbound guard\n  blocks private address space by default, and `10.0.0.5` is exactly the shape\n  it is there to block.\n\n**Supersedes the marketing site's `postgres` placeholder**, which advertised a `POSTGRES_URL` connection string. This adapter takes host, port and database separately and keeps the password encrypted, which the single-URL form could not do.\n",
+  "requiredEnvVars": [
+    "POSTGRES_HOST",
+    "POSTGRES_PORT",
+    "POSTGRES_DATABASE",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD"
+  ],
+  "connector": {
+    "name": "PostgreSQL",
+    "type": "DATABASE",
+    "baseUrl": "postgres://{{POSTGRES_HOST}}:{{POSTGRES_PORT}}/{{POSTGRES_DATABASE}}",
+    "authType": "CONNECTION_STRING",
+    "authConfig": {
+      "username": "{{POSTGRES_USER}}",
+      "password": "{{POSTGRES_PASSWORD}}"
+    }
+  },
+  "probe": {
+    "tool": "postgres_list_tables"
+  },
+  "tools": [
+    {
+      "name": "postgres_list_tables",
+      "description": "List the tables and views in the database with their schema and, where the server tracks it, an approximate row count. Start here — it is the map of what can be queried.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema, table_name"
+      }
+    },
+    {
+      "name": "postgres_describe_table",
+      "description": "Describe one table: every column with its data type, nullability and default. Read this before writing a query against a table you have not seen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_name": {
+            "type": "string",
+            "description": "Table name, without the schema prefix."
+          }
+        },
+        "required": [
+          "table_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT column_name, data_type, is_nullable, column_default, character_maximum_length FROM information_schema.columns WHERE table_name = ${table_name} ORDER BY ordinal_position"
+      }
+    },
+    {
+      "name": "postgres_find_columns",
+      "description": "Find columns across every table whose name matches a pattern — the fast way to locate where customer e-mail addresses, IBANs or order numbers actually live.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "SQL LIKE pattern matched against the column name, e.g. %email% or %_id."
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT table_schema, table_name, column_name, data_type FROM information_schema.columns WHERE column_name LIKE ${pattern} AND table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema, table_name, column_name"
+      }
+    },
+    {
+      "name": "postgres_query",
+      "description": "Run a read-only SQL statement against PostgreSQL and return up to 1000 rows. The statement runs exactly as written — there is no automatic LIMIT, so say LIMIT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A single SQL SELECT statement. Include your own LIMIT; nothing is added for you."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "${query}"
+      }
+    },
+    {
+      "name": "postgres_query_examples",
+      "description": "Show worked example queries for PostgreSQL: how to list schemas, find large tables, inspect indexes and check what is running right now. Costs nothing and touches no data.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "PostgreSQL example queries\n\n-- Every schema, and how big it is\nSELECT schemaname, COUNT(*) AS tables,\n       pg_size_pretty(SUM(pg_total_relation_size(schemaname||'.'||tablename))) AS size\nFROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')\nGROUP BY schemaname ORDER BY 3 DESC;\n\n-- The ten largest tables\nSELECT schemaname||'.'||relname AS table, n_live_tup AS approx_rows,\n       pg_size_pretty(pg_total_relation_size(relid)) AS total_size\nFROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 10;\n\n-- Indexes on a table\nSELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'orders';\n\n-- Foreign keys out of a table\nSELECT conname, pg_get_constraintdef(oid) FROM pg_constraint\nWHERE conrelid = 'public.orders'::regclass AND contype = 'f';\n\n-- What is running right now, longest first\nSELECT pid, now() - query_start AS runtime, state, left(query, 120) AS query\nFROM pg_stat_activity WHERE state <> 'idle' ORDER BY runtime DESC;\n\n-- Columns whose name suggests personal data\nSELECT table_schema, table_name, column_name FROM information_schema.columns\nWHERE column_name ~* '(email|phone|iban|birth|passwor|ssn|tax)'\n  AND table_schema NOT IN ('pg_catalog','information_schema')\nORDER BY 1, 2;\n"
+      }
+    }
+  ]
+}

@@ -1,0 +1,413 @@
+{
+  "slug": "sevdesk",
+  "name": "sevDesk",
+  "description": "sevDesk cloud bookkeeping for German SMBs and freelancers: contacts, invoices, vouchers (Belege), orders, parts and bank accounts. REST API v1, API-key auth — the key goes in a bare Authorization header, with no Bearer prefix.",
+  "region": "de",
+  "category": "accounting",
+  "icon": "sevdesk",
+  "docsUrl": "https://api.sevdesk.de/",
+  "instructions": "**Getting a key**\n1. Sign in to sevDesk and open **Einstellungen → Benutzer → (your user) → API-Token**.\n2. Copy the token into `SEVDESK_API_KEY`. It belongs to one user in one client (Mandant) and inherits that user's permissions — create a dedicated API user with read rights if the agent should not be able to write.\n\n**The Authorization header has no scheme.** sevDesk expects the raw token (`Authorization: abc123…`), *not* `Bearer abc123…`. This adapter sends it that way; if you build a custom connector against sevDesk by hand, that is the single most common reason for a 401.\n\n**Object names are capitalised and singular**: the collection is `/Contact`, `/Invoice`, `/Voucher`, `/Order`, `/Part` — not `/contacts`. Responses wrap the rows in `{\"objects\": [...]}`.\n\n**Embedded objects**: most rows reference other objects only by `{id, objectName}`. Pass a comma-separated `embed` (e.g. `embed=contact,contactPerson`) to have sevDesk expand them inline rather than making the agent fetch each one.\n\n**API version**: v1 at `https://my.sevdesk.de/api/v1`. sevDesk has published a v2 preview; v1 remains the supported production surface.\n\n**Writes**: `sevdesk_create_contact` creates a real contact. Invoice creation is deliberately not exposed — sevDesk requires a multi-step create-position-then-book flow whose partial failure leaves an unusable draft, so an invoice is better created in the UI.\n\n**Cloud reachability**: my.sevdesk.de is public with a valid certificate; AnythingMCP Cloud reaches it directly.",
+  "requiredEnvVars": [
+    "SEVDESK_API_KEY"
+  ],
+  "connector": {
+    "name": "sevDesk API v1",
+    "type": "REST",
+    "baseUrl": "https://my.sevdesk.de/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{SEVDESK_API_KEY}}"
+    },
+    "healthcheckPath": "/SevUser"
+  },
+  "probe": {
+    "tool": "sevdesk_list_users"
+  },
+  "tools": [
+    {
+      "name": "sevdesk_list_users",
+      "description": "List the sevDesk users in this client, with their names and e-mail addresses. Fast call with no parameters — use it to confirm the API key is accepted.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/SevUser"
+      }
+    },
+    {
+      "name": "sevdesk_list_contacts",
+      "description": "List contacts (customers, suppliers, partners). Narrow by customer number or by depth, and page through larger result sets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "depth": {
+            "type": "boolean",
+            "description": "When true, include contact persons attached to organisations."
+          },
+          "customerNumber": {
+            "type": "string",
+            "description": "Exact customer number (Kundennummer) to look up."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Comma-separated related objects to expand inline, e.g. addresses,communicationWays."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Contact",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "depth": "$depth",
+          "customerNumber": "$customerNumber",
+          "embed": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sevdesk_get_contact",
+      "description": "Read one contact by its numeric sevDesk id, with its category, customer number, tax settings and default payment terms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric contact id."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Comma-separated related objects to expand, e.g. category,parent."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Contact/{id}",
+        "queryParams": {
+          "embed": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sevdesk_list_invoices",
+      "description": "List outgoing invoices, newest first. Filter by status to answer 'what is unpaid' — status 200 is open, 1000 is paid, 100 is draft.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "status": {
+            "type": "number",
+            "description": "Invoice status: 50 draft, 100 open draft, 200 delivered/open, 750 partially paid, 1000 paid."
+          },
+          "startDate": {
+            "type": "number",
+            "description": "Earliest invoice date as a Unix timestamp in seconds."
+          },
+          "endDate": {
+            "type": "number",
+            "description": "Latest invoice date as a Unix timestamp in seconds."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Comma-separated related objects to expand, e.g. contact,contactPerson."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Invoice",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "status": "$status",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "embed": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sevdesk_get_invoice_positions",
+      "description": "Read the line items (Positionen) of one invoice: article, quantity, unit price, tax rate and the resulting net and gross sums.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "number",
+            "description": "Numeric invoice id."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum line items to return."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/InvoicePos",
+        "queryParams": {
+          "invoice[id]": "$invoiceId",
+          "invoice[objectName]": "Invoice",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "sevdesk_list_vouchers",
+      "description": "List vouchers (Belege) — incoming supplier invoices and receipts. This is the bookkeeping side of sevDesk, separate from outgoing invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "status": {
+            "type": "number",
+            "description": "Voucher status: 50 draft, 100 unpaid, 1000 paid."
+          },
+          "creditDebit": {
+            "type": "string",
+            "description": "`C` for credit (income) or `D` for debit (expense)."
+          },
+          "startDate": {
+            "type": "number",
+            "description": "Earliest voucher date as a Unix timestamp in seconds."
+          },
+          "endDate": {
+            "type": "number",
+            "description": "Latest voucher date as a Unix timestamp in seconds."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Comma-separated related objects to expand, e.g. supplier,document."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Voucher",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "status": "$status",
+          "creditDebit": "$creditDebit",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "embed": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sevdesk_list_orders",
+      "description": "List orders and quotations (Aufträge und Angebote). The `orderType` field distinguishes AN (Angebot), AB (Auftragsbestätigung) and LI (Lieferschein).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "status": {
+            "type": "number",
+            "description": "Order status: 100 draft, 200 delivered, 300 partly calculated, 500 calculated, 750 partly accepted, 1000 accepted."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Comma-separated related objects to expand, e.g. contact."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Order",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "status": "$status",
+          "embed": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sevdesk_list_parts",
+      "description": "List parts (Artikel) from the sevDesk product catalogue with their price, stock level, unit and tax rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "partNumber": {
+            "type": "string",
+            "description": "Exact article number to look up."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Part",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "partNumber": "$partNumber"
+        }
+      }
+    },
+    {
+      "name": "sevdesk_list_check_accounts",
+      "description": "List the bank and cash accounts (Kassen und Bankkonten) configured in sevDesk, with their current balance and import type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/CheckAccount",
+        "queryParams": {
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "sevdesk_list_transactions",
+      "description": "List bank transactions on one check account, so unpaid invoices can be matched against money that actually arrived.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "checkAccountId": {
+            "type": "number",
+            "description": "Numeric id of the check account, from sevdesk_list_check_accounts."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "status": {
+            "type": "number",
+            "description": "Transaction status: 100 created, 200 linked, 300 private, 350 auto-booked, 400 booked."
+          }
+        },
+        "required": [
+          "checkAccountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/CheckAccountTransaction",
+        "queryParams": {
+          "checkAccount[id]": "$checkAccountId",
+          "checkAccount[objectName]": "CheckAccount",
+          "limit": "$limit",
+          "offset": "$offset",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "sevdesk_create_contact",
+      "description": "Create a new contact. Writes to the live client — search with sevdesk_list_contacts first so a duplicate customer number is not created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Organisation name, or the family name for a private person."
+          },
+          "categoryId": {
+            "type": "number",
+            "description": "Contact category id: 3 = supplier, 2 = customer, 4 = partner. Required by sevDesk."
+          },
+          "customerNumber": {
+            "type": "string",
+            "description": "Customer number. Left blank, sevDesk assigns the next free one."
+          },
+          "surename": {
+            "type": "string",
+            "description": "Given name, for a private person."
+          },
+          "familyname": {
+            "type": "string",
+            "description": "Family name, for a private person."
+          },
+          "vatNumber": {
+            "type": "string",
+            "description": "VAT identification number (USt-IdNr.)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Free-text note stored on the contact."
+          }
+        },
+        "required": [
+          "name",
+          "categoryId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Contact",
+        "bodyMapping": {
+          "name": "$name",
+          "category": {
+            "id": "$categoryId",
+            "objectName": "Category"
+          },
+          "customerNumber": "$customerNumber",
+          "surename": "$surename",
+          "familyname": "$familyname",
+          "vatNumber": "$vatNumber",
+          "description": "$description"
+        }
+      }
+    }
+  ]
+}

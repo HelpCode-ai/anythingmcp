@@ -1,0 +1,373 @@
+{
+  "slug": "invoice-ninja",
+  "name": "Invoice Ninja",
+  "description": "Invoice Ninja: clients, invoices, quotes, recurring invoices, payments, products, expenses and projects. REST API v5 on Invoice Ninja's hosted service or your own instance, API-token auth.",
+  "region": "intl",
+  "category": "accounting",
+  "icon": "invoice-ninja",
+  "docsUrl": "https://api-docs.invoicing.co/",
+  "instructions": "**Getting a token**\n1. Sign in and open **Settings → Account Management → API Tokens** (on v5; on a self-hosted instance the same page exists).\n2. Create a token and put it in `INVOICENINJA_API_TOKEN`.\n3. Set `INVOICENINJA_URL`. For the hosted service that is `https://invoicing.co`; for a self-hosted instance, your own root. No trailing slash and no `/api/v1` — the adapter appends it.\n\n**The header is `X-API-TOKEN`.**\n\n**One token, one company.** Invoice Ninja supports several companies per account, and the token is bound to the one it was created in. A second company needs a second token and a second connector.\n\n**`include` resolves relationships in one call**: `include=client,invitations` on an invoice, `include=contacts` on a client. Without it you get ids and have to fetch each one.\n\n**Status is a small integer, and each document type numbers it differently.** For invoices: 1 draft, 2 sent, 3 partial, 4 paid, 5 cancelled, -1 reversed. For quotes: 1 draft, 2 sent, 3 approved, 4 converted, 5 expired. Do not assume they line up.\n\n**Amounts are floats in the client's currency**, and `balance` is what is still owed while `amount` is the invoice total. A receivables figure wants `balance`.\n\n**Soft deletes are hidden by default.** Archived and deleted records are excluded unless you ask for them, which is usually right — but it is why a record somebody swears exists can be missing.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`invoices.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "INVOICENINJA_URL",
+    "INVOICENINJA_API_TOKEN"
+  ],
+  "connector": {
+    "name": "Invoice Ninja API v5",
+    "type": "REST",
+    "baseUrl": "{{INVOICENINJA_URL}}/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-TOKEN",
+      "apiKey": "{{INVOICENINJA_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "X-Requested-With": "XMLHttpRequest"
+    },
+    "healthcheckPath": "/clients?per_page=1"
+  },
+  "probe": {
+    "tool": "invoice_ninja_list_clients"
+  },
+  "tools": [
+    {
+      "name": "invoice_ninja_list_clients",
+      "description": "List clients with their name, contacts, balance, paid-to-date total and currency. The quickest call for checking that the API token works.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page (default 20)."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Search fragment matched against name, e-mail and number."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. contacts."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort expression, e.g. `name|asc` or `balance|desc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page",
+          "filter": "$filter",
+          "include": "$include",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "invoice_ninja_get_client",
+      "description": "Read one client in full: their contacts, addresses, payment terms, balance and the settings that override the company defaults for them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": "string",
+            "description": "Invoice Ninja client hashed id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. contacts,documents."
+          }
+        },
+        "required": [
+          "clientId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/{clientId}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "invoice_ninja_list_invoices",
+      "description": "List invoices with their number, date, due date, client, amount and balance. Status 1 draft, 2 sent, 3 partial, 4 paid, 5 cancelled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page (default 20)."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Restrict to one client's invoices."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Search fragment matched against number and PO number."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. client."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort expression, e.g. `date|desc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page",
+          "client_id": "$client_id",
+          "filter": "$filter",
+          "include": "$include",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "invoice_ninja_get_invoice",
+      "description": "Read one invoice in full: every line item with quantity, cost and tax, the totals, the balance outstanding and the payments applied.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "string",
+            "description": "Invoice Ninja invoice hashed id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. client,payments."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoiceId}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "invoice_ninja_list_quotes",
+      "description": "List quotes with their number, date, client, amount and status — what is out with prospects and not yet converted into an invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Restrict to one client's quotes."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. client."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quotes",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page",
+          "client_id": "$client_id",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "invoice_ninja_list_payments",
+      "description": "List payments with their date, amount, method, client and the invoices they were applied to — the money that actually arrived.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Restrict to one client's payments."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. client,invoices."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page",
+          "client_id": "$client_id",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "invoice_ninja_list_recurring_invoices",
+      "description": "List recurring invoices with their frequency, next send date, client and amount — the predictable part of the revenue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Restrict to one client."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. client."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recurring_invoices",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page",
+          "client_id": "$client_id",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "invoice_ninja_list_products",
+      "description": "List products with their key, notes, cost, price, quantity and tax settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Search fragment matched against the product key and notes."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "invoice_ninja_list_expenses",
+      "description": "List expenses with their date, vendor, category, amount and whether they have been billed to a client — the cost side of the ledger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Restrict to expenses billed to one client."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, e.g. client,vendor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page",
+          "client_id": "$client_id",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "invoice_ninja_list_projects",
+      "description": "List projects with their name, client, budgeted hours, task rate and due date — the anchor for time and profitability questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Restrict to one client's projects."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "per_page": "$per_page",
+          "page": "$page",
+          "client_id": "$client_id"
+        }
+      }
+    }
+  ]
+}

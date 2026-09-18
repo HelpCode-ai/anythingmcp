@@ -438,3 +438,102 @@ describe('extractLoginRefusal', () => {
     expect(extractLoginRefusal(body)).toBeNull();
   });
 });
+
+/**
+ * Two of the shipped adapters log in over GET, which is the shape with the
+ * sharp edge: LoginTokenService uses `loginUrl` verbatim (a `${username}`
+ * written there is sent literally) and, when no `loginBody` is given, turns
+ * every template param — including the password — into a query parameter.
+ *
+ * Both of those were live bugs in these adapters before this test existed, so
+ * the real authConfigs are driven here rather than a paraphrase of them.
+ */
+describe('shipped GET-login adapters build the request they intend', () => {
+  let service: LoginTokenService;
+  let mockPrisma: any;
+  const encryptionKey = 'test-encryption-key-32-chars-ok!';
+
+  const resolve = (value: unknown, env: Record<string, string>): any => {
+    if (typeof value === 'string') {
+      return value.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => env[k] ?? _m);
+    }
+    if (Array.isArray(value)) return value.map((v) => resolve(v, env));
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value).map(([k, v]) => [k, resolve(v, env)]),
+      );
+    }
+    return value;
+  };
+
+  beforeEach(() => {
+    mockPrisma = {
+      connectorAuthCache: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+    };
+    service = new LoginTokenService(
+      mockPrisma,
+      { get: jest.fn().mockReturnValue(encryptionKey) } as any,
+    );
+    jest.clearAllMocks();
+  });
+
+  it('glpi sends a revocable user token in a header and nothing in the URL', async () => {
+    const adapter = require('../../adapters/intl/glpi.json');
+    const cfg = resolve(adapter.connector.authConfig, {
+      GLPI_URL: 'https://glpi.example.test',
+      GLPI_APP_TOKEN: 'app-tok-111',
+      GLPI_USER_TOKEN: 'user-tok-222',
+    }) as LoginTokenAuthConfig;
+
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({
+      data: { session_token: 'sess-abc' },
+      headers: {},
+    });
+
+    const bundle = await service.getToken(cfg);
+    expect(bundle.token).toBe('sess-abc');
+
+    const req = (mockedAxios as unknown as jest.Mock).mock.calls[0][0];
+    expect(req.method).toBe('GET');
+    expect(req.url).toBe('https://glpi.example.test/apirest.php/initSession');
+    expect(req.headers.Authorization).toBe('user_token user-tok-222');
+    expect(req.headers['App-Token']).toBe('app-tok-111');
+    // The empty loginBody is what keeps the credential out of the query
+    // string — and therefore out of the web server's access log.
+    expect(req.params).toEqual({});
+    expect(JSON.stringify(req.params ?? {})).not.toContain('user-tok-222');
+  });
+
+  it('synology interpolates the account and password into the query DSM reads', async () => {
+    const adapter = require('../../adapters/intl/synology.json');
+    const cfg = resolve(adapter.connector.authConfig, {
+      SYNOLOGY_URL: 'https://nas.example.test:5001',
+      SYNOLOGY_USERNAME: 'amcpbot',
+      SYNOLOGY_PASSWORD: 'nas@pw:9',
+    }) as LoginTokenAuthConfig;
+
+    (mockedAxios as unknown as jest.Mock).mockResolvedValue({
+      data: { success: true, data: { sid: 'sid-xyz' } },
+      headers: {},
+    });
+
+    const bundle = await service.getToken(cfg);
+    expect(bundle.token).toBe('sid-xyz');
+
+    const req = (mockedAxios as unknown as jest.Mock).mock.calls[0][0];
+    expect(req.method).toBe('GET');
+    // No placeholder survives into the URL: loginUrl is never interpolated.
+    expect(req.url).toBe('https://nas.example.test:5001/webapi/auth.cgi');
+    expect(req.url).not.toContain('${');
+    expect(req.params).toMatchObject({
+      api: 'SYNO.API.Auth',
+      method: 'login',
+      account: 'amcpbot',
+      passwd: 'nas@pw:9',
+      format: 'sid',
+    });
+  });
+});

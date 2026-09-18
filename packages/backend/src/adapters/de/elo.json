@@ -1,0 +1,232 @@
+{
+  "slug": "elo",
+  "name": "ELO Digital Office",
+  "description": "ELO ECM: search the archive, read Sord metadata and keywording, walk the folder tree and list document versions. ELO IX REST interface, ticket-based session auth against your own ELO server.",
+  "region": "de",
+  "category": "dms",
+  "icon": "elo",
+  "docsUrl": "https://docs.elo.com/dev/api/en/",
+  "instructions": "**Setup**\n1. Confirm the **ELO Indexserver (IX)** publishes its REST interface — typically `https://<server>/ix-<repo>/rest`. The repository name is part of the path, so an installation with several archives needs one connector each.\n2. Create an ELO user for the integration with read rights on the archive areas the agent should see. ELO enforces ACLs per Sord, so a restricted user sees a smaller archive rather than an error.\n3. Set `ELO_URL` to the IX REST root (no trailing slash), plus `ELO_USERNAME` and `ELO_PASSWORD`.\n\n**ELO's session is a ticket.** The adapter logs in at `/ix/login` and sends the returned ticket back on every call. AnythingMCP caches it (encrypted, in `connector_auth_cache`) and re-logs in when ELO expires it — ELO tickets are short-lived and logging in per call would exhaust the server's session pool.\n\n**Everything is a Sord.** ELO models folders *and* documents as the same object, a *Sord*, identified by a numeric **objId** or a GUID. `sordType` distinguishes them: values below 254 are folders, 254 and above are documents. An agent that treats every search hit as a document will be wrong about a third of the time.\n\n**Keywording forms (Verschlagwortungsmasken)** define which index fields a Sord carries. `elo_list_keywording_forms` returns them, and you need the mask's field *group names* to make a find request precise.\n\n**Find is two calls.** ELO's search creates a result set and then pages it: `elo_find_first` runs the query and returns the first page plus a `searchId`, and `elo_find_next` pages through it. Release the search when done or ELO keeps the result set alive.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`elo.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "ELO_URL",
+    "ELO_USERNAME",
+    "ELO_PASSWORD"
+  ],
+  "connector": {
+    "name": "ELO Indexserver REST",
+    "type": "REST",
+    "baseUrl": "{{ELO_URL}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{ELO_URL}}/ix/login",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json"
+      },
+      "loginBody": {
+        "userName": "${username}",
+        "userPwd": "${password}",
+        "clientComputer": "AnythingMCP",
+        "runAsUser": ""
+      },
+      "username": "{{ELO_USERNAME}}",
+      "password": "{{ELO_PASSWORD}}",
+      "tokenJsonPath": "ticket",
+      "tokenTTLSeconds": 1800,
+      "proactiveRefreshSeconds": 180,
+      "refreshOn401": true,
+      "headerName": "X-ELO-Ticket",
+      "headerTemplate": "${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/ix/checkoutSord"
+  },
+  "probe": {
+    "tool": "elo_get_session_info"
+  },
+  "tools": [
+    {
+      "name": "elo_get_session_info",
+      "description": "Read the current ELO session: the logged-in user, their groups and the repository this connector is bound to. The quickest proof the ticket login works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ix/getUserData",
+        "bodyMapping": {}
+      }
+    },
+    {
+      "name": "elo_find_first",
+      "description": "Run an archive search and return the first page of hits plus a searchId. ELO's search is stateful — page it with elo_find_next, then release it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fulltext": {
+            "type": "string",
+            "description": "Full-text query over document content and index fields."
+          },
+          "maskId": {
+            "type": "string",
+            "description": "Restrict to one keywording form (Verschlagwortungsmaske) id."
+          },
+          "objIds": {
+            "type": "string",
+            "description": "Comma-separated objIds to restrict the search to."
+          },
+          "max": {
+            "type": "number",
+            "description": "Hits per page (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ix/findFirstSords",
+        "bodyMapping": {
+          "findInfo": {
+            "findByIndex": {
+              "maskId": "$maskId",
+              "objIds": "$objIds"
+            },
+            "findDirect": {
+              "query": "$fulltext"
+            }
+          },
+          "max": "$max"
+        }
+      }
+    },
+    {
+      "name": "elo_find_next",
+      "description": "Fetch the next page of an open ELO search using the searchId returned by elo_find_first. Stop when the response reports no more hits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "searchId": {
+            "type": "string",
+            "description": "Search id from elo_find_first."
+          },
+          "idx": {
+            "type": "number",
+            "description": "Index of the first hit to return on this page."
+          },
+          "max": {
+            "type": "number",
+            "description": "Hits per page."
+          }
+        },
+        "required": [
+          "searchId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ix/findNextSords",
+        "bodyMapping": {
+          "searchId": "$searchId",
+          "idx": "$idx",
+          "max": "$max"
+        }
+      }
+    },
+    {
+      "name": "elo_get_sord",
+      "description": "Read one Sord — folder or document — by objId, with its name, type, dates, owner and full keywording field values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objId": {
+            "type": "string",
+            "description": "Numeric objId or GUID of the Sord."
+          }
+        },
+        "required": [
+          "objId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ix/checkoutSord",
+        "bodyMapping": {
+          "objId": "$objId",
+          "editInfoZ": {
+            "bset": 268435456
+          },
+          "lockZ": {
+            "bset": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "elo_list_children",
+      "description": "List the children of a folder Sord — how you walk the ELO archive tree from a known folder downwards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parentId": {
+            "type": "string",
+            "description": "objId or GUID of the parent folder."
+          },
+          "max": {
+            "type": "number",
+            "description": "Maximum children to return."
+          }
+        },
+        "required": [
+          "parentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ix/getChildren",
+        "bodyMapping": {
+          "parentId": "$parentId",
+          "max": "$max"
+        }
+      }
+    },
+    {
+      "name": "elo_get_document_versions",
+      "description": "Read the version history of one document Sord: who checked in each version, when, and with what comment. The audit answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objId": {
+            "type": "string",
+            "description": "objId or GUID of the document."
+          }
+        },
+        "required": [
+          "objId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ix/getDocumentVersions",
+        "bodyMapping": {
+          "objId": "$objId"
+        }
+      }
+    },
+    {
+      "name": "elo_list_keywording_forms",
+      "description": "List the keywording forms (Verschlagwortungsmasken) defined in this repository, with their index field groups. Needed to make a find request precise.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ix/getMaskNames",
+        "bodyMapping": {}
+      }
+    }
+  ]
+}

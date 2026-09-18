@@ -1,0 +1,277 @@
+{
+  "slug": "haufe-x360",
+  "name": "Haufe X360",
+  "description": "Haufe X360 cloud ERP (the German Acumatica distribution): customers, stock items, sales orders, invoices and shipments over the contract-based REST API. Cookie-session auth against your own tenant. Partner credentials required.",
+  "region": "de",
+  "category": "erp",
+  "icon": "haufe-x360",
+  "docsUrl": "https://help.acumatica.com/Help?ScreenId=ShowWiki&pageid=f35e6e6b-a3b8-4bc0-8b26-14e4e1d6f2c6",
+  "instructions": "**Partner credentials required.** Haufe X360's API is not self-service: access is arranged through your Haufe implementation partner, who enables the endpoint on the tenant and creates the integration user. Do not expect to find an API key in the web UI.\n\n**Setup**\n1. Ask your partner to publish the **Default** contract-based endpoint (or a custom one) and note its version — typically `Default/20.200.001`.\n2. Have them create a dedicated API user with the licence type that permits API access, and the roles for the screens you want to read.\n3. Set `X360_URL` to your tenant root (e.g. `https://mycompany.haufe-x360.de`, no trailing slash), plus `X360_USERNAME`, `X360_PASSWORD`, and `X360_ENDPOINT_VERSION` if it differs from the default. A tenant with several companies also needs `X360_COMPANY`.\n\n**Acumatica's session is a cookie, and there is a licence limit on concurrent sessions.** The adapter logs in at `/entity/auth/login` and reuses the returned `.ASPXAUTH` cookie. Because the tenant licenses a fixed number of concurrent API sessions, a connector that logs in on every call will exhaust them; the cached session here is what keeps that from happening.\n\n**Field names are the screen's, not the database's.** The contract-based API exposes the *screen* field names, e.g. `CustomerID`, `CustomerName`, `OrderNbr` — with values wrapped as `{\"value\": …}`. Read a row before composing a `$filter`.\n\n**OData-style filtering** (`$filter`, `$top`, `$skip`, `$expand`, `$select`) works on the list endpoints. `$expand=Details` is what fetches an order's line items; without it you get the header only.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n",
+  "requiredEnvVars": [
+    "X360_URL",
+    "X360_USERNAME",
+    "X360_PASSWORD"
+  ],
+  "optionalEnvVars": [
+    "X360_COMPANY"
+  ],
+  "connector": {
+    "name": "Haufe X360 contract-based REST API",
+    "type": "REST",
+    "baseUrl": "{{X360_URL}}/entity/Default/20.200.001",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{X360_URL}}/entity/auth/login",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json"
+      },
+      "loginBody": {
+        "name": "${username}",
+        "password": "${password}",
+        "company": "{{X360_COMPANY}}"
+      },
+      "username": "{{X360_USERNAME}}",
+      "password": "{{X360_PASSWORD}}",
+      "tokenSource": "cookie",
+      "cookieName": ".ASPXAUTH",
+      "tokenJsonPath": "token",
+      "tokenTTLSeconds": 1200,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "headerName": "Cookie",
+      "headerTemplate": ".ASPXAUTH=${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/Customer?$top=1"
+  },
+  "probe": {
+    "tool": "haufe_x360_list_customers"
+  },
+  "tools": [
+    {
+      "name": "haufe_x360_list_customers",
+      "description": "List customers with their id, name, status, class and balance. Use $top to keep the first call small — X360 returns every field of every row otherwise.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression, e.g. Status eq 'Active'."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. CustomerID,CustomerName,Balance."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Customer",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$select": "$select"
+        }
+      }
+    },
+    {
+      "name": "haufe_x360_get_customer",
+      "description": "Read one customer by their customer id, with addresses, contacts, payment terms and credit settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "description": "Customer id as shown on the screen, e.g. C000001."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related entities to expand, e.g. Contacts,MainContact."
+          }
+        },
+        "required": [
+          "customerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Customer/{customerId}",
+        "queryParams": {
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "haufe_x360_list_sales_orders",
+      "description": "List sales orders with their number, type, customer, date, status and total. Pass $expand=Details to get the line items in the same call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression, e.g. Status eq 'Open'."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related entities to expand; `Details` returns the line items."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/SalesOrder",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "haufe_x360_list_stock_items",
+      "description": "List stock items with their inventory id, description, item class, base unit and default price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression, e.g. ItemStatus eq 'Active'."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/StockItem",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "haufe_x360_list_invoices",
+      "description": "List A/R invoices with their reference number, customer, date, due date, status and balance — the answer to 'what is still open'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression, e.g. Status eq 'Open'."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Related entities to expand, e.g. Details."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Invoice",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "haufe_x360_list_shipments",
+      "description": "List shipments with their number, customer, status, shipment date and the sales order they fulfil.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Shipment",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "haufe_x360_list_vendors",
+      "description": "List vendors with their id, name, status, class and balance, for the purchasing side of the ledger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Vendor",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    }
+  ]
+}

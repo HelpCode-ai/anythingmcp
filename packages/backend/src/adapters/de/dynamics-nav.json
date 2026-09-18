@@ -1,0 +1,208 @@
+{
+  "slug": "dynamics-nav",
+  "name": "Microsoft Dynamics NAV",
+  "description": "Microsoft Dynamics NAV on-premises over OData v4: query and update any published page or query web service — customers, items, sales orders, vendors — in one company. NavUserPassword or Windows basic auth against your own NAV service tier.",
+  "region": "de",
+  "category": "erp",
+  "icon": "dynamics-nav",
+  "docsUrl": "https://learn.microsoft.com/en-us/dynamics-nav/odata-web-services",
+  "instructions": "**Publish the web services first.** NAV exposes nothing by default. In the NAV client open **Web Services** (page 810) and add a row per object you want to reach: Object Type `Page`, the object id, and a **Service Name** — that service name is the OData entity set name, not the page's caption. Tick Published. Common ones: page 21 → `Customer`, page 27 → `Vendor`, page 30 → `Item`, page 42 → `SalesOrder`.\n\n**Then point the connector at one company.**\n1. `NAV_BASE_URL` is the OData root of your service tier, e.g. `https://nav.example.com:7048/DynamicsNAV110/OData`. No trailing slash.\n2. `NAV_COMPANY` is the company name exactly as NAV spells it, including spaces — `CRONUS Deutschland GmbH`. The adapter builds `.../OData/Company('<name>')`, so one connector serves one company; add a second connector for a second company.\n3. `NAV_USERNAME` and `NAV_PASSWORD` are a NavUserPassword credential (or a Windows account, if the service tier is configured for NTLM).\n\n**OData v4 vocabulary**: `$filter`, `$select`, `$top`, `$orderby`, `$expand`. String comparison is `Name eq 'Muster'` with single quotes; dates are bare (`Order_Date ge 2026-01-01`). NAV replaces spaces in field names with underscores, so *Order Date* is `Order_Date`.\n\n**Updates need the row's etag.** OData v4 requires `If-Match` on a PATCH. `dynamics_nav_update_record` sends `If-Match: *`, which means 'update whichever version is current' — simple, and deliberately last-writer-wins. Read the row first if that matters.\n\n**SOAP is being retired**, in Business Central from release wave 2026-2. OData is the path forward, which is why this adapter speaks it and not the older SOAP endpoint.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`nav.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "NAV_BASE_URL",
+    "NAV_COMPANY",
+    "NAV_USERNAME",
+    "NAV_PASSWORD"
+  ],
+  "connector": {
+    "name": "Dynamics NAV OData v4",
+    "type": "REST",
+    "baseUrl": "{{NAV_BASE_URL}}/Company('{{NAV_COMPANY}}')",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{NAV_USERNAME}}",
+      "password": "{{NAV_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "OData-Version": "4.0"
+    },
+    "healthcheckPath": "/"
+  },
+  "probe": {
+    "tool": "dynamics_nav_list_services"
+  },
+  "tools": [
+    {
+      "name": "dynamics_nav_list_services",
+      "description": "List the published web services available on this company — the entity set names every other tool needs. Start here: NAV exposes nothing that has not been published by hand.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/"
+      }
+    },
+    {
+      "name": "dynamics_nav_query",
+      "description": "Query any published entity set with OData v4. The general-purpose read: pass the service name plus $filter, $select, $top and $orderby.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "Published web service name, e.g. Customer, Item, SalesOrder."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression, e.g. Country_Region_Code eq 'DE'. Field names use underscores for spaces."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. No,Name,Balance_LCY."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort expression, e.g. `Name asc` or `Order_Date desc`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to expand inline, e.g. SalesOrderSalesLines."
+          }
+        },
+        "required": [
+          "service"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{service}",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$orderby": "$orderby",
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "dynamics_nav_get_by_key",
+      "description": "Read one record by its OData key. NAV keys are often composite, so pass the key exactly as it appears in a list response's `@odata.id`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "Published web service name, e.g. Customer."
+          },
+          "key": {
+            "type": "string",
+            "description": "OData key literal, e.g. '10000' or Document_Type='Order',No='101005'."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Navigation properties to expand inline."
+          }
+        },
+        "required": [
+          "service",
+          "key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{service}({key})",
+        "queryParams": {
+          "$expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "dynamics_nav_get_metadata",
+      "description": "Read the OData $metadata document: every published entity type, its properties and their data types. The authoritative field list when a $filter keeps failing.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/$metadata"
+      }
+    },
+    {
+      "name": "dynamics_nav_create_record",
+      "description": "Create a record in a published entity set. Writes to the live NAV company and triggers the page's own validation and business logic.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "Published web service name, e.g. Customer."
+          },
+          "record": {
+            "type": "object",
+            "description": "Field values for the new record, keyed by OData field name, e.g. {\"Name\": \"Muster GmbH\", \"Country_Region_Code\": \"DE\"}."
+          }
+        },
+        "required": [
+          "service",
+          "record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{service}",
+        "bodyMapping": {
+          "__raw": "$record"
+        }
+      }
+    },
+    {
+      "name": "dynamics_nav_update_record",
+      "description": "Update one record by key. Sends If-Match: * — last writer wins — so read the row first if a concurrent edit would matter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "Published web service name."
+          },
+          "key": {
+            "type": "string",
+            "description": "OData key literal of the record to update."
+          },
+          "record": {
+            "type": "object",
+            "description": "Field values to set, keyed by OData field name."
+          }
+        },
+        "required": [
+          "service",
+          "key",
+          "record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/{service}({key})",
+        "headers": {
+          "If-Match": "*"
+        },
+        "bodyMapping": {
+          "__raw": "$record"
+        }
+      }
+    }
+  ]
+}

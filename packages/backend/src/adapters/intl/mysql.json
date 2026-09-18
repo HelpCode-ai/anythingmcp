@@ -1,0 +1,117 @@
+{
+  "slug": "mysql",
+  "name": "MySQL / MariaDB",
+  "description": "Query a MySQL or MariaDB database directly: list tables, describe columns and run read-only SQL. Installs read-only; credentials are held encrypted rather than in the connection string.",
+  "region": "intl",
+  "category": "database",
+  "icon": "mysql",
+  "docsUrl": "https://dev.mysql.com/doc/refman/8.4/en/",
+  "instructions": "**Setup**\n1. Create a dedicated user and grant it only SELECT:\n   ```sql\n   CREATE USER 'amcp_reader'@'%' IDENTIFIED BY 'change-me';\n   GRANT SELECT ON sales.* TO 'amcp_reader'@'%';\n   FLUSH PRIVILEGES;\n   ```\n   Narrow `'%'` to the AnythingMCP host if you can — MySQL's host part of the account name is a real access control and worth using.\n2. Set `MYSQL_HOST`, `MYSQL_PORT` (3306), `MYSQL_DATABASE`, `MYSQL_USER` and `MYSQL_PASSWORD`.\n\n**MariaDB works unchanged.** The engine also accepts a `mariadb://` DSN and normalises it, because the mysql2 driver only understands `mysql://`. Either scheme reaches a MariaDB server.\n\n**In MySQL a schema *is* a database.** `information_schema.tables.table_schema` holds the database name, so the listing below is scoped to the one database you configured rather than to a schema inside it.\n\n**How a database connector behaves**\n\n- **It installs read-only.** The engine rejects anything that is not a read\n  until you flip the switch in the connector's settings. That is a guard rail,\n  not a security boundary: give the connection a database role that is itself\n  read-only, and the guard rail never has to matter.\n- **Credentials live in the encrypted `authConfig`**, not in the connection\n  string. `MYSQL_USER` and `MYSQL_PASSWORD` are stored encrypted and spliced into the\n  DSN at call time; the host and database name are stored in the plaintext\n  `baseUrl` column.\n- **Results are capped at 1000 rows.** A query that would return more comes\n  back truncated with a flag. Aggregate in SQL rather than in the agent.\n- **A statement runs exactly as written.** There is no query rewriting and no\n  automatic LIMIT — an unbounded scan on a large table is a real unbounded\n  scan on your production database. Say LIMIT.\n\n**Reachable from where?**\n\n- On **AnythingMCP Cloud** the server must accept connections from the public\n  internet, which for a production database usually means it should not. Point\n  the connector at a read replica, or self-host AnythingMCP inside the network.\n- **Self-hosted**, add the host to `SSRF_ALLOWED_HOSTS`: the outbound guard\n  blocks private address space by default, and `10.0.0.5` is exactly the shape\n  it is there to block.\n",
+  "requiredEnvVars": [
+    "MYSQL_HOST",
+    "MYSQL_PORT",
+    "MYSQL_DATABASE",
+    "MYSQL_USER",
+    "MYSQL_PASSWORD"
+  ],
+  "connector": {
+    "name": "MySQL / MariaDB",
+    "type": "DATABASE",
+    "baseUrl": "mysql://{{MYSQL_HOST}}:{{MYSQL_PORT}}/{{MYSQL_DATABASE}}",
+    "authType": "CONNECTION_STRING",
+    "authConfig": {
+      "username": "{{MYSQL_USER}}",
+      "password": "{{MYSQL_PASSWORD}}"
+    }
+  },
+  "probe": {
+    "tool": "mysql_list_tables"
+  },
+  "tools": [
+    {
+      "name": "mysql_list_tables",
+      "description": "List the tables and views in the database with their schema and, where the server tracks it, an approximate row count. Start here — it is the map of what can be queried.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT table_schema, table_name, table_type, table_rows FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name"
+      }
+    },
+    {
+      "name": "mysql_describe_table",
+      "description": "Describe one table: every column with its data type, nullability and default. Read this before writing a query against a table you have not seen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_name": {
+            "type": "string",
+            "description": "Table name, without the schema prefix."
+          }
+        },
+        "required": [
+          "table_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT column_name, column_type, is_nullable, column_default, column_key FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ${table_name} ORDER BY ordinal_position"
+      }
+    },
+    {
+      "name": "mysql_find_columns",
+      "description": "Find columns across every table whose name matches a pattern — the fast way to locate where customer e-mail addresses, IBANs or order numbers actually live.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "SQL LIKE pattern matched against the column name, e.g. %email% or %_id."
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT table_name, column_name, column_type FROM information_schema.columns WHERE table_schema = DATABASE() AND column_name LIKE ${pattern} ORDER BY table_name, column_name"
+      }
+    },
+    {
+      "name": "mysql_query",
+      "description": "Run a read-only SQL statement against MySQL / MariaDB and return up to 1000 rows. The statement runs exactly as written — there is no automatic LIMIT, so say LIMIT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A single SQL SELECT statement. Include your own LIMIT; nothing is added for you."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "${query}"
+      }
+    },
+    {
+      "name": "mysql_query_examples",
+      "description": "Show worked example queries for MySQL / MariaDB: how to list schemas, find large tables, inspect indexes and check what is running right now. Costs nothing and touches no data.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "MySQL / MariaDB example queries\n\n-- The ten largest tables in this database\nSELECT table_name, table_rows,\n       ROUND((data_length + index_length) / 1024 / 1024, 1) AS mb\nFROM information_schema.tables WHERE table_schema = DATABASE()\nORDER BY data_length + index_length DESC LIMIT 10;\n\n-- Indexes on a table\nSHOW INDEX FROM orders;\n\n-- Foreign keys out of a table\nSELECT constraint_name, column_name, referenced_table_name, referenced_column_name\nFROM information_schema.key_column_usage\nWHERE table_schema = DATABASE() AND table_name = 'orders'\n  AND referenced_table_name IS NOT NULL;\n\n-- Tables with no primary key — usually a mistake worth reporting\nSELECT t.table_name FROM information_schema.tables t\nLEFT JOIN information_schema.table_constraints c\n  ON c.table_schema = t.table_schema AND c.table_name = t.table_name\n AND c.constraint_type = 'PRIMARY KEY'\nWHERE t.table_schema = DATABASE() AND t.table_type = 'BASE TABLE'\n  AND c.constraint_name IS NULL;\n\n-- Columns whose name suggests personal data\nSELECT table_name, column_name FROM information_schema.columns\nWHERE table_schema = DATABASE()\n  AND column_name REGEXP '(email|phone|iban|birth|passwor|ssn|tax)'\nORDER BY 1, 2;\n\n-- Character sets in use, for a mojibake investigation\nSELECT table_name, column_name, character_set_name, collation_name\nFROM information_schema.columns\nWHERE table_schema = DATABASE() AND character_set_name IS NOT NULL\nGROUP BY 1, 2, 3, 4;\n"
+      }
+    }
+  ]
+}

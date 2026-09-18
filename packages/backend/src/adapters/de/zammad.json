@@ -1,0 +1,360 @@
+{
+  "slug": "zammad",
+  "name": "Zammad",
+  "description": "Zammad open-source helpdesk: tickets, their articles, users, organizations and groups, plus full-text search across the ticket base. REST API v1 on your own Zammad instance, token auth.",
+  "region": "de",
+  "category": "support",
+  "icon": "zammad",
+  "docsUrl": "https://docs.zammad.org/en/latest/api/intro.html",
+  "instructions": "**Getting a token**\n1. Sign in to Zammad, open your avatar → **Profile → Token Access**, and switch token access on if an admin has not already.\n2. Create a token with the permissions the agent needs — `ticket.agent` to read and answer tickets, `admin` only if you really want the agent to change configuration.\n3. Put it in `ZAMMAD_API_TOKEN` and your instance's base URL (no trailing slash, no `/api`) in `ZAMMAD_URL`.\n\n**The Authorization header is `Token token=…`**, Zammad's own scheme — not `Bearer`. This adapter sends it correctly; it is the first thing to check when hand-building a Zammad connector that 401s with a token you know is good.\n\n**Permissions are per-token *and* per-group.** A token whose user is not a member of a group cannot see that group's tickets, and Zammad reports this as an empty list rather than an error. An agent that says 'there are no tickets' may simply be looking through the wrong account.\n\n**Search syntax** is Elasticsearch-flavoured when Zammad has Elasticsearch attached, and falls back to a much simpler SQL LIKE otherwise. `state.name:open AND group.name:Support` works on the former and not the latter, so keep queries simple if you are unsure.\n\n**expand=true** turns id references (`state_id`, `owner_id`) into readable names. The list tools below pass it through; it costs a little latency and saves several follow-up calls.\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`zammad.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n\n**Writes**: `zammad_create_ticket` opens a real ticket that notifies the customer, and `zammad_add_article` sends a real reply if `type` is `email`. Use `type: note` with `internal: true` for anything the customer should not see.",
+  "requiredEnvVars": [
+    "ZAMMAD_URL",
+    "ZAMMAD_API_TOKEN"
+  ],
+  "connector": {
+    "name": "Zammad API v1",
+    "type": "REST",
+    "baseUrl": "{{ZAMMAD_URL}}/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Token token={{ZAMMAD_API_TOKEN}}"
+    },
+    "healthcheckPath": "/users/me"
+  },
+  "probe": {
+    "tool": "zammad_get_me"
+  },
+  "tools": [
+    {
+      "name": "zammad_get_me",
+      "description": "Read the user the token belongs to, with their roles, group memberships and permissions. The fastest way to see what this connector is actually allowed to do.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      }
+    },
+    {
+      "name": "zammad_list_tickets",
+      "description": "List tickets, newest first, with state, priority, group, owner and customer. Pass expand=true to get readable names instead of numeric ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page (default 50, max 100)."
+          },
+          "expand": {
+            "type": "boolean",
+            "description": "When true, resolve id references to names."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by, e.g. created_at or updated_at."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "`asc` or `desc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "expand": "$expand",
+          "sort_by": "$sort_by",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "zammad_search_tickets",
+      "description": "Full-text search across tickets. With Elasticsearch attached, field queries like `state.name:open AND group.name:Support` work; without it, keep to plain words.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query. Plain words always work; field syntax needs Elasticsearch."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum results to return (default 50)."
+          },
+          "expand": {
+            "type": "boolean",
+            "description": "When true, resolve id references to names."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/search",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "zammad_get_ticket",
+      "description": "Read one ticket by number or id with all its attributes: state, priority, owner, customer, group, SLA and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric ticket id (not the ticket number)."
+          },
+          "expand": {
+            "type": "boolean",
+            "description": "When true, resolve id references to names."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "zammad_list_ticket_articles",
+      "description": "Read the conversation on one ticket: every article in order, with sender, type, body and whether it is internal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticketId": {
+            "type": "number",
+            "description": "Numeric ticket id."
+          }
+        },
+        "required": [
+          "ticketId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ticket_articles/by_ticket/{ticketId}"
+      }
+    },
+    {
+      "name": "zammad_list_users",
+      "description": "List users (agents and customers) with their name, e-mail, organization and active flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page (default 50, max 100)."
+          },
+          "expand": {
+            "type": "boolean",
+            "description": "When true, resolve id references to names."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "zammad_search_users",
+      "description": "Find a user by name, e-mail or phone fragment — the usual first step before opening a ticket for somebody.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search term: part of a name, e-mail address or phone number."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum results to return."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/search",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "zammad_list_organizations",
+      "description": "List organizations (the customer companies tickets are grouped under) with their domain, note and VIP flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "zammad_list_groups",
+      "description": "List the groups (queues) tickets are routed into, with their assignment and follow-up settings. Needed to pick a group when opening a ticket.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups"
+      }
+    },
+    {
+      "name": "zammad_create_ticket",
+      "description": "Open a real ticket in the live instance. Zammad notifies the customer according to the group's settings, so this is not a dry run.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Ticket subject."
+          },
+          "group": {
+            "type": "string",
+            "description": "Group (queue) name the ticket is routed to, e.g. Support."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer's e-mail address or numeric user id."
+          },
+          "body": {
+            "type": "string",
+            "description": "Body of the first article."
+          },
+          "type": {
+            "type": "string",
+            "description": "Article type: `note`, `email` or `phone`. `email` actually sends mail."
+          },
+          "internal": {
+            "type": "boolean",
+            "description": "When true, the first article is internal and not shown to the customer."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Priority name: `1 low`, `2 normal` or `3 high`."
+          }
+        },
+        "required": [
+          "title",
+          "group",
+          "customer_id",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets",
+        "bodyMapping": {
+          "title": "$title",
+          "group": "$group",
+          "customer_id": "$customer_id",
+          "priority": "$priority",
+          "article": {
+            "subject": "$title",
+            "body": "$body",
+            "type": "$type",
+            "internal": "$internal"
+          }
+        }
+      }
+    },
+    {
+      "name": "zammad_add_article",
+      "description": "Add an article to an existing ticket. With type `email` Zammad sends it to the customer; use type `note` with internal=true for a private comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "number",
+            "description": "Numeric ticket id."
+          },
+          "body": {
+            "type": "string",
+            "description": "Article body."
+          },
+          "type": {
+            "type": "string",
+            "description": "`note`, `email` or `phone`. `email` actually sends mail."
+          },
+          "internal": {
+            "type": "boolean",
+            "description": "When true, the article is internal and invisible to the customer."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Article subject; defaults to the ticket title."
+          }
+        },
+        "required": [
+          "ticket_id",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ticket_articles",
+        "bodyMapping": {
+          "ticket_id": "$ticket_id",
+          "body": "$body",
+          "type": "$type",
+          "internal": "$internal",
+          "subject": "$subject"
+        }
+      }
+    }
+  ]
+}

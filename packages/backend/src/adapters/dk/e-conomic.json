@@ -1,0 +1,308 @@
+{
+  "slug": "e-conomic",
+  "name": "e-conomic",
+  "description": "e-conomic — the Danish accounting standard (Visma group): customers, suppliers, booked and draft invoices, products, accounts and journals. REST API, authenticated with two separate tokens.",
+  "region": "dk",
+  "category": "accounting",
+  "icon": "e-conomic",
+  "docsUrl": "https://restdocs.e-conomic.com/",
+  "instructions": "**e-conomic needs two tokens, and they come from different places.**\n1. The **App Secret Token** identifies your *application*. You get it once, from e-conomic, when you register as a developer partner at `secure.e-conomic.com/secure/api1/requestaccess.aspx`. It is the same for every customer you connect.\n2. The **Agreement Grant Token** identifies the *customer's agreement* (their e-conomic company). The customer grants it by going through e-conomic's app-authorisation URL for your app; each customer produces a different one.\n3. Set `ECONOMIC_APP_SECRET_TOKEN` and `ECONOMIC_AGREEMENT_GRANT_TOKEN`.\n\nBoth travel as headers on every request — `X-AppSecretToken` and `X-AgreementGrantToken`. A 401 here means one of the two is wrong, and the message does not say which.\n\n**One connector, one agreement.** The grant token binds this connector to one company. A bookkeeper with several clients needs one connector per client.\n\n**Booked vs drafts vs not-due.** e-conomic splits invoices across three collections: `/invoices/drafts` (not yet booked — not revenue), `/invoices/booked` (posted and immutable), `/invoices/not-due` and `/invoices/overdue` (booked and unpaid, split by due date). Summing drafts with booked over-reports; the overdue collection is the direct answer to 'who is late'.\n\n**Paging** is `skippages` and `pagesize` (max 1000). The response's `pagination` block carries `results`, `resultsWithoutFilter` and the link to the next page.\n\n**Filtering** uses e-conomic's own syntax: `filter=date$gte:2026-01-01$and:date$lte:2026-03-31`. Operators are `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$like`, `$in`, joined with `$and:` and `$or:`.\n\n**Cloud reachability**: restapi.e-conomic.com is public with a valid certificate.",
+  "requiredEnvVars": [
+    "ECONOMIC_APP_SECRET_TOKEN",
+    "ECONOMIC_AGREEMENT_GRANT_TOKEN"
+  ],
+  "connector": {
+    "name": "e-conomic REST API",
+    "type": "REST",
+    "baseUrl": "https://restapi.e-conomic.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-AppSecretToken",
+      "apiKey": "{{ECONOMIC_APP_SECRET_TOKEN}}",
+      "extraHeaders": {
+        "X-AgreementGrantToken": "{{ECONOMIC_AGREEMENT_GRANT_TOKEN}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/self"
+  },
+  "probe": {
+    "tool": "e_conomic_get_self"
+  },
+  "tools": [
+    {
+      "name": "e_conomic_get_self",
+      "description": "Read the agreement this connector is bound to: the company name, its CVR number, the application name and the modules enabled. The fastest way to check both tokens at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/self"
+      }
+    },
+    {
+      "name": "e_conomic_list_customers",
+      "description": "List customers with their number, name, CVR number, address, currency and payment terms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "e-conomic filter, e.g. name$like:Muster or customerNumber$gte:1000."
+          },
+          "pagesize": {
+            "type": "number",
+            "description": "Rows per page, max 1000."
+          },
+          "skippages": {
+            "type": "number",
+            "description": "Pages to skip, for paging."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, prefix with `-` for descending."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "filter": "$filter",
+          "pagesize": "$pagesize",
+          "skippages": "$skippages",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "e_conomic_get_customer",
+      "description": "Read one customer by their customer number, with addresses, VAT zone, payment terms and the layout used for their invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerNumber": {
+            "type": "number",
+            "description": "e-conomic customer number."
+          }
+        },
+        "required": [
+          "customerNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customerNumber}"
+      }
+    },
+    {
+      "name": "e_conomic_list_booked_invoices",
+      "description": "List booked (posted, immutable) invoices with their number, date, due date, customer and totals. This is what 'invoiced revenue' means.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "e-conomic filter, e.g. date$gte:2026-01-01$and:date$lte:2026-03-31."
+          },
+          "pagesize": {
+            "type": "number",
+            "description": "Rows per page, max 1000."
+          },
+          "skippages": {
+            "type": "number",
+            "description": "Pages to skip, for paging."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, prefix with `-` for descending."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/booked",
+        "queryParams": {
+          "filter": "$filter",
+          "pagesize": "$pagesize",
+          "skippages": "$skippages",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "e_conomic_get_booked_invoice",
+      "description": "Read one booked invoice in full: every line with product, quantity, unit price and VAT, plus the totals and the remaining amount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bookedInvoiceNumber": {
+            "type": "number",
+            "description": "Booked invoice number."
+          }
+        },
+        "required": [
+          "bookedInvoiceNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/booked/{bookedInvoiceNumber}"
+      }
+    },
+    {
+      "name": "e_conomic_list_overdue_invoices",
+      "description": "List booked invoices that are past their due date and still unpaid — the direct answer to 'who is late', without needing a filter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pagesize": {
+            "type": "number",
+            "description": "Rows per page, max 1000."
+          },
+          "skippages": {
+            "type": "number",
+            "description": "Pages to skip, for paging."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, e.g. dueDate."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/overdue",
+        "queryParams": {
+          "pagesize": "$pagesize",
+          "skippages": "$skippages",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "e_conomic_list_draft_invoices",
+      "description": "List unbooked invoice drafts. A draft is not revenue — keep it out of any figure reporting what was actually invoiced.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "e-conomic filter expression."
+          },
+          "pagesize": {
+            "type": "number",
+            "description": "Rows per page, max 1000."
+          },
+          "skippages": {
+            "type": "number",
+            "description": "Pages to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/drafts",
+        "queryParams": {
+          "filter": "$filter",
+          "pagesize": "$pagesize",
+          "skippages": "$skippages"
+        }
+      }
+    },
+    {
+      "name": "e_conomic_list_suppliers",
+      "description": "List suppliers with their number, name, CVR number, currency and payment terms, for the purchasing side of the ledger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "e-conomic filter expression."
+          },
+          "pagesize": {
+            "type": "number",
+            "description": "Rows per page, max 1000."
+          },
+          "skippages": {
+            "type": "number",
+            "description": "Pages to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers",
+        "queryParams": {
+          "filter": "$filter",
+          "pagesize": "$pagesize",
+          "skippages": "$skippages"
+        }
+      }
+    },
+    {
+      "name": "e_conomic_list_products",
+      "description": "List products with their number, name, sales price, cost price, unit and the product group they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "e-conomic filter expression, e.g. name$like:Widget."
+          },
+          "pagesize": {
+            "type": "number",
+            "description": "Rows per page, max 1000."
+          },
+          "skippages": {
+            "type": "number",
+            "description": "Pages to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "filter": "$filter",
+          "pagesize": "$pagesize",
+          "skippages": "$skippages"
+        }
+      }
+    },
+    {
+      "name": "e_conomic_list_accounts",
+      "description": "List the chart of accounts with each account's number, name, type, VAT account and current balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "e-conomic filter expression."
+          },
+          "pagesize": {
+            "type": "number",
+            "description": "Rows per page, max 1000."
+          },
+          "skippages": {
+            "type": "number",
+            "description": "Pages to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "filter": "$filter",
+          "pagesize": "$pagesize",
+          "skippages": "$skippages"
+        }
+      }
+    }
+  ]
+}

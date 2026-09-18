@@ -1,0 +1,314 @@
+{
+  "slug": "znuny",
+  "name": "Znuny",
+  "description": "Znuny (the maintained OTRS fork, and the same API as OTOBO): search and read tickets with their articles, open tickets and add articles, over the GenericInterface REST web service on your own instance.",
+  "region": "de",
+  "category": "support",
+  "icon": "znuny",
+  "docsUrl": "https://doc.znuny.org/znuny/api/",
+  "instructions": "**A Znuny web service has to be created before any of this works.** Znuny does not expose a REST API by default; you build one in the admin UI.\n1. Go to **Admin → Web Services → Add web service** and import Znuny's bundled `GenericTicketConnectorREST.yml` (it ships in `scripts/examples/webservices/`). That file defines exactly the four operations this adapter calls, and the routes below are its routes: `GET /Ticket` is TicketSearch, `POST /Ticket` is TicketCreate, `GET /Ticket/:TicketID` is TicketGet and `PATCH /Ticket/:TicketID` is TicketUpdate. If you wrote your own web service with different routes, change them here to match.\n2. Note the **web service name** you gave it — it is part of every URL. Set it in `ZNUNY_WEBSERVICE`; the bundled file's default is `GenericTicketConnectorREST`.\n3. Create a Znuny agent for the integration with the queue permissions the agent should have, and put its login in `ZNUNY_USERNAME` and password in `ZNUNY_PASSWORD`. Set `ZNUNY_URL` to your instance root, no trailing slash.\n\n**Credentials travel in the request itself, not in a header.** The GenericInterface expects `UserLogin` and `Password` as parameters on every call — that is Znuny's design, not an oversight here. AnythingMCP appends them automatically so they never reach a prompt or a tool parameter. They do end up in the query string, and therefore in the web server's access log: give this agent its own Znuny account and rotate its password like any other.\n\n**OTOBO is the same API.** OTOBO forked from OTRS alongside Znuny and kept the GenericInterface unchanged. Point this adapter at an OTOBO instance and it works — set `ZNUNY_SCRIPT_PATH` to `otobo/nph-genericinterface.pl` instead of the Znuny default.\n\n**Search returns ids only.** `znuny_search_tickets` gives you `TicketID`s; `znuny_get_ticket` turns one into a full record. Articles are omitted unless you ask for them, because a long thread is large.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`znuny.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "ZNUNY_URL",
+    "ZNUNY_WEBSERVICE",
+    "ZNUNY_USERNAME",
+    "ZNUNY_PASSWORD"
+  ],
+  "optionalEnvVars": [
+    "ZNUNY_SCRIPT_PATH"
+  ],
+  "connector": {
+    "name": "Znuny GenericInterface REST",
+    "type": "REST",
+    "baseUrl": "{{ZNUNY_URL}}/znuny/nph-genericinterface.pl/Webservice/{{ZNUNY_WEBSERVICE}}",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "UserLogin": "{{ZNUNY_USERNAME}}",
+      "Password": "{{ZNUNY_PASSWORD}}"
+    },
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/Ticket"
+  },
+  "probe": {
+    "tool": "znuny_search_tickets"
+  },
+  "tools": [
+    {
+      "name": "znuny_search_tickets",
+      "description": "Search tickets by queue, state, customer or title fragment (TicketSearch). Returns TicketIDs only — feed them to znuny_get_ticket for the detail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Title": {
+            "type": "string",
+            "description": "Title fragment; Znuny matches with a wildcard on both sides."
+          },
+          "Queues": {
+            "type": "string",
+            "description": "Queue name to search, e.g. Raw or Support."
+          },
+          "States": {
+            "type": "string",
+            "description": "State name, e.g. new or open."
+          },
+          "CustomerID": {
+            "type": "string",
+            "description": "Restrict to one customer company id."
+          },
+          "CustomerUserLogin": {
+            "type": "string",
+            "description": "Restrict to one customer user login."
+          },
+          "Limit": {
+            "type": "number",
+            "description": "Maximum TicketIDs to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Ticket",
+        "queryParams": {
+          "Title": "$Title",
+          "Queues": "$Queues",
+          "States": "$States",
+          "CustomerID": "$CustomerID",
+          "CustomerUserLogin": "$CustomerUserLogin",
+          "Limit": "$Limit"
+        }
+      }
+    },
+    {
+      "name": "znuny_get_ticket",
+      "description": "Read one ticket by TicketID (TicketGet) with its queue, state, priority, owner, customer and SLA. Set AllArticles to 1 to include the conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "TicketID": {
+            "type": "number",
+            "description": "Numeric ticket id from znuny_search_tickets."
+          },
+          "AllArticles": {
+            "type": "number",
+            "description": "1 to include every article, 0 for the ticket header only."
+          },
+          "DynamicFields": {
+            "type": "number",
+            "description": "1 to include dynamic field values."
+          },
+          "Attachments": {
+            "type": "number",
+            "description": "1 to include article attachment metadata."
+          }
+        },
+        "required": [
+          "TicketID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Ticket/{TicketID}",
+        "queryParams": {
+          "AllArticles": "$AllArticles",
+          "DynamicFields": "$DynamicFields",
+          "Attachments": "$Attachments"
+        }
+      }
+    },
+    {
+      "name": "znuny_get_ticket_articles",
+      "description": "Read one ticket's full conversation: every article in order with its sender, channel, subject, body and customer visibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "TicketID": {
+            "type": "number",
+            "description": "Numeric ticket id."
+          }
+        },
+        "required": [
+          "TicketID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Ticket/{TicketID}",
+        "queryParams": {
+          "AllArticles": 1,
+          "DynamicFields": 0,
+          "Attachments": 0
+        }
+      }
+    },
+    {
+      "name": "znuny_create_ticket",
+      "description": "Open a real ticket with its first article (TicketCreate). Znuny applies the queue's notification rules, so the customer may be e-mailed immediately.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Title": {
+            "type": "string",
+            "description": "Ticket title."
+          },
+          "Queue": {
+            "type": "string",
+            "description": "Queue name the ticket is placed in, e.g. Raw."
+          },
+          "State": {
+            "type": "string",
+            "description": "Initial state name, e.g. new."
+          },
+          "Priority": {
+            "type": "string",
+            "description": "Priority name, e.g. `3 normal`."
+          },
+          "CustomerUser": {
+            "type": "string",
+            "description": "Customer user login or e-mail address."
+          },
+          "Subject": {
+            "type": "string",
+            "description": "Subject of the first article."
+          },
+          "Body": {
+            "type": "string",
+            "description": "Body of the first article."
+          },
+          "CommunicationChannel": {
+            "type": "string",
+            "description": "`Internal`, `Email` or `Phone`. `Email` actually sends mail."
+          },
+          "SenderType": {
+            "type": "string",
+            "description": "`agent`, `system` or `customer`."
+          }
+        },
+        "required": [
+          "Title",
+          "Queue",
+          "CustomerUser",
+          "Subject",
+          "Body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Ticket",
+        "bodyMapping": {
+          "Ticket": {
+            "Title": "$Title",
+            "Queue": "$Queue",
+            "State": "$State",
+            "Priority": "$Priority",
+            "CustomerUser": "$CustomerUser"
+          },
+          "Article": {
+            "Subject": "$Subject",
+            "Body": "$Body",
+            "ContentType": "text/plain; charset=utf8",
+            "CommunicationChannel": "$CommunicationChannel",
+            "SenderType": "$SenderType"
+          }
+        }
+      }
+    },
+    {
+      "name": "znuny_add_article",
+      "description": "Add an article to an existing ticket (TicketUpdate). With the Email channel Znuny actually sends it, so use Internal for anything the customer should not see.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "TicketID": {
+            "type": "number",
+            "description": "Numeric ticket id."
+          },
+          "Subject": {
+            "type": "string",
+            "description": "Article subject."
+          },
+          "Body": {
+            "type": "string",
+            "description": "Article body."
+          },
+          "CommunicationChannel": {
+            "type": "string",
+            "description": "`Internal`, `Email` or `Phone`. `Email` actually sends mail."
+          },
+          "SenderType": {
+            "type": "string",
+            "description": "`agent`, `system` or `customer`."
+          },
+          "IsVisibleForCustomer": {
+            "type": "number",
+            "description": "1 to show the article to the customer, 0 to keep it internal."
+          }
+        },
+        "required": [
+          "TicketID",
+          "Subject",
+          "Body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/Ticket/{TicketID}",
+        "bodyMapping": {
+          "Article": {
+            "Subject": "$Subject",
+            "Body": "$Body",
+            "ContentType": "text/plain; charset=utf8",
+            "CommunicationChannel": "$CommunicationChannel",
+            "SenderType": "$SenderType",
+            "IsVisibleForCustomer": "$IsVisibleForCustomer"
+          }
+        }
+      }
+    },
+    {
+      "name": "znuny_update_ticket",
+      "description": "Change a ticket's state, queue, priority or owner (TicketUpdate) — the move that closes a ticket or hands it to another team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "TicketID": {
+            "type": "number",
+            "description": "Numeric ticket id."
+          },
+          "State": {
+            "type": "string",
+            "description": "New state name, e.g. `closed successful`."
+          },
+          "Queue": {
+            "type": "string",
+            "description": "New queue name."
+          },
+          "Priority": {
+            "type": "string",
+            "description": "New priority name."
+          },
+          "Owner": {
+            "type": "string",
+            "description": "Login of the new owner."
+          }
+        },
+        "required": [
+          "TicketID"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/Ticket/{TicketID}",
+        "bodyMapping": {
+          "Ticket": {
+            "State": "$State",
+            "Queue": "$Queue",
+            "Priority": "$Priority",
+            "Owner": "$Owner"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,354 @@
+{
+  "slug": "sellsy",
+  "name": "Sellsy",
+  "description": "Sellsy — French CRM and invoicing: companies, contacts, opportunities, invoices, estimates, items and payments. REST API v2, OAuth 2.0 client credentials.",
+  "region": "fr",
+  "category": "crm",
+  "icon": "sellsy",
+  "docsUrl": "https://api.sellsy.com/doc/v2/",
+  "instructions": "**Getting credentials**\n1. Sign in to Sellsy, open **Paramètres → API** and create an **application** in the developer area.\n2. Choose the *client credentials* flow — it authorises the application against your own account with no browser consent step. You receive a **client id** and **client secret**.\n3. Set `SELLSY_CLIENT_ID` and `SELLSY_CLIENT_SECRET`. AnythingMCP mints and refreshes the access token on its own.\n\n**This is API v2**, at `https://api.sellsy.com/v2`. Sellsy's v1 was an entirely different, single-endpoint RPC API — if you find an example that POSTs everything to one URL with a `request` parameter, that is v1 and it does not apply here.\n\n**Searching is a POST.** Sellsy's v2 list endpoints have a sibling `/search` that takes a JSON body of `{\"filters\": {...}}`. It is far more expressive than the query parameters on the plain list, which is why the search tools below are POSTs that read.\n\n**`embed` resolves relationships.** A document returns its `related` parties as ids; `embed[]=contact` and similar bring them back inline and save a round of calls.\n\n**Amounts are strings in the document's currency**, with the tax detail in a separate `amounts` object. `total_amount_without_taxes` and `total_amount` are both present, and confusing them is how a revenue figure ends up 20% wrong.\n\n**Cloud reachability**: api.sellsy.com is public with a valid certificate.",
+  "requiredEnvVars": [
+    "SELLSY_CLIENT_ID",
+    "SELLSY_CLIENT_SECRET"
+  ],
+  "connector": {
+    "name": "Sellsy API v2",
+    "type": "REST",
+    "baseUrl": "https://api.sellsy.com/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{SELLSY_CLIENT_ID}}",
+      "clientSecret": "{{SELLSY_CLIENT_SECRET}}",
+      "tokenUrl": "https://login.sellsy.com/oauth2/access-tokens"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/companies?limit=1"
+  },
+  "probe": {
+    "tool": "sellsy_list_companies"
+  },
+  "tools": [
+    {
+      "name": "sellsy_list_companies",
+      "description": "List client companies with their name, SIRET, VAT number, address and owner. The quickest call for checking the OAuth client works.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page (default 25, max 100)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "Offset token from the previous page's pagination block."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field, e.g. created or name."
+          },
+          "direction": {
+            "type": "string",
+            "description": "`asc` or `desc`."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Relationship to resolve inline, e.g. invoicing_address."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_companies",
+      "description": "Search companies with Sellsy's filter object — far more expressive than the plain list. A POST that only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Filter object, e.g. {\"name\": \"Dupont\"} or {\"created\": {\"start\": \"2026-01-01\"}}."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "string",
+            "description": "Offset token from the previous page."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      }
+    },
+    {
+      "name": "sellsy_get_company",
+      "description": "Read one client company in full: addresses, contacts, tax identifiers, rating and the notes recorded against it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "number",
+            "description": "Numeric Sellsy company id."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Relationship to resolve inline, e.g. contacts."
+          }
+        },
+        "required": [
+          "companyId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{companyId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_contacts",
+      "description": "List individual contacts with their name, e-mail, phone, position and the company they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "string",
+            "description": "Offset token from the previous page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field, e.g. created or last_name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_invoices",
+      "description": "List invoices with their number, date, due date, client, net and gross totals and payment status — the receivables view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "string",
+            "description": "Offset token from the previous page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field, e.g. created or due_date."
+          },
+          "direction": {
+            "type": "string",
+            "description": "`asc` or `desc`."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Relationship to resolve inline, e.g. related."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_invoices",
+      "description": "Search invoices with Sellsy's filter object — by status, date range, client or amount. A POST that only reads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Filter object, e.g. {\"status\": [\"late\"], \"created\": {\"start\": \"2026-01-01\"}}."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "string",
+            "description": "Offset token from the previous page."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      }
+    },
+    {
+      "name": "sellsy_get_invoice",
+      "description": "Read one invoice in full: every row with its quantity, unit price, discount and VAT, the totals and the payments applied against it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "number",
+            "description": "Numeric Sellsy invoice id."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Relationship to resolve inline, e.g. rows or related."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoiceId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_estimates",
+      "description": "List estimates (devis) with their number, date, client, total and acceptance status — what is out with prospects and not yet won.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "string",
+            "description": "Offset token from the previous page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field, e.g. created."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estimates",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_opportunities",
+      "description": "List CRM opportunities with their name, client, amount, funnel step and expected close date — the pipeline view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "string",
+            "description": "Offset token from the previous page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field, e.g. created."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_items",
+      "description": "List catalogue items with their reference, name, unit price, VAT rate and stock tracking flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "string",
+            "description": "Offset token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

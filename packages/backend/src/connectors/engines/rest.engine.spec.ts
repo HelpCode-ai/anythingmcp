@@ -1,4 +1,4 @@
-import { RestEngine } from './rest.engine';
+import { RestEngine, serializeRepeatedParams } from './rest.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { LoginTokenService } from './login-token.service';
 import axios, { AxiosError } from 'axios';
@@ -794,6 +794,159 @@ describe('RestEngine', () => {
       const sent = (mockedAxios.mock.calls[0][0] as unknown as { data: string })
         .data;
       expect(sent).not.toContain('__spread');
+    });
+  });
+
+  /**
+   * Both of these were found by driving shipped adapters through the engine
+   * rather than by reading them: each produced a request that axios accepted
+   * and the upstream rejected, with an error naming a field the adapter never
+   * mentioned. The shipped adapters are used here, not paraphrases of them.
+   */
+  describe('array-shaped mappings keep their shape', () => {
+    it('sends a top-level array bodyMapping as an array', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const bexio = require('../../adapters/ch/bexio.json') as {
+        tools: Array<{ name: string; endpointMapping: Record<string, unknown> }>;
+      };
+      const tool = bexio.tools.find((t) => t.name === 'bexio_search_contacts')!;
+
+      await engine.execute(
+        {
+          baseUrl: 'https://api.bexio.com',
+          authType: 'BEARER_TOKEN',
+          authConfig: { token: 'tok' },
+        },
+        tool.endpointMapping as never,
+        { field: 'name_1', value: 'Muster', criteria: 'like' },
+      );
+
+      const body = (mockedAxios.mock.calls[0][0] as unknown as { data: unknown }).data;
+      expect(Array.isArray(body)).toBe(true);
+      expect(body).toEqual([
+        { field: 'name_1', value: 'Muster', criteria: 'like' },
+      ]);
+    });
+
+    it('sends OTTO price updates as the array the API documents', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const otto = require('../../adapters/de/otto-market.json') as {
+        tools: Array<{ name: string; endpointMapping: Record<string, unknown> }>;
+      };
+      const tool = otto.tools.find((t) => t.name === 'otto_market_update_price')!;
+
+      await engine.execute(
+        { baseUrl: 'https://api.otto.market', authType: 'NONE' },
+        tool.endpointMapping as never,
+        { sku: 'SKU-1', amount: '29.99', currency: 'EUR' },
+      );
+
+      const body = (mockedAxios.mock.calls[0][0] as unknown as { data: unknown }).data;
+      expect(Array.isArray(body)).toBe(true);
+      expect(body).toEqual([
+        { sku: 'SKU-1', standardPrice: { amount: '29.99', currency: 'EUR' } },
+      ]);
+    });
+
+    it('repeats an array query parameter instead of bracketing it', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const checkmk = require('../../adapters/de/checkmk.json') as {
+        tools: Array<{ name: string; endpointMapping: Record<string, unknown> }>;
+      };
+      const tool = checkmk.tools.find(
+        (t) => t.name === 'checkmk_list_host_states',
+      )!;
+
+      await engine.execute(
+        {
+          baseUrl: 'https://cmk.test/check_mk/api/1.0',
+          authType: 'API_KEY',
+          authConfig: { headerName: 'Authorization', apiKey: 'Bearer u s' },
+        },
+        tool.endpointMapping as never,
+        {},
+      );
+
+      const cfg = mockedAxios.mock.calls[0][0] as unknown as {
+        params: Record<string, unknown>;
+        paramsSerializer: unknown;
+      };
+      const query = cfg.paramsSerializer as unknown as (
+        p: Record<string, unknown>,
+      ) => string;
+      const serialized = query(cfg.params);
+      expect(serialized).toContain('columns=name&columns=state');
+      expect(serialized).not.toContain('columns%5B%5D');
+    });
+  });
+
+  /**
+   * The serializer is applied to EVERY request that carries query params, so
+   * any difference from axios's own encoding silently rewrites 254 adapters'
+   * URLs. An earlier version built the string with URLSearchParams, which
+   * percent-encodes the colon — that alone re-spells every ISO 8601 filter
+   * value in the catalogue, and 150 adapters send one.
+   *
+   * So compare against real axios over a real socket rather than against a
+   * hand-copied list of escape exceptions.
+   */
+  describe('serializeRepeatedParams matches axios on scalars', () => {
+    const scalarCases: Array<[string, Record<string, unknown>]> = [
+      ['a space', { q: 'Muster GmbH' }],
+      ['an ISO timestamp', { date: '2026-09-17T00:00:00Z' }],
+      ['an eBay filter', { filter: 'creationdate:[2026-09-01T00:00:00.000Z..]' }],
+      ['an OData filter', { $filter: "InvoiceDate ge datetime'2026-01-01'" }],
+      ['base64', { b64: 'aGVsbG8+d29ybGQ/eA==' }],
+      ['reserved characters', { sym: 'a+b&c=d' }],
+      ['unreserved punctuation', { punct: 'a~b', star: 'x*y', comma: 'a,b' }],
+      ['non-ASCII and falsy values', { umlaut: 'Bevölkerung', zero: 0, bool: true }],
+      ['a FIQL query', { query: 'status==firstLine;caller.branch.name==Berlin' }],
+    ];
+
+    let server: import('node:http').Server;
+    let seen: string[] = [];
+    let port = 0;
+
+    beforeAll(async () => {
+      const http = jest.requireActual('node:http') as typeof import('node:http');
+      server = http.createServer((req, res) => {
+        seen.push(req.url ?? '');
+        res.end('{}');
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      port = (server.address() as { port: number }).port;
+    });
+
+    afterAll(async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it.each(scalarCases)('encodes %s the way axios does', async (_label, params) => {
+      const realAxios = jest.requireActual('axios').default as (
+        cfg: unknown,
+      ) => Promise<unknown>;
+      seen = [];
+      await realAxios({
+        method: 'GET',
+        url: `http://127.0.0.1:${port}/x`,
+        params,
+      });
+      expect(seen).toHaveLength(1);
+      expect(`/x?${serializeRepeatedParams(params)}`).toBe(seen[0]);
+    });
+  });
+
+  describe('serializeRepeatedParams', () => {
+    it('repeats array members and leaves scalars alone', () => {
+      expect(
+        serializeRepeatedParams({ a: ['x', 'y'], b: 1, c: 'z' }),
+      ).toBe('a=x&a=y&b=1&c=z');
+    });
+
+    it('drops null and undefined rather than stringifying them', () => {
+      expect(
+        serializeRepeatedParams({ a: undefined, b: null, c: ['k', null], d: 0 }),
+      ).toBe('c=k&d=0');
     });
   });
 
