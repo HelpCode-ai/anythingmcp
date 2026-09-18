@@ -200,7 +200,11 @@ services:
     # the image persists across deploys and is only rebuilt when it changes.
     build:
       context: ./deploy/motis
-    image: anythingmcp-motis:2.11.3-1
+    # The -N suffix is a build revision of OUR image, not of MOTIS: bump it
+    # whenever deploy/motis/{Dockerfile,entrypoint.sh,config.yml} changes.
+    # The deploy only builds when the pinned tag is missing locally, so an
+    # edit with the same tag ships nothing — -2 carries `--log-level info`.
+    image: anythingmcp-motis:2.11.3-2
     container_name: amcp-cloud-motis
     expose:
       - "8080"
