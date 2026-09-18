@@ -1,0 +1,203 @@
+{
+  "slug": "matomo",
+  "name": "Matomo Analytics",
+  "description": "Read Matomo web analytics from any AI agent: visit summaries, top pages, referrers, visitor countries, and device types. 5 read-only tools, token authentication.",
+  "instructions": "This connector uses the Matomo Reporting API and is read-only.\n\nSetup:\n1. Set MATOMO_URL to your Matomo installation URL, for example https://analytics.example.com.\n2. Set MATOMO_SITE_ID to the numeric site ID to query.\n3. Create a Matomo authentication token with view access only, then set MATOMO_AUTH_TOKEN.\n\nAll reports use the configured site ID. Use period='day' with date='today' for today, or period='range' with date='2026-09-01,2026-09-15' for a custom date range.\n\nUse HTTPS. The token_auth value is sent as a query parameter.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "matomo",
+  "docsUrl": "https://developer.matomo.org/api-reference/api",
+  "requiredEnvVars": ["MATOMO_URL", "MATOMO_SITE_ID", "MATOMO_AUTH_TOKEN"],
+  "connector": {
+    "name": "Matomo Reporting API",
+    "type": "REST",
+    "baseUrl": "{{MATOMO_URL}}",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "token_auth": "{{MATOMO_AUTH_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "matomo_get_visit_summary",
+      "description": "Return core visit metrics for the configured Matomo site: visits, unique visitors, actions, time on site, bounces, conversions, and revenue. Example: period='day', date='today'. For a custom range, use period='range' and date='2026-09-01,2026-09-15'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year, or range. Example: 'day'."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date such as 'today', 'yesterday', '2026-09-01', or '2026-09-01,2026-09-15' with period='range'."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Optional Matomo segment to filter the report. Example: 'referrerName==example.com'."
+          }
+        },
+        "required": ["period", "date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "method": "VisitsSummary.get",
+          "format": "JSON",
+          "idSite": "{{MATOMO_SITE_ID}}",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_top_pages",
+      "description": "Return the most visited page URLs for the configured Matomo site, including page views, unique page views, entries, exits, and time on page. Example: period='day', date='today', limit=10. Returns flattened URLs rather than a nested page hierarchy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year, or range. Example: 'day'."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date such as 'today', 'yesterday', '2026-09-01', or '2026-09-01,2026-09-15' with period='range'."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Optional Matomo segment to filter the report. Example: 'referrerName==example.com'."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of pages to return. Example: 10. Omit to use Matomo's default of 100."
+          }
+        },
+        "required": ["period", "date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "method": "Actions.getPageUrls",
+          "format": "JSON",
+          "flat": "1",
+          "idSite": "{{MATOMO_SITE_ID}}",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment",
+          "filter_limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_referrer_types",
+      "description": "Return the traffic-source breakdown for the configured Matomo site: direct entries, search engines, websites, campaigns, and social networks. Example: period='month', date='today'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year, or range. Example: 'month'."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date such as 'today', 'yesterday', '2026-09-01', or '2026-09-01,2026-09-15' with period='range'."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Optional Matomo segment to filter the report. Example: 'countryCode==US'."
+          }
+        },
+        "required": ["period", "date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "method": "Referrers.getReferrerType",
+          "format": "JSON",
+          "idSite": "{{MATOMO_SITE_ID}}",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_visitor_countries",
+      "description": "Return visitor countries and visit metrics for the configured Matomo site. Example: period='month', date='today'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year, or range. Example: 'day'."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date such as 'today', 'yesterday', '2026-09-01', or '2026-09-01,2026-09-15' with period='range'."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Optional Matomo segment to filter the report. Example: 'referrerName==example.com'."
+          }
+        },
+        "required": ["period", "date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "method": "UserCountry.getCountry",
+          "format": "JSON",
+          "idSite": "{{MATOMO_SITE_ID}}",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_device_types",
+      "description": "Return visitor device-type metrics for the configured Matomo site, such as desktop, smartphone, tablet, TV, and console. Example: period='month', date='today'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year, or range. Example: 'day'."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date such as 'today', 'yesterday', '2026-09-01', or '2026-09-01,2026-09-15' with period='range'."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Optional Matomo segment to filter the report. Example: 'referrerName==example.com'."
+          }
+        },
+        "required": ["period", "date"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "method": "DevicesDetection.getType",
+          "format": "JSON",
+          "idSite": "{{MATOMO_SITE_ID}}",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment"
+        }
+      }
+    }
+  ]
+}

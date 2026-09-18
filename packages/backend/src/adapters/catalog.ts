@@ -118,6 +118,7 @@ import * as mailerlite from './intl/mailerlite.json';
 import * as mailshake from './intl/mailshake.json';
 import * as mapbox from './intl/mapbox.json';
 import * as mastodon from './intl/mastodon.json';
+import * as matomo from './intl/matomo.json';
 import * as medium from './intl/medium.json';
 import * as messagebird from './intl/messagebird.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
@@ -424,6 +425,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mailshake as unknown as AdapterDefinition,
   mapbox as unknown as AdapterDefinition,
   mastodon as unknown as AdapterDefinition,
+  matomo as unknown as AdapterDefinition,
   medium as unknown as AdapterDefinition,
   messagebird as unknown as AdapterDefinition,
   microsoftBookings as unknown as AdapterDefinition,
