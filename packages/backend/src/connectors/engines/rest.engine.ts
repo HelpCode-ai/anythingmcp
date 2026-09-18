@@ -164,6 +164,13 @@ export class RestEngine {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
         ...mappedQuery,
       };
+      // axios serializes an array value as `k[]=a&k[]=b`. OpenAPI's default
+      // for an array query parameter is `style: form, explode: true`, i.e.
+      // the repeated `k=a&k=b` form — which is what Checkmk's `columns` and
+      // most standards-following APIs actually parse. The bracketed form is
+      // silently ignored by them, so the request succeeds and quietly
+      // returns the wrong columns. Serialize the standard way instead.
+      axiosConfig.paramsSerializer = serializeRepeatedParams;
     }
 
     // Request body
@@ -545,6 +552,19 @@ export class RestEngine {
     mapping: Record<string, unknown>,
     params: Record<string, unknown>,
   ): Record<string, unknown> {
+    // A bodyMapping may legitimately BE an array — plenty of APIs take a
+    // top-level JSON array (bexio's /search takes a list of criteria, OTTO's
+    // price and quantity updates take a list of SKUs). Building a fresh `{}`
+    // and copying entries into it turned `[{…}]` into `{"0": {…}}`, which is
+    // valid JSON, is accepted by axios, and is rejected by the upstream with
+    // a validation error that names a field the adapter never mentioned.
+    // resolveValue already recurses arrays correctly; defer to it.
+    if (Array.isArray(mapping)) {
+      return this.resolveValue(mapping, params) as unknown as Record<
+        string,
+        unknown
+      >;
+    }
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(mapping)) {
       const resolved = this.resolveValue(value, params);
@@ -605,6 +625,30 @@ export class RestEngine {
     }
     return value;
   }
+}
+
+/**
+ * Serialize query params with the repeated-key form for arrays
+ * (`columns=a&columns=b`), which is OpenAPI's `explode: true` default, rather
+ * than axios's bracketed `columns[]=a`. Scalars are unchanged; null and
+ * undefined are dropped rather than sent as the strings "null"/"undefined".
+ */
+export function serializeRepeatedParams(
+  params: Record<string, unknown>,
+): string {
+  const out = new URLSearchParams();
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      for (const v of value) {
+        if (v === undefined || v === null) continue;
+        out.append(key, String(v));
+      }
+    } else {
+      out.append(key, String(value));
+    }
+  }
+  return out.toString();
 }
 
 /**
