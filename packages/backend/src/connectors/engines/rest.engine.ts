@@ -5,6 +5,7 @@ import axios, {
   AxiosError,
   Method,
 } from 'axios';
+import { createHmac } from 'node:crypto';
 import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { buildOAuth1Header } from './oauth1-signer';
@@ -237,6 +238,11 @@ export class RestEngine {
     // form-urlencoded body params (unlike Bearer/API-key auth, which is set in
     // injectAuth before those exist).
     this.applyOAuth1Signature(axiosConfig, config);
+
+    // HMAC signing is here for the same reason: the canonical string most
+    // of these APIs sign folds in the request body, which does not exist
+    // until the block above has run.
+    this.applyHmacSignature(axiosConfig, config);
 
     // Route through the proxy / web-unblocker when the caller asked for it.
     // The unblocker agent disables upstream TLS verification (Zyte and friends
@@ -505,6 +511,91 @@ export class RestEngine {
    * - `token`, `tokenSecret` — optional (three-legged/user context).
    * - `realm` — optional Authorization-header realm (not signed).
    */
+  /**
+   * Sign the request with an HMAC over a canonical string the adapter
+   * describes, for the APIs that authenticate that way rather than with a
+   * static header. Kaufland's Marketplace API is the shipped example; the
+   * pattern (secret + a template naming method, path, body and a timestamp)
+   * is common enough to be worth expressing in the adapter rather than in
+   * per-vendor code.
+   *
+   * authConfig:
+   *   signature.template   `${method}`, `${url}`, `${path}`, `${body}`,
+   *                        `${timestamp}` — whatever the vendor's canonical
+   *                        string needs, in their order. `\n` is honoured.
+   *   signature.secret     the shared secret (an env placeholder at rest)
+   *   signature.algorithm  sha256 (default) | sha1 | sha512
+   *   signature.encoding   hex (default) | base64
+   *   signature.headerName where the digest goes
+   *   signature.timestampHeader  optional; receives the same timestamp that
+   *                        went into the string, so the server can recompute it
+   *   signature.extraHeaders     static headers sent alongside (e.g. a client key)
+   */
+  private applyHmacSignature(
+    axiosConfig: AxiosRequestConfig,
+    config: { authType: string; authConfig?: Record<string, unknown> },
+  ): void {
+    if (config.authType !== 'HMAC' || !config.authConfig) return;
+    const sig = config.authConfig.signature as Record<string, unknown> | undefined;
+    if (!sig) return;
+
+    const algorithm = String(sig.algorithm ?? 'sha256');
+    const encoding = String(sig.encoding ?? 'hex') === 'base64' ? 'base64' : 'hex';
+    const secret = String(sig.secret ?? '');
+    const headerName = String(sig.headerName ?? 'Signature');
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    // The body as it will actually go out. An object body is serialized the
+    // way axios will serialize it, so the bytes signed are the bytes sent —
+    // signing a different rendering is the classic way an HMAC integration
+    // fails with a message about the key.
+    const data = axiosConfig.data;
+    const body =
+      data === undefined || data === null
+        ? ''
+        : typeof data === 'string'
+          ? data
+          : JSON.stringify(data);
+
+    const url = String(axiosConfig.url ?? '');
+    let path = url;
+    try {
+      const parsed = new URL(url);
+      // Query params are set separately on axiosConfig and appended later, so
+      // fold them in here or they are absent from a signature that covers them.
+      const query = serializeRepeatedParams(
+        (axiosConfig.params as Record<string, unknown>) ?? {},
+      );
+      path = parsed.pathname + (query ? `?${query}` : parsed.search);
+    } catch {
+      /* relative URL — sign it as given */
+    }
+
+    const canonical = String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}\n')
+      .replace(/\\n/g, '\n')
+      .replace(/\$\{method\}/g, String(axiosConfig.method ?? 'GET').toUpperCase())
+      .replace(/\$\{url\}/g, url)
+      .replace(/\$\{path\}/g, path)
+      .replace(/\$\{body\}/g, body)
+      .replace(/\$\{timestamp\}/g, timestamp);
+
+    const digest = createHmac(algorithm, secret)
+      .update(canonical, 'utf8')
+      .digest(encoding as 'hex' | 'base64');
+
+    const extra = (sig.extraHeaders as Record<string, string> | undefined) ?? {};
+    axiosConfig.headers = {
+      ...axiosConfig.headers,
+      ...extra,
+      [headerName]: digest,
+    };
+    if (sig.timestampHeader) {
+      (axiosConfig.headers as Record<string, string>)[
+        String(sig.timestampHeader)
+      ] = timestamp;
+    }
+  }
+
   private applyOAuth1Signature(
     axiosConfig: AxiosRequestConfig,
     config: { authType: string; authConfig?: Record<string, unknown> },

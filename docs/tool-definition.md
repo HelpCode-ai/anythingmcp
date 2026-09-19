@@ -45,10 +45,43 @@ listed below; these values are validated before an adapter can pass.
 ### Authentication
 
 Use `NONE`, `API_KEY`, `BEARER_TOKEN`, `BASIC`, `BASIC_AUTH`, `OAUTH2`,
-`OAUTH1`, `LOGIN_TOKEN`, `QUERY_AUTH`, or `CONNECTION_STRING` as
+`OAUTH1`, `LOGIN_TOKEN`, `QUERY_AUTH`, `CONNECTION_STRING` or `HMAC` as
 `connector.authType`. Keep the corresponding credentials in `authConfig` and
 reference environment variables with `{{VAR}}` where the connector injects
 them.
+
+### HMAC-signed requests
+
+Some APIs never receive the secret: each request carries a digest computed
+over a canonical string. `authType: "HMAC"` describes that string in the
+adapter rather than in per-vendor engine code. Signing happens after the body
+and query are built, because the canonical string usually folds them in.
+
+```json
+"authType": "HMAC",
+"authConfig": {
+  "signature": {
+    "algorithm": "sha256",
+    "encoding": "hex",
+    "secret": "{{KAUFLAND_SECRET_KEY}}",
+    "template": "${method}\n${url}\n${body}\n${timestamp}\n",
+    "headerName": "Shop-Signature",
+    "timestampHeader": "Shop-Timestamp",
+    "extraHeaders": { "Shop-Client-Key": "{{KAUFLAND_CLIENT_KEY}}" }
+  }
+}
+```
+
+`template` may use `${method}`, `${url}`, `${path}` (path + query only),
+`${body}` and `${timestamp}` (Unix seconds), in whatever order the vendor
+documents. `\n` is honoured. `algorithm` is `sha256` (default), `sha1` or
+`sha512`; `encoding` is `hex` (default) or `base64`. `timestampHeader` sends
+the same timestamp that went into the string, which the server needs to
+recompute it.
+
+The body is signed exactly as it will be sent — signing a different rendering
+of the same object is the usual way an HMAC integration fails with an error
+that blames the key.
 
 ### DATABASE adapters
 
