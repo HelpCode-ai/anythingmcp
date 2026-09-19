@@ -69,18 +69,28 @@ jobs:
       - name: Publish
         run: ./mcp-publisher publish
 
+      # The registry returns every version we have ever published, in no
+      # particular order — after 0.10.0 the list came back as 0.10.0, 0.8.1,
+      # 0.9.0. Taking `last` therefore asked "which version is at the end of an
+      # unordered list", which is not a question with a useful answer: the
+      # publish had succeeded and this step still failed the release. Each entry
+      # carries an explicit `isLatest`, so select on that.
       - name: Confirm the registry actually updated
         run: |
           set -euo pipefail
           EXPECTED=$(jq -r .version server.json)
+          LIVE=none
           for i in $(seq 1 10); do
             LIVE=$(curl -fsSL "https://registry.modelcontextprotocol.io/v0/servers?search=anythingmcp" \
-              | jq -r '[.servers[].server | select(.name=="io.github.HelpCode-ai/anythingmcp") | .version] | last // "none"')
+              | jq -r '[.servers[]
+                        | select(.server.name=="io.github.HelpCode-ai/anythingmcp")
+                        | select(._meta["io.modelcontextprotocol.registry/official"].isLatest == true)
+                        | .server.version] | first // "none"')
             if [ "$LIVE" = "$EXPECTED" ]; then
               echo "registry now serves $LIVE"
               exit 0
             fi
             sleep 6
           done
-          echo "::error::published but the registry still serves '$LIVE', expected '$EXPECTED'"
+          echo "::error::published but the registry's latest is '$LIVE', expected '$EXPECTED'"
           exit 1
