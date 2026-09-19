@@ -36,7 +36,7 @@ docker compose up -d   # → http://localhost:3000
 
 Three words appear throughout and mean three different things:
 
-- an **adapter** is one of the 191 JSON definitions that ship in this repo — DATEV, weclapp, DHL, Deutsche Bahn, Shopware, Personio, Handelsregister and the rest. 20 of them need no API key at all; the others ask for your credentials at import.
+- an **adapter** is one of the 255 JSON definitions that ship in this repo — DATEV, weclapp, DHL, Deutsche Bahn, Shopware, Personio, Handelsregister and the rest. 20 of them need no API key at all; the others ask for your credentials at import.
 - a **connector** is an adapter, or your own OpenAPI spec / Postman collection / WSDL / GraphQL endpoint / database, once you have configured it in your workspace. Anything you can point at, in minutes, without writing an MCP server.
 - an **MCP server** is the URL you hand to Claude. It exposes the connectors you assign to it, and nothing else.
 
