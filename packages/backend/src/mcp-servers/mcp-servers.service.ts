@@ -194,6 +194,36 @@ export class McpServersService {
   }
 
   /**
+   * Read-only content assigned to a server.  This deliberately returns only
+   * connector metadata and persisted resources reachable through the server's
+   * connector assignments; callers still perform principal checks first.
+   */
+  async getResourcesForServer(serverId: string) {
+    const rows = await this.prisma.mcpServerConnector.findMany({
+      where: { mcpServerId: serverId },
+      select: {
+        connector: {
+          select: {
+            id: true,
+            name: true,
+            instructions: true,
+            resources: {
+              select: {
+                uri: true,
+                name: true,
+                description: true,
+                mimeType: true,
+                fetchConfig: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    return rows.map((row) => row.connector);
+  }
+
+  /**
    * Compose MCP server instructions from the server's own instructions
    * plus all assigned connectors' instructions.
    */

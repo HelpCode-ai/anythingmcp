@@ -56,6 +56,7 @@ import {
 } from './tool-annotations';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { makeResource, registerResources, type RegisteredResource } from './resource-registry';
 
 /**
  * Backend version, reported as the demo server's version (was a hardcoded 1.0.0).
@@ -121,6 +122,19 @@ interface ToolSetParams {
   /** Optional text appended as a trailing content block to every successful
    *  tool result (used by the public demo to say where the answer came from). */
   resultFooter?: string;
+}
+
+interface ResourceConnector {
+  id: string;
+  name: string;
+  instructions: string | null;
+  resources: Array<{
+    uri: string;
+    name: string;
+    description: string | null;
+    mimeType: string;
+    fetchConfig: unknown;
+  }>;
 }
 
 interface InvocationContext {
@@ -664,9 +678,10 @@ export class McpEndpointController {
     }
 
     // 2. Get connector IDs and composed instructions for this server
-    const [connectorIds, instructions] = await Promise.all([
+    const [connectorIds, instructions, resourceConnectors] = await Promise.all([
       this.mcpServersService.getConnectorIds(serverId),
       this.mcpServersService.getComposedInstructions(serverId),
+      this.mcpServersService.getResourcesForServer(serverId),
     ]);
 
     // 3. Filter tools to only those from assigned connectors
@@ -689,6 +704,19 @@ export class McpEndpointController {
       { name: mcpServerConfig.name, version: mcpServerConfig.version || '1.0.0' },
       { instructions },
     );
+
+    // Resources are read-only and scoped to the same assigned connectors as
+    // tools.  Register generated instruction resources alongside persisted
+    // static resources so agents can attach setup guidance without invoking a
+    // synthetic tool.
+    const resources = this.planRoleScopedResources(
+      serverId,
+      resourceConnectors,
+      instructions,
+      serverTools,
+      allowedToolIds,
+    );
+    registerResources(mcpServer, resources, (message) => this.logger.warn(message));
 
     // Build invocation context for audit logging and tool scoping
     // OAuth JWTs store email inside user_data, app JWTs have it top-level
@@ -755,6 +783,67 @@ export class McpEndpointController {
     // The server was already built above with this caller's tool surface, so
     // the factory hands back that instance rather than constructing another.
     await this.serveStateless(req, res, body, () => mcpServer, `server ${serverId}`);
+  }
+
+  private planResources(
+    serverId: string,
+    connectors: ResourceConnector[],
+    instructions?: string,
+  ): RegisteredResource[] {
+    const planned: RegisteredResource[] = [];
+    if (instructions) {
+      planned.push(
+        makeResource(
+          {
+            uri: `anythingmcp://server/${serverId}/instructions`,
+            name: 'Server instructions',
+            description: 'Instructions composed from this MCP server and its assigned connectors.',
+            mimeType: 'text/markdown',
+            fetchConfig: {},
+          },
+          { text: instructions, mimeType: 'text/markdown' },
+        ),
+      );
+    }
+    for (const connector of connectors) {
+      if (connector.instructions) {
+        planned.push(
+          makeResource(
+            {
+              uri: `anythingmcp://connector/${connector.id}/instructions`,
+              name: `${connector.name} setup instructions`,
+              description: `Setup and usage notes for the ${connector.name} connector.`,
+              mimeType: 'text/markdown',
+              fetchConfig: {},
+            },
+            { text: connector.instructions, mimeType: 'text/markdown' },
+          ),
+        );
+      }
+      for (const resource of connector.resources) {
+        planned.push(makeResource(resource));
+      }
+    }
+    return planned;
+  }
+
+  private planRoleScopedResources(
+    serverId: string,
+    connectors: ResourceConnector[],
+    instructions: string | undefined,
+    serverTools: RegisteredTool[],
+    allowedToolIds: string[] | null,
+  ): RegisteredResource[] {
+    const allowedConnectorIds = new Set(
+      serverTools
+        .filter((tool) => allowedToolIds === null || allowedToolIds.includes(tool.id))
+        .map((tool) => tool.connectorId),
+    );
+    return this.planResources(
+      serverId,
+      connectors.filter((connector) => allowedConnectorIds.has(connector.id)),
+      instructions,
+    );
   }
 
   /**
