@@ -94,6 +94,7 @@ import * as convertkit from './intl/convertkit.json';
 import * as copper from './intl/copper.json';
 import * as crisp from './intl/crisp.json';
 import * as datadog from './intl/datadog.json';
+import * as dchub from './intl/dchub.json';
 import * as deel from './intl/deel.json';
 import * as discordBot from './intl/discord-bot.json';
 import * as drip from './intl/drip.json';
@@ -466,6 +467,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   copper as unknown as AdapterDefinition,
   crisp as unknown as AdapterDefinition,
   datadog as unknown as AdapterDefinition,
+  dchub as unknown as AdapterDefinition,
   deel as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
   drip as unknown as AdapterDefinition,
