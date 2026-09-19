@@ -75,22 +75,25 @@ jobs:
       # unordered list", which is not a question with a useful answer: the
       # publish had succeeded and this step still failed the release. Each entry
       # carries an explicit `isLatest`, so select on that.
+      # The registry keeps every version of a server and returns them in no
+      # particular order: after v0.10.0 went out the list came back as
+      # ["0.10.0","0.8.1","0.9.0"], so the old `last` read 0.9.0 and failed a
+      # release that had in fact published fine. Ask whether the expected
+      # version is *present and active*, not whether it happens to be last.
       - name: Confirm the registry actually updated
         run: |
           set -euo pipefail
           EXPECTED=$(jq -r .version server.json)
-          LIVE=none
+          SELECT='[ .servers[]? | select(.server.name == "io.github.HelpCode-ai/anythingmcp")'
           for i in $(seq 1 10); do
-            LIVE=$(curl -fsSL "https://registry.modelcontextprotocol.io/v0/servers?search=anythingmcp" \
-              | jq -r '[.servers[]
-                        | select(.server.name=="io.github.HelpCode-ai/anythingmcp")
-                        | select(._meta["io.modelcontextprotocol.registry/official"].isLatest == true)
-                        | .server.version] | first // "none"')
-            if [ "$LIVE" = "$EXPECTED" ]; then
-              echo "registry now serves $LIVE"
+            BODY=$(curl -fsSL "https://registry.modelcontextprotocol.io/v0/servers?search=anythingmcp" || echo '{}')
+            FOUND=$(printf '%s' "$BODY" | jq -r --arg v "$EXPECTED" "$SELECT | select(.server.version == \$v) | (._meta[\"io.modelcontextprotocol.registry/official\"].status // \"active\") ] | first // \"missing\"")
+            if [ "$FOUND" = "active" ]; then
+              echo "registry serves $EXPECTED (active)"
               exit 0
             fi
             sleep 6
           done
-          echo "::error::published but the registry's latest is '$LIVE', expected '$EXPECTED'"
+          ALL=$(printf '%s' "$BODY" | jq -c "$SELECT | .server.version ]")
+          echo "::error::published, but the registry does not serve '$EXPECTED' as active. It lists $ALL"
           exit 1
