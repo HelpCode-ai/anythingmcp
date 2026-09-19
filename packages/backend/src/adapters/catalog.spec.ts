@@ -10,6 +10,7 @@ const VALID_AUTH_TYPES = new Set([
   'QUERY_AUTH',
   'LOGIN_TOKEN',
   'CONNECTION_STRING',
+  'HMAC',
 ]);
 
 const VALID_PASSWORD_HASHING_SCHEMES = new Set(['bcrypt', 'none']);

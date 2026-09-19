@@ -890,6 +890,134 @@ describe('RestEngine', () => {
    * So compare against real axios over a real socket rather than against a
    * hand-copied list of escape exceptions.
    */
+  /**
+   * The point of HMAC auth is that the secret is never sent, so the only thing
+   * that can be checked is whether the digest is the one the vendor will
+   * recompute. Verify against a signature computed independently here, and
+   * against the shipped Kaufland adapter's own template — not against the
+   * engine's own output, which would pass whatever it produced.
+   */
+  describe('HMAC request signing', () => {
+    const crypto = jest.requireActual('node:crypto') as typeof import('node:crypto');
+
+    it('signs the canonical string the shipped Kaufland adapter declares', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const kaufland = require('../../adapters/de/kaufland.json') as {
+        connector: { authType: string; authConfig: Record<string, unknown> };
+        tools: Array<{ name: string; endpointMapping: Record<string, unknown> }>;
+      };
+      const authConfig = JSON.parse(
+        JSON.stringify(kaufland.connector.authConfig)
+          .replace('{{KAUFLAND_SECRET_KEY}}', 'sh-secret')
+          .replace('{{KAUFLAND_CLIENT_KEY}}', 'sh-client'),
+      ) as Record<string, unknown>;
+      const tool = kaufland.tools.find((t) => t.name === 'kaufland_list_warehouses')!;
+
+      const before = Math.floor(Date.now() / 1000);
+      await engine.execute(
+        {
+          baseUrl: 'https://sellerapi.kaufland.com/v2',
+          authType: 'HMAC',
+          authConfig,
+        },
+        tool.endpointMapping as never,
+        {},
+      );
+      const after = Math.floor(Date.now() / 1000);
+
+      const cfg = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+        url: string;
+      };
+      const ts = cfg.headers['Shop-Timestamp'];
+      expect(Number(ts)).toBeGreaterThanOrEqual(before);
+      expect(Number(ts)).toBeLessThanOrEqual(after);
+      expect(cfg.headers['Shop-Client-Key']).toBe('sh-client');
+
+      // Recompute independently, from the vendor's documented string.
+      const expected = crypto
+        .createHmac('sha256', 'sh-secret')
+        .update(`GET\n${cfg.url}\n\n${ts}\n`, 'utf8')
+        .digest('hex');
+      expect(cfg.headers['Shop-Signature']).toBe(expected);
+      // The secret itself must appear nowhere on the wire.
+      expect(JSON.stringify(cfg)).not.toContain('sh-secret');
+    });
+
+    it('signs the body exactly as it is sent', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const body = { sku: 'A-1', qty: 3 };
+      await engine.execute(
+        {
+          baseUrl: 'https://api.test',
+          authType: 'HMAC',
+          authConfig: {
+            signature: {
+              secret: 's3cret',
+              template: '${method}\n${path}\n${body}\n${timestamp}\n',
+              headerName: 'X-Sig',
+              timestampHeader: 'X-Ts',
+            },
+          },
+        },
+        { method: 'POST', path: '/units', bodyMapping: { sku: '$sku', qty: '$qty' } } as never,
+        body,
+      );
+      const cfg = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+        data: unknown;
+      };
+      const sent = JSON.stringify(cfg.data);
+      const expected = crypto
+        .createHmac('sha256', 's3cret')
+        .update(`POST\n/units\n${sent}\n${cfg.headers['X-Ts']}\n`, 'utf8')
+        .digest('hex');
+      expect(cfg.headers['X-Sig']).toBe(expected);
+    });
+
+    it('supports base64 and sha512, and leaves other auth types alone', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(
+        {
+          baseUrl: 'https://api.test',
+          authType: 'HMAC',
+          authConfig: {
+            signature: {
+              secret: 'k',
+              algorithm: 'sha512',
+              encoding: 'base64',
+              template: '${method}',
+              headerName: 'X-Sig',
+            },
+          },
+        },
+        { method: 'GET', path: '/x' } as never,
+        {},
+      );
+      const cfg = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+      };
+      expect(cfg.headers['X-Sig']).toBe(
+        crypto.createHmac('sha512', 'k').update('GET', 'utf8').digest('base64'),
+      );
+
+      mockedAxios.mockClear();
+      await engine.execute(
+        {
+          baseUrl: 'https://api.test',
+          authType: 'BEARER_TOKEN',
+          authConfig: { token: 't', signature: { secret: 'k', headerName: 'X-Sig' } },
+        },
+        { method: 'GET', path: '/x' } as never,
+        {},
+      );
+      const plain = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+      };
+      expect(plain.headers['X-Sig']).toBeUndefined();
+    });
+  });
+
   describe('serializeRepeatedParams matches axios on scalars', () => {
     const scalarCases: Array<[string, Record<string, unknown>]> = [
       ['a space', { q: 'Muster GmbH' }],
