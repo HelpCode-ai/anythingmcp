@@ -185,7 +185,18 @@ export class RestEngine {
         try {
           parsed = JSON.parse(rendered);
         } catch (e: any) {
-          throw new Error(`bodyTemplate produced invalid JSON after interpolation: ${e.message}`);
+          // The parser's "position 38" is a position in a string the caller
+          // cannot see, and we must not show it: env vars are interpolated into
+          // the template too, so the rendered body can carry a credential. Name
+          // the placeholders that had nothing to substitute instead — that is
+          // the usual cause and the only part that is safe to repeat.
+          const missing = missingTemplateParams(endpointMapping.bodyTemplate, params);
+          const hint = missing.length
+            ? ` No value was supplied for ${missing.map((m) => `\`\${${m}}\``).join(', ')}, which is the usual cause.`
+            : '';
+          throw new Error(
+            `bodyTemplate produced invalid JSON after interpolation: ${e.message}.${hint}`,
+          );
         }
         assertNoPrototypePollution(parsed);
         axiosConfig.data = parsed;
@@ -877,6 +888,24 @@ const FORBIDDEN_PARAM_KEYS: ReadonlySet<string> = new Set([
  *
  * Forbidden param names that can pollute Object.prototype are rejected.
  */
+/**
+ * Placeholders the template references that the call did not provide.
+ *
+ * Only the names are returned, never a value: the rendered body may contain a
+ * credential, because connector env vars are interpolated into the template
+ * before the parameters are.
+ */
+function missingTemplateParams(
+  template: string,
+  params: Record<string, unknown>,
+): string[] {
+  const referenced = new Set<string>();
+  for (const match of template.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) {
+    referenced.add(match[1]);
+  }
+  return [...referenced].filter((name) => params[name] === undefined);
+}
+
 function renderBodyTemplate(
   template: string,
   params: Record<string, unknown>,
