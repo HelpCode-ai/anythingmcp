@@ -94,4 +94,24 @@ jobs:
 
             docker image prune -f
 
+            # Keep the eight most recent app images and drop the rest. On
+            # 2026-09-19 the droplet held 35 of them going back four months,
+            # ~1.3 GB each — the bulk of the 34 GB under /var/lib/containerd,
+            # growing by one image per deploy.
+            #
+            # Safe because these are a local cache, not an archive: every tag
+            # is still on Docker Hub, so an older rollback target comes back
+            # with `docker pull helpcodeai/anythingmcp:<tag>`. Eight covers
+            # roughly six weeks of builds. An image a container is using
+            # cannot be removed — docker refuses, and the `|| true` keeps the
+            # deploy green when it does.
+            docker images helpcodeai/anythingmcp \
+              --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
+              | sort -r | tail -n +9 | cut -f2 \
+              | while read -r img; do
+                  [ "$img" = "helpcodeai/anythingmcp:latest" ] && continue
+                  echo "pruning cached image $img"
+                  docker rmi "$img" >/dev/null 2>&1 || true
+                done
+
             echo "Deployment complete"
