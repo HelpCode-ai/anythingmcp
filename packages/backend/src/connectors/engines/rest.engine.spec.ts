@@ -1177,3 +1177,58 @@ describe('RestEngine', () => {
     });
   });
 });
+
+describe('RestEngine — bodyTemplate that will not parse', () => {
+  /**
+   * A customer built a write tool on top of their Etsy connector and got
+   * `bodyTemplate produced invalid JSON after interpolation: Expected property
+   * name or '}' in JSON at position 38`. Position 38 of what? Not of anything
+   * they can see: the rendered body is never shown, and it must not be, because
+   * connector env vars are interpolated into the template before the parameters
+   * are and the result can hold a credential. They debugged it by trial and
+   * error and had it working eleven minutes later.
+   *
+   * Naming the placeholders that had nothing to substitute costs nothing and
+   * points straight at the fix.
+   */
+  let engine: RestEngine;
+
+  beforeEach(() => {
+    engine = new RestEngine({} as any, {} as any);
+  });
+
+  const call = (bodyTemplate: string, params: Record<string, unknown>) =>
+    engine.execute(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' } as any,
+      { method: 'POST', path: '/x', bodyTemplate } as any,
+      params,
+    );
+
+  it('names the placeholder nobody filled in', async () => {
+    // A quoted placeholder renders as "" when absent, which is valid JSON, so
+    // to break the parse the template has to reference a missing key where a
+    // bare value is expected AND produce something unparseable around it.
+    await expect(
+      call('{"a": ${given}, "b": ${forgotten}x}', { given: 1 }),
+    ).rejects.toThrow(/No value was supplied for `\$\{forgotten\}`/);
+  });
+
+  it('lists every missing placeholder, not just the first', async () => {
+    await expect(
+      call('{"a": ${one} ${two}x}', {}),
+    ).rejects.toThrow(/`\$\{one\}`, `\$\{two\}`/);
+  });
+
+  it('says nothing extra when the template is simply malformed', async () => {
+    const err: any = await call('{"a": ${given},,}', { given: 1 }).catch((e) => e);
+    expect(err.message).toMatch(/produced invalid JSON after interpolation/);
+    expect(err.message).not.toMatch(/No value was supplied/);
+  });
+
+  it('never repeats a rendered value, which may be a credential', async () => {
+    const err: any = await call('{"t": "${token}",,}', {
+      token: 'super-secret',
+    }).catch((e) => e);
+    expect(err.message).not.toMatch(/super-secret/);
+  });
+});
