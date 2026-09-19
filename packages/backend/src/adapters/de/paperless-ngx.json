@@ -1,0 +1,268 @@
+{
+  "slug": "paperless-ngx",
+  "name": "Paperless-ngx",
+  "description": "Paperless-ngx document management: full-text search over scanned documents, correspondents, document types, tags, storage paths and the OCR'd content of any document. REST API on your own instance, token auth.",
+  "region": "de",
+  "category": "dms",
+  "icon": "paperless-ngx",
+  "docsUrl": "https://docs.paperless-ngx.com/api/",
+  "instructions": "**Getting a token**\n1. Sign in to Paperless-ngx, open the user menu → **My Profile**, and copy the **API Auth Token** (create one if the field is empty).\n2. Put it in `PAPERLESS_API_TOKEN` and your instance's base URL in `PAPERLESS_URL` — no trailing slash and no `/api`, e.g. `https://paperless.example.com`.\n\n**The Authorization header is `Token …`**, Django REST Framework's scheme — not `Bearer`. The adapter sends it correctly.\n\n**Search is the point of this connector.** `paperless_ngx_search_documents` passes a query to Paperless's full-text index, which searches the OCR'd content, not just the title. The index supports field terms (`correspondent:acme`, `type:invoice`, `created:[2026-01-01 TO 2026-06-30]`), quoted phrases and wildcards. `paperless_ngx_list_documents` is the structured alternative when you already know the correspondent or tag ids.\n\n**Documents reference everything by id.** A document row carries `correspondent`, `document_type` and `tags` as numeric ids; resolve them with the three list tools, or ask for `full_perms`-style expansion in the UI. Reading content for a document is a separate call because the OCR text can be very large.\n\n**Permissions**: Paperless-ngx 2.x supports per-document owners and per-object permissions. A token for a restricted user sees a smaller library and reports it as an empty page, not as an error.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`paperless.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n\n**Read-only by design**: this adapter exposes no upload or delete. Documents are the audit trail; a wrong write there is not a thing an agent should be able to do by accident.",
+  "requiredEnvVars": [
+    "PAPERLESS_URL",
+    "PAPERLESS_API_TOKEN"
+  ],
+  "connector": {
+    "name": "Paperless-ngx REST API",
+    "type": "REST",
+    "baseUrl": "{{PAPERLESS_URL}}/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Token {{PAPERLESS_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json; version=5"
+    },
+    "healthcheckPath": "/documents/?page_size=1"
+  },
+  "probe": {
+    "tool": "paperless_ngx_list_tags"
+  },
+  "tools": [
+    {
+      "name": "paperless_ngx_search_documents",
+      "description": "Full-text search across the OCR'd content of every document. Supports field terms (correspondent:acme, type:invoice), quoted phrases, wildcards and date ranges.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Full-text query, e.g. `Mahnung correspondent:Telekom` or `\"Rechnung 2026\"`."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page (default 25)."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/",
+        "queryParams": {
+          "query": "$query",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "paperless_ngx_list_documents",
+      "description": "List documents filtered by correspondent, document type, tag or creation date — the structured alternative to full-text search when you already have the ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "correspondent__id": {
+            "type": "number",
+            "description": "Restrict to one correspondent id."
+          },
+          "document_type__id": {
+            "type": "number",
+            "description": "Restrict to one document type id."
+          },
+          "tags__id__all": {
+            "type": "string",
+            "description": "Comma-separated tag ids that must ALL be present."
+          },
+          "created__date__gte": {
+            "type": "string",
+            "description": "Earliest creation date, YYYY-MM-DD."
+          },
+          "created__date__lte": {
+            "type": "string",
+            "description": "Latest creation date, YYYY-MM-DD."
+          },
+          "ordering": {
+            "type": "string",
+            "description": "Sort field, e.g. `-created` for newest first."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page (default 25)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/",
+        "queryParams": {
+          "correspondent__id": "$correspondent__id",
+          "document_type__id": "$document_type__id",
+          "tags__id__all": "$tags__id__all",
+          "created__date__gte": "$created__date__gte",
+          "created__date__lte": "$created__date__lte",
+          "ordering": "$ordering",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "paperless_ngx_get_document",
+      "description": "Read one document's metadata: title, correspondent, type, tags, created and added dates, archive serial number and the full OCR'd content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric document id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/{id}/"
+      }
+    },
+    {
+      "name": "paperless_ngx_get_document_metadata",
+      "description": "Read the technical metadata of one document: original filename, media type, checksum, page count and any embedded PDF metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric document id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/{id}/metadata/"
+      }
+    },
+    {
+      "name": "paperless_ngx_list_correspondents",
+      "description": "List correspondents — the senders documents are filed under — with their document count and matching rules.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name__icontains": {
+            "type": "string",
+            "description": "Case-insensitive name fragment to filter by."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/correspondents/",
+        "queryParams": {
+          "name__icontains": "$name__icontains",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "paperless_ngx_list_document_types",
+      "description": "List the document types configured in the instance (invoice, contract, payslip …) with their document counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name__icontains": {
+            "type": "string",
+            "description": "Case-insensitive name fragment to filter by."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document_types/",
+        "queryParams": {
+          "name__icontains": "$name__icontains",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "paperless_ngx_list_tags",
+      "description": "List tags with their colour, inbox flag and document count. No parameters needed — the quickest check that URL and token are right.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags/",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "paperless_ngx_list_storage_paths",
+      "description": "List the storage paths documents are filed into, with their path template and document count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage_paths/",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "paperless_ngx_get_statistics",
+      "description": "Read instance-wide statistics: total documents, documents in the inbox, character count and the breakdown by file type.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/statistics/"
+      }
+    }
+  ]
+}

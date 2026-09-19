@@ -1,0 +1,287 @@
+{
+  "slug": "matrix42",
+  "name": "Matrix42",
+  "description": "Matrix42 Enterprise Service Management: query any configuration item, incident, service request, asset or user with Matrix42's fragment query API. Bearer token minted from an API token against your own instance.",
+  "region": "de",
+  "category": "itsm",
+  "icon": "matrix42",
+  "docsUrl": "https://help.matrix42.com/030_DWP/030_ESM/Web_Services",
+  "instructions": "**Setup**\n1. In Matrix42 open **Administration → Integration → API Tokens** and create a token for a service account with the roles the agent needs. Matrix42 applies role-based access on top of the API, so a restricted account sees fewer fragments.\n2. Set `MATRIX42_URL` to your instance root (e.g. `https://esm.example.com/M42Services`, no trailing slash) and `MATRIX42_API_TOKEN` to the token.\n3. The adapter exchanges that token for a short-lived bearer at `/api/ApiToken/Token` and refreshes it automatically. AnythingMCP stores the bearer encrypted in `connector_auth_cache`.\n\n**Everything is a fragment.** Matrix42's data model is *Configuration Items* made of typed *fragments*: `SPSActivityTypeIncident` for an incident, `SPSAssetClassBase` for an asset, `SPSScUserClassBase` for a user. The query API takes the fragment name plus the columns you want, and returns rows. There is no per-entity REST path — this is why every tool here takes a `fragmentName`.\n\n**`columns` is not optional in practice.** Matrix42 fragments have dozens of columns and omitting the list returns all of them. Name what you need.\n\n**`where` is SQL-flavoured**, e.g. `State = 3 AND CreatedDate > '2026-09-01'`. Column names are the fragment's, which differ from the labels shown in the web UI. `matrix42_get_fragment_schema` returns the real names.\n\n**`$skip` / `$top` page the result.** There is no cursor.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`esm.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "MATRIX42_URL",
+    "MATRIX42_API_TOKEN"
+  ],
+  "connector": {
+    "name": "Matrix42 Web Services",
+    "type": "REST",
+    "baseUrl": "{{MATRIX42_URL}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{MATRIX42_URL}}/api/ApiToken/Token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json"
+      },
+      "loginBody": {
+        "ApiToken": "${password}"
+      },
+      "username": "{{MATRIX42_API_TOKEN}}",
+      "password": "{{MATRIX42_API_TOKEN}}",
+      "tokenJsonPath": "access_token",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/data/fragments/SPSScUserClassBase?columns=ID&$top=1"
+  },
+  "probe": {
+    "tool": "matrix42_query_users"
+  },
+  "tools": [
+    {
+      "name": "matrix42_query_fragments",
+      "description": "Query any Matrix42 fragment by name with a column list and a SQL-flavoured where clause. The general-purpose read — everything in Matrix42 is reachable this way.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fragmentName": {
+            "type": "string",
+            "description": "Fragment type name, e.g. SPSActivityTypeIncident, SPSAssetClassBase, SPSScUserClassBase."
+          },
+          "columns": {
+            "type": "string",
+            "description": "Comma-separated columns to return. Name them — fragments have dozens."
+          },
+          "where": {
+            "type": "string",
+            "description": "SQL-flavoured filter over that fragment's columns, e.g. State = 3."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort expression, e.g. `CreatedDate desc`."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "fragmentName",
+          "columns"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/data/fragments/{fragmentName}",
+        "queryParams": {
+          "columns": "$columns",
+          "where": "$where",
+          "orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "matrix42_get_fragment_schema",
+      "description": "Read the column definitions of one fragment: the real column names, their types and their relations. Needed because the UI labels differ from the column names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fragmentName": {
+            "type": "string",
+            "description": "Fragment type name, e.g. SPSActivityTypeIncident."
+          }
+        },
+        "required": [
+          "fragmentName"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/schema/fragments/{fragmentName}"
+      }
+    },
+    {
+      "name": "matrix42_query_incidents",
+      "description": "Query incidents with a where clause over the incident fragment: state, priority, category, reported date and the affected user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "string",
+            "description": "Comma-separated columns to return. Defaults to a useful subset when omitted."
+          },
+          "where": {
+            "type": "string",
+            "description": "SQL-flavoured filter, e.g. State = 3 AND Priority = 1."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort expression, e.g. `CreatedDate desc`."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/data/fragments/SPSActivityTypeIncident",
+        "queryParams": {
+          "columns": "$columns",
+          "where": "$where",
+          "orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "matrix42_query_service_requests",
+      "description": "Query service requests with a where clause: their state, requested service, requester and fulfilment dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "string",
+            "description": "Comma-separated columns to return."
+          },
+          "where": {
+            "type": "string",
+            "description": "SQL-flavoured filter over the service-request fragment."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/data/fragments/SPSActivityTypeServiceRequest",
+        "queryParams": {
+          "columns": "$columns",
+          "where": "$where",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "matrix42_query_assets",
+      "description": "Query the asset base: hardware and software configuration items with their name, type, serial number, status and assigned user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "string",
+            "description": "Comma-separated columns to return."
+          },
+          "where": {
+            "type": "string",
+            "description": "SQL-flavoured filter over the asset fragment."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/data/fragments/SPSAssetClassBase",
+        "queryParams": {
+          "columns": "$columns",
+          "where": "$where",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "matrix42_query_users",
+      "description": "Query the user base with their display name, e-mail, department and location. The quickest call for checking that the API token exchange works.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "string",
+            "description": "Comma-separated columns to return."
+          },
+          "where": {
+            "type": "string",
+            "description": "SQL-flavoured filter, e.g. EmailAddress LIKE '%@example.com'."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/data/fragments/SPSScUserClassBase",
+        "queryParams": {
+          "columns": "$columns",
+          "where": "$where",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "matrix42_get_object",
+      "description": "Read one configuration item by its object id, returning the named fragments attached to it. The detail call after a query has returned ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "objectId": {
+            "type": "string",
+            "description": "Matrix42 object id (GUID)."
+          },
+          "fragments": {
+            "type": "string",
+            "description": "Comma-separated fragment names to include."
+          }
+        },
+        "required": [
+          "objectId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/data/objects/{objectId}",
+        "queryParams": {
+          "fragments": "$fragments"
+        }
+      }
+    }
+  ]
+}

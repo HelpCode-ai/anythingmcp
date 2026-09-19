@@ -1,0 +1,306 @@
+{
+  "slug": "openproject",
+  "name": "OpenProject",
+  "description": "OpenProject: projects, work packages with their activities, versions, time entries, users and statuses, queried with OpenProject's filter grammar. API v3, Basic auth with the literal username `apikey`.",
+  "region": "de",
+  "category": "project-management",
+  "icon": "openproject",
+  "docsUrl": "https://www.openproject.org/docs/api/",
+  "instructions": "**Getting a key**\n1. In OpenProject open **My Account → Access tokens** and generate an **API token**.\n2. Set `OPENPROJECT_URL` to your instance root (no trailing slash) and `OPENPROJECT_API_KEY` to the token.\n\n**The Basic-auth username is the literal string `apikey`.** Not your login name — the word `apikey`, with the token as the password. This adapter does it for you, and it is the first thing to check when a token you know is valid returns 401.\n\n**Permissions follow the user.** The token inherits its owner's project memberships and roles. A project the user is not a member of is simply absent from the results, not an error.\n\n**Filters are a JSON array of single-key objects**: `[{\"status\":{\"operator\":\"o\",\"values\":[]}},{\"assignee\":{\"operator\":\"=\",\"values\":[\"42\"]}}]`. Operators are OpenProject's own short codes — `o` open, `c` closed, `=` equals, `!` not, `~` contains, `<>d` between dates, `t` today, `>t-` in the last N days. The filter string is passed through verbatim so the whole grammar stays available.\n\n**Responses are HAL+JSON.** Rows live in `_embedded.elements`, related resources are links under `_links` and paging is `_links.nextByOffset`. Fields like `assignee` arrive as a link with a `title`, which is usually the readable name you want without another call.\n\n**Durations are ISO 8601**: `estimatedTime` of `PT8H` is eight hours, `P2D` is two days. They are not numbers.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`op.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "OPENPROJECT_URL",
+    "OPENPROJECT_API_KEY"
+  ],
+  "connector": {
+    "name": "OpenProject API v3",
+    "type": "REST",
+    "baseUrl": "{{OPENPROJECT_URL}}/api/v3",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "apikey",
+      "password": "{{OPENPROJECT_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/hal+json"
+    },
+    "healthcheckPath": "/users/me"
+  },
+  "probe": {
+    "tool": "openproject_get_me"
+  },
+  "tools": [
+    {
+      "name": "openproject_get_me",
+      "description": "Read the user the API token belongs to, with their name, e-mail, language and admin flag. The fastest way to see whose projects this connector can see.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      }
+    },
+    {
+      "name": "openproject_list_projects",
+      "description": "List projects with their identifier, name, status, description and active flag. The map of what this token can reach.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "OpenProject filter JSON, e.g. [{\"active\":{\"operator\":\"=\",\"values\":[\"t\"]}}]."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Rows per page (default 20, max 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "sortBy": {
+            "type": "string",
+            "description": "Sort JSON, e.g. [[\"name\",\"asc\"]]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "filters": "$filters",
+          "pageSize": "$pageSize",
+          "offset": "$offset",
+          "sortBy": "$sortBy"
+        }
+      }
+    },
+    {
+      "name": "openproject_list_work_packages",
+      "description": "List work packages — tasks, bugs, features, milestones — across all projects, with their type, status, assignee, dates and priority.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Filter JSON, e.g. [{\"status\":{\"operator\":\"o\",\"values\":[]}}] for open ones."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Rows per page (default 20, max 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "sortBy": {
+            "type": "string",
+            "description": "Sort JSON, e.g. [[\"dueDate\",\"asc\"]]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/work_packages",
+        "queryParams": {
+          "filters": "$filters",
+          "pageSize": "$pageSize",
+          "offset": "$offset",
+          "sortBy": "$sortBy"
+        }
+      }
+    },
+    {
+      "name": "openproject_list_project_work_packages",
+      "description": "List the work packages inside one project — the usual scope for 'what is open on this project' and much cheaper than filtering globally.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "description": "Project id or identifier."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Filter JSON, e.g. [{\"status\":{\"operator\":\"o\",\"values\":[]}}]."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Rows per page (max 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "sortBy": {
+            "type": "string",
+            "description": "Sort JSON, e.g. [[\"priority\",\"desc\"]]."
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{projectId}/work_packages",
+        "queryParams": {
+          "filters": "$filters",
+          "pageSize": "$pageSize",
+          "offset": "$offset",
+          "sortBy": "$sortBy"
+        }
+      }
+    },
+    {
+      "name": "openproject_get_work_package",
+      "description": "Read one work package in full: description, type, status, assignee, dates, estimated and spent time, and its custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric work package id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/work_packages/{id}"
+      }
+    },
+    {
+      "name": "openproject_list_work_package_activities",
+      "description": "Read the activity stream of one work package: every comment and field change in order, with author and timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric work package id."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Entries per page."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/work_packages/{id}/activities",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "openproject_list_time_entries",
+      "description": "List logged time entries with their user, work package, date, hours and comment — the raw data behind any effort report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Filter JSON, e.g. [{\"spentOn\":{\"operator\":\"<>d\",\"values\":[\"2026-09-01\",\"2026-09-30\"]}}]."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Rows per page (max 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time_entries",
+        "queryParams": {
+          "filters": "$filters",
+          "pageSize": "$pageSize",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "openproject_list_versions",
+      "description": "List versions (releases and sprints) with their name, status, due date and the project they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pageSize": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/versions",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "openproject_list_users",
+      "description": "List users with their name, e-mail, login and status, to resolve who a work package is assigned to. Requires an administrator token on most instances.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Filter JSON, e.g. [{\"status\":{\"operator\":\"=\",\"values\":[\"active\"]}}]."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "filters": "$filters",
+          "pageSize": "$pageSize",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "openproject_list_statuses",
+      "description": "List the work-package statuses this instance defines, with their id, name and whether each counts as closed. Needed to read a status filter correctly.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/statuses"
+      }
+    }
+  ]
+}

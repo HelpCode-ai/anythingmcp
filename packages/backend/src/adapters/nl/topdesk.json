@@ -1,0 +1,350 @@
+{
+  "slug": "topdesk",
+  "name": "TOPdesk",
+  "description": "TOPdesk ITSM: incidents, changes, assets, operators, persons and branches, with TOPdesk's FIQL query language for precise filtering. REST API, Basic auth with an application password.",
+  "region": "nl",
+  "category": "itsm",
+  "icon": "topdesk",
+  "docsUrl": "https://developers.topdesk.com/",
+  "instructions": "**Use an application password, never the operator's own.**\n1. In TOPdesk open **Modules → Supporting Files → Operator Management**, pick the operator the integration should act as, and on its card create an **Application Password**. TOPdesk shows it once.\n2. Give that operator exactly the permission groups the agent needs — TOPdesk enforces them per module, and a missing one produces a 403 rather than an empty list, which is at least honest.\n3. Set `TOPDESK_URL` to your instance root (e.g. `https://mycompany.topdesk.net`, no trailing slash), `TOPDESK_USERNAME` to the operator login name and `TOPDESK_APP_PASSWORD` to the generated value.\n\n**FIQL is the query language, and it is worth learning.** `query=status==firstLine;caller.branch.name==Berlin` filters server-side. `;` is AND, `,` is OR, `==` is equals, `=lt=`/`=gt=` compare, `=in=` takes a list. The tools below pass a `query` string through verbatim.\n\n**Paging** is `start` and `page_size` (max 100 on most endpoints), not page numbers. TOPdesk returns 206 Partial Content when more rows exist and 204 No Content when the result is empty — a 204 with no body is a successful search that matched nothing.\n\n**`fields` cuts the response down.** Incident records are large; `fields=id,number,briefDescription,status,caller.dynamicName` keeps the answer readable.\n\n**Writes**: `topdesk_create_incident` opens a real incident, which notifies whoever the process assigns it to.",
+  "requiredEnvVars": [
+    "TOPDESK_URL",
+    "TOPDESK_USERNAME",
+    "TOPDESK_APP_PASSWORD"
+  ],
+  "connector": {
+    "name": "TOPdesk REST API",
+    "type": "REST",
+    "baseUrl": "{{TOPDESK_URL}}/tas/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{TOPDESK_USERNAME}}",
+      "password": "{{TOPDESK_APP_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/version"
+  },
+  "probe": {
+    "tool": "topdesk_get_version"
+  },
+  "tools": [
+    {
+      "name": "topdesk_get_version",
+      "description": "Read the TOPdesk version this instance runs. No parameters and no module permission needed — the fastest proof that URL and application password are right.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/version"
+      }
+    },
+    {
+      "name": "topdesk_list_incidents",
+      "description": "List incidents with FIQL filtering. `query=status==firstLine;closed==false` is the common 'what is open' shape; name the fields you want to keep the answer readable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "FIQL query, e.g. status==firstLine;closed==false. `;` is AND, `,` is OR."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,number,briefDescription,status."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort expression, e.g. `creationDate:desc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/incidents",
+        "queryParams": {
+          "query": "$query",
+          "fields": "$fields",
+          "page_size": "$page_size",
+          "start": "$start",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "topdesk_get_incident",
+      "description": "Read one incident by its TOPdesk number or UUID, with its caller, category, status, operator group, SLA target dates and request text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Incident number (e.g. I 2609 123) or the incident UUID."
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/incidents/number/{number}"
+      }
+    },
+    {
+      "name": "topdesk_get_incident_progress",
+      "description": "Read the progress trail of one incident: every action and memo in order, with author, timestamp and whether it is invisible to the caller.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Incident UUID."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Entries per page, max 100."
+          },
+          "start": {
+            "type": "number",
+            "description": "Entries to skip, for paging."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/incidents/id/{id}/progresstrail",
+        "queryParams": {
+          "page_size": "$page_size",
+          "start": "$start"
+        }
+      }
+    },
+    {
+      "name": "topdesk_list_changes",
+      "description": "List change activities with their number, requester, status, planned dates and change type. The change-management side of TOPdesk.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "FIQL query over change fields."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/operatorChanges",
+        "queryParams": {
+          "query": "$query",
+          "page_size": "$page_size",
+          "start": "$start"
+        }
+      }
+    },
+    {
+      "name": "topdesk_list_persons",
+      "description": "List persons (the callers incidents are raised for) with their name, e-mail, branch and department. Filter with FIQL to find one before raising an incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "FIQL query, e.g. email==anna@example.com."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/persons",
+        "queryParams": {
+          "query": "$query",
+          "fields": "$fields",
+          "page_size": "$page_size",
+          "start": "$start"
+        }
+      }
+    },
+    {
+      "name": "topdesk_list_operators",
+      "description": "List operators (the staff who work the queue) with their name, e-mail and the operator groups they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "FIQL query over operator fields."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/operators",
+        "queryParams": {
+          "query": "$query",
+          "page_size": "$page_size",
+          "start": "$start"
+        }
+      }
+    },
+    {
+      "name": "topdesk_list_branches",
+      "description": "List branches — the sites or client organisations TOPdesk groups people and assets under — with their name, address and client reference number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "FIQL query over branch fields."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page, max 100."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branches",
+        "queryParams": {
+          "query": "$query",
+          "page_size": "$page_size",
+          "start": "$start"
+        }
+      }
+    },
+    {
+      "name": "topdesk_search_assets",
+      "description": "Search the asset management module for configuration items by name or type, returning their id, name, template and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "searchTerm": {
+            "type": "string",
+            "description": "Fragment matched against the asset name."
+          },
+          "templateName": {
+            "type": "string",
+            "description": "Restrict to one asset template, e.g. Laptop."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assetmgmt/assets",
+        "queryParams": {
+          "searchTerm": "$searchTerm",
+          "templateName": "$templateName",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "topdesk_create_incident",
+      "description": "Open a real incident in the live instance. TOPdesk routes and notifies it according to the process configuration, so this is not a dry run.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "briefDescription": {
+            "type": "string",
+            "description": "One-line summary — the incident's title."
+          },
+          "callerId": {
+            "type": "string",
+            "description": "UUID of the person the incident is raised for, from topdesk_list_persons."
+          },
+          "request": {
+            "type": "string",
+            "description": "Full request text. HTML is accepted."
+          },
+          "operatorGroupId": {
+            "type": "string",
+            "description": "UUID of the operator group to route the incident to."
+          },
+          "categoryName": {
+            "type": "string",
+            "description": "Category name, as configured in this instance."
+          },
+          "entryTypeName": {
+            "type": "string",
+            "description": "Entry type name, e.g. Telefoon, E-mail, Self Service Desk."
+          }
+        },
+        "required": [
+          "briefDescription",
+          "callerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/incidents",
+        "bodyMapping": {
+          "briefDescription": "$briefDescription",
+          "caller": {
+            "id": "$callerId"
+          },
+          "request": "$request",
+          "operatorGroup": {
+            "id": "$operatorGroupId"
+          },
+          "category": {
+            "name": "$categoryName"
+          },
+          "entryType": {
+            "name": "$entryTypeName"
+          }
+        }
+      }
+    }
+  ]
+}

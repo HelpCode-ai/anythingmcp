@@ -1,0 +1,455 @@
+{
+  "slug": "matomo",
+  "name": "Matomo",
+  "description": "Matomo web analytics: visits, page and entry-page reports, referrers, countries and devices, goal conversions and live visitor detail. Reporting API on Matomo Cloud or your own instance, token_auth.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "matomo",
+  "docsUrl": "https://developer.matomo.org/api-reference/reporting-api",
+  "instructions": "**Getting a token**\n1. Sign in to Matomo and open **Administration → Personal → Security → Auth tokens**, then *Create new token*.\n2. Leave **'Only allow secure requests'** unticked *only* if you must — with it ticked, Matomo 4+ requires the token in a POST body rather than a query parameter. This adapter sends it as a query parameter (GET), which is Matomo's classic Reporting API shape and what the majority of installs accept.\n3. Set `MATOMO_URL` to your Matomo root (no trailing slash, no `/index.php`) and `MATOMO_TOKEN` to the token.\n\n**If every call returns an authentication error on Matomo 5**, the token was created with the secure-requests flag. Create a second token without it, or build a custom connector that POSTs `token_auth` in the body.\n\n**Everything is one endpoint.** Matomo's Reporting API is `index.php?module=API&method=Module.action&idSite=…&period=…&date=…&format=JSON`. That is why every tool here shares a path and differs only in the `method` parameter.\n\n**`idSite`, `period` and `date` are required on every report**, and they mean:\n- `idSite` — the numeric site id. `matomo_list_sites` gives you the list.\n- `period` — `day`, `week`, `month`, `year` or `range`.\n- `date` — `2026-09-17`, or a keyword like `today`, `yesterday`, `last7`, `last30`, `previous7`. With `period=range`, a comma-separated pair: `2026-09-01,2026-09-30`.\n\nA multi-period request (`period=day&date=last30`) returns an object keyed by date, not a flat array. That is the shape, not an error.\n\n**Segments** narrow a report without changing it: `countryCode==de`, `deviceType==smartphone`, `visitCount>2`, joined with `;` for AND and `,` for OR.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`analytics.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "MATOMO_URL",
+    "MATOMO_TOKEN"
+  ],
+  "connector": {
+    "name": "Matomo Reporting API",
+    "type": "REST",
+    "baseUrl": "{{MATOMO_URL}}",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "token_auth": "{{MATOMO_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/index.php?module=API&method=API.getMatomoVersion&format=JSON"
+  },
+  "probe": {
+    "tool": "matomo_get_version"
+  },
+  "tools": [
+    {
+      "name": "matomo_get_version",
+      "description": "Read the Matomo version of this instance. No site, period or date needed — the fastest way to tell a URL problem from a token problem.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "format": "JSON",
+          "method": "API.getMatomoVersion"
+        }
+      }
+    },
+    {
+      "name": "matomo_list_sites",
+      "description": "List the sites this token can report on, with their id, name, main URL, timezone and currency. Every other tool needs one of these ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "format": "JSON",
+          "method": "SitesManager.getSitesWithAtLeastViewAccess"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_visits_summary",
+      "description": "Read the headline numbers for a period: visits, unique visitors, actions, bounce rate, average visit duration and actions per visit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSite": {
+            "type": "number",
+            "description": "Numeric site id. Matomo hosts many sites and every report is scoped to one."
+          },
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year or range."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date or keyword: YYYY-MM-DD, `today`, `yesterday`, `last7`, `last30`, or `2026-09-01,2026-09-30` with period=range."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Matomo segment expression, e.g. countryCode==de;deviceType==smartphone."
+          }
+        },
+        "required": [
+          "idSite",
+          "period",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "format": "JSON",
+          "method": "VisitsSummary.get",
+          "idSite": "$idSite",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_page_urls",
+      "description": "Read the page report: which URLs were viewed, how often, their average time on page, bounce rate and exit rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSite": {
+            "type": "number",
+            "description": "Numeric site id. Matomo hosts many sites and every report is scoped to one."
+          },
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year or range."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date or keyword: YYYY-MM-DD, `today`, `yesterday`, `last7`, `last30`, or `2026-09-01,2026-09-30` with period=range."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Matomo segment expression."
+          },
+          "flat": {
+            "type": "number",
+            "description": "Pass 1 to flatten the URL hierarchy into full paths instead of a folder tree."
+          },
+          "filter_limit": {
+            "type": "number",
+            "description": "Rows to return (default 100; -1 for all)."
+          },
+          "filter_sort_column": {
+            "type": "string",
+            "description": "Column to sort by, e.g. nb_hits or nb_visits."
+          }
+        },
+        "required": [
+          "idSite",
+          "period",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "format": "JSON",
+          "method": "Actions.getPageUrls",
+          "idSite": "$idSite",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment",
+          "flat": "$flat",
+          "filter_limit": "$filter_limit",
+          "filter_sort_column": "$filter_sort_column"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_entry_pages",
+      "description": "Read which pages visitors *arrived* on, with entries, bounce rate and the visits that followed — the landing-page view, not the pageview view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSite": {
+            "type": "number",
+            "description": "Numeric site id. Matomo hosts many sites and every report is scoped to one."
+          },
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year or range."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date or keyword: YYYY-MM-DD, `today`, `yesterday`, `last7`, `last30`, or `2026-09-01,2026-09-30` with period=range."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Matomo segment expression."
+          },
+          "flat": {
+            "type": "number",
+            "description": "Pass 1 to flatten the URL hierarchy."
+          },
+          "filter_limit": {
+            "type": "number",
+            "description": "Rows to return."
+          }
+        },
+        "required": [
+          "idSite",
+          "period",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "format": "JSON",
+          "method": "Actions.getEntryPageUrls",
+          "idSite": "$idSite",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment",
+          "flat": "$flat",
+          "filter_limit": "$filter_limit"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_referrers",
+      "description": "Read where the traffic came from: search engines, websites, social networks, campaigns and direct entry, with visits and actions for each.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSite": {
+            "type": "number",
+            "description": "Numeric site id. Matomo hosts many sites and every report is scoped to one."
+          },
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year or range."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date or keyword: YYYY-MM-DD, `today`, `yesterday`, `last7`, `last30`, or `2026-09-01,2026-09-30` with period=range."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Matomo segment expression."
+          },
+          "filter_limit": {
+            "type": "number",
+            "description": "Rows to return."
+          }
+        },
+        "required": [
+          "idSite",
+          "period",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "format": "JSON",
+          "method": "Referrers.getAll",
+          "idSite": "$idSite",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment",
+          "filter_limit": "$filter_limit"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_countries",
+      "description": "Read the visits broken down by country, with visit counts, actions and bounce rate — the geography of the audience.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSite": {
+            "type": "number",
+            "description": "Numeric site id. Matomo hosts many sites and every report is scoped to one."
+          },
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year or range."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date or keyword: YYYY-MM-DD, `today`, `yesterday`, `last7`, `last30`, or `2026-09-01,2026-09-30` with period=range."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Matomo segment expression."
+          },
+          "filter_limit": {
+            "type": "number",
+            "description": "Rows to return."
+          }
+        },
+        "required": [
+          "idSite",
+          "period",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "format": "JSON",
+          "method": "UserCountry.getCountry",
+          "idSite": "$idSite",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment",
+          "filter_limit": "$filter_limit"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_device_types",
+      "description": "Read the visits broken down by device type — desktop, smartphone, tablet — with visits, actions and bounce rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSite": {
+            "type": "number",
+            "description": "Numeric site id. Matomo hosts many sites and every report is scoped to one."
+          },
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year or range."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date or keyword: YYYY-MM-DD, `today`, `yesterday`, `last7`, `last30`, or `2026-09-01,2026-09-30` with period=range."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Matomo segment expression."
+          }
+        },
+        "required": [
+          "idSite",
+          "period",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "format": "JSON",
+          "method": "DevicesDetection.getType",
+          "idSite": "$idSite",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_goals",
+      "description": "Read goal conversions for a period: conversions, conversion rate and revenue, overall or for one goal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSite": {
+            "type": "number",
+            "description": "Numeric site id. Matomo hosts many sites and every report is scoped to one."
+          },
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year or range."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date or keyword: YYYY-MM-DD, `today`, `yesterday`, `last7`, `last30`, or `2026-09-01,2026-09-30` with period=range."
+          },
+          "idGoal": {
+            "type": "string",
+            "description": "Numeric goal id, or leave empty for all goals combined."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Matomo segment expression."
+          }
+        },
+        "required": [
+          "idSite",
+          "period",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "format": "JSON",
+          "method": "Goals.get",
+          "idSite": "$idSite",
+          "period": "$period",
+          "date": "$date",
+          "idGoal": "$idGoal",
+          "segment": "$segment"
+        }
+      }
+    },
+    {
+      "name": "matomo_get_last_visits",
+      "description": "Read individual recent visits with their referrer, country, device, and the pages each one viewed in order. The qualitative detail behind the aggregates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSite": {
+            "type": "number",
+            "description": "Numeric site id. Matomo hosts many sites and every report is scoped to one."
+          },
+          "period": {
+            "type": "string",
+            "description": "Reporting period: day, week, month, year or range."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date or keyword: YYYY-MM-DD, `today`, `yesterday`, `last7`, `last30`, or `2026-09-01,2026-09-30` with period=range."
+          },
+          "segment": {
+            "type": "string",
+            "description": "Matomo segment expression."
+          },
+          "filter_limit": {
+            "type": "number",
+            "description": "Visits to return (default 100)."
+          }
+        },
+        "required": [
+          "idSite",
+          "period",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "module": "API",
+          "format": "JSON",
+          "method": "Live.getLastVisitsDetails",
+          "idSite": "$idSite",
+          "period": "$period",
+          "date": "$date",
+          "segment": "$segment",
+          "filter_limit": "$filter_limit"
+        }
+      }
+    }
+  ]
+}

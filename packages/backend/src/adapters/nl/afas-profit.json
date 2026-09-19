@@ -1,0 +1,237 @@
+{
+  "slug": "afas-profit",
+  "name": "AFAS Profit",
+  "description": "AFAS Profit — Dutch ERP and HR: read any published GetConnector, list what is available, and inspect a connector's metadata. Token auth with AFAS's base64-wrapped XML token.",
+  "region": "nl",
+  "category": "erp",
+  "icon": "afas-profit",
+  "docsUrl": "https://help.afas.nl/help/NL/SE/App_Cnr_Rest.htm",
+  "instructions": "**AFAS exposes nothing until somebody publishes a GetConnector.** That is the whole model, and it is why this adapter takes the connector name as a parameter rather than hard-coding entity paths.\n1. In AFAS open **Algemeen → Beheer → App connector** and create an app connector for the integration.\n2. Add the **GetConnectors** the agent should reach (e.g. `Profit_Debiteuren`, `Profit_Facturen`, or your own `Custom_…`). A GetConnector that has not been added to the app connector does not exist as far as the API is concerned.\n3. Generate the **token**. AFAS gives you an XML blob like `<token><version>1</version><data>ABC123…</data></token>`. Base64-encode that entire string and put the result in `AFAS_TOKEN`. AFAS's own UI offers a base64 version — use it.\n4. Set `AFAS_ENVIRONMENT` to your environment id, the `O12345AB` code in your AFAS URL.\n\n**The Authorization header is `AfasToken <base64>`**, AFAS's own scheme.\n\n**Filtering uses three parallel parameters.** `filterfieldids`, `filtervalues` and `operatortypes` are comma-separated lists read positionally: `filterfieldids=Nummer,Datum`, `filtervalues=1001,2026-01-01`, `operatortypes=1,4`. Operator 1 is equals, 2 is greater-or-equal, 3 is less-or-equal, 4 is greater, 5 is less, 6 is 'is null', 7 is 'not null', 8 is not equal, 9 is 'starts with', 10 is 'contains'. Getting the three lists out of step produces a wrong answer rather than an error.\n\n**`skip` and `take` page.** `take` is capped at 1000 and `-1` means everything, which on a large connector is not a good idea.\n\n**UpdateConnectors are deliberately not exposed.** They write into AFAS with the full force of the business logic behind them, and a malformed payload is not something to discover from an agent.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n",
+  "requiredEnvVars": [
+    "AFAS_ENVIRONMENT",
+    "AFAS_TOKEN"
+  ],
+  "connector": {
+    "name": "AFAS Profit REST",
+    "type": "REST",
+    "baseUrl": "https://{{AFAS_ENVIRONMENT}}.rest.afas.online/profitrestservices",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "AfasToken {{AFAS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/metainfo"
+  },
+  "probe": {
+    "tool": "afas_profit_list_connectors"
+  },
+  "tools": [
+    {
+      "name": "afas_profit_list_connectors",
+      "description": "List the GetConnectors and UpdateConnectors published to this app connector. Start here: anything not in this list does not exist as far as the API is concerned.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metainfo"
+      }
+    },
+    {
+      "name": "afas_profit_get_connector_metadata",
+      "description": "Read one GetConnector's field definitions: the field ids, their types and lengths. You need the field ids before any filter will work.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "connectorName": {
+            "type": "string",
+            "description": "GetConnector name, e.g. Profit_Debiteuren."
+          }
+        },
+        "required": [
+          "connectorName"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metainfo/get/{connectorName}"
+      }
+    },
+    {
+      "name": "afas_profit_get_data",
+      "description": "Read rows from a GetConnector with AFAS's positional three-list filter. filterfieldids, filtervalues and operatortypes are read in parallel — keep them in step.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "connectorName": {
+            "type": "string",
+            "description": "GetConnector name, e.g. Profit_Facturen."
+          },
+          "filterfieldids": {
+            "type": "string",
+            "description": "Comma-separated field ids to filter on, e.g. Nummer,Datum."
+          },
+          "filtervalues": {
+            "type": "string",
+            "description": "Comma-separated values, positionally matched to filterfieldids."
+          },
+          "operatortypes": {
+            "type": "string",
+            "description": "Comma-separated operators, positionally matched. 1 eq, 2 ge, 3 le, 4 gt, 5 lt, 6 is null, 7 not null, 8 ne, 9 starts with, 10 contains."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "take": {
+            "type": "number",
+            "description": "Rows to return, max 1000. -1 means everything."
+          },
+          "orderbyfieldids": {
+            "type": "string",
+            "description": "Comma-separated field ids to sort by; prefix with `-` for descending."
+          }
+        },
+        "required": [
+          "connectorName"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/connectors/{connectorName}",
+        "queryParams": {
+          "filterfieldids": "$filterfieldids",
+          "filtervalues": "$filtervalues",
+          "operatortypes": "$operatortypes",
+          "skip": "$skip",
+          "take": "$take",
+          "orderbyfieldids": "$orderbyfieldids"
+        }
+      }
+    },
+    {
+      "name": "afas_profit_get_debtors",
+      "description": "Read the Profit_Debiteuren GetConnector — customers with their debtor number, name, address and credit data. Only works if it has been published to your app connector.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "take": {
+            "type": "number",
+            "description": "Rows to return, max 1000."
+          },
+          "filterfieldids": {
+            "type": "string",
+            "description": "Comma-separated field ids to filter on."
+          },
+          "filtervalues": {
+            "type": "string",
+            "description": "Comma-separated values, positionally matched."
+          },
+          "operatortypes": {
+            "type": "string",
+            "description": "Comma-separated operator codes, positionally matched."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/connectors/Profit_Debiteuren",
+        "queryParams": {
+          "skip": "$skip",
+          "take": "$take",
+          "filterfieldids": "$filterfieldids",
+          "filtervalues": "$filtervalues",
+          "operatortypes": "$operatortypes"
+        }
+      }
+    },
+    {
+      "name": "afas_profit_get_invoices",
+      "description": "Read the Profit_Facturen GetConnector — invoices with their number, date, debtor and amounts. Only works if it has been published to your app connector.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "take": {
+            "type": "number",
+            "description": "Rows to return, max 1000."
+          },
+          "filterfieldids": {
+            "type": "string",
+            "description": "Comma-separated field ids to filter on, e.g. Datum."
+          },
+          "filtervalues": {
+            "type": "string",
+            "description": "Comma-separated values, positionally matched."
+          },
+          "operatortypes": {
+            "type": "string",
+            "description": "Comma-separated operator codes, positionally matched."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/connectors/Profit_Facturen",
+        "queryParams": {
+          "skip": "$skip",
+          "take": "$take",
+          "filterfieldids": "$filterfieldids",
+          "filtervalues": "$filtervalues",
+          "operatortypes": "$operatortypes"
+        }
+      }
+    },
+    {
+      "name": "afas_profit_get_employees",
+      "description": "Read the Profit_Medewerkers GetConnector — employees with their number, name, department and employment data. Only works if it has been published.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "take": {
+            "type": "number",
+            "description": "Rows to return, max 1000."
+          },
+          "filterfieldids": {
+            "type": "string",
+            "description": "Comma-separated field ids to filter on."
+          },
+          "filtervalues": {
+            "type": "string",
+            "description": "Comma-separated values, positionally matched."
+          },
+          "operatortypes": {
+            "type": "string",
+            "description": "Comma-separated operator codes, positionally matched."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/connectors/Profit_Medewerkers",
+        "queryParams": {
+          "skip": "$skip",
+          "take": "$take",
+          "filterfieldids": "$filterfieldids",
+          "filtervalues": "$filtervalues",
+          "operatortypes": "$operatortypes"
+        }
+      }
+    }
+  ]
+}

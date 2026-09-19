@@ -1,0 +1,291 @@
+{
+  "slug": "clockodo",
+  "name": "clockodo",
+  "description": "clockodo time tracking for German SMBs: time entries, customers, projects, services, users, absences and the running clock. REST API v2, authenticated with a per-user API key plus the user's e-mail address.",
+  "region": "de",
+  "category": "time-tracking",
+  "icon": "clockodo",
+  "docsUrl": "https://www.clockodo.com/en/api/",
+  "instructions": "**Getting credentials** — clockodo needs two values.\n1. Sign in and open **Mein Bereich → Mein Benutzerkonto**; the **API-Schlüssel** is at the bottom of the page. Put it in `CLOCKODO_API_KEY`.\n2. Put the e-mail address of that same account in `CLOCKODO_API_USER`. clockodo sends it in the `X-ClockodoApiUser` header and rejects a key without it.\n3. clockodo also asks every API client to identify itself in a `X-Clockodo-External-Application` header; this adapter sends `AnythingMCP;support@anythingmcp.com` automatically.\n\n**Permissions follow the user.** The key inherits the clockodo role of the account it belongs to. A regular employee only sees their own entries; to read the whole company's time the key must belong to a user with the *Verwaltung* or *Inhaber* role.\n\n**API version**: time entries moved to `/v2/entries` with a different response envelope (`{entries, paging}`) from the v1 shape. Customers, projects, services and users are still served from the unversioned root — the paths below reflect that split.\n\n**Time ranges are mandatory and ISO 8601 with a zone**, e.g. `2026-09-01T00:00:00Z`. clockodo rejects a bare date. Ranges are limited server-side; a full year of a large team may need paging via `page`.\n\n**Billability**: `billable` is 0 (not billable), 1 (billable) or 2 (already billed). 'Unbilled work' means `billable=1`, not 'billable is true'.\n\n**Cloud reachability**: my.clockodo.com is public with a valid certificate.",
+  "requiredEnvVars": [
+    "CLOCKODO_API_KEY",
+    "CLOCKODO_API_USER"
+  ],
+  "connector": {
+    "name": "clockodo API v2",
+    "type": "REST",
+    "baseUrl": "https://my.clockodo.com/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-ClockodoApiKey",
+      "apiKey": "{{CLOCKODO_API_KEY}}",
+      "extraHeaders": {
+        "X-ClockodoApiUser": "{{CLOCKODO_API_USER}}"
+      }
+    },
+    "headers": {
+      "X-Clockodo-External-Application": "AnythingMCP;support@anythingmcp.com"
+    },
+    "healthcheckPath": "/users"
+  },
+  "probe": {
+    "tool": "clockodo_list_users"
+  },
+  "tools": [
+    {
+      "name": "clockodo_list_users",
+      "description": "List the clockodo users in this account with their name, e-mail, role and whether they are active. No parameters — use it to check the key and e-mail pair.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users"
+      }
+    },
+    {
+      "name": "clockodo_list_customers",
+      "description": "List customers with their number, billing rate and active flag. Customers sit above projects in clockodo's hierarchy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_active": {
+            "type": "boolean",
+            "description": "When true, only active customers."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "filter[active]": "$filter_active",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "clockodo_list_projects",
+      "description": "List projects, optionally narrowed to one customer, with their budget, billing rate and completion flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_customers_id": {
+            "type": "number",
+            "description": "Restrict to one customer's projects."
+          },
+          "filter_active": {
+            "type": "boolean",
+            "description": "When true, only active projects."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "filter[customers_id]": "$filter_customers_id",
+          "filter[active]": "$filter_active",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "clockodo_list_services",
+      "description": "List the service types (Leistungsarten) time can be booked against, with their default billability.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services"
+      }
+    },
+    {
+      "name": "clockodo_list_entries",
+      "description": "Read time entries in a date range — the core query. Narrow by user, customer, project or billability to answer 'how much did we spend' and 'what is still unbilled'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_since": {
+            "type": "string",
+            "description": "Start of the range, ISO 8601 with a zone, e.g. 2026-09-01T00:00:00Z."
+          },
+          "time_until": {
+            "type": "string",
+            "description": "End of the range, ISO 8601 with a zone, e.g. 2026-09-30T23:59:59Z."
+          },
+          "filter_users_id": {
+            "type": "number",
+            "description": "Restrict to one user's entries."
+          },
+          "filter_customers_id": {
+            "type": "number",
+            "description": "Restrict to one customer."
+          },
+          "filter_projects_id": {
+            "type": "number",
+            "description": "Restrict to one project."
+          },
+          "filter_billable": {
+            "type": "number",
+            "description": "0 not billable, 1 billable and unbilled, 2 already billed."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "time_since",
+          "time_until"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/entries",
+        "queryParams": {
+          "time_since": "$time_since",
+          "time_until": "$time_until",
+          "filter[users_id]": "$filter_users_id",
+          "filter[customers_id]": "$filter_customers_id",
+          "filter[projects_id]": "$filter_projects_id",
+          "filter[billable]": "$filter_billable",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "clockodo_get_clock",
+      "description": "Read the currently running clock: which entry is ticking right now, for which user, project and service, and since when.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/clock"
+      }
+    },
+    {
+      "name": "clockodo_list_absences",
+      "description": "List absences (holiday, sick leave, training) for a year, with their type, date range and approval status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "string",
+            "description": "Calendar year, e.g. 2026."
+          },
+          "users_id": {
+            "type": "number",
+            "description": "Restrict to one user's absences."
+          }
+        },
+        "required": [
+          "year"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absences",
+        "queryParams": {
+          "year": "$year",
+          "users_id": "$users_id"
+        }
+      }
+    },
+    {
+      "name": "clockodo_get_entry",
+      "description": "Read one time entry by its id: the exact start and end time, duration, text, project, service and billability.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric entry id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/entry/{id}"
+      }
+    },
+    {
+      "name": "clockodo_create_entry",
+      "description": "Book a time entry against a customer, project and service. Writes to the live account — a wrong entry has to be deleted in the clockodo UI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customers_id": {
+            "type": "number",
+            "description": "Numeric customer id the time is booked to."
+          },
+          "services_id": {
+            "type": "number",
+            "description": "Numeric service (Leistungsart) id."
+          },
+          "billable": {
+            "type": "number",
+            "description": "0 not billable, 1 billable."
+          },
+          "time_since": {
+            "type": "string",
+            "description": "Entry start, ISO 8601 with a zone."
+          },
+          "time_until": {
+            "type": "string",
+            "description": "Entry end, ISO 8601 with a zone."
+          },
+          "projects_id": {
+            "type": "number",
+            "description": "Numeric project id, when the customer has projects."
+          },
+          "text": {
+            "type": "string",
+            "description": "What was done — shown on the invoice if the entry is billed."
+          },
+          "users_id": {
+            "type": "number",
+            "description": "User the entry belongs to. Defaults to the key's own user."
+          }
+        },
+        "required": [
+          "customers_id",
+          "services_id",
+          "billable",
+          "time_since",
+          "time_until"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/entry",
+        "bodyMapping": {
+          "customers_id": "$customers_id",
+          "projects_id": "$projects_id",
+          "services_id": "$services_id",
+          "billable": "$billable",
+          "time_since": "$time_since",
+          "time_until": "$time_until",
+          "text": "$text",
+          "users_id": "$users_id"
+        }
+      }
+    }
+  ]
+}

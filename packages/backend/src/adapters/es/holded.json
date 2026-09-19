@@ -1,0 +1,220 @@
+{
+  "slug": "holded",
+  "name": "Holded",
+  "description": "Holded — the Spanish SMB business suite: contacts, sales and purchase documents, products, warehouses, treasury accounts and CRM funnels. REST API v1, API-key auth.",
+  "region": "es",
+  "category": "accounting",
+  "icon": "holded",
+  "docsUrl": "https://developers.holded.com/reference",
+  "instructions": "**Getting a key**\n1. Sign in to Holded and open **Configuración → Desarrolladores → API key** (Settings → Developers).\n2. Generate a key and put it in `HOLDED_API_KEY`. The key belongs to the account, not to a user, and carries full access to every module you have subscribed to — treat it as a password.\n\n**The key travels in a `key` header.** Not `Authorization`, not a query parameter. Holded's own documentation calls it simply `key`.\n\n**One API, several modules, one path prefix each.** Invoicing lives under `/invoicing/v1`, CRM under `/crm/v1`, projects under `/projects/v1`, team under `/team/v1`. The tools below carry the right prefix per resource; a 404 on a path that looks right usually means the module is not on your plan.\n\n**Documents are one endpoint with a type.** `/invoicing/v1/documents/{docType}` covers invoices, sales receipts, credit notes, estimates, purchase orders and supplier invoices — the `docType` path segment picks one: `invoice`, `salesreceipt`, `creditnote`, `salesorder`, `estimate`, `purchase`, `purchaseorder`, `waybill`.\n\n**Dates are Unix timestamps in seconds**, not ISO strings, on the `starttmp`/`endtmp` filters. This catches everyone once.\n\n**Cloud reachability**: api.holded.com is public with a valid certificate.",
+  "requiredEnvVars": [
+    "HOLDED_API_KEY"
+  ],
+  "connector": {
+    "name": "Holded API v1",
+    "type": "REST",
+    "baseUrl": "https://api.holded.com/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "key",
+      "apiKey": "{{HOLDED_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/invoicing/v1/contacts"
+  },
+  "probe": {
+    "tool": "holded_list_contacts"
+  },
+  "tools": [
+    {
+      "name": "holded_list_contacts",
+      "description": "List contacts — customers, suppliers, leads — with their name, NIF/CIF, e-mail, address and the type flags that say which role they hold.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "description": "Page number, starting at 1."
+          },
+          "type": {
+            "type": "string",
+            "description": "Restrict by contact type, e.g. client or supplier."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoicing/v1/contacts",
+        "queryParams": {
+          "page": "$page",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "holded_get_contact",
+      "description": "Read one contact in full: tax data, billing address, payment terms, default VAT rate and the notes recorded against them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "string",
+            "description": "Holded contact id."
+          }
+        },
+        "required": [
+          "contactId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoicing/v1/contacts/{contactId}"
+      }
+    },
+    {
+      "name": "holded_list_documents",
+      "description": "List documents of one type — invoices, estimates, credit notes, purchase orders — with their number, date, contact, total and payment status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docType": {
+            "type": "string",
+            "description": "Document type: invoice, salesreceipt, creditnote, salesorder, estimate, purchase, purchaseorder, waybill."
+          },
+          "starttmp": {
+            "type": "number",
+            "description": "Earliest document date as a Unix timestamp in seconds."
+          },
+          "endtmp": {
+            "type": "number",
+            "description": "Latest document date as a Unix timestamp in seconds."
+          },
+          "contactid": {
+            "type": "string",
+            "description": "Restrict to one contact's documents."
+          },
+          "page": {
+            "type": "string",
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "docType"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoicing/v1/documents/{docType}",
+        "queryParams": {
+          "starttmp": "$starttmp",
+          "endtmp": "$endtmp",
+          "contactid": "$contactid",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "holded_get_document",
+      "description": "Read one document in full: every line with its quantity, price, discount and VAT, the totals, and the payments applied against it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docType": {
+            "type": "string",
+            "description": "Document type, e.g. invoice."
+          },
+          "documentId": {
+            "type": "string",
+            "description": "Holded document id."
+          }
+        },
+        "required": [
+          "docType",
+          "documentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoicing/v1/documents/{docType}/{documentId}"
+      }
+    },
+    {
+      "name": "holded_list_products",
+      "description": "List products and services with their SKU, name, price, cost, VAT rate and stock level.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoicing/v1/products",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "holded_list_warehouses",
+      "description": "List warehouses with their name and location, so a stock question can name the right one.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoicing/v1/warehouses"
+      }
+    },
+    {
+      "name": "holded_list_treasury_accounts",
+      "description": "List the treasury accounts (bank and cash) with their name, IBAN and current balance — the cash-position answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoicing/v1/treasury"
+      }
+    },
+    {
+      "name": "holded_list_funnels",
+      "description": "List the CRM funnels with their stages, so a pipeline question knows which stages exist before asking about leads in them.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/v1/funnels"
+      }
+    },
+    {
+      "name": "holded_list_leads",
+      "description": "List CRM leads with their name, contact, value, funnel stage and expected close date — the sales-pipeline view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/v1/leads",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    }
+  ]
+}

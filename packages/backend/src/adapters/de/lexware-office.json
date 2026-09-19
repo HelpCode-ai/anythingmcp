@@ -1,0 +1,430 @@
+{
+  "slug": "lexware-office",
+  "name": "Lexware Office",
+  "description": "Lexware Office (formerly lexoffice) — Germany's most-used SMB bookkeeping app. Read and create contacts, invoices, quotations, credit notes, vouchers and articles, and pull the voucher list that drives the Buchhaltung. Public REST API v1, bearer token.",
+  "region": "de",
+  "category": "accounting",
+  "icon": "lexware-office",
+  "docsUrl": "https://developers.lexware.io/docs/",
+  "instructions": "**Getting a token**\n1. Sign in to Lexware Office (lexoffice) with an account on a paid plan — the API is not available on the free tier.\n2. Open **Einstellungen → Erweiterungen → Öffentliche API** and create a new access token. The token is shown once; store it immediately.\n3. Set `LEXWARE_API_KEY` to that value. It is a personal token scoped to the one company (Mandant) it was created in; a tax adviser handling several clients needs one connector per client.\n\n**API version**: this adapter targets the public REST API **v1** at `https://api.lexware.io/v1`. Lexware still serves the historical `api.lexoffice.io` host; both answer the same tokens, but new integrations should use `api.lexware.io`.\n\n**Rate limit**: 2 requests per second per token. The API answers a burst with `429`; the agent should pace bulk work rather than retry in a tight loop.\n\n**Vouchers vs invoices**: `lexware_office_list_vouchers` reads the *voucher list* — the bookkeeping view that contains sales invoices, purchase invoices, credit notes and receipts alike, and is what you want for \"what is unpaid\". `lexware_office_get_invoice` reads a single sales invoice document with its line items.\n\n**Writes**: `lexware_office_create_contact` and `lexware_office_create_invoice` create real records in the live company. An invoice created with `finalize: false` stays a draft (Entwurf) and can still be deleted in the UI; finalized invoices are legally immutable under GoBD and can only be corrected with a credit note.\n\n**Cloud reachability**: api.lexware.io is public with a valid certificate, so AnythingMCP Cloud reaches it with no extra setup.",
+  "requiredEnvVars": [
+    "LEXWARE_API_KEY"
+  ],
+  "connector": {
+    "name": "Lexware Office API v1",
+    "type": "REST",
+    "baseUrl": "https://api.lexware.io/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{LEXWARE_API_KEY}}"
+    },
+    "healthcheckPath": "/profile"
+  },
+  "probe": {
+    "tool": "lexware_office_get_profile"
+  },
+  "tools": [
+    {
+      "name": "lexware_office_get_profile",
+      "description": "Read the connected company profile: company name, tax number, VAT id, the connection's user id and the small-business (Kleinunternehmer) flag. Fast call — use it to verify the token works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/profile"
+      }
+    },
+    {
+      "name": "lexware_office_list_contacts",
+      "description": "List contacts (customers and vendors) with paging. Filter by role or by a free-text name fragment to find the party before reading or creating a document for them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Zero-based page index (default 0)."
+          },
+          "size": {
+            "type": "number",
+            "description": "Page size, 1–250 (default 25)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Exact e-mail address to filter by."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name fragment; matches company name or last name."
+          },
+          "customer": {
+            "type": "boolean",
+            "description": "When true, only contacts that have the customer role."
+          },
+          "vendor": {
+            "type": "boolean",
+            "description": "When true, only contacts that have the vendor role."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size",
+          "email": "$email",
+          "name": "$name",
+          "customer": "$customer",
+          "vendor": "$vendor"
+        }
+      }
+    },
+    {
+      "name": "lexware_office_get_contact",
+      "description": "Read one contact by its Lexware id, including all addresses, the customer/vendor roles, contact persons, e-mail addresses and phone numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Contact UUID as returned by lexware_office_list_contacts."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{id}"
+      }
+    },
+    {
+      "name": "lexware_office_list_vouchers",
+      "description": "Search the voucher list — the bookkeeping view across sales invoices, purchase invoices, credit notes, down payments and receipts. This is the tool for questions like 'what is still open' or 'what did we book in Q3'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "voucherType": {
+            "type": "string",
+            "description": "Comma-separated types: salesinvoice, salescreditnote, purchaseinvoice, purchasecreditnote, invoice, creditnote, orderconfirmation, quotation, deliverynote, downpaymentinvoice."
+          },
+          "voucherStatus": {
+            "type": "string",
+            "description": "Comma-separated statuses: draft, open, paid, paidoff, voided, transferred, sepadebit, overdue, accepted, rejected."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "When true, include archived vouchers."
+          },
+          "contactId": {
+            "type": "string",
+            "description": "Restrict to one contact's vouchers (UUID)."
+          },
+          "voucherDateFrom": {
+            "type": "string",
+            "description": "Earliest voucher date, YYYY-MM-DD."
+          },
+          "voucherDateTo": {
+            "type": "string",
+            "description": "Latest voucher date, YYYY-MM-DD."
+          },
+          "page": {
+            "type": "number",
+            "description": "Zero-based page index (default 0)."
+          },
+          "size": {
+            "type": "number",
+            "description": "Page size, 1–250 (default 25)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/voucherlist",
+        "queryParams": {
+          "voucherType": "$voucherType",
+          "voucherStatus": "$voucherStatus",
+          "archived": "$archived",
+          "contactId": "$contactId",
+          "voucherDateFrom": "$voucherDateFrom",
+          "voucherDateTo": "$voucherDateTo",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "lexware_office_get_invoice",
+      "description": "Read one sales invoice in full: header, addressee, every line item with net/gross and tax rate, the total amounts, the payment terms and the shipping date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Invoice UUID, as returned in the voucher list's `id` field."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{id}"
+      }
+    },
+    {
+      "name": "lexware_office_get_quotation",
+      "description": "Read one quotation (Angebot) in full, including its line items, totals, validity date and current status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Quotation UUID."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quotations/{id}"
+      }
+    },
+    {
+      "name": "lexware_office_get_credit_note",
+      "description": "Read one credit note (Rechnungskorrektur) in full: the invoice it corrects, its line items and its totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Credit note UUID."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credit-notes/{id}"
+      }
+    },
+    {
+      "name": "lexware_office_list_articles",
+      "description": "List articles (Artikel) from the product catalogue, optionally narrowed by article number or type, so an invoice line can reference a real product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "articleNumber": {
+            "type": "string",
+            "description": "Exact article number to look up."
+          },
+          "type": {
+            "type": "string",
+            "description": "Either `PRODUCT` or `SERVICE`."
+          },
+          "page": {
+            "type": "number",
+            "description": "Zero-based page index (default 0)."
+          },
+          "size": {
+            "type": "number",
+            "description": "Page size, 1–250 (default 25)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles",
+        "queryParams": {
+          "articleNumber": "$articleNumber",
+          "type": "$type",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "lexware_office_list_countries",
+      "description": "List the country codes Lexware Office accepts in an address, with their tax classification (intra-community, third country). Useful before creating a contact with a foreign address.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/countries"
+      }
+    },
+    {
+      "name": "lexware_office_create_contact",
+      "description": "Create a new contact with the customer and/or vendor role. Writes to the live company — check with lexware_office_list_contacts first that the party does not already exist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "description": "Company name. Provide this OR firstName+lastName, not both."
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Given name, for a private person."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Family name, for a private person."
+          },
+          "isCustomer": {
+            "type": "boolean",
+            "description": "Give the contact the customer role (default true)."
+          },
+          "isVendor": {
+            "type": "boolean",
+            "description": "Give the contact the vendor role."
+          },
+          "email": {
+            "type": "string",
+            "description": "Primary business e-mail address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Primary business phone number."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street and house number of the billing address."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code of the billing address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City of the billing address."
+          },
+          "countryCode": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 country code, e.g. DE."
+          }
+        },
+        "required": [
+          "companyName"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "version": 0,
+          "roles": {
+            "customer": {},
+            "vendor": {}
+          },
+          "company": {
+            "name": "$companyName"
+          },
+          "person": {
+            "firstName": "$firstName",
+            "lastName": "$lastName"
+          },
+          "addresses": {
+            "billing": [
+              {
+                "street": "$street",
+                "zip": "$zip",
+                "city": "$city",
+                "countryCode": "$countryCode"
+              }
+            ]
+          },
+          "emailAddresses": {
+            "business": [
+              "$email"
+            ]
+          },
+          "phoneNumbers": {
+            "business": [
+              "$phone"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "lexware_office_create_invoice",
+      "description": "Create a sales invoice. With finalize=false it is saved as a draft that can still be edited or deleted; with finalize=true it is booked and becomes legally immutable under GoBD.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "string",
+            "description": "UUID of the customer the invoice is addressed to."
+          },
+          "voucherDate": {
+            "type": "string",
+            "description": "Invoice date in ISO 8601, e.g. 2026-09-17T00:00:00.000+02:00."
+          },
+          "lineItems": {
+            "type": "array",
+            "description": "Array of line items. Each: {type: 'custom', name, quantity, unitName, unitPrice: {currency: 'EUR', netAmount, taxRatePercentage}}.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "taxType": {
+            "type": "string",
+            "description": "Tax treatment: `net`, `gross`, `vatfree`, `intraCommunitySupply`, `constructionService13b` or `externalService13b`."
+          },
+          "finalize": {
+            "type": "boolean",
+            "description": "When true the invoice is booked immediately instead of saved as a draft."
+          },
+          "introduction": {
+            "type": "string",
+            "description": "Text printed above the line items."
+          },
+          "remark": {
+            "type": "string",
+            "description": "Text printed below the line items, e.g. payment terms."
+          }
+        },
+        "required": [
+          "contactId",
+          "lineItems"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices",
+        "queryParams": {
+          "finalize": "$finalize"
+        },
+        "bodyMapping": {
+          "voucherDate": "$voucherDate",
+          "address": {
+            "contactId": "$contactId"
+          },
+          "lineItems": "$lineItems",
+          "totalPrice": {
+            "currency": "EUR"
+          },
+          "taxConditions": {
+            "taxType": "$taxType"
+          },
+          "shippingConditions": {
+            "shippingType": "none"
+          },
+          "introduction": "$introduction",
+          "remark": "$remark"
+        }
+      }
+    }
+  ]
+}

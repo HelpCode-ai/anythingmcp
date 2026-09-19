@@ -1,0 +1,472 @@
+{
+  "slug": "odoo",
+  "name": "Odoo",
+  "description": "Odoo ERP over the JSON-2 API: search, read, create and update any model, plus purpose-built tools for partners, sales orders, invoices and products. Works against Odoo Online, Odoo.sh and self-hosted Odoo 19+, bearer API key.",
+  "region": "intl",
+  "category": "erp",
+  "icon": "odoo",
+  "docsUrl": "https://www.odoo.com/documentation/master/developer/reference/external_api.html",
+  "instructions": "**Getting an API key**\n1. In Odoo open your user menu → **My Profile → Account Security** and create a new **API key**. Odoo shows it once.\n2. Put it in `ODOO_API_KEY`, your instance URL in `ODOO_URL` (e.g. `https://mycompany.odoo.com`, no trailing slash) and the database name in `ODOO_DB`. On Odoo Online the database name is usually the subdomain.\n\n**This adapter uses the JSON-2 API**, which Odoo introduced in 19 and which is the only Odoo HTTP surface a generic REST engine can speak: `POST {url}/json/2/{model}/{method}` with the key as a bearer token and the database in an `X-Odoo-Database` header. On **Odoo 18 and older** that route does not exist — those versions only offer XML-RPC and the older `/jsonrpc` endpoint, neither of which this connector can call. For an older instance, build a custom connector against `/jsonrpc` (POST, `{\"jsonrpc\":\"2.0\",\"method\":\"call\",\"params\":{\"service\":\"object\",\"method\":\"execute_kw\",\"args\":[db, uid, key, model, method, args]}}`) or install the OCA REST API module.\n\n**Domains are Odoo's query language.** A domain is a list of triples: `[[\"state\",\"=\",\"sale\"],[\"amount_total\",\">\",1000]]`, implicitly AND-ed. `|` and `!` prefix operators express OR and NOT. `odoo_search_read` takes one verbatim, which is what makes this connector able to answer questions the purpose-built tools do not cover.\n\n**Always pass `fields`.** Odoo models have hundreds of columns and omitting `fields` returns all of them, which will exhaust the agent's context on a handful of rows. Start with `odoo_fields_get` to see what exists.\n\n**Permissions follow the user.** The API key inherits its owner's access rights and record rules. A restricted user sees fewer rows, not an error — so an agent reporting 'no open orders' may simply be looking through the wrong account.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`odoo.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n\n**Writes**: `odoo_create` and `odoo_write` change the live database, and Odoo's automations (mail, stock moves, accounting entries) fire as if a person had done it.",
+  "requiredEnvVars": [
+    "ODOO_URL",
+    "ODOO_DB",
+    "ODOO_API_KEY"
+  ],
+  "connector": {
+    "name": "Odoo JSON-2 API",
+    "type": "REST",
+    "baseUrl": "{{ODOO_URL}}/json/2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ODOO_API_KEY}}"
+    },
+    "headers": {
+      "X-Odoo-Database": "{{ODOO_DB}}",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/res.users/search_count"
+  },
+  "probe": {
+    "tool": "odoo_list_partners"
+  },
+  "tools": [
+    {
+      "name": "odoo_search_read",
+      "description": "Search and read any Odoo model in one call. The general-purpose tool: pass a model, an Odoo domain and the fields you want. Always name the fields — Odoo models have hundreds of columns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Technical model name, e.g. res.partner, sale.order, account.move, product.product."
+          },
+          "domain": {
+            "type": "array",
+            "description": "Odoo domain as a list of triples, e.g. [[\"state\",\"=\",\"sale\"]]. Empty list matches everything.",
+            "items": {
+              "type": "array"
+            }
+          },
+          "fields": {
+            "type": "array",
+            "description": "Field names to return. Omitting this returns every column.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 80)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort expression, e.g. `date_order desc`."
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{model}/search_read",
+        "bodyMapping": {
+          "domain": "$domain",
+          "fields": "$fields",
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "odoo_read",
+      "description": "Read specific records of a model by their ids — the follow-up call when a search has returned ids and you now want the detail of a few of them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Technical model name, e.g. sale.order."
+          },
+          "ids": {
+            "type": "array",
+            "description": "Record ids to read.",
+            "items": {
+              "type": "number"
+            }
+          },
+          "fields": {
+            "type": "array",
+            "description": "Field names to return.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "model",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{model}/read",
+        "bodyMapping": {
+          "ids": "$ids",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "odoo_search_count",
+      "description": "Count the records of a model matching a domain, without transferring them. Use this before a search_read to find out whether the answer is 12 rows or 120,000.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Technical model name, e.g. account.move."
+          },
+          "domain": {
+            "type": "array",
+            "description": "Odoo domain as a list of triples.",
+            "items": {
+              "type": "array"
+            }
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{model}/search_count",
+        "bodyMapping": {
+          "domain": "$domain"
+        }
+      }
+    },
+    {
+      "name": "odoo_fields_get",
+      "description": "Describe a model's fields: name, type, label, whether it is required or readonly, and the related model for relational fields. Read this before composing a domain against an unfamiliar model.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Technical model name, e.g. res.partner."
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Field attributes to return, e.g. [\"string\",\"type\",\"required\",\"relation\"].",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{model}/fields_get",
+        "bodyMapping": {
+          "attributes": "$attributes"
+        }
+      }
+    },
+    {
+      "name": "odoo_list_partners",
+      "description": "List partners — Odoo's customers, suppliers and contacts — with name, e-mail, phone, city and country. Convenience wrapper over res.partner.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 50)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "domain": {
+            "type": "array",
+            "description": "Extra Odoo domain, e.g. [[\"customer_rank\",\">\",0]] for customers only.",
+            "items": {
+              "type": "array"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/res.partner/search_read",
+        "bodyMapping": {
+          "domain": "$domain",
+          "fields": [
+            "id",
+            "name",
+            "email",
+            "phone",
+            "city",
+            "country_id",
+            "customer_rank",
+            "supplier_rank",
+            "vat"
+          ],
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "name asc"
+        }
+      }
+    },
+    {
+      "name": "odoo_list_sale_orders",
+      "description": "List sales orders with their customer, date, state and total. Convenience wrapper over sale.order; state `sale` means confirmed, `draft` a quotation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 50)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "domain": {
+            "type": "array",
+            "description": "Extra Odoo domain, e.g. [[\"state\",\"=\",\"sale\"]].",
+            "items": {
+              "type": "array"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sale.order/search_read",
+        "bodyMapping": {
+          "domain": "$domain",
+          "fields": [
+            "id",
+            "name",
+            "partner_id",
+            "date_order",
+            "state",
+            "amount_total",
+            "currency_id",
+            "invoice_status"
+          ],
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "date_order desc"
+        }
+      }
+    },
+    {
+      "name": "odoo_list_invoices",
+      "description": "List customer invoices and vendor bills with their partner, date, due date, state and residual amount — the answer to 'what is still unpaid'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 50)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "domain": {
+            "type": "array",
+            "description": "Extra Odoo domain, e.g. [[\"move_type\",\"=\",\"out_invoice\"],[\"payment_state\",\"!=\",\"paid\"]].",
+            "items": {
+              "type": "array"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/account.move/search_read",
+        "bodyMapping": {
+          "domain": "$domain",
+          "fields": [
+            "id",
+            "name",
+            "partner_id",
+            "invoice_date",
+            "invoice_date_due",
+            "move_type",
+            "state",
+            "payment_state",
+            "amount_total",
+            "amount_residual",
+            "currency_id"
+          ],
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "invoice_date desc"
+        }
+      }
+    },
+    {
+      "name": "odoo_list_products",
+      "description": "List products with their internal reference, sale price, cost, on-hand quantity and product type. Convenience wrapper over product.product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 50)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "domain": {
+            "type": "array",
+            "description": "Extra Odoo domain, e.g. [[\"sale_ok\",\"=\",true]].",
+            "items": {
+              "type": "array"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product.product/search_read",
+        "bodyMapping": {
+          "domain": "$domain",
+          "fields": [
+            "id",
+            "name",
+            "default_code",
+            "list_price",
+            "standard_price",
+            "qty_available",
+            "type",
+            "uom_id"
+          ],
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "default_code asc"
+        }
+      }
+    },
+    {
+      "name": "odoo_create",
+      "description": "Create a record in any Odoo model. Writes to the live database and fires Odoo's automations — mail, stock moves and accounting entries all behave as if a person had done it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Technical model name, e.g. res.partner."
+          },
+          "values": {
+            "type": "object",
+            "description": "Field values for the new record, e.g. {\"name\": \"Muster GmbH\", \"email\": \"info@muster.de\"}."
+          }
+        },
+        "required": [
+          "model",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{model}/create",
+        "bodyMapping": {
+          "values": "$values"
+        }
+      }
+    },
+    {
+      "name": "odoo_write",
+      "description": "Update existing records in any Odoo model. Writes to the live database; a domain that matches more rows than you expected will update all of them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Technical model name, e.g. sale.order."
+          },
+          "ids": {
+            "type": "array",
+            "description": "Ids of the records to update.",
+            "items": {
+              "type": "number"
+            }
+          },
+          "values": {
+            "type": "object",
+            "description": "Field values to set, e.g. {\"note\": \"Called 2026-09-17\"}."
+          }
+        },
+        "required": [
+          "model",
+          "ids",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{model}/write",
+        "bodyMapping": {
+          "ids": "$ids",
+          "values": "$values"
+        }
+      }
+    },
+    {
+      "name": "odoo_call_method",
+      "description": "Call an arbitrary public method on an Odoo model — the escape hatch for workflow actions such as action_confirm on a sale order or action_post on an invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Technical model name, e.g. sale.order."
+          },
+          "method": {
+            "type": "string",
+            "description": "Public method name, e.g. action_confirm, action_post, button_cancel."
+          },
+          "ids": {
+            "type": "array",
+            "description": "Record ids the method operates on.",
+            "items": {
+              "type": "number"
+            }
+          },
+          "kwargs": {
+            "type": "object",
+            "description": "Keyword arguments for the method, when it takes any."
+          }
+        },
+        "required": [
+          "model",
+          "method",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{model}/{method}",
+        "bodyMapping": {
+          "ids": "$ids",
+          "kwargs": "$kwargs"
+        }
+      }
+    }
+  ]
+}

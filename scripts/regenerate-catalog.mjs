@@ -2,7 +2,7 @@
 /**
  * Regenerates the auto-managed sections of
  * packages/backend/src/adapters/catalog.ts by scanning every *.json under
- * packages/backend/src/adapters/{de,gb,intl,br,in,jp,ng}/.
+ * packages/backend/src/adapters/{de,gb,intl,br,in,jp,ng,it,es,fr,nl,be,ch,se,dk}/.
  *
  * Hand-written code OUTSIDE the AUTOGEN markers is preserved.
  *
@@ -24,7 +24,10 @@ const REPO_ROOT = join(__dirname, '..');
 const ADAPTERS_DIR = join(REPO_ROOT, 'packages/backend/src/adapters');
 const CATALOG_PATH = join(ADAPTERS_DIR, 'catalog.ts');
 
-const REGIONS = ['de', 'gb', 'intl', 'br', 'in', 'jp', 'ng'];
+const REGIONS = [
+  'de', 'gb', 'intl', 'br', 'in', 'jp', 'ng',
+  'it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk',
+];
 
 const IMPORTS_BEGIN = '// === AUTOGEN-IMPORTS-BEGIN === run scripts/regenerate-catalog.mjs ===';
 const IMPORTS_END = '// === AUTOGEN-IMPORTS-END ===';

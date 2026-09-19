@@ -5,6 +5,7 @@ import axios, {
   AxiosError,
   Method,
 } from 'axios';
+import { createHmac } from 'node:crypto';
 import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { buildOAuth1Header } from './oauth1-signer';
@@ -164,6 +165,13 @@ export class RestEngine {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
         ...mappedQuery,
       };
+      // axios serializes an array value as `k[]=a&k[]=b`. OpenAPI's default
+      // for an array query parameter is `style: form, explode: true`, i.e.
+      // the repeated `k=a&k=b` form — which is what Checkmk's `columns` and
+      // most standards-following APIs actually parse. The bracketed form is
+      // silently ignored by them, so the request succeeds and quietly
+      // returns the wrong columns. Serialize the standard way instead.
+      axiosConfig.paramsSerializer = serializeRepeatedParams;
     }
 
     // Request body
@@ -230,6 +238,11 @@ export class RestEngine {
     // form-urlencoded body params (unlike Bearer/API-key auth, which is set in
     // injectAuth before those exist).
     this.applyOAuth1Signature(axiosConfig, config);
+
+    // HMAC signing is here for the same reason: the canonical string most
+    // of these APIs sign folds in the request body, which does not exist
+    // until the block above has run.
+    this.applyHmacSignature(axiosConfig, config);
 
     // Route through the proxy / web-unblocker when the caller asked for it.
     // The unblocker agent disables upstream TLS verification (Zyte and friends
@@ -498,6 +511,91 @@ export class RestEngine {
    * - `token`, `tokenSecret` — optional (three-legged/user context).
    * - `realm` — optional Authorization-header realm (not signed).
    */
+  /**
+   * Sign the request with an HMAC over a canonical string the adapter
+   * describes, for the APIs that authenticate that way rather than with a
+   * static header. Kaufland's Marketplace API is the shipped example; the
+   * pattern (secret + a template naming method, path, body and a timestamp)
+   * is common enough to be worth expressing in the adapter rather than in
+   * per-vendor code.
+   *
+   * authConfig:
+   *   signature.template   `${method}`, `${url}`, `${path}`, `${body}`,
+   *                        `${timestamp}` — whatever the vendor's canonical
+   *                        string needs, in their order. `\n` is honoured.
+   *   signature.secret     the shared secret (an env placeholder at rest)
+   *   signature.algorithm  sha256 (default) | sha1 | sha512
+   *   signature.encoding   hex (default) | base64
+   *   signature.headerName where the digest goes
+   *   signature.timestampHeader  optional; receives the same timestamp that
+   *                        went into the string, so the server can recompute it
+   *   signature.extraHeaders     static headers sent alongside (e.g. a client key)
+   */
+  private applyHmacSignature(
+    axiosConfig: AxiosRequestConfig,
+    config: { authType: string; authConfig?: Record<string, unknown> },
+  ): void {
+    if (config.authType !== 'HMAC' || !config.authConfig) return;
+    const sig = config.authConfig.signature as Record<string, unknown> | undefined;
+    if (!sig) return;
+
+    const algorithm = String(sig.algorithm ?? 'sha256');
+    const encoding = String(sig.encoding ?? 'hex') === 'base64' ? 'base64' : 'hex';
+    const secret = String(sig.secret ?? '');
+    const headerName = String(sig.headerName ?? 'Signature');
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    // The body as it will actually go out. An object body is serialized the
+    // way axios will serialize it, so the bytes signed are the bytes sent —
+    // signing a different rendering is the classic way an HMAC integration
+    // fails with a message about the key.
+    const data = axiosConfig.data;
+    const body =
+      data === undefined || data === null
+        ? ''
+        : typeof data === 'string'
+          ? data
+          : JSON.stringify(data);
+
+    const url = String(axiosConfig.url ?? '');
+    let path = url;
+    try {
+      const parsed = new URL(url);
+      // Query params are set separately on axiosConfig and appended later, so
+      // fold them in here or they are absent from a signature that covers them.
+      const query = serializeRepeatedParams(
+        (axiosConfig.params as Record<string, unknown>) ?? {},
+      );
+      path = parsed.pathname + (query ? `?${query}` : parsed.search);
+    } catch {
+      /* relative URL — sign it as given */
+    }
+
+    const canonical = String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}\n')
+      .replace(/\\n/g, '\n')
+      .replace(/\$\{method\}/g, String(axiosConfig.method ?? 'GET').toUpperCase())
+      .replace(/\$\{url\}/g, url)
+      .replace(/\$\{path\}/g, path)
+      .replace(/\$\{body\}/g, body)
+      .replace(/\$\{timestamp\}/g, timestamp);
+
+    const digest = createHmac(algorithm, secret)
+      .update(canonical, 'utf8')
+      .digest(encoding as 'hex' | 'base64');
+
+    const extra = (sig.extraHeaders as Record<string, string> | undefined) ?? {};
+    axiosConfig.headers = {
+      ...axiosConfig.headers,
+      ...extra,
+      [headerName]: digest,
+    };
+    if (sig.timestampHeader) {
+      (axiosConfig.headers as Record<string, string>)[
+        String(sig.timestampHeader)
+      ] = timestamp;
+    }
+  }
+
   private applyOAuth1Signature(
     axiosConfig: AxiosRequestConfig,
     config: { authType: string; authConfig?: Record<string, unknown> },
@@ -545,6 +643,19 @@ export class RestEngine {
     mapping: Record<string, unknown>,
     params: Record<string, unknown>,
   ): Record<string, unknown> {
+    // A bodyMapping may legitimately BE an array — plenty of APIs take a
+    // top-level JSON array (bexio's /search takes a list of criteria, OTTO's
+    // price and quantity updates take a list of SKUs). Building a fresh `{}`
+    // and copying entries into it turned `[{…}]` into `{"0": {…}}`, which is
+    // valid JSON, is accepted by axios, and is rejected by the upstream with
+    // a validation error that names a field the adapter never mentioned.
+    // resolveValue already recurses arrays correctly; defer to it.
+    if (Array.isArray(mapping)) {
+      return this.resolveValue(mapping, params) as unknown as Record<
+        string,
+        unknown
+      >;
+    }
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(mapping)) {
       const resolved = this.resolveValue(value, params);
@@ -605,6 +716,55 @@ export class RestEngine {
     }
     return value;
   }
+}
+
+/**
+ * axios's own percent-encoding for a query component, reproduced so that
+ * swapping in a custom serializer changes ONLY the array shape and nothing
+ * else. It leaves `: $ ,` unescaped and writes a space as `+`, which is what
+ * 254 adapters' URLs have always looked like. Verified character by character
+ * against real axios in rest.engine.spec — brackets ARE escaped, and guessing
+ * otherwise was wrong.
+ *
+ * URLSearchParams is not a substitute: it percent-encodes the colon, turning
+ * every ISO 8601 filter value (`date ge 2026-09-01T00:00:00Z`, eBay's
+ * `creationdate:[…]`) into a differently-spelled string. 150 adapters send a
+ * date, time or filter query parameter, and an API that string-matches its
+ * own filter grammar is entitled to reject the re-spelled form.
+ */
+function encodeQueryComponent(value: string): string {
+  return encodeURIComponent(value)
+    .replace(/%3A/gi, ':')
+    .replace(/%24/g, '$')
+    .replace(/%2C/gi, ',')
+    .replace(/%20/g, '+');
+}
+
+/**
+ * Serialize query params with the repeated-key form for arrays
+ * (`columns=a&columns=b`), which is OpenAPI's `explode: true` default, rather
+ * than axios's bracketed `columns[]=a`. Scalars are encoded exactly as axios
+ * would encode them; null and undefined are dropped rather than sent as the
+ * strings "null"/"undefined".
+ */
+export function serializeRepeatedParams(
+  params: Record<string, unknown>,
+): string {
+  const parts: string[] = [];
+  const push = (key: string, value: unknown) => {
+    if (value === undefined || value === null) return;
+    parts.push(
+      `${encodeQueryComponent(key)}=${encodeQueryComponent(String(value))}`,
+    );
+  };
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (Array.isArray(value)) {
+      for (const v of value) push(key, v);
+    } else {
+      push(key, value);
+    }
+  }
+  return parts.join('&');
 }
 
 /**

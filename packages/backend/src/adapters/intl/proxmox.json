@@ -1,0 +1,285 @@
+{
+  "slug": "proxmox",
+  "name": "Proxmox VE",
+  "description": "Proxmox Virtual Environment: cluster nodes, virtual machines and containers with their status and resource usage, storage, backup tasks and the task log. REST API with an API token, read-only by construction.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "proxmox",
+  "docsUrl": "https://pve.proxmox.com/pve-docs/api-viewer/",
+  "instructions": "**Use an API token, not a password.**\n1. In the Proxmox web UI go to **Datacenter → Permissions → API Tokens** and add a token for a user — e.g. `readonly@pve` with token id `amcp`. Proxmox shows the secret once.\n2. Leave **Privilege Separation** ticked and grant the token the `PVEAuditor` role at path `/`. PVEAuditor is read-everything, change-nothing, which is exactly what this adapter needs and all it can do.\n3. Set `PROXMOX_URL` to `https://your-host:8006`, `PROXMOX_TOKEN_ID` to the full `user@realm!tokenid` string, and `PROXMOX_TOKEN_SECRET` to the secret.\n\n**The Authorization header is `PVEAPIToken=user@realm!tokenid=secret`** — Proxmox's own scheme, with the whole triple in one header value. The adapter assembles it; a space in the wrong place is the usual cause of a 401.\n\n**Valid TLS is required, and a fresh Proxmox does not have it.** Proxmox ships a self-signed certificate on port 8006, and this connector will refuse it — there is no trust-anything switch. Put a real certificate on the host (Proxmox has built-in ACME support under **Node → Certificates**) or put it behind a reverse proxy that has one.\n\n**Node names scope almost everything.** `/nodes/{node}/qemu` lists the VMs on *one* node. `proxmox_list_cluster_resources` is the exception and the better starting point: it returns every VM, container and storage across the whole cluster in one call.\n\n**VM vs container.** `qemu` is a full virtual machine, `lxc` is a container. They are separate collections with the same shape, and a question about 'all the machines' needs both — or `proxmox_list_cluster_resources`, which covers both.\n\n**Read-only by design**: no start, no stop, no snapshot, no delete. Restarting production from a chat window should be a decision, not an autocomplete.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch, and a homelab's default certificate is exactly the case that breaks.\n- On an internal host (`pve.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "PROXMOX_URL",
+    "PROXMOX_TOKEN_ID",
+    "PROXMOX_TOKEN_SECRET"
+  ],
+  "connector": {
+    "name": "Proxmox VE API",
+    "type": "REST",
+    "baseUrl": "{{PROXMOX_URL}}/api2/json",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "PVEAPIToken={{PROXMOX_TOKEN_ID}}={{PROXMOX_TOKEN_SECRET}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/version"
+  },
+  "probe": {
+    "tool": "proxmox_get_version"
+  },
+  "tools": [
+    {
+      "name": "proxmox_get_version",
+      "description": "Read the Proxmox VE version and release of the connected node. No parameters and the lightest possible permission — the fastest proof that URL, token id and secret all line up.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/version"
+      }
+    },
+    {
+      "name": "proxmox_list_cluster_resources",
+      "description": "List every VM, container, node and storage across the whole cluster in one call, with status, CPU, memory and disk usage. The best starting point — it needs no node name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Restrict to one kind: vm, storage, node or sdn."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cluster/resources",
+        "queryParams": {
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "proxmox_list_nodes",
+      "description": "List the cluster's nodes with their status, uptime, CPU count and memory. The node names every per-node tool needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nodes"
+      }
+    },
+    {
+      "name": "proxmox_get_node_status",
+      "description": "Read one node's live status: load average, CPU and memory usage, root filesystem usage, kernel version and uptime.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "string",
+            "description": "Node name, from proxmox_list_nodes."
+          }
+        },
+        "required": [
+          "node"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nodes/{node}/status"
+      }
+    },
+    {
+      "name": "proxmox_list_vms",
+      "description": "List the QEMU virtual machines on one node, with their VMID, name, status, CPU and memory allocation and current usage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "string",
+            "description": "Node name, from proxmox_list_nodes."
+          }
+        },
+        "required": [
+          "node"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nodes/{node}/qemu"
+      }
+    },
+    {
+      "name": "proxmox_get_vm_status",
+      "description": "Read one virtual machine's live status: running or stopped, uptime, CPU and memory usage, disk and network throughput.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "string",
+            "description": "Node name."
+          },
+          "vmid": {
+            "type": "number",
+            "description": "VMID of the virtual machine."
+          }
+        },
+        "required": [
+          "node",
+          "vmid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nodes/{node}/qemu/{vmid}/status/current"
+      }
+    },
+    {
+      "name": "proxmox_get_vm_config",
+      "description": "Read one virtual machine's configuration: its disks, network interfaces, boot order, CPU type and the notes recorded against it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "string",
+            "description": "Node name."
+          },
+          "vmid": {
+            "type": "number",
+            "description": "VMID of the virtual machine."
+          }
+        },
+        "required": [
+          "node",
+          "vmid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nodes/{node}/qemu/{vmid}/config"
+      }
+    },
+    {
+      "name": "proxmox_list_containers",
+      "description": "List the LXC containers on one node with their VMID, name, status and resource usage. Containers are a separate collection from VMs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "string",
+            "description": "Node name, from proxmox_list_nodes."
+          }
+        },
+        "required": [
+          "node"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nodes/{node}/lxc"
+      }
+    },
+    {
+      "name": "proxmox_list_storage",
+      "description": "List the storage configured on one node with each store's type, total and used space, and what content it accepts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "string",
+            "description": "Node name."
+          },
+          "content": {
+            "type": "string",
+            "description": "Restrict to storage accepting one content type, e.g. backup, images, iso."
+          }
+        },
+        "required": [
+          "node"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nodes/{node}/storage",
+        "queryParams": {
+          "content": "$content"
+        }
+      }
+    },
+    {
+      "name": "proxmox_list_backups",
+      "description": "List the backup archives on one storage, with their VMID, creation time, size and format — the answer to 'when was this last backed up'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "string",
+            "description": "Node name."
+          },
+          "storage": {
+            "type": "string",
+            "description": "Storage id, from proxmox_list_storage."
+          },
+          "vmid": {
+            "type": "number",
+            "description": "Restrict to one VM's backups."
+          }
+        },
+        "required": [
+          "node",
+          "storage"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nodes/{node}/storage/{storage}/content",
+        "queryParams": {
+          "content": "backup",
+          "vmid": "$vmid"
+        }
+      }
+    },
+    {
+      "name": "proxmox_list_tasks",
+      "description": "List recent tasks on one node with their type, VMID, user, start time and exit status — where a failed backup or migration shows up.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "string",
+            "description": "Node name."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum tasks to return."
+          },
+          "errors": {
+            "type": "number",
+            "description": "Pass 1 to list only tasks that failed."
+          },
+          "vmid": {
+            "type": "number",
+            "description": "Restrict to one VM's tasks."
+          }
+        },
+        "required": [
+          "node"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nodes/{node}/tasks",
+        "queryParams": {
+          "limit": "$limit",
+          "errors": "$errors",
+          "vmid": "$vmid"
+        }
+      }
+    }
+  ]
+}

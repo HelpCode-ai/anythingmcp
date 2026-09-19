@@ -1,0 +1,335 @@
+{
+  "slug": "dolibarr",
+  "name": "Dolibarr",
+  "description": "Dolibarr open-source ERP and CRM: third parties, contacts, customer and supplier invoices, orders, proposals, products and stock. REST API on your own installation, DOLAPIKEY auth.",
+  "region": "fr",
+  "category": "erp",
+  "icon": "dolibarr",
+  "docsUrl": "https://wiki.dolibarr.org/index.php?title=Module_Web_Services_API_REST_(developer)",
+  "instructions": "**Turn the module on first.** Dolibarr ships the REST API as a module that is off by default.\n1. As an administrator go to **Setup → Modules → Web Services API REST** and enable it.\n2. Open the user you want the agent to act as, go to the **User card → API key** area, and generate a key. Put it in `DOLIBARR_API_KEY`.\n3. Set `DOLIBARR_URL` to your installation root (no trailing slash, no `/api`). The adapter appends `/api/index.php`.\n\n**The header is `DOLAPIKEY`.** Not `Authorization`. Dolibarr also accepts it as a query parameter, but a header keeps it out of the access log.\n\n**Permissions follow the user, per module.** Dolibarr's rights are fine-grained — a user with no *read invoices* permission gets a 403 on `/invoices`, and one with no *read third parties* sees an empty list. Grant exactly what the agent needs on a dedicated user.\n\n**`sqlfilters` is the powerful part.** Dolibarr's list endpoints accept a filter expression like `(t.datec:>=:'2026-01-01') and (t.fk_statut:=:1)` — the colon-delimited operator syntax is Dolibarr's own and is documented on the wiki. Field names are the SQL column names, prefixed `t.`.\n\n**Status codes are integers with per-object meanings.** An invoice's `status` 0 is draft, 1 validated, 2 paid, 3 abandoned. An order's are different again. Do not assume they line up.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`erp.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "DOLIBARR_URL",
+    "DOLIBARR_API_KEY"
+  ],
+  "connector": {
+    "name": "Dolibarr REST API",
+    "type": "REST",
+    "baseUrl": "{{DOLIBARR_URL}}/api/index.php",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "DOLAPIKEY",
+      "apiKey": "{{DOLIBARR_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/status"
+  },
+  "probe": {
+    "tool": "dolibarr_get_status"
+  },
+  "tools": [
+    {
+      "name": "dolibarr_get_status",
+      "description": "Read the Dolibarr version and API status of this installation. No permission needed — the fastest proof that the module is on and the key is accepted.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/status"
+      }
+    },
+    {
+      "name": "dolibarr_list_thirdparties",
+      "description": "List third parties — Dolibarr's customers, suppliers and prospects — with their name, VAT number, address and customer/supplier flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sortfield": {
+            "type": "string",
+            "description": "SQL field to sort by, e.g. t.nom."
+          },
+          "sortorder": {
+            "type": "string",
+            "description": "`ASC` or `DESC`."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page (default 100)."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "sqlfilters": {
+            "type": "string",
+            "description": "Dolibarr filter expression, e.g. (t.nom:like:'%Dupont%')."
+          },
+          "mode": {
+            "type": "number",
+            "description": "1 for customers only, 2 for prospects, 3 for neither, 4 for suppliers."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/thirdparties",
+        "queryParams": {
+          "sortfield": "$sortfield",
+          "sortorder": "$sortorder",
+          "limit": "$limit",
+          "page": "$page",
+          "sqlfilters": "$sqlfilters",
+          "mode": "$mode"
+        }
+      }
+    },
+    {
+      "name": "dolibarr_get_thirdparty",
+      "description": "Read one third party in full: addresses, tax identifiers, payment terms, assigned sales representative and account balances.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric third-party id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/thirdparties/{id}"
+      }
+    },
+    {
+      "name": "dolibarr_list_invoices",
+      "description": "List customer invoices with their reference, date, third party, totals and status. Status 0 is draft, 1 validated, 2 paid, 3 abandoned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sortfield": {
+            "type": "string",
+            "description": "SQL field to sort by, e.g. t.datef."
+          },
+          "sortorder": {
+            "type": "string",
+            "description": "`ASC` or `DESC`."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "thirdparty_ids": {
+            "type": "string",
+            "description": "Comma-separated third-party ids to restrict to."
+          },
+          "status": {
+            "type": "string",
+            "description": "Status filter: draft, unpaid, paid or cancelled."
+          },
+          "sqlfilters": {
+            "type": "string",
+            "description": "Dolibarr filter expression, e.g. (t.datef:>=:'2026-01-01')."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "sortfield": "$sortfield",
+          "sortorder": "$sortorder",
+          "limit": "$limit",
+          "page": "$page",
+          "thirdparty_ids": "$thirdparty_ids",
+          "status": "$status",
+          "sqlfilters": "$sqlfilters"
+        }
+      }
+    },
+    {
+      "name": "dolibarr_get_invoice",
+      "description": "Read one customer invoice in full: every line with quantity, unit price, discount and VAT, the totals, and the payments applied against it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric invoice id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{id}"
+      }
+    },
+    {
+      "name": "dolibarr_list_orders",
+      "description": "List customer orders with their reference, date, third party, total and status, for the pipeline between proposal and invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sortfield": {
+            "type": "string",
+            "description": "SQL field to sort by."
+          },
+          "sortorder": {
+            "type": "string",
+            "description": "`ASC` or `DESC`."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "sqlfilters": {
+            "type": "string",
+            "description": "Dolibarr filter expression."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "sortfield": "$sortfield",
+          "sortorder": "$sortorder",
+          "limit": "$limit",
+          "page": "$page",
+          "sqlfilters": "$sqlfilters"
+        }
+      }
+    },
+    {
+      "name": "dolibarr_list_proposals",
+      "description": "List commercial proposals (devis) with their reference, date, third party, total and whether they have been signed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "sqlfilters": {
+            "type": "string",
+            "description": "Dolibarr filter expression."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proposals",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "sqlfilters": "$sqlfilters"
+        }
+      }
+    },
+    {
+      "name": "dolibarr_list_supplier_invoices",
+      "description": "List supplier invoices with their reference, date, supplier, total and payment status — the payables side of the ledger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "sqlfilters": {
+            "type": "string",
+            "description": "Dolibarr filter expression."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supplierinvoices",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "sqlfilters": "$sqlfilters"
+        }
+      }
+    },
+    {
+      "name": "dolibarr_list_products",
+      "description": "List products and services with their reference, label, sale and cost price, VAT rate and stock quantity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 0."
+          },
+          "sqlfilters": {
+            "type": "string",
+            "description": "Dolibarr filter expression, e.g. (t.ref:like:'ART%')."
+          },
+          "mode": {
+            "type": "number",
+            "description": "0 for all, 1 for products only, 2 for services only."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "sqlfilters": "$sqlfilters",
+          "mode": "$mode"
+        }
+      }
+    },
+    {
+      "name": "dolibarr_get_product_stock",
+      "description": "Read the per-warehouse stock of one product — the answer an availability question actually needs, rather than the cached total on the product record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Numeric product id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{id}/stock"
+      }
+    }
+  ]
+}

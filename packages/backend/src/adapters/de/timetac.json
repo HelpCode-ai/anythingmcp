@@ -1,0 +1,209 @@
+{
+  "slug": "timetac",
+  "name": "TimeTac",
+  "description": "TimeTac time and attendance for DACH teams: time trackings, users, projects, tasks, absences and the live clock-in state. REST API v3 on the customer's own timetac.com subdomain, OAuth 2.0.",
+  "region": "de",
+  "category": "time-tracking",
+  "icon": "timetac",
+  "docsUrl": "https://www.timetac.com/en/api-documentation/",
+  "instructions": "**Your account name is part of every URL.** TimeTac gives each customer a subdomain *and* repeats the account name in the path: `https://<account>.timetac.com/<account>/api/v3/`. Set `TIMETAC_ACCOUNT` to that name (the part before `.timetac.com`) and the adapter builds both halves.\n\n**Getting OAuth credentials**\n1. Ask TimeTac support to enable API access and issue an OAuth 2.0 client for your account — it is not self-service in the web UI.\n2. You receive a **client id** and **client secret**. Complete the authorization-code flow once against `https://<account>.timetac.com/<account>/oauth2/authorize` and keep the **refresh token**.\n3. Set `TIMETAC_ACCOUNT`, `TIMETAC_CLIENT_ID`, `TIMETAC_CLIENT_SECRET` and `TIMETAC_REFRESH_TOKEN`. AnythingMCP refreshes the access token on its own from then on.\n\n**Reads end in `/read`.** TimeTac's v3 API is not REST-shaped: the list endpoint for a resource is `<resource>/read`, and filters go in query parameters like `filter=[{\"field\":\"date\",\"comparison\":\"gt\",\"value\":\"2026-09-01\"}]`. The tools below pass a `filter` string through verbatim so the agent can express whatever the docs allow.\n\n**Responses are wrapped** in `{\"Success\": true, \"Results\": [...], \"NumResults\": n}`. An empty `Results` with `Success: true` means the filter matched nothing, not that the call failed.\n\n**Unverified**: these paths follow TimeTac's published v3 documentation and have not been run against a live account. Check the docs before concluding a credential is wrong.\n\n**Cloud reachability**: `<account>.timetac.com` is public with a valid certificate.",
+  "requiredEnvVars": [
+    "TIMETAC_ACCOUNT",
+    "TIMETAC_CLIENT_ID",
+    "TIMETAC_CLIENT_SECRET",
+    "TIMETAC_REFRESH_TOKEN"
+  ],
+  "connector": {
+    "name": "TimeTac API v3",
+    "type": "REST",
+    "baseUrl": "https://{{TIMETAC_ACCOUNT}}.timetac.com/{{TIMETAC_ACCOUNT}}/api/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{TIMETAC_CLIENT_ID}}",
+      "clientSecret": "{{TIMETAC_CLIENT_SECRET}}",
+      "refreshToken": "{{TIMETAC_REFRESH_TOKEN}}",
+      "tokenUrl": "https://{{TIMETAC_ACCOUNT}}.timetac.com/{{TIMETAC_ACCOUNT}}/oauth2/token"
+    },
+    "healthcheckPath": "/users/read"
+  },
+  "probe": {
+    "tool": "timetac_list_users"
+  },
+  "tools": [
+    {
+      "name": "timetac_list_users",
+      "description": "List the users in the TimeTac account with their name, employee number, department and active state. No parameters — the quickest check that the OAuth client works.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "TimeTac filter JSON, e.g. [{\"field\":\"status\",\"comparison\":\"eq\",\"value\":\"active\"}]."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/read",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "timetac_list_time_trackings",
+      "description": "Read time trackings in a date range: start, end, duration, the user and the task booked against. This is the core reporting query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "TimeTac filter JSON, e.g. [{\"field\":\"start_time\",\"comparison\":\"gt\",\"value\":\"2026-09-01 00:00:00\"}]."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "start": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort JSON, e.g. [{\"property\":\"start_time\",\"direction\":\"DESC\"}]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeTrackings/read",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit",
+          "start": "$start",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "timetac_list_projects",
+      "description": "List projects with their client, budget and status, so a time tracking can be attributed to a piece of work.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "TimeTac filter JSON."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/read",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "timetac_list_tasks",
+      "description": "List tasks — the things users actually clock onto — with the project they belong to and whether they are still open.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "TimeTac filter JSON, e.g. by project_id."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/read",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "timetac_list_absences",
+      "description": "List absences (holiday, sick leave, special leave) with their type, date range and approval state, for the roster view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "TimeTac filter JSON, e.g. by user_id or date range."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absences/read",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "timetac_list_departments",
+      "description": "List the departments configured in the account, so users and reports can be grouped the way the org chart does.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments/read",
+        "queryParams": {
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "timetac_get_live_status",
+      "description": "Read who is currently clocked in and on what — the live attendance board, answering 'who is working right now'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "TimeTac filter JSON, e.g. restrict to one department."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeTrackings/readLive",
+        "queryParams": {
+          "filter": "$filter"
+        }
+      }
+    }
+  ]
+}
