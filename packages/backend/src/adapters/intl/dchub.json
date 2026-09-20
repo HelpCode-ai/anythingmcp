@@ -36,7 +36,7 @@
     },
     {
       "name": "dchub_search_facilities",
-      "description": "Search 22,900+ data centre facilities by free text (city, provider or market name) and/or country. Returns summary records. Use dchub_facility_detail with an id from here for the full record (that one needs an API key).",
+      "description": "Search DC Hub's data centre facilities by free text (city, provider or market name) and/or country. Returns summary records. Use dchub_facility_detail with an id from here for the full record (that one needs an API key).",
       "parameters": {
         "type": "object",
         "properties": {
