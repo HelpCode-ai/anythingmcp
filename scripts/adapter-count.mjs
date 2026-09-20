@@ -4,9 +4,14 @@
  *
  * Counts every adapter JSON under packages/backend/src/adapters/<region>/ and
  * prints the numbers. With --check it verifies that every place that quotes
- * the count (README, glama.json, CITATION.cff, issue-template config, the
- * demo tools) agrees with the real number, and exits 1 otherwise. Wired into
- * CI so the README can never drift from the catalog again.
+ * the count (README, glama.json, CITATION.cff, server.json, package.json)
+ * agrees with the real number, and exits 1 otherwise. Wired into CI so the
+ * README can never drift from the catalog again.
+ *
+ * `.github/` is governed by the opposite rule: nothing in there may quote the
+ * count at all, and --check fails if something does. Workflows read it from
+ * this script at runtime instead. The reason is supply-chain rather than
+ * tidiness — see the guard near the bottom of this file.
  *
  *   node scripts/adapter-count.mjs            # prints JSON {adapters, keyless}
  *   node scripts/adapter-count.mjs --check    # verifies the quoted numbers
@@ -50,10 +55,8 @@ if (args.includes('--check')) {
     ['README.md', /\b(\d{2,3})\s+(?:pre-built |ready-to-use |ready )?(?:adapters|connectors)\b/g],
     ['glama.json', /\b(\d{2,3})\+?\s+pre-built adapters\b/g],
     ['CITATION.cff', /\b(\d{2,3})\s+pre-built adapters\b/g],
-    ['.github/ISSUE_TEMPLATE/config.yml', /\b(\d{2,3})\+?\s+adapter/g],
     ['server.json', /\b(\d{2,3})\s+(?:pre-built )?(?:adapters|connectors)\b/g],
     ['package.json', /\b(\d{2,3})\s+pre-built adapters\b/g],
-    ['.github/workflows/docker-publish.yml', /\b(\d{2,3})\s+connectors\b/g],
   ];
   // Same idea for the "no API key needed" number, which the README, the demo
   // tools and the website all quote as a selling point.
@@ -102,6 +105,35 @@ if (args.includes('--check')) {
       `::error file=server.json::description is ${serverJson.description.length} characters; the MCP registry rejects anything over 100`,
     );
     failed = true;
+  }
+
+  // Inverted rule for .github/: nothing in there may quote the count.
+  //
+  // The sync list above used to include docker-publish.yml and the issue
+  // template, which meant every adapter PR had to edit a workflow to pass CI.
+  // A workflow edit arriving as routine noise on a PR whose subject is a JSON
+  // file is the cheapest place in this repository to hide a malicious change,
+  // and fork PRs were doing it by design. The number now comes from this
+  // script at workflow runtime, and this keeps it from creeping back.
+  const githubDir = join(ROOT, '.github');
+  const walk = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
+    );
+  for (const abs of walk(githubDir)) {
+    if (!/\.(ya?ml|md)$/.test(abs)) continue;
+    const rel = abs.slice(ROOT.length + 1);
+    const text = readFileSync(abs, 'utf8');
+    for (const m of text.matchAll(
+      /\b(\d{2,4})\+?\s+(?:pre-built\s+)?(?:adapters?|connectors?)\b/g,
+    )) {
+      console.error(
+        `::error file=${rel}::quotes "${m[0]}". Nothing under .github/ may carry the adapter count — ` +
+          `an adapter PR must never have a reason to edit a workflow. Read it at runtime instead ` +
+          `(see the "Read the catalog count" step in docker-publish.yml).`,
+      );
+      failed = true;
+    }
   }
 
   for (const [file, re] of banned) {
