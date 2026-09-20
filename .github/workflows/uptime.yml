@@ -100,9 +100,7 @@ jobs:
             last=$(gh issue view "$num" --repo "$REPO" --json comments --jq '.comments[-1].createdAt // ""')
             last_s=$( [ -n "$last" ] && date -d "$last" +%s || echo 0 )
             if [ $(( $(date +%s) - last_s )) -ge 1800 ]; then
-              gh issue comment "$num" --repo "$REPO" --body "Still failing.
-
-$body"
+              gh issue comment "$num" --repo "$REPO" --body "$(printf 'Still failing.\n\n%s' "$body")"
             else
               echo "Incident #$num already updated within the last 30 minutes; not commenting again."
             fi
