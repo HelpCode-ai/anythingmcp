@@ -1,0 +1,118 @@
+name: Uptime probe
+
+# Four complete outages on 2026-09-20 went unnoticed until a third-party
+# directory emailed to say our connector was unhealthy. This is the cheapest
+# thing that would have told us first.
+#
+# Every five minutes: probe the cloud's health endpoint, the anonymous MCP demo
+# endpoint and the marketing site. On failure, open an issue labelled
+# `incident` (or comment on the open one, at most every 30 minutes); on
+# recovery, comment and close it. The heap percentage that /health now
+# reports is written to the run summary on every probe, so the trend is
+# visible here without SSH.
+#
+# A schedule is best-effort on GitHub — delayed under load, never early — so
+# treat this as "we will know within ~10 minutes", not as monitoring.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: uptime-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TITLE: "Cloud is down or degraded (uptime probe)"
+    steps:
+      - name: Probe
+        id: probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          fail=0; report=""
+          note() { report+="$1"$'\n'; echo "$1"; }
+
+          # 1. Backend health — 200 and status ok. A 503 here is the heap
+          #    guard reporting the process degraded before it crashes.
+          code=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 15 https://cloud.anythingmcp.com/health || echo 000)
+          status=$(jq -r '.status // "?"' /tmp/health.json 2>/dev/null || echo "?")
+          heap=$(jq -r '(.info.heap // .details.heap // .error.heap) | select(.!=null) | "\(.percent)% of \(.limitMb) MB (\(.usedMb) MB)"' /tmp/health.json 2>/dev/null || true)
+          if [ "$code" = "200" ] && [ "$status" = "ok" ]; then
+            note "✅ cloud /health → 200 ok · heap ${heap:-n/a}"
+          else
+            fail=1; note "❌ cloud /health → HTTP $code, status=$status · heap ${heap:-n/a} · $(head -c 300 /tmp/health.json 2>/dev/null | tr -d '\n')"
+          fi
+
+          # 2. Anonymous MCP demo endpoint — what directories like Glama probe.
+          code=$(curl -sS -o /tmp/mcp.txt -w '%{http_code}' --max-time 20 -X POST \
+                 -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+                 -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+                 https://cloud.anythingmcp.com/mcp/demo || echo 000)
+          if [ "$code" = "200" ] && grep -q '"tools"' /tmp/mcp.txt; then
+            note "✅ cloud /mcp/demo tools/list → 200 with tools"
+          else
+            fail=1; note "❌ cloud /mcp/demo → HTTP $code · $(head -c 200 /tmp/mcp.txt 2>/dev/null | tr -d '\n')"
+          fi
+
+          # 3. Marketing site.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -L https://anythingmcp.com/ || echo 000)
+          if [ "$code" = "200" ]; then note "✅ anythingmcp.com → 200"; else fail=1; note "❌ anythingmcp.com → HTTP $code"; fi
+
+          {
+            echo "### Uptime probe — $(date -u +'%Y-%m-%d %H:%M UTC')"
+            echo
+            echo "$report"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo "fail=$fail"
+            echo "report<<EOF"
+            echo "$report"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the incident issue
+        if: steps.probe.outputs.fail == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh label create incident --repo "$REPO" --color B60205 --description "Production outage or degradation detected by the uptime probe" 2>/dev/null || true
+          existing=$(gh issue list --repo "$REPO" --label incident --state open --search "\"$TITLE\" in:title" --json number,updatedAt --jq '.[0]')
+          when=$(date -u +'%Y-%m-%d %H:%M UTC')
+          body=$(printf '**%s**\n\n%s\n\nRun: %s/%s/actions/runs/%s' "$when" "${{ steps.probe.outputs.report }}" "$GITHUB_SERVER_URL" "$REPO" "$GITHUB_RUN_ID")
+          if [ -z "$existing" ] || [ "$existing" = "null" ]; then
+            gh issue create --repo "$REPO" --label incident --title "$TITLE" --body "$(printf 'The uptime probe failed. It runs every five minutes; this issue is updated at most every thirty and closed automatically on recovery.\n\n%s' "$body")"
+          else
+            num=$(echo "$existing" | jq -r .number)
+            last=$(gh issue view "$num" --repo "$REPO" --json comments --jq '.comments[-1].createdAt // ""')
+            last_s=$( [ -n "$last" ] && date -d "$last" +%s || echo 0 )
+            if [ $(( $(date +%s) - last_s )) -ge 1800 ]; then
+              gh issue comment "$num" --repo "$REPO" --body "$(printf 'Still failing.\n\n%s' "$body")"
+            else
+              echo "Incident #$num already updated within the last 30 minutes; not commenting again."
+            fi
+          fi
+
+      - name: Close the incident on recovery
+        if: steps.probe.outputs.fail == '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing=$(gh issue list --repo "$REPO" --label incident --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // ""')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$(printf 'Recovered at %s.\n\n%s' "$(date -u +'%Y-%m-%d %H:%M UTC')" "${{ steps.probe.outputs.report }}")"
+            gh issue close "$existing" --repo "$REPO" --reason completed
+          fi
