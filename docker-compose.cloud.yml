@@ -23,7 +23,9 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      app:
+      backend:
+        condition: service_healthy
+      frontend:
         condition: service_healthy
     restart: unless-stopped
     # Docker's json-file driver is unbounded by default. On 2026-09-18 MOTIS's
@@ -37,13 +39,28 @@ services:
         max-size: "50m"
         max-file: "5"
 
-  # NestJS Backend + Next.js Frontend (single container)
-  app:
+  # ── Backend and frontend: two containers, one image ──────────────────────
+  # Until 2026-09-20 both processes ran in one container under start.sh's
+  # liveness loop, which shut the container down whenever either process
+  # died. That afternoon the backend exhausted its heap four times, and each
+  # time the restart took the frontend and every tenant's MCP endpoint with
+  # it. Now a backend crash restarts the backend. The image is the same;
+  # `./start.sh backend` and `./start.sh frontend` exec one process each as
+  # PID 1, so `docker stop` and the backend's own heap guard reach Node
+  # directly and an exit becomes a restart through `restart: unless-stopped`.
+  backend:
     image: helpcodeai/anythingmcp:latest
-    container_name: amcp-cloud-app
+    container_name: amcp-cloud-backend
+    command: ["./start.sh", "backend"]
     expose:
-      - "3000"
       - "4000"
+    # Hard ceiling for the kernel, above the V8 cap so the backend's own
+    # guard (graceful exit at HEAP_EXIT_PERCENT of NODE_MAX_OLD_SPACE_MB, see
+    # .env.example) fires first. RSS runs ~10-20% above the JS heap for native
+    # buffers and code; 5 GB over a 4 GB heap leaves that room. On the 7.9 GB
+    # droplet the rest — frontend, postgres, redis, motis, caddy — sits well
+    # under 2 GB today. If NODE_MAX_OLD_SPACE_MB is raised, raise this too.
+    mem_limit: ${BACKEND_MEM_LIMIT:-5g}
     environment:
       - NODE_ENV=production
       - PORT=4000
@@ -121,6 +138,11 @@ services:
       - SMTP_PASS=${SMTP_PASS:-}
       - SMTP_FROM=${SMTP_FROM:-}
       - SMTP_SECURE=${SMTP_SECURE:-false}
+    volumes:
+      # One heap snapshot per process, written by the heap guard when the heap
+      # crosses HEAP_SNAPSHOT_PERCENT. A volume so it outlives the container
+      # that wrote it — the whole point is to read it after the restart.
+      - diagnostics:/app/diagnostics
     depends_on:
       postgres:
         condition: service_healthy
@@ -139,7 +161,49 @@ services:
       # mid-boot and --wait aborted, failing a deploy that was actually coming up
       # fine (false negative). A genuinely dead app never becomes healthy, so once
       # start_period elapses it still goes unhealthy and the deploy fails for real.
+      #
+      # /health now also fails at HEALTH_HEAP_PERCENT of the heap limit, so the
+      # container reads unhealthy during a decline instead of right up to the
+      # abort. Docker does not restart an unhealthy container by itself; the
+      # backend's own guard exits, and this status is what a deploy and an
+      # outside probe see in the meantime.
       start_period: 180s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  frontend:
+    image: helpcodeai/anythingmcp:latest
+    container_name: amcp-cloud-frontend
+    command: ["./start.sh", "frontend"]
+    expose:
+      - "3000"
+    mem_limit: ${FRONTEND_MEM_LIMIT:-1g}
+    # Only what the Next.js server reads at runtime — found by grepping
+    # `process.env.` under packages/frontend/src, not by copying the backend's
+    # list. Its backend rewrites are baked at build time (see the note in
+    # deploy/cloud/Caddyfile — Caddy routes every backend path itself), so no
+    # database URL and no secrets here: a process that does not need them
+    # should not hold them.
+    #
+    # GTM_ID and COOKIE_DOMAIN are read server-side to render the Tag Manager
+    # snippet and the consent banner; leave them out and both silently vanish.
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=https://${DOMAIN}
+      - GTM_ID=${GTM_ID:-}
+      - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
+    healthcheck:
+      # A static file under public/, served by the standalone server without
+      # touching the backend: this probe answers for the frontend alone.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/logo.svg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
     logging:
       driver: json-file
@@ -242,3 +306,4 @@ volumes:
   motis_data:
   caddy_data:
   caddy_config:
+  diagnostics:

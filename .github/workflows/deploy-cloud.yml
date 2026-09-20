@@ -80,16 +80,24 @@ jobs:
               fi
             fi
 
-            # Recreate ONLY the app to pick up the new image/config (postgres,
-            # redis and motis keep running — no data churn, no needless
-            # downtime), and wait until it reports healthy. The old command
-            # force-recreated the whole stack with no health gate, so a
+            # Recreate ONLY the two app containers to pick up the new image and
+            # config (postgres, redis and motis keep running — no data churn, no
+            # needless downtime), and wait until both report healthy. The old
+            # command force-recreated the whole stack with no health gate, so a
             # crash-on-start went unnoticed and could take the DB down with it.
+            #
+            # backend and frontend are separate services since the 20 Sep heap
+            # incident, so that a backend restart no longer takes the app and
+            # every tenant's MCP endpoint down with it. The first deploy of that
+            # layout leaves the old single `app` container running until the
+            # step below removes it as an orphan — caddy keeps routing to it
+            # until then, so the switch is a few seconds of proxy restart.
             docker compose -f docker-compose.cloud.yml up -d \
-              --no-deps --force-recreate --wait --wait-timeout 300 app
+              --no-deps --force-recreate --wait --wait-timeout 300 backend frontend
 
-            # Ensure the proxy + any other services are up (caddy waits for the
-            # app to be healthy, which it now is).
+            # Ensure the proxy + any other services are up (caddy waits for
+            # backend and frontend to be healthy, which they now are) and drop
+            # anything no longer in the compose file.
             docker compose -f docker-compose.cloud.yml up -d --remove-orphans
 
             docker image prune -f
