@@ -38,6 +38,7 @@ type Tool = {
 
 const a = adapter as unknown as {
   description: string;
+  instructions: string;
   requiredEnvVars: string[];
   optionalEnvVars: string[];
   connector: {
@@ -114,10 +115,20 @@ describe('dchub adapter — static spec conformance', () => {
     expect(tool.description).toContain('_gated');
   });
 
-  it('does not bake a facility count into catalogue copy', () => {
+  it('does not bake a facility count into any copy we publish', () => {
     // DC Hub asked for this: the numbers move weekly and they cannot edit
     // our listing. Live figures come from dchub_stats instead.
-    expect(a.description).not.toMatch(/[\d,]{4,}\+?\s*(facilities|data ?centres|data ?centers)/i);
+    //
+    // Tool descriptions count. The website generates its guides from this
+    // file, so a stale number here reaches 35 published pages across seven
+    // languages — which is exactly how "22,900+ facilities" survived being
+    // removed from the adapter description.
+    const COUNT = /[\d,]{4,}\+?\s*(facilities|data ?centres|data ?centers)/i;
+    expect(a.description).not.toMatch(COUNT);
+    expect(a.instructions).not.toMatch(COUNT);
+    for (const tool of a.tools) {
+      expect(tool.description).not.toMatch(COUNT);
+    }
   });
 
   it('covers all sixteen published operations, and nothing invented', () => {
