@@ -100,6 +100,44 @@ jobs:
             # anything no longer in the compose file.
             docker compose -f docker-compose.cloud.yml up -d --remove-orphans
 
+            # Caddy reads its Caddyfile once, at start. The file is a bind
+            # mount, so a changed file does not change the container's config
+            # hash and `up` leaves the container alone. That is how the first
+            # split-layout deploy went: backend and frontend healthy, the old
+            # `app` removed, Caddy still proxying to app:4000 from memory —
+            # every route 502, and this workflow reported success. Reload,
+            # unconditionally: it is graceful, and a no-op when nothing changed.
+            docker exec amcp-cloud-caddy caddy reload --config /etc/caddy/Caddyfile
+
+            # The health gate above asked the containers. This asks the site,
+            # through Caddy, and fails the deploy if the answer is wrong — for
+            # the backend route, the anonymous MCP endpoint, and a frontend
+            # page, since those are three different proxy targets.
+            DOMAIN=$(grep -E '^DOMAIN=' .env | cut -d= -f2- | tr -d '"' | tr -d "'")
+            probe() {
+              local label="$1" expect="$2"; shift 2
+              local code=""
+              for i in $(seq 1 12); do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@" || echo 000)
+                [ "$code" = "$expect" ] && { echo "ok   $label → $code"; return 0; }
+                sleep 5
+              done
+              echo "::error::$label answered $code after deploy (expected $expect)"
+              return 1
+            }
+            ok=1
+            probe "https://${DOMAIN}/health" 200 "https://${DOMAIN}/health" || ok=0
+            probe "https://${DOMAIN}/mcp/demo tools/list" 200 -X POST \
+              -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+              "https://${DOMAIN}/mcp/demo" || ok=0
+            probe "https://${DOMAIN}/login" 200 "https://${DOMAIN}/login" || ok=0
+            if [ "$ok" != "1" ]; then
+              docker compose -f docker-compose.cloud.yml ps
+              docker logs --tail 30 amcp-cloud-caddy
+              exit 1
+            fi
+
             docker image prune -f
 
             # Keep the eight most recent app images and drop the rest. On
