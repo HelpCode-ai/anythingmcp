@@ -884,7 +884,7 @@ export default function ConnectorDetailPage() {
                 />
               </div>
               {editAuthType === 'API_KEY' && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium mb-1">Header Name</label>
                     <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
@@ -902,7 +902,7 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
               {editAuthType === 'BASIC_AUTH' && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium mb-1">Username</label>
                     <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
@@ -915,7 +915,7 @@ export default function ConnectorDetailPage() {
               )}
               {editAuthType === 'OAUTH2' && connector.type !== 'MCP' && (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">Client ID</label>
                       <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
@@ -968,7 +968,7 @@ export default function ConnectorDetailPage() {
                     <label className="block text-sm font-medium mb-1">Login URL</label>
                     <input type="text" value={editLtLoginUrl} onChange={(e) => setEditLtLoginUrl(e.target.value)} placeholder="https://api.hrworks.de/v2/authentication" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">Username / Access key</label>
                       <input type="text" value={editLtUsername} onChange={(e) => setEditLtUsername(e.target.value)} placeholder="access key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
@@ -985,7 +985,7 @@ export default function ConnectorDetailPage() {
                       Use <code>{'${username}'}</code> / <code>{'${password}'}</code> placeholders. HRworks uses <code>{'{ "accessKey": "${username}", "secretAccessKey": "${password}" }'}</code>.
                     </p>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <div>
                       <label className="block text-sm font-medium mb-1">Method</label>
                       <AppSelect

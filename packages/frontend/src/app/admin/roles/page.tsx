@@ -413,8 +413,8 @@ export default function AdminRolesPage() {
                 </p>
               </div>
 
-              <div className="rounded-[9px] border border-[var(--border)] overflow-hidden">
-                <table className="w-full text-sm">
+              <div className="rounded-[9px] border border-[var(--border)] overflow-x-auto">
+                <table className="w-full min-w-[520px] text-sm">
                   <thead className="bg-[var(--surface-2)]">
                     <tr>
                       <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">User</th>

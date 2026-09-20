@@ -471,7 +471,7 @@ function AdapterStoreContent() {
                     {adapter.description}
                   </p>
 
-                  <div className="mt-4 flex items-center justify-between gap-3 border-t border-dashed border-[var(--border)] pt-3">
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-dashed border-[var(--border)] pt-3">
                     <div className="flex items-center gap-2 font-mono text-[11px] text-[var(--text-3)]">
                       <span className="font-semibold text-[var(--text)]">
                         {adapter.toolCount}
@@ -487,11 +487,11 @@ function AdapterStoreContent() {
                         ))}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5">
                       {adapter.authType && (
                         <Badge
                           tone={isPublic ? 'emerald' : 'neutral'}
-                          className="gap-1 font-mono uppercase tracking-wider"
+                          className="max-w-full min-w-0 gap-1 truncate font-mono uppercase tracking-wider"
                         >
                           {isPublic ? <SparklesIcon /> : <LockIcon />}
                           {AUTH_LABELS[adapter.authType] || adapter.authType}

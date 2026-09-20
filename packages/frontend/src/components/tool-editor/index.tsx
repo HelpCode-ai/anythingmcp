@@ -646,7 +646,7 @@ export function ToolEditor({
       </div>
 
       {/* Basic Info */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-medium mb-1">Tool Name</label>
           <input
@@ -753,7 +753,7 @@ export function ToolEditor({
             </p>
           </div>
         ) : type === 'SOAP' ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-medium mb-1">SOAP Operation</label>
               <input
@@ -780,7 +780,7 @@ export function ToolEditor({
           </div>
         ) : (
           /* REST / WEBHOOK / MCP */
-          <div className="grid grid-cols-[120px_1fr] gap-3">
+          <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3">
             <div>
               <label className="block text-xs font-medium mb-1">Method</label>
               <AppSelect
@@ -953,7 +953,7 @@ export function ToolEditor({
         ) : (
           <div className="space-y-2">
             {/* Column headers */}
-            <div className="grid grid-cols-[1fr_100px_1fr_140px_50px_30px] gap-2 text-[10px] font-medium text-[var(--muted-foreground)] px-1">
+            <div className="hidden md:grid grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_140px_50px_30px] gap-2 text-[10px] font-medium text-[var(--muted-foreground)] px-1">
               <span>Name</span>
               <span>Type</span>
               <span>Description</span>
@@ -967,9 +967,10 @@ export function ToolEditor({
               return (
               <div
                 key={i}
-                className={`grid grid-cols-[1fr_100px_1fr_140px_50px_30px] gap-2 items-center${isEnvOverridden ? ' opacity-60' : ''}`}
+                className={`grid grid-cols-2 gap-2 items-center rounded-md border border-[var(--border)] p-2 md:grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_140px_50px_30px] md:border-0 md:p-0${isEnvOverridden ? ' opacity-60' : ''}`}
               >
-                <div className="relative">
+                <div className="relative col-span-2 md:col-span-1">
+                  <span className="mb-0.5 block text-[10px] text-[var(--muted-foreground)] md:hidden">Name</span>
                   <input
                     type="text"
                     value={param.name}
@@ -986,10 +987,16 @@ export function ToolEditor({
                     </span>
                   )}
                 </div>
+                {/* Phone: the two selects share a row under their labels;
+                    the description and the required/remove row take the
+                    full width. `order` re-sequences them for the 2-col grid
+                    while the DOM stays in the desktop column order. */}
+                <span className="text-[10px] text-[var(--muted-foreground)] md:hidden">Type</span>
+                <span className="text-[10px] text-[var(--muted-foreground)] md:hidden">Maps To</span>
                 <AppSelect
                   value={param.type}
                   onValueChange={v => updateParam(i, { type: v as ToolParam['type'] })}
-                  className="border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)]"
+                  className="min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)] max-md:order-1"
                   options={[
                     { value: 'string', label: 'string' },
                     { value: 'number', label: 'number' },
@@ -999,34 +1006,41 @@ export function ToolEditor({
                     { value: 'object', label: 'object' },
                   ]}
                 />
-                <input
-                  type="text"
-                  value={param.description}
-                  onChange={e => updateParam(i, { description: e.target.value })}
-                  placeholder="Describe this parameter..."
-                  className="border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)]"
-                />
+                <div className="col-span-2 md:col-span-1 max-md:order-3">
+                  <span className="mb-0.5 block text-[10px] text-[var(--muted-foreground)] md:hidden">Description</span>
+                  <input
+                    type="text"
+                    value={param.description}
+                    onChange={e => updateParam(i, { description: e.target.value })}
+                    placeholder="Describe this parameter..."
+                    className="w-full min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)]"
+                  />
+                </div>
                 <AppSelect
                   value={param.target}
                   onValueChange={v => updateParam(i, { target: v as ToolParam['target'] })}
-                  className="border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)]"
+                  className="min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)] max-md:order-2"
                   options={targets.map(t => ({ value: t.value, label: t.label }))}
                 />
-                <div className="flex justify-center">
-                  <input
-                    type="checkbox"
-                    checked={param.required}
-                    onChange={e => updateParam(i, { required: e.target.checked })}
-                    title="Required"
-                  />
+                <div className="col-span-2 flex items-center justify-between gap-3 max-md:order-4 md:contents">
+                  <label className="flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)] md:justify-center md:gap-0">
+                    <input
+                      type="checkbox"
+                      checked={param.required}
+                      onChange={e => updateParam(i, { required: e.target.checked })}
+                      title="Required"
+                    />
+                    <span className="md:hidden">Required</span>
+                  </label>
+                  <button
+                    onClick={() => removeParam(i)}
+                    className="text-[var(--destructive)] text-xs hover:underline"
+                    title="Remove parameter"
+                  >
+                    <span className="md:hidden">Remove</span>
+                    <span className="hidden md:inline">&times;</span>
+                  </button>
                 </div>
-                <button
-                  onClick={() => removeParam(i)}
-                  className="text-[var(--destructive)] text-xs hover:underline"
-                  title="Remove parameter"
-                >
-                  &times;
-                </button>
               </div>
               );
             })}

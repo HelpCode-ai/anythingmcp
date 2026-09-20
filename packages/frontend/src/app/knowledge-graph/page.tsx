@@ -235,7 +235,7 @@ export default function KnowledgeGraphPage() {
       hideFooter
       actions={
         isAdmin && enabled ? (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {llmEnabled && (
               <Button
                 variant="outlineBrand"

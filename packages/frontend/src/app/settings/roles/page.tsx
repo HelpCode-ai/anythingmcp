@@ -497,8 +497,8 @@ export default function SettingsRolesPage() {
               </p>
             </div>
 
-            <div className="border border-[var(--border)] rounded-[9px] overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="border border-[var(--border)] rounded-[9px] overflow-x-auto">
+              <table className="w-full min-w-[520px] text-sm">
                 <thead className="bg-[var(--surface-2)]">
                   <tr className="text-[var(--text-2)]">
                     <th className="text-left px-4 py-3 font-semibold">User</th>

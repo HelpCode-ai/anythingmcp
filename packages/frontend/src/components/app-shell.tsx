@@ -48,7 +48,7 @@ export function AppShell({
   const headerTitle = title ?? breadcrumbs?.[breadcrumbs.length - 1]?.label;
 
   return (
-    <div className="flex h-screen items-stretch overflow-hidden">
+    <div className="flex h-dvh items-stretch overflow-hidden">
       <AppSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -58,11 +58,17 @@ export function AppShell({
           <UsageBanner />
         </div>
         {/* Content header */}
+        {/* Phones: the header wraps. The title group is laid out at 40% of
+            the row, so a short toolbar (one button, the 7d/30d/90d switch)
+            still shares the title row, while a busy toolbar (Test / Edit /
+            Delete, the five connector actions) drops to a second full-width
+            line and wraps there. Nothing can push the header past the
+            viewport. From md up everything sits on one line as before. */}
         <header
-          className="sticky top-0 z-30 flex min-h-[60px] flex-shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-2.5 backdrop-blur-md sm:px-6"
+          className="sticky top-0 z-30 flex min-h-[60px] flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] px-4 py-2.5 backdrop-blur-md sm:px-6"
           style={{ background: 'color-mix(in srgb, var(--bg) 80%, transparent)' }}
         >
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3 max-md:basis-[40%] max-md:grow-[999]">
             <button
               onClick={() => setMobileOpen(true)}
               aria-label="Open navigation"
@@ -89,7 +95,7 @@ export function AppShell({
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 max-md:contents">
             <button
               onClick={() => setTheme(isDark ? 'light' : 'dark')}
               title="Toggle theme"
@@ -102,7 +108,11 @@ export function AppShell({
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z" /></svg>
               )}
             </button>
-            {actions}
+            {actions && (
+              <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 max-md:grow">
+                {actions}
+              </div>
+            )}
           </div>
         </header>
 

@@ -58,7 +58,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     <AppShell title="Settings">
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[210px_1fr] lg:gap-8">
         {/* Settings sub-navigation */}
-        <nav className="flex gap-1 overflow-x-auto pb-2 lg:sticky lg:top-0 lg:flex-col lg:overflow-x-visible lg:pb-0">
+        <nav className="scrollbar-none -mx-4 flex gap-1 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:sticky lg:top-0 lg:mx-0 lg:flex-col lg:overflow-x-visible lg:px-0 lg:pb-0">
           {SIDEBAR_SECTIONS.map((section, si) => {
             if (section.adminOnly && !isAdmin) return null;
 

@@ -348,15 +348,15 @@ export default function SettingsPage() {
           {(mcpAuthMode === 'oauth2' || mcpAuthMode === 'both') && oauthEndpoints && (
             <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-4 space-y-3">
               <h4 className="text-sm font-semibold text-[var(--text)]">OAuth 2.0 Endpoints</h4>
-              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs font-mono text-[var(--text)]">
+              <div className="grid grid-cols-1 gap-x-3 gap-y-1 text-xs font-mono text-[var(--text)] sm:grid-cols-[auto_minmax(0,1fr)]">
                 <span className="text-[var(--text-3)]">Discovery:</span>
-                <span>{serverUrl}{oauthEndpoints.wellKnown}</span>
+                <span className="break-all sm:mb-0 mb-1.5">{serverUrl}{oauthEndpoints.wellKnown}</span>
                 <span className="text-[var(--text-3)]">Authorize:</span>
-                <span>{serverUrl}{oauthEndpoints.authorize}</span>
+                <span className="break-all sm:mb-0 mb-1.5">{serverUrl}{oauthEndpoints.authorize}</span>
                 <span className="text-[var(--text-3)]">Token:</span>
-                <span>{serverUrl}{oauthEndpoints.token}</span>
+                <span className="break-all sm:mb-0 mb-1.5">{serverUrl}{oauthEndpoints.token}</span>
                 <span className="text-[var(--text-3)]">Register:</span>
-                <span>{serverUrl}{oauthEndpoints.register}</span>
+                <span className="break-all">{serverUrl}{oauthEndpoints.register}</span>
               </div>
               <p className="text-xs text-[var(--text-3)]">
                 Supports Authorization Code (with PKCE) and Client Credentials grant types.
@@ -408,7 +408,7 @@ export default function SettingsPage() {
       <Dialog.Root open={deleteOpen} onOpenChange={(open) => { if (!open) resetDeleteDialog(); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Delete account</Dialog.Title>
             <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
               This action cannot be undone. Enter your password and type <strong>DELETE</strong> to confirm.

@@ -136,11 +136,11 @@ export default function SkillsPage() {
       maxWidth={860}
       actions={
         isAdmin && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <select
               value={target}
               onChange={(e) => setTarget(e.target.value)}
-              className="h-9 px-2.5 rounded-[9px] text-[12.5px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] outline-none"
+              className="h-9 min-w-0 px-2.5 rounded-[9px] text-[12.5px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] outline-none max-md:basis-full"
               title="Scope for Generate / Consolidate"
             >
               <option value="">From connectors</option>

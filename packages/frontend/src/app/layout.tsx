@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
@@ -35,6 +35,16 @@ export const metadata: Metadata = {
     ],
     apple: '/apple-icon.svg',
   },
+};
+
+// maximumScale: 1 stops iOS Safari from auto-zooming the page when a
+// 13px input gets focus — that zoom leaves the layout wider than the
+// screen and turns on horizontal scrolling. Pinch-zoom still works: iOS
+// ignores maximumScale for user gestures since iOS 10.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 // process.env.GTM_ID is read by GoogleTagManager() during the layout

@@ -161,6 +161,12 @@ button:disabled {
   outline-offset: 2px;
 }
 
+/* Horizontal strips (settings sub-nav) scroll without showing a bar */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 9px;

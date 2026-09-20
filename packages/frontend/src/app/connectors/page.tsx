@@ -201,7 +201,7 @@ export default function ConnectorsPage() {
   });
 
   const headerActions = (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <Button
         variant="secondary"
         size="md"
@@ -248,7 +248,7 @@ export default function ConnectorsPage() {
       <Dialog.Root open={showImportModal} onOpenChange={(open) => { setShowImportModal(open); if (!open) setImportJson(''); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <div className="mb-4 flex items-center justify-between">
               <Dialog.Title className="text-lg font-semibold text-[var(--text)]">Import Connectors</Dialog.Title>
               <Dialog.Close className="rounded-sm p-1 text-[var(--text-3)] hover:text-[var(--text)]">
@@ -288,7 +288,7 @@ export default function ConnectorsPage() {
       <Dialog.Root open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <Dialog.Title className="mb-2 text-lg font-semibold text-[var(--text)]">Delete Connector</Dialog.Title>
             <Dialog.Description className="mb-5 text-sm text-[var(--text-3)]">
               Are you sure you want to delete <strong className="text-[var(--text)]">{deleteConfirm?.name}</strong> and all its tools? This action cannot be undone.
@@ -342,7 +342,7 @@ export default function ConnectorsPage() {
 
       {loading ? (
         /* Skeleton loading state */
-        <div className="grid gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <Card key={i} className="animate-pulse p-[18px]">
               <div className="mb-[14px] flex items-start gap-3">
@@ -429,7 +429,7 @@ export default function ConnectorsPage() {
             </span>
           </div>
 
-          <div className="grid gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
             {filtered.map((c) => {
               const tone: Tone = TYPE_TONE[c.type] ?? 'neutral';
               return (

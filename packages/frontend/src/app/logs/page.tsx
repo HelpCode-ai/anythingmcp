@@ -257,7 +257,7 @@ export default function LogsPage() {
       <Card className="overflow-hidden">
         {/* Header row */}
         <div
-          className="grid items-center gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-[18px] py-[11px] text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-3)]"
+          className="hidden items-center gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-[18px] py-[11px] text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-3)] md:grid"
           style={{ gridTemplateColumns: GRID_COLS }}
         >
           <span>Time</span>
@@ -284,9 +284,41 @@ export default function LogsPage() {
             const isExpanded = expandedId === log.id;
             return (
               <Fragment key={log.id}>
+                {/* Phone row: stacked, no fixed columns */}
                 <div
                   onClick={() => setExpandedId(isExpanded ? null : log.id)}
-                  className="grid cursor-pointer items-center gap-3 border-b border-[var(--border)] px-[18px] py-[11px] text-[13px] transition-colors hover:bg-[var(--surface-2)]"
+                  className="flex cursor-pointer flex-col gap-1.5 border-b border-[var(--border)] px-4 py-3 text-[13px] transition-colors hover:bg-[var(--surface-2)] md:hidden"
+                >
+                  <div className="flex min-w-0 items-center justify-between gap-2">
+                    <span className="min-w-0 truncate font-mono text-[12.5px] font-medium" title={log.tool?.name || log.toolId}>
+                      {log.tool?.name || log.toolId}
+                    </span>
+                    <StatusPill tone={tone} dot={statusDot(log.status)} className="flex-shrink-0">
+                      {log.status}
+                    </StatusPill>
+                  </div>
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[var(--text-2)]">
+                    <span className="min-w-0 truncate">{log.tool?.connector?.name || '-'}</span>
+                    <span className="text-[var(--border-strong)]">·</span>
+                    <span
+                      className="rounded-md px-[6px] py-px font-mono text-[11.5px] font-semibold"
+                      style={tone === 'success'
+                        ? { background: 'var(--t-success-bg)', color: 'var(--t-success-fg)' }
+                        : tone === 'neutral'
+                          ? { background: 'var(--t-neutral-bg)', color: 'var(--t-neutral-fg)' }
+                          : { background: 'var(--t-danger-bg)', color: 'var(--t-danger-fg)' }}
+                    >
+                      {statusCode(log.status)}
+                    </span>
+                    <span className="font-mono text-[11.5px]">{log.durationMs ? `${log.durationMs}ms` : '-'}</span>
+                    <span className="ml-auto font-mono text-[11.5px] text-[var(--text-3)]">{formatTime(log.createdAt)}</span>
+                  </div>
+                </div>
+
+                {/* Desktop row: fixed-column grid */}
+                <div
+                  onClick={() => setExpandedId(isExpanded ? null : log.id)}
+                  className="hidden cursor-pointer items-center gap-3 border-b border-[var(--border)] px-[18px] py-[11px] text-[13px] transition-colors hover:bg-[var(--surface-2)] md:grid"
                   style={{ gridTemplateColumns: GRID_COLS }}
                 >
                   <span className="font-mono text-[12px] text-[var(--text-3)] whitespace-nowrap overflow-hidden text-ellipsis" title={formatTime(log.createdAt)}>
@@ -317,7 +349,7 @@ export default function LogsPage() {
                 </div>
 
                 {isExpanded && (
-                  <div className="border-b border-[var(--border)] bg-[var(--surface-2)] px-[18px] py-4">
+                  <div className="min-w-0 border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-4 sm:px-[18px]">
                     <div className="grid max-w-full grid-cols-1 gap-4 md:grid-cols-2">
                       <div>
                         <h4 className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-3)]">Input Parameters</h4>

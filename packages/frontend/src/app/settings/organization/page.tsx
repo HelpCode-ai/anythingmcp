@@ -318,7 +318,7 @@ export default function OrganizationSettingsPage() {
       <Dialog.Root open={revokeOpen} onOpenChange={(open) => { if (!open) resetRevokeDialog(); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Sign everyone out</Dialog.Title>
             <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
               Every member of <strong>{name}</strong> will have to sign in again, on the dashboard and
@@ -405,7 +405,7 @@ export default function OrganizationSettingsPage() {
       <Dialog.Root open={deleteOpen} onOpenChange={(open) => { if (!open) resetDeleteOrgDialog(); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Delete organization</Dialog.Title>
             <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
               This deletes <strong>{name}</strong> and everything it contains. To confirm, type the

@@ -167,7 +167,7 @@ function DailyTimeline({
   // Thin the x-axis labels so they don't overlap on 30/90-day ranges.
   const labelEvery = Math.max(1, Math.ceil(daily.length / 8));
   return (
-    <div className="flex h-[170px] items-end gap-1.5">
+    <div className="flex h-[170px] items-end gap-1 sm:gap-1.5">
       {daily.map((d, i) => {
         const total = d.success + d.error + d.timeout;
         const errored = d.error + d.timeout;
@@ -177,7 +177,7 @@ function DailyTimeline({
         return (
           <div
             key={d.date}
-            className="flex h-full flex-1 flex-col items-center justify-end gap-2"
+            className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2"
             title={`${d.date}: ${total} call${total === 1 ? '' : 's'}${errored > 0 ? ` · ${errored} error${errored === 1 ? '' : 's'}` : ''}`}
           >
             <div className="flex h-[140px] w-full items-end">
@@ -197,7 +197,7 @@ function DailyTimeline({
                 </div>
               )}
             </div>
-            <span className="h-3 whitespace-nowrap text-[10px] text-[var(--text-3)]">
+            <span className="h-3 max-w-full overflow-visible whitespace-nowrap text-[10px] text-[var(--text-3)]">
               {showLabel ? d.date.slice(5) : ''}
             </span>
           </div>
