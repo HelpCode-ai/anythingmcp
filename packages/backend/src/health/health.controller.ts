@@ -3,10 +3,13 @@ import { ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import {
   HealthCheck,
+  HealthCheckError,
   HealthCheckService,
   HealthCheckResult,
   HealthIndicatorResult,
 } from '@nestjs/terminus';
+import * as v8 from 'node:v8';
+import { heapStatus, readHealthHeapPercent } from '../common/process-vitals';
 import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { UsersService } from '../users/users.service';
@@ -74,7 +77,34 @@ export class HealthController {
     return this.health.check([
       () => this.checkDatabase(),
       () => this.checkRedis(),
+      () => this.checkHeap(),
     ]);
+  }
+
+  /**
+   * The process itself, not just its dependencies.
+   *
+   * On 2026-09-20 this endpoint returned 200 for the whole of four declines
+   * into heap exhaustion: Postgres was up, Redis was up, and the Node process
+   * was spending 8 seconds per GC cycle recovering nothing. Docker's
+   * healthcheck saw a healthy container right up to the abort. The numbers
+   * are reported even when up, so a probe from outside can see the trend
+   * without SSH.
+   */
+  private checkHeap(): HealthIndicatorResult {
+    const sample = {
+      heapUsed: process.memoryUsage().heapUsed,
+      heapLimit: v8.getHeapStatistics().heap_size_limit,
+    };
+    const heap = heapStatus(sample, readHealthHeapPercent());
+    const result: HealthIndicatorResult = { heap };
+    if (heap.status === 'down') {
+      throw new HealthCheckError(
+        `heap at ${heap.percent}% of its ${heap.limitMb} MB limit`,
+        result,
+      );
+    }
+    return result;
   }
 
   private async checkDatabase(): Promise<HealthIndicatorResult> {

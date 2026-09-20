@@ -1,3 +1,4 @@
+import { processGauges } from '../common/process-vitals';
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import type { McpServer } from '@modelcontextprotocol/server';
 import type { NodeStreamableHTTPServerTransport as StreamableHTTPServerTransport } from '@modelcontextprotocol/node';
@@ -58,6 +59,7 @@ export class McpSessionManager implements OnModuleDestroy {
     // process alive (matters for tests / graceful shutdown).
     this.sweepTimer = setInterval(() => this.sweepIdle(), 60_000);
     if (typeof this.sweepTimer.unref === 'function') this.sweepTimer.unref();
+    processGauges.register('statefulSessions', () => this.sessions.size);
   }
 
   /** Whether stateful session mode is enabled for the instance. */

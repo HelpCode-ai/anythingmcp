@@ -24,6 +24,7 @@ import { mcpHttpTransport } from './mcp-strategy';
 import { toolVisibilityRole } from './mcp-server.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
+import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool } from './tool-registry';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 
@@ -781,6 +782,36 @@ export class McpEndpointController {
     buildServer: () => McpServer,
     label: string,
   ): Promise<void> {
+    // Two gauges that ought to agree, and are kept separately because the
+    // whole point is to notice when they stop agreeing.
+    //
+    //   mcpRequestsInFlight — decremented when the socket closes. This is what
+    //     the network says is still open.
+    //   mcpHandlersUnclosed — decremented when the `finally` below has run
+    //     handler.close(). This is what OUR cleanup says is still open.
+    //
+    // If the second climbs while the first does not, a request whose socket
+    // went away never reached its cleanup — the per-request handler and
+    // everything it built stay referenced. That is the question the 20 Sep
+    // heap exhaustion left open, and it is answered by watching these two
+    // numbers in the `vitals` line, not by guessing.
+    //
+    // `res.once` is guarded because unit tests hand this method bare mocks.
+    processGauges.inc('mcpRequestsInFlight');
+    processGauges.inc('mcpHandlersUnclosed');
+    const startedAt = Date.now();
+    if (typeof (res as { once?: unknown }).once === 'function') {
+      res.once('close', () => {
+        processGauges.dec('mcpRequestsInFlight');
+        if (!res.writableFinished) {
+          processGauges.inc('mcpAbortedTotal');
+          if (Date.now() - startedAt > 60_000) processGauges.inc('mcpAbortedLongTotal');
+        }
+      });
+    } else {
+      processGauges.dec('mcpRequestsInFlight');
+    }
+
     const handler = createMcpHandler(() => buildServer(), {
       legacy: 'stateless',
       // Mapped from the old `enableJsonResponse` boolean, deliberately NOT to
@@ -823,6 +854,7 @@ export class McpEndpointController {
       } catch {
         // Ignore cleanup errors
       }
+      processGauges.dec('mcpHandlersUnclosed');
     }
   }
 
