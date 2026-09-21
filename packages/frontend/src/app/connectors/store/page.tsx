@@ -11,7 +11,7 @@ import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { authTypeLabel, cn } from '@/lib/utils';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
 
 const REGION_LABELS: Record<string, string> = {
@@ -80,6 +80,27 @@ function brandColor(slug: string): string {
   return MONOGRAM_PALETTE[h % MONOGRAM_PALETTE.length];
 }
 
+/**
+ * Monogram colour for a given tile fill. The palette is shared with the
+ * marketing site, so the fills stay exactly as they are; what changes is
+ * which ink goes on top. White only clears 4.5:1 on the two darkest
+ * swatches — on #84cc16 it is 1.98:1 — so the letters follow the fill.
+ */
+function monogramInk(bg: string): string {
+  const channel = (c: number) => {
+    const v = c / 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const r = channel(parseInt(bg.slice(1, 3), 16));
+  const g = channel(parseInt(bg.slice(3, 5), 16));
+  const b = channel(parseInt(bg.slice(5, 7), 16));
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const INK_LUMINANCE = 0.004703; // #0c0f14
+  const onWhite = 1.05 / (luminance + 0.05);
+  const onInk = (luminance + 0.05) / (INK_LUMINANCE + 0.05);
+  return onWhite >= onInk ? '#ffffff' : '#0c0f14';
+}
+
 /* Brand logo or coloured monogram fallback. Matches the marketing-site
    Marketplace card visual exactly so the in-app store feels like the same
    product surface. */
@@ -103,13 +124,15 @@ function BrandTile({ adapter, size = 44 }: { adapter: AdapterItem; size?: number
       </div>
     );
   }
+  const fill = brandColor(adapter.slug);
   return (
     <div
-      className="flex shrink-0 items-center justify-center rounded-xl font-bold text-white ring-1 ring-inset ring-black/5"
+      className="flex shrink-0 items-center justify-center rounded-xl font-bold ring-1 ring-inset ring-black/5"
       style={{
         width: size,
         height: size,
-        background: brandColor(adapter.slug),
+        background: fill,
+        color: monogramInk(fill),
         fontSize: size >= 56 ? 22 : 14,
       }}
     >
@@ -149,17 +172,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   travel: 'Travel',
   cms: 'CMS',
   sports: 'Sports',
-};
-
-const AUTH_LABELS: Record<string, string> = {
-  API_KEY: 'API Key',
-  BEARER_TOKEN: 'Bearer Token',
-  OAUTH2: 'OAuth 2.0',
-  BASIC: 'Basic Auth',
-  BASIC_AUTH: 'Basic Auth',
-  QUERY_AUTH: 'Query Param Auth',
-  LOGIN_TOKEN: 'Login Token',
-  NONE: 'Public API',
 };
 
 interface AdapterItem {
@@ -389,7 +401,7 @@ function AdapterStoreContent() {
                 className={cn(
                   'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                   activeCategory === null
-                    ? 'border-[var(--brand)] bg-[var(--brand)] text-white'
+                    ? 'border-[var(--brand)] bg-[var(--brand)] text-[var(--primary-foreground)]'
                     : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
                 )}
               >
@@ -402,7 +414,7 @@ function AdapterStoreContent() {
                   className={cn(
                     'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                     activeCategory === cat
-                      ? 'border-[var(--brand)] bg-[var(--brand)] text-white'
+                      ? 'border-[var(--brand)] bg-[var(--brand)] text-[var(--primary-foreground)]'
                       : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
                   )}
                 >
@@ -471,7 +483,7 @@ function AdapterStoreContent() {
                     {adapter.description}
                   </p>
 
-                  <div className="mt-4 flex items-center justify-between gap-3 border-t border-dashed border-[var(--border)] pt-3">
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-dashed border-[var(--border)] pt-3">
                     <div className="flex items-center gap-2 font-mono text-[11px] text-[var(--text-3)]">
                       <span className="font-semibold text-[var(--text)]">
                         {adapter.toolCount}
@@ -487,14 +499,14 @@ function AdapterStoreContent() {
                         ))}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5">
                       {adapter.authType && (
                         <Badge
                           tone={isPublic ? 'emerald' : 'neutral'}
-                          className="gap-1 font-mono uppercase tracking-wider"
+                          className="max-w-full min-w-0 gap-1 truncate font-mono uppercase tracking-wider"
                         >
                           {isPublic ? <SparklesIcon /> : <LockIcon />}
-                          {AUTH_LABELS[adapter.authType] || adapter.authType}
+                          {authTypeLabel(adapter.authType)}
                         </Badge>
                       )}
                       {adapter.docsUrl && (
@@ -560,7 +572,7 @@ function AdapterStoreContent() {
 
             <div className="mb-3 flex items-center gap-2 text-xs text-[var(--text-3)]">
               <LockIcon />
-              <span>Auth type: {AUTH_LABELS[configAdapter.connector?.authType] || configAdapter.connector?.authType}</span>
+              <span>Auth type: {authTypeLabel(configAdapter.connector?.authType)}</span>
             </div>
 
             {/* Setup instructions — collapsible details block, default open

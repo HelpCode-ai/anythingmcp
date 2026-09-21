@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
@@ -35,6 +35,15 @@ export const metadata: Metadata = {
     ],
     apple: '/apple-icon.svg',
   },
+};
+
+// No maximumScale: clamping it fails WCAG 1.4.4 and blocks pinch-zoom on
+// the browsers that still honour it. The iOS auto-zoom-on-focus that used
+// to widen the layout is fixed at its source in globals.css, by giving
+// form controls the 16px text iOS asks for.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 // process.env.GTM_ID is read by GoogleTagManager() during the layout

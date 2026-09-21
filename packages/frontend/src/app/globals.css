@@ -29,7 +29,7 @@
   --danger: #dc2626;
   /* tag tones (bg + fg) */
   --t-info-bg: #eaf1ff;     --t-info-fg: #1d4ed8;
-  --t-success-bg: #e6f6ed;  --t-success-fg: #15803d;
+  --t-success-bg: #e6f6ed;  --t-success-fg: #157a3a;  /* 4.84:1 on its tint; #15803d measured 4.48 */
   --t-warn-bg: #fcf1e1;     --t-warn-fg: #b45309;
   --t-danger-bg: #fdecec;   --t-danger-fg: #c2282d;
   --t-neutral-bg: #eef0f4;  --t-neutral-fg: #5b6275;
@@ -67,6 +67,15 @@
   --ring: var(--brand);
   --brand-light: var(--brand-tint);
   --brand-foreground: #ffffff;
+  /* Text that sits ON a solid accent fill. Measured against each accent in
+     both themes: --ok and --warn are too light to carry white anywhere
+     (white on #16a34a is 3.30:1), so their foreground is ink in both. */
+  --danger-foreground: #ffffff;
+  --ok-foreground: #0c0f14;
+  --warn-foreground: #0c0f14;
+  /* Carries white in both themes, unlike --brand, which is light in dark
+     mode. Used by the monogram avatars. */
+  --avatar-gradient: linear-gradient(135deg, #2563eb, #7c3aed);
   --success: var(--ok);
   --success-light: var(--t-success-bg);
   --warning: var(--warn);
@@ -121,6 +130,7 @@
      explicit dark values where the alias target differs */
   --primary-foreground: #0c0f14;
   --brand-foreground: #0c0f14;
+  --danger-foreground: #0c0f14;
 }
 
 html, body {
@@ -159,6 +169,30 @@ button:disabled {
 *:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
+}
+
+/* Horizontal strips (settings sub-nav) scroll without showing a bar. The
+   strip still says it scrolls: `scroll-fade-x` softens its trailing edge. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+@utility scroll-fade-x {
+  mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 28px), transparent 100%);
+}
+
+/* iOS Safari zooms the page in when a focused control's text is smaller
+   than 16px, and the zoomed layout is wider than the screen — one of the
+   ways the viewport "breaks" on a phone. Meeting the 16px threshold is
+   the fix; clamping maximum-scale would only hide it and take pinch-zoom
+   away with it. Unlayered, so it outranks the Tailwind text utilities. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 /* Custom scrollbar */

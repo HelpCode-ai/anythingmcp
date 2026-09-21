@@ -845,10 +845,12 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] px-4">
+    // <main>, not a <div>: this page sits outside AppShell, so without it the
+    // document has no main landmark for a screen reader to jump to.
+    <main className="min-h-dvh flex items-center justify-center bg-[var(--bg)] px-4">
       <Suspense>
         <LoginForm />
       </Suspense>
-    </div>
+    </main>
   );
 }

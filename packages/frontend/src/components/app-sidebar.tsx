@@ -109,7 +109,7 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
     <>
       <div className="flex items-center gap-2.5 px-[18px] pb-4 pt-[18px]">
         <div
-          className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-[var(--brand)] text-white"
+          className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-[var(--brand)] text-[var(--primary-foreground)]"
           style={{ boxShadow: '0 2px 8px var(--brand-ring)' }}
         >
           <LogoIcon size={18} />
@@ -163,7 +163,7 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
                   }}
                   className="flex w-full items-center gap-2.5 px-3 py-2 text-left font-[inherit] hover:bg-[var(--surface-2)]"
                 >
-                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[7px] bg-[linear-gradient(135deg,var(--brand),#7c3aed)] text-[11px] font-semibold text-white">
+                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[7px] bg-[var(--avatar-gradient)] text-[11px] font-semibold text-white">
                     {(org.name || '?').slice(0, 2).toUpperCase()}
                   </span>
                   <span className="min-w-0 flex-1">
@@ -206,7 +206,7 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
           onClick={() => setWsMenu((v) => !v)}
           className="flex w-full items-center gap-2.5 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-2 text-left font-[inherit] hover:border-[var(--border-strong)]"
         >
-          <div className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-lg bg-[linear-gradient(135deg,var(--brand),#7c3aed)] text-xs font-semibold text-white">
+          <div className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-lg bg-[var(--avatar-gradient)] text-xs font-semibold text-white">
             {orgInitials}
           </div>
           <div className="min-w-0 flex-1">

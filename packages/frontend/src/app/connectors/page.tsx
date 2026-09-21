@@ -10,7 +10,8 @@ import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { ActionMenu } from '@/components/ui/action-menu';
+import { authTypeLabel, cn } from '@/lib/utils';
 
 type HealthStatus = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -200,37 +201,49 @@ export default function ConnectorsPage() {
     return true;
   });
 
+  // Four utilities plus the primary action. From md up they all fit on the
+  // header row; on a phone they would take two or three rows of their own, so
+  // the four fold into an overflow menu where each still carries its label.
+  const utilityActions = [
+    { label: checkingHealth ? 'Checking…' : 'Health check', icon: <HeartPulseIcon />, onSelect: handleHealthCheck, disabled: checkingHealth },
+    { label: 'Export all as JSON', icon: <DownloadIcon />, onSelect: handleExportAll },
+    { label: 'Import from JSON', icon: <UploadIcon />, onSelect: () => setShowImportModal(true) },
+    { label: 'Browse adapters', icon: <StoreIcon />, href: '/connectors/store' },
+  ];
+
   const headerActions = (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Button
         variant="secondary"
         size="md"
         onClick={handleHealthCheck}
         disabled={checkingHealth}
         title="Health check all connectors"
+        className="max-md:hidden"
       >
         <HeartPulseIcon />
-        <span className="hidden sm:inline">{checkingHealth ? 'Checking...' : 'Health Check'}</span>
+        <span>{checkingHealth ? 'Checking...' : 'Health Check'}</span>
       </Button>
-      <Button variant="secondary" size="md" onClick={handleExportAll} title="Export all connectors as JSON">
+      <Button variant="secondary" size="md" onClick={handleExportAll} title="Export all connectors as JSON" className="max-md:hidden">
         <DownloadIcon />
-        <span className="hidden sm:inline">Export</span>
+        <span>Export</span>
       </Button>
-      <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title="Import connectors from JSON backup">
+      <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title="Import connectors from JSON backup" className="max-md:hidden">
         <UploadIcon />
-        <span className="hidden sm:inline">Import</span>
+        <span>Import</span>
       </Button>
       <Link
         href="/connectors/store"
         title="Browse pre-built adapter recipes"
-        className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}
+        className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'max-md:hidden')}
       >
         <StoreIcon />
-        <span className="hidden sm:inline">Adapters</span>
+        <span>Adapters</span>
       </Link>
+      <ActionMenu items={utilityActions} className="md:hidden" />
       <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
-        <PlusIcon />
-        Add Connector
+      <PlusIcon />
+      Add Connector
       </Link>
     </div>
   );
@@ -248,7 +261,7 @@ export default function ConnectorsPage() {
       <Dialog.Root open={showImportModal} onOpenChange={(open) => { setShowImportModal(open); if (!open) setImportJson(''); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <div className="mb-4 flex items-center justify-between">
               <Dialog.Title className="text-lg font-semibold text-[var(--text)]">Import Connectors</Dialog.Title>
               <Dialog.Close className="rounded-sm p-1 text-[var(--text-3)] hover:text-[var(--text)]">
@@ -288,7 +301,7 @@ export default function ConnectorsPage() {
       <Dialog.Root open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <Dialog.Title className="mb-2 text-lg font-semibold text-[var(--text)]">Delete Connector</Dialog.Title>
             <Dialog.Description className="mb-5 text-sm text-[var(--text-3)]">
               Are you sure you want to delete <strong className="text-[var(--text)]">{deleteConfirm?.name}</strong> and all its tools? This action cannot be undone.
@@ -342,7 +355,7 @@ export default function ConnectorsPage() {
 
       {loading ? (
         /* Skeleton loading state */
-        <div className="grid gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <Card key={i} className="animate-pulse p-[18px]">
               <div className="mb-[14px] flex items-start gap-3">
@@ -429,7 +442,7 @@ export default function ConnectorsPage() {
             </span>
           </div>
 
-          <div className="grid gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
             {filtered.map((c) => {
               const tone: Tone = TYPE_TONE[c.type] ?? 'neutral';
               return (
@@ -456,7 +469,7 @@ export default function ConnectorsPage() {
                       </div>
                       <div>
                         <div className="text-[11px] text-[var(--text-3)]">Auth</div>
-                        <div className="text-[14px] font-semibold text-[var(--text)]">{c.authType}</div>
+                        <div className="truncate text-[14px] font-semibold text-[var(--text)]">{authTypeLabel(c.authType)}</div>
                       </div>
                     </div>
                     <StatusPill
@@ -473,7 +486,7 @@ export default function ConnectorsPage() {
                         Import Spec
                       </Button>
                     )}
-                    <Button variant="danger" size="sm" onClick={() => setDeleteConfirm({ id: c.id, name: c.name })}>
+                    <Button variant="outlineDanger" size="sm" onClick={() => setDeleteConfirm({ id: c.id, name: c.name })}>
                       Delete
                     </Button>
                   </div>

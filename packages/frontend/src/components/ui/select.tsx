@@ -10,9 +10,20 @@ interface AppSelectProps {
   options: { value: string; label: string }[];
   className?: string;
   disabled?: boolean;
+  /** The trigger is a button, not a <select>, so it needs an explicit name. */
+  'aria-label'?: string;
+  'aria-labelledby'?: string;
 }
 
-export function AppSelect({ value, onValueChange, options, className, disabled }: AppSelectProps) {
+export function AppSelect({
+  value,
+  onValueChange,
+  options,
+  className,
+  disabled,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
+}: AppSelectProps) {
   const radixValue = value === '' ? NONE : value;
 
   return (
@@ -21,7 +32,11 @@ export function AppSelect({ value, onValueChange, options, className, disabled }
       onValueChange={(v) => onValueChange(v === NONE ? '' : v)}
       disabled={disabled}
     >
-      <Select.Trigger className={`flex items-center justify-between gap-2 ${className ?? ''}`}>
+      <Select.Trigger
+        className={`flex items-center justify-between gap-2 ${className ?? ''}`}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+      >
         <Select.Value />
         <Select.Icon asChild>
           <svg

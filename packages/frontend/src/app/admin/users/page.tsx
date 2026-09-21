@@ -238,7 +238,7 @@ export default function AdminUsersPage() {
         <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
       ) : (
         <Card className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-[var(--surface-2)]">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">Email</th>

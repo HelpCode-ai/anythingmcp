@@ -213,7 +213,7 @@ export function ToolAnnotationsEditor({
         <button
           onClick={() => save(false)}
           disabled={saving}
-          className="inline-flex items-center justify-center rounded-[7px] border border-[var(--brand)] bg-[var(--brand)] text-white px-2.5 py-1 text-xs font-semibold disabled:opacity-50"
+          className="inline-flex items-center justify-center rounded-[7px] border border-[var(--brand)] bg-[var(--brand)] text-[var(--primary-foreground)] px-2.5 py-1 text-xs font-semibold disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Save hints'}
         </button>
