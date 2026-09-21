@@ -1,3 +1,4 @@
+import { processGauges } from '../common/process-vitals';
 import { Injectable, Logger } from '@nestjs/common';
 
 /**
@@ -58,6 +59,12 @@ export class ToolRegistry {
   private readonly toolsById = new Map<string, RegisteredTool>();
   // Secondary index by name for backward-compatible lookups (within a filtered set)
   private readonly toolsByName = new Map<string, RegisteredTool[]>();
+
+  constructor() {
+    // The registry is the largest long-lived structure in the process (it
+    // outgrew a 2 GB heap on 10 Sep). Its size belongs in every vitals line.
+    processGauges.register('registeredTools', () => this.toolsById.size);
+  }
 
   /**
    * Register a tool in the runtime registry.

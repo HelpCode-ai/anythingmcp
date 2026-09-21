@@ -112,6 +112,14 @@ COPY --from=frontend-builder --chown=appuser:appuser /app/packages/frontend/publ
 COPY --chown=appuser:appuser start.sh ./start.sh
 RUN chmod +x ./start.sh
 
+# ── Diagnostics ──
+# Where the backend's heap guard writes its one-per-process heap snapshot
+# (packages/backend/src/common/process-vitals.service.ts). Created here so the
+# unprivileged user can write to it and so a deployment can mount a volume on
+# a path that is known to exist; the cloud compose file does exactly that.
+RUN mkdir -p /app/diagnostics && chown appuser:appuser /app/diagnostics
+ENV HEAP_SNAPSHOT_DIR=/app/diagnostics
+
 LABEL org.opencontainers.image.title="AnythingMCP" \
       org.opencontainers.image.description="Convert any API into an MCP server — REST, SOAP, GraphQL, Database, MCP Bridge. Self-hosted MCP middleware." \
       org.opencontainers.image.url="https://github.com/HelpCode-ai/anythingmcp" \
@@ -129,7 +137,12 @@ EXPOSE 3000 4000
 # failing probe keeps the container "starting" (not "unhealthy"), so orchestrators
 # that gate on health don't abort a deploy that is still legitimately coming up.
 # 30s interval, 5s timeout, 120s start period, 3 retries before unhealthy.
+#
+# This is the check for the default `all` mode and for `backend` mode. A
+# container run in `frontend` mode has no port 4000; a compose file that runs
+# that mode overrides this with a probe of port 3000 (see docker-compose.cloud.yml).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://localhost:4000/health || exit 1
 
+# `./start.sh backend` or `./start.sh frontend` for one process per container.
 CMD ["./start.sh"]
