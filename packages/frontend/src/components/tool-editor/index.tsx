@@ -989,7 +989,7 @@ export function ToolEditor({
                     />
                     {isEnvOverridden && (
                       <span
-                        className="absolute -top-2 right-1 text-[9px] px-1 rounded bg-[var(--brand)] text-white leading-tight"
+                        className="absolute -top-2 right-1 text-[9px] px-1 rounded bg-[var(--brand)] text-[var(--primary-foreground)] leading-tight"
                         title="This parameter is auto-filled from an environment variable and hidden from the AI"
                       >
                         env

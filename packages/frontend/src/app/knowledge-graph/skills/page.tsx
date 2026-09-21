@@ -13,6 +13,7 @@ import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, type Tone } from '@/components/ui/badge';
+import { ActionMenu } from '@/components/ui/action-menu';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
@@ -128,6 +129,9 @@ export default function SkillsPage() {
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const to = Math.min(total, (page + 1) * PAGE_SIZE);
   const everEmpty = counts.pending + counts.applied + counts.dismissed === 0;
+  const scopeLabel = target
+    ? (servers.find((x) => x.id === target)?.name ?? 'this server')
+    : 'connectors';
 
   return (
     <AppShell
@@ -159,20 +163,36 @@ export default function SkillsPage() {
               onClick={consolidate}
               disabled={consolidating || generating}
               title="Merge the active skills in this scope into fewer, non-redundant ones"
+              className="max-md:hidden"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 8h10M7 12h10M9 16h6" />
-                <rect x="3" y="4" width="18" height="16" rx="2" />
-              </svg>
+              <ConsolidateIcon />
               {consolidating ? 'Consolidating…' : 'Consolidate'}
             </Button>
-            <Button variant="secondary" size="sm" onClick={generate} disabled={generating || consolidating}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 3v3M12 18v3M5 12H3M21 12h-2M6 6l1.5 1.5M18 18l-1.5-1.5" />
-                <circle cx="12" cy="12" r="3.5" />
-              </svg>
+            <Button variant="secondary" size="sm" onClick={generate} disabled={generating || consolidating} className="max-md:hidden">
+              <GenerateIcon />
               {generating ? 'Generating…' : 'Generate with AI'}
             </Button>
+            {/* On a phone the two AI actions fold into a menu, and the label
+                repeats the scope the select beside it is set to, so the menu
+                entry states what it will act on. */}
+            <ActionMenu
+              className="md:hidden"
+              label="Skill actions"
+              items={[
+                {
+                  label: generating ? 'Generating…' : `Generate with AI · ${scopeLabel}`,
+                  icon: <GenerateIcon />,
+                  onSelect: generate,
+                  disabled: generating || consolidating,
+                },
+                {
+                  label: consolidating ? 'Consolidating…' : `Consolidate · ${scopeLabel}`,
+                  icon: <ConsolidateIcon />,
+                  onSelect: consolidate,
+                  disabled: consolidating || generating,
+                },
+              ]}
+            />
             <Button variant="primary" size="sm" onClick={() => setShowNew((v) => !v)}>
               {showNew ? (
                 'Close'
@@ -247,7 +267,7 @@ export default function SkillsPage() {
                     className={cn(
                       'px-3 py-1.5 rounded-[7px] text-[12.5px] font-medium transition-colors',
                       activeTab
-                        ? 'bg-[var(--brand)] text-white'
+                        ? 'bg-[var(--brand)] text-[var(--primary-foreground)]'
                         : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
                     )}
                   >
@@ -422,7 +442,7 @@ function SkillCard({
                 size="sm"
                 disabled={busy}
                 onClick={() => run(() => knowledgeGraph.skills.apply(token, s.id))}
-                className="h-[30px] px-[11px] bg-[var(--ok)] text-white hover:opacity-90"
+                className="h-[30px] px-[11px] bg-[var(--ok)] text-[var(--ok-foreground)] hover:opacity-90"
               >
                 {s.status === 'dismissed' ? 'Activate' : 'Apply'}
               </Button>
@@ -563,5 +583,23 @@ function NewSkillForm({
         </div>
       </div>
     </Card>
+  );
+}
+
+function ConsolidateIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 8h10M7 12h10M9 16h6" />
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+    </svg>
+  );
+}
+
+function GenerateIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3v3M12 18v3M5 12H3M21 12h-2M6 6l1.5 1.5M18 18l-1.5-1.5" />
+      <circle cx="12" cy="12" r="3.5" />
+    </svg>
   );
 }

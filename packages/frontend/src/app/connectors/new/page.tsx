@@ -338,7 +338,7 @@ export default function NewConnectorPage() {
                       className={cn(
                         'rounded-[9px] px-[13px] py-[7px] text-[13px] font-semibold transition-all',
                         dbReadOnly
-                          ? 'bg-[var(--brand)] text-white'
+                          ? 'bg-[var(--brand)] text-[var(--primary-foreground)]'
                           : 'border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)]'
                       )}
                     >
@@ -350,7 +350,7 @@ export default function NewConnectorPage() {
                       className={cn(
                         'rounded-[9px] px-[13px] py-[7px] text-[13px] font-semibold transition-all',
                         !dbReadOnly
-                          ? 'bg-[var(--brand)] text-white'
+                          ? 'bg-[var(--brand)] text-[var(--primary-foreground)]'
                           : 'border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)]'
                       )}
                     >
@@ -554,7 +554,7 @@ export default function NewConnectorPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="h-10 rounded-[9px] bg-[var(--brand)] px-[18px] text-[13px] font-semibold text-white hover:bg-[var(--brand-strong)] disabled:opacity-50"
+                  className="h-10 rounded-[9px] bg-[var(--brand)] px-[18px] text-[13px] font-semibold text-[var(--primary-foreground)] hover:bg-[var(--brand-strong)] disabled:opacity-50"
                 >
                   {loading ? 'Creating...' : 'Create connector'}
                 </button>

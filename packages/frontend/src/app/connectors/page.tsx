@@ -10,6 +10,7 @@ import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { ActionMenu } from '@/components/ui/action-menu';
 import { authTypeLabel, cn } from '@/lib/utils';
 
 type HealthStatus = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
@@ -200,37 +201,49 @@ export default function ConnectorsPage() {
     return true;
   });
 
+  // Four utilities plus the primary action. From md up they all fit on the
+  // header row; on a phone they would take two or three rows of their own, so
+  // the four fold into an overflow menu where each still carries its label.
+  const utilityActions = [
+    { label: checkingHealth ? 'Checking…' : 'Health check', icon: <HeartPulseIcon />, onSelect: handleHealthCheck, disabled: checkingHealth },
+    { label: 'Export all as JSON', icon: <DownloadIcon />, onSelect: handleExportAll },
+    { label: 'Import from JSON', icon: <UploadIcon />, onSelect: () => setShowImportModal(true) },
+    { label: 'Browse adapters', icon: <StoreIcon />, href: '/connectors/store' },
+  ];
+
   const headerActions = (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Button
         variant="secondary"
         size="md"
         onClick={handleHealthCheck}
         disabled={checkingHealth}
         title="Health check all connectors"
+        className="max-md:hidden"
       >
         <HeartPulseIcon />
         <span>{checkingHealth ? 'Checking...' : 'Health Check'}</span>
       </Button>
-      <Button variant="secondary" size="md" onClick={handleExportAll} title="Export all connectors as JSON">
+      <Button variant="secondary" size="md" onClick={handleExportAll} title="Export all connectors as JSON" className="max-md:hidden">
         <DownloadIcon />
         <span>Export</span>
       </Button>
-      <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title="Import connectors from JSON backup">
+      <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title="Import connectors from JSON backup" className="max-md:hidden">
         <UploadIcon />
         <span>Import</span>
       </Button>
       <Link
         href="/connectors/store"
         title="Browse pre-built adapter recipes"
-        className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}
+        className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'max-md:hidden')}
       >
         <StoreIcon />
         <span>Adapters</span>
       </Link>
+      <ActionMenu items={utilityActions} className="md:hidden" />
       <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
-        <PlusIcon />
-        Add Connector
+      <PlusIcon />
+      Add Connector
       </Link>
     </div>
   );

@@ -264,13 +264,6 @@ export default function LogsPage() {
           ]}
         />
 
-        {/* Export — not wired up yet, so it does not take a row on a phone */}
-        <Button variant="secondary" size="md" disabled title="Export (coming soon)" className="max-sm:hidden">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-          </svg>
-          Export
-        </Button>
       </div>
 
       {/* Table card */}

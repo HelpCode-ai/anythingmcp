@@ -55,7 +55,7 @@ export default function AnalyticsPage() {
               className={cn(
                 'rounded-[7px] px-3 py-1 text-[12.5px] font-semibold transition-colors',
                 days === r.days
-                  ? 'bg-[var(--brand)] text-white'
+                  ? 'bg-[var(--brand)] text-[var(--primary-foreground)]'
                   : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'
               )}
             >

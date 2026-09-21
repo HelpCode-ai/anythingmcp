@@ -80,6 +80,27 @@ function brandColor(slug: string): string {
   return MONOGRAM_PALETTE[h % MONOGRAM_PALETTE.length];
 }
 
+/**
+ * Monogram colour for a given tile fill. The palette is shared with the
+ * marketing site, so the fills stay exactly as they are; what changes is
+ * which ink goes on top. White only clears 4.5:1 on the two darkest
+ * swatches — on #84cc16 it is 1.98:1 — so the letters follow the fill.
+ */
+function monogramInk(bg: string): string {
+  const channel = (c: number) => {
+    const v = c / 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const r = channel(parseInt(bg.slice(1, 3), 16));
+  const g = channel(parseInt(bg.slice(3, 5), 16));
+  const b = channel(parseInt(bg.slice(5, 7), 16));
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const INK_LUMINANCE = 0.004703; // #0c0f14
+  const onWhite = 1.05 / (luminance + 0.05);
+  const onInk = (luminance + 0.05) / (INK_LUMINANCE + 0.05);
+  return onWhite >= onInk ? '#ffffff' : '#0c0f14';
+}
+
 /* Brand logo or coloured monogram fallback. Matches the marketing-site
    Marketplace card visual exactly so the in-app store feels like the same
    product surface. */
@@ -103,13 +124,15 @@ function BrandTile({ adapter, size = 44 }: { adapter: AdapterItem; size?: number
       </div>
     );
   }
+  const fill = brandColor(adapter.slug);
   return (
     <div
-      className="flex shrink-0 items-center justify-center rounded-xl font-bold text-white ring-1 ring-inset ring-black/5"
+      className="flex shrink-0 items-center justify-center rounded-xl font-bold ring-1 ring-inset ring-black/5"
       style={{
         width: size,
         height: size,
-        background: brandColor(adapter.slug),
+        background: fill,
+        color: monogramInk(fill),
         fontSize: size >= 56 ? 22 : 14,
       }}
     >
@@ -378,7 +401,7 @@ function AdapterStoreContent() {
                 className={cn(
                   'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                   activeCategory === null
-                    ? 'border-[var(--brand)] bg-[var(--brand)] text-white'
+                    ? 'border-[var(--brand)] bg-[var(--brand)] text-[var(--primary-foreground)]'
                     : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
                 )}
               >
@@ -391,7 +414,7 @@ function AdapterStoreContent() {
                   className={cn(
                     'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                     activeCategory === cat
-                      ? 'border-[var(--brand)] bg-[var(--brand)] text-white'
+                      ? 'border-[var(--brand)] bg-[var(--brand)] text-[var(--primary-foreground)]'
                       : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
                   )}
                 >
