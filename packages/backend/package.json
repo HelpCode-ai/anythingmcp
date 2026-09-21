@@ -64,7 +64,7 @@
     "js-yaml": "^4.3.2",
     "mongodb": "^7.6.0",
     "mssql": "^12.7.0",
-    "mysql2": "^3.24.3",
+    "mysql2": "^3.24.4",
     "nestjs-pino": "^4.6.1",
     "nodemailer": "^9.1.1",
     "openid-client": "^6.8.8",
