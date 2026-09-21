@@ -13,7 +13,7 @@ import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { authTypeLabel, cn } from '@/lib/utils';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 
 const IMPORT_SOURCES = [
@@ -624,12 +624,7 @@ export default function ConnectorDetailPage() {
           <Button variant="secondary" size="md" onClick={() => setEditing(!editing)}>
             {editing ? 'Cancel' : 'Edit'}
           </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={handleDelete}
-            className="border-[var(--danger)] text-[var(--danger)] hover:border-[var(--danger)] hover:bg-[var(--t-danger-bg)] hover:text-[var(--danger)]"
-          >
+          <Button variant="outlineDanger" size="md" onClick={handleDelete}>
             Delete
           </Button>
         </div>
@@ -637,7 +632,7 @@ export default function ConnectorDetailPage() {
     >
       <div className="space-y-6">
         {/* Connector identity header */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3.5">
+        <div className="flex items-start gap-3.5 sm:items-center">
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-[12px] bg-[var(--surface-2)] text-[15px] font-semibold text-[var(--text-2)]">
             {connectorInitials}
           </div>
@@ -1037,25 +1032,12 @@ export default function ConnectorDetailPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-[var(--text-3)]">Name</p>
-                <p className="font-medium">{connector.name}</p>
-              </div>
-              <div>
-                <p className="text-[var(--text-3)]">Type</p>
-                <p className="font-medium">{connector.type}</p>
-              </div>
-              <div>
-                <p className="text-[var(--text-3)]">Base URL</p>
-                <p className="font-medium font-mono text-xs break-all">{connector.baseUrl}</p>
-              </div>
+              {/* Name, base URL, type and status are already on the page — the
+                  identity block above states all four. This card carries only
+                  what that block does not. */}
               <div>
                 <p className="text-[var(--text-3)]">Auth Type</p>
-                <p className="font-medium">{connector.authType}</p>
-              </div>
-              <div>
-                <p className="text-[var(--text-3)]">Status</p>
-                <p className="font-medium">{connector.isActive ? 'Active' : 'Inactive'}</p>
+                <p className="font-medium">{authTypeLabel(connector.authType)}</p>
               </div>
               {connector.type === 'DATABASE' && (
                 <div>

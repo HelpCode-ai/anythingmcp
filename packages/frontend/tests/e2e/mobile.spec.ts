@@ -173,6 +173,11 @@ async function fakeSession(page: Page) {
     if (p.endsWith('/organizations/mine')) return json([{ id: 'o1', name: 'Acme', role: 'ADMIN', joinedAt: '2026-01-01' }]);
     if (p.endsWith('/license/status')) return json({ plan: 'community', status: 'active' });
     if (p.endsWith('/connectors/proxy-availability')) return json({ available: false });
+    if (p.includes('/connectors/health-check'))
+      return json({ total: 2, healthy: 1, unhealthy: 1, connectors: [
+        { name: 'DATEV Online APIs', status: 'healthy', latencyMs: 120 },
+        { name: 'API-Football v3', status: 'unhealthy', latencyMs: 0 },
+      ] });
     if (p.endsWith('/connectors/c1')) return json(CONNECTORS[0]);
     if (p.endsWith('/connectors')) return json(CONNECTORS);
     if (p.endsWith('/mcp-servers/s1')) return json(SERVERS[0]);
@@ -243,10 +248,22 @@ test.describe('phone layout has no horizontal overflow', () => {
       await page.waitForTimeout(600);
       await shot(page, route);
 
+      // A page that crashed into the error boundary has nothing wide on it,
+      // so it would sail through the checks below without being tested.
+      await expect(page.getByText('Something went wrong')).toHaveCount(0);
+
       const o = await overflow(page);
       expect(o.doc, 'document').toBeLessThanOrEqual(o.vw);
       expect(o.main, '<main>').toBeLessThanOrEqual(o.vw);
       expect(o.header, '<header>').toBeLessThanOrEqual(o.vw);
+
+      // The title row is the header's own line on a phone, so no page title
+      // is ever ellipsised away.
+      const title = page.locator('header').locator('div.truncate').first();
+      if (await title.count()) {
+        const clipped = await title.evaluate((el) => el.scrollWidth > el.clientWidth);
+        expect(clipped, 'header title is truncated').toBe(false);
+      }
     });
   }
 

@@ -161,10 +161,28 @@ button:disabled {
   outline-offset: 2px;
 }
 
-/* Horizontal strips (settings sub-nav) scroll without showing a bar */
+/* Horizontal strips (settings sub-nav) scroll without showing a bar. The
+   strip still says it scrolls: `scroll-fade-x` softens its trailing edge. */
 @utility scrollbar-none {
   scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
+}
+
+@utility scroll-fade-x {
+  mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 28px), transparent 100%);
+}
+
+/* iOS Safari zooms the page in when a focused control's text is smaller
+   than 16px, and the zoomed layout is wider than the screen — one of the
+   ways the viewport "breaks" on a phone. Meeting the 16px threshold is
+   the fix; clamping maximum-scale would only hide it and take pinch-zoom
+   away with it. Unlayered, so it outranks the Tailwind text utilities. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 /* Custom scrollbar */

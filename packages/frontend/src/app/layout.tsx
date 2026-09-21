@@ -37,14 +37,13 @@ export const metadata: Metadata = {
   },
 };
 
-// maximumScale: 1 stops iOS Safari from auto-zooming the page when a
-// 13px input gets focus — that zoom leaves the layout wider than the
-// screen and turns on horizontal scrolling. Pinch-zoom still works: iOS
-// ignores maximumScale for user gestures since iOS 10.
+// No maximumScale: clamping it fails WCAG 1.4.4 and blocks pinch-zoom on
+// the browsers that still honour it. The iOS auto-zoom-on-focus that used
+// to widen the layout is fixed at its source in globals.css, by giving
+// form controls the 16px text iOS asks for.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
 };
 
 // process.env.GTM_ID is read by GoogleTagManager() during the layout

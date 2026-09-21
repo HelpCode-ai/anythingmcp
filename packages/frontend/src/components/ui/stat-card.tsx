@@ -42,21 +42,21 @@ export function StatCard({
           ? 'var(--danger)'
           : 'var(--text-3)';
   return (
-    <Card className={cn('p-4', className)}>
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-[12.5px] font-medium text-[var(--text-2)]">{label}</span>
+    <Card className={cn('p-3.5 sm:p-4', className)}>
+      <div className="mb-2 flex items-start justify-between gap-2 sm:mb-3 sm:items-center">
+        <span className="min-w-0 text-[12.5px] font-medium text-[var(--text-2)]">{label}</span>
         {icon && (
           <span
-            className="flex h-[30px] w-[30px] items-center justify-center rounded-lg"
+            className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-lg sm:h-[30px] sm:w-[30px]"
             style={iconToneStyle[iconTone] ?? iconToneStyle.info}
           >
             {icon}
           </span>
         )}
       </div>
-      <div className="text-[28px] font-semibold tracking-[-0.03em]">{value}</div>
+      <div className="text-[24px] font-semibold tracking-[-0.03em] sm:text-[28px]">{value}</div>
       {hint != null && (
-        <div className="mt-0.5 text-xs" style={{ color: hintColor }}>
+        <div className="mt-0.5 text-[11.5px] sm:text-xs" style={{ color: hintColor }}>
           {hint}
         </div>
       )}

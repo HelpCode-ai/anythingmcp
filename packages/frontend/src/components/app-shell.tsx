@@ -31,6 +31,39 @@ interface AppShellProps {
   children: React.ReactNode;
 }
 
+/**
+ * Theme toggle. Rendered twice — once in the title row for phones, once in
+ * the action group from `md` up — because those are different flex rows and
+ * a single node cannot sit in both.
+ */
+function ThemeToggle({
+  isDark,
+  setTheme,
+  className,
+}: {
+  isDark: boolean;
+  setTheme: ReturnType<typeof useTheme>['setTheme'];
+  className?: string;
+}) {
+  return (
+    <button
+      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      title="Toggle theme"
+      aria-label="Toggle theme"
+      className={cn(
+        'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
+        className
+      )}
+    >
+      {isDark ? (
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+      ) : (
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z" /></svg>
+      )}
+    </button>
+  );
+}
+
 export function AppShell({
   title,
   subtitle,
@@ -58,17 +91,17 @@ export function AppShell({
           <UsageBanner />
         </div>
         {/* Content header */}
-        {/* Phones: the header wraps. The title group is laid out at 40% of
-            the row, so a short toolbar (one button, the 7d/30d/90d switch)
-            still shares the title row, while a busy toolbar (Test / Edit /
-            Delete, the five connector actions) drops to a second full-width
-            line and wraps there. Nothing can push the header past the
-            viewport. From md up everything sits on one line as before. */}
+        {/* Phones get two rows: the title owns the first one — so it is never
+            squeezed into an ellipsis by whatever the page puts in its toolbar
+            — and the toolbar owns the second, aligned with the title and the
+            content below it. The subtitle is desktop-only: at this width it
+            only ever rendered as a cut-off half-sentence. From md up
+            everything sits on one line, as before. */}
         <header
-          className="sticky top-0 z-30 flex min-h-[60px] flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] px-4 py-2.5 backdrop-blur-md sm:px-6"
+          className="sticky top-0 z-30 flex flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] px-4 py-2 backdrop-blur-md sm:px-6 md:min-h-[60px] md:py-2.5"
           style={{ background: 'color-mix(in srgb, var(--bg) 80%, transparent)' }}
         >
-          <div className="flex min-w-0 flex-1 items-center gap-3 max-md:basis-[40%] max-md:grow-[999]">
+          <div className="flex min-w-0 flex-1 items-center gap-3 max-md:basis-full">
             <button
               onClick={() => setMobileOpen(true)}
               aria-label="Open navigation"
@@ -76,7 +109,7 @@ export function AppShell({
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
             </button>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               {backTo && (
                 <Link
                   href={backTo.href}
@@ -90,26 +123,18 @@ export function AppShell({
                 <div className="truncate text-[16px] font-semibold tracking-[-0.02em]">{headerTitle}</div>
               )}
               {subtitle && (
-                <div className="mt-px truncate text-[12.5px] text-[var(--text-3)]">{subtitle}</div>
+                <div className="mt-px hidden truncate text-[12.5px] text-[var(--text-3)] md:block">{subtitle}</div>
               )}
             </div>
+            {/* Phones: the theme toggle rides the title row, so the second row
+                belongs entirely to the page's own actions. */}
+            <ThemeToggle isDark={isDark} setTheme={setTheme} className="md:hidden" />
           </div>
 
           <div className="flex items-center gap-2.5 max-md:contents">
-            <button
-              onClick={() => setTheme(isDark ? 'light' : 'dark')}
-              title="Toggle theme"
-              aria-label="Toggle theme"
-              className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-            >
-              {isDark ? (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
-              ) : (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z" /></svg>
-              )}
-            </button>
+            <ThemeToggle isDark={isDark} setTheme={setTheme} className="max-md:hidden" />
             {actions && (
-              <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 max-md:grow">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 max-md:grow max-md:justify-start md:justify-end">
                 {actions}
               </div>
             )}

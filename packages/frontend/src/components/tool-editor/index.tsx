@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { AppSelect } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import {
   EMPTY_MAPPING_STATE,
   ResponseMappingPanel,
@@ -126,6 +127,10 @@ const TARGET_OPTIONS: Record<string, { value: string; label: string }[]> = {
     { value: 'body', label: 'Pass-through Parameter' },
   ],
 };
+
+/** Per-field label inside a parameter row. Phones only: from md up the
+ *  shared column header above the rows names every field once. */
+const PARAM_LABEL = 'block text-[10px] font-medium text-[var(--muted-foreground)] md:hidden';
 
 const DEFAULT_TARGET: Record<string, string> = {
   REST: 'query',
@@ -915,19 +920,16 @@ export function ToolEditor({
 
       {/* Parameters */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <label className="block text-xs font-semibold">Input Parameters</label>
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+          <div className="min-w-[200px] flex-1">
+            <h4 className="text-xs font-semibold">Input Parameters</h4>
             <p className="text-[10px] text-[var(--muted-foreground)]">
               Define what the AI model can pass to this tool, and where each value goes in the API request
             </p>
           </div>
-          <button
-            onClick={addParam}
-            className="border border-[var(--border)] px-3 py-1 rounded text-xs hover:bg-[var(--accent)]"
-          >
-            + Add Parameter
-          </button>
+          <Button variant="secondary" size="sm" onClick={addParam} className="flex-shrink-0">
+            Add parameter
+          </Button>
         </div>
 
         {/* Env var override banner */}
@@ -948,7 +950,7 @@ export function ToolEditor({
 
         {params.length === 0 ? (
           <p className="text-xs text-[var(--muted-foreground)] py-3 text-center border border-dashed border-[var(--border)] rounded-md">
-            No parameters defined. Click &quot;Add Parameter&quot; to define tool inputs.
+            No parameters yet. Add one for each value the AI model should be able to pass in.
           </p>
         ) : (
           <div className="space-y-2">
@@ -965,65 +967,81 @@ export function ToolEditor({
             {params.map((param, i) => {
               const isEnvOverridden = !!(envVarKeys && param.name && envVarKeys.has(param.name));
               return (
+              /* Phones stack the fields into a card, each under its own
+                 label. From md up every wrapper becomes `display: contents`
+                 and its control drops straight into the six-column grid
+                 under the shared header row — one control per field either
+                 way, and each label is tied to the thing it names. */
               <div
                 key={i}
-                className={`grid grid-cols-2 gap-2 items-center rounded-md border border-[var(--border)] p-2 md:grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_140px_50px_30px] md:border-0 md:p-0${isEnvOverridden ? ' opacity-60' : ''}`}
+                className={`flex flex-col gap-2 rounded-md border border-[var(--border)] p-2.5 md:grid md:grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_140px_50px_30px] md:items-center md:gap-2 md:border-0 md:p-0${isEnvOverridden ? ' opacity-60' : ''}`}
               >
-                <div className="relative col-span-2 md:col-span-1">
-                  <span className="mb-0.5 block text-[10px] text-[var(--muted-foreground)] md:hidden">Name</span>
-                  <input
-                    type="text"
-                    value={param.name}
-                    onChange={e => updateParam(i, { name: e.target.value })}
-                    placeholder="param_name"
-                    className={`w-full border rounded px-2 py-1.5 text-xs bg-[var(--background)] font-mono ${isEnvOverridden ? 'border-[var(--brand)] border-dashed' : 'border-[var(--input)]'}`}
-                  />
-                  {isEnvOverridden && (
-                    <span
-                      className="absolute -top-2 right-1 text-[9px] px-1 rounded bg-[var(--brand)] text-white leading-tight"
-                      title="This parameter is auto-filled from an environment variable and hidden from the AI"
-                    >
-                      env
-                    </span>
-                  )}
+                <div className="md:contents">
+                  <label htmlFor={`param-${i}-name`} className={PARAM_LABEL}>Name</label>
+                  <div className="relative md:order-1">
+                    <input
+                      id={`param-${i}-name`}
+                      type="text"
+                      value={param.name}
+                      onChange={e => updateParam(i, { name: e.target.value })}
+                      placeholder="param_name"
+                      className={`w-full min-w-0 border rounded px-2 py-1.5 text-xs bg-[var(--background)] font-mono ${isEnvOverridden ? 'border-[var(--brand)] border-dashed' : 'border-[var(--input)]'}`}
+                    />
+                    {isEnvOverridden && (
+                      <span
+                        className="absolute -top-2 right-1 text-[9px] px-1 rounded bg-[var(--brand)] text-white leading-tight"
+                        title="This parameter is auto-filled from an environment variable and hidden from the AI"
+                      >
+                        env
+                      </span>
+                    )}
+                  </div>
                 </div>
-                {/* Phone: the two selects share a row under their labels;
-                    the description and the required/remove row take the
-                    full width. `order` re-sequences them for the 2-col grid
-                    while the DOM stays in the desktop column order. */}
-                <span className="text-[10px] text-[var(--muted-foreground)] md:hidden">Type</span>
-                <span className="text-[10px] text-[var(--muted-foreground)] md:hidden">Maps To</span>
-                <AppSelect
-                  value={param.type}
-                  onValueChange={v => updateParam(i, { type: v as ToolParam['type'] })}
-                  className="min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)] max-md:order-1"
-                  options={[
-                    { value: 'string', label: 'string' },
-                    { value: 'number', label: 'number' },
-                    { value: 'integer', label: 'integer' },
-                    { value: 'boolean', label: 'boolean' },
-                    { value: 'array', label: 'array' },
-                    { value: 'object', label: 'object' },
-                  ]}
-                />
-                <div className="col-span-2 md:col-span-1 max-md:order-3">
-                  <span className="mb-0.5 block text-[10px] text-[var(--muted-foreground)] md:hidden">Description</span>
+
+                <div className="grid grid-cols-2 gap-2 md:contents">
+                  <div className="min-w-0 md:contents">
+                    <span className={PARAM_LABEL} id={`param-${i}-type-label`}>Type</span>
+                    <AppSelect
+                      value={param.type}
+                      onValueChange={v => updateParam(i, { type: v as ToolParam['type'] })}
+                      className="h-full w-full min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)] md:order-2"
+                      aria-labelledby={`param-${i}-type-label`}
+                      options={[
+                        { value: 'string', label: 'string' },
+                        { value: 'number', label: 'number' },
+                        { value: 'integer', label: 'integer' },
+                        { value: 'boolean', label: 'boolean' },
+                        { value: 'array', label: 'array' },
+                        { value: 'object', label: 'object' },
+                      ]}
+                    />
+                  </div>
+                  <div className="min-w-0 md:contents">
+                    <span className={PARAM_LABEL} id={`param-${i}-target-label`}>Maps To</span>
+                    <AppSelect
+                      value={param.target}
+                      onValueChange={v => updateParam(i, { target: v as ToolParam['target'] })}
+                      className="h-full w-full min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)] md:order-4"
+                      aria-labelledby={`param-${i}-target-label`}
+                      options={targets.map(t => ({ value: t.value, label: t.label }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="md:contents">
+                  <label htmlFor={`param-${i}-description`} className={PARAM_LABEL}>Description</label>
                   <input
+                    id={`param-${i}-description`}
                     type="text"
                     value={param.description}
                     onChange={e => updateParam(i, { description: e.target.value })}
-                    placeholder="Describe this parameter..."
-                    className="w-full min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)]"
+                    placeholder="Describe this parameter…"
+                    className="w-full min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)] md:order-3"
                   />
                 </div>
-                <AppSelect
-                  value={param.target}
-                  onValueChange={v => updateParam(i, { target: v as ToolParam['target'] })}
-                  className="min-w-0 border border-[var(--input)] rounded px-2 py-1.5 text-xs bg-[var(--background)] max-md:order-2"
-                  options={targets.map(t => ({ value: t.value, label: t.label }))}
-                />
-                <div className="col-span-2 flex items-center justify-between gap-3 max-md:order-4 md:contents">
-                  <label className="flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)] md:justify-center md:gap-0">
+
+                <div className="mt-0.5 flex items-center justify-between gap-3 border-t border-[var(--border)] pt-2.5 md:contents">
+                  <label className="flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)] md:order-5 md:justify-center md:gap-0">
                     <input
                       type="checkbox"
                       checked={param.required}
@@ -1034,11 +1052,12 @@ export function ToolEditor({
                   </label>
                   <button
                     onClick={() => removeParam(i)}
-                    className="text-[var(--destructive)] text-xs hover:underline"
+                    className="text-[var(--destructive)] text-xs hover:underline md:order-6"
                     title="Remove parameter"
+                    aria-label={param.name ? `Remove parameter ${param.name}` : 'Remove parameter'}
                   >
                     <span className="md:hidden">Remove</span>
-                    <span className="hidden md:inline">&times;</span>
+                    <span className="hidden md:inline" aria-hidden="true">&times;</span>
                   </button>
                 </div>
               </div>

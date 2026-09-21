@@ -23,6 +23,11 @@ const buttonVariants = cva(
           'bg-transparent text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
         danger:
           'bg-[var(--danger)] text-white hover:opacity-90',
+        // Destructive, but not the loudest thing on the screen. This is the
+        // default for a delete that sits next to ordinary actions; reserve
+        // solid `danger` for the confirm button inside a delete dialog.
+        outlineDanger:
+          'border border-[var(--danger)] bg-transparent text-[var(--danger)] hover:bg-[var(--t-danger-bg)]',
         outlineBrand:
           'border border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)] hover:bg-[var(--brand)] hover:text-white',
       },

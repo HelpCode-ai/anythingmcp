@@ -10,7 +10,7 @@ import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { authTypeLabel, cn } from '@/lib/utils';
 
 type HealthStatus = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -210,15 +210,15 @@ export default function ConnectorsPage() {
         title="Health check all connectors"
       >
         <HeartPulseIcon />
-        <span className="hidden sm:inline">{checkingHealth ? 'Checking...' : 'Health Check'}</span>
+        <span>{checkingHealth ? 'Checking...' : 'Health Check'}</span>
       </Button>
       <Button variant="secondary" size="md" onClick={handleExportAll} title="Export all connectors as JSON">
         <DownloadIcon />
-        <span className="hidden sm:inline">Export</span>
+        <span>Export</span>
       </Button>
       <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title="Import connectors from JSON backup">
         <UploadIcon />
-        <span className="hidden sm:inline">Import</span>
+        <span>Import</span>
       </Button>
       <Link
         href="/connectors/store"
@@ -226,7 +226,7 @@ export default function ConnectorsPage() {
         className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}
       >
         <StoreIcon />
-        <span className="hidden sm:inline">Adapters</span>
+        <span>Adapters</span>
       </Link>
       <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
         <PlusIcon />
@@ -456,7 +456,7 @@ export default function ConnectorsPage() {
                       </div>
                       <div>
                         <div className="text-[11px] text-[var(--text-3)]">Auth</div>
-                        <div className="text-[14px] font-semibold text-[var(--text)]">{c.authType}</div>
+                        <div className="truncate text-[14px] font-semibold text-[var(--text)]">{authTypeLabel(c.authType)}</div>
                       </div>
                     </div>
                     <StatusPill
@@ -473,7 +473,7 @@ export default function ConnectorsPage() {
                         Import Spec
                       </Button>
                     )}
-                    <Button variant="danger" size="sm" onClick={() => setDeleteConfirm({ id: c.id, name: c.name })}>
+                    <Button variant="outlineDanger" size="sm" onClick={() => setDeleteConfirm({ id: c.id, name: c.name })}>
                       Delete
                     </Button>
                   </div>

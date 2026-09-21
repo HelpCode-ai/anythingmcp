@@ -143,6 +143,18 @@ export default function LogsPage() {
     return d.toLocaleString();
   };
 
+  /** Phone rows have one line for the metadata, so the date drops the year
+   *  and the seconds — the full timestamp is a tap away in the expanded row. */
+  const formatTimeShort = (ts: string) => {
+    const d = new Date(ts);
+    return d.toLocaleString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   const formatJson = (data: any) => {
     if (!data) return '-';
     try {
@@ -159,6 +171,14 @@ export default function LogsPage() {
     { value: 'ERROR', label: 'Errors' },
     { value: 'TIMEOUT', label: 'Timeouts' },
   ];
+
+  const hasFilters = !!(statusFilter || debouncedSearch || connectorFilter || mcpServerFilter);
+  const clearFilters = () => {
+    setStatusFilter('');
+    setSearch('');
+    setConnectorFilter('');
+    setMcpServerFilter('');
+  };
 
   const exportButton = (
     <Button
@@ -244,8 +264,8 @@ export default function LogsPage() {
           ]}
         />
 
-        {/* Export */}
-        <Button variant="secondary" size="md" disabled title="Export (coming soon)">
+        {/* Export — not wired up yet, so it does not take a row on a phone */}
+        <Button variant="secondary" size="md" disabled title="Export (coming soon)" className="max-sm:hidden">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
           </svg>
@@ -275,8 +295,28 @@ export default function LogsPage() {
             <p className="text-sm">Loading logs…</p>
           </div>
         ) : logs.length === 0 ? (
-          <div className="px-[18px] py-14 text-center text-[var(--text-3)]">
-            <p className="text-sm">{page > 0 ? 'No more results.' : 'No invocations found.'}</p>
+          <div className="px-5 py-14 text-center">
+            {page > 0 ? (
+              <p className="text-sm text-[var(--text-3)]">That&apos;s the end of the log.</p>
+            ) : hasFilters ? (
+              <>
+                <p className="text-sm text-[var(--text-2)]">No invocations match these filters.</p>
+                <button
+                  onClick={clearFilters}
+                  className="mt-2 text-[13px] font-medium text-[var(--brand)] hover:underline"
+                >
+                  Clear filters
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-[var(--text-2)]">No tool calls recorded yet.</p>
+                <p className="mx-auto mt-1 max-w-[42ch] text-[13px] text-[var(--text-3)]">
+                  Every call an AI client makes to one of your tools shows up here, with what it
+                  sent and what came back.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           logs.map((log) => {
@@ -289,29 +329,27 @@ export default function LogsPage() {
                   onClick={() => setExpandedId(isExpanded ? null : log.id)}
                   className="flex cursor-pointer flex-col gap-1.5 border-b border-[var(--border)] px-4 py-3 text-[13px] transition-colors hover:bg-[var(--surface-2)] md:hidden"
                 >
-                  <div className="flex min-w-0 items-center justify-between gap-2">
-                    <span className="min-w-0 truncate font-mono text-[12.5px] font-medium" title={log.tool?.name || log.toolId}>
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    {/* The tool name is what identifies the row, so it wraps
+                        rather than truncating — most of them are long. */}
+                    <span className="min-w-0 [overflow-wrap:anywhere] font-mono text-[12.5px] font-medium leading-snug">
                       {log.tool?.name || log.toolId}
                     </span>
                     <StatusPill tone={tone} dot={statusDot(log.status)} className="flex-shrink-0">
                       {log.status}
                     </StatusPill>
                   </div>
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[var(--text-2)]">
+                  {/* One indicator for the outcome, not three: the pill above
+                      says it, and the response code is derived from the same
+                      field rather than reported by the upstream API. */}
+                  <div className="flex min-w-0 items-center gap-2 text-[12px] text-[var(--text-2)]">
                     <span className="min-w-0 truncate">{log.tool?.connector?.name || '-'}</span>
-                    <span className="text-[var(--border-strong)]">·</span>
-                    <span
-                      className="rounded-md px-[6px] py-px font-mono text-[11.5px] font-semibold"
-                      style={tone === 'success'
-                        ? { background: 'var(--t-success-bg)', color: 'var(--t-success-fg)' }
-                        : tone === 'neutral'
-                          ? { background: 'var(--t-neutral-bg)', color: 'var(--t-neutral-fg)' }
-                          : { background: 'var(--t-danger-bg)', color: 'var(--t-danger-fg)' }}
-                    >
-                      {statusCode(log.status)}
+                    <span className="flex-shrink-0 font-mono text-[11.5px] text-[var(--text-3)]">
+                      {log.durationMs ? `${log.durationMs}ms` : '-'}
                     </span>
-                    <span className="font-mono text-[11.5px]">{log.durationMs ? `${log.durationMs}ms` : '-'}</span>
-                    <span className="ml-auto font-mono text-[11.5px] text-[var(--text-3)]">{formatTime(log.createdAt)}</span>
+                    <span className="ml-auto flex-shrink-0 font-mono text-[11.5px] text-[var(--text-3)]">
+                      {formatTimeShort(log.createdAt)}
+                    </span>
                   </div>
                 </div>
 

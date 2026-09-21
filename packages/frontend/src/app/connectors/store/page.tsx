@@ -11,7 +11,7 @@ import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { authTypeLabel, cn } from '@/lib/utils';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
 
 const REGION_LABELS: Record<string, string> = {
@@ -149,17 +149,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   travel: 'Travel',
   cms: 'CMS',
   sports: 'Sports',
-};
-
-const AUTH_LABELS: Record<string, string> = {
-  API_KEY: 'API Key',
-  BEARER_TOKEN: 'Bearer Token',
-  OAUTH2: 'OAuth 2.0',
-  BASIC: 'Basic Auth',
-  BASIC_AUTH: 'Basic Auth',
-  QUERY_AUTH: 'Query Param Auth',
-  LOGIN_TOKEN: 'Login Token',
-  NONE: 'Public API',
 };
 
 interface AdapterItem {
@@ -494,7 +483,7 @@ function AdapterStoreContent() {
                           className="max-w-full min-w-0 gap-1 truncate font-mono uppercase tracking-wider"
                         >
                           {isPublic ? <SparklesIcon /> : <LockIcon />}
-                          {AUTH_LABELS[adapter.authType] || adapter.authType}
+                          {authTypeLabel(adapter.authType)}
                         </Badge>
                       )}
                       {adapter.docsUrl && (
@@ -560,7 +549,7 @@ function AdapterStoreContent() {
 
             <div className="mb-3 flex items-center gap-2 text-xs text-[var(--text-3)]">
               <LockIcon />
-              <span>Auth type: {AUTH_LABELS[configAdapter.connector?.authType] || configAdapter.connector?.authType}</span>
+              <span>Auth type: {authTypeLabel(configAdapter.connector?.authType)}</span>
             </div>
 
             {/* Setup instructions — collapsible details block, default open

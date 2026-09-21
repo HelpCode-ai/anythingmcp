@@ -137,11 +137,14 @@ export default function SkillsPage() {
       actions={
         isAdmin && (
           <div className="flex flex-wrap items-center gap-2">
+            {/* Scope for the two AI actions beside it. It sizes to its own
+                content instead of claiming a whole row on a phone. */}
             <select
               value={target}
               onChange={(e) => setTarget(e.target.value)}
-              className="h-9 min-w-0 px-2.5 rounded-[9px] text-[12.5px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] outline-none max-md:basis-full"
+              className="h-9 min-w-0 max-w-[48vw] truncate px-2.5 rounded-[9px] text-[12.5px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] outline-none md:max-w-none"
               title="Scope for Generate / Consolidate"
+              aria-label="Scope for Generate and Consolidate"
             >
               <option value="">From connectors</option>
               {servers.map((s) => (
@@ -186,13 +189,12 @@ export default function SkillsPage() {
         )
       }
     >
+      {/* The header already carries the way back to the graph, so this stays
+          a description and nothing else. */}
       <p className="text-[13px] leading-relaxed text-[var(--text-2)] mb-4">
-        Reusable rules inferred from the user intents captured on your tool calls — per connector or
-        for a whole MCP server (combined context). <span className="text-[var(--text)]">Active</span> skills are
-        composed into the server&apos;s instructions automatically.{' '}
-        <Link href="/knowledge-graph" className="text-[var(--brand)] hover:underline">
-          Back to graph
-        </Link>
+        Rules inferred from the intents behind your tool calls, scoped to one connector or to a
+        whole MCP server. <span className="text-[var(--text)]">Active</span> skills are composed
+        into that server&apos;s instructions automatically.
       </p>
       {status && <p className="text-[12px] text-[var(--text-3)] mb-3">{status}</p>}
 
@@ -211,9 +213,21 @@ export default function SkillsPage() {
       )}
 
       {everEmpty && !loading ? (
-        <Card className="p-6 text-center text-[13px] text-[var(--text-3)]">
-          No skills yet. Enable “Capture user intent” and “AI enrichment”, let some tool calls flow,
-          then {isAdmin ? 'click “Generate with AI”.' : 'ask an admin to generate them.'}
+        <Card className="p-6 text-center">
+          <p className="text-[13px] font-medium text-[var(--text-2)]">No skills yet</p>
+          <p className="mx-auto mt-1.5 max-w-[46ch] text-[13px] leading-relaxed text-[var(--text-3)]">
+            {isAdmin ? (
+              <>
+                Skills are generated from captured intents. Turn on{' '}
+                <Link href="/settings/organization" className="text-[var(--brand)] hover:underline">
+                  Capture user intent and AI enrichment
+                </Link>
+                , let some tool calls run, then use Generate with AI.
+              </>
+            ) : (
+              'They are generated from captured tool-call intents. Ask an admin to generate them.'
+            )}
+          </p>
         </Card>
       ) : (
         <>
