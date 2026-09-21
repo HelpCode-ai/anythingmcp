@@ -34,7 +34,16 @@ DOMAIN="${DOMAIN:-$(envval DOMAIN)}"
 ALERT_TO="${UPTIME_ALERT_TO:-$(envval UPTIME_ALERT_TO)}"
 [ -n "$DOMAIN" ] || { echo "no DOMAIN in $ENV_FILE" >&2; exit 2; }
 
-log() { logger -t anythingmcp-probe -- "$*" 2>/dev/null || true; [ "$DRY_RUN" = 1 ] && echo "$*"; }
+# Returns 0 always: the old one-liner ended on `[ "$DRY_RUN" = 1 ] && echo`,
+# which is false outside a dry run, so every successful send_mail fell into its
+# own `|| { log "mail failed" ...; return 1; }`. The journal for the 21 Sep
+# recovery mail reads "mailed" and "mail failed" on the same second, and
+# --test-mail exited 1 on a mail that had arrived.
+log() {
+  logger -t anythingmcp-probe -- "$*" 2>/dev/null || true
+  [ "$DRY_RUN" = 1 ] && echo "$*"
+  return 0
+}
 
 send_mail() {
   local subject="$1" body="$2"
@@ -63,7 +72,13 @@ fi
 fail=0; report=""
 note() { report+="$1"$'\n'; }
 
-code=$(curl -sS -o /tmp/probe-health.json -w '%{http_code}' --max-time 15 "https://${DOMAIN}/health" 2>/dev/null || echo 000)
+# Truncate the body first, and take the code from curl's own -w rather than
+# from an `|| echo 000` that appends a second one. A connection that never
+# happens (DNS, TLS, timeout) leaves -o untouched, so the old form both
+# printed "HTTP 000000" and parsed *last* minute's body: a DOWN mail could
+# report "status=ok heap 12%" for a backend that had not answered at all.
+: > /tmp/probe-health.json
+code=$(curl -sS -o /tmp/probe-health.json -w '%{http_code}' --max-time 15 "https://${DOMAIN}/health" 2>/dev/null); code=${code:-000}
 # Anchored at the start: terminus nests a "status" per indicator, and a
 # greedy match reads the last one ("up" for the heap) instead of the verdict.
 status=$(sed -n 's/^{"status":"\([a-z]*\)".*/\1/p' /tmp/probe-health.json 2>/dev/null | head -1)
@@ -74,17 +89,18 @@ else
   fail=1; note "FAIL /health HTTP $code status=${status:-?} heap ${heap:-n/a}"
 fi
 
+: > /tmp/probe-mcp.txt
 code=$(curl -sS -o /tmp/probe-mcp.txt -w '%{http_code}' --max-time 20 -X POST \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  "https://${DOMAIN}/mcp/demo" 2>/dev/null || echo 000)
+  "https://${DOMAIN}/mcp/demo" 2>/dev/null); code=${code:-000}
 if [ "$code" = "200" ] && grep -q '"tools"' /tmp/probe-mcp.txt 2>/dev/null; then
   note "ok   /mcp/demo tools/list 200"
 else
   fail=1; note "FAIL /mcp/demo HTTP $code"
 fi
 
-code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://${DOMAIN}/login" 2>/dev/null || echo 000)
+code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://${DOMAIN}/login" 2>/dev/null); code=${code:-000}
 if [ "$code" = "200" ]; then note "ok   /login 200"; else fail=1; note "FAIL /login HTTP $code"; fi
 
 now=$(date -u +%s)
@@ -98,9 +114,24 @@ fi
 mkdir -p "$STATE_DIR"
 prev=$(cat "$STATE_DIR/state" 2>/dev/null || echo "up")   # "up" | "down:<epoch>"
 
+# A deploy recreates the two app containers, and Caddy answers 502 for the ~20 s
+# in between. On 21 Sep that window landed on a tick and mailed a DOWN for a
+# planned deploy — the kind of false page that teaches you to ignore the real
+# one. deploy-cloud.yml writes an expiry epoch here before it touches a
+# container and clears it on every exit path, the failing ones included. The
+# marker carries an expiry rather than being a bare flag so that a deploy killed
+# mid-flight cannot silence the probe for good: the silence ends by itself and a
+# site still down mails as usual.
+maintenance_until=$(head -1 "$STATE_DIR/maintenance" 2>/dev/null | tr -cd '0-9')
+[ -n "$maintenance_until" ] || maintenance_until=0
+
 
 if [ "$fail" = 1 ]; then
   log "DOWN — ${report//$'\n'/ | }"
+  if [ "$now" -lt "$maintenance_until" ]; then
+    log "suppressed: deploy in progress until $(date -u -d "@$maintenance_until" +'%H:%M:%S UTC') — no mail, state left as '$prev'"
+    exit 0
+  fi
   case "$prev" in
     down:*) : ;;  # still down; the first mail said so
     *) echo "down:$now" > "$STATE_DIR/state"

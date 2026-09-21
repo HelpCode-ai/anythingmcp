@@ -95,6 +95,17 @@ jobs:
               fi
             fi
 
+            # Silence the host uptime probe for the length of this deploy.
+            # Recreating the two app containers leaves Caddy answering 502 for
+            # ~20 s, and on 21 Sep that window landed on a probe tick: a DOWN
+            # mail for a planned deploy, which is how an alert stops being read.
+            # The marker is an expiry, not a flag, and the trap clears it on
+            # every exit path — including the public gate below failing — so a
+            # deploy that actually breaks the site still mails within a minute.
+            mkdir -p /var/lib/anythingmcp-probe
+            echo $(( $(date -u +%s) + 600 )) > /var/lib/anythingmcp-probe/maintenance
+            trap 'rm -f /var/lib/anythingmcp-probe/maintenance' EXIT
+
             # Recreate ONLY the two app containers to pick up the new image and
             # config (postgres, redis and motis keep running — no data churn, no
             # needless downtime), and wait until both report healthy. The old
