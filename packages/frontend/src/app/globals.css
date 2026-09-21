@@ -178,8 +178,11 @@ button:disabled {
   &::-webkit-scrollbar { display: none; }
 }
 
+/* Only the trailing edge fades. A symmetric mask also washed out the first
+   chip while the strip sat at scrollLeft 0 — fading content that was not
+   hidden, which is the state every visitor sees first. */
 @utility scroll-fade-x {
-  mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 32px), transparent 100%);
 }
 
 /* iOS Safari zooms the page in when a focused control's text is smaller

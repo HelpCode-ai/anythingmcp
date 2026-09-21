@@ -4,7 +4,7 @@
   "description": "Geocode addresses, reverse-geocode coordinates, autocomplete addresses as-you-type, and search places via the HERE Location Services API. Useful for address validation, delivery-route planning, and storefront locators. Free tier covers 250k requests/month.",
   "instructions": "This connector uses the HERE Geocoding & Search v7 REST API.\n\n**Credentials**: generate a REST API key at https://platform.here.com → Projects → API Keys. Paste it into `HERE_API_KEY` when importing. The key is passed as a query parameter (`apiKey`), not as a header.\n\n**Pricing**: HERE's Freemium plan includes 250,000 requests/month free. Bulk batch geocoding requires a paid plan.\n\n**Countries**: worldwide coverage. Use `in=countryCode:DEU` or ISO 3-letter country filter for scope.\n\n**Addressing strategies**:\n- `/geocode` — full forward geocoding (structured or unstructured input)\n- `/autocomplete` — very fast address autocomplete, returns short snippets\n- `/autosuggest` — richer suggestions including POIs, chains, addresses\n- `/revgeocode` — coordinates → address\n- `/discover` — place search with categories, brands, opening hours\n\n**Languages**: add `lang=de` or any BCP-47 tag to localise labels.\n\n**In Germany / Baustoff use-case**: use `in=countryCode:DEU&lang=de` to force German labels on addresses for consistency with ERP records.",
   "region": "global",
-  "category": "mapping",
+  "category": "maps",
   "icon": "here",
   "docsUrl": "https://www.here.com/docs/bundle/geocoding-and-search-api-developer-guide/page/README.html",
   "requiredEnvVars": ["HERE_API_KEY"],

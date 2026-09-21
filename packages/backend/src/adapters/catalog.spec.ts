@@ -69,6 +69,36 @@ describe('adapter catalog', () => {
   });
 
   /**
+   * Category is the marketplace's filter axis: every distinct value becomes a
+   * chip. `Sports` alongside `sports`, and `ecommerce` alongside `e-commerce`,
+   * put the same concept behind two chips and split its adapters between them.
+   * Lowercase kebab-case is the house format, so a stray capital or spelling
+   * cannot quietly add a filter nobody meant to create.
+   */
+  it('categories are lowercase kebab-case', () => {
+    const malformed = adapters
+      .filter((a) => a.category && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(a.category))
+      .map((a) => `${a.slug}: ${a.category}`);
+    expect(malformed).toEqual([]);
+  });
+
+  it('every category is spelled one way only', () => {
+    // Collapse the spellings that have actually collided before: separators
+    // dropped (ecommerce/e-commerce) and singular/gerund pairs (maps/mapping).
+    const key = (c: string) => c.replace(/-/g, '').replace(/ing$/, '');
+    const byKey = new Map<string, Set<string>>();
+    for (const a of adapters) {
+      if (!a.category) continue;
+      const k = key(a.category);
+      byKey.set(k, (byKey.get(k) ?? new Set()).add(a.category));
+    }
+    const split = [...byKey.values()]
+      .filter((v) => v.size > 1)
+      .map((v) => [...v].sort().join(' / '));
+    expect(split).toEqual([]);
+  });
+
+  /**
    * `connector_auth_cache` is written by the login-token service and by nothing
    * else: 131 OAUTH2 connectors in production, zero rows. The Etsy adapter told
    * its users their OAuth token was persisted there, which was simply untrue —
