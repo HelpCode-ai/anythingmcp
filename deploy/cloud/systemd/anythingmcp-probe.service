@@ -1,0 +1,13 @@
+[Unit]
+Description=AnythingMCP Cloud uptime probe (one run; see the timer)
+Documentation=https://github.com/HelpCode-ai/anythingmcp/blob/main/deploy/cloud/uptime-probe.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/anythingmcp-cloud/uptime-probe.sh
+Environment=ENV_FILE=/opt/anythingmcp-cloud/.env
+Environment=STATE_DIR=/var/lib/anythingmcp-probe
+StateDirectory=anythingmcp-probe
+TimeoutStartSec=90
