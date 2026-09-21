@@ -112,22 +112,6 @@ The quickstart binds to `127.0.0.1` on purpose: nothing in front of it terminate
 
 ---
 
-## How AnythingMCP compares
-
-The projects it gets compared with are mostly MCP gateways: they federate, scope and secure MCP servers you already have. AnythingMCP starts one step earlier, because most companies have no MCP servers at all — they have a REST API, a SOAP service from 2009 and a database nobody wants to expose. Every project below solves a real problem; they just don't solve the same one.
-
-| | What it is | Choose it instead if… |
-|---|---|---|
-| **[ContextForge](https://github.com/IBM/mcp-context-forge)** (IBM) | Federation and a registry in front of MCP servers you already have | Your tools are already MCP servers and what you need is federation, virtual servers and a registry |
-| **[Docker MCP Gateway](https://github.com/docker/mcp-gateway)** | Runs catalog MCP servers as containers behind one endpoint, with secret handling | You want vendor-published MCP servers sandboxed in Docker and the published catalog covers you |
-| **[MetaMCP](https://github.com/metatool-ai/metamcp)** | Aggregates MCP servers into namespaced endpoints with a middleware layer | You mainly need to group and re-scope existing MCP servers per client |
-| **[Composio](https://github.com/ComposioHQ/composio)** | A hosted catalog of managed integrations with auth handled for you | A fixed managed catalog is enough and you never need to add your own SOAP service, in-house API or database |
-| **AnythingMCP** | Turns the APIs, SOAP services and databases you already run into MCP tools | Your systems are **not** MCP servers yet, and you want the choice of holding the credentials yourself |
-
-Side-by-side pages with the full feature tables: [anythingmcp.com/vs](https://anythingmcp.com/vs).
-
----
-
 ## Knowledge Graph &amp; AI skills
 
 Forwarding calls leaves the hard part to the agent: knowing which tool to call
@@ -283,6 +267,22 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 ➡️ **[docs/guides.md](docs/guides.md)** — Claude / ChatGPT / Gemini / Copilot / Cursor setup · REST / SOAP / GraphQL / Database / MCP-bridge connector guides · API reference &amp; deployment docs · FAQ.
 
 Looking for a specific service? Every adapter has a step-by-step guide at **[anythingmcp.com/guides](https://anythingmcp.com/guides)**.
+
+---
+
+## How AnythingMCP compares
+
+The projects it gets compared with are mostly MCP gateways: they federate, scope and secure MCP servers you already have. AnythingMCP starts one step earlier, because most companies have no MCP servers at all — they have a REST API, a SOAP service from 2009 and a database nobody wants to expose. Every project below solves a real problem; they just don't solve the same one.
+
+| | What it is | Choose it instead if… |
+|---|---|---|
+| **[ContextForge](https://github.com/IBM/mcp-context-forge)** (IBM) | Federation and a registry in front of MCP servers you already have | Your tools are already MCP servers and what you need is federation, virtual servers and a registry |
+| **[Docker MCP Gateway](https://github.com/docker/mcp-gateway)** | Runs catalog MCP servers as containers behind one endpoint, with secret handling | You want vendor-published MCP servers sandboxed in Docker and the published catalog covers you |
+| **[MetaMCP](https://github.com/metatool-ai/metamcp)** | Aggregates MCP servers into namespaced endpoints with a middleware layer | You mainly need to group and re-scope existing MCP servers per client |
+| **[Composio](https://github.com/ComposioHQ/composio)** | A hosted catalog of managed integrations with auth handled for you | A fixed managed catalog is enough and you never need to add your own SOAP service, in-house API or database |
+| **AnythingMCP** | Turns the APIs, SOAP services and databases you already run into MCP tools | Your systems are **not** MCP servers yet, and you want the choice of holding the credentials yourself |
+
+Side-by-side pages with the full feature tables: [anythingmcp.com/vs](https://anythingmcp.com/vs).
 
 ## Community &amp; support
 
