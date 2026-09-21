@@ -9,7 +9,7 @@ import {
   HealthIndicatorResult,
 } from '@nestjs/terminus';
 import * as v8 from 'node:v8';
-import { heapStatus, readHealthHeapPercent } from '../common/process-vitals';
+import { heapStatus, readCgroupMemoryLimit, readHealthHeapPercent } from '../common/process-vitals';
 import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { UsersService } from '../users/users.service';
@@ -91,16 +91,26 @@ export class HealthController {
    * are reported even when up, so a probe from outside can see the trend
    * without SSH.
    */
+  /** Read once: it does not change for the life of the container. */
+  private static readonly cgroupLimit = readCgroupMemoryLimit();
+
   private checkHeap(): HealthIndicatorResult {
+    const mem = process.memoryUsage();
     const sample = {
-      heapUsed: process.memoryUsage().heapUsed,
+      heapUsed: mem.heapUsed,
       heapLimit: v8.getHeapStatistics().heap_size_limit,
+      // The kernel enforces the cgroup limit on RSS and never looks at the
+      // V8 heap; on 21 Sep it killed the process nineteen times with the
+      // heap at 60 %. So RSS is judged too.
+      rss: mem.rss,
+      rssLimit: HealthController.cgroupLimit,
     };
     const heap = heapStatus(sample, readHealthHeapPercent());
     const result: HealthIndicatorResult = { heap };
     if (heap.status === 'down') {
       throw new HealthCheckError(
-        `heap at ${heap.percent}% of its ${heap.limitMb} MB limit`,
+        `heap at ${heap.percent}% of its ${heap.limitMb} MB limit` +
+          (heap.rssPercent !== undefined ? `, rss at ${heap.rssPercent}% of the ${heap.rssLimitMb} MB cgroup limit` : ''),
         result,
       );
     }
