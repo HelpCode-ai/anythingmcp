@@ -16,8 +16,9 @@
 # deployment's .env; if UPTIME_ALERT_TO is unset it logs to the journal and
 # sends nothing.
 #
-#   uptime-probe.sh            probe, update state, mail on change
-#   uptime-probe.sh --dry-run  probe and print, touch nothing, send nothing
+#   uptime-probe.sh              probe, update state, mail on change
+#   uptime-probe.sh --dry-run    probe and print, touch nothing, send nothing
+#   uptime-probe.sh --test-mail  send one test mail to UPTIME_ALERT_TO and exit
 # =============================================================================
 set -uo pipefail
 
@@ -35,12 +36,37 @@ ALERT_TO="${UPTIME_ALERT_TO:-$(envval UPTIME_ALERT_TO)}"
 
 log() { logger -t anythingmcp-probe -- "$*" 2>/dev/null || true; [ "$DRY_RUN" = 1 ] && echo "$*"; }
 
+send_mail() {
+  local subject="$1" body="$2"
+  [ -n "$ALERT_TO" ] || { log "no UPTIME_ALERT_TO — would have mailed: $subject"; return 0; }
+  local host port user pass from secure from_addr
+  host=$(envval SMTP_HOST); port=$(envval SMTP_PORT); user=$(envval SMTP_USER); pass=$(envval SMTP_PASS); from=$(envval SMTP_FROM); secure=$(envval SMTP_SECURE)
+  [ -n "$host" ] && [ -n "$from" ] || { log "SMTP not configured — would have mailed: $subject"; return 0; }
+  # SMTP_FROM may be "Name <addr>"; the envelope sender must be the bare address.
+  from_addr=$(printf '%s' "$from" | grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+' | head -1); [ -n "$from_addr" ] || from_addr="$from"
+  local url="smtp://${host}:${port:-587}"; local tls=(--ssl-reqd)
+  [ "$secure" = "true" ] && url="smtps://${host}:${port:-465}" && tls=()
+  printf 'From: AnythingMCP probe <%s>\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s\r\n' \
+    "$from_addr" "$ALERT_TO" "$subject" "$body" \
+    | curl -sS --max-time 30 --url "$url" "${tls[@]}" --mail-from "$from_addr" --mail-rcpt "$ALERT_TO" \
+        ${user:+--user "$user:$pass"} -T - >/dev/null 2>/tmp/probe-mail.err \
+    && log "mailed: $subject" || { log "mail failed: $subject — $(tr -d '\n' < /tmp/probe-mail.err | cut -c1-200)"; return 1; }
+}
+
+if [ "${1:-}" = "--test-mail" ]; then
+  DRY_RUN=1
+  send_mail "[AnythingMCP] probe test mail" "$(date -u +'%Y-%m-%d %H:%M:%S UTC')"$'\n\n'"If you can read this, the uptime probe on ${DOMAIN} can reach you. It will write again only when the site changes state."
+  exit $?
+fi
+
 # ── Probes ───────────────────────────────────────────────────────────────────
 fail=0; report=""
 note() { report+="$1"$'\n'; }
 
 code=$(curl -sS -o /tmp/probe-health.json -w '%{http_code}' --max-time 15 "https://${DOMAIN}/health" 2>/dev/null || echo 000)
-status=$(sed -n 's/.*"status":"\([a-z]*\)".*/\1/p' /tmp/probe-health.json 2>/dev/null | head -1)
+# Anchored at the start: terminus nests a "status" per indicator, and a
+# greedy match reads the last one ("up" for the heap) instead of the verdict.
+status=$(sed -n 's/^{"status":"\([a-z]*\)".*/\1/p' /tmp/probe-health.json 2>/dev/null | head -1)
 heap=$(sed -n 's/.*"heap":{[^}]*"usedMb":\([0-9]*\)[^}]*"limitMb":\([0-9]*\)[^}]*"percent":\([0-9.]*\).*/\3% of \2 MB (\1 MB)/p' /tmp/probe-health.json 2>/dev/null | head -1)
 if [ "$code" = "200" ] && [ "$status" = "ok" ]; then
   note "ok   /health 200 ok, heap ${heap:-n/a}"
@@ -72,20 +98,6 @@ fi
 mkdir -p "$STATE_DIR"
 prev=$(cat "$STATE_DIR/state" 2>/dev/null || echo "up")   # "up" | "down:<epoch>"
 
-send_mail() {
-  local subject="$1" body="$2"
-  [ -n "$ALERT_TO" ] || { log "no UPTIME_ALERT_TO — would have mailed: $subject"; return 0; }
-  local host port user pass from secure
-  host=$(envval SMTP_HOST); port=$(envval SMTP_PORT); user=$(envval SMTP_USER); pass=$(envval SMTP_PASS); from=$(envval SMTP_FROM); secure=$(envval SMTP_SECURE)
-  [ -n "$host" ] && [ -n "$from" ] || { log "SMTP not configured — would have mailed: $subject"; return 0; }
-  local url="smtp://${host}:${port:-587}" ; local tls=(--ssl-reqd)
-  [ "$secure" = "true" ] && url="smtps://${host}:${port:-465}" && tls=()
-  printf 'From: AnythingMCP probe <%s>\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s\r\n' \
-    "$from" "$ALERT_TO" "$subject" "$body" \
-    | curl -sS --max-time 30 --url "$url" "${tls[@]}" --mail-from "$from" --mail-rcpt "$ALERT_TO" \
-        ${user:+--user "$user:$pass"} -T - >/dev/null 2>/tmp/probe-mail.err \
-    && log "mailed: $subject" || log "mail failed: $subject — $(tr -d '\n' < /tmp/probe-mail.err | cut -c1-200)"
-}
 
 if [ "$fail" = 1 ]; then
   log "DOWN — ${report//$'\n'/ | }"
