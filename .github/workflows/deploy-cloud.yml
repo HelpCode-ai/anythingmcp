@@ -23,7 +23,7 @@ jobs:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
           target: /tmp/anythingmcp-deploy
           overwrite: true
 
@@ -54,6 +54,21 @@ jobs:
             # image is reused.
             cp /tmp/anythingmcp-deploy/docker-compose.cloud.yml ./docker-compose.cloud.yml
             cp /tmp/anythingmcp-deploy/deploy/cloud/Caddyfile ./Caddyfile
+
+            # Uptime probe: a systemd timer on this host, every minute, mailing
+            # on a change of state. It is here and not only in GitHub Actions
+            # because the scheduled workflow ran three times in its first ten
+            # hours — GitHub's cron is best-effort — and the failure mode we
+            # have is the backend dying while the host stays up, which a timer
+            # on the host sees within a minute. Reads DOMAIN, SMTP_* and
+            # UPTIME_ALERT_TO from this directory's .env; with no
+            # UPTIME_ALERT_TO it only logs to the journal.
+            install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/uptime-probe.sh ./uptime-probe.sh
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-probe.service /etc/systemd/system/
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-probe.timer /etc/systemd/system/
+            systemctl daemon-reload
+            systemctl enable --now anythingmcp-probe.timer
+            systemctl is-active anythingmcp-probe.timer
             mkdir -p ./deploy/motis
             cp /tmp/anythingmcp-deploy/deploy/motis/* ./deploy/motis/
             rm -rf ./deploy/cloud/db-rest

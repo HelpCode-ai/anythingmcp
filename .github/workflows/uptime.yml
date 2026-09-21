@@ -11,13 +11,21 @@ name: Uptime probe
 # reports is written to the run summary on every probe, so the trend is
 # visible here without SSH.
 #
-# A schedule is best-effort on GitHub — delayed under load, never early — so
-# treat this as "we will know within ~10 minutes", not as monitoring.
+# A schedule is best-effort on GitHub — delayed under load, never early. In
+# its first ten hours this ran three times, not 120. The minute-by-minute
+# probe is a systemd timer on the droplet (deploy/cloud/uptime-probe.sh);
+# this one remains as an independent second opinion that does not live on
+# the machine it watches, and for the issue it opens.
 
 on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: "Pretend the probes failed, to exercise the incident-issue path"
+        type: boolean
+        default: false
 
 permissions:
   issues: write
@@ -70,6 +78,11 @@ jobs:
           # 3. Marketing site.
           code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -L https://anythingmcp.com/ || echo 000)
           if [ "$code" = "200" ]; then note "✅ anythingmcp.com → 200"; else fail=1; note "❌ anythingmcp.com → HTTP $code"; fi
+
+          # The one path that matters is the one that never runs on a good day.
+          if [ "${{ inputs.simulate_failure }}" = "true" ]; then
+            fail=1; note "🧪 simulated failure (workflow_dispatch input) — the issue below is a drill"
+          fi
 
           {
             echo "### Uptime probe — $(date -u +'%Y-%m-%d %H:%M UTC')"
