@@ -256,8 +256,13 @@ describe('ProcessVitalsService.tick', () => {
   });
 
   it('pauses to flush the log before writing the snapshot, writes once, and requests exit once', async () => {
-    // Snapshot enabled at 60 with plenty of room (rss 1.2×heap of a 6 GB limit).
-    const { svc, effects } = service([{ heapPct: 65 }, { heapPct: 92 }, { heapPct: 93 }, { heapPct: 94 }, { heapPct: 95 }]);
+    // Snapshot at 15 % with the room for it: heap 0.8 GB, rss 0.96 GB, limit
+    // 6 GB. (At 65 % of the heap the guard rightly refuses — rss + heap would
+    // be 5.7 GB — which is tested on its own below.)
+    const { svc, effects } = service(
+      [{ heapPct: 20 }, { heapPct: 92 }, { heapPct: 93 }, { heapPct: 94 }, { heapPct: 95 }],
+      { snapshotPercent: 15 },
+    );
     for (let i = 0; i < 5; i++) await svc.tick();
     expect(effects.pause).toHaveBeenCalledWith(300);
     expect(effects.writeSnapshot).toHaveBeenCalledTimes(1);
@@ -282,7 +287,7 @@ describe('ProcessVitalsService.tick', () => {
   });
 
   it('survives a failing snapshot and keeps logging', async () => {
-    const { svc, effects, log } = service([{ heapPct: 65 }, { heapPct: 66 }]);
+    const { svc, effects, log } = service([{ heapPct: 20 }, { heapPct: 21 }], { snapshotPercent: 15 });
     effects.writeSnapshot.mockImplementation(() => {
       throw new Error('disk full');
     });
