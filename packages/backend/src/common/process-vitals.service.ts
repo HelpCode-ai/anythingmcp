@@ -10,6 +10,7 @@ import {
   HeapState,
   INITIAL_HEAP_STATE,
   processGauges,
+  readCgroupMemoryLimit,
   readHeapPolicy,
   readSnapshotDir,
   readVitalsIntervalSec,
@@ -19,6 +20,8 @@ import {
 export interface VitalsCollector {
   memory(): NodeJS.MemoryUsage;
   heapLimit(): number;
+  /** The cgroup memory limit, or undefined when unlimited. Read once. */
+  rssLimit(): number | undefined;
   activeResources(): string[];
 }
 
@@ -26,11 +29,14 @@ export interface VitalsCollector {
 export interface VitalsEffects {
   writeSnapshot(dir: string): { path: string; bytes: number; ms: number };
   requestExit(): void;
+  /** Wait; lets the log line before a blocking operation reach stdout. */
+  pause(ms: number): Promise<void>;
 }
 
 const defaultCollector: VitalsCollector = {
   memory: () => process.memoryUsage(),
   heapLimit: () => v8.getHeapStatistics().heap_size_limit,
+  rssLimit: () => readCgroupMemoryLimit(),
   activeResources: () => process.getActiveResourcesInfo(),
 };
 
@@ -50,30 +56,33 @@ const defaultEffects: VitalsEffects = {
     process.kill(process.pid, 'SIGTERM');
     setTimeout(() => process.exit(70), 30_000).unref();
   },
+  pause: (ms) => new Promise((r) => setTimeout(r, ms)),
 };
 
 const MB = 1048576;
-const mb = (n: number) => Math.round((n / MB) * 10) / 10;
+const mb = (n: number | undefined) => (n === undefined ? undefined : Math.round((n / MB) * 10) / 10);
 
 /**
- * Logs one `vitals` line per interval and acts on heap pressure.
+ * Logs one `vitals` line per interval and acts on memory pressure.
  *
- * Why this exists is in process-vitals.ts. What it does each tick:
+ * Why this exists, and why it looks the way it does, is in process-vitals.ts.
+ * What it does each tick:
  *
- *   1. read memory, heap limit, event-loop delay, active handles and the live
- *      gauges other modules maintain;
+ *   1. read memory, the heap limit, the cgroup limit, event-loop delay,
+ *      active handles and the live gauges other modules maintain;
  *   2. log them as one structured line, so the trend before any incident is
  *      in the log rather than reconstructed from `docker stats` afterwards;
  *   3. warn once when the heap crosses HEAP_WARN_PERCENT;
- *   4. write one heap snapshot per process at HEAP_SNAPSHOT_PERCENT — the
- *      only artifact that names which objects are being retained;
- *   5. after HEAP_EXIT_CONSECUTIVE ticks over HEAP_EXIT_PERCENT, exit
- *      gracefully. The alternative is what happened on 20 Sep: minutes of
- *      stop-the-world GC serving nothing, then a hard abort.
+ *   4. if HEAP_SNAPSHOT_PERCENT is set and the process can show the room,
+ *      write one heap snapshot per process — after a pause, so the line
+ *      announcing it is on stdout before the event loop blocks;
+ *   5. after HEAP_EXIT_CONSECUTIVE ticks with the heap over HEAP_EXIT_PERCENT
+ *      of its limit, or RSS over HEAP_RSS_EXIT_PERCENT of the cgroup limit,
+ *      exit gracefully. The alternatives are what happened on 20 and 21 Sep:
+ *      minutes of stop-the-world GC serving nothing, then a hard abort — or a
+ *      kernel SIGKILL with no log line at all.
  *
- * A separate process supervisor turns that exit into a restart. Whether that
- * restart takes the frontend down with it is the supervisor's business, not
- * this service's.
+ * A separate process supervisor turns that exit into a restart.
  */
 @Injectable()
 export class ProcessVitalsService implements OnModuleInit, OnModuleDestroy {
@@ -82,6 +91,8 @@ export class ProcessVitalsService implements OnModuleInit, OnModuleDestroy {
   private loopDelay?: IntervalHistogram;
   private state: HeapState = { ...INITIAL_HEAP_STATE };
   private exitRequested = false;
+  private rssLimit: number | undefined;
+  private ticking = false;
 
   /** Public so tests (and only tests) can swap the world out. */
   collector: VitalsCollector = defaultCollector;
@@ -97,15 +108,18 @@ export class ProcessVitalsService implements OnModuleInit, OnModuleDestroy {
     }
     this.loopDelay = monitorEventLoopDelay({ resolution: 20 });
     this.loopDelay.enable();
+    this.rssLimit = this.collector.rssLimit();
 
     const limit = this.collector.heapLimit();
     this.logger.log(
-      `Process vitals every ${intervalSec}s — heap limit ${mb(limit)} MB; ` +
+      `Process vitals every ${intervalSec}s — heap limit ${mb(limit)} MB, ` +
+        `cgroup limit ${this.rssLimit ? `${mb(this.rssLimit)} MB` : 'none'}; ` +
         `warn at ${this.policy.warnPercent}%, snapshot at ${this.policy.snapshotPercent}% ` +
-        `(${this.snapshotDir}), exit after ${this.policy.exitConsecutive} ticks over ${this.policy.exitPercent}%`,
+        `(${this.snapshotDir}), exit after ${this.policy.exitConsecutive} ticks over ` +
+        `${this.policy.exitPercent}% heap or ${this.policy.rssExitPercent}% rss`,
     );
 
-    this.timer = setInterval(() => this.tick(), intervalSec * 1000);
+    this.timer = setInterval(() => void this.tick(), intervalSec * 1000);
     // Never keep the process alive on our account.
     this.timer.unref();
   }
@@ -116,18 +130,27 @@ export class ProcessVitalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** One tick. Never throws: a diagnostics failure must not become an outage. */
-  tick(): void {
+  async tick(): Promise<void> {
+    if (this.ticking) return; // a snapshot in progress; do not stack ticks
+    this.ticking = true;
     try {
-      this.tickInner();
+      await this.tickInner();
     } catch (err) {
       this.logger.warn(`vitals tick failed: ${(err as Error)?.message ?? err}`);
+    } finally {
+      this.ticking = false;
     }
   }
 
-  private tickInner(): void {
+  private async tickInner(): Promise<void> {
     const mem = this.collector.memory();
-    const sample: HeapSample = { heapUsed: mem.heapUsed, heapLimit: this.collector.heapLimit() };
-    const { actions, state, percent } = evaluateHeap(sample, this.policy, this.state);
+    const sample: HeapSample = {
+      heapUsed: mem.heapUsed,
+      heapLimit: this.collector.heapLimit(),
+      rss: mem.rss,
+      rssLimit: this.rssLimit,
+    };
+    const { actions, state, percent, rssPct } = evaluateHeap(sample, this.policy, this.state);
     this.state = state;
 
     const resources = this.collector.activeResources();
@@ -141,6 +164,8 @@ export class ProcessVitalsService implements OnModuleInit, OnModuleDestroy {
 
     const vitals = {
       rssMb: mb(mem.rss),
+      rssLimitMb: mb(this.rssLimit),
+      rssPercent: rssPct === undefined ? undefined : Math.round(rssPct * 10) / 10,
       heapUsedMb: mb(mem.heapUsed),
       heapTotalMb: mb(mem.heapTotal),
       heapLimitMb: mb(sample.heapLimit),
@@ -162,11 +187,20 @@ export class ProcessVitalsService implements OnModuleInit, OnModuleDestroy {
           `Heap at ${vitals.heapPercent}% of its ${vitals.heapLimitMb} MB limit ` +
             `(${vitals.heapUsedMb} MB used, rss ${vitals.rssMb} MB)`,
         );
+      } else if (action === 'snapshot-skipped') {
+        this.logger.warn(
+          `Heap crossed ${this.policy.snapshotPercent}% but a snapshot would need about ` +
+            `${vitals.heapUsedMb} MB more, and rss ${vitals.rssMb} MB of a ${vitals.rssLimitMb} MB ` +
+            `cgroup limit leaves no room for it. Not writing one: that is how 21 Sep went.`,
+        );
       } else if (action === 'snapshot') {
         this.logger.warn(
           `Heap crossed ${this.policy.snapshotPercent}% — writing a heap snapshot to ${this.snapshotDir}. ` +
-            `This blocks the event loop while it runs.`,
+            `This blocks the event loop while it runs and needs roughly ${vitals.heapUsedMb} MB more memory.`,
         );
+        // Let that line reach stdout before the loop stops. It is the line
+        // that explains the pause — and the kill, if one comes anyway.
+        await this.effects.pause(300);
         try {
           const out = this.effects.writeSnapshot(this.snapshotDir);
           this.logger.warn(
@@ -176,13 +210,17 @@ export class ProcessVitalsService implements OnModuleInit, OnModuleDestroy {
         } catch (err) {
           this.logger.error(`Heap snapshot failed: ${(err as Error)?.message ?? err}`);
         }
-      } else if (action === 'exit' && !this.exitRequested) {
+      } else if ((action === 'exit' || action === 'exit-rss') && !this.exitRequested) {
         this.exitRequested = true;
+        const reason =
+          action === 'exit'
+            ? `heap over ${this.policy.exitPercent}% of its limit (${vitals.heapUsedMb} of ${vitals.heapLimitMb} MB)`
+            : `rss over ${this.policy.rssExitPercent}% of the cgroup limit (${vitals.rssMb} of ${vitals.rssLimitMb} MB)`;
         this.logger.error(
-          `Heap has been over ${this.policy.exitPercent}% for ${this.policy.exitConsecutive} consecutive ticks ` +
-            `(${vitals.heapUsedMb} of ${vitals.heapLimitMb} MB). Exiting gracefully before the ` +
-            `GC death spiral makes the process unresponsive; the supervisor restarts it.`,
+          `Memory pressure for ${this.policy.exitConsecutive} consecutive ticks — ${reason}. ` +
+            `Exiting gracefully before the GC death spiral or the kernel does it for us; the supervisor restarts the process.`,
         );
+        await this.effects.pause(300);
         this.effects.requestExit();
       }
     }

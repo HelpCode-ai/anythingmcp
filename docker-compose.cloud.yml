@@ -54,13 +54,17 @@ services:
     command: ["./start.sh", "backend"]
     expose:
       - "4000"
-    # Hard ceiling for the kernel, above the V8 cap so the backend's own
-    # guard (graceful exit at HEAP_EXIT_PERCENT of NODE_MAX_OLD_SPACE_MB, see
-    # .env.example) fires first. RSS runs ~10-20% above the JS heap for native
-    # buffers and code; 5 GB over a 4 GB heap leaves that room. On the 7.9 GB
-    # droplet the rest — frontend, postgres, redis, motis, caddy — sits well
-    # under 2 GB today. If NODE_MAX_OLD_SPACE_MB is raised, raise this too.
-    mem_limit: ${BACKEND_MEM_LIMIT:-5g}
+    # Hard ceiling for the kernel. It must sit far enough above the V8 cap
+    # that the backend's own guard (process-vitals.ts) acts first, and the
+    # margin is larger than it looks: on 21 Sep RSS ran 1.6 GB above the JS
+    # heap — native buffers, and V8's snapshot builder — so a 5 GB limit over
+    # a 4 GB heap was reached with the heap at 60 %, and the kernel killed
+    # the process nineteen times with no log line. 6 GB over 4 GB, with the
+    # guard now watching RSS against this limit as well (HEAP_RSS_EXIT_PERCENT),
+    # turns that into a logged, graceful restart. On the 7.9 GB droplet the
+    # rest — frontend, postgres, redis, motis, caddy — sits near 1 GB today.
+    # If NODE_MAX_OLD_SPACE_MB is raised, raise this too.
+    mem_limit: ${BACKEND_MEM_LIMIT:-6g}
     environment:
       - NODE_ENV=production
       - PORT=4000
@@ -70,6 +74,17 @@ services:
       # .env when the host has the RAM to back it — roughly half of total is a
       # safe ceiling, since postgres, redis, motis and caddy share the box.
       - NODE_MAX_OLD_SPACE_MB=${NODE_MAX_OLD_SPACE_MB:-2048}
+      # Heap guard (packages/backend/src/common/process-vitals.ts; every var
+      # documented in .env.example). The snapshot stays OFF here: on a heap
+      # this size V8's snapshot builder is what pushed RSS into the cgroup
+      # limit on 21 Sep. Enable it deliberately, at a low percentage, when a
+      # snapshot is wanted — the guard refuses it anyway unless the room is
+      # there.
+      - HEAP_SNAPSHOT_PERCENT=${HEAP_SNAPSHOT_PERCENT:-0}
+      - HEAP_EXIT_PERCENT=${HEAP_EXIT_PERCENT:-90}
+      - HEAP_RSS_EXIT_PERCENT=${HEAP_RSS_EXIT_PERCENT:-90}
+      - HEAP_WARN_PERCENT=${HEAP_WARN_PERCENT:-75}
+      - HEALTH_HEAP_PERCENT=${HEALTH_HEAP_PERCENT:-90}
       - DEPLOYMENT_MODE=cloud
       - NEXT_PUBLIC_API_URL=https://${DOMAIN}
       - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
