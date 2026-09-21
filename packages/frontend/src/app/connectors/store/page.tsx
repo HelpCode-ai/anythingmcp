@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Suspense, useEffect, useState, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth-context';
 import { adapters } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { authTypeLabel, cn } from '@/lib/utils';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -142,6 +142,21 @@ function BrandTile({ adapter, size = 44 }: { adapter: AdapterItem; size?: number
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
+  monitoring: 'Monitoring',
+  'time-tracking': 'Time Tracking',
+  dms: 'Document Management',
+  transport: 'Transport',
+  itsm: 'IT Service Management',
+  wholesale: 'Wholesale',
+  construction: 'Construction',
+  productivity: 'Productivity',
+  storage: 'Storage',
+  data: 'Data',
+  infrastructure: 'Infrastructure',
+  healthcare: 'Healthcare',
+  database: 'Database',
+  food: 'Food',
+  gaming: 'Gaming',
   logistics: 'Logistics',
   finance: 'Finance',
   government: 'Government',
@@ -173,6 +188,29 @@ const CATEGORY_LABELS: Record<string, string> = {
   cms: 'CMS',
   sports: 'Sports',
 };
+
+/**
+ * Filter chip. Taller on a phone than the 26px the desktop density gave it:
+ * these sit in a row you scroll with a thumb, and a small target on a
+ * scrolling surface is a mis-tap waiting to happen.
+ */
+const CHIP =
+  'flex min-h-[34px] flex-shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] font-medium transition-colors sm:min-h-0 sm:px-3 sm:py-1 sm:text-xs';
+const CHIP_ON = 'border-[var(--brand)] bg-[var(--brand)] text-[var(--primary-foreground)]';
+const CHIP_OFF =
+  'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]';
+
+/**
+ * Title-case an unlabelled slug rather than printing it raw. The catalog gains
+ * categories over time and `time-tracking` in a filter chip reads as a bug.
+ */
+function categoryLabel(slug: string): string {
+  if (CATEGORY_LABELS[slug]) return CATEGORY_LABELS[slug];
+  return slug
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
 
 interface AdapterItem {
   slug: string;
@@ -234,6 +272,7 @@ function AdapterStoreContent() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const [importing, setImporting] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
 
@@ -334,18 +373,51 @@ function AdapterStoreContent() {
     doImport(configAdapter.slug, creds);
   };
 
-  // Derive unique categories from the loaded adapters
-  const categories = [...new Set(list.map((a) => a.category).filter(Boolean))];
+  /**
+   * Categories ranked by how much of the catalog each one holds, so the first
+   * chips are the ones most likely to be wanted. In load order, 45 categories
+   * of one to twenty-four adapters all looked equally important.
+   */
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const a of list) {
+      if (a.category) counts.set(a.category, (counts.get(a.category) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([slug, count]) => ({ slug, count, label: categoryLabel(slug) }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  }, [list]);
+
+  /**
+   * Twelve is about two wrapped rows on a desktop and three swipes on a
+   * phone. Uncapped, the phone row ran 4957px — thirteen screens — to reach
+   * the last chip, and fifteen of these categories hold one or two adapters
+   * each: a chip that filters 257 down to 1 is better served by the search
+   * box. The rest stay one tap away behind "More".
+   */
+  const CATEGORY_CAP = 12;
+  const shownCategories = showAllCategories
+    ? categories
+    : categories.slice(0, CATEGORY_CAP);
+  const hiddenCategoryCount = categories.length - shownCategories.length;
+  // A category picked from the expanded list stays on screen after collapsing.
+  const activeIsHidden =
+    !!activeCategory && !shownCategories.some((c) => c.slug === activeCategory);
 
   const filtered = list.filter((a) => {
     if (activeCategory && a.category !== activeCategory) return false;
     if (!search) return true;
     const q = search.toLowerCase();
+    // Match what the card actually says, not just the stored slug: the card
+    // reads "GERMANY" and "E-commerce", so those are the words people type.
     return (
       a.name.toLowerCase().includes(q) ||
       a.description.toLowerCase().includes(q) ||
+      a.slug.toLowerCase().includes(q) ||
       a.category?.toLowerCase().includes(q) ||
-      a.region?.toLowerCase().includes(q)
+      categoryLabel(a.category ?? '').toLowerCase().includes(q) ||
+      a.region?.toLowerCase().includes(q) ||
+      (REGION_LABELS[a.region] ?? '').toLowerCase().includes(q)
     );
   });
 
@@ -395,32 +467,73 @@ function AdapterStoreContent() {
           </div>
 
           {categories.length > 1 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => setActiveCategory(null)}
+            <div className="flex flex-col gap-2">
+              {/* Phones get one scrolling row instead of fourteen wrapped
+                  ones: 45 chips filled the whole screen before a single
+                  adapter appeared. Ranked by size, so the row starts with
+                  the categories most people are after, and the trailing
+                  fade says there is more to the right. From sm up the chips
+                  wrap, capped until "Show all" — that was five rows too. */}
+              <div
                 className={cn(
-                  'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                  activeCategory === null
-                    ? 'border-[var(--brand)] bg-[var(--brand)] text-[var(--primary-foreground)]'
-                    : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
+                  'flex items-center gap-2',
+                  'max-sm:scrollbar-none max-sm:scroll-fade-x max-sm:-mx-4 max-sm:overflow-x-auto max-sm:px-4 max-sm:pb-0.5',
+                  'sm:flex-wrap'
                 )}
               >
-                All
-              </button>
-              {categories.map((cat) => (
                 <button
-                  key={cat}
-                  onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
-                  className={cn(
-                    'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                    activeCategory === cat
-                      ? 'border-[var(--brand)] bg-[var(--brand)] text-[var(--primary-foreground)]'
-                      : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]'
-                  )}
+                  onClick={() => setActiveCategory(null)}
+                  aria-pressed={activeCategory === null}
+                  className={cn(CHIP, activeCategory === null ? CHIP_ON : CHIP_OFF)}
                 >
-                  {CATEGORY_LABELS[cat] || cat}
+                  All
                 </button>
-              ))}
+                {(activeIsHidden
+                  ? [...shownCategories, categories.find((c) => c.slug === activeCategory)!]
+                  : shownCategories
+                ).map((cat) => {
+                  const active = activeCategory === cat.slug;
+                  return (
+                    <button
+                      key={cat.slug}
+                      onClick={() => setActiveCategory(active ? null : cat.slug)}
+                      aria-pressed={active}
+                      className={cn(CHIP, active ? CHIP_ON : CHIP_OFF)}
+                    >
+                      {cat.label}
+                      {/* The count turns a wall of equal-looking words into
+                          something you can read the catalogue's shape from. */}
+                      <span className={cn('tabular-nums', active ? 'opacity-70' : 'text-[var(--text-3)]')}>
+                        {cat.count}
+                      </span>
+                    </button>
+                  );
+                })}
+                {hiddenCategoryCount > 0 && (
+                  <button
+                    onClick={() => setShowAllCategories(true)}
+                    className={cn(CHIP, CHIP_OFF, 'border-dashed')}
+                  >
+                    +{hiddenCategoryCount} more
+                  </button>
+                )}
+                {showAllCategories && (
+                  <button
+                    onClick={() => setShowAllCategories(false)}
+                    className={cn(CHIP, 'border-transparent text-[var(--text-3)] hover:text-[var(--text)]')}
+                  >
+                    Show fewer
+                  </button>
+                )}
+              </div>
+
+              {/* What the filters actually did, in one line. */}
+              <p className="text-[11.5px] text-[var(--text-3)]">
+                {filtered.length === list.length
+                  ? `${list.length} adapters`
+                  : `${filtered.length} of ${list.length} adapters`}
+                {activeCategory && ` · ${categoryLabel(activeCategory)}`}
+              </p>
             </div>
           )}
         </div>
@@ -436,12 +549,36 @@ function AdapterStoreContent() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-[14px] border border-dashed border-[var(--border)] py-16 text-center">
-            <p className="text-[var(--text-3)]">
-              {list.length === 0
-                ? 'No adapters available yet.'
-                : 'No adapters match your search.'}
-            </p>
+          <div className="rounded-[14px] border border-dashed border-[var(--border)] px-5 py-16 text-center">
+            {list.length === 0 ? (
+              <p className="text-[var(--text-3)]">No adapters available yet.</p>
+            ) : (
+              <>
+                <p className="text-sm text-[var(--text-2)]">
+                  Nothing matches{search ? ` “${search}”` : ''}
+                  {activeCategory ? ` in ${categoryLabel(activeCategory)}` : ''}.
+                </p>
+                <p className="mx-auto mt-1 max-w-[46ch] text-[13px] text-[var(--text-3)]">
+                  Any REST, SOAP, GraphQL or SQL system can still become a
+                  connector — the adapters are just a head start.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setSearch('');
+                      setActiveCategory(null);
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                  <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
+                    Build a custom connector
+                  </Link>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -471,7 +608,7 @@ function AdapterStoreContent() {
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-wider text-[var(--text-3)]">
                         <span>
-                          {CATEGORY_LABELS[adapter.category] || adapter.category}
+                          {categoryLabel(adapter.category)}
                         </span>
                         <span className="text-[var(--border-strong)]">·</span>
                         <span>{REGION_LABELS[adapter.region] || adapter.region}</span>

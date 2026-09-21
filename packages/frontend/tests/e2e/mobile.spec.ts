@@ -291,6 +291,54 @@ test.describe('phone layout has no horizontal overflow', () => {
     expect(o.main, '<main> with expanded log').toBeLessThanOrEqual(o.vw);
   });
 
+  /**
+   * The marketplace ships 45 categories. Rendered as a wrapped chip list they
+   * filled fourteen rows and pushed the first adapter 635px down the page, so
+   * the row is capped and scrolls sideways instead. Both properties are easy
+   * to lose the next time somebody touches the filter.
+   */
+  test('marketplace category filters stay one capped row', async ({ page }) => {
+    const manyCategories = Array.from({ length: 45 }, (_, i) => ({
+      slug: `adapter-${i}`,
+      name: `Adapter ${i}`,
+      description: 'An adapter used to fill out the category list.',
+      category: `category-number-${i}`,
+      region: 'intl',
+      toolCount: 3,
+      authType: 'API_KEY',
+      docsUrl: null,
+      icon: null,
+    }));
+    await fakeSession(page);
+    await page.route(/\/api\/adapters$/, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(manyCategories) }));
+
+    await page.goto('/connectors/store');
+    await page.getByText('Adapter 0').first().waitFor();
+    await page.waitForTimeout(400);
+
+    const row = page.locator('button', { hasText: /^All$/ }).first().locator('..');
+    const shape = await row.evaluate((el) => ({
+      chips: [...el.children].filter((c) => c.tagName === 'BUTTON').length,
+      rows: new Set([...el.children].map((c) => Math.round(c.getBoundingClientRect().top))).size,
+      overflowX: getComputedStyle(el).overflowX,
+      minChipHeight: Math.min(
+        ...[...el.children].map((c) => Math.round(c.getBoundingClientRect().height)),
+      ),
+    }));
+
+    // All + 12 categories + "+N more" — not one chip per category.
+    expect(shape.chips, 'chips rendered').toBeLessThanOrEqual(14);
+    expect(shape.rows, 'chip rows on a phone').toBe(1);
+    expect(shape.overflowX, 'row scrolls sideways').toBe('auto');
+    // A target you scroll past with a thumb needs to be bigger than the
+    // 26px the desktop chip density gave it.
+    expect(shape.minChipHeight, 'chip touch target').toBeGreaterThanOrEqual(32);
+
+    const o = await overflow(page);
+    expect(o.doc, 'document').toBeLessThanOrEqual(o.vw);
+  });
+
   test('header keeps the title readable when the toolbar wraps', async ({ page }) => {
     await fakeSession(page);
     await page.goto('/connectors/c1');

@@ -4,7 +4,7 @@
   "description": "Query a Shopware 6 storefront programmatically — product catalog, categories, cross-sells, landing pages, and search. Covers the public-facing Store API, which is how the Shopware storefront itself talks to the backend.",
   "instructions": "This connector uses the Shopware 6 Store API (not the Admin API).\n\n**Instance URL**: every Shopware install has its own URL. Paste it into `SHOPWARE_URL` when importing — e.g. `https://shop.koch-freiburg.de`. Do NOT add `/store-api`; the adapter handles that.\n\n**Access key**: the Store API authenticates with a single header `sw-access-key`. Find it in the Shopware admin under Settings → System → Integrations → 'Access key for sales channels', or per-sales-channel under Sales Channels → 'API access → Access key'. Set it as `SHOPWARE_ACCESS_KEY` at import time.\n\n**Context token (optional)**: for cart/wishlist operations you also need a `sw-context-token` (obtained from POST /context) — not handled by this adapter. For public catalog browsing no context is required.\n\n**Store API vs Admin API**: Store API is optimised for customer-facing reads and is always active. For administrative writes (create products, manage stock, order fulfilment) use the Admin API, which requires OAuth2 client_credentials and is not covered by this adapter.\n\n**Search**: the search endpoint supports Shopware's criteria grammar (associations, filter, sort, pagination) — see https://developer.shopware.com/docs/concepts/search-queries.html",
   "region": "de",
-  "category": "ecommerce",
+  "category": "e-commerce",
   "icon": "shopware",
   "docsUrl": "https://developer.shopware.com/docs/guides/integrations-api/store-api-guide",
   "requiredEnvVars": [

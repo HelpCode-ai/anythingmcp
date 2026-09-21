@@ -3,7 +3,7 @@
   "name": "Billbee Order Management",
   "description": "Manage orders, products, customers, stock and shipments in Billbee, the leading German/DACH multichannel order-management (Warenwirtschaft) platform used by 20,000+ online retailers.",
   "region": "de",
-  "category": "ecommerce",
+  "category": "e-commerce",
   "icon": "billbee",
   "docsUrl": "https://app.billbee.io/swagger/ui/index",
   "requiredEnvVars": [
