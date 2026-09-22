@@ -51,18 +51,29 @@ if (args.includes('--check')) {
   // Each entry: file, regex that captures the quoted number. Every capture in
   // the file must equal stats.adapters.
   const N = stats.adapters;
+  // [file, regex, expected number of matches]. The third element exists for
+  // the translated READMEs: a regex that matches nothing passes silently, so a
+  // translator rewording "257 fertige Adapter" would quietly remove the file
+  // from this guard rather than fail it. The English files predate the count
+  // and are left without one.
   const checks = [
     ['README.md', /\b(\d{2,3})\s+(?:pre-built |ready-to-use |ready )?(?:adapters|connectors)\b/g],
     ['glama.json', /\b(\d{2,3})\+?\s+pre-built adapters\b/g],
     ['CITATION.cff', /\b(\d{2,3})\s+pre-built adapters\b/g],
     ['server.json', /\b(\d{2,3})\s+(?:pre-built )?(?:adapters|connectors)\b/g],
     ['package.json', /\b(\d{2,3})\s+pre-built adapters\b/g],
+    ['README.de.md', /\b(\d{2,3})\s+(?:Connectors|fertige Adapter|JSON-Definitionen|Adapter)\b/g, 4],
+    ['README.zh-CN.md', /(\d{2,3})\s*个\s*(?:连接器|现成适配器|适配器|JSON 定义)/g, 4],
+    ['README.ja.md', /(\d{2,3})\s*(?:のコネクター|種類の既製アダプター|個の JSON 定義|個のアダプター)/g, 4],
   ];
   // Same idea for the "no API key needed" number, which the README, the demo
   // tools and the website all quote as a selling point.
   const keylessChecks = [
     ['README.md', /\b(\d{1,3})\s+(?:of them\s+)?(?:need|needs)\s+no API key\b/g],
     ['README.md', /\b(\d{1,3})\s+adapters need no API key\b/g],
+    ['README.de.md', /\b(\d{1,3})\s+(?:davon|benötigen keinen API-Schlüssel)/g, 3],
+    ['README.zh-CN.md', /其中\s*(\d{1,3})\s*个/g, 3],
+    ['README.ja.md', /(\d{1,3})\s*個?\s*は\s*API\s*キー/g, 3],
   ];
   const banned = [
     // Wording that no longer describes the project. CHANGELOG/LICENSING/license-faq
@@ -75,24 +86,40 @@ if (args.includes('--check')) {
     ['.github/ISSUE_TEMPLATE/config.yml', /source-available|BSL|non-commercial/i],
   ];
   let failed = false;
-  for (const [file, re] of checks) {
+  for (const [file, re, expected] of checks) {
     const text = readFileSync(join(ROOT, file), 'utf8');
+    let seen = 0;
     for (const m of text.matchAll(re)) {
+      seen++;
       if (Number(m[1]) !== N) {
         console.error(`::error file=${file}::quotes "${m[0]}" but the catalog has ${N} adapters`);
         failed = true;
       }
     }
+    if (expected !== undefined && seen !== expected) {
+      console.error(
+        `::error file=${file}::matched the adapter count ${seen} times, expected ${expected} — reword the check, not the file`,
+      );
+      failed = true;
+    }
   }
-  for (const [file, re] of keylessChecks) {
+  for (const [file, re, expected] of keylessChecks) {
     const text = readFileSync(join(ROOT, file), 'utf8');
+    let seen = 0;
     for (const m of text.matchAll(re)) {
+      seen++;
       if (Number(m[1]) !== stats.keyless) {
         console.error(
           `::error file=${file}::quotes "${m[0]}" but ${stats.keyless} adapters have authType NONE`,
         );
         failed = true;
       }
+    }
+    if (expected !== undefined && seen !== expected) {
+      console.error(
+        `::error file=${file}::matched the keyless count ${seen} times, expected ${expected} — reword the check, not the file`,
+      );
+      failed = true;
     }
   }
   // The MCP registry rejects a server.json description over 100 characters with
