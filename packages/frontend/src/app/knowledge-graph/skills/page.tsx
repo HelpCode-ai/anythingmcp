@@ -13,6 +13,7 @@ import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, type Tone } from '@/components/ui/badge';
+import { ActionMenu } from '@/components/ui/action-menu';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
@@ -128,6 +129,9 @@ export default function SkillsPage() {
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const to = Math.min(total, (page + 1) * PAGE_SIZE);
   const everEmpty = counts.pending + counts.applied + counts.dismissed === 0;
+  const scopeLabel = target
+    ? (servers.find((x) => x.id === target)?.name ?? 'this server')
+    : 'connectors';
 
   return (
     <AppShell
@@ -136,12 +140,15 @@ export default function SkillsPage() {
       maxWidth={860}
       actions={
         isAdmin && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Scope for the two AI actions beside it. It sizes to its own
+                content instead of claiming a whole row on a phone. */}
             <select
               value={target}
               onChange={(e) => setTarget(e.target.value)}
-              className="h-9 px-2.5 rounded-[9px] text-[12.5px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] outline-none"
+              className="h-9 min-w-0 max-w-[48vw] truncate px-2.5 rounded-[9px] text-[12.5px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] outline-none md:max-w-none"
               title="Scope for Generate / Consolidate"
+              aria-label="Scope for Generate and Consolidate"
             >
               <option value="">From connectors</option>
               {servers.map((s) => (
@@ -156,20 +163,36 @@ export default function SkillsPage() {
               onClick={consolidate}
               disabled={consolidating || generating}
               title="Merge the active skills in this scope into fewer, non-redundant ones"
+              className="max-md:hidden"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 8h10M7 12h10M9 16h6" />
-                <rect x="3" y="4" width="18" height="16" rx="2" />
-              </svg>
+              <ConsolidateIcon />
               {consolidating ? 'Consolidating…' : 'Consolidate'}
             </Button>
-            <Button variant="secondary" size="sm" onClick={generate} disabled={generating || consolidating}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 3v3M12 18v3M5 12H3M21 12h-2M6 6l1.5 1.5M18 18l-1.5-1.5" />
-                <circle cx="12" cy="12" r="3.5" />
-              </svg>
+            <Button variant="secondary" size="sm" onClick={generate} disabled={generating || consolidating} className="max-md:hidden">
+              <GenerateIcon />
               {generating ? 'Generating…' : 'Generate with AI'}
             </Button>
+            {/* On a phone the two AI actions fold into a menu, and the label
+                repeats the scope the select beside it is set to, so the menu
+                entry states what it will act on. */}
+            <ActionMenu
+              className="md:hidden"
+              label="Skill actions"
+              items={[
+                {
+                  label: generating ? 'Generating…' : `Generate with AI · ${scopeLabel}`,
+                  icon: <GenerateIcon />,
+                  onSelect: generate,
+                  disabled: generating || consolidating,
+                },
+                {
+                  label: consolidating ? 'Consolidating…' : `Consolidate · ${scopeLabel}`,
+                  icon: <ConsolidateIcon />,
+                  onSelect: consolidate,
+                  disabled: consolidating || generating,
+                },
+              ]}
+            />
             <Button variant="primary" size="sm" onClick={() => setShowNew((v) => !v)}>
               {showNew ? (
                 'Close'
@@ -186,13 +209,12 @@ export default function SkillsPage() {
         )
       }
     >
+      {/* The header already carries the way back to the graph, so this stays
+          a description and nothing else. */}
       <p className="text-[13px] leading-relaxed text-[var(--text-2)] mb-4">
-        Reusable rules inferred from the user intents captured on your tool calls — per connector or
-        for a whole MCP server (combined context). <span className="text-[var(--text)]">Active</span> skills are
-        composed into the server&apos;s instructions automatically.{' '}
-        <Link href="/knowledge-graph" className="text-[var(--brand)] hover:underline">
-          Back to graph
-        </Link>
+        Rules inferred from the intents behind your tool calls, scoped to one connector or to a
+        whole MCP server. <span className="text-[var(--text)]">Active</span> skills are composed
+        into that server&apos;s instructions automatically.
       </p>
       {status && <p className="text-[12px] text-[var(--text-3)] mb-3">{status}</p>}
 
@@ -211,9 +233,21 @@ export default function SkillsPage() {
       )}
 
       {everEmpty && !loading ? (
-        <Card className="p-6 text-center text-[13px] text-[var(--text-3)]">
-          No skills yet. Enable “Capture user intent” and “AI enrichment”, let some tool calls flow,
-          then {isAdmin ? 'click “Generate with AI”.' : 'ask an admin to generate them.'}
+        <Card className="p-6 text-center">
+          <p className="text-[13px] font-medium text-[var(--text-2)]">No skills yet</p>
+          <p className="mx-auto mt-1.5 max-w-[46ch] text-[13px] leading-relaxed text-[var(--text-3)]">
+            {isAdmin ? (
+              <>
+                Skills are generated from captured intents. Turn on{' '}
+                <Link href="/settings/organization" className="text-[var(--brand)] hover:underline">
+                  Capture user intent and AI enrichment
+                </Link>
+                , let some tool calls run, then use Generate with AI.
+              </>
+            ) : (
+              'They are generated from captured tool-call intents. Ask an admin to generate them.'
+            )}
+          </p>
         </Card>
       ) : (
         <>
@@ -233,7 +267,7 @@ export default function SkillsPage() {
                     className={cn(
                       'px-3 py-1.5 rounded-[7px] text-[12.5px] font-medium transition-colors',
                       activeTab
-                        ? 'bg-[var(--brand)] text-white'
+                        ? 'bg-[var(--brand)] text-[var(--primary-foreground)]'
                         : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
                     )}
                   >
@@ -408,7 +442,7 @@ function SkillCard({
                 size="sm"
                 disabled={busy}
                 onClick={() => run(() => knowledgeGraph.skills.apply(token, s.id))}
-                className="h-[30px] px-[11px] bg-[var(--ok)] text-white hover:opacity-90"
+                className="h-[30px] px-[11px] bg-[var(--ok)] text-[var(--ok-foreground)] hover:opacity-90"
               >
                 {s.status === 'dismissed' ? 'Activate' : 'Apply'}
               </Button>
@@ -549,5 +583,23 @@ function NewSkillForm({
         </div>
       </div>
     </Card>
+  );
+}
+
+function ConsolidateIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 8h10M7 12h10M9 16h6" />
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+    </svg>
+  );
+}
+
+function GenerateIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3v3M12 18v3M5 12H3M21 12h-2M6 6l1.5 1.5M18 18l-1.5-1.5" />
+      <circle cx="12" cy="12" r="3.5" />
+    </svg>
   );
 }

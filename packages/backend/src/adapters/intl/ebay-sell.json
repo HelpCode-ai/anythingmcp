@@ -1,0 +1,280 @@
+{
+  "slug": "ebay-sell",
+  "name": "eBay Sell",
+  "description": "eBay's Sell APIs for merchants: inventory items and offers, orders and fulfilment, payment disputes, and the seller's own account policies. OAuth 2.0 user token against the production marketplace.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "ebay-sell",
+  "docsUrl": "https://developer.ebay.com/api-docs/sell/static/overview.html",
+  "instructions": "**Getting a token** — the Sell APIs need a *user* token, not an application token.\n1. Register at developer.ebay.com and create a **production** keyset. Note the App ID (client id), Cert ID (client secret) and an RuName (redirect URI name).\n2. Run the authorization-code grant once for the seller account, requesting the scopes you need: `sell.inventory`, `sell.fulfillment`, `sell.account`, optionally read-only variants. eBay's OAuth documentation has a browser-based token tool for this.\n3. Keep the **refresh token** — it lasts around 18 months — and set `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` and `EBAY_REFRESH_TOKEN`. AnythingMCP mints access tokens from it (access tokens expire in two hours, which is why the refresh token is the thing to store).\n4. Set `EBAY_MARKETPLACE_ID` to the marketplace the seller trades on, e.g. `EBAY_DE`, `EBAY_US`, `EBAY_GB`. eBay reads it from the `X-EBAY-C-MARKETPLACE-ID` header and answers differently per marketplace.\n\n**Sandbox is a separate host.** This adapter points at `api.ebay.com` (production). The sandbox lives at `api.sandbox.ebay.com` with its own keyset and its own tokens; a production token there fails with a confusing 401.\n\n**Inventory vs Trading.** The Sell Inventory API only sees listings created through it or migrated into it. A long-established seller whose listings were created with the legacy Trading API may find `ebay_sell_list_inventory_items` almost empty while their eBay shop is full — that is expected, and the migration is a one-time API call eBay documents.\n\n**Limits**: most Sell endpoints allow a few thousand calls a day per application. Pace bulk work.\n\n**Writes**: `ebay_sell_update_offer_price` changes a live listing's price, which buyers see immediately.",
+  "requiredEnvVars": [
+    "EBAY_CLIENT_ID",
+    "EBAY_CLIENT_SECRET",
+    "EBAY_REFRESH_TOKEN",
+    "EBAY_MARKETPLACE_ID"
+  ],
+  "connector": {
+    "name": "eBay Sell APIs",
+    "type": "REST",
+    "baseUrl": "https://api.ebay.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{EBAY_CLIENT_ID}}",
+      "clientSecret": "{{EBAY_CLIENT_SECRET}}",
+      "refreshToken": "{{EBAY_REFRESH_TOKEN}}",
+      "tokenUrl": "https://api.ebay.com/identity/v1/oauth2/token",
+      "tokenAuthMethod": "basic"
+    },
+    "headers": {
+      "X-EBAY-C-MARKETPLACE-ID": "{{EBAY_MARKETPLACE_ID}}",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/sell/account/v1/fulfillment_policy"
+  },
+  "probe": {
+    "tool": "ebay_sell_list_fulfillment_policies"
+  },
+  "tools": [
+    {
+      "name": "ebay_sell_list_orders",
+      "description": "List orders with their buyer, line items, totals, payment status and fulfilment status. Filter by creation date or order status to answer 'what shipped this week'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "eBay filter expression, e.g. creationdate:[2026-09-01T00:00:00.000Z..] or orderfulfillmentstatus:{NOT_STARTED|IN_PROGRESS}."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page, 1–200 (default 50)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/fulfillment/v1/order",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_order",
+      "description": "Read one order in full: every line item with SKU and price, the buyer, the shipping address, the payment summary and the fulfilment instructions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "description": "eBay order id, e.g. 12-34567-89012."
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/fulfillment/v1/order/{orderId}"
+      }
+    },
+    {
+      "name": "ebay_sell_list_inventory_items",
+      "description": "List inventory items — the SKU-level product records behind Sell-API listings. A seller whose listings predate the Inventory API will see this nearly empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page, 1–200 (default 25)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/inventory/v1/inventory_item",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_inventory_item",
+      "description": "Read one inventory item by SKU: its product details, condition, package dimensions and available quantity per fulfilment channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Seller-defined SKU."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/inventory/v1/inventory_item/{sku}"
+      }
+    },
+    {
+      "name": "ebay_sell_list_offers",
+      "description": "List the offers (listings) for one SKU, with their marketplace, format, price, listing status and listing id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Seller-defined SKU whose offers to list."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/inventory/v1/offer",
+        "queryParams": {
+          "sku": "$sku",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_list_fulfillment_policies",
+      "description": "List the seller's fulfilment (shipping) policies for the configured marketplace, with their services, costs and handling times.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/account/v1/fulfillment_policy",
+        "queryParams": {
+          "marketplace_id": "$EBAY_MARKETPLACE_ID"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_list_return_policies",
+      "description": "List the seller's return policies: whether returns are accepted, the return window, and who pays the shipping.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/account/v1/return_policy",
+        "queryParams": {
+          "marketplace_id": "$EBAY_MARKETPLACE_ID"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_list_payment_disputes",
+      "description": "List payment disputes opened against the seller, with the reason, amount, status and the deadline to respond. The thing that costs money when it is missed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Restrict to disputes on one order."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/fulfillment/v1/payment_dispute_summary",
+        "queryParams": {
+          "order_id": "$order_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_privileges",
+      "description": "Read the selling privileges of the account: whether selling is enabled and what the current selling limits on quantity and value are.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/account/v1/privilege"
+      }
+    },
+    {
+      "name": "ebay_sell_update_offer_price",
+      "description": "Change the price of a live offer. Buyers see the new price immediately — this is not a draft operation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "description": "Offer id, from ebay_sell_list_offers."
+          },
+          "value": {
+            "type": "string",
+            "description": "New price as a decimal string, e.g. 29.99."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency code matching the marketplace, e.g. EUR."
+          }
+        },
+        "required": [
+          "offerId",
+          "value",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/offer/{offerId}/update_price_quantity",
+        "bodyMapping": {
+          "requests": [
+            {
+              "offerId": "$offerId",
+              "price": {
+                "value": "$value",
+                "currency": "$currency"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

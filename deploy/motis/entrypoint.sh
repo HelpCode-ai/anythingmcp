@@ -83,7 +83,13 @@ fi
 
 while :; do
   log "starting server on $CURRENT"
-  /motis server -d "$CURRENT" &
+  # --log-level info, not MOTIS's default debug. The GTFS-RT feed carries every
+  # bus in the country while the static datasets are rail only, so nearly every
+  # trip in it is unresolvable by construction and MOTIS logged a debug line
+  # per trip, every update_interval. Measured on the droplet: 19,995 of any
+  # 20,000 lines were that one message, 1.5 GB an hour, and on 2026-09-18 it
+  # filled the 77 GB disk. The [info] lines (rt update timings) are kept.
+  /motis server -d "$CURRENT" --log-level "${MOTIS_LOG_LEVEL:-info}" &
   pid=$!
   swap=0
   while kill -0 "$pid" 2>/dev/null; do

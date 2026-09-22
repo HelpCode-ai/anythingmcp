@@ -1,0 +1,289 @@
+{
+  "slug": "nextcloud",
+  "name": "Nextcloud",
+  "description": "Nextcloud OCS API: users, groups, file shares, app capabilities and server status on your own Nextcloud. Basic auth with an app password, the OCS-APIRequest header and format=json.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "nextcloud",
+  "docsUrl": "https://docs.nextcloud.com/server/latest/developer_manual/client_apis/OCS/index.html",
+  "instructions": "**Use an app password, never the account password.**\n1. Sign in to Nextcloud and open **Settings → Security → Devices & sessions**.\n2. Create a new app password named e.g. `AnythingMCP`. Nextcloud shows it once.\n3. Set `NEXTCLOUD_URL` to your instance root (no trailing slash), `NEXTCLOUD_USERNAME` to the login name and `NEXTCLOUD_APP_PASSWORD` to the generated value. An app password can be revoked on its own, and it sidesteps two-factor authentication, which would otherwise break API access entirely.\n\n**Three things every OCS call needs**, all of which this adapter sends for you:\n- `Authorization: Basic …` from the username and app password,\n- the `OCS-APIRequest: true` header — without it Nextcloud answers with an HTML login page and a 200, which looks like success and parses like nonsense,\n- `format=json`, or the response comes back as XML.\n\n**Two OCS versions live side by side.** The provisioning API (users, groups) is on `ocs/v1.php`; the sharing API is on `ocs/v2.php`. They also report errors differently — v1 puts the real status in the body's `meta.statuscode` while returning HTTP 200. Read `ocs.meta` before trusting `ocs.data`.\n\n**Admin-only endpoints.** Listing users and groups requires an administrator or a group admin. A normal user's app password gets an OCS 997 (unauthorised) inside an HTTP 200.\n\n**Files themselves are WebDAV, not OCS**, and are out of scope here: this connector manages users, groups and shares, not file contents.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`cloud.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n\n**Writes**: `nextcloud_create_share` publishes a real share. A public link share (`shareType: 3`) is reachable by anyone who has the URL — set a password and an expiry date unless you mean it to be open.",
+  "requiredEnvVars": [
+    "NEXTCLOUD_URL",
+    "NEXTCLOUD_USERNAME",
+    "NEXTCLOUD_APP_PASSWORD"
+  ],
+  "connector": {
+    "name": "Nextcloud OCS API",
+    "type": "REST",
+    "baseUrl": "{{NEXTCLOUD_URL}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{NEXTCLOUD_USERNAME}}",
+      "password": "{{NEXTCLOUD_APP_PASSWORD}}"
+    },
+    "headers": {
+      "OCS-APIRequest": "true",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/ocs/v2.php/cloud/capabilities?format=json"
+  },
+  "probe": {
+    "tool": "nextcloud_get_capabilities"
+  },
+  "tools": [
+    {
+      "name": "nextcloud_get_capabilities",
+      "description": "Read the server's capabilities: Nextcloud version, enabled apps and their feature flags. Works for any authenticated user — the quickest proof the app password is accepted.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ocs/v2.php/cloud/capabilities",
+        "queryParams": {
+          "format": "json"
+        }
+      }
+    },
+    {
+      "name": "nextcloud_get_user_status",
+      "description": "Read the status of the account the app password belongs to: quota, used space, display name, e-mail, groups and last login.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ocs/v2.php/cloud/user",
+        "queryParams": {
+          "format": "json"
+        }
+      }
+    },
+    {
+      "name": "nextcloud_list_users",
+      "description": "List user ids on the instance, optionally filtered by a search fragment. Requires an administrator or group-admin account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Fragment matched against user id and display name."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum ids to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Ids to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ocs/v1.php/cloud/users",
+        "queryParams": {
+          "format": "json",
+          "search": "$search",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "nextcloud_get_user",
+      "description": "Read one user's details: display name, e-mail, quota, group memberships, last login and whether the account is enabled. Admin only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "Nextcloud user id (the login name)."
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ocs/v1.php/cloud/users/{userId}",
+        "queryParams": {
+          "format": "json"
+        }
+      }
+    },
+    {
+      "name": "nextcloud_list_groups",
+      "description": "List the groups defined on the instance, optionally filtered by a search fragment. Requires an administrator account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Fragment matched against the group id."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum groups to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Groups to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ocs/v1.php/cloud/groups",
+        "queryParams": {
+          "format": "json",
+          "search": "$search",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "nextcloud_list_group_members",
+      "description": "List the user ids in one group — who actually has access to whatever is shared with that group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "groupId": {
+            "type": "string",
+            "description": "Group id."
+          }
+        },
+        "required": [
+          "groupId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ocs/v1.php/cloud/groups/{groupId}",
+        "queryParams": {
+          "format": "json"
+        }
+      }
+    },
+    {
+      "name": "nextcloud_list_shares",
+      "description": "List shares the account owns or received, with their type, recipient, permissions, expiry and public link URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Restrict to shares of one path, relative to the user's files root, e.g. /Projects/Acme."
+          },
+          "reshares": {
+            "type": "boolean",
+            "description": "When true, include shares made by other users of the same file."
+          },
+          "shared_with_me": {
+            "type": "boolean",
+            "description": "When true, list shares received rather than shares made."
+          },
+          "subfiles": {
+            "type": "boolean",
+            "description": "When true and path is a folder, list shares of its children."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares",
+        "queryParams": {
+          "format": "json",
+          "path": "$path",
+          "reshares": "$reshares",
+          "shared_with_me": "$shared_with_me",
+          "subfiles": "$subfiles"
+        }
+      }
+    },
+    {
+      "name": "nextcloud_get_share",
+      "description": "Read one share by its id: exactly who it is shared with, at what permission level, and when it expires.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shareId": {
+            "type": "number",
+            "description": "Numeric share id."
+          }
+        },
+        "required": [
+          "shareId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares/{shareId}",
+        "queryParams": {
+          "format": "json"
+        }
+      }
+    },
+    {
+      "name": "nextcloud_create_share",
+      "description": "Create a share. shareType 0 shares with a user, 1 with a group and 3 creates a public link that anyone with the URL can open — set a password and expireDate for those.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to share, relative to the user's files root, e.g. /Projects/Acme."
+          },
+          "shareType": {
+            "type": "number",
+            "description": "0 user, 1 group, 3 public link, 4 e-mail, 6 federated cloud."
+          },
+          "shareWith": {
+            "type": "string",
+            "description": "User id, group id or e-mail address. Omit for a public link."
+          },
+          "permissions": {
+            "type": "number",
+            "description": "Bitmask: 1 read, 2 update, 4 create, 8 delete, 16 share. 1 for read-only."
+          },
+          "password": {
+            "type": "string",
+            "description": "Password protecting a public link."
+          },
+          "expireDate": {
+            "type": "string",
+            "description": "Expiry date, YYYY-MM-DD."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note shown to the recipient."
+          }
+        },
+        "required": [
+          "path",
+          "shareType"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares",
+        "queryParams": {
+          "format": "json"
+        },
+        "bodyMapping": {
+          "path": "$path",
+          "shareType": "$shareType",
+          "shareWith": "$shareWith",
+          "permissions": "$permissions",
+          "password": "$password",
+          "expireDate": "$expireDate",
+          "note": "$note"
+        }
+      }
+    }
+  ]
+}

@@ -10,10 +10,13 @@ import { McpAssignModal } from '@/components/mcp-assign-modal';
 import { AppSelect } from '@/components/ui/select';
 import { HeadersEditor, headerRowsToObject, objectToHeaderRows, type HeaderRow } from '@/components/headers-editor';
 import { AppShell } from '@/components/app-shell';
-import { Button } from '@/components/ui/button';
+import * as Dialog from '@radix-ui/react-dialog';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { authTypeLabel, cn } from '@/lib/utils';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 
 const IMPORT_SOURCES = [
@@ -54,6 +57,10 @@ export default function ConnectorDetailPage() {
   const [authorizing, setAuthorizing] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<
+    { kind: 'connector' } | { kind: 'tool'; id: string; name: string } | null
+  >(null);
+  const [deleting, setDeleting] = useState(false);
   const [editName, setEditName] = useState('');
   const [editBaseUrl, setEditBaseUrl] = useState('');
   const [editHealthcheckPath, setEditHealthcheckPath] = useState('');
@@ -383,23 +390,30 @@ export default function ConnectorDetailPage() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!token || !confirm('Delete this connector and all its tools?')) return;
-    try {
-      await connectors.delete(id, token);
-      router.push('/connectors');
-    } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
-    }
-  };
+  // Deleting is confirmed in the product's own dialog, the same one the
+  // connectors list uses — a native confirm() looked like a different
+  // application and is the easiest thing on a phone to mis-tap.
+  const handleDelete = () => setDeleteTarget({ kind: 'connector' });
+  const handleDeleteTool = (toolId: string, toolName: string) =>
+    setDeleteTarget({ kind: 'tool', id: toolId, name: toolName });
 
-  const handleDeleteTool = async (toolId: string) => {
-    if (!token || !confirm('Delete this tool?')) return;
+  const confirmDelete = async () => {
+    if (!token || !deleteTarget) return;
+    setDeleting(true);
     try {
-      await tools.delete(id, toolId, token);
-      setToolList((prev) => prev.filter((t) => t.id !== toolId));
+      if (deleteTarget.kind === 'connector') {
+        await connectors.delete(id, token);
+        router.push('/connectors');
+        return;
+      }
+      await tools.delete(id, deleteTarget.id, token);
+      setToolList((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+      setDeleteTarget(null);
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -624,20 +638,49 @@ export default function ConnectorDetailPage() {
           <Button variant="secondary" size="md" onClick={() => setEditing(!editing)}>
             {editing ? 'Cancel' : 'Edit'}
           </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={handleDelete}
-            className="border-[var(--danger)] text-[var(--danger)] hover:border-[var(--danger)] hover:bg-[var(--t-danger-bg)] hover:text-[var(--danger)]"
-          >
+          <Button variant="outlineDanger" size="md" onClick={handleDelete}>
             Delete
           </Button>
         </div>
       }
     >
+      <Dialog.Root open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+            <Dialog.Title className="mb-2 text-lg font-semibold text-[var(--text)]">
+              {deleteTarget?.kind === 'tool' ? 'Delete Tool' : 'Delete Connector'}
+            </Dialog.Title>
+            <Dialog.Description className="mb-5 text-sm text-[var(--text-3)]">
+              {deleteTarget?.kind === 'tool' ? (
+                <>
+                  Are you sure you want to delete{' '}
+                  <strong className="text-[var(--text)]">{deleteTarget.name}</strong>? AI clients
+                  will stop seeing this tool. This action cannot be undone.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to delete{' '}
+                  <strong className="text-[var(--text)]">{connector.name}</strong> and all its
+                  tools? This action cannot be undone.
+                </>
+              )}
+            </Dialog.Description>
+            <div className="flex justify-end gap-2">
+              <Dialog.Close className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))} disabled={deleting}>
+                Cancel
+              </Dialog.Close>
+              <Button variant="danger" size="md" onClick={confirmDelete} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Delete'}
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
       <div className="space-y-6">
         {/* Connector identity header */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3.5">
+        <div className="flex items-start gap-3.5 sm:items-center">
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-[12px] bg-[var(--surface-2)] text-[15px] font-semibold text-[var(--text-2)]">
             {connectorInitials}
           </div>
@@ -842,7 +885,7 @@ export default function ConnectorDetailPage() {
                       onClick={() => setEditDbReadOnly(true)}
                       className={`px-3 py-1.5 rounded-[9px] text-sm font-medium border transition-all ${
                         editDbReadOnly
-                          ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
+                          ? 'bg-[var(--brand)] text-[var(--primary-foreground)] border-[var(--brand)]'
                           : 'border-[var(--border)] hover:bg-[var(--surface-2)]'
                       }`}
                     >
@@ -853,7 +896,7 @@ export default function ConnectorDetailPage() {
                       onClick={() => setEditDbReadOnly(false)}
                       className={`px-3 py-1.5 rounded-[9px] text-sm font-medium border transition-all ${
                         !editDbReadOnly
-                          ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
+                          ? 'bg-[var(--brand)] text-[var(--primary-foreground)] border-[var(--brand)]'
                           : 'border-[var(--border)] hover:bg-[var(--surface-2)]'
                       }`}
                     >
@@ -884,7 +927,7 @@ export default function ConnectorDetailPage() {
                 />
               </div>
               {editAuthType === 'API_KEY' && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium mb-1">Header Name</label>
                     <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
@@ -902,7 +945,7 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
               {editAuthType === 'BASIC_AUTH' && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium mb-1">Username</label>
                     <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
@@ -915,7 +958,7 @@ export default function ConnectorDetailPage() {
               )}
               {editAuthType === 'OAUTH2' && connector.type !== 'MCP' && (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">Client ID</label>
                       <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
@@ -968,7 +1011,7 @@ export default function ConnectorDetailPage() {
                     <label className="block text-sm font-medium mb-1">Login URL</label>
                     <input type="text" value={editLtLoginUrl} onChange={(e) => setEditLtLoginUrl(e.target.value)} placeholder="https://api.hrworks.de/v2/authentication" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">Username / Access key</label>
                       <input type="text" value={editLtUsername} onChange={(e) => setEditLtUsername(e.target.value)} placeholder="access key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
@@ -985,7 +1028,7 @@ export default function ConnectorDetailPage() {
                       Use <code>{'${username}'}</code> / <code>{'${password}'}</code> placeholders. HRworks uses <code>{'{ "accessKey": "${username}", "secretAccessKey": "${password}" }'}</code>.
                     </p>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <div>
                       <label className="block text-sm font-medium mb-1">Method</label>
                       <AppSelect
@@ -1037,25 +1080,12 @@ export default function ConnectorDetailPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-[var(--text-3)]">Name</p>
-                <p className="font-medium">{connector.name}</p>
-              </div>
-              <div>
-                <p className="text-[var(--text-3)]">Type</p>
-                <p className="font-medium">{connector.type}</p>
-              </div>
-              <div>
-                <p className="text-[var(--text-3)]">Base URL</p>
-                <p className="font-medium font-mono text-xs break-all">{connector.baseUrl}</p>
-              </div>
+              {/* Name, base URL, type and status are already on the page — the
+                  identity block above states all four. This card carries only
+                  what that block does not. */}
               <div>
                 <p className="text-[var(--text-3)]">Auth Type</p>
-                <p className="font-medium">{connector.authType}</p>
-              </div>
-              <div>
-                <p className="text-[var(--text-3)]">Status</p>
-                <p className="font-medium">{connector.isActive ? 'Active' : 'Inactive'}</p>
+                <p className="font-medium">{authTypeLabel(connector.authType)}</p>
               </div>
               {connector.type === 'DATABASE' && (
                 <div>
@@ -1086,9 +1116,16 @@ export default function ConnectorDetailPage() {
                 </div>
               )}
               {connector.instructions && (
-                <div className="col-span-2">
+                <div className="col-span-2 min-w-0">
                   <p className="text-[var(--text-3)]">Instructions</p>
-                  <p className="font-medium text-xs whitespace-pre-wrap">{connector.instructions}</p>
+                  {/* Adapters author this as Markdown — tables of codes,
+                      headings, fenced examples — and it was printed raw,
+                      pipes and all. Same renderer the marketplace uses. */}
+                  <div className="prose prose-sm max-w-none text-[13px] leading-relaxed dark:prose-invert prose-pre:overflow-x-auto prose-table:block prose-table:overflow-x-auto">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {connector.instructions}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               )}
             </div>
@@ -1398,7 +1435,7 @@ export default function ConnectorDetailPage() {
                                 setTestParams(JSON.stringify(example, null, 2));
                               }
                             }}
-                            className="inline-flex items-center justify-center rounded-[7px] border border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)] px-2.5 py-1 text-xs font-semibold transition-colors hover:bg-[var(--brand)] hover:text-white"
+                            className="inline-flex items-center justify-center rounded-[7px] border border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)] px-2.5 py-1 text-xs font-semibold transition-colors hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
                           >
                             {testingToolId === tool.id ? 'Close' : 'Test'}
                           </button>
@@ -1441,7 +1478,7 @@ export default function ConnectorDetailPage() {
                             </label>
                           )}
                           <button
-                            onClick={() => handleDeleteTool(tool.id)}
+                            onClick={() => handleDeleteTool(tool.id, tool.name)}
                             className="inline-flex items-center justify-center rounded-[7px] border border-[var(--danger)] bg-transparent text-[var(--danger)] px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--t-danger-bg)]"
                           >
                             Delete

@@ -205,7 +205,7 @@ export default function SettingsUsersPage() {
       <Dialog.Root open={revokeTarget !== null} onOpenChange={(open) => { if (!open) closeRevokeDialog(); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow)]">
             <Dialog.Title className="text-base font-semibold text-[var(--text)] mb-2">Sign out everywhere</Dialog.Title>
             <Dialog.Description className="text-sm text-[var(--text-2)] mb-4">
               <strong>{revokeTarget?.email}</strong> will be signed out of the dashboard and of every
@@ -333,7 +333,7 @@ export default function SettingsUsersPage() {
         <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
       ) : (
         <Card className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-[var(--surface-2)]">
               <tr className="text-[var(--text-2)]">
                 <th className="text-left px-4 py-3 font-semibold">Email</th>

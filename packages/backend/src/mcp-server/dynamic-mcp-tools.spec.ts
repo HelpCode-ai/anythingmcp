@@ -147,6 +147,43 @@ describe('DynamicMcpTools — response shaping', () => {
   });
 });
 
+describe('DynamicMcpTools — actionable hint on upstream errors', () => {
+  it('appends a hint for a weclapp "unknown property" 400, next to the vendor body', async () => {
+    const { AxiosError } = await import('axios');
+    const tool = makeTool();
+    tool.connectorConfig = { baseUrl: 'https://purora.weclapp.com/webapp/api/v2', authType: 'NONE' };
+    const { executor, restEngine, audit } = build(tool);
+    const err = new AxiosError('Request failed with status code 400', '400', { url: '/salesOrder', baseURL: tool.connectorConfig.baseUrl } as any, undefined, {
+      status: 400,
+      statusText: 'Bad Request',
+      headers: {},
+      config: {} as any,
+      data: { detail: 'unknown property: orderItems.articleNumber', status: 400 },
+    });
+    restEngine.execute.mockRejectedValueOnce(err);
+
+    const res = await executor.executeTool('list_devices', {});
+
+    expect(res.isError).toBe(true);
+    const detail = JSON.parse(res.content[0].text);
+    // The vendor's own message is still there, unmodified…
+    expect(detail.responseBody.detail).toBe('unknown property: orderItems.articleNumber');
+    // …and the hint sits beside it.
+    expect(detail.hint).toMatch(/fetch ONE record/);
+    // The audit row keeps the raw upstream cause, not the hint.
+    expect(audit.logInvocation.mock.calls[0][0].error).toMatch(/unknown property/);
+    expect(audit.logInvocation.mock.calls[0][0].error).not.toMatch(/fetch ONE record/);
+  });
+
+  it('adds no hint for an ordinary failure on an unknown host', async () => {
+    const { executor, restEngine } = build(makeTool());
+    restEngine.execute.mockRejectedValueOnce(new Error('boom'));
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBe(true);
+    expect(JSON.parse(res.content[0].text).hint).toBeUndefined();
+  });
+});
+
 describe('DynamicMcpTools — response cache', () => {
   it('caches the raw response, not the rendered text', async () => {
     const { executor, redis } = build(makeTool({ ...SELECT_TRANSFORM, cacheTtl: 300 }));
@@ -421,3 +458,53 @@ describe('DynamicMcpTools — exposed response headers (pagination)', () => {
   });
 });
 
+
+describe('DynamicMcpTools — credentials that were filled in after the install', () => {
+  /**
+   * authConfig used to be substituted once, at import time, from whatever the
+   * install form was given. Install the connector first, paste the credentials
+   * later, and it kept sending "{{MY_KEY}}" to the vendor forever. Caught on a
+   * live Etsy connector on 2026-09-17, where the vendor's complaint about the
+   * key format read exactly like the bug we had fixed that morning.
+   */
+  function toolWithEnv(authConfig: Record<string, unknown>, envVars: Record<string, string>) {
+    const tool = makeTool();
+    tool.connectorConfig = {
+      baseUrl: 'https://api.example.com',
+      authType: 'API_KEY',
+      authConfig: JSON.stringify(authConfig),
+      envVars,
+    };
+    return tool;
+  }
+
+  it('resolves {{VAR}} inside authConfig from the connector env vars at call time', async () => {
+    const tool = toolWithEnv(
+      { headerName: 'x-api-key', apiKey: '{{SHOP_ID}}:{{SHOP_SECRET}}' },
+      { SHOP_ID: 'shop-42', SHOP_SECRET: 's3cr3t' },
+    );
+    const { executor, restEngine } = build(tool, { engineResult: { ok: true } });
+
+    await executor.executeTool('list_devices', {});
+
+    const [config] = (restEngine.execute as jest.Mock).mock.calls[0];
+    expect(config.authConfig).toEqual({
+      headerName: 'x-api-key',
+      apiKey: 'shop-42:s3cr3t',
+    });
+  });
+
+  it('refuses the call, naming the variables, when nobody ever set them', async () => {
+    const tool = toolWithEnv(
+      { headerName: 'x-api-key', apiKey: '{{SHOP_ID}}:{{SHOP_SECRET}}' },
+      {},
+    );
+    const { executor, restEngine } = build(tool, { engineResult: { ok: true } });
+
+    const res = await executor.executeTool('list_devices', {});
+
+    expect(restEngine.execute).not.toHaveBeenCalled();
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res)).toMatch(/SHOP_ID, SHOP_SECRET/);
+  });
+});

@@ -1,0 +1,387 @@
+{
+  "slug": "espocrm",
+  "name": "EspoCRM",
+  "description": "EspoCRM open-source CRM: accounts, contacts, leads, opportunities, cases, calls, meetings and tasks, plus a generic entity route for custom entities. API-key auth against your own instance.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "espocrm",
+  "docsUrl": "https://docs.espocrm.com/development/api/",
+  "instructions": "**Getting a key**\n1. In EspoCRM go to **Administration → API Users** and create an API user. Choose **API Key** authentication (not HMAC — this adapter sends the plain key).\n2. Assign a role that grants read access to the entities the agent should see. EspoCRM enforces roles per entity *and* per field, so a restricted role produces fewer rows and fewer columns rather than an error.\n3. Copy the generated key into `ESPOCRM_API_KEY` and set `ESPOCRM_URL` to your instance root (no trailing slash, no `/api/v1`).\n\n**The header is `X-Api-Key`.**\n\n**One route shape for every entity.** `/api/v1/{entityType}` lists, `/api/v1/{entityType}/{id}` reads one. That covers Account, Contact, Lead, Opportunity, Case, Call, Meeting, Task and any custom entity your instance defines — which is why `espocrm_list_entities` takes the entity type as a parameter.\n\n**`where` is an indexed array, which is awkward and worth reading once.** EspoCRM expects `where[0][type]=equals&where[0][attribute]=status&where[0][value]=New`. Types include `equals`, `notEquals`, `contains`, `startsWith`, `greaterThan`, `lessThan`, `between`, `isNull`, `isNotNull`, `linkedWith`, `today`, `lastXDays`. The list tools below expose the first `where` clause directly, which covers most questions; for anything compound, EspoCRM's own documentation has the full grammar.\n\n**`select` keeps responses small.** Without it EspoCRM returns every readable attribute, which for an Account with custom fields is a lot.\n\n**Order is `orderBy` plus `order`** (`asc`/`desc`), not a single expression.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`crm.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "ESPOCRM_URL",
+    "ESPOCRM_API_KEY"
+  ],
+  "connector": {
+    "name": "EspoCRM API v1",
+    "type": "REST",
+    "baseUrl": "{{ESPOCRM_URL}}/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{ESPOCRM_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/App/user"
+  },
+  "probe": {
+    "tool": "espocrm_get_app_user"
+  },
+  "tools": [
+    {
+      "name": "espocrm_get_app_user",
+      "description": "Read the API user this key belongs to, with their roles and the entity permissions they carry. The fastest way to see what this connector is actually allowed to read.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/App/user"
+      }
+    },
+    {
+      "name": "espocrm_list_entities",
+      "description": "List records of any entity type with a single where clause. The real API: Account, Contact, Lead, Opportunity, Case and any custom entity share this route.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entityType": {
+            "type": "string",
+            "description": "Entity type, e.g. Account, Contact, Lead, Opportunity, Case, Call, Meeting, Task."
+          },
+          "where_type": {
+            "type": "string",
+            "description": "Clause type: equals, notEquals, contains, startsWith, greaterThan, lessThan, isNull, isNotNull, today, lastXDays."
+          },
+          "where_attribute": {
+            "type": "string",
+            "description": "Attribute the clause applies to, e.g. status or createdAt."
+          },
+          "where_value": {
+            "type": "string",
+            "description": "Value the clause compares against."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated attributes to return, e.g. id,name,status,createdAt."
+          },
+          "orderBy": {
+            "type": "string",
+            "description": "Attribute to sort by, e.g. createdAt."
+          },
+          "order": {
+            "type": "string",
+            "description": "`asc` or `desc`."
+          },
+          "maxSize": {
+            "type": "number",
+            "description": "Rows to return (default 20, max 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "entityType"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entityType}",
+        "queryParams": {
+          "where[0][type]": "$where_type",
+          "where[0][attribute]": "$where_attribute",
+          "where[0][value]": "$where_value",
+          "select": "$select",
+          "orderBy": "$orderBy",
+          "order": "$order",
+          "maxSize": "$maxSize",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "espocrm_get_entity",
+      "description": "Read one record of any entity type by id, with every attribute the API user's role permits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entityType": {
+            "type": "string",
+            "description": "Entity type, e.g. Account."
+          },
+          "id": {
+            "type": "string",
+            "description": "Record id."
+          }
+        },
+        "required": [
+          "entityType",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entityType}/{id}"
+      }
+    },
+    {
+      "name": "espocrm_list_accounts",
+      "description": "List accounts — the customer companies — with their name, industry, website, phone, billing city and assigned user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where_type": {
+            "type": "string",
+            "description": "Clause type, e.g. contains."
+          },
+          "where_attribute": {
+            "type": "string",
+            "description": "Attribute the clause applies to, e.g. name."
+          },
+          "where_value": {
+            "type": "string",
+            "description": "Value the clause compares against."
+          },
+          "maxSize": {
+            "type": "number",
+            "description": "Rows to return (max 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Account",
+        "queryParams": {
+          "select": "id,name,industry,website,phoneNumber,billingAddressCity,assignedUserName",
+          "where[0][type]": "$where_type",
+          "where[0][attribute]": "$where_attribute",
+          "where[0][value]": "$where_value",
+          "maxSize": "$maxSize",
+          "offset": "$offset",
+          "orderBy": "name",
+          "order": "asc"
+        }
+      }
+    },
+    {
+      "name": "espocrm_list_contacts",
+      "description": "List contacts with their name, account, e-mail, phone and title, to find the person before logging an interaction against them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where_type": {
+            "type": "string",
+            "description": "Clause type, e.g. equals."
+          },
+          "where_attribute": {
+            "type": "string",
+            "description": "Attribute the clause applies to, e.g. emailAddress."
+          },
+          "where_value": {
+            "type": "string",
+            "description": "Value the clause compares against."
+          },
+          "maxSize": {
+            "type": "number",
+            "description": "Rows to return (max 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Contact",
+        "queryParams": {
+          "select": "id,name,accountName,emailAddress,phoneNumber,title,assignedUserName",
+          "where[0][type]": "$where_type",
+          "where[0][attribute]": "$where_attribute",
+          "where[0][value]": "$where_value",
+          "maxSize": "$maxSize",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "espocrm_list_opportunities",
+      "description": "List opportunities with their name, account, amount, stage, probability and close date — the sales-pipeline view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where_type": {
+            "type": "string",
+            "description": "Clause type, e.g. equals."
+          },
+          "where_attribute": {
+            "type": "string",
+            "description": "Attribute the clause applies to, e.g. stage."
+          },
+          "where_value": {
+            "type": "string",
+            "description": "Value the clause compares against, e.g. Proposal."
+          },
+          "maxSize": {
+            "type": "number",
+            "description": "Rows to return (max 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Opportunity",
+        "queryParams": {
+          "select": "id,name,accountName,amount,amountCurrency,stage,probability,closeDate,assignedUserName",
+          "where[0][type]": "$where_type",
+          "where[0][attribute]": "$where_attribute",
+          "where[0][value]": "$where_value",
+          "maxSize": "$maxSize",
+          "offset": "$offset",
+          "orderBy": "closeDate",
+          "order": "asc"
+        }
+      }
+    },
+    {
+      "name": "espocrm_list_leads",
+      "description": "List leads with their name, company, status, source, e-mail and phone — the top of the funnel, before conversion into an account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where_type": {
+            "type": "string",
+            "description": "Clause type, e.g. equals."
+          },
+          "where_attribute": {
+            "type": "string",
+            "description": "Attribute the clause applies to, e.g. status."
+          },
+          "where_value": {
+            "type": "string",
+            "description": "Value the clause compares against, e.g. New."
+          },
+          "maxSize": {
+            "type": "number",
+            "description": "Rows to return (max 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Lead",
+        "queryParams": {
+          "select": "id,name,accountName,status,source,emailAddress,phoneNumber,createdAt,assignedUserName",
+          "where[0][type]": "$where_type",
+          "where[0][attribute]": "$where_attribute",
+          "where[0][value]": "$where_value",
+          "maxSize": "$maxSize",
+          "offset": "$offset",
+          "orderBy": "createdAt",
+          "order": "desc"
+        }
+      }
+    },
+    {
+      "name": "espocrm_list_cases",
+      "description": "List support cases with their number, subject, status, priority, account and assigned user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where_type": {
+            "type": "string",
+            "description": "Clause type, e.g. equals."
+          },
+          "where_attribute": {
+            "type": "string",
+            "description": "Attribute the clause applies to, e.g. status."
+          },
+          "where_value": {
+            "type": "string",
+            "description": "Value the clause compares against, e.g. Open."
+          },
+          "maxSize": {
+            "type": "number",
+            "description": "Rows to return (max 200)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Case",
+        "queryParams": {
+          "select": "id,number,name,status,priority,accountName,assignedUserName,createdAt",
+          "where[0][type]": "$where_type",
+          "where[0][attribute]": "$where_attribute",
+          "where[0][value]": "$where_value",
+          "maxSize": "$maxSize",
+          "offset": "$offset",
+          "orderBy": "createdAt",
+          "order": "desc"
+        }
+      }
+    },
+    {
+      "name": "espocrm_get_related",
+      "description": "List the records linked to one record — the contacts on an account, the opportunities on a contact, the activities on anything. EspoCRM's history lives in these links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entityType": {
+            "type": "string",
+            "description": "Entity type of the anchor record, e.g. Account."
+          },
+          "id": {
+            "type": "string",
+            "description": "Id of the anchor record."
+          },
+          "link": {
+            "type": "string",
+            "description": "Link name, e.g. contacts, opportunities, cases, meetings."
+          },
+          "maxSize": {
+            "type": "number",
+            "description": "Rows to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "entityType",
+          "id",
+          "link"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entityType}/{id}/{link}",
+        "queryParams": {
+          "maxSize": "$maxSize",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

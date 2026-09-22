@@ -1,0 +1,354 @@
+{
+  "slug": "fortnox",
+  "name": "Fortnox",
+  "description": "Fortnox — the Swedish SMB accounting standard: customers, invoices, supplier invoices, articles, orders, vouchers and the account chart. REST API v3, OAuth 2.0.",
+  "region": "se",
+  "category": "accounting",
+  "icon": "fortnox",
+  "docsUrl": "https://www.fortnox.se/developer/",
+  "instructions": "**Getting a token**\n1. Register at the **Fortnox Developer Portal** and create an integration. You receive a **client id** and **client secret**.\n2. Run the authorization-code flow once for the customer's Fortnox account, asking for the scopes you need — `invoice`, `customer`, `article`, `order`, `supplierinvoice`, `bookkeeping`, `settings`. Keep the **refresh token**.\n3. Set `FORTNOX_CLIENT_ID`, `FORTNOX_CLIENT_SECRET` and `FORTNOX_REFRESH_TOKEN`. AnythingMCP refreshes the access token on its own.\n\n**The legacy Access-Token header is gone.** Fortnox retired the old `Access-Token` + `Client-Secret` header pair; if you find an example using those, it is pre-2022 and will not work. OAuth 2.0 is the only path now.\n\n**Refresh tokens rotate.** Fortnox issues a new refresh token on every refresh and invalidates the old one. AnythingMCP persists the rotated value back into the connector — but sharing one refresh token between this connector and another script will break one of them.\n\n**Rate limit** is roughly 25 requests per 5 seconds per token, answered with 429. Pace bulk work.\n\n**Responses wrap the rows** in the resource name: `{\"Customers\": [...], \"MetaInformation\": {...}}`. The paging totals live in `MetaInformation` (`@TotalPages`, `@TotalResources`).\n\n**`financialyear` matters for vouchers.** Fortnox scopes bookkeeping to a financial year id; without one it uses the current year, which is a surprise in January.\n\n**Cloud reachability**: api.fortnox.se is public with a valid certificate.",
+  "requiredEnvVars": [
+    "FORTNOX_CLIENT_ID",
+    "FORTNOX_CLIENT_SECRET",
+    "FORTNOX_REFRESH_TOKEN"
+  ],
+  "connector": {
+    "name": "Fortnox API v3",
+    "type": "REST",
+    "baseUrl": "https://api.fortnox.se/3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{FORTNOX_CLIENT_ID}}",
+      "clientSecret": "{{FORTNOX_CLIENT_SECRET}}",
+      "refreshToken": "{{FORTNOX_REFRESH_TOKEN}}",
+      "tokenUrl": "https://apps.fortnox.se/oauth-v1/token",
+      "tokenAuthMethod": "basic"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/settings/company"
+  },
+  "probe": {
+    "tool": "fortnox_get_company_settings"
+  },
+  "tools": [
+    {
+      "name": "fortnox_get_company_settings",
+      "description": "Read the connected company's settings: name, organisation number, VAT number, address and currency. The fastest proof that the OAuth client works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/company"
+      }
+    },
+    {
+      "name": "fortnox_list_customers",
+      "description": "List customers with their number, name, organisation number, address and payment terms. Filter by name or organisation number to find one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page (default 100, max 500)."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Named filter, e.g. active or inactive."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name fragment to search for."
+          },
+          "organisationnumber": {
+            "type": "string",
+            "description": "Exact organisation number to look up."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "filter": "$filter",
+          "name": "$name",
+          "organisationnumber": "$organisationnumber"
+        }
+      }
+    },
+    {
+      "name": "fortnox_get_customer",
+      "description": "Read one customer by their customer number, with addresses, delivery defaults, VAT settings and price list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerNumber": {
+            "type": "string",
+            "description": "Fortnox customer number."
+          }
+        },
+        "required": [
+          "customerNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customerNumber}"
+      }
+    },
+    {
+      "name": "fortnox_list_invoices",
+      "description": "List invoices with their number, date, due date, customer, total and balance. Filter `unpaidoverdue` answers 'who is late' directly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page (default 100, max 500)."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Named filter: cancelled, fullypaid, unpaid, unpaidoverdue, unbooked."
+          },
+          "fromdate": {
+            "type": "string",
+            "description": "Earliest invoice date, YYYY-MM-DD."
+          },
+          "todate": {
+            "type": "string",
+            "description": "Latest invoice date, YYYY-MM-DD."
+          },
+          "customernumber": {
+            "type": "string",
+            "description": "Restrict to one customer's invoices."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "filter": "$filter",
+          "fromdate": "$fromdate",
+          "todate": "$todate",
+          "customernumber": "$customernumber"
+        }
+      }
+    },
+    {
+      "name": "fortnox_get_invoice",
+      "description": "Read one invoice in full: every row with article, quantity, price and VAT, the totals, the payment terms and the balance outstanding.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentNumber": {
+            "type": "string",
+            "description": "Fortnox invoice document number."
+          }
+        },
+        "required": [
+          "documentNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{documentNumber}"
+      }
+    },
+    {
+      "name": "fortnox_list_supplier_invoices",
+      "description": "List supplier invoices with their supplier, date, due date, total and payment state — the payables side of the ledger.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Named filter: cancelled, fullypaid, unpaid, unpaidoverdue, unbooked."
+          },
+          "fromdate": {
+            "type": "string",
+            "description": "Earliest invoice date, YYYY-MM-DD."
+          },
+          "todate": {
+            "type": "string",
+            "description": "Latest invoice date, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supplierinvoices",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "filter": "$filter",
+          "fromdate": "$fromdate",
+          "todate": "$todate"
+        }
+      }
+    },
+    {
+      "name": "fortnox_list_orders",
+      "description": "List sales orders with their number, customer, date, delivery state and total, for the pipeline between quote and invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Named filter: cancelled, expired, invoicecreated, invoicenotcreated."
+          },
+          "fromdate": {
+            "type": "string",
+            "description": "Earliest order date, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "filter": "$filter",
+          "fromdate": "$fromdate"
+        }
+      }
+    },
+    {
+      "name": "fortnox_list_articles",
+      "description": "List articles with their number, description, sales price, purchase price, stock quantity and unit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Named filter, e.g. active."
+          },
+          "articlenumber": {
+            "type": "string",
+            "description": "Exact article number to look up."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "filter": "$filter",
+          "articlenumber": "$articlenumber"
+        }
+      }
+    },
+    {
+      "name": "fortnox_list_vouchers",
+      "description": "List bookkeeping vouchers in a financial year with their series, number, date and description — the ledger underneath the documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "financialyear": {
+            "type": "number",
+            "description": "Financial year id. Omitted, Fortnox uses the current year — a surprise in January."
+          },
+          "fromdate": {
+            "type": "string",
+            "description": "Earliest voucher date, YYYY-MM-DD."
+          },
+          "todate": {
+            "type": "string",
+            "description": "Latest voucher date, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vouchers",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "financialyear": "$financialyear",
+          "fromdate": "$fromdate",
+          "todate": "$todate"
+        }
+      }
+    },
+    {
+      "name": "fortnox_list_accounts",
+      "description": "List the chart of accounts for a financial year with each account's number, description, VAT code and balance-carry setting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "financialyear": {
+            "type": "number",
+            "description": "Financial year id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page",
+          "financialyear": "$financialyear"
+        }
+      }
+    }
+  ]
+}

@@ -12,7 +12,11 @@ import { RedisService } from '../common/redis.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { DeploymentService } from '../common/deployment.service';
 import { PrismaService } from '../common/prisma.service';
-import { interpolateConnectorConfig } from '../common/env-interpolation.util';
+import {
+  interpolateConnectorConfig,
+  interpolateDeep,
+} from '../common/env-interpolation.util';
+import { assertNoUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
 import {
   CALLER_CONTEXT_PREFIX,
   buildCallerContextVars,
@@ -25,6 +29,8 @@ import {
 import { KgService } from '../knowledge-graph/kg.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
+import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
+import { processGauges } from '../common/process-vitals';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -102,6 +108,48 @@ export class DynamicMcpTools {
    * env ?? 100. There is intentionally no API to change the per-workspace
    * value — only a service admin via the database.
    */
+  /**
+   * One line per tool call, with the two numbers the 20 Sep incident lacked.
+   *
+   * The afternoon the backend exhausted its heap, the run that died had 24
+   * tool calls that took over 20 seconds — several near two minutes — while
+   * the run that stayed healthy had none. The audit log records duration but
+   * lives in Postgres; the log is what an operator reads at 2 a.m. Response
+   * size is here because a 118-second call that returns 40 MB and one that
+   * returns 4 KB are different problems.
+   *
+   * WARN above 20 s or 1 MB so the outliers are greppable without a threshold
+   * in someone's head.
+   */
+  private logToolCall(
+    tool: RegisteredTool,
+    context: { organizationId?: string; mcpServerId?: string; authMethod?: string } | undefined,
+    durationMs: number,
+    status: 'SUCCESS' | 'ERROR',
+    renderedText?: string,
+    upstreamStatus?: number,
+  ): void {
+    const resultBytes = renderedText ? Buffer.byteLength(renderedText) : 0;
+    const line = {
+      msg: 'tool_call',
+      toolName: tool.name,
+      connectorId: tool.connectorId,
+      connectorType: tool.connectorType,
+      organizationId: context?.organizationId,
+      mcpServerId: context?.mcpServerId,
+      authMethod: context?.authMethod,
+      durationMs,
+      resultBytes,
+      status,
+      upstreamStatus,
+    };
+    if (durationMs > 20_000 || resultBytes > 1_048_576) {
+      this.logger.warn({ ...line, slow: durationMs > 20_000, large: resultBytes > 1_048_576 });
+    } else {
+      this.logger.log(line);
+    }
+  }
+
   private async getProxyLimit(organizationId: string): Promise<number> {
     const org = await this.prisma.organization.findUnique({
       where: { id: organizationId },
@@ -264,16 +312,40 @@ export class DynamicMcpTools {
       const proxyUrl = await this.resolveProxy(tool, context?.organizationId);
       usedProxy = proxyUrl != null;
 
+      // authConfig carries {{VAR}} placeholders too, and until now nothing
+      // resolved them at call time: they were substituted once, at import, from
+      // whatever the install form was given. A workspace that installed the
+      // connector first and filled its credentials afterwards therefore kept
+      // sending the placeholder text forever. Interpolating here makes the two
+      // paths agree.
+      const authConfig = tool.connectorConfig.authConfig
+        ? interpolateDeep(
+            JSON.parse(tool.connectorConfig.authConfig),
+            interpolationVars,
+            { reservedPrefix: CALLER_CONTEXT_PREFIX },
+          )
+        : undefined;
+
       const engineConfig = {
         baseUrl: interpolatedConfig.baseUrl,
         authType: tool.connectorConfig.authType,
-        authConfig: tool.connectorConfig.authConfig
-          ? JSON.parse(tool.connectorConfig.authConfig)
-          : undefined,
+        authConfig,
         headers: interpolatedConfig.headers,
         specUrl: (tool.connectorConfig as any).specUrl,
         ...(proxyUrl ? { proxyUrl } : {}),
       };
+
+      // Nothing left to substitute it with: fail here, with the variable names,
+      // rather than let the vendor answer something that reads like our bug.
+      assertNoUnresolvedPlaceholders(
+        {
+          baseUrl: engineConfig.baseUrl,
+          path: interpolatedMapping.path,
+          headers: engineConfig.headers,
+          authConfig,
+        },
+        `the connector behind ${tool.name}`,
+      );
 
       // Inject env vars as parameter defaults (env var values fill in params
       // that match by name, so they don't need to be provided by the caller)
@@ -282,13 +354,20 @@ export class DynamicMcpTools {
       // Apply JSON Schema defaults for missing params
       const mergedParams = this.applyDefaults(tool.parameters, paramsWithEnv);
 
-      const { body: result, meta } = await this.executeWithEngine(
-        tool.connectorType,
-        engineConfig,
-        interpolatedMapping,
-        mergedParams,
-        { connectorConfig: tool.connectorConfig.config },
-      );
+      processGauges.inc('toolCallsInFlight');
+      let engineOut: Awaited<ReturnType<DynamicMcpTools['executeWithEngine']>>;
+      try {
+        engineOut = await this.executeWithEngine(
+          tool.connectorType,
+          engineConfig,
+          interpolatedMapping,
+          mergedParams,
+          { connectorConfig: tool.connectorConfig.config },
+        );
+      } finally {
+        processGauges.dec('toolCallsInFlight');
+      }
+      const { body: result, meta } = engineOut;
 
       const durationMs = Date.now() - startTime;
 
@@ -332,16 +411,39 @@ export class DynamicMcpTools {
         }
       }
 
-      return this.renderResult(
+      const rendered = this.renderResult(
         result,
         responseMapping,
         toolName,
         meta,
         tool.endpointMapping?.queryParams,
       );
+      this.logToolCall(tool, context, durationMs, 'SUCCESS', rendered.content?.[0]?.text);
+      return rendered;
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
       const errorDetail = this.extractErrorDetail(error);
+      this.logToolCall(
+        tool,
+        context,
+        durationMs,
+        'ERROR',
+        undefined,
+        typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
+      );
+
+      // One actionable line for the client, on top of the vendor's own body.
+      // Keyed on the upstream host so hand-built tools get the same help as
+      // catalog ones; see error-hints.ts for why this exists.
+      const hint = deriveErrorHint({
+        host:
+          hostFromAxiosConfig(error?.config) ??
+          hostFromUrl(tool.connectorConfig?.baseUrl),
+        status: typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
+        message: typeof error?.message === 'string' ? error.message : undefined,
+        body: errorDetail.responseBody,
+      });
+      if (hint) errorDetail.hint = hint;
 
       await this.auditService.logInvocation({
         toolId: tool.id,

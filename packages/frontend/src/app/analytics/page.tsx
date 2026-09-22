@@ -55,7 +55,7 @@ export default function AnalyticsPage() {
               className={cn(
                 'rounded-[7px] px-3 py-1 text-[12.5px] font-semibold transition-colors',
                 days === r.days
-                  ? 'bg-[var(--brand)] text-white'
+                  ? 'bg-[var(--brand)] text-[var(--primary-foreground)]'
                   : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'
               )}
             >
@@ -77,7 +77,7 @@ export default function AnalyticsPage() {
         ) : !bd ? null : (
           <>
             {/* Metric tiles */}
-            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-3.5 lg:grid-cols-4">
               <StatCard
                 label={`Tool calls · ${bd.days}d`}
                 value={bd.total.toLocaleString()}
@@ -103,7 +103,7 @@ export default function AnalyticsPage() {
               <StatCard
                 label="Est. cost"
                 value={hasRates ? formatCost(bd.estCostMicros) : '—'}
-                hint={hasRates ? 'volume-based' : 'set COST_PER_CALL_MICROS'}
+                hint={hasRates ? 'volume-based' : 'no rate configured'}
                 iconTone="emerald"
                 icon={<CostStatIcon />}
               />
@@ -164,20 +164,25 @@ function DailyTimeline({
   daily: Array<{ date: string; success: number; error: number; timeout: number }>;
 }) {
   const max = Math.max(1, ...daily.map((d) => d.success + d.error + d.timeout));
-  // Thin the x-axis labels so they don't overlap on 30/90-day ranges.
+  // Thin the x-axis labels so they don't overlap on 30/90-day ranges. The
+  // labels are centred under a column a few pixels wide, so the ones at the
+  // very ends would hang off the chart: the offset keeps them inboard, and
+  // every other label is dropped on a phone, where there is half the room.
   const labelEvery = Math.max(1, Math.ceil(daily.length / 8));
+  const labelOffset = Math.floor(labelEvery / 2);
   return (
-    <div className="flex h-[170px] items-end gap-1.5">
+    <div className="flex h-[170px] items-end gap-1 sm:gap-1.5">
       {daily.map((d, i) => {
         const total = d.success + d.error + d.timeout;
         const errored = d.error + d.timeout;
         const height = (total / max) * 100;
         const errorPct = total > 0 ? (errored / total) * 100 : 0;
-        const showLabel = i % labelEvery === 0 || i === daily.length - 1;
+        const labelIndex = (i - labelOffset) / labelEvery;
+        const showLabel = labelEvery === 1 || (Number.isInteger(labelIndex) && labelIndex >= 0);
         return (
           <div
             key={d.date}
-            className="flex h-full flex-1 flex-col items-center justify-end gap-2"
+            className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2"
             title={`${d.date}: ${total} call${total === 1 ? '' : 's'}${errored > 0 ? ` · ${errored} error${errored === 1 ? '' : 's'}` : ''}`}
           >
             <div className="flex h-[140px] w-full items-end">
@@ -197,7 +202,12 @@ function DailyTimeline({
                 </div>
               )}
             </div>
-            <span className="h-3 whitespace-nowrap text-[10px] text-[var(--text-3)]">
+            <span
+              className={cn(
+                'h-3 max-w-full overflow-visible whitespace-nowrap text-[10px] text-[var(--text-3)]',
+                showLabel && labelEvery > 1 && labelIndex % 2 === 1 && 'max-sm:invisible'
+              )}
+            >
               {showLabel ? d.date.slice(5) : ''}
             </span>
           </div>

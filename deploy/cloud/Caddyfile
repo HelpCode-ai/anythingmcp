@@ -1,23 +1,57 @@
 {$DOMAIN} {
-	# Backend API, health, MCP endpoints
+	# ── Backend ────────────────────────────────────────────────────────────
+	# This list must match the `rewrites()` in packages/frontend/next.config.ts.
+	#
+	# Until the containers were split, only five of these were here, and the
+	# other eight — /auth, /sso, /authorize, /callback, /token, /register,
+	# /userinfo — reached the backend by a route nobody had drawn: Caddy sent
+	# them to the frontend, and Next's rewrites (baked at build time with
+	# http://localhost:4000, so no runtime variable can redirect them) forwarded
+	# them to the backend in the same container. Two containers have no shared
+	# localhost. Every path the backend owns is routed here explicitly, so the
+	# OAuth endpoints Claude and ChatGPT connect through never depend on which
+	# process happens to be listening next door.
 	handle /api/* {
-		reverse_proxy app:4000
+		reverse_proxy backend:4000
 	}
 	handle /health* {
-		reverse_proxy app:4000
+		reverse_proxy backend:4000
 	}
 	handle /mcp {
-		reverse_proxy app:4000
+		reverse_proxy backend:4000
 	}
 	handle /mcp/* {
-		reverse_proxy app:4000
+		reverse_proxy backend:4000
 	}
 	handle /.well-known/* {
-		reverse_proxy app:4000
+		reverse_proxy backend:4000
+	}
+	handle /auth/* {
+		reverse_proxy backend:4000
+	}
+	handle /sso/* {
+		reverse_proxy backend:4000
+	}
+	handle /authorize {
+		reverse_proxy backend:4000
+	}
+	handle /callback {
+		reverse_proxy backend:4000
+	}
+	handle /token {
+		reverse_proxy backend:4000
+	}
+	handle /register {
+		reverse_proxy backend:4000
+	}
+	handle /userinfo {
+		reverse_proxy backend:4000
 	}
 
-	# Frontend (Next.js)
+	# ── Frontend (Next.js) ─────────────────────────────────────────────────
+	# Its own container: a backend restart leaves the app reachable, and the
+	# frontend can never take the API down with it.
 	handle {
-		reverse_proxy app:3000
+		reverse_proxy frontend:3000
 	}
 }

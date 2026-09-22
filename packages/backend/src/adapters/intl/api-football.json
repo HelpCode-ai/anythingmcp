@@ -2,7 +2,7 @@
   "slug": "api-football",
   "name": "API-Football",
   "description": "Live and historical football (soccer) data from API-Football v3 (API-Sports): leagues, standings, fixtures with live scores & events, teams, players & statistics, predictions, injuries, transfers and betting odds.",
-  "category": "Sports",
+  "category": "sports",
   "region": "intl",
   "icon": "https://media.api-sports.io/football.png",
   "docsUrl": "https://www.api-football.com/documentation-v3",

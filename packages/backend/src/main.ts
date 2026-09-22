@@ -161,9 +161,40 @@ async function bootstrap() {
   server.keepAliveTimeout = 65_000;
   server.headersTimeout = 66_000;
 
+  // A SIGTERM must end in an exit, every time, within a bounded time.
+  //
+  // It did not. `app.close()` calls `server.close()`, which resolves only
+  // once every connection has gone away — and an MCP server has connections
+  // that never go away on their own: SSE subscription streams held open for
+  // minutes, and keep-alive sockets idling for up to keepAliveTimeout. In the
+  // split-container layout the backend is PID 1 and its exit is what makes
+  // Docker restart it; tested with a plain SIGTERM, the process closed its
+  // listener and then sat there, unhealthy, for as long as anyone cared to
+  // wait. The heap guard's own exit path (process-vitals.service.ts) would
+  // have hung the same way but for its 30-second fallback.
+  //
+  // So: stop accepting, give in-flight requests a moment, then cut what is
+  // left and exit — and if even that stalls, exit anyway. The deadline is the
+  // guarantee; everything before it is courtesy.
+  const shutdownTimeoutMs = Number(process.env.SHUTDOWN_TIMEOUT_MS) || 20_000;
+  const cutConnectionsAfterMs = Math.min(5_000, shutdownTimeoutMs / 2);
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, async () => {
-      logger.log(`Received ${signal}, shutting down gracefully...`);
+      logger.log(`Received ${signal}, shutting down gracefully (deadline ${shutdownTimeoutMs} ms)...`);
+      const deadline = setTimeout(() => {
+        logger.error(`Graceful shutdown exceeded ${shutdownTimeoutMs} ms — exiting now.`);
+        process.exit(1);
+      }, shutdownTimeoutMs);
+      deadline.unref();
+      // Idle keep-alive sockets can go immediately; nothing is in flight on them.
+      server.closeIdleConnections?.();
+      // Streams and slow calls get a grace period, then are closed so that
+      // server.close() can actually complete.
+      const cutter = setTimeout(() => {
+        logger.warn('Closing remaining connections so shutdown can complete.');
+        server.closeAllConnections?.();
+      }, cutConnectionsAfterMs);
+      cutter.unref();
       try {
         await app.close();
         logger.log('Shutdown complete.');

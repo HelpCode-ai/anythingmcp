@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — 189 connectors, 20 of them with no API key. Your REST, SOAP/WSDL, GraphQL, SQL and MCP systems become tools for Claude, ChatGPT, Copilot and Gemini." width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP — 257 connectors, 20 of them with no API key. Your REST, SOAP/WSDL, GraphQL, SQL and MCP systems become tools for Claude, ChatGPT, Copilot and Gemini." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Give Claude, ChatGPT and Copilot safe access to the software your company already runs.</strong><br/>
-  189 ready adapters, any REST/SOAP/GraphQL/SQL system without code, on your own infrastructure — and it learns how your systems connect.
+  257 ready adapters, any REST/SOAP/GraphQL/SQL system without code, on your own infrastructure — and it learns how your systems connect.
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 Three words appear throughout and mean three different things:
 
-- an **adapter** is one of the 189 JSON definitions that ship in this repo — DATEV, weclapp, DHL, Deutsche Bahn, Shopware, Personio, Handelsregister and the rest. 20 of them need no API key at all; the others ask for your credentials at import.
+- an **adapter** is one of the 255 JSON definitions that ship in this repo — DATEV, weclapp, DHL, Deutsche Bahn, Shopware, Personio, Handelsregister and the rest. 20 of them need no API key at all; the others ask for your credentials at import.
 - a **connector** is an adapter, or your own OpenAPI spec / Postman collection / WSDL / GraphQL endpoint / database, once you have configured it in your workspace. Anything you can point at, in minutes, without writing an MCP server.
 - an **MCP server** is the URL you hand to Claude. It exposes the connectors you assign to it, and nothing else.
 
@@ -113,22 +113,6 @@ The quickstart binds to `127.0.0.1` on purpose: nothing in front of it terminate
 
 - **[Knowledge Graph](docs/knowledge-graph.md)** — a per-workspace, PII-safe map of how your connectors' data relates, served back to the agent as an MCP tool so it chains calls across systems correctly.
 - **[AI skills](docs/knowledge-graph.md)** — recurring usage turned into small reusable rules and composed into the server's instructions, so they guide the agent without adding a tool call (optional, opt-in).
-
----
-
-## How AnythingMCP compares
-
-The projects it gets compared with are mostly MCP gateways: they federate, scope and secure MCP servers you already have. AnythingMCP starts one step earlier, because most companies have no MCP servers at all — they have a REST API, a SOAP service from 2009 and a database nobody wants to expose. Every project below solves a real problem; they just don't solve the same one.
-
-| | What it is | Choose it instead if… |
-|---|---|---|
-| **[ContextForge](https://github.com/IBM/mcp-context-forge)** (IBM) | Federation and a registry in front of MCP servers you already have | Your tools are already MCP servers and what you need is federation, virtual servers and a registry |
-| **[Docker MCP Gateway](https://github.com/docker/mcp-gateway)** | Runs catalog MCP servers as containers behind one endpoint, with secret handling | You want vendor-published MCP servers sandboxed in Docker and the published catalog covers you |
-| **[MetaMCP](https://github.com/metatool-ai/metamcp)** | Aggregates MCP servers into namespaced endpoints with a middleware layer | You mainly need to group and re-scope existing MCP servers per client |
-| **[Composio](https://github.com/ComposioHQ/composio)** | A hosted catalog of managed integrations with auth handled for you | A fixed managed catalog is enough and you never need to add your own SOAP service, in-house API or database |
-| **AnythingMCP** | Turns the APIs, SOAP services and databases you already run into MCP tools | Your systems are **not** MCP servers yet, and you want the choice of holding the credentials yourself |
-
-Side-by-side pages with the full feature tables: [anythingmcp.com/vs](https://anythingmcp.com/vs).
 
 ---
 
@@ -264,7 +248,7 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 
 ## The adapter catalog
 
-189 adapters, exposing 1,800+ tools. **20 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+257 adapters, exposing 1,800+ tools. **20 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Examples |
 |---|---|
@@ -288,10 +272,27 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 
 Looking for a specific service? Every adapter has a step-by-step guide at **[anythingmcp.com/guides](https://anythingmcp.com/guides)**.
 
+---
+
+## How AnythingMCP compares
+
+The projects it gets compared with are mostly MCP gateways: they federate, scope and secure MCP servers you already have. AnythingMCP starts one step earlier, because most companies have no MCP servers at all — they have a REST API, a SOAP service from 2009 and a database nobody wants to expose. Every project below solves a real problem; they just don't solve the same one.
+
+| | What it is | Choose it instead if… |
+|---|---|---|
+| **[ContextForge](https://github.com/IBM/mcp-context-forge)** (IBM) | Federation and a registry in front of MCP servers you already have | Your tools are already MCP servers and what you need is federation, virtual servers and a registry |
+| **[Docker MCP Gateway](https://github.com/docker/mcp-gateway)** | Runs catalog MCP servers as containers behind one endpoint, with secret handling | You want vendor-published MCP servers sandboxed in Docker and the published catalog covers you |
+| **[MetaMCP](https://github.com/metatool-ai/metamcp)** | Aggregates MCP servers into namespaced endpoints with a middleware layer | You mainly need to group and re-scope existing MCP servers per client |
+| **[Composio](https://github.com/ComposioHQ/composio)** | A hosted catalog of managed integrations with auth handled for you | A fixed managed catalog is enough and you never need to add your own SOAP service, in-house API or database |
+| **AnythingMCP** | Turns the APIs, SOAP services and databases you already run into MCP tools | Your systems are **not** MCP servers yet, and you want the choice of holding the credentials yourself |
+
+Side-by-side pages with the full feature tables: [anythingmcp.com/vs](https://anythingmcp.com/vs).
+
 ## Community &amp; support
 
 - 💬 **Questions &amp; discussions** — [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions) — vote on the next adapter, share what you've built
 - 🐛 **Bugs / 💡 features** — [Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · 🆘 [SUPPORT.md](SUPPORT.md)
+- 👥 **Adopters** — [ADOPTERS.md](ADOPTERS.md) — who runs AnythingMCP in production, and how to add yourself
 - 🔐 **Security** — please do not open a public issue; follow [SECURITY.md](SECURITY.md)
 - 🏢 Built by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany. AI-assisted development, human-reviewed — [AUTHORS.md](AUTHORS.md) says which parts and how.
 

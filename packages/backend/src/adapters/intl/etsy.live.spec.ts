@@ -1,8 +1,14 @@
 import * as adapter from './etsy.json';
+import { interpolateString } from '../../common/env-interpolation.util';
 
 const a = adapter as unknown as {
   requiredEnvVars: string[];
-  connector: { baseUrl: string; authType: string; authConfig: Record<string, unknown> };
+  connector: {
+    baseUrl: string;
+    authType: string;
+    healthcheckPath?: string;
+    authConfig: Record<string, unknown>;
+  };
   tools: Array<{ name: string; useProxy?: boolean }>;
 };
 
@@ -42,9 +48,39 @@ describe('etsy adapter — static spec conformance', () => {
     expect(a.connector.authConfig.refreshToken).toBe('{{ETSY_REFRESH_TOKEN}}');
   });
 
-  it('carries x-api-key alongside the Bearer token (Etsy v3 dual-auth)', () => {
+  /**
+   * The API key must carry the keystring AND the shared secret, colon
+   * separated, on every request — OAuth bearer or not.
+   *
+   * This test used to assert the keystring alone, which is how the bug
+   * survived: 54 installed connectors, 70 calls, 70 failures with
+   * `403 Invalid API key: should be in the format 'keystring:shared_secret'`.
+   * That exact string is quoted in the proxy test above, where it was read as
+   * "the host is reachable and only wants credentials" — Etsy was in fact
+   * naming the required format, and nobody heard it until a customer did.
+   *
+   * Verified against Etsy with a real key: keystring alone → 403 "Shared
+   * secret is required in x-api-key header", keystring:shared_secret → 200.
+   */
+  it('carries keystring:shared_secret as x-api-key, not the keystring alone', () => {
     const extra = a.connector.authConfig.extraHeaders as Record<string, string>;
-    expect(extra['x-api-key']).toBe('{{ETSY_CLIENT_ID}}');
+    expect(extra['x-api-key']).toBe('{{ETSY_CLIENT_ID}}:{{ETSY_CLIENT_SECRET}}');
+    expect(
+      interpolateString(extra['x-api-key'], {
+        ETSY_CLIENT_ID: 'aa11bb22cc33dd44ee55ff66',
+        ETSY_CLIENT_SECRET: 'zz99yy88',
+      }),
+    ).toBe('aa11bb22cc33dd44ee55ff66:zz99yy88');
+  });
+
+  /**
+   * "/" is a 404 on the Etsy API, so Test connection failed on a connector
+   * that was otherwise fine and sent people looking in the wrong place.
+   * openapi-ping needs only the API key, which makes a green test mean the
+   * key is genuinely accepted.
+   */
+  it('points the healthcheck at an endpoint that exists', () => {
+    expect(a.connector.healthcheckPath).toBe('/openapi-ping');
   });
 
   it('asks only for 3 env vars (client id/secret + initial refresh token)', () => {

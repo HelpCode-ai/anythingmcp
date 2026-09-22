@@ -56,6 +56,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Read rather than hardcode. The count used to be written into the line
+      # below, which meant every adapter PR — including every one from a fork —
+      # had a legitimate reason to edit this workflow. A one-character change
+      # in a workflow file is the easiest place in the repository to hide a
+      # malicious one, and it was arriving as routine noise on PRs whose
+      # subject was a JSON file. Now nothing under .github/ quotes the number,
+      # so an edit here is never routine.
+      - name: Read the catalog count
+        id: catalog
+        run: |
+          set -euo pipefail
+          echo "adapters=$(node scripts/adapter-count.mjs | jq -er .adapters)" >> "$GITHUB_OUTPUT"
+
       - name: Update Docker Hub description from README
         uses: peter-evans/dockerhub-description@v5
         with:
@@ -65,7 +78,7 @@ jobs:
           readme-filepath: ./README.md
           # Docker Hub caps this at 100 characters and shows it in search
           # results; the repo's was left at the truncated default.
-          short-description: "189 connectors + any REST/SOAP/GraphQL/SQL as MCP tools for Claude & ChatGPT. Self-hosted, AGPL."
+          short-description: "${{ steps.catalog.outputs.adapters }} connectors + any REST/SOAP/GraphQL/SQL as MCP tools for Claude & ChatGPT. Self-hosted, AGPL."
 
       - name: Set Docker Hub categories
         env:

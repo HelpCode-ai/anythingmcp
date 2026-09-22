@@ -9,6 +9,8 @@ const VALID_AUTH_TYPES = new Set([
   'OAUTH1',
   'QUERY_AUTH',
   'LOGIN_TOKEN',
+  'CONNECTION_STRING',
+  'HMAC',
 ]);
 
 const VALID_PASSWORD_HASHING_SCHEMES = new Set(['bcrypt', 'none']);
@@ -26,6 +28,12 @@ const VALID_GRAPHQL_METHODS = new Set([
   'STATIC',
   'SCHEMA',
 ]);
+
+// DATABASE adapters never speak HTTP: `query` runs SQL (or a Mongo find spec),
+// `mongo_schema` introspects collections, and `static` returns canned text —
+// see DatabaseEngine.execute. Their `path` IS the statement, so the REST rules
+// about `{placeholders}` and `${x}` do not apply to it.
+const VALID_DATABASE_METHODS = new Set(['QUERY', 'STATIC', 'MONGO_SCHEMA']);
 
 /**
  * Recursively collect every string value in an object/array, together with the
@@ -58,6 +66,56 @@ describe('adapter catalog', () => {
   it('has unique slugs', () => {
     const slugs = adapters.map((a) => a.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
+  });
+
+  /**
+   * Category is the marketplace's filter axis: every distinct value becomes a
+   * chip. `Sports` alongside `sports`, and `ecommerce` alongside `e-commerce`,
+   * put the same concept behind two chips and split its adapters between them.
+   * Lowercase kebab-case is the house format, so a stray capital or spelling
+   * cannot quietly add a filter nobody meant to create.
+   */
+  it('categories are lowercase kebab-case', () => {
+    const malformed = adapters
+      .filter((a) => a.category && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(a.category))
+      .map((a) => `${a.slug}: ${a.category}`);
+    expect(malformed).toEqual([]);
+  });
+
+  it('every category is spelled one way only', () => {
+    // Collapse the spellings that have actually collided before: separators
+    // dropped (ecommerce/e-commerce) and singular/gerund pairs (maps/mapping).
+    const key = (c: string) => c.replace(/-/g, '').replace(/ing$/, '');
+    const byKey = new Map<string, Set<string>>();
+    for (const a of adapters) {
+      if (!a.category) continue;
+      const k = key(a.category);
+      byKey.set(k, (byKey.get(k) ?? new Set()).add(a.category));
+    }
+    const split = [...byKey.values()]
+      .filter((v) => v.size > 1)
+      .map((v) => [...v].sort().join(' / '));
+    expect(split).toEqual([]);
+  });
+
+  /**
+   * `connector_auth_cache` is written by the login-token service and by nothing
+   * else: 131 OAUTH2 connectors in production, zero rows. The Etsy adapter told
+   * its users their OAuth token was persisted there, which was simply untrue —
+   * OAuth2 writes the refreshed pair back into the connector's own encrypted
+   * authConfig. Instructions are the page a customer reads when a connector
+   * misbehaves, so a wrong sentence there costs somebody an afternoon.
+   */
+  it('only LOGIN_TOKEN adapters claim the connector_auth_cache table', () => {
+    const liars = adapters
+      .map((m) => getAdapter(m.slug)!)
+      .filter(
+        (a) =>
+          a.instructions?.includes('connector_auth_cache') &&
+          a.connector.authType !== 'LOGIN_TOKEN',
+      )
+      .map((a) => a.slug);
+    expect(liars).toEqual([]);
   });
 
   describe('GraphQL adapters get auto-injected builtin tools', () => {
@@ -102,6 +160,58 @@ describe('adapter catalog', () => {
     );
   });
 
+  /**
+   * The install probe runs immediately after import with no arguments, and
+   * its result is what the install form reports. A probe tool with an
+   * unsatisfied required parameter therefore tells the user their perfectly
+   * good credential does not work.
+   */
+  it('every probe tool can run with the arguments the probe supplies', () => {
+    const broken = adapters
+      .map((m) => getAdapter(m.slug)!)
+      .filter((a) => a.probe)
+      .map((a) => {
+        const tool = a.tools.find((t) => t.name === a.probe!.tool);
+        if (!tool) return `${a.slug}: probe names unknown tool ${a.probe!.tool}`;
+        const required =
+          ((tool.parameters as { required?: string[] })?.required ?? []);
+        const supplied = new Set(Object.keys(a.probe!.params ?? {}));
+        const missing = required.filter((r) => !supplied.has(r));
+        return missing.length ? `${a.slug}: probe needs ${missing.join(', ')}` : null;
+      })
+      .filter(Boolean);
+    expect(broken).toEqual([]);
+  });
+
+  /**
+   * A `{UPPER_SNAKE}` segment in a path is filled from the connector's env
+   * vars, which ConnectorsService merges into the tool's params at call time.
+   * Undeclared, the placeholder is never filled and every call 404s against a
+   * URL containing a literal brace. Three adapters (fatture-in-cloud,
+   * exact-online, moneybird) put the tenant id in the path this way.
+   */
+  it('every env-var path placeholder is a declared env var', () => {
+    const broken: string[] = [];
+    for (const meta of adapters) {
+      const a = getAdapter(meta.slug)!;
+      const declared = new Set([
+        ...(a.requiredEnvVars ?? []),
+        ...(a.optionalEnvVars ?? []),
+      ]);
+      for (const tool of a.tools) {
+        const path = String(
+          (tool.endpointMapping as { path?: unknown }).path ?? '',
+        );
+        for (const m of path.matchAll(/\{([A-Z][A-Z0-9_]*)\}/g)) {
+          if (!declared.has(m[1])) {
+            broken.push(`${a.slug}/${tool.name}: {${m[1]}} is not declared`);
+          }
+        }
+      }
+    }
+    expect(broken).toEqual([]);
+  });
+
   describe.each(adapters)('$slug', (meta) => {
     const adapter = getAdapter(meta.slug)!;
 
@@ -134,13 +244,43 @@ describe('adapter catalog', () => {
       });
     }
 
+    if (adapter.connector.authType === 'LOGIN_TOKEN') {
+      /**
+       * Two LoginTokenService behaviours only bite on a GET login, and both
+       * produced a silently wrong request in shipped adapters before this
+       * existed (glpi, synology):
+       *
+       * - `loginUrl` is used verbatim and never interpolated, so a
+       *   `${username}` written there is sent as those ten characters.
+       * - With no `loginBody`, every template param — including the
+       *   password — becomes a query parameter, i.e. lands in the upstream's
+       *   access log.
+       *
+       * Credentials belong in `loginBody`, which is interpolated, or in
+       * `loginHeaders`. A GET login that genuinely needs no parameters must
+       * say so with an explicit empty `loginBody`.
+       */
+      it('login request is built from interpolated fields, not the URL', () => {
+        const cfg = adapter.connector.authConfig as Record<string, unknown>;
+        expect(String(cfg.loginUrl ?? '')).not.toMatch(/\$\{/);
+        const method = String(cfg.loginMethod ?? 'POST').toUpperCase();
+        if (method === 'GET') {
+          const hasBody =
+            cfg.loginBody !== undefined || cfg.loginBodyTemplate !== undefined;
+          expect(hasBody).toBe(true);
+        }
+      });
+    }
+
     it.each(adapter.tools.map((t) => [t.name, t]))(
       '%s has a well-formed endpointMapping',
       (_name, tool) => {
         const em = tool.endpointMapping as Record<string, unknown>;
 
-        const allowed =
-          adapter.connector.type === 'GRAPHQL'
+        const isDatabase = adapter.connector.type === 'DATABASE';
+        const allowed = isDatabase
+          ? VALID_DATABASE_METHODS
+          : adapter.connector.type === 'GRAPHQL'
             ? VALID_GRAPHQL_METHODS
             : VALID_REST_METHODS;
         expect(allowed.has(String(em.method).toUpperCase())).toBe(true);
@@ -149,9 +289,23 @@ describe('adapter catalog', () => {
         // Legacy `body` field must be renamed to `bodyMapping`/`bodyTemplate`
         expect(em).not.toHaveProperty('body');
 
+        // The remaining rules police HTTP URLs and HTTP payloads. A DATABASE
+        // tool has neither: its path is SQL, where `${query}` is the documented
+        // way to hand the engine a raw statement.
+        if (isDatabase) return;
+
         // Path placeholders must be {x} (engine resolves path via `{name}` interpolation),
         // not ${x} (which the engine would leave literal in URLs).
         expect(em.path as string).not.toMatch(/\$\{[\w$]+\}/);
+
+        // …nor $UPPER_SNAKE. RestEngine.resolveValue honours `$VAR` in
+        // queryParams, bodyMapping and headers, but the path is interpolated
+        // by a plain `{key}` replace, so `/c/$FIC_COMPANY_ID/clients` ships
+        // the literal dollar sign to the vendor and 404s. Env vars reach the
+        // path as `{FIC_COMPANY_ID}` — they are merged into params at call
+        // time (ConnectorsService.mergedParams). Lower-case `$metadata` and
+        // `$links` are OData's own literals and are left alone.
+        expect(em.path as string).not.toMatch(/\$[A-Z][A-Z0-9_]*\b/);
 
         // queryParams / bodyMapping / headers: verify every `$x` or `${x}` reference
         // points to a parameter the tool declares (catches typos in placeholder names).

@@ -1,0 +1,347 @@
+{
+  "slug": "teamleader",
+  "name": "Teamleader Focus",
+  "description": "Teamleader Focus — the Belgian CRM, project and invoicing suite: companies, contacts, deals, projects, time tracking, invoices and quotations. REST API, OAuth 2.0, everything over POST.",
+  "region": "be",
+  "category": "crm",
+  "icon": "teamleader",
+  "docsUrl": "https://developer.teamleader.eu/",
+  "instructions": "**Getting a token**\n1. Register an integration in the **Teamleader Marketplace developer area** (developer.teamleader.eu). You receive a client id and client secret.\n2. Run the authorization-code flow once for the account and keep the **refresh token** — Teamleader's access tokens last one hour.\n3. Set `TEAMLEADER_CLIENT_ID`, `TEAMLEADER_CLIENT_SECRET` and `TEAMLEADER_REFRESH_TOKEN`. AnythingMCP refreshes the access token on its own.\n\n**Every endpoint is a POST, including the reads.** Teamleader's API is action-shaped — `companies.list`, `deals.info`, `invoices.list` — and all of them are POSTs whose JSON body carries the filter. That is why these tools look like writes in an HTTP trace even when they only read; the tool names here say what each one actually does.\n\n**Filters are a nested object.** `{\"filter\": {\"term\": \"Acme\"}, \"page\": {\"size\": 20, \"number\": 1}, \"sort\": [{\"field\": \"name\", \"order\": \"asc\"}]}`. The available filter keys differ per action and are listed in Teamleader's reference.\n\n**Refresh tokens rotate.** Teamleader issues a new refresh token on every refresh and invalidates the old one. AnythingMCP persists the rotated token back into the connector, so the stored value stays current — but if you also use the same refresh token from another script, one of the two will start failing.\n\n**Ids are UUIDs**, and `deals.info` needs the deal's id, not its reference number.\n\n**Cloud reachability**: api.focus.teamleader.eu is public with a valid certificate.",
+  "requiredEnvVars": [
+    "TEAMLEADER_CLIENT_ID",
+    "TEAMLEADER_CLIENT_SECRET",
+    "TEAMLEADER_REFRESH_TOKEN"
+  ],
+  "connector": {
+    "name": "Teamleader Focus API",
+    "type": "REST",
+    "baseUrl": "https://api.focus.teamleader.eu",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{TEAMLEADER_CLIENT_ID}}",
+      "clientSecret": "{{TEAMLEADER_CLIENT_SECRET}}",
+      "refreshToken": "{{TEAMLEADER_REFRESH_TOKEN}}",
+      "tokenUrl": "https://focus.teamleader.eu/oauth2/access_token"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/users.me"
+  },
+  "probe": {
+    "tool": "teamleader_get_me"
+  },
+  "tools": [
+    {
+      "name": "teamleader_get_me",
+      "description": "Read the user the token belongs to, with their name, e-mail, language and account. The fastest proof that the OAuth client and refresh token work.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users.me",
+        "bodyMapping": {}
+      }
+    },
+    {
+      "name": "teamleader_list_companies",
+      "description": "List client companies with their name, VAT number, address and tags. A POST that only reads — that is how Teamleader's API is shaped.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Search fragment matched against name, VAT number and e-mail."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page (default 20, max 100)."
+          },
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies.list",
+        "bodyMapping": {
+          "filter": {
+            "term": "$term"
+          },
+          "page": {
+            "size": "$page_size",
+            "number": "$page_number"
+          }
+        }
+      }
+    },
+    {
+      "name": "teamleader_get_company",
+      "description": "Read one company in full: addresses, VAT number, payment terms, custom fields, tags and the account manager.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Company UUID."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies.info",
+        "bodyMapping": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "teamleader_list_contacts",
+      "description": "List individual contacts with their name, e-mail, phone and the companies they are linked to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Search fragment matched against name, e-mail and phone."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page (default 20, max 100)."
+          },
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts.list",
+        "bodyMapping": {
+          "filter": {
+            "term": "$term"
+          },
+          "page": {
+            "size": "$page_size",
+            "number": "$page_number"
+          }
+        }
+      }
+    },
+    {
+      "name": "teamleader_list_deals",
+      "description": "List deals with their title, customer, value, phase and expected closing date — the sales-pipeline view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Search fragment matched against the deal title and reference."
+          },
+          "phase_id": {
+            "type": "string",
+            "description": "Restrict to one pipeline phase UUID."
+          },
+          "status": {
+            "type": "array",
+            "description": "Statuses to include: open, won, lost.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page (default 20, max 100)."
+          },
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deals.list",
+        "bodyMapping": {
+          "filter": {
+            "term": "$term",
+            "phase_id": "$phase_id",
+            "status": "$status"
+          },
+          "page": {
+            "size": "$page_size",
+            "number": "$page_number"
+          }
+        }
+      }
+    },
+    {
+      "name": "teamleader_get_deal",
+      "description": "Read one deal in full: its value, phase, source, responsible user, linked quotations and the full phase history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Deal UUID — not the reference number."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deals.info",
+        "bodyMapping": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "teamleader_list_invoices",
+      "description": "List invoices with their number, date, due date, customer, totals and payment status — the receivables view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "array",
+            "description": "Statuses to include: draft, outstanding, matched.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page (default 20, max 100)."
+          },
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices.list",
+        "bodyMapping": {
+          "filter": {
+            "status": "$status"
+          },
+          "page": {
+            "size": "$page_size",
+            "number": "$page_number"
+          }
+        }
+      }
+    },
+    {
+      "name": "teamleader_list_projects",
+      "description": "List projects with their title, customer, status, budget and the milestones they are broken into.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page (default 20, max 100)."
+          },
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects-v2/projects.list",
+        "bodyMapping": {
+          "page": {
+            "size": "$page_size",
+            "number": "$page_number"
+          }
+        }
+      }
+    },
+    {
+      "name": "teamleader_list_time_tracking",
+      "description": "List tracked time entries with their user, date, duration, project and invoiceability — the raw data behind 'how much did we spend on this client'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "started_after": {
+            "type": "string",
+            "description": "Earliest start, ISO 8601 with a zone."
+          },
+          "started_before": {
+            "type": "string",
+            "description": "Latest start, ISO 8601 with a zone."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page (default 20, max 100)."
+          },
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/timeTracking.list",
+        "bodyMapping": {
+          "filter": {
+            "started_after": "$started_after",
+            "started_before": "$started_before"
+          },
+          "page": {
+            "size": "$page_size",
+            "number": "$page_number"
+          }
+        }
+      }
+    },
+    {
+      "name": "teamleader_list_quotations",
+      "description": "List quotations with their deal, total, status and validity date, to see what is out with prospects and not yet accepted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deal_id": {
+            "type": "string",
+            "description": "Restrict to one deal's quotations."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/quotations.list",
+        "bodyMapping": {
+          "filter": {
+            "deal_id": "$deal_id"
+          },
+          "page": {
+            "size": "$page_size",
+            "number": "$page_number"
+          }
+        }
+      }
+    }
+  ]
+}

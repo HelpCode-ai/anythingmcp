@@ -1,0 +1,11 @@
+[Unit]
+Description=Probe AnythingMCP Cloud every minute and mail on a change of state
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit=anythingmcp-probe.service
+
+[Install]
+WantedBy=timers.target

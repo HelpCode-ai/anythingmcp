@@ -23,7 +23,7 @@ jobs:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
           target: /tmp/anythingmcp-deploy
           overwrite: true
 
@@ -31,11 +31,12 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           CRON_SECRET: ${{ secrets.ONBOARDING_CRON_SECRET }}
+          LICENSE_SERVICE_TOKEN: ${{ secrets.LICENSE_SERVICE_TOKEN }}
         with:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          envs: CRON_SECRET
+          envs: CRON_SECRET,LICENSE_SERVICE_TOKEN
           script: |
             set -e
             cd /opt/anythingmcp-cloud
@@ -53,6 +54,21 @@ jobs:
             # image is reused.
             cp /tmp/anythingmcp-deploy/docker-compose.cloud.yml ./docker-compose.cloud.yml
             cp /tmp/anythingmcp-deploy/deploy/cloud/Caddyfile ./Caddyfile
+
+            # Uptime probe: a systemd timer on this host, every minute, mailing
+            # on a change of state. It is here and not only in GitHub Actions
+            # because the scheduled workflow ran three times in its first ten
+            # hours — GitHub's cron is best-effort — and the failure mode we
+            # have is the backend dying while the host stays up, which a timer
+            # on the host sees within a minute. Reads DOMAIN, SMTP_* and
+            # UPTIME_ALERT_TO from this directory's .env; with no
+            # UPTIME_ALERT_TO it only logs to the journal.
+            install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/uptime-probe.sh ./uptime-probe.sh
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-probe.service /etc/systemd/system/
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-probe.timer /etc/systemd/system/
+            systemctl daemon-reload
+            systemctl enable --now anythingmcp-probe.timer
+            systemctl is-active anythingmcp-probe.timer
             mkdir -p ./deploy/motis
             cp /tmp/anythingmcp-deploy/deploy/motis/* ./deploy/motis/
             rm -rf ./deploy/cloud/db-rest
@@ -68,18 +84,106 @@ jobs:
               echo "CRON_SECRET=${CRON_SECRET}" >> .env
             fi
 
-            # Recreate ONLY the app to pick up the new image/config (postgres,
-            # redis and motis keep running — no data churn, no needless
-            # downtime), and wait until it reports healthy. The old command
-            # force-recreated the whole stack with no health gate, so a
-            # crash-on-start went unnoticed and could take the DB down with it.
-            docker compose -f docker-compose.cloud.yml up -d \
-              --no-deps --force-recreate --wait --wait-timeout 300 app
+            # Same for the licence service token, which anythingmcp.com checks
+            # to tell this backend apart from the public when it asks for a
+            # trial. Must match LICENSE_SERVICE_TOKEN on the website droplet.
+            if [ -n "${LICENSE_SERVICE_TOKEN}" ]; then
+              if grep -q '^LICENSE_SERVICE_TOKEN=' .env; then
+                sed -i "s#^LICENSE_SERVICE_TOKEN=.*#LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN}#" .env
+              else
+                echo "LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN}" >> .env
+              fi
+            fi
 
-            # Ensure the proxy + any other services are up (caddy waits for the
-            # app to be healthy, which it now is).
+            # Silence the host uptime probe for the length of this deploy.
+            # Recreating the two app containers leaves Caddy answering 502 for
+            # ~20 s, and on 21 Sep that window landed on a probe tick: a DOWN
+            # mail for a planned deploy, which is how an alert stops being read.
+            # The marker is an expiry, not a flag, and the trap clears it on
+            # every exit path — including the public gate below failing — so a
+            # deploy that actually breaks the site still mails within a minute.
+            mkdir -p /var/lib/anythingmcp-probe
+            echo $(( $(date -u +%s) + 600 )) > /var/lib/anythingmcp-probe/maintenance
+            trap 'rm -f /var/lib/anythingmcp-probe/maintenance' EXIT
+
+            # Recreate ONLY the two app containers to pick up the new image and
+            # config (postgres, redis and motis keep running — no data churn, no
+            # needless downtime), and wait until both report healthy. The old
+            # command force-recreated the whole stack with no health gate, so a
+            # crash-on-start went unnoticed and could take the DB down with it.
+            #
+            # backend and frontend are separate services since the 20 Sep heap
+            # incident, so that a backend restart no longer takes the app and
+            # every tenant's MCP endpoint down with it. The first deploy of that
+            # layout leaves the old single `app` container running until the
+            # step below removes it as an orphan — caddy keeps routing to it
+            # until then, so the switch is a few seconds of proxy restart.
+            docker compose -f docker-compose.cloud.yml up -d \
+              --no-deps --force-recreate --wait --wait-timeout 300 backend frontend
+
+            # Ensure the proxy + any other services are up (caddy waits for
+            # backend and frontend to be healthy, which they now are) and drop
+            # anything no longer in the compose file.
             docker compose -f docker-compose.cloud.yml up -d --remove-orphans
 
+            # Caddy reads its Caddyfile once, at start. The file is a bind
+            # mount, so a changed file does not change the container's config
+            # hash and `up` leaves the container alone. That is how the first
+            # split-layout deploy went: backend and frontend healthy, the old
+            # `app` removed, Caddy still proxying to app:4000 from memory —
+            # every route 502, and this workflow reported success. Reload,
+            # unconditionally: it is graceful, and a no-op when nothing changed.
+            docker exec amcp-cloud-caddy caddy reload --config /etc/caddy/Caddyfile
+
+            # The health gate above asked the containers. This asks the site,
+            # through Caddy, and fails the deploy if the answer is wrong — for
+            # the backend route, the anonymous MCP endpoint, and a frontend
+            # page, since those are three different proxy targets.
+            DOMAIN=$(grep -E '^DOMAIN=' .env | cut -d= -f2- | tr -d '"' | tr -d "'")
+            probe() {
+              local label="$1" expect="$2"; shift 2
+              local code=""
+              for i in $(seq 1 12); do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@" || echo 000)
+                [ "$code" = "$expect" ] && { echo "ok   $label → $code"; return 0; }
+                sleep 5
+              done
+              echo "::error::$label answered $code after deploy (expected $expect)"
+              return 1
+            }
+            ok=1
+            probe "https://${DOMAIN}/health" 200 "https://${DOMAIN}/health" || ok=0
+            probe "https://${DOMAIN}/mcp/demo tools/list" 200 -X POST \
+              -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+              "https://${DOMAIN}/mcp/demo" || ok=0
+            probe "https://${DOMAIN}/login" 200 "https://${DOMAIN}/login" || ok=0
+            if [ "$ok" != "1" ]; then
+              docker compose -f docker-compose.cloud.yml ps
+              docker logs --tail 30 amcp-cloud-caddy
+              exit 1
+            fi
+
             docker image prune -f
+
+            # Keep the eight most recent app images and drop the rest. On
+            # 2026-09-19 the droplet held 35 of them going back four months,
+            # ~1.3 GB each — the bulk of the 34 GB under /var/lib/containerd,
+            # growing by one image per deploy.
+            #
+            # Safe because these are a local cache, not an archive: every tag
+            # is still on Docker Hub, so an older rollback target comes back
+            # with `docker pull helpcodeai/anythingmcp:<tag>`. Eight covers
+            # roughly six weeks of builds. An image a container is using
+            # cannot be removed — docker refuses, and the `|| true` keeps the
+            # deploy green when it does.
+            docker images helpcodeai/anythingmcp \
+              --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
+              | sort -r | tail -n +9 | cut -f2 \
+              | while read -r img; do
+                  [ "$img" = "helpcodeai/anythingmcp:latest" ] && continue
+                  echo "pruning cached image $img"
+                  docker rmi "$img" >/dev/null 2>&1 || true
+                done
 
             echo "Deployment complete"

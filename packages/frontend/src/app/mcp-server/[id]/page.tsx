@@ -550,24 +550,16 @@ export default function McpServerDetailPage() {
       title={server.name}
       maxWidth={1200}
       actions={
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleToggleActive}
-            className={cn(
-              'h-9 rounded-[9px] border px-[13px] text-[12.5px] font-semibold transition-colors',
-              server.isActive
-                ? 'border-[var(--ok)] text-[var(--ok)] hover:bg-[var(--t-success-bg)]'
-                : 'border-[var(--border)] text-[var(--text-3)] hover:bg-[var(--surface-2)]'
-            )}
-          >
-            {server.isActive ? 'Active' : 'Inactive'}
-          </button>
-          <button
-            onClick={handleDeleteServer}
-            className="h-9 rounded-[9px] border border-[var(--danger)] px-[13px] text-[12.5px] font-semibold text-[var(--danger)] transition-colors hover:bg-[var(--t-danger-bg)]"
-          >
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The button names what it will do. Current state is the pill
+              below it, which is where state belongs — labelling the button
+              "Active" left it unclear whether it was a state or a switch. */}
+          <Button variant="secondary" size="md" onClick={handleToggleActive}>
+            {server.isActive ? 'Deactivate' : 'Activate'}
+          </Button>
+          <Button variant="outlineDanger" size="md" onClick={handleDeleteServer}>
             Delete
-          </button>
+          </Button>
         </div>
       }
     >

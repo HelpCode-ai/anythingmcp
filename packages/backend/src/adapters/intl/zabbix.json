@@ -1,0 +1,500 @@
+{
+  "slug": "zabbix",
+  "name": "Zabbix",
+  "description": "Zabbix monitoring: hosts, host groups, items, triggers, active problems, events and the latest measured values. JSON-RPC API over a single endpoint, bearer API token.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "zabbix",
+  "docsUrl": "https://www.zabbix.com/documentation/current/en/manual/api",
+  "instructions": "**Getting a token** (Zabbix 5.4 and newer)\n1. Sign in to the Zabbix frontend as a Super admin and open **Users → API tokens**.\n2. Create a token for a user with read permission on the host groups the agent should see, and copy the value — Zabbix shows it once.\n3. Set `ZABBIX_URL` to your frontend root (no trailing slash, no `/api_jsonrpc.php`) and `ZABBIX_API_TOKEN` to the token. The adapter sends it as `Authorization: Bearer …`, which Zabbix 6.0+ accepts; on 5.4 the token also works in the JSON-RPC `auth` field, which this adapter does not use.\n\n**One endpoint, many methods.** Zabbix is JSON-RPC: every call is a POST to `/api_jsonrpc.php` with `{\"jsonrpc\":\"2.0\",\"method\":\"host.get\",\"params\":{…},\"id\":1}`. That is why every tool here has the same path, and why the *method* is what distinguishes them.\n\n**Permissions are per host group, and Zabbix reports a denial as an empty array.** A token whose user cannot see a host group gets `{\"result\": []}` rather than an error — so an agent that reports 'no problems' may simply be looking through an account with no visibility.\n\n**Severity is an integer.** 0 not classified, 1 information, 2 warning, 3 average, 4 high, 5 disaster. 'Critical alerts' usually means severity ≥ 4.\n\n**`problem.get` is the live board, `event.get` is the history.** A problem that has since resolved is gone from `problem.get` and still in `event.get`. Ask the right one.\n\n**Timestamps are Unix seconds**, in the server's timezone configuration.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch, and a homelab's default certificate is exactly the case that breaks.\n- On an internal host (`zabbix.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "requiredEnvVars": [
+    "ZABBIX_URL",
+    "ZABBIX_API_TOKEN"
+  ],
+  "connector": {
+    "name": "Zabbix JSON-RPC API",
+    "type": "REST",
+    "baseUrl": "{{ZABBIX_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ZABBIX_API_TOKEN}}"
+    },
+    "headers": {
+      "Content-Type": "application/json-rpc"
+    },
+    "healthcheckPath": "/api_jsonrpc.php"
+  },
+  "probe": {
+    "tool": "zabbix_get_api_version"
+  },
+  "tools": [
+    {
+      "name": "zabbix_get_api_version",
+      "description": "Read the Zabbix API version. The one method that needs no authentication at all — use it to separate a URL problem from a token problem.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_jsonrpc.php",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "method": "apiinfo.version",
+          "id": 1,
+          "params": {}
+        }
+      }
+    },
+    {
+      "name": "zabbix_list_hosts",
+      "description": "List monitored hosts with their name, status, interfaces and host groups. The map of what Zabbix is actually watching.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum hosts to return."
+          },
+          "groupids": {
+            "type": "array",
+            "description": "Restrict to these host group ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "search_name": {
+            "type": "string",
+            "description": "Name fragment to search for (wildcard match)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_jsonrpc.php",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "method": "host.get",
+          "id": 1,
+          "params": {
+            "output": [
+              "hostid",
+              "host",
+              "name",
+              "status",
+              "available",
+              "description"
+            ],
+            "selectInterfaces": [
+              "ip",
+              "dns",
+              "port",
+              "type"
+            ],
+            "selectGroups": [
+              "groupid",
+              "name"
+            ],
+            "limit": "$limit",
+            "groupids": "$groupids",
+            "search": {
+              "name": "$search_name"
+            },
+            "searchWildcardsEnabled": true
+          }
+        }
+      }
+    },
+    {
+      "name": "zabbix_list_host_groups",
+      "description": "List host groups with their id, name and the number of hosts in each. Needed to scope any other query to a part of the estate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum groups to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_jsonrpc.php",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "method": "hostgroup.get",
+          "id": 1,
+          "params": {
+            "output": [
+              "groupid",
+              "name"
+            ],
+            "selectHosts": "count",
+            "limit": "$limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "zabbix_list_problems",
+      "description": "List the problems that are active **right now**, with their severity, host, name and the time they started. This is the live alert board.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum problems to return."
+          },
+          "severities": {
+            "type": "array",
+            "description": "Severity levels to include: 0 not classified, 1 information, 2 warning, 3 average, 4 high, 5 disaster.",
+            "items": {
+              "type": "number"
+            }
+          },
+          "groupids": {
+            "type": "array",
+            "description": "Restrict to these host group ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hostids": {
+            "type": "array",
+            "description": "Restrict to these host ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recent": {
+            "type": "boolean",
+            "description": "When true, also include recently resolved problems."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_jsonrpc.php",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "method": "problem.get",
+          "id": 1,
+          "params": {
+            "output": "extend",
+            "selectAcknowledges": "extend",
+            "selectTags": "extend",
+            "sortfield": [
+              "eventid"
+            ],
+            "sortorder": "DESC",
+            "limit": "$limit",
+            "severities": "$severities",
+            "groupids": "$groupids",
+            "hostids": "$hostids",
+            "recent": "$recent"
+          }
+        }
+      }
+    },
+    {
+      "name": "zabbix_list_events",
+      "description": "List events from the history — including problems that have since resolved, which problem.get no longer shows. The tool for 'what happened last night'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum events to return."
+          },
+          "time_from": {
+            "type": "number",
+            "description": "Earliest event time, Unix seconds."
+          },
+          "time_till": {
+            "type": "number",
+            "description": "Latest event time, Unix seconds."
+          },
+          "severities": {
+            "type": "array",
+            "description": "Severity levels to include, 0-5.",
+            "items": {
+              "type": "number"
+            }
+          },
+          "hostids": {
+            "type": "array",
+            "description": "Restrict to these host ids.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_jsonrpc.php",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "method": "event.get",
+          "id": 1,
+          "params": {
+            "output": "extend",
+            "select_acknowledges": "extend",
+            "sortfield": [
+              "clock",
+              "eventid"
+            ],
+            "sortorder": "DESC",
+            "limit": "$limit",
+            "time_from": "$time_from",
+            "time_till": "$time_till",
+            "severities": "$severities",
+            "hostids": "$hostids"
+          }
+        }
+      }
+    },
+    {
+      "name": "zabbix_list_triggers",
+      "description": "List triggers with their expression, severity, current value and the host they belong to — the rules that turn measurements into problems.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum triggers to return."
+          },
+          "hostids": {
+            "type": "array",
+            "description": "Restrict to these host ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "only_true": {
+            "type": "boolean",
+            "description": "When true, only triggers currently in a problem state."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_jsonrpc.php",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "method": "trigger.get",
+          "id": 1,
+          "params": {
+            "output": [
+              "triggerid",
+              "description",
+              "expression",
+              "priority",
+              "status",
+              "value",
+              "lastchange"
+            ],
+            "selectHosts": [
+              "hostid",
+              "name"
+            ],
+            "expandDescription": true,
+            "limit": "$limit",
+            "hostids": "$hostids",
+            "only_true": "$only_true"
+          }
+        }
+      }
+    },
+    {
+      "name": "zabbix_list_items",
+      "description": "List monitored items with their key, name, type, value type and units — what Zabbix actually measures on a host.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum items to return."
+          },
+          "hostids": {
+            "type": "array",
+            "description": "Restrict to these host ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "search_key": {
+            "type": "string",
+            "description": "Item key fragment to search for, e.g. vfs.fs.size."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_jsonrpc.php",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "method": "item.get",
+          "id": 1,
+          "params": {
+            "output": [
+              "itemid",
+              "name",
+              "key_",
+              "type",
+              "value_type",
+              "units",
+              "status",
+              "lastvalue",
+              "lastclock"
+            ],
+            "limit": "$limit",
+            "hostids": "$hostids",
+            "search": {
+              "key_": "$search_key"
+            },
+            "searchWildcardsEnabled": true
+          }
+        }
+      }
+    },
+    {
+      "name": "zabbix_get_latest_values",
+      "description": "Read the most recent value of specific items — the current disk usage, load average or temperature, rather than the alert about it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemids": {
+            "type": "array",
+            "description": "Item ids to read, from zabbix_list_items.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hostids": {
+            "type": "array",
+            "description": "Or read every item on these hosts.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum items to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_jsonrpc.php",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "method": "item.get",
+          "id": 1,
+          "params": {
+            "output": [
+              "itemid",
+              "name",
+              "key_",
+              "lastvalue",
+              "lastclock",
+              "units",
+              "value_type"
+            ],
+            "selectHosts": [
+              "hostid",
+              "name"
+            ],
+            "itemids": "$itemids",
+            "hostids": "$hostids",
+            "limit": "$limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "zabbix_get_history",
+      "description": "Read historical values of one item over a time range — the series behind a graph. Pass the right history type or Zabbix returns nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemids": {
+            "type": "array",
+            "description": "Item ids to read.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "history": {
+            "type": "number",
+            "description": "Value type: 0 float, 1 character, 2 log, 3 unsigned integer, 4 text. Must match the item's value_type."
+          },
+          "time_from": {
+            "type": "number",
+            "description": "Start of the range, Unix seconds."
+          },
+          "time_till": {
+            "type": "number",
+            "description": "End of the range, Unix seconds."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum data points to return."
+          }
+        },
+        "required": [
+          "itemids",
+          "history"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_jsonrpc.php",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "method": "history.get",
+          "id": 1,
+          "params": {
+            "output": "extend",
+            "sortfield": "clock",
+            "sortorder": "DESC",
+            "itemids": "$itemids",
+            "history": "$history",
+            "time_from": "$time_from",
+            "time_till": "$time_till",
+            "limit": "$limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "zabbix_list_maintenance_windows",
+      "description": "List configured maintenance windows with their hosts, groups and periods — the explanation for why an alert did not fire.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum maintenance windows to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_jsonrpc.php",
+        "bodyMapping": {
+          "jsonrpc": "2.0",
+          "method": "maintenance.get",
+          "id": 1,
+          "params": {
+            "output": "extend",
+            "selectGroups": "extend",
+            "selectHosts": "extend",
+            "selectTimeperiods": "extend",
+            "limit": "$limit"
+          }
+        }
+      }
+    }
+  ]
+}

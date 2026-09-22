@@ -23,17 +23,48 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      app:
+      backend:
+        condition: service_healthy
+      frontend:
         condition: service_healthy
     restart: unless-stopped
+    # Docker's json-file driver is unbounded by default. On 2026-09-18 MOTIS's
+    # debug log reached 32 GB and filled the droplet's 77 GB disk: every
+    # container went unhealthy, Postgres could not write, and a deploy failed
+    # at the scp step because nothing could be written to /tmp. Caps here, on
+    # every service, so one chatty container cannot do that again.
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
-  # NestJS Backend + Next.js Frontend (single container)
-  app:
+  # ── Backend and frontend: two containers, one image ──────────────────────
+  # Until 2026-09-20 both processes ran in one container under start.sh's
+  # liveness loop, which shut the container down whenever either process
+  # died. That afternoon the backend exhausted its heap four times, and each
+  # time the restart took the frontend and every tenant's MCP endpoint with
+  # it. Now a backend crash restarts the backend. The image is the same;
+  # `./start.sh backend` and `./start.sh frontend` exec one process each as
+  # PID 1, so `docker stop` and the backend's own heap guard reach Node
+  # directly and an exit becomes a restart through `restart: unless-stopped`.
+  backend:
     image: helpcodeai/anythingmcp:latest
-    container_name: amcp-cloud-app
+    container_name: amcp-cloud-backend
+    command: ["./start.sh", "backend"]
     expose:
-      - "3000"
       - "4000"
+    # Hard ceiling for the kernel. It must sit far enough above the V8 cap
+    # that the backend's own guard (process-vitals.ts) acts first, and the
+    # margin is larger than it looks: on 21 Sep RSS ran 1.6 GB above the JS
+    # heap — native buffers, and V8's snapshot builder — so a 5 GB limit over
+    # a 4 GB heap was reached with the heap at 60 %, and the kernel killed
+    # the process nineteen times with no log line. 6 GB over 4 GB, with the
+    # guard now watching RSS against this limit as well (HEAP_RSS_EXIT_PERCENT),
+    # turns that into a logged, graceful restart. On the 7.9 GB droplet the
+    # rest — frontend, postgres, redis, motis, caddy — sits near 1 GB today.
+    # If NODE_MAX_OLD_SPACE_MB is raised, raise this too.
+    mem_limit: ${BACKEND_MEM_LIMIT:-6g}
     environment:
       - NODE_ENV=production
       - PORT=4000
@@ -43,6 +74,17 @@ services:
       # .env when the host has the RAM to back it — roughly half of total is a
       # safe ceiling, since postgres, redis, motis and caddy share the box.
       - NODE_MAX_OLD_SPACE_MB=${NODE_MAX_OLD_SPACE_MB:-2048}
+      # Heap guard (packages/backend/src/common/process-vitals.ts; every var
+      # documented in .env.example). The snapshot stays OFF here: on a heap
+      # this size V8's snapshot builder is what pushed RSS into the cgroup
+      # limit on 21 Sep. Enable it deliberately, at a low percentage, when a
+      # snapshot is wanted — the guard refuses it anyway unless the room is
+      # there.
+      - HEAP_SNAPSHOT_PERCENT=${HEAP_SNAPSHOT_PERCENT:-0}
+      - HEAP_EXIT_PERCENT=${HEAP_EXIT_PERCENT:-90}
+      - HEAP_RSS_EXIT_PERCENT=${HEAP_RSS_EXIT_PERCENT:-90}
+      - HEAP_WARN_PERCENT=${HEAP_WARN_PERCENT:-75}
+      - HEALTH_HEAP_PERCENT=${HEALTH_HEAP_PERCENT:-90}
       - DEPLOYMENT_MODE=cloud
       - NEXT_PUBLIC_API_URL=https://${DOMAIN}
       - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
@@ -53,6 +95,13 @@ services:
       # Must match the repo secret ONBOARDING_CRON_SECRET. Unset = cron
       # endpoint refuses all calls (self-host default).
       - CRON_SECRET=${CRON_SECRET:-}
+      # Shared secret presented to anythingmcp.com as x-amcp-service-token when
+      # this backend asks for a licence on a user's behalf. The licence API
+      # rate-limits anonymous callers per IP, and every cloud trial request
+      # leaves from this one droplet, so without it the whole cloud shared a
+      # bucket of three trials an hour. Must match LICENSE_SERVICE_TOKEN on the
+      # website. Unset = public limit (self-host default).
+      - LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN:-}
       - CORS_ORIGIN=https://${DOMAIN}
       - SERVER_URL=https://${DOMAIN}
       - FRONTEND_URL=https://${DOMAIN}
@@ -104,6 +153,11 @@ services:
       - SMTP_PASS=${SMTP_PASS:-}
       - SMTP_FROM=${SMTP_FROM:-}
       - SMTP_SECURE=${SMTP_SECURE:-false}
+    volumes:
+      # One heap snapshot per process, written by the heap guard when the heap
+      # crosses HEAP_SNAPSHOT_PERCENT. A volume so it outlives the container
+      # that wrote it — the whole point is to read it after the restart.
+      - diagnostics:/app/diagnostics
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,8 +176,55 @@ services:
       # mid-boot and --wait aborted, failing a deploy that was actually coming up
       # fine (false negative). A genuinely dead app never becomes healthy, so once
       # start_period elapses it still goes unhealthy and the deploy fails for real.
+      #
+      # /health now also fails at HEALTH_HEAP_PERCENT of the heap limit, so the
+      # container reads unhealthy during a decline instead of right up to the
+      # abort. Docker does not restart an unhealthy container by itself; the
+      # backend's own guard exits, and this status is what a deploy and an
+      # outside probe see in the meantime.
       start_period: 180s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  frontend:
+    image: helpcodeai/anythingmcp:latest
+    container_name: amcp-cloud-frontend
+    command: ["./start.sh", "frontend"]
+    expose:
+      - "3000"
+    mem_limit: ${FRONTEND_MEM_LIMIT:-1g}
+    # Only what the Next.js server reads at runtime — found by grepping
+    # `process.env.` under packages/frontend/src, not by copying the backend's
+    # list. Its backend rewrites are baked at build time (see the note in
+    # deploy/cloud/Caddyfile — Caddy routes every backend path itself), so no
+    # database URL and no secrets here: a process that does not need them
+    # should not hold them.
+    #
+    # GTM_ID and COOKIE_DOMAIN are read server-side to render the Tag Manager
+    # snippet and the consent banner; leave them out and both silently vanish.
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=https://${DOMAIN}
+      - GTM_ID=${GTM_ID:-}
+      - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
+    healthcheck:
+      # A static file under public/, served by the standalone server without
+      # touching the backend: this probe answers for the frontend alone.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/logo.svg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   # PostgreSQL Database
   postgres:
@@ -141,6 +242,11 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   # Redis Cache — caching & rate limiting
   redis:
@@ -154,6 +260,11 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   # MOTIS — routing engine behind the Deutsche Bahn connector, fed by the open
   # gtfs.de timetable (CC BY 4.0) plus its GTFS-RT feed for live delays.
@@ -168,7 +279,11 @@ services:
     # the image persists across deploys and is only rebuilt when it changes.
     build:
       context: ./deploy/motis
-    image: anythingmcp-motis:2.11.3-1
+    # The -N suffix is a build revision of OUR image, not of MOTIS: bump it
+    # whenever deploy/motis/{Dockerfile,entrypoint.sh,config.yml} changes.
+    # The deploy only builds when the pinned tag is missing locally, so an
+    # edit with the same tag ships nothing — -2 carries `--log-level info`.
+    image: anythingmcp-motis:2.11.3-2
     container_name: amcp-cloud-motis
     expose:
       - "8080"
@@ -176,8 +291,17 @@ services:
       - motis_data:/data
     environment:
       - MOTIS_REFRESH_DAYS=${MOTIS_REFRESH_DAYS:-7}
+      # info, not MOTIS's default debug — see deploy/motis/entrypoint.sh.
+      # Set to debug temporarily when diagnosing a routing problem, then
+      # put it back: debug writes ~1.5 GB an hour.
+      - MOTIS_LOG_LEVEL=${MOTIS_LOG_LEVEL:-info}
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/"]
+      # 127.0.0.1, not localhost: MOTIS binds IPv4 only and localhost resolves
+      # to ::1 first inside the container, so the probe was refused every time.
+      # /metrics, not /: MOTIS answers 404 on the root, which --spider treats as
+      # a failure. Between the two, the container reported unhealthy for its
+      # whole life while serving traffic perfectly.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/metrics"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -185,6 +309,11 @@ services:
       # minutes); the margin is for a slow gtfs.de.
       start_period: 180s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
 volumes:
   postgres_data:
@@ -192,3 +321,4 @@ volumes:
   motis_data:
   caddy_data:
   caddy_config:
+  diagnostics:

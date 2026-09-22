@@ -2,7 +2,7 @@
   "slug": "etsy",
   "name": "Etsy",
   "description": "Read and update Etsy shop data (listings, transactions, receipts, reviews) from any AI agent. OAuth2 with automatic refresh-token rotation + x-api-key dual auth.",
-  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com) with **automatic OAuth2 refresh-token rotation**. You set it up once with a long-lived refresh token; AnythingMCP keeps the short-lived access token (1 hour TTL) refreshed in the background, so you never see expired-token errors.\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/your-apps → **Create New App**.\n2. Note the **Keystring** (= `x-api-key` = `client_id`) and **Shared secret** (= `client_secret`).\n3. Run the Etsy OAuth2 PKCE flow once (locally or via `https://www.etsy.com/oauth/connect?...`) with scopes such as `transactions_r listings_r listings_w shops_r email_r`. You'll receive an access token and a refresh token.\n4. Set the three env vars:\n   - `ETSY_CLIENT_ID` = the Keystring (also used as `x-api-key`)\n   - `ETSY_CLIENT_SECRET` = the Shared secret\n   - `ETSY_REFRESH_TOKEN` = the OAuth2 refresh token from step 3\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}`\nThe access token is refreshed in-memory and persisted to the encrypted `connector_auth_cache` DB table — survives restarts. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP captures the new refresh token from each refresh response and re-uses it automatically.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Out of scope here**: listing image uploads, payment account, billing, taxonomy edits.",
+  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com) with **automatic OAuth2 refresh-token rotation**. You set it up once with a long-lived refresh token; AnythingMCP keeps the short-lived access token (1 hour TTL) refreshed in the background, so you never see expired-token errors.\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/your-apps → **Create New App**.\n2. Note the **Keystring** (= `client_id`) and **Shared secret** (= `client_secret`). Etsy wants BOTH of them in the `x-api-key` header, joined by a colon; the connector builds that for you.\n3. Run the Etsy OAuth2 PKCE flow once (locally or via `https://www.etsy.com/oauth/connect?...`) with scopes such as `transactions_r listings_r listings_w shops_r email_r`. You'll receive an access token and a refresh token.\n4. Set the three env vars:\n   - `ETSY_CLIENT_ID` = the Keystring\n   - `ETSY_CLIENT_SECRET` = the Shared secret\n   - `ETSY_REFRESH_TOKEN` = the OAuth2 refresh token from step 3\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}:${ETSY_CLIENT_SECRET}`\n\nEtsy requires the API key on **every** request, OAuth or not, and it must carry the\nKeystring AND the Shared secret separated by a colon. The Keystring alone earns a\n`403 {\"error\":\"Invalid API key: should be in the format 'keystring:shared_secret'.\"}`\non every call.\n\nThe access token is kept in memory and written back, together with the rotated refresh token, into this connector's own encrypted configuration, so a restart does not lose it. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP stores the new one from every refresh response and re-uses it automatically.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**\"No authorization URL configured\"** on the connector page is expected: this connector uses the refresh-token grant, so there is no Authorize button and nothing to click. Step 3 above is the one-off manual part.\n\n**Out of scope here**: listing image uploads, payment account, billing, taxonomy edits.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "etsy",
@@ -16,6 +16,7 @@
     "name": "Etsy Open API v3",
     "type": "REST",
     "baseUrl": "https://openapi.etsy.com/v3/application",
+    "healthcheckPath": "/openapi-ping",
     "authType": "OAUTH2",
     "authConfig": {
       "grant": "refresh_token",
@@ -24,7 +25,7 @@
       "clientSecret": "{{ETSY_CLIENT_SECRET}}",
       "refreshToken": "{{ETSY_REFRESH_TOKEN}}",
       "extraHeaders": {
-        "x-api-key": "{{ETSY_CLIENT_ID}}"
+        "x-api-key": "{{ETSY_CLIENT_ID}}:{{ETSY_CLIENT_SECRET}}"
       }
     }
   },

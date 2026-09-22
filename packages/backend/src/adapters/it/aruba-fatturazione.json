@@ -1,0 +1,215 @@
+{
+  "slug": "aruba-fatturazione",
+  "name": "Aruba Fatturazione Elettronica",
+  "description": "Aruba Fatturazione Elettronica: send and track Italian e-invoices through the Sistema di Interscambio, read received invoices and their SDI notifications. Token auth against Aruba's B2B gateway.",
+  "region": "it",
+  "category": "accounting",
+  "icon": "aruba-fatturazione",
+  "docsUrl": "https://fatturazioneelettronica.aruba.it/apidoc/docs.html",
+  "instructions": "**Getting credentials**\n1. You need an active **Aruba Fatturazione Elettronica** subscription with the API option enabled.\n2. In the web console create the API user. Aruba issues a username of the form `XXXXXXXX` and a password; these are *not* your Aruba portal login.\n3. Set `ARUBA_USERNAME` and `ARUBA_PASSWORD`. The adapter signs in at `/services/auth/signin` and reuses the returned bearer token, refreshing it when Aruba expires it. AnythingMCP keeps the token encrypted in `connector_auth_cache`.\n\n**The Sistema di Interscambio is asynchronous, and that is the whole shape of this API.** You hand an invoice to Aruba, Aruba hands it to the SDI, and the SDI answers minutes or hours later with a notification. `aruba_fatturazione_get_invoice_status` reads where a document currently stands; the states that matter are `PRESA_IN_CARICO` (accepted by Aruba), `INVIATA` (forwarded to the SDI), `CONSEGNATA` (delivered to the recipient), `SCARTATA` (rejected — a real problem), `MANCATA_CONSEGNA` (the recipient's channel failed, but the invoice is still legally issued) and `NON_RECAPITABILE`.\n\n**A `SCARTATA` invoice has not been issued.** It has to be corrected and resent with the same number within five days. An agent reporting revenue should exclude rejected documents, not count them.\n\n**Invoices are XML (FatturaPA), base64-encoded over this API.** The tools here read status and metadata; fetching a document returns the encoded XML, which is the legally binding artefact.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: ws.fatturazioneelettronica.aruba.it is public with a valid certificate.",
+  "requiredEnvVars": [
+    "ARUBA_USERNAME",
+    "ARUBA_PASSWORD"
+  ],
+  "connector": {
+    "name": "Aruba Fatturazione Elettronica",
+    "type": "REST",
+    "baseUrl": "https://ws.fatturazioneelettronica.aruba.it/services",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://ws.fatturazioneelettronica.aruba.it/services/auth/signin",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json"
+      },
+      "loginBody": {
+        "username": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{ARUBA_USERNAME}}",
+      "password": "{{ARUBA_PASSWORD}}",
+      "tokenJsonPath": "access_token",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/invoice/out/findByFilters"
+  },
+  "probe": {
+    "tool": "aruba_fatturazione_list_sent_invoices"
+  },
+  "tools": [
+    {
+      "name": "aruba_fatturazione_list_sent_invoices",
+      "description": "List invoices sent through the Sistema di Interscambio in a date range, with their number, recipient, total and current SDI state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "startDate": {
+            "type": "string",
+            "description": "Earliest invoice date, dd/MM/yyyy."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Latest invoice date, dd/MM/yyyy."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "status": {
+            "type": "string",
+            "description": "Restrict by SDI state, e.g. CONSEGNATA, SCARTATA, MANCATA_CONSEGNA."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/out/findByFilters",
+        "queryParams": {
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "page": "$page",
+          "size": "$size",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "aruba_fatturazione_get_invoice_status",
+      "description": "Read where one sent invoice currently stands with the SDI, including the notification history. SCARTATA means it was rejected and has not legally been issued.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSdi": {
+            "type": "string",
+            "description": "SDI identifier of the document, returned when it was sent."
+          }
+        },
+        "required": [
+          "idSdi"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/out/getBySdiId",
+        "queryParams": {
+          "idSdi": "$idSdi"
+        }
+      }
+    },
+    {
+      "name": "aruba_fatturazione_get_sent_invoice",
+      "description": "Fetch one sent invoice as base64-encoded FatturaPA XML — the legally binding artefact, not a rendering of it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSdi": {
+            "type": "string",
+            "description": "SDI identifier of the document."
+          }
+        },
+        "required": [
+          "idSdi"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/out/getFile",
+        "queryParams": {
+          "idSdi": "$idSdi"
+        }
+      }
+    },
+    {
+      "name": "aruba_fatturazione_list_received_invoices",
+      "description": "List invoices received from suppliers through the SDI in a date range, with their sender, number, date and total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "startDate": {
+            "type": "string",
+            "description": "Earliest invoice date, dd/MM/yyyy."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Latest invoice date, dd/MM/yyyy."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "size": {
+            "type": "number",
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/in/findByFilters",
+        "queryParams": {
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "aruba_fatturazione_get_received_invoice",
+      "description": "Fetch one received supplier invoice as base64-encoded FatturaPA XML, for archiving or for feeding into bookkeeping.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSdi": {
+            "type": "string",
+            "description": "SDI identifier of the received document."
+          }
+        },
+        "required": [
+          "idSdi"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/in/getFile",
+        "queryParams": {
+          "idSdi": "$idSdi"
+        }
+      }
+    },
+    {
+      "name": "aruba_fatturazione_list_notifications",
+      "description": "List the SDI notifications attached to one document: receipt, delivery, non-delivery or rejection, each with its timestamp and reason code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idSdi": {
+            "type": "string",
+            "description": "SDI identifier of the document."
+          }
+        },
+        "required": [
+          "idSdi"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/out/getNotifications",
+        "queryParams": {
+          "idSdi": "$idSdi"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,226 @@
+{
+  "slug": "zalando-zds",
+  "name": "Zalando Partner (ZDS)",
+  "description": "Zalando's partner APIs for Zalando Direct Ship merchants: orders, order items, shipments, returns, stock and price feeds. OAuth 2.0 client credentials. Partner onboarding required.",
+  "region": "de",
+  "category": "e-commerce",
+  "icon": "zalando-zds",
+  "docsUrl": "https://opendevportal.zalando.com/",
+  "instructions": "**Partner onboarding required.** Zalando's merchant APIs are not open: you need an active Zalando Partner Programme contract and credentials issued through **Zalando zDirect**. There is no self-service signup and no public sandbox, so this adapter ships unverified by design.\n\n**Setup**\n1. In zDirect open the API section and create an OAuth 2.0 client for your merchant account. You receive a **client id** and **client secret**.\n2. Note your **merchant id** — a UUID that scopes every path. Zalando merchants often have several (one per sales channel or country), and the wrong one returns an empty, entirely convincing result.\n3. Set `ZALANDO_CLIENT_ID`, `ZALANDO_CLIENT_SECRET` and `ZALANDO_MERCHANT_ID`.\n\n**Client credentials, scoped per API.** The token endpoint is `https://api.zalando.com/oauth2/token` and the scopes you were granted determine which of the paths below actually answer. A 403 here usually means a missing scope rather than a bad secret.\n\n**ZDS vs Partner Fulfilment.** These tools target **Zalando Direct Ship**, where the merchant ships to the customer. Merchants on Zalando Fulfilment Solutions (ZFS) use a different set of endpoints for stock and shipping, because Zalando holds the inventory.\n\n**Dates** are ISO 8601 with a zone. Order lists are cursor-paged: pass back the `next` token from the response rather than computing an offset.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n",
+  "requiredEnvVars": [
+    "ZALANDO_CLIENT_ID",
+    "ZALANDO_CLIENT_SECRET",
+    "ZALANDO_MERCHANT_ID"
+  ],
+  "connector": {
+    "name": "Zalando Partner API",
+    "type": "REST",
+    "baseUrl": "https://api.zalando.com/merchants/{{ZALANDO_MERCHANT_ID}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{ZALANDO_CLIENT_ID}}",
+      "clientSecret": "{{ZALANDO_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.zalando.com/oauth2/token"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/orders?limit=1"
+  },
+  "probe": {
+    "tool": "zalando_zds_list_orders"
+  },
+  "tools": [
+    {
+      "name": "zalando_zds_list_orders",
+      "description": "List orders for the merchant with their order number, date, status and totals. Cursor-paged: pass back the `next` token from the previous response.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Earliest order date, ISO 8601 with a zone."
+          },
+          "to": {
+            "type": "string",
+            "description": "Latest order date, ISO 8601 with a zone."
+          },
+          "status": {
+            "type": "string",
+            "description": "Restrict by order status, e.g. OPEN, FULFILLED, CANCELLED."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "next": {
+            "type": "string",
+            "description": "Cursor token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "status": "$status",
+          "limit": "$limit",
+          "next": "$next"
+        }
+      }
+    },
+    {
+      "name": "zalando_zds_get_order",
+      "description": "Read one order in full: its items with EAN and price, the delivery address, and the current fulfilment state of each item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "description": "Zalando order id."
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{orderId}"
+      }
+    },
+    {
+      "name": "zalando_zds_list_order_items",
+      "description": "List the individual items of one order with their EAN, article number, price and per-item status — the level Zalando actually fulfils and cancels at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "description": "Zalando order id."
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{orderId}/items"
+      }
+    },
+    {
+      "name": "zalando_zds_list_shipments",
+      "description": "List shipments the merchant has reported, with their carrier, tracking number, date and the order items they cover.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Earliest shipment date, ISO 8601 with a zone."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "next": {
+            "type": "string",
+            "description": "Cursor token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments",
+        "queryParams": {
+          "from": "$from",
+          "limit": "$limit",
+          "next": "$next"
+        }
+      }
+    },
+    {
+      "name": "zalando_zds_list_returns",
+      "description": "List returns with their EAN, reason code, date and the order they belong to — the input to any returns-rate analysis.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Earliest return date, ISO 8601 with a zone."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "next": {
+            "type": "string",
+            "description": "Cursor token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/returns",
+        "queryParams": {
+          "from": "$from",
+          "limit": "$limit",
+          "next": "$next"
+        }
+      }
+    },
+    {
+      "name": "zalando_zds_list_stock",
+      "description": "Read the stock Zalando currently holds for the merchant's EANs, so a discrepancy with the ERP can be found before it becomes an oversell.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "next": {
+            "type": "string",
+            "description": "Cursor token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock",
+        "queryParams": {
+          "limit": "$limit",
+          "next": "$next"
+        }
+      }
+    },
+    {
+      "name": "zalando_zds_list_prices",
+      "description": "Read the prices currently live on Zalando for the merchant's EANs, including any active promotional price and its validity window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Rows per page."
+          },
+          "next": {
+            "type": "string",
+            "description": "Cursor token from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/prices",
+        "queryParams": {
+          "limit": "$limit",
+          "next": "$next"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,121 @@
+{
+  "slug": "mssql",
+  "name": "Microsoft SQL Server",
+  "description": "Query a Microsoft SQL Server database directly: list tables, describe columns and run read-only T-SQL. Supports SQL Server and Windows (NTLM) authentication. Installs read-only.",
+  "region": "intl",
+  "category": "database",
+  "icon": "mssql",
+  "docsUrl": "https://learn.microsoft.com/en-us/sql/t-sql/language-reference",
+  "instructions": "**Setup**\n1. Create a login and a database user with only `db_datareader`:\n   ```sql\n   CREATE LOGIN amcp_reader WITH PASSWORD = 'change-me';\n   USE sales;\n   CREATE USER amcp_reader FOR LOGIN amcp_reader;\n   ALTER ROLE db_datareader ADD MEMBER amcp_reader;\n   ```\n2. Set `MSSQL_HOST`, `MSSQL_PORT` (1433), `MSSQL_DATABASE`, `MSSQL_USER` and `MSSQL_PASSWORD`.\n\n**Windows authentication**: set `MSSQL_DOMAIN` as well and the engine switches to NTLM instead of SQL Server auth. Leave it blank for a SQL login.\n\n**Named instances**: a host of the `SERVER\\\\INSTANCE` form does not fit a URL. Give the instance's TCP port in `MSSQL_PORT` and the plain hostname in `MSSQL_HOST` — the SQL Browser resolves the name to that port anyway, and naming the port directly removes a moving part.\n\n**The default schema is `dbo`**, so an unqualified name resolves there. Qualify (`sales.orders`) when the database uses more than one schema.\n\n**How a database connector behaves**\n\n- **It installs read-only.** The engine rejects anything that is not a read\n  until you flip the switch in the connector's settings. That is a guard rail,\n  not a security boundary: give the connection a database role that is itself\n  read-only, and the guard rail never has to matter.\n- **Credentials live in the encrypted `authConfig`**, not in the connection\n  string. `MSSQL_USER` and `MSSQL_PASSWORD` are stored encrypted and spliced into the\n  DSN at call time; the host and database name are stored in the plaintext\n  `baseUrl` column.\n- **Results are capped at 1000 rows.** A query that would return more comes\n  back truncated with a flag. Aggregate in SQL rather than in the agent.\n- **A statement runs exactly as written.** There is no query rewriting and no\n  automatic LIMIT — an unbounded scan on a large table is a real unbounded\n  scan on your production database. Say LIMIT.\n\n**Reachable from where?**\n\n- On **AnythingMCP Cloud** the server must accept connections from the public\n  internet, which for a production database usually means it should not. Point\n  the connector at a read replica, or self-host AnythingMCP inside the network.\n- **Self-hosted**, add the host to `SSRF_ALLOWED_HOSTS`: the outbound guard\n  blocks private address space by default, and `10.0.0.5` is exactly the shape\n  it is there to block.\n",
+  "requiredEnvVars": [
+    "MSSQL_HOST",
+    "MSSQL_PORT",
+    "MSSQL_DATABASE",
+    "MSSQL_USER",
+    "MSSQL_PASSWORD"
+  ],
+  "optionalEnvVars": [
+    "MSSQL_DOMAIN"
+  ],
+  "connector": {
+    "name": "Microsoft SQL Server",
+    "type": "DATABASE",
+    "baseUrl": "mssql://{{MSSQL_HOST}}:{{MSSQL_PORT}}/{{MSSQL_DATABASE}}",
+    "authType": "CONNECTION_STRING",
+    "authConfig": {
+      "username": "{{MSSQL_USER}}",
+      "password": "{{MSSQL_PASSWORD}}",
+      "domain": "{{MSSQL_DOMAIN}}"
+    }
+  },
+  "probe": {
+    "tool": "mssql_list_tables"
+  },
+  "tools": [
+    {
+      "name": "mssql_list_tables",
+      "description": "List the tables and views in the database with their schema and, where the server tracks it, an approximate row count. Start here — it is the map of what can be queried.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT s.name AS table_schema, t.name AS table_name, 'BASE TABLE' AS table_type, p.rows AS approx_rows FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id JOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0,1) ORDER BY s.name, t.name"
+      }
+    },
+    {
+      "name": "mssql_describe_table",
+      "description": "Describe one table: every column with its data type, nullability and default. Read this before writing a query against a table you have not seen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_name": {
+            "type": "string",
+            "description": "Table name, without the schema prefix."
+          }
+        },
+        "required": [
+          "table_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT column_name, data_type, is_nullable, column_default, character_maximum_length FROM information_schema.columns WHERE table_name = ${table_name} ORDER BY ordinal_position"
+      }
+    },
+    {
+      "name": "mssql_find_columns",
+      "description": "Find columns across every table whose name matches a pattern — the fast way to locate where customer e-mail addresses, IBANs or order numbers actually live.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "SQL LIKE pattern matched against the column name, e.g. %email% or %_id."
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT table_schema, table_name, column_name, data_type FROM information_schema.columns WHERE column_name LIKE ${pattern} ORDER BY table_schema, table_name, column_name"
+      }
+    },
+    {
+      "name": "mssql_query",
+      "description": "Run a read-only SQL statement against Microsoft SQL Server and return up to 1000 rows. The statement runs exactly as written — there is no automatic LIMIT, so say LIMIT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A single SQL SELECT statement. Include your own LIMIT; nothing is added for you."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "${query}"
+      }
+    },
+    {
+      "name": "mssql_query_examples",
+      "description": "Show worked example queries for Microsoft SQL Server: how to list schemas, find large tables, inspect indexes and check what is running right now. Costs nothing and touches no data.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "Microsoft SQL Server example queries\n\n-- The ten largest tables\nSELECT TOP 10 s.name + '.' + t.name AS [table], SUM(p.rows) AS [rows],\n       SUM(a.total_pages) * 8 / 1024 AS mb\nFROM sys.tables t\nJOIN sys.schemas s ON s.schema_id = t.schema_id\nJOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0,1)\nJOIN sys.allocation_units a ON a.container_id = p.partition_id\nGROUP BY s.name, t.name ORDER BY 3 DESC;\n\n-- Indexes on a table\nSELECT i.name, i.type_desc, i.is_unique,\n       STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns\nFROM sys.indexes i\nJOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id\nJOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id\nWHERE i.object_id = OBJECT_ID('dbo.orders')\nGROUP BY i.name, i.type_desc, i.is_unique;\n\n-- Foreign keys out of a table\nSELECT fk.name, OBJECT_NAME(fk.referenced_object_id) AS references_table\nFROM sys.foreign_keys fk WHERE fk.parent_object_id = OBJECT_ID('dbo.orders');\n\n-- What is running right now, longest first\nSELECT r.session_id, r.status, r.wait_type,\n       DATEDIFF(second, r.start_time, GETDATE()) AS seconds,\n       LEFT(t.text, 120) AS query\nFROM sys.dm_exec_requests r\nCROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t\nWHERE r.session_id <> @@SPID ORDER BY seconds DESC;\n\n-- Columns whose name suggests personal data\nSELECT table_schema, table_name, column_name FROM information_schema.columns\nWHERE column_name LIKE '%email%' OR column_name LIKE '%phone%'\n   OR column_name LIKE '%iban%'  OR column_name LIKE '%birth%'\nORDER BY 1, 2;\n"
+      }
+    }
+  ]
+}

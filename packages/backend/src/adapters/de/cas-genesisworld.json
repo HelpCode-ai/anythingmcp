@@ -1,0 +1,261 @@
+{
+  "slug": "cas-genesisworld",
+  "name": "CAS genesisWorld",
+  "description": "CAS genesisWorld — the CRM of roughly 30,000 German Mittelstand companies. Read and search addresses, contacts, opportunities, appointments, tasks and documents over the genesisWorld Web REST API. Basic auth against your own application server.",
+  "region": "de",
+  "category": "crm",
+  "icon": "cas-genesisworld",
+  "docsUrl": "https://help.cas.de/doc/en/gw/api/",
+  "instructions": "**Getting access**\n1. The REST API ships with the **genesisWorld Web** component. Ask your CAS partner or administrator to confirm it is installed and that the `/api` route is published — it is not on by default in every deployment.\n2. Create a genesisWorld user for the integration and give it exactly the record rights the agent should have. genesisWorld enforces record-level rights, so a restricted user simply sees fewer rows rather than getting an error.\n3. Set `CAS_URL` to the genesisWorld Web base URL (no trailing slash), plus `CAS_USERNAME` and `CAS_PASSWORD`.\n\n**Record types are the vocabulary.** genesisWorld calls its entities *Datensatztypen*: `Address` (companies and people), `Contact` (logged interactions — calls, letters), `Opportunity` (Verkaufschance), `Appointment`, `Task` and `Document`. The `type` parameter on the search tool takes these names.\n\n**GUIDs, not integers.** Every record is identified by a GUID like `{A1B2C3D4-…}`, braces included. Pass it back exactly as it was returned.\n\n**Searching** takes a `query` expression over the record type's fields. Start with a simple `CompanyName like 'Muster%'` before reaching for compound conditions; the expression grammar differs subtly between genesisWorld versions.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant — CAS Software AG does not offer a public sandbox. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. If you run this against a real system, a correction to the adapter JSON is genuinely welcome.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`crm.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n\n**Read-only by design**: this adapter exposes no write. genesisWorld's record rights and workflow triggers make a blind create genuinely risky, and a CRM record created by mistake is visible to the whole sales team.",
+  "requiredEnvVars": [
+    "CAS_URL",
+    "CAS_USERNAME",
+    "CAS_PASSWORD"
+  ],
+  "connector": {
+    "name": "CAS genesisWorld Web API",
+    "type": "REST",
+    "baseUrl": "{{CAS_URL}}/api/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{CAS_USERNAME}}",
+      "password": "{{CAS_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/session"
+  },
+  "probe": {
+    "tool": "cas_genesisworld_get_session"
+  },
+  "tools": [
+    {
+      "name": "cas_genesisworld_get_session",
+      "description": "Read the session of the connected user: display name, licence, language and the record rights the integration will operate under.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/session"
+      }
+    },
+    {
+      "name": "cas_genesisworld_search_records",
+      "description": "Search any genesisWorld record type with a query expression. The general-purpose tool — start with a simple `Field like 'value%'` before composing conditions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Record type: Address, Contact, Opportunity, Appointment, Task or Document."
+          },
+          "query": {
+            "type": "string",
+            "description": "Query expression over that type's fields, e.g. CompanyName like 'Muster%'."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "orderBy": {
+            "type": "string",
+            "description": "Field to sort by, e.g. CompanyName."
+          }
+        },
+        "required": [
+          "type",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/records/{type}",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit",
+          "offset": "$offset",
+          "orderBy": "$orderBy"
+        }
+      }
+    },
+    {
+      "name": "cas_genesisworld_get_record",
+      "description": "Read one record in full by its record type and GUID, with every field the connected user is allowed to see.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Record type, e.g. Address or Opportunity."
+          },
+          "gguid": {
+            "type": "string",
+            "description": "Record GUID as returned by a search, braces included."
+          }
+        },
+        "required": [
+          "type",
+          "gguid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/records/{type}/{gguid}"
+      }
+    },
+    {
+      "name": "cas_genesisworld_list_addresses",
+      "description": "List addresses — genesisWorld's companies and people — with their company name, contact person, city and account manager.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "orderBy": {
+            "type": "string",
+            "description": "Field to sort by, e.g. CompanyName."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/records/Address",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "orderBy": "$orderBy"
+        }
+      }
+    },
+    {
+      "name": "cas_genesisworld_list_opportunities",
+      "description": "List sales opportunities (Verkaufschancen) with their value, probability, phase, expected close date and the address they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "orderBy": {
+            "type": "string",
+            "description": "Field to sort by, e.g. ExpectedCloseDate."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/records/Opportunity",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "orderBy": "$orderBy"
+        }
+      }
+    },
+    {
+      "name": "cas_genesisworld_list_appointments",
+      "description": "List appointments in a date range with their subject, participants, location and linked address — the calendar view of customer contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the range, ISO 8601 date."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the range, ISO 8601 date."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/records/Appointment",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cas_genesisworld_list_tasks",
+      "description": "List tasks with their subject, due date, status, priority and the user they are assigned to, for the follow-up view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/records/Task",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "cas_genesisworld_get_record_links",
+      "description": "Read the records linked to one record — the appointments, tasks, documents and opportunities hanging off an address. genesisWorld's history lives in these links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Record type of the anchor record, e.g. Address."
+          },
+          "gguid": {
+            "type": "string",
+            "description": "GUID of the anchor record, braces included."
+          },
+          "linkType": {
+            "type": "string",
+            "description": "Restrict to one linked record type, e.g. Opportunity."
+          }
+        },
+        "required": [
+          "type",
+          "gguid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/records/{type}/{gguid}/links",
+        "queryParams": {
+          "linkType": "$linkType"
+        }
+      }
+    }
+  ]
+}

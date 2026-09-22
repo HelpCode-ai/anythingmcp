@@ -1,4 +1,4 @@
-import { RestEngine } from './rest.engine';
+import { RestEngine, serializeRepeatedParams } from './rest.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { LoginTokenService } from './login-token.service';
 import axios, { AxiosError } from 'axios';
@@ -797,6 +797,287 @@ describe('RestEngine', () => {
     });
   });
 
+  /**
+   * Both of these were found by driving shipped adapters through the engine
+   * rather than by reading them: each produced a request that axios accepted
+   * and the upstream rejected, with an error naming a field the adapter never
+   * mentioned. The shipped adapters are used here, not paraphrases of them.
+   */
+  describe('array-shaped mappings keep their shape', () => {
+    it('sends a top-level array bodyMapping as an array', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const bexio = require('../../adapters/ch/bexio.json') as {
+        tools: Array<{ name: string; endpointMapping: Record<string, unknown> }>;
+      };
+      const tool = bexio.tools.find((t) => t.name === 'bexio_search_contacts')!;
+
+      await engine.execute(
+        {
+          baseUrl: 'https://api.bexio.com',
+          authType: 'BEARER_TOKEN',
+          authConfig: { token: 'tok' },
+        },
+        tool.endpointMapping as never,
+        { field: 'name_1', value: 'Muster', criteria: 'like' },
+      );
+
+      const body = (mockedAxios.mock.calls[0][0] as unknown as { data: unknown }).data;
+      expect(Array.isArray(body)).toBe(true);
+      expect(body).toEqual([
+        { field: 'name_1', value: 'Muster', criteria: 'like' },
+      ]);
+    });
+
+    it('sends OTTO price updates as the array the API documents', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const otto = require('../../adapters/de/otto-market.json') as {
+        tools: Array<{ name: string; endpointMapping: Record<string, unknown> }>;
+      };
+      const tool = otto.tools.find((t) => t.name === 'otto_market_update_price')!;
+
+      await engine.execute(
+        { baseUrl: 'https://api.otto.market', authType: 'NONE' },
+        tool.endpointMapping as never,
+        { sku: 'SKU-1', amount: '29.99', currency: 'EUR' },
+      );
+
+      const body = (mockedAxios.mock.calls[0][0] as unknown as { data: unknown }).data;
+      expect(Array.isArray(body)).toBe(true);
+      expect(body).toEqual([
+        { sku: 'SKU-1', standardPrice: { amount: '29.99', currency: 'EUR' } },
+      ]);
+    });
+
+    it('repeats an array query parameter instead of bracketing it', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const checkmk = require('../../adapters/de/checkmk.json') as {
+        tools: Array<{ name: string; endpointMapping: Record<string, unknown> }>;
+      };
+      const tool = checkmk.tools.find(
+        (t) => t.name === 'checkmk_list_host_states',
+      )!;
+
+      await engine.execute(
+        {
+          baseUrl: 'https://cmk.test/check_mk/api/1.0',
+          authType: 'API_KEY',
+          authConfig: { headerName: 'Authorization', apiKey: 'Bearer u s' },
+        },
+        tool.endpointMapping as never,
+        {},
+      );
+
+      const cfg = mockedAxios.mock.calls[0][0] as unknown as {
+        params: Record<string, unknown>;
+        paramsSerializer: unknown;
+      };
+      const query = cfg.paramsSerializer as unknown as (
+        p: Record<string, unknown>,
+      ) => string;
+      const serialized = query(cfg.params);
+      expect(serialized).toContain('columns=name&columns=state');
+      expect(serialized).not.toContain('columns%5B%5D');
+    });
+  });
+
+  /**
+   * The serializer is applied to EVERY request that carries query params, so
+   * any difference from axios's own encoding silently rewrites 254 adapters'
+   * URLs. An earlier version built the string with URLSearchParams, which
+   * percent-encodes the colon — that alone re-spells every ISO 8601 filter
+   * value in the catalogue, and 150 adapters send one.
+   *
+   * So compare against real axios over a real socket rather than against a
+   * hand-copied list of escape exceptions.
+   */
+  /**
+   * The point of HMAC auth is that the secret is never sent, so the only thing
+   * that can be checked is whether the digest is the one the vendor will
+   * recompute. Verify against a signature computed independently here, and
+   * against the shipped Kaufland adapter's own template — not against the
+   * engine's own output, which would pass whatever it produced.
+   */
+  describe('HMAC request signing', () => {
+    const crypto = jest.requireActual('node:crypto') as typeof import('node:crypto');
+
+    it('signs the canonical string the shipped Kaufland adapter declares', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const kaufland = require('../../adapters/de/kaufland.json') as {
+        connector: { authType: string; authConfig: Record<string, unknown> };
+        tools: Array<{ name: string; endpointMapping: Record<string, unknown> }>;
+      };
+      const authConfig = JSON.parse(
+        JSON.stringify(kaufland.connector.authConfig)
+          .replace('{{KAUFLAND_SECRET_KEY}}', 'sh-secret')
+          .replace('{{KAUFLAND_CLIENT_KEY}}', 'sh-client'),
+      ) as Record<string, unknown>;
+      const tool = kaufland.tools.find((t) => t.name === 'kaufland_list_warehouses')!;
+
+      const before = Math.floor(Date.now() / 1000);
+      await engine.execute(
+        {
+          baseUrl: 'https://sellerapi.kaufland.com/v2',
+          authType: 'HMAC',
+          authConfig,
+        },
+        tool.endpointMapping as never,
+        {},
+      );
+      const after = Math.floor(Date.now() / 1000);
+
+      const cfg = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+        url: string;
+      };
+      const ts = cfg.headers['Shop-Timestamp'];
+      expect(Number(ts)).toBeGreaterThanOrEqual(before);
+      expect(Number(ts)).toBeLessThanOrEqual(after);
+      expect(cfg.headers['Shop-Client-Key']).toBe('sh-client');
+
+      // Recompute independently, from the vendor's documented string.
+      const expected = crypto
+        .createHmac('sha256', 'sh-secret')
+        .update(`GET\n${cfg.url}\n\n${ts}\n`, 'utf8')
+        .digest('hex');
+      expect(cfg.headers['Shop-Signature']).toBe(expected);
+      // The secret itself must appear nowhere on the wire.
+      expect(JSON.stringify(cfg)).not.toContain('sh-secret');
+    });
+
+    it('signs the body exactly as it is sent', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      const body = { sku: 'A-1', qty: 3 };
+      await engine.execute(
+        {
+          baseUrl: 'https://api.test',
+          authType: 'HMAC',
+          authConfig: {
+            signature: {
+              secret: 's3cret',
+              template: '${method}\n${path}\n${body}\n${timestamp}\n',
+              headerName: 'X-Sig',
+              timestampHeader: 'X-Ts',
+            },
+          },
+        },
+        { method: 'POST', path: '/units', bodyMapping: { sku: '$sku', qty: '$qty' } } as never,
+        body,
+      );
+      const cfg = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+        data: unknown;
+      };
+      const sent = JSON.stringify(cfg.data);
+      const expected = crypto
+        .createHmac('sha256', 's3cret')
+        .update(`POST\n/units\n${sent}\n${cfg.headers['X-Ts']}\n`, 'utf8')
+        .digest('hex');
+      expect(cfg.headers['X-Sig']).toBe(expected);
+    });
+
+    it('supports base64 and sha512, and leaves other auth types alone', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(
+        {
+          baseUrl: 'https://api.test',
+          authType: 'HMAC',
+          authConfig: {
+            signature: {
+              secret: 'k',
+              algorithm: 'sha512',
+              encoding: 'base64',
+              template: '${method}',
+              headerName: 'X-Sig',
+            },
+          },
+        },
+        { method: 'GET', path: '/x' } as never,
+        {},
+      );
+      const cfg = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+      };
+      expect(cfg.headers['X-Sig']).toBe(
+        crypto.createHmac('sha512', 'k').update('GET', 'utf8').digest('base64'),
+      );
+
+      mockedAxios.mockClear();
+      await engine.execute(
+        {
+          baseUrl: 'https://api.test',
+          authType: 'BEARER_TOKEN',
+          authConfig: { token: 't', signature: { secret: 'k', headerName: 'X-Sig' } },
+        },
+        { method: 'GET', path: '/x' } as never,
+        {},
+      );
+      const plain = mockedAxios.mock.calls[0][0] as unknown as {
+        headers: Record<string, string>;
+      };
+      expect(plain.headers['X-Sig']).toBeUndefined();
+    });
+  });
+
+  describe('serializeRepeatedParams matches axios on scalars', () => {
+    const scalarCases: Array<[string, Record<string, unknown>]> = [
+      ['a space', { q: 'Muster GmbH' }],
+      ['an ISO timestamp', { date: '2026-09-17T00:00:00Z' }],
+      ['an eBay filter', { filter: 'creationdate:[2026-09-01T00:00:00.000Z..]' }],
+      ['an OData filter', { $filter: "InvoiceDate ge datetime'2026-01-01'" }],
+      ['base64', { b64: 'aGVsbG8+d29ybGQ/eA==' }],
+      ['reserved characters', { sym: 'a+b&c=d' }],
+      ['unreserved punctuation', { punct: 'a~b', star: 'x*y', comma: 'a,b' }],
+      ['non-ASCII and falsy values', { umlaut: 'Bevölkerung', zero: 0, bool: true }],
+      ['a FIQL query', { query: 'status==firstLine;caller.branch.name==Berlin' }],
+    ];
+
+    let server: import('node:http').Server;
+    let seen: string[] = [];
+    let port = 0;
+
+    beforeAll(async () => {
+      const http = jest.requireActual('node:http') as typeof import('node:http');
+      server = http.createServer((req, res) => {
+        seen.push(req.url ?? '');
+        res.end('{}');
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      port = (server.address() as { port: number }).port;
+    });
+
+    afterAll(async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it.each(scalarCases)('encodes %s the way axios does', async (_label, params) => {
+      const realAxios = jest.requireActual('axios').default as (
+        cfg: unknown,
+      ) => Promise<unknown>;
+      seen = [];
+      await realAxios({
+        method: 'GET',
+        url: `http://127.0.0.1:${port}/x`,
+        params,
+      });
+      expect(seen).toHaveLength(1);
+      expect(`/x?${serializeRepeatedParams(params)}`).toBe(seen[0]);
+    });
+  });
+
+  describe('serializeRepeatedParams', () => {
+    it('repeats array members and leaves scalars alone', () => {
+      expect(
+        serializeRepeatedParams({ a: ['x', 'y'], b: 1, c: 'z' }),
+      ).toBe('a=x&a=y&b=1&c=z');
+    });
+
+    it('drops null and undefined rather than stringifying them', () => {
+      expect(
+        serializeRepeatedParams({ a: undefined, b: null, c: ['k', null], d: 0 }),
+      ).toBe('c=k&d=0');
+    });
+  });
+
   describe('baseUrl / path joining', () => {
     it('joins a trailing-slash baseUrl and leading-slash path with one slash', async () => {
       mockedAxios.mockResolvedValue({ data: {} });
@@ -894,5 +1175,60 @@ describe('RestEngine', () => {
       expect(retried.headers['x-amz-access-token']).toBe('new-access-token');
       expect(retried.headers.Authorization).toBeUndefined();
     });
+  });
+});
+
+describe('RestEngine — bodyTemplate that will not parse', () => {
+  /**
+   * A customer built a write tool on top of their Etsy connector and got
+   * `bodyTemplate produced invalid JSON after interpolation: Expected property
+   * name or '}' in JSON at position 38`. Position 38 of what? Not of anything
+   * they can see: the rendered body is never shown, and it must not be, because
+   * connector env vars are interpolated into the template before the parameters
+   * are and the result can hold a credential. They debugged it by trial and
+   * error and had it working eleven minutes later.
+   *
+   * Naming the placeholders that had nothing to substitute costs nothing and
+   * points straight at the fix.
+   */
+  let engine: RestEngine;
+
+  beforeEach(() => {
+    engine = new RestEngine({} as any, {} as any);
+  });
+
+  const call = (bodyTemplate: string, params: Record<string, unknown>) =>
+    engine.execute(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' } as any,
+      { method: 'POST', path: '/x', bodyTemplate } as any,
+      params,
+    );
+
+  it('names the placeholder nobody filled in', async () => {
+    // A quoted placeholder renders as "" when absent, which is valid JSON, so
+    // to break the parse the template has to reference a missing key where a
+    // bare value is expected AND produce something unparseable around it.
+    await expect(
+      call('{"a": ${given}, "b": ${forgotten}x}', { given: 1 }),
+    ).rejects.toThrow(/No value was supplied for `\$\{forgotten\}`/);
+  });
+
+  it('lists every missing placeholder, not just the first', async () => {
+    await expect(
+      call('{"a": ${one} ${two}x}', {}),
+    ).rejects.toThrow(/`\$\{one\}`, `\$\{two\}`/);
+  });
+
+  it('says nothing extra when the template is simply malformed', async () => {
+    const err: any = await call('{"a": ${given},,}', { given: 1 }).catch((e) => e);
+    expect(err.message).toMatch(/produced invalid JSON after interpolation/);
+    expect(err.message).not.toMatch(/No value was supplied/);
+  });
+
+  it('never repeats a rendered value, which may be a credential', async () => {
+    const err: any = await call('{"t": "${token}",,}', {
+      token: 'super-secret',
+    }).catch((e) => e);
+    expect(err.message).not.toMatch(/super-secret/);
   });
 });

@@ -14,6 +14,133 @@ Every MCP tool in AnythingMCP is defined by three JSON objects:
 2. **`endpointMapping`** — How parameters map to the API request
 3. **`responseMapping`** — (Optional) How to transform the API response
 
+## Adapter envelope
+
+The catalog validator requires each adapter to provide `slug`, `name`,
+`description`, `region`, `category`, `icon`, `docsUrl`, `requiredEnvVars`,
+`connector`, and a non-empty `tools` array. The filename must match `slug`.
+Optional environment variables use the same array-of-strings shape and must
+not duplicate a required variable.
+
+### Adapter fields
+
+Keep the required envelope fields above at the adapter root; use arrays for
+`requiredEnvVars` and `optionalEnvVars`, and do not list one variable in both.
+
+### Tools
+
+Each entry in `tools` needs a string `name`, a useful `description`, and its
+JSON-Schema `parameters` when it accepts input. Parameter properties should
+include descriptions for the model.
+
+See [connector configuration](#connector)
+and [authentication](#authentication) for the nested connector fields.
+
+### Connector
+
+Set `connector.type` to `REST`, `GRAPHQL`, `SOAP`, `MCP`, `DATABASE`, or
+`LOGIN_TOKEN`. Set `connector.authType` to a supported authentication scheme
+listed below; these values are validated before an adapter can pass.
+
+### Authentication
+
+Use `NONE`, `API_KEY`, `BEARER_TOKEN`, `BASIC`, `BASIC_AUTH`, `OAUTH2`,
+`OAUTH1`, `LOGIN_TOKEN`, `QUERY_AUTH`, `CONNECTION_STRING` or `HMAC` as
+`connector.authType`. Keep the corresponding credentials in `authConfig` and
+reference environment variables with `{{VAR}}` where the connector injects
+them.
+
+### HMAC-signed requests
+
+Some APIs never receive the secret: each request carries a digest computed
+over a canonical string. `authType: "HMAC"` describes that string in the
+adapter rather than in per-vendor engine code. Signing happens after the body
+and query are built, because the canonical string usually folds them in.
+
+```json
+"authType": "HMAC",
+"authConfig": {
+  "signature": {
+    "algorithm": "sha256",
+    "encoding": "hex",
+    "secret": "{{KAUFLAND_SECRET_KEY}}",
+    "template": "${method}\n${url}\n${body}\n${timestamp}\n",
+    "headerName": "Shop-Signature",
+    "timestampHeader": "Shop-Timestamp",
+    "extraHeaders": { "Shop-Client-Key": "{{KAUFLAND_CLIENT_KEY}}" }
+  }
+}
+```
+
+`template` may use `${method}`, `${url}`, `${path}` (path + query only),
+`${body}` and `${timestamp}` (Unix seconds), in whatever order the vendor
+documents. `\n` is honoured. `algorithm` is `sha256` (default), `sha1` or
+`sha512`; `encoding` is `hex` (default) or `base64`. `timestampHeader` sends
+the same timestamp that went into the string, which the server needs to
+recompute it.
+
+The body is signed exactly as it will be sent — signing a different rendering
+of the same object is the usual way an HMAC integration fails with an error
+that blames the key.
+
+### DATABASE adapters
+
+A `DATABASE` adapter points at a database instead of an HTTP API, so several
+of the REST rules simply do not apply to it:
+
+- `authType` is `CONNECTION_STRING`. `baseUrl` is the DSN and carries the
+  driver (`postgres://`, `mysql://`, `mariadb://`, `mssql://`, `oracle://`,
+  `mongodb://`, `sqlite://`) — the engine picks the driver from that prefix.
+- Put the username and password in `authConfig`, not in the DSN. `authConfig`
+  is encrypted at rest; `baseUrl` is not. The engine splices them into the URL
+  (Postgres, MySQL, Mongo) or passes them as driver config (MSSQL, Oracle,
+  which also accept `authConfig.domain` for NTLM).
+- `endpointMapping.method` is `query`, `static`, or `mongo_schema` — never an
+  HTTP verb. `path` is the statement, not a URL.
+- A `path` of exactly `${query}` hands the engine the caller's raw SQL. Any
+  other `path` is a template whose `${name}` placeholders are compiled to
+  bound parameters, never string-interpolated.
+- Adapters install **read-only**; the engine rejects anything but a read until
+  the user flips the switch in the connector's settings.
+- Declare a `probe` (a listing tool with no required parameters). A DATABASE
+  adapter has no HTTP healthcheck, so without one the install reports nothing.
+
+```json
+{
+  "slug": "postgres",
+  "requiredEnvVars": ["POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DATABASE", "POSTGRES_USER", "POSTGRES_PASSWORD"],
+  "probe": { "tool": "postgres_list_tables" },
+  "connector": {
+    "name": "PostgreSQL",
+    "type": "DATABASE",
+    "authType": "CONNECTION_STRING",
+    "baseUrl": "postgres://{{POSTGRES_HOST}}:{{POSTGRES_PORT}}/{{POSTGRES_DATABASE}}",
+    "authConfig": {
+      "username": "{{POSTGRES_USER}}",
+      "password": "{{POSTGRES_PASSWORD}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "postgres_query",
+      "description": "Run a read-only SQL SELECT against the database and return up to 1000 rows.",
+      "parameters": {
+        "type": "object",
+        "properties": { "query": { "type": "string", "description": "A single SQL SELECT statement." } },
+        "required": ["query"]
+      },
+      "endpointMapping": { "method": "query", "path": "${query}" }
+    }
+  ]
+}
+```
+
+### Adapter file errors
+
+If an adapter file cannot be read, check that its path exists and that the
+validator process has permission to read it. This is distinct from invalid JSON
+syntax, which requires fixing the file contents.
+
 ---
 
 ## 1. Parameters (JSON Schema)
@@ -170,19 +297,26 @@ Adapter authors don't need to declare them.
 
 ### Database Example (SQL)
 
+`${name}` placeholders are compiled to the driver's bound parameters
+(`$1`, `?`, `:1`), so values are never spliced into the statement.
+
 ```json
 {
-  "method": "static",
-  "path": "SELECT * FROM orders WHERE customer_id = $customer_id AND status = $status ORDER BY created_at DESC LIMIT $limit"
+  "method": "query",
+  "path": "SELECT * FROM orders WHERE customer_id = ${customer_id} AND status = ${status} ORDER BY created_at DESC LIMIT ${limit}"
 }
 ```
 
 ### Database Example (MongoDB)
 
+The path is a JSON find spec — `collection` plus optional `filter`,
+`projection`, `sort` and `limit`. `mongo_schema` takes no path at all and
+lists the collections with a sampled field list.
+
 ```json
 {
   "method": "query",
-  "path": "db.collection('orders').find({customerId: $customer_id, status: $status}).sort({createdAt: -1}).limit($limit)"
+  "path": "{\"collection\": \"orders\", \"filter\": {\"customerId\": \"${customer_id}\"}, \"sort\": {\"createdAt\": -1}, \"limit\": ${limit}}"
 }
 ```
 

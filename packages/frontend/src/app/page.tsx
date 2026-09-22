@@ -115,7 +115,7 @@ export default function DashboardPage() {
         )}
 
         {/* Stat cards */}
-        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-3.5 lg:grid-cols-4">
           <StatCard
             label="Active connectors"
             value={dataLoading ? '—' : stats.connectors}
@@ -249,7 +249,7 @@ export default function DashboardPage() {
                   </div>
                   <span className="text-[13px] font-semibold">{healthResult.healthy}/{healthResult.total}</span>
                 </div>
-                {healthResult.connectors.map((c: any, i: number) => (
+                {(healthResult.connectors ?? []).map((c: any, i: number) => (
                   <div key={i} className="flex items-center justify-between py-1.5 text-[13px]">
                     <div className="flex items-center gap-2">
                       <span className="h-[7px] w-[7px] rounded-full" style={{ background: c.status === 'healthy' ? 'var(--ok)' : 'var(--danger)' }} />
