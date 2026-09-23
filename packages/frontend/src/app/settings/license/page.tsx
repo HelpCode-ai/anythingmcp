@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { license } from '@/lib/api';
-import { buildPricingUrl } from '@/lib/marketing';
+import { buildManagePlanUrl, buildPricingUrl } from '@/lib/marketing';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -285,17 +285,34 @@ export default function LicenseSettingsPage() {
           <h2 className="text-sm font-semibold text-[var(--text)] mb-4">
             {status?.plan && status.plan !== 'trial' ? 'Change License Key' : 'Activate License Key'}
           </h2>
-          <p className="text-sm text-[var(--text-2)] mb-4">
-            Purchase a license at{' '}
-            <a
-              href={buildPricingUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[var(--brand)] hover:underline font-medium"
-            >
-              anythingmcp.com
-            </a>
-          </p>
+          {status?.plan && status.plan !== 'trial' ? (
+            // A paying customer who buys again gets a second subscription beside
+            // the first, not a new plan. Send them to the plan switch instead.
+            <p className="text-sm text-[var(--text-2)] mb-4">
+              To move to another plan,{' '}
+              <a
+                href={buildManagePlanUrl(user?.email)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--brand)] hover:underline font-medium"
+              >
+                change it in the billing portal
+              </a>{' '}
+              — your current subscription is switched and prorated, not duplicated.
+            </p>
+          ) : (
+            <p className="text-sm text-[var(--text-2)] mb-4">
+              Purchase a license at{' '}
+              <a
+                href={buildPricingUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--brand)] hover:underline font-medium"
+              >
+                anythingmcp.com
+              </a>
+            </p>
+          )}
 
           <div className="flex gap-3">
             <input

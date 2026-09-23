@@ -15,3 +15,20 @@ export function buildPricingUrl(returnPath = '/settings/license/activate'): stri
   const returnUrl = `${window.location.origin}${returnPath}`;
   return `${base}?return_url=${encodeURIComponent(returnUrl)}`;
 }
+
+/**
+ * Where a customer who already pays changes plan: the billing portal on the
+ * marketing site, reached through /account, which mails the portal link to the
+ * address that owns the subscription.
+ *
+ * Not the pricing page. A checkout does not change a plan, it adds one, and
+ * until 23 Sep every upgrade nudge in this app sent paying customers to a
+ * fresh checkout — two of them moved Starter to Team that way and were billed
+ * for both. The portal's plan switch replaces the subscription and prorates.
+ */
+export function buildManagePlanUrl(email?: string | null, params?: Record<string, string>): string {
+  const url = new URL(`${getMarketingUrl()}/account`);
+  if (email) url.searchParams.set('email', email);
+  for (const [key, value] of Object.entries(params ?? {})) url.searchParams.set(key, value);
+  return url.toString();
+}

@@ -5,15 +5,18 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { buildPricingUrl } from '@/lib/marketing';
+import { buildManagePlanUrl, buildPricingUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-type BlockReason = 'no-license' | 'trial-ended' | 'expired';
+// 'lapsed' is a paid subscription that stopped being active without being
+// cancelled — the website marks a licence expired on any non-active status,
+// which in practice means a renewal the card did not cover.
+type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed';
 
 export function LicenseWall() {
-  const { token, deploymentMode } = useAuth();
+  const { token, user, deploymentMode } = useAuth();
   const [reason, setReason] = useState<BlockReason | null>(null);
   const [starting, setStarting] = useState(false);
   const [startErr, setStartErr] = useState<string | null>(null);
@@ -60,6 +63,14 @@ export function LicenseWall() {
         setReason('trial-ended');
         return;
       }
+      // A paid licence that lapsed is fixed in the billing portal. Sending it
+      // to the pricing page, as this used to, starts a second subscription
+      // while Stripe keeps retrying the first — double billing the day the
+      // old card goes through.
+      if (status.status === 'expired' && status.plan !== 'trial') {
+        setReason('lapsed');
+        return;
+      }
       // Block when any license is expired/revoked
       if (status.status === 'expired' || status.status === 'revoked') {
         setReason('expired');
@@ -92,14 +103,18 @@ export function LicenseWall() {
       ? 'License Required'
       : reason === 'trial-ended'
         ? 'Your Trial Has Expired'
-        : 'Your License Has Expired';
+        : reason === 'lapsed'
+          ? 'Your Subscription Is Not Active'
+          : 'Your License Has Expired';
 
   const body =
     reason === 'no-license'
       ? 'This workspace doesn’t have an active license. Start a trial or purchase a plan to continue.'
       : reason === 'trial-ended'
         ? 'Your 7-day trial period has ended. Purchase a license to continue using AnythingMCP Cloud. Your connectors and configurations are preserved.'
-        : 'Your license is no longer active. Purchase or renew a license to continue using AnythingMCP. Your connectors and configurations are preserved.';
+        : reason === 'lapsed'
+          ? 'Your subscription is not active — usually a renewal payment that did not go through. Update your payment method in the billing portal and it resumes; buying a new plan would start a second subscription beside this one. Your connectors and configurations are preserved.'
+          : 'Your license is no longer active. Purchase or renew a license to continue using AnythingMCP. Your connectors and configurations are preserved.';
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -134,6 +149,15 @@ export function LicenseWall() {
                 View Plans &amp; Purchase License
               </a>
             </>
+          ) : reason === 'lapsed' ? (
+            <a
+              href={buildManagePlanUrl(user?.email)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
+            >
+              Update Billing
+            </a>
           ) : (
             <a
               href={buildPricingUrl()}
