@@ -224,17 +224,27 @@ export class McpServersService {
   }
 
   /**
-   * Compose MCP server instructions from the server's own instructions
-   * plus all assigned connectors' instructions.
+   * Compose MCP server instructions from the server's own instructions plus
+   * the caller-visible connectors' instructions and skills. When connectorIds
+   * is omitted, all assigned connectors are included for backwards
+   * compatibility with non-role-scoped callers.
    */
-  async getComposedInstructions(serverId: string): Promise<string | undefined> {
+  async getComposedInstructions(
+    serverId: string,
+    connectorIds?: string[],
+  ): Promise<string | undefined> {
     const server = await this.prisma.mcpServerConfig.findUnique({
       where: { id: serverId },
       select: { instructions: true },
     });
 
     const serverConnectors = await this.prisma.mcpServerConnector.findMany({
-      where: { mcpServerId: serverId },
+      where: {
+        mcpServerId: serverId,
+        ...(connectorIds !== undefined
+          ? { connectorId: { in: connectorIds } }
+          : {}),
+      },
       include: {
         connector: {
           select: { name: true, instructions: true },

@@ -677,10 +677,11 @@ export class McpEndpointController {
       }
     }
 
-    // 2. Get connector IDs and composed instructions for this server
-    const [connectorIds, instructions, resourceConnectors] = await Promise.all([
+    // 2. Get the server's assigned connector surface. Instructions are
+    // composed after role filtering so denied connector guidance and skills
+    // cannot leak through MCP initialize or resources/read.
+    const [connectorIds, resourceConnectors] = await Promise.all([
       this.mcpServersService.getConnectorIds(serverId),
-      this.mcpServersService.getComposedInstructions(serverId),
       this.mcpServersService.getResourcesForServer(serverId),
     ]);
 
@@ -699,6 +700,15 @@ export class McpEndpointController {
       );
     }
 
+    const allowedConnectorIds = this.getRoleAllowedConnectorIds(
+      serverTools,
+      allowedToolIds,
+    );
+    const instructions = await this.mcpServersService.getComposedInstructions(
+      serverId,
+      [...allowedConnectorIds],
+    );
+
     // 5. Create a per-request MCP server with only the assigned tools
     const mcpServer = new McpServer(
       { name: mcpServerConfig.name, version: mcpServerConfig.version || '1.0.0' },
@@ -713,8 +723,7 @@ export class McpEndpointController {
       serverId,
       resourceConnectors,
       instructions,
-      serverTools,
-      allowedToolIds,
+      allowedConnectorIds,
     );
     registerResources(mcpServer, resources, (message) => this.logger.warn(message));
 
@@ -824,25 +833,65 @@ export class McpEndpointController {
         planned.push(makeResource(resource));
       }
     }
-    return planned;
+    return this.failClosedOnResourceCollisions(planned);
+  }
+
+  private failClosedOnResourceCollisions(
+    resources: RegisteredResource[],
+  ): RegisteredResource[] {
+    const resourcesByUri = new Map<string, RegisteredResource[]>();
+    for (const resource of resources) {
+      const matches = resourcesByUri.get(resource.uri) ?? [];
+      matches.push(resource);
+      resourcesByUri.set(resource.uri, matches);
+    }
+
+    return resources.map((resource) => {
+      const collisions = resourcesByUri.get(resource.uri) ?? [];
+      if (collisions.length < 2) return resource;
+
+      const names = collisions.map((entry) => entry.name).join(', ');
+      const message =
+        `Resource content withheld because URI "${resource.uri}" is declared ` +
+        `by multiple resources: ${names}. Use unique connector-scoped URIs.`;
+      return makeResource(
+        {
+          ...resource,
+          description: message,
+          mimeType: 'text/plain',
+        },
+        {
+          text: message,
+          mimeType: 'text/plain',
+        },
+      );
+    });
   }
 
   private planRoleScopedResources(
     serverId: string,
     connectors: ResourceConnector[],
     instructions: string | undefined,
-    serverTools: RegisteredTool[],
-    allowedToolIds: string[] | null,
+    allowedConnectorIds: Set<string>,
   ): RegisteredResource[] {
-    const allowedConnectorIds = new Set(
-      serverTools
-        .filter((tool) => allowedToolIds === null || allowedToolIds.includes(tool.id))
-        .map((tool) => tool.connectorId),
-    );
     return this.planResources(
       serverId,
       connectors.filter((connector) => allowedConnectorIds.has(connector.id)),
       instructions,
+    );
+  }
+
+  private getRoleAllowedConnectorIds(
+    serverTools: RegisteredTool[],
+    allowedToolIds: string[] | null,
+  ): Set<string> {
+    return new Set(
+      serverTools
+        .filter(
+          (tool) =>
+            allowedToolIds === null || allowedToolIds.includes(tool.id),
+        )
+        .map((tool) => tool.connectorId),
     );
   }
 

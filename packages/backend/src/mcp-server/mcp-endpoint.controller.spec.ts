@@ -99,6 +99,10 @@ describe('McpEndpointController — tenant isolation', () => {
       'org-A',
     );
     expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
+    expect(mcpServersService.getComposedInstructions).toHaveBeenCalledWith(
+      'srv-A',
+      [],
+    );
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
 
@@ -361,17 +365,11 @@ describe('McpEndpointController — native resources', () => {
         ],
       },
     ];
-    const tools = [
-      { id: 'tool-allowed', connectorId: 'conn-allowed' },
-      { id: 'tool-denied', connectorId: 'conn-denied' },
-    ];
-
     const entries = (controller as any).planRoleScopedResources(
       'srv-1',
       connectors,
       undefined,
-      tools,
-      ['tool-allowed'],
+      new Set(['conn-allowed']),
     );
 
     expect(entries.map((entry: any) => entry.uri)).toEqual([
@@ -381,5 +379,46 @@ describe('McpEndpointController — native resources', () => {
     expect(entries.map((entry: any) => entry.uri)).not.toContain(
       'anythingmcp://denied/reference',
     );
+  });
+
+  it('withholds ambiguous persisted content and surfaces URI collisions', async () => {
+    const controller = new McpEndpointController(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const resource = (name: string, content: string) => ({
+      uri: 'anythingmcp://crm/enums',
+      name,
+      description: null,
+      mimeType: 'application/json',
+      fetchConfig: { content },
+    });
+
+    const entries = (controller as any).planResources('srv-1', [
+      {
+        id: 'conn-1',
+        name: 'CRM A',
+        instructions: null,
+        resources: [resource('CRM A enums', '{"source":"a"}')],
+      },
+      {
+        id: 'conn-2',
+        name: 'CRM B',
+        instructions: null,
+        resources: [resource('CRM B enums', '{"source":"b"}')],
+      },
+    ]);
+
+    expect(entries[0].description).toContain('declared by multiple resources');
+    expect(entries[0].description).toContain('CRM A enums, CRM B enums');
+    await expect(entries[0].read()).resolves.toEqual({
+      mimeType: 'text/plain',
+      text: expect.stringContaining('content withheld'),
+    });
   });
 });
