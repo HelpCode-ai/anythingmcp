@@ -48,3 +48,26 @@ test.describe('auth UI', () => {
     ).toBeVisible();
   });
 });
+
+test.describe('licence activation handoff', () => {
+  // The marketing site's checkout page sends the buyer here with the key in the
+  // fragment. A signed-out buyer must reach /login without the key in the URL,
+  // and the key must survive sign-in (sessionStorage), or the purchase does not
+  // activate. Until 23 Sep the auth gate redirected before the page ran and
+  // `redirect` carried only the pathname, so the key was lost.
+  const KEY = 'AMCP-1234-5678-9ABC-DEF0';
+
+  test('a signed-out buyer keeps the key through the sign-in redirect', async ({ page }) => {
+    await page.goto(`/settings/license/activate#key=${KEY}`);
+    await page.waitForURL(/\/login\?redirect=%2Fsettings%2Flicense%2Factivate$/);
+    expect(page.url()).not.toContain(KEY);
+    expect(await page.evaluate(() => sessionStorage.getItem('amcp_pending_license_key'))).toBe(KEY);
+  });
+
+  test('the legacy ?key= form is read too, and leaves the URL', async ({ page }) => {
+    await page.goto(`/settings/license/activate?key=${KEY}`);
+    await page.waitForURL(/\/login\?redirect=%2Fsettings%2Flicense%2Factivate$/);
+    expect(page.url()).not.toContain(KEY);
+    expect(await page.evaluate(() => sessionStorage.getItem('amcp_pending_license_key'))).toBe(KEY);
+  });
+});
