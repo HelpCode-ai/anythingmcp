@@ -139,3 +139,87 @@ describe('LicenseService — tenant scoping', () => {
     });
   });
 });
+
+describe('LicenseService — a licence key stays with its workspace', () => {
+  const KEY = 'AMCP-1111-2222-3333-4444';
+
+  function withUpsert(ctx: ReturnType<typeof makeService>, licenses: MockLicense[]) {
+    const upsert = jest.fn(async ({ where, update, create }: any) => {
+      const lic = licenses.find((l) => l.licenseKey === where.licenseKey);
+      if (lic) return Object.assign(lic, update);
+      const created = mkLicense({ ...create });
+      licenses.push(created);
+      return created;
+    });
+    (ctx.prisma.license as any).upsert = upsert;
+    // Remote verification answers "valid"; activation is fire-and-forget.
+    jest.spyOn(ctx.svc, 'verifyLicense').mockResolvedValue({ valid: true, plan: 'team' } as any);
+    jest.spyOn(ctx.svc, 'activateLicense').mockResolvedValue(true);
+    jest.spyOn(ctx.svc as any, 'getInstanceId').mockResolvedValue('instance-1');
+    return upsert;
+  }
+
+  it('refuses to move a paying workspace’s key into another workspace (cloud)', async () => {
+    const licenses = [mkLicense({ licenseKey: KEY, plan: 'team', organizationId: 'org-paying' })];
+    const ctx = makeService({ isCloud: true, licenses });
+    const upsert = withUpsert(ctx, licenses);
+
+    await expect(ctx.svc.setLicenseKey(KEY, 'org-attacker')).rejects.toThrow(/already active in another workspace/);
+    expect(upsert).not.toHaveBeenCalled();
+    expect(ctx.svc.verifyLicense).not.toHaveBeenCalled();
+    // The paying workspace still holds its licence.
+    expect(licenses[0].organizationId).toBe('org-paying');
+    expect(await ctx.svc.getCurrentLicense('org-paying')).toMatchObject({ licenseKey: KEY, plan: 'team' });
+    expect(await ctx.svc.getCurrentLicense('org-attacker')).toBeNull();
+  });
+
+  it('still lets the owning workspace re-enter its own key', async () => {
+    const licenses = [mkLicense({ licenseKey: KEY, organizationId: 'org-paying' })];
+    const ctx = makeService({ isCloud: true, licenses });
+    const upsert = withUpsert(ctx, licenses);
+
+    await expect(ctx.svc.setLicenseKey(KEY, 'org-paying')).resolves.toMatchObject({ licenseKey: KEY });
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('binds a fresh key — bought on the website, never activated — to the first workspace', async () => {
+    const licenses: MockLicense[] = [];
+    const ctx = makeService({ isCloud: true, licenses });
+    withUpsert(ctx, licenses);
+
+    await expect(ctx.svc.setLicenseKey(KEY, 'org-new')).resolves.toMatchObject({ licenseKey: KEY });
+    expect(licenses[0].organizationId).toBe('org-new');
+  });
+
+  it('does not apply to self-hosted, where one admin owns every workspace', async () => {
+    const licenses = [mkLicense({ licenseKey: KEY, organizationId: 'org-a' })];
+    const ctx = makeService({ isCloud: false, licenses });
+    const upsert = withUpsert(ctx, licenses);
+
+    await expect(ctx.svc.setLicenseKey(KEY, 'org-b')).resolves.toMatchObject({ licenseKey: KEY });
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LicenseService — billing portal', () => {
+  const OLD = process.env.LICENSE_SERVICE_TOKEN;
+  afterEach(() => {
+    process.env.LICENSE_SERVICE_TOKEN = OLD;
+    jest.restoreAllMocks();
+  });
+
+  it('presents the service token, because a licence key alone no longer opens a portal', async () => {
+    process.env.LICENSE_SERVICE_TOKEN = 'svc-token-0123456789abcdef';
+    const licenses = [mkLicense({ licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD', organizationId: 'org-1' })];
+    const { svc } = makeService({ isCloud: true, licenses });
+    const axios = require('axios');
+    const post = jest.spyOn(axios, 'post').mockResolvedValue({ data: { url: 'https://billing.stripe.com/p/session/x' } });
+
+    await expect(svc.createBillingPortalSession('org-1')).resolves.toEqual({ url: 'https://billing.stripe.com/p/session/x' });
+    expect(post).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/billing\/portal$/),
+      expect.objectContaining({ licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD' }),
+      expect.objectContaining({ headers: { 'x-amcp-service-token': 'svc-token-0123456789abcdef' } }),
+    );
+  });
+});

@@ -87,10 +87,14 @@ export class LicenseService implements OnModuleInit {
       throw new Error('No active license for this organization.');
     }
     try {
+      // The licence API opens a portal only for this server, by its service
+      // token: a licence key alone is not a billing credential. What makes it
+      // safe to hand back a URL here is that the key is the one bound to the
+      // signed-in admin's own workspace.
       const { data } = await axios.post(
         `${this.apiBase}/api/billing/portal`,
         { licenseKey: license.licenseKey, returnUrl },
-        { timeout: 15000 },
+        { timeout: 15000, headers: this.serviceHeaders() },
       );
       if (!data?.url) throw new Error('No portal URL returned.');
       return { url: data.url as string };
@@ -426,6 +430,28 @@ export class LicenseService implements OnModuleInit {
   // ── Admin: Set License Key ─────────────────────────────────────────────────
 
   async setLicenseKey(licenseKey: string, organizationId?: string): Promise<LicenseInfo> {
+    // A key already bound to one workspace is not moved to another. The upsert
+    // below is keyed on the licence key and used to overwrite organizationId,
+    // so pasting a paying customer's key into any free workspace took their
+    // licence away from them — the licence wall locked them out — and gave the
+    // new workspace their plan, and with it their billing portal. Holding a
+    // key proves nothing: keys travel in URLs, emails and screenshots.
+    // Self-hosted is one tenant, where the admin owns every workspace.
+    if (this.deployment.isCloud() && organizationId) {
+      const bound = await this.prisma.license.findUnique({
+        where: { licenseKey },
+        select: { organizationId: true },
+      });
+      if (bound?.organizationId && bound.organizationId !== organizationId) {
+        this.logger.warn(
+          `Refused to move licence …${licenseKey.slice(-4)} from workspace ${bound.organizationId} to ${organizationId}`,
+        );
+        throw new Error(
+          'This license key is already active in another workspace. If it is yours, contact support@anythingmcp.com to move it.',
+        );
+      }
+    }
+
     // Verify remotely first
     const verification = await this.verifyLicense(licenseKey);
 
