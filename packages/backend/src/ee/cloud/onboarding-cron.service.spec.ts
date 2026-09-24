@@ -9,6 +9,9 @@ function makeLicense(repaired = 0) {
     repairMissingTrials: jest
       .fn()
       .mockResolvedValue({ examined: repaired, repaired, failed: 0 }),
+    reverifyPaidLicenses: jest
+      .fn()
+      .mockResolvedValue({ checked: 3, deactivated: 1, inGrace: 1, unreachable: 0 }),
   } as any;
 }
 
@@ -193,5 +196,9 @@ describe('OnboardingCronService — trial repair', () => {
     // Without this the drip happily emails people about a trial they never got.
     expect(license.repairMissingTrials).toHaveBeenCalledTimes(1);
     expect(out.trialsRepaired).toBe(4);
+    // And paid licences get re-checked against the licence server.
+    expect(license.reverifyPaidLicenses).toHaveBeenCalledTimes(1);
+    expect(out.licensesReverified).toBe(3);
+    expect(out.licensesDeactivated).toBe(1);
   });
 });
