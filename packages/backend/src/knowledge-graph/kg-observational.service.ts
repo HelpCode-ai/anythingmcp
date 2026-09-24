@@ -8,6 +8,53 @@ import { extractFieldNames, extractIdentifiers, hashValue } from './identifier';
 const MAX_INVOCATIONS_PER_RUN = 2000;
 const MAX_PAIRS_PER_HASH = 6; // cap fan-out per shared value
 
+/** Invocations read per page. Only ids and timestamps; payloads load separately. */
+const PAGE_SIZE = 100;
+/**
+ * JSON bytes loaded into memory at once. A payload parses into several times
+ * its JSON size as JS objects, so this, not the row count, is what bounds the
+ * heap: 100 rows of a 3 MB bulk export took the cloud backend past its 4 GB
+ * heap on 24 Sep 2026.
+ */
+const PAYLOAD_BATCH_BYTES = 8 * 1024 * 1024;
+/** An invocation whose output JSON is larger than this contributes its input only. */
+const MAX_OUTPUT_BYTES = 6 * 1024 * 1024;
+/**
+ * Stored jsonb is TOAST-compressed, often 5-10x for repetitive bulk exports,
+ * so its stored size says little about what it costs to load. Values stored
+ * above this are measured exactly (Postgres renders them to count); smaller
+ * ones are estimated at COMPRESSION_ALLOWANCE times their stored size.
+ */
+const MEASURE_ABOVE_STORED_BYTES = 64 * 1024;
+const COMPRESSION_ALLOWANCE = 8;
+/** Occurrence rows read back per correlate pass. */
+const MAX_CORRELATE_ROWS = 20_000;
+/**
+ * Rows per createMany and hashes per correlate query. Prisma compiles each
+ * statement synchronously, and one statement carrying a 5,000-row export's
+ * worth of parameters held the event loop for over a second.
+ */
+const WRITE_CHUNK = 1000;
+
+const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+interface PageRow {
+  id: string;
+  connectorId: string | null;
+  createdAt: Date;
+  intent: string | null;
+  tool: { name: string } | null;
+}
+
+interface ValueRow {
+  organizationId: string;
+  connectorId: string;
+  valueHash: string;
+  entity: string;
+  field: string;
+  direction: string;
+}
+
 /**
  * Observational KG layer: learns relationships from real tool_invocations.
  *
@@ -23,6 +70,13 @@ const MAX_PAIRS_PER_HASH = 6; // cap fan-out per shared value
 @Injectable()
 export class KgObservationalService {
   private readonly logger = new Logger(KgObservationalService.name);
+  /**
+   * Organizations with an ingest running in this process. Every tool call
+   * schedules one (after a 45 s cooldown), and a run over large payloads can
+   * outlast the cooldown, so without this guard runs piled up on top of each
+   * other until the heap gave out.
+   */
+  private readonly inFlight = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -30,6 +84,20 @@ export class KgObservationalService {
   ) {}
 
   async ingestOrganization(
+    organizationId: string,
+  ): Promise<{ invocations: number; edges: number; skipped?: boolean }> {
+    if (this.inFlight.has(organizationId)) {
+      return { invocations: 0, edges: 0, skipped: true };
+    }
+    this.inFlight.add(organizationId);
+    try {
+      return await this.ingest(organizationId);
+    } finally {
+      this.inFlight.delete(organizationId);
+    }
+  }
+
+  private async ingest(
     organizationId: string,
   ): Promise<{ invocations: number; edges: number }> {
     if (!(await this.kgStatic.isEnabled(organizationId))) {
@@ -40,6 +108,7 @@ export class KgObservationalService {
       where: { organizationId },
       select: { id: true, tools: { select: { name: true } } },
     });
+    if (connectors.length === 0) return { invocations: 0, edges: 0 };
     const slugByConnector = new Map(
       connectors.map((c) => [c.id, deriveSlug(c.tools.map((t) => t.name))]),
     );
@@ -48,23 +117,15 @@ export class KgObservationalService {
       select: { connectorId: true, lastObservedAt: true },
     });
     const watermark = new Map(states.map((s) => [s.connectorId, s.lastObservedAt]));
-    // Lower bound for the invocation scan. If ANY connector has no watermark
-    // yet (e.g. just connected), we must scan from the beginning for it; only
-    // when every connector is watermarked can we start at the earliest one.
-    // (A plain reduce seeded with epoch would always collapse to epoch and, at
-    // >MAX_INVOCATIONS_PER_RUN invocations, never advance past the oldest page.)
-    const anyUnwatermarked = connectors.some((c) => !watermark.get(c.id));
-    const watermarkTimes = states
-      .map((s) => s.lastObservedAt)
-      .filter((d): d is Date => !!d)
-      .map((d) => d.getTime());
-    const floor =
-      anyUnwatermarked || watermarkTimes.length === 0
-        ? new Date(0)
-        : new Date(Math.min(...watermarkTimes));
 
-    // Invocations are streamed in pages inside the loop below (see CHUNK) so we
-    // never hold thousands of full input/output payloads in memory at once.
+    // Each connector is scanned from its OWN watermark. A single global floor
+    // meant one connector without a watermark dragged every other connector
+    // back to the beginning of time, and the run re-read the same oldest pages
+    // on every call without ever reaching new rows.
+    const scope = connectors.map((c) => {
+      const wm = watermark.get(c.id);
+      return wm ? { connectorId: c.id, createdAt: { gt: wm } } : { connectorId: c.id };
+    });
 
     // Existing entities per connector, so we can link a response field name to a
     // known entity (FK rule applied to the response shape, not just values).
@@ -81,8 +142,6 @@ export class KgObservationalService {
       s.add(r.entity);
     }
 
-    // Edges accumulate across pages; the raw value rows are flushed per page
-    // (below) so the in-memory set never grows to the size of the whole batch.
     let edges = 0;
     // references edges mined from response field names: key -> details.
     const refBumps = new Map<
@@ -92,116 +151,130 @@ export class KgObservationalService {
     // Entities whose tools served the SAME captured user request (intent).
     // intent -> set of `${connectorId}::${entity}`.
     const intentGroups = new Map<string, Set<string>>();
-    const maxTsByConnector = new Map<string, Date>();
 
-    // Page through invocations so we never hold more than CHUNK full input/output
-    // payloads in memory at once. A busy org's payloads can be megabytes each;
-    // loading thousands together previously OOM'd the backend.
-    const CHUNK = 100;
     let processed = 0;
+    let after: { createdAt: Date; id: string } | null = null;
     while (processed < MAX_INVOCATIONS_PER_RUN) {
-      const page = await this.prisma.toolInvocation.findMany({
-        where: { organizationId, connectorId: { not: null }, createdAt: { gt: floor } },
+      // Keyset pagination: `skip` over a moving table re-reads or skips rows.
+      const page: PageRow[] = await this.prisma.toolInvocation.findMany({
+        where: {
+          organizationId,
+          OR: scope,
+          ...(after
+            ? {
+                AND: [
+                  {
+                    OR: [
+                      { createdAt: { gt: after.createdAt } },
+                      { createdAt: after.createdAt, id: { gt: after.id } },
+                    ],
+                  },
+                ],
+              }
+            : {}),
+        },
         select: {
           id: true,
           connectorId: true,
           createdAt: true,
-          input: true,
-          output: true,
           intent: true,
           tool: { select: { name: true } },
         },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        skip: processed,
-        take: Math.min(CHUNK, MAX_INVOCATIONS_PER_RUN - processed),
+        take: Math.min(PAGE_SIZE, MAX_INVOCATIONS_PER_RUN - processed),
       });
       if (page.length === 0) break;
       processed += page.length;
+      after = { createdAt: page[page.length - 1].createdAt, id: page[page.length - 1].id };
 
       // Per-page value occurrences, flushed at the end of each page.
       const newHashes = new Set<string>();
-      const valueRows: Array<{
-        organizationId: string;
-        connectorId: string;
-        valueHash: string;
-        entity: string;
-        field: string;
-        direction: string;
-      }> = [];
+      const valueRows: ValueRow[] = [];
+      const maxTsByConnector = new Map<string, Date>();
 
-      for (const inv of page) {
-      const connectorId = inv.connectorId!;
-      // Skip invocations already covered by this connector's watermark.
-      const wm = watermark.get(connectorId);
-      if (wm && inv.createdAt <= wm) continue;
-
-      const slug = slugByConnector.get(connectorId) ?? '';
-      const ent = extractEntity(inv.tool?.name ?? '', slug);
-      if (!ent) continue;
-
-      const prevMax = maxTsByConnector.get(connectorId);
-      if (!prevMax || inv.createdAt > prevMax) {
-        maxTsByConnector.set(connectorId, inv.createdAt);
-      }
-
-      const collect = (payload: unknown, direction: 'input' | 'output') => {
-        for (const { field, value } of extractIdentifiers(payload)) {
-          const valueHash = hashValue(organizationId, value);
-          newHashes.add(valueHash);
-          valueRows.push({
-            organizationId,
-            connectorId,
-            valueHash,
-            entity: ent.entity,
-            field,
-            direction,
-          });
+      for await (const { inv, input, output } of this.loadPayloads(page)) {
+        const connectorId = inv.connectorId!;
+        // Every row read moves the watermark, including tools that map to no
+        // entity: skipping those left a connector's watermark where it was, so
+        // the same rows were read again on every run.
+        const prevMax = maxTsByConnector.get(connectorId);
+        if (!prevMax || inv.createdAt > prevMax) {
+          maxTsByConnector.set(connectorId, inv.createdAt);
         }
-      };
-      collect(inv.input, 'input');
-      collect(inv.output, 'output');
 
-      // Record which entity served this captured user request, so entities used
-      // together for the same intent can be linked below (chat history → graph).
-      if (inv.intent) {
-        const key = String(inv.intent).toLowerCase().trim().slice(0, 200);
-        if (key) {
-          let g = intentGroups.get(key);
-          if (!g) {
-            g = new Set();
-            intentGroups.set(key, g);
+        const slug = slugByConnector.get(connectorId) ?? '';
+        const ent = extractEntity(inv.tool?.name ?? '', slug);
+        if (!ent) continue;
+
+        const collect = (payload: unknown, direction: 'input' | 'output') => {
+          for (const { field, value } of extractIdentifiers(payload)) {
+            const valueHash = hashValue(organizationId, value);
+            newHashes.add(valueHash);
+            valueRows.push({
+              organizationId,
+              connectorId,
+              valueHash,
+              entity: ent.entity,
+              field,
+              direction,
+            });
           }
-          g.add(`${connectorId}::${ent.entity}`);
-        }
-      }
+        };
+        collect(input, 'input');
+        collect(output, 'output');
 
-      // Mine the response SHAPE: a field like `customer_id` in the output means
-      // this entity references Customer, even with no value coincidence.
-      const knownEntities = connectorEntities.get(connectorId);
-      if (knownEntities) {
-        for (const field of extractFieldNames(inv.output)) {
-          const target = fkCandidate(field);
-          if (target && target !== ent.entity && knownEntities.has(target)) {
-            const k = `${connectorId}|${ent.entity}|${target}`;
-            if (!refBumps.has(k)) {
-              refBumps.set(k, { connectorId, from: ent.entity, to: target, field });
+        // Record which entity served this captured user request, so entities used
+        // together for the same intent can be linked below (chat history → graph).
+        if (inv.intent) {
+          const key = String(inv.intent).toLowerCase().trim().slice(0, 200);
+          if (key) {
+            let g = intentGroups.get(key);
+            if (!g) {
+              g = new Set();
+              intentGroups.set(key, g);
+            }
+            g.add(`${connectorId}::${ent.entity}`);
+          }
+        }
+
+        // Mine the response SHAPE: a field like `customer_id` in the output means
+        // this entity references Customer, even with no value coincidence.
+        const knownEntities = connectorEntities.get(connectorId);
+        if (knownEntities && output !== undefined) {
+          for (const field of extractFieldNames(output)) {
+            const target = fkCandidate(field);
+            if (target && target !== ent.entity && knownEntities.has(target)) {
+              const k = `${connectorId}|${ent.entity}|${target}`;
+              if (!refBumps.has(k)) {
+                refBumps.set(k, { connectorId, from: ent.entity, to: target, field });
+              }
             }
           }
         }
       }
-      } // for (const inv of page)
 
       // Flush this page's value occurrences and correlate immediately. correlate
       // reads kgValueSeen (which now includes earlier pages), so cross-page
-      // produces_consumes / same_identity links are still found.
-      if (valueRows.length) {
-        await this.prisma.kgValueSeen.createMany({ data: valueRows });
+      // produces_consumes / same_identity links are still found. The unique key
+      // keeps a value seen a thousand times as one row.
+      for (let i = 0; i < valueRows.length; i += WRITE_CHUNK) {
+        await this.prisma.kgValueSeen.createMany({
+          data: valueRows.slice(i, i + WRITE_CHUNK),
+          skipDuplicates: true,
+        });
+        await yieldToEventLoop();
       }
-      if (newHashes.size) {
-        edges += await this.correlate(organizationId, [...newHashes]);
+      const hashes = [...newHashes];
+      for (let i = 0; i < hashes.length; i += WRITE_CHUNK) {
+        edges += await this.correlate(organizationId, hashes.slice(i, i + WRITE_CHUNK));
+        await yieldToEventLoop();
       }
 
-      if (page.length < CHUNK) break;
+      // Commit progress per page, so a run that dies halfway resumes where it
+      // stopped instead of starting over from the first page.
+      await this.advanceWatermarks(organizationId, maxTsByConnector);
+
+      if (page.length < PAGE_SIZE) break;
     } // while pages
 
     // Apply references edges mined from response shapes.
@@ -247,7 +320,88 @@ export class KgObservationalService {
       }
     }
 
-    // Advance per-connector watermark.
+    this.logger.debug(
+      `KG observational ${organizationId}: ${processed} invocations, ${edges} edges`,
+    );
+    return { invocations: processed, edges };
+  }
+
+  /**
+   * Yields each page row with its payloads, loading them in batches bounded
+   * by stored size rather than by count, and handing the event loop back
+   * between rows so health checks and MCP requests keep being answered.
+   */
+  private async *loadPayloads<T extends { id: string }>(
+    page: T[],
+  ): AsyncGenerator<{ inv: T; input: unknown; output: unknown }> {
+    const ids = page.map((p) => p.id);
+    const sizes = await this.prisma.$queryRaw<
+      Array<{ id: string; input_bytes: number; output_bytes: number }>
+    >`SELECT id,
+             (COALESCE(pg_column_size(input), 0) * ${COMPRESSION_ALLOWANCE})::int AS input_bytes,
+             (CASE WHEN pg_column_size(output) > ${MEASURE_ABOVE_STORED_BYTES}
+                   THEN octet_length(output::text)
+                   ELSE COALESCE(pg_column_size(output), 0) * ${COMPRESSION_ALLOWANCE}
+              END)::int AS output_bytes
+        FROM tool_invocations
+       WHERE id = ANY(${ids}::text[])`;
+    const sizeById = new Map(sizes.map((r) => [r.id, r]));
+    const withOutput = (id: string) =>
+      (sizeById.get(id)?.output_bytes ?? 0) <= MAX_OUTPUT_BYTES;
+
+    let batch: T[] = [];
+    let batchBytes = 0;
+    for (const inv of page) {
+      const s = sizeById.get(inv.id);
+      const bytes = (s?.input_bytes ?? 0) + (withOutput(inv.id) ? (s?.output_bytes ?? 0) : 0);
+      if (batch.length && batchBytes + bytes > PAYLOAD_BATCH_BYTES) {
+        yield* this.readBatch(batch, withOutput);
+        batch = [];
+        batchBytes = 0;
+      }
+      batch.push(inv);
+      batchBytes += bytes;
+    }
+    if (batch.length) yield* this.readBatch(batch, withOutput);
+  }
+
+  private async *readBatch<T extends { id: string }>(
+    rows: T[],
+    withOutput: (id: string) => boolean,
+  ): AsyncGenerator<{ inv: T; input: unknown; output: unknown }> {
+    const full = rows.filter((r) => withOutput(r.id)).map((r) => r.id);
+    const inputOnly = rows.filter((r) => !withOutput(r.id)).map((r) => r.id);
+    const loaded = new Map<string, { input: unknown; output: unknown }>();
+    if (full.length) {
+      for (const r of await this.prisma.toolInvocation.findMany({
+        where: { id: { in: full } },
+        select: { id: true, input: true, output: true },
+      })) {
+        loaded.set(r.id, { input: r.input, output: r.output });
+      }
+    }
+    if (inputOnly.length) {
+      this.logger.debug(
+        `KG observational: ${inputOnly.length} output(s) over ${MAX_OUTPUT_BYTES} bytes read as input only`,
+      );
+      for (const r of await this.prisma.toolInvocation.findMany({
+        where: { id: { in: inputOnly } },
+        select: { id: true, input: true },
+      })) {
+        loaded.set(r.id, { input: r.input, output: undefined });
+      }
+    }
+    for (const inv of rows) {
+      const p = loaded.get(inv.id);
+      yield { inv, input: p?.input, output: p?.output };
+      await yieldToEventLoop();
+    }
+  }
+
+  private async advanceWatermarks(
+    organizationId: string,
+    maxTsByConnector: Map<string, Date>,
+  ): Promise<void> {
     for (const [connectorId, ts] of maxTsByConnector) {
       await this.prisma.kgConnectorState.upsert({
         where: { connectorId },
@@ -255,11 +409,6 @@ export class KgObservationalService {
         update: { lastObservedAt: ts },
       });
     }
-
-    this.logger.debug(
-      `KG observational ${organizationId}: ${processed} invocations, ${edges} edges`,
-    );
-    return { invocations: processed, edges };
   }
 
   /** Correlate value occurrences into produces_consumes + same_identity edges. */
@@ -276,10 +425,19 @@ export class KgObservationalService {
         field: true,
         direction: true,
       },
+      take: MAX_CORRELATE_ROWS,
     });
 
+    // One occurrence per (hash, connector, entity, direction). Rows that differ
+    // only in field name describe the same link, and pairing every copy with
+    // every other copy is what turned one busy value into thousands of edge
+    // writes.
     const byHash = new Map<string, typeof rows>();
+    const seen = new Set<string>();
     for (const r of rows) {
+      const key = `${r.valueHash}|${r.connectorId}|${r.entity}|${r.direction}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       const list = byHash.get(r.valueHash) ?? [];
       list.push(r);
       byHash.set(r.valueHash, list);
@@ -317,8 +475,9 @@ export class KgObservationalService {
       // same_identity: same value across two distinct connectors.
       const connectors = [...new Set(occ.map((o) => o.connectorId))];
       if (connectors.length >= 2) {
-        for (let i = 0; i < occ.length; i++) {
-          for (let j = i + 1; j < occ.length; j++) {
+        let pairs = 0;
+        for (let i = 0; i < occ.length && pairs < MAX_PAIRS_PER_HASH; i++) {
+          for (let j = i + 1; j < occ.length && pairs < MAX_PAIRS_PER_HASH; j++) {
             const a = occ[i];
             const b = occ[j];
             if (a.connectorId === b.connectorId) continue;
@@ -333,6 +492,7 @@ export class KgObservationalService {
               status: 'suggested',
             });
             edgeCount++;
+            pairs++;
           }
         }
       }
