@@ -44,12 +44,15 @@ export class LicenseGuardService {
       );
     }
 
-    if (license.plan === 'trial' && license.expiresAt) {
-      if (new Date(license.expiresAt) < new Date()) {
-        throw new ForbiddenException(
-          'This workspace\'s trial has ended. Ask a workspace administrator to activate a license.',
-        );
-      }
+    // Every plan, not only trials: a paid licence carries an expiresAt while
+    // its renewal payment is failing (the end of the grace period), and must
+    // stop on that date even if nobody has re-verified it since.
+    if (license.expiresAt && new Date(license.expiresAt) < new Date()) {
+      throw new ForbiddenException(
+        license.plan === 'trial'
+          ? 'This workspace\'s trial has ended. Ask a workspace administrator to activate a license.'
+          : 'This workspace\'s license has expired. Ask a workspace administrator to renew it.',
+      );
     }
   }
 

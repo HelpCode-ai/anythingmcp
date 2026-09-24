@@ -47,6 +47,8 @@ export class OnboardingCronService {
     trialExpired: number;
     trialsMarkedExpired: number;
     trialsRepaired: number;
+    licensesReverified: number;
+    licensesDeactivated: number;
     skipped: number;
   }> {
     const now = Date.now();
@@ -60,6 +62,8 @@ export class OnboardingCronService {
       trialExpired: 0,
       trialsMarkedExpired: 0,
       trialsRepaired: 0,
+      licensesReverified: 0,
+      licensesDeactivated: 0,
       skipped: 0,
     };
 
@@ -172,11 +176,18 @@ export class OnboardingCronService {
     // cannot use.
     out.trialsRepaired = (await this.license.repairMissingTrials()).repaired;
 
+    // Paid licences are re-checked against the licence server about once a
+    // day, so a cancelled or unpaid subscription stops working here too.
+    const reverified = await this.license.reverifyPaidLicenses();
+    out.licensesReverified = reverified.checked;
+    out.licensesDeactivated = reverified.deactivated;
+
     this.logger.log(
       `Onboarding drip: examined=${out.examined} first=${out.firstReminders} ` +
         `second=${out.secondReminders} activation=${out.activationReminders} ` +
         `trialWarn3=${out.trialWarn3} trialWarn1=${out.trialWarn1} trialExpired=${out.trialExpired} ` +
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
+        `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
         `skipped=${out.skipped}`,
     );
     return out;
