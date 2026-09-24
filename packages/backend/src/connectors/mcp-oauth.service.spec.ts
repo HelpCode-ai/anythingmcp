@@ -170,3 +170,28 @@ describe('McpOAuthService.discoverMetadata', () => {
     ).rejects.toThrow(/oauth-protected-resource\/deep\/mcp/);
   });
 });
+
+describe('McpOAuthService.buildAuthorizationUrl', () => {
+  it('keeps query parameters the adapter put on the authorization URL', () => {
+    // Google only issues a refresh token for access_type=offline, and only
+    // re-issues one on a repeat grant with prompt=consent. The Search Console
+    // adapter carries both on its authorizationUrl; dropping them would leave
+    // a connector that stops working an hour after it was authorised.
+    const url = new URL(
+      new McpOAuthService().buildAuthorizationUrl({
+        authorizationEndpoint:
+          'https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent',
+        clientId: 'client-1',
+        redirectUri: 'https://cloud.example.com/api/mcp-oauth/callback',
+        codeChallenge: 'challenge',
+        state: 'state-1',
+        scope: 'https://www.googleapis.com/auth/webmasters',
+      }),
+    );
+    expect(url.searchParams.get('access_type')).toBe('offline');
+    expect(url.searchParams.get('prompt')).toBe('consent');
+    expect(url.searchParams.get('client_id')).toBe('client-1');
+    expect(url.searchParams.get('scope')).toBe('https://www.googleapis.com/auth/webmasters');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+  });
+});

@@ -70,6 +70,11 @@ export class RestEngine {
       // tool saved as `method: "static"` carries only its staticResponse.
       // Declaring it required is what let an undefined path reach `.replace`.
       path?: string;
+      // Percent-encode every value substituted into `{param}`. Off by
+      // default: existing tools rely on a value landing verbatim, slashes
+      // and all. Needed when an identifier is itself a URL (Search Console
+      // properties, sitemap paths), which would otherwise split the path.
+      encodePathParams?: boolean;
       queryParams?: Record<string, unknown>;
       bodyMapping?: Record<string, unknown>;
       bodyTemplate?: string;
@@ -104,7 +109,12 @@ export class RestEngine {
       );
     }
     for (const [key, value] of Object.entries(params)) {
-      path = path.replace(`{${key}}`, String(value));
+      const segment = endpointMapping.encodePathParams
+        ? encodeURIComponent(String(value))
+        : String(value);
+      // A replacer function, not a string: `$&` or `$'` inside a value would
+      // otherwise be read as a replacement pattern.
+      path = path.replace(`{${key}}`, () => segment);
     }
 
     // Allow per-tool absolute URLs to escape the connector's baseUrl. Useful

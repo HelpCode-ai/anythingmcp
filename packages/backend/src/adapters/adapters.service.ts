@@ -183,6 +183,7 @@ export class AdaptersService {
             endpointMapping: tool.endpointMapping as any,
             responseMapping: tool.responseMapping as any,
             outputSchema: ((tool as any).outputSchema ?? null) as any,
+            annotations: (tool.annotations ?? undefined) as any,
           },
         });
         toolsCreated++;
@@ -219,6 +220,18 @@ export class AdaptersService {
     adapter: AdapterDefinition,
     connectorId: string,
   ): Promise<ImportProbeResult | null> {
+    // An OAuth2 connector authorised in the browser (authorizationUrl, no
+    // refresh token of its own) holds no token until the user completes that
+    // step on the connector page. Probing it now can only return a 401 that
+    // the form would present as a wrong credential.
+    const auth = adapter.connector.authConfig as Record<string, unknown> | undefined;
+    if (
+      adapter.connector.authType === 'OAUTH2' &&
+      auth?.authorizationUrl &&
+      !auth.refreshToken
+    ) {
+      return null;
+    }
     const call = pickProbe(adapter);
     if (!call) return null;
     const started = Date.now();

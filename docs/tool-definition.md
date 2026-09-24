@@ -200,6 +200,11 @@ The bridge configuration that transforms MCP tool calls into API requests.
 
 The `$` prefix means "take the value from the tool input parameter with this name."
 
+A `{param}` value is inserted verbatim, slashes included, so a file path can span several segments. When
+the identifier is itself a URL (a Search Console property such as `https://www.example.com/`, a sitemap
+URL), set `"encodePathParams": true` on the mapping and every substituted value is percent-encoded
+(`https%3A%2F%2Fwww.example.com%2F`). The model then passes the value raw, as the API returned it.
+
 ### Response headers and pagination (`exposeHeaders`)
 
 By default a tool receives the response **body** and nothing else. Some APIs put
@@ -436,7 +441,7 @@ You normally do not set these. AnythingMCP derives them from what the connector 
 | REST | `PATCH` | write, destructive, non-idempotent |
 | GraphQL | `query` / `mutation` | read-only / write |
 | Database | connector `readOnly` flag, or `SELECT` vs `INSERT`/`UPDATE`/`DELETE` in the statement | read-only / write; always `openWorldHint: false` |
-| Database | `static` method | read-only |
+| Any | `static` method (fixed text, no call) | read-only |
 | SOAP | operation name only | never asserts read-only; flags a clearly-named destructive op |
 | MCP bridge | the upstream server's own annotations | passed through verbatim |
 
@@ -472,6 +477,10 @@ curl -X PATCH .../api/connectors/<connectorId>/tools/<toolId>/annotations \
 
 An override survives a re-import. Annotations coming from an *upstream MCP server* are refreshed on
 re-import, since that server is authoritative about its own tools.
+
+A catalog adapter that knows better can ship the override itself, as an `annotations` object on the tool
+(`"annotations": {"readOnlyHint": true}`). It seeds the same per-tool override at install, so the operator
+can still change it, and a catalog re-sync never overwrites it on a tool that already exists.
 
 ---
 

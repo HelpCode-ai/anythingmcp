@@ -26,6 +26,22 @@ describe('deriveToolAnnotations', () => {
       });
     });
 
+    it('marks a static playbook read-only', () => {
+      // The executor answers `static` before any engine runs, whatever the
+      // connector type, so a REST playbook is as harmless as a database one.
+      expect(
+        deriveToolAnnotations({
+          name: 'seo_playbook',
+          connectorType: 'REST',
+          endpointMapping: { method: 'static', path: '/' },
+        }),
+      ).toMatchObject({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
+    });
+
     it('treats POST as an additive, non-idempotent write', () => {
       expect(deriveToolAnnotations(rest('POST', 'create_invoice'))).toMatchObject({
         readOnlyHint: false,
