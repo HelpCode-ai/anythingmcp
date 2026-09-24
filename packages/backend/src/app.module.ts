@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { join } from 'path';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import * as Sentry from '@sentry/nestjs';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { MCP_STRATEGY } from '@rekog/mcp-nest';
 import { McpAuthModule } from '@rekog/mcp-nest-auth';
@@ -82,6 +83,14 @@ if (useOAuth) {
         // `openid email` is silently narrowed to nothing.
         scopesSupported: ['openid', 'email'],
       },
+      // The module verifies at bootstrap that cookie-parser is mounted by
+      // looking for an Express layer whose handler is named `cookieParser`.
+      // With Sentry on, its Express instrumentation wraps every handler as
+      // `layerHandlePatched`, the check finds nothing and throws, and the
+      // backend never starts: that took the cloud down on 2026-09-24. main.ts
+      // always mounts cookie-parser (see the regression test in
+      // main-cookie-parser.spec.ts), so the check is skipped only then.
+      skipCookieParserCheck: Sentry.isInitialized(),
     }),
   );
 }

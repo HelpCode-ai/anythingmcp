@@ -149,7 +149,16 @@ jobs:
             sleep 2
           done
           docker exec amcp-ci-db pg_isready -U amcp -d anythingmcp
+          # Booted the way the cloud runs it: OAuth2 on, and Sentry on. On
+          # 2026-09-24 Sentry's Express instrumentation renamed every middleware
+          # layer, @rekog/mcp-nest-auth's bootstrap check stopped finding
+          # cookie-parser, and the backend refused to start in production. The
+          # default boot (auth mode none, no DSN) loads neither module and
+          # could not have caught it. The DSN points at a .invalid host, so
+          # nothing is ever sent.
           docker run -d --name amcp-ci-app --network amcp-ci -p 4000:4000 \
+            -e MCP_AUTH_MODE=oauth2 \
+            -e SENTRY_DSN=https://public@o0.ingest.sentry.invalid/0 \
             -e DATABASE_URL=postgresql://amcp:amcp@amcp-ci-db:5432/anythingmcp \
             -e JWT_SECRET="$(openssl rand -hex 32)" \
             -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
