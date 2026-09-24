@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import * as Sentry from '@sentry/nextjs';
 
 /**
  * Global error boundary. Renders for any uncaught exception inside an App
@@ -19,6 +20,8 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
+    // Reported with its stack; a no-op when Sentry is not configured.
+    Sentry.captureException(error, { tags: { boundary: 'segment' } });
     // Avoid leaking stack traces; just record that something tripped.
     if (typeof window !== 'undefined' && error?.digest) {
       console.error(`[error.tsx] uncaught error (digest=${error.digest})`);

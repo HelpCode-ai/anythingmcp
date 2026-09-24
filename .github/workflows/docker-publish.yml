@@ -41,11 +41,38 @@ jobs:
             # short SHA for traceability
             type=sha,prefix=
 
+      # The frontend build uploads its source maps to Sentry when this token is
+      # present. Set is not the same as valid (the website's first token got
+      # 401 while "set"), so ask the API up front and warn on the run.
+      # Never prints the token; never blocks the publish.
+      - name: Check the Sentry token for the source map upload
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "::warning::SENTRY_AUTH_TOKEN is not set: cloud frontend stack traces in Sentry will be minified"
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+            -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+            "https://de.sentry.io/api/0/organizations/helpcodeai-gmbh/releases/?per_page=1" || true)
+          if [ "$code" = "200" ]; then
+            echo "SENTRY_AUTH_TOKEN accepted — source maps will be uploaded for release ${{ github.sha }}"
+          else
+            echo "::warning::Sentry rejected SENTRY_AUTH_TOKEN: HTTP $code. Source maps will not upload."
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
+          build-args: |
+            SENTRY_RELEASE=${{ github.sha }}
+          # Only the source map upload uses it; nothing Sentry-related that
+          # decides where an instance reports is baked into the public image.
+          secrets: |
+            sentry_auth_token=${{ secrets.SENTRY_AUTH_TOKEN }}
           # arm64 dropped: Prisma 7.8.0's WASM schema engine misparses
           # `onDelete: Cascade` on linux/arm64 (reads it as empty),
           # blocking `prisma generate`. Production runs on amd64 droplets;
