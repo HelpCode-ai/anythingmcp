@@ -97,3 +97,24 @@ export interface BrowserSentryConfig {
 }
 
 export const BROWSER_CONFIG_GLOBAL = '__AMCP_SENTRY__';
+
+/**
+ * Browser errors that are not ours. Each entry names where it comes from, so
+ * the list can be pruned when that source goes away. Same list as the
+ * marketing site, where these were the first issues Sentry recorded.
+ */
+export const BROWSER_IGNORE_ERRORS: Array<string | RegExp> = [
+  // Microsoft Outlook SafeLinks: its scanner opens links from mails (our
+  // invitations and verification links included) in an embedded browser that
+  // rejects with this string.
+  /Object Not Found Matching Id:\d+, MethodName:\w+, ParamCount:\d+/,
+  // Wallet extensions injecting into every page.
+  /MetaMask/,
+];
+
+/** Errors raised by scripts browser extensions inject into the page. */
+export const BROWSER_DENY_URLS: RegExp[] = [
+  /^(chrome|moz|safari(-web)?|ms-browser)-extension:\/\//i,
+  // MetaMask's content script, as it appears once frames are normalised.
+  /\/scripts\/inpage\.js$/i,
+];
