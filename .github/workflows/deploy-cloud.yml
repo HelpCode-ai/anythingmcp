@@ -23,7 +23,7 @@ jobs:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
           target: /tmp/anythingmcp-deploy
           overwrite: true
 
@@ -37,6 +37,11 @@ jobs:
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
           envs: CRON_SECRET,LICENSE_SERVICE_TOKEN
+          # The action's default is 10m. A release that fails and is rolled
+          # back can take longer (up to 5 min waiting for the new containers,
+          # the site checks, up to 5 min more for the previous ones), and a
+          # timeout mid-rollback would leave neither release running.
+          command_timeout: 30m
           script: |
             set -e
             cd /opt/anythingmcp-cloud
@@ -47,13 +52,12 @@ jobs:
             docker pull helpcodeai/anythingmcp:${{ inputs.tag }}
             docker pull helpcodeai/anythingmcp:latest
 
-            # Update compose, Caddyfile and the MOTIS build context from
-            # checkout. deploy/motis is the build context for the motis
-            # service; `docker compose up` builds it if the pinned image tag is
-            # missing (fresh droplet or a bumped tag), otherwise the existing
-            # image is reused.
-            cp /tmp/anythingmcp-deploy/docker-compose.cloud.yml ./docker-compose.cloud.yml
-            cp /tmp/anythingmcp-deploy/deploy/cloud/Caddyfile ./Caddyfile
+            # docker-compose.cloud.yml and the Caddyfile are NOT copied here:
+            # release.sh installs them, after saving the ones in use, so a
+            # failed release can put them back. The MOTIS build context is
+            # copied below; `docker compose up` builds it if the pinned image
+            # tag is missing (fresh droplet or a bumped tag), otherwise the
+            # existing image is reused.
 
             # Uptime probe: a systemd timer on this host, every minute, mailing
             # on a change of state. It is here and not only in GitHub Actions
@@ -72,7 +76,6 @@ jobs:
             mkdir -p ./deploy/motis
             cp /tmp/anythingmcp-deploy/deploy/motis/* ./deploy/motis/
             rm -rf ./deploy/cloud/db-rest
-            rm -rf /tmp/anythingmcp-deploy
 
             # Keep CRON_SECRET in the server .env in sync with the repo
             # secret so the onboarding-reminders cron can authenticate.
@@ -100,69 +103,20 @@ jobs:
             # ~20 s, and on 21 Sep that window landed on a probe tick: a DOWN
             # mail for a planned deploy, which is how an alert stops being read.
             # The marker is an expiry, not a flag, and the trap clears it on
-            # every exit path — including the public gate below failing — so a
-            # deploy that actually breaks the site still mails within a minute.
+            # every exit path — including a failed release, rolled back or not —
+            # so a deploy that actually breaks the site still mails within a
+            # minute. 30 min covers the slowest failed-and-rolled-back release.
             mkdir -p /var/lib/anythingmcp-probe
-            echo $(( $(date -u +%s) + 600 )) > /var/lib/anythingmcp-probe/maintenance
-            trap 'rm -f /var/lib/anythingmcp-probe/maintenance' EXIT
+            echo $(( $(date -u +%s) + 1800 )) > /var/lib/anythingmcp-probe/maintenance
+            trap 'rm -f /var/lib/anythingmcp-probe/maintenance; rm -rf /tmp/anythingmcp-deploy' EXIT
 
-            # Recreate ONLY the two app containers to pick up the new image and
-            # config (postgres, redis and motis keep running — no data churn, no
-            # needless downtime), and wait until both report healthy. The old
-            # command force-recreated the whole stack with no health gate, so a
-            # crash-on-start went unnoticed and could take the DB down with it.
-            #
-            # backend and frontend are separate services since the 20 Sep heap
-            # incident, so that a backend restart no longer takes the app and
-            # every tenant's MCP endpoint down with it. The first deploy of that
-            # layout leaves the old single `app` container running until the
-            # step below removes it as an orphan — caddy keeps routing to it
-            # until then, so the switch is a few seconds of proxy restart.
-            docker compose -f docker-compose.cloud.yml up -d \
-              --no-deps --force-recreate --wait --wait-timeout 300 backend frontend
-
-            # Ensure the proxy + any other services are up (caddy waits for
-            # backend and frontend to be healthy, which they now are) and drop
-            # anything no longer in the compose file.
-            docker compose -f docker-compose.cloud.yml up -d --remove-orphans
-
-            # Caddy reads its Caddyfile once, at start. The file is a bind
-            # mount, so a changed file does not change the container's config
-            # hash and `up` leaves the container alone. That is how the first
-            # split-layout deploy went: backend and frontend healthy, the old
-            # `app` removed, Caddy still proxying to app:4000 from memory —
-            # every route 502, and this workflow reported success. Reload,
-            # unconditionally: it is graceful, and a no-op when nothing changed.
-            docker exec amcp-cloud-caddy caddy reload --config /etc/caddy/Caddyfile
-
-            # The health gate above asked the containers. This asks the site,
-            # through Caddy, and fails the deploy if the answer is wrong — for
-            # the backend route, the anonymous MCP endpoint, and a frontend
-            # page, since those are three different proxy targets.
-            DOMAIN=$(grep -E '^DOMAIN=' .env | cut -d= -f2- | tr -d '"' | tr -d "'")
-            probe() {
-              local label="$1" expect="$2"; shift 2
-              local code=""
-              for i in $(seq 1 12); do
-                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@" || echo 000)
-                [ "$code" = "$expect" ] && { echo "ok   $label → $code"; return 0; }
-                sleep 5
-              done
-              echo "::error::$label answered $code after deploy (expected $expect)"
-              return 1
-            }
-            ok=1
-            probe "https://${DOMAIN}/health" 200 "https://${DOMAIN}/health" || ok=0
-            probe "https://${DOMAIN}/mcp/demo tools/list" 200 -X POST \
-              -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-              -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-              "https://${DOMAIN}/mcp/demo" || ok=0
-            probe "https://${DOMAIN}/login" 200 "https://${DOMAIN}/login" || ok=0
-            if [ "$ok" != "1" ]; then
-              docker compose -f docker-compose.cloud.yml ps
-              docker logs --tail 30 amcp-cloud-caddy
-              exit 1
-            fi
+            # Swap backend and frontend to the new release, reload Caddy, check
+            # the site through it, and roll everything back if any of that
+            # fails: see deploy/cloud/release.sh. On 2026-09-24 a release that
+            # could not start stayed in place and the API answered 502 until
+            # someone intervened; now the previous release comes back and this
+            # job goes red.
+            bash /tmp/anythingmcp-deploy/deploy/cloud/release.sh
 
             docker image prune -f
 
