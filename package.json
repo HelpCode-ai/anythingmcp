@@ -20,6 +20,7 @@
     "build:frontend": "npm run build --workspace=packages/frontend",
     "lint": "npm run lint --workspaces",
     "test": "npm run test --workspaces",
+    "adapter:new": "node scripts/adapter-new.mjs",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:build": "docker compose build",

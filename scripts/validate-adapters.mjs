@@ -9,8 +9,9 @@
  * connector and authentication types, and a non-empty tools array.
  *
  * Soft warnings (printed with --warn, but do not fail CI): short instructions,
- * unprefixed tool names, short tool descriptions, and missing parameter
- * descriptions. Environment-reference checks are also informational because
+ * unprefixed tool names, short tool descriptions, missing parameter
+ * descriptions, and leftover TODO markers from the scaffolder.
+ * Environment-reference checks are also informational because
  * some adapters document values supplied as tool parameters.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -20,12 +21,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
 const DEFAULT_ADAPTERS_DIR = join(REPO_ROOT, 'packages/backend/src/adapters');
-const REGIONS = [
+export const REGIONS = [
   'de', 'gb', 'intl', 'br', 'in', 'jp', 'ng',
   'it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk',
 ];
 const ALLOWED_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'DATABASE', 'LOGIN_TOKEN']);
-const ALLOWED_AUTH_TYPES = new Set(['NONE', 'API_KEY', 'BEARER_TOKEN', 'BASIC', 'BASIC_AUTH', 'OAUTH2', 'OAUTH1', 'LOGIN_TOKEN', 'QUERY_AUTH', 'CONNECTION_STRING', 'HMAC']);
+export const ALLOWED_AUTH_TYPES = new Set(['NONE', 'API_KEY', 'BEARER_TOKEN', 'BASIC', 'BASIC_AUTH', 'OAUTH2', 'OAUTH1', 'LOGIN_TOKEN', 'QUERY_AUTH', 'CONNECTION_STRING', 'HMAC']);
 const REQUIRED_TOP_LEVEL = ['slug', 'name', 'description', 'region', 'category', 'icon', 'docsUrl', 'requiredEnvVars', 'connector', 'tools'];
 const MIN_INSTRUCTIONS_LEN = 800;
 const MIN_TOOL_DESCRIPTION_LEN = 60;
@@ -97,6 +98,21 @@ function isPlaceholderReferenced(envVar, adapter) {
   return JSON.stringify(adapter).includes(`{{${envVar}}}`);
 }
 
+// Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:
+// real adapters mention "to-do" lists, and only the uppercase word is ours.
+const TODO_MARKER = /\bTODO\b/;
+
+/** Walk every string in the adapter and warn where a TODO marker is left. */
+function collectTodoMarkers(value, path, warnings) {
+  if (typeof value === 'string') {
+    if (TODO_MARKER.test(value)) warnings.push(warning('todo-marker', path, `leftover TODO marker at ${path} — finish or remove it before submitting`));
+  } else if (Array.isArray(value)) {
+    value.forEach((item, i) => collectTodoMarkers(item, `${path}[${i}]`, warnings));
+  } else if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) collectTodoMarkers(item, path === '$' ? key : `${path}.${key}`, warnings);
+  }
+}
+
 export function validateAdapter(adapter, file, region) {
   const errors = [];
   const warnings = [];
@@ -155,6 +171,8 @@ export function validateAdapter(adapter, file, region) {
       }
     }
   }
+  // Last, so existing warnings keep their order.
+  collectTodoMarkers(adapter, '$', warnings);
   return { errors, warnings };
 }
 

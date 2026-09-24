@@ -99,6 +99,26 @@ test('required-env warning preserves the explanatory operator guidance', () => {
   assert.equal(result.warnings[0].message, 'requiredEnvVars contains "GOOD_KEY" but it\'s not auto-injected via {{GOOD_KEY}} (operator must set it for documentation, agent passes it as a tool param)');
 });
 
+test('leftover TODO markers are non-blocking warnings with the path of each one', () => {
+  const draft = adapter({
+    description: 'TODO: describe this adapter',
+    tools: [{ name: 'good_lookup', description: 'x'.repeat(60), parameters: {
+      type: 'object', properties: { query: { type: 'string', description: 'TODO: what to look up' } },
+    } }],
+  });
+  const result = validateAdapter(draft, 'good.json', 'de');
+  const todos = result.warnings.filter((w) => w.rule === 'todo-marker');
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(todos.map((w) => w.path), ['description', 'tools[0].parameters.properties.query.description']);
+  assert.match(todos[0].message, /leftover TODO marker at description/);
+});
+
+test('the TODO rule ignores lowercase mentions and adds nothing to a clean adapter', () => {
+  const clean = adapter({ description: 'Manage your to-do list and todo items in Todoist' });
+  const result = validateAdapter(clean, 'good.json', 'de');
+  assert.equal(result.warnings.some((w) => w.rule === 'todo-marker'), false);
+});
+
 test('read failures use an injected reader and a distinct actionable diagnostic', () => {
   const loaded = validatorModule.loadAdapter('missing.json', () => {
     const error = new Error('permission denied');
