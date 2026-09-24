@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — 257 のコネクター、うち 20 は API キー不要。REST、SOAP/WSDL、GraphQL、SQL、MCP システムを Claude、ChatGPT、Copilot、Gemini 用のツールにします。" width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP — 258 のコネクター、うち 20 は API キー不要。REST、SOAP/WSDL、GraphQL、SQL、MCP システムを Claude、ChatGPT、Copilot、Gemini 用のツールにします。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Claude、ChatGPT、Copilot から、企業で既に使っているソフトウェアへ安全にアクセスできます。</strong><br/>
-  257 種類の既製アダプターに加え、REST・SOAP・GraphQL・SQL の各システムをコードを書かずに接続。自社のインフラ上で動作し、システム同士のつながりも学習します。
+  258 種類の既製アダプターに加え、REST・SOAP・GraphQL・SQL の各システムをコードを書かずに接続。自社のインフラ上で動作し、システム同士のつながりも学習します。
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 この文書で繰り返し使う 3 つの用語は、それぞれ異なるものを指します。
 
-- **アダプター（adapter）**は、このリポジトリに含まれる 257 個の JSON 定義のいずれかです。DATEV、weclapp、DHL、Deutsche Bahn、Shopware、Personio、Handelsregister などがあります。そのうち 20 個は API キーを一切必要とせず、それ以外はインポート時に認証情報を設定します。
+- **アダプター（adapter）**は、このリポジトリに含まれる 258 個の JSON 定義のいずれかです。DATEV、weclapp、DHL、Deutsche Bahn、Shopware、Personio、Handelsregister などがあります。そのうち 20 個は API キーを一切必要とせず、それ以外はインポート時に認証情報を設定します。
 - **コネクター（connector）**は、アダプター、または独自の OpenAPI 仕様・Postman コレクション・WSDL・GraphQL エンドポイント・データベースを、ワークスペース内で設定したものです。接続先を指定すれば、MCP サーバーを書くことなく数分で設定できます。
 - **MCP サーバー**は、Claude に渡す URL です。そのサーバーに割り当てたコネクターだけを公開します。
 
@@ -234,7 +234,7 @@ AI クライアントは MCP を使いますが、業務システムは REST、S
 
 ## アダプターカタログ
 
-257 個のアダプターで、1,800 以上のツールを公開できます。**20 個は API キーが不要**です。それ以外はインポート時に認証情報を設定すれば、すぐにツールを利用できます。各アダプターには [anythingmcp.com/guides](https://anythingmcp.com/guides) で 7 言語のセットアップガイドを用意しています。
+258 個のアダプターで、1,800 以上のツールを公開できます。**20 個は API キーが不要**です。それ以外はインポート時に認証情報を設定すれば、すぐにツールを利用できます。各アダプターには [anythingmcp.com/guides](https://anythingmcp.com/guides) で 7 言語のセットアップガイドを用意しています。
 
 | カテゴリー | 例 |
 |---|---|

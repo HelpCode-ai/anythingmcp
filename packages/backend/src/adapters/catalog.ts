@@ -121,6 +121,7 @@ import * as gitbook from './intl/gitbook.json';
 import * as glpi from './intl/glpi.json';
 import * as gocardless from './intl/gocardless.json';
 import * as googleAnalytics4 from './intl/google-analytics-4.json';
+import * as googleSearchConsole from './intl/google-search-console.json';
 import * as gorgias from './intl/gorgias.json';
 import * as greenhouse from './intl/greenhouse.json';
 import * as gtinLookup from './intl/gtin-lookup.json';
@@ -329,6 +330,10 @@ export interface AdapterDefinition extends AdapterMeta {
     // APIs). Default false. Seeds mcp_tools.use_proxy on import; the user
     // can still toggle it per tool afterwards.
     useProxy?: boolean;
+    /** MCP annotation hints the derivation cannot reach on its own, above all
+     *  `readOnlyHint` for a read exposed over POST. Seeds mcp_tools.annotations
+     *  on import, the same column a user override lives in. */
+    annotations?: Record<string, unknown>;
   }>;
 }
 
@@ -494,6 +499,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   glpi as unknown as AdapterDefinition,
   gocardless as unknown as AdapterDefinition,
   googleAnalytics4 as unknown as AdapterDefinition,
+  googleSearchConsole as unknown as AdapterDefinition,
   gorgias as unknown as AdapterDefinition,
   greenhouse as unknown as AdapterDefinition,
   gtinLookup as unknown as AdapterDefinition,

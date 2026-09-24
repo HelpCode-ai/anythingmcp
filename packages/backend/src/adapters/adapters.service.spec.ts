@@ -168,3 +168,29 @@ describe('AdaptersService placeholder resolution', () => {
     });
   });
 });
+
+describe('AdaptersService import probe', () => {
+  const service = Object.create(AdaptersService.prototype) as AdaptersService;
+  const runImportProbe = (adapter: unknown) =>
+    (service as any).runImportProbe(adapter, 'connector-1');
+
+  it('does not probe a connector that is authorised in the browser after install', async () => {
+    // No token exists until the user clicks "Authorize with Provider", so the
+    // only possible result is a 401 that the install form would present as a
+    // wrong credential. The service's dependencies are deliberately absent:
+    // reaching Prisma or the engine would throw.
+    const probe = await runImportProbe({
+      connector: {
+        authType: 'OAUTH2',
+        authConfig: {
+          clientId: 'id',
+          clientSecret: 'secret',
+          authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+          tokenUrl: 'https://oauth2.googleapis.com/token',
+        },
+      },
+      tools: [{ name: 'list', parameters: {}, endpointMapping: { method: 'GET', path: '/x' } }],
+    });
+    expect(probe).toBeNull();
+  });
+});

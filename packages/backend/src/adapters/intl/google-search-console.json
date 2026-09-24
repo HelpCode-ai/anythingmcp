@@ -1,0 +1,367 @@
+{
+  "slug": "google-search-console",
+  "name": "Google Search Console",
+  "description": "Google Search Console for AI agents: search performance (queries, pages, countries, devices, clicks, impressions, CTR, position), URL inspection, sitemaps and properties, plus a built-in SEO playbook. 11 tools, OAuth2.",
+  "instructions": "This connector wraps the **Google Search Console API** (`searchconsole.googleapis.com`): Search Analytics (clicks, impressions, CTR, average position), the URL Inspection API (index status, canonical, crawl, rich results), sitemaps and property management. 11 tools.\n\n**Start with `gsc_seo_playbook`.** It costs no API call and returns ready-made recipes (period comparison, striking-distance keywords, cannibalisation, traffic-drop diagnosis, indexing audit…) with the exact request bodies to send.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Search Console API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. For your own use, the \"unverified app\" warning can be clicked through.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with a Google account that has access to your Search Console properties. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**Scope**: the connector asks for `https://www.googleapis.com/auth/webmasters` (read and write), because it can also submit sitemaps and add properties. For a read-only setup, change the scope to `https://www.googleapis.com/auth/webmasters.readonly` in the connector's OAuth settings, re-authorize, and disable `gsc_submit_sitemap`, `gsc_delete_sitemap`, `gsc_add_site` and `gsc_remove_site`.\n\n**Properties (`site_url`)**\n- Always call `gsc_list_sites` first and reuse the `siteUrl` exactly as returned. `https://example.com/`, `https://www.example.com/` and `sc-domain:example.com` are three different properties.\n- A **domain property** (`sc-domain:`) covers every protocol and subdomain. To look at one subdomain or folder, keep the domain property and filter on `page`.\n- `permissionLevel` `siteUnverifiedUser` means no data access: every data call on that property returns 403.\n\n**Search Analytics (`gsc_query_search_analytics`)**\n- `startDate` and `endDate` are required, `YYYY-MM-DD`, in **Pacific Time**. There are no relative dates: work them out from today's date. History goes back 16 months.\n- Fresh data: `dataState: \"all\"` includes the last 2-3 days, which are still incomplete (what the Search Console UI shows). `\"final\"` returns only finalised days. `\"hourly_all\"` together with the `hour` dimension gives hourly data for about the last 10 days.\n- Dimensions: `query`, `page`, `country`, `device`, `searchAppearance`, `date`, `hour`. With no dimensions you get one totals row.\n- Rows come back **sorted by clicks, descending** (by date when `date` is a dimension). The API cannot sort by impressions, CTR or position: raise `rowLimit` (max 25,000 per call, page with `startRow`) and sort the result yourself.\n- `ctr` is a fraction (0.034 = 3.4%). `position` is the average rank, 1 = top.\n- Filters: `dimensionFilterGroups: [{\"groupType\": \"and\", \"filters\": [{\"dimension\": \"page\", \"operator\": \"contains\", \"expression\": \"/blog/\"}]}]`. Operators: `equals`, `notEquals`, `contains`, `notContains`, `includingRegex`, `excludingRegex` (RE2 syntax). Countries are ISO 3166-1 alpha-3 in lower case (`ita`, `deu`, `usa`); devices are `DESKTOP`, `MOBILE`, `TABLET`.\n- Anonymised queries are left out of rows grouped by `query`, so their sum is lower than the property total. For site totals, query without dimensions.\n- `type`: `web` (default), `image`, `video`, `news`, `discover`, `googleNews`. Discover and Google News have no `query` dimension and no position.\n\n**URL Inspection (`gsc_inspect_url`)**: one URL per call, and the URL must belong to the property. Quota: 2,000 inspections per day and 600 per minute per property. It returns Google's indexed view (verdict, coverage state, last crawl, Google-selected vs declared canonical, robots.txt, fetch state, rich results) plus `inspectionResultLink` to the report in the Search Console UI. It does not trigger a recrawl: the API has no \"request indexing\" call.\n\n**Sitemaps**: `gsc_list_sitemaps` shows each sitemap's last submission and download, pending state, errors, warnings and submitted URL counts. The `indexed` counts in `contents` are no longer populated by Google; use URL Inspection or the page-indexing report for index coverage.\n\n**Errors**: 403 means the Google account has no access to that property (or a read-only scope for a write call); 404 on a property usually means `site_url` is not spelled exactly like in `gsc_list_sites`; 429 means the per-minute quota, so wait and retry.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "google-search-console",
+  "docsUrl": "https://developers.google.com/webmaster-tools/v1/api_reference_index",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "connector": {
+    "name": "Google Search Console",
+    "type": "REST",
+    "baseUrl": "https://searchconsole.googleapis.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/webmasters"
+    },
+    "healthcheckPath": "/webmasters/v3/sites"
+  },
+  "tools": [
+    {
+      "name": "gsc_seo_playbook",
+      "description": "START HERE for any SEO analysis: returns, with NO API call, the ordered steps and exact request bodies for an overview, period comparison, traffic-drop diagnosis, striking-distance keywords, CTR opportunities, cannibalisation, brand vs non-brand, segments, trends, indexing checks and sitemap health.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "/",
+        "staticResponse": "SEARCH CONSOLE PLAYBOOK. Find the request in the ROUTER, then run the steps in order.\nGround rules: (1) gsc_list_sites first, reuse siteUrl verbatim. (2) Dates are YYYY-MM-DD in Pacific Time; compute them from today. Default window = last 28 full days ending 3 days ago (finalised data); say so when you use dataState \"all\". (3) Rows are sorted by clicks only; fetch enough rows (rowLimit 1000-25000) and sort/filter yourself. (4) ctr is a fraction, position is an average (lower = better). (5) Every number you report must come from a tool response.\n\nROUTER\n- How is the site doing / overview -> [OVERVIEW]\n- Compare two periods, month over month, year over year -> [COMPARE]\n- Why did traffic drop / what changed -> [DROP]\n- Keywords close to page 1, quick wins -> [STRIKING]\n- Pages with poor CTR, title/meta rewrites -> [CTR]\n- Several pages competing for one query -> [CANNIBAL]\n- Which queries bring traffic to a page -> [PAGE]\n- Which pages rank for a query -> [QUERY]\n- Brand vs non-brand -> [BRAND]\n- Countries, devices, search appearance -> [SEGMENTS]\n- Trend over time, daily/weekly -> [TREND]\n- Is this URL indexed / why not -> [INDEX]\n- Audit indexing of many URLs -> [INDEX-AUDIT]\n- Sitemap health -> [SITEMAPS]\n- Content section performance (/blog/, /products/) -> [SECTION]\n\n[OVERVIEW] 1) totals: gsc_query_search_analytics {startDate, endDate} with no dimensions -> clicks, impressions, ctr, position. 2) same window with dimensions [\"date\"] for the trend. 3) dimensions [\"query\"], rowLimit 25 and dimensions [\"page\"], rowLimit 25 for top queries and pages. 4) dimensions [\"device\"] and [\"country\"] rowLimit 10. Summarise totals, trend direction, top 10 queries/pages.\n\n[COMPARE] Run the SAME request (same dimensions, filters, type) for period A and period B of equal length. Year over year: shift by 364 days so weekdays line up. Join rows on keys yourself and report absolute and % change for clicks and impressions, and position change (negative = improved). Flag new and lost keys (present in only one period). Use rowLimit 1000+ so the join is not cut off.\n\n[DROP] 1) [COMPARE] on totals to size the drop, then with [\"date\"] to find the day it started. 2) [COMPARE] with [\"page\"] -> pages that lost most clicks. 3) For the top 3 losers, [COMPARE] with [\"query\"] filtered on that page: lost rankings (position up) vs lost demand (impressions down, position stable) vs CTR loss (impressions stable, clicks down: SERP change, snippet, rich result). 4) [COMPARE] by [\"device\"] and [\"country\"] to see if it is one segment. 5) gsc_inspect_url on the top losers to rule out deindexing or canonical changes. 6) gsc_list_sitemaps for new errors.\n\n[STRIKING] dimensions [\"query\",\"page\"], rowLimit 5000, last 28 days. Keep rows with position between 8 and 20 and impressions above the site median; sort by impressions desc. These rank on page 1-2 and gain most from on-page work. Report query, page, position, impressions, clicks.\n\n[CTR] dimensions [\"page\"] (or [\"query\",\"page\"]), rowLimit 5000. Compute the site's typical CTR per position bucket (1-3, 4-6, 7-10) from the same data, then list rows whose ctr is well below their bucket with high impressions. Those snippets (title, meta description, rich results) are the rewrite candidates.\n\n[CANNIBAL] dimensions [\"query\",\"page\"], rowLimit 25000. Group by query; keep queries where 2+ pages each have meaningful impressions (e.g. >10% of the query's impressions). Report the pages, their positions and click split; suggest consolidating or differentiating.\n\n[PAGE] dimensions [\"query\"], dimensionFilterGroups [{\"filters\":[{\"dimension\":\"page\",\"operator\":\"equals\",\"expression\":\"<full URL>\"}]}], rowLimit 1000.\n\n[QUERY] dimensions [\"page\"], filter {\"dimension\":\"query\",\"operator\":\"equals\",\"expression\":\"<query>\"}.\n\n[BRAND] Two calls on [\"query\"]: filter operator \"includingRegex\" with the brand terms (e.g. \"acme|acmecorp|acme corp\") and one with \"excludingRegex\" for non-brand. Compare clicks, impressions, ctr, position of each group; use totals without the query dimension for the site share because of anonymised queries.\n\n[SEGMENTS] dimensions [\"country\"] / [\"device\"] / [\"searchAppearance\"]. searchAppearance: run it on its own first, then filter on a value ({\"dimension\":\"searchAppearance\",\"operator\":\"equals\",\"expression\":\"<value>\"}) with other dimensions.\n\n[TREND] dimensions [\"date\"] (daily). For weekly or monthly, aggregate the daily rows yourself. For the last few days hour by hour: dataState \"hourly_all\" with dimensions [\"hour\"].\n\n[INDEX] gsc_inspect_url {site_url, inspectionUrl}. Read indexStatusResult: verdict (PASS/PARTIAL/FAIL/NEUTRAL), coverageState (e.g. \"Submitted and indexed\", \"Crawled - currently not indexed\", \"Discovered - currently not indexed\", \"Excluded by 'noindex' tag\", \"Duplicate, Google chose different canonical than user\"), robotsTxtState, indexingState, pageFetchState, lastCrawlTime, googleCanonical vs userCanonical (a mismatch means Google picked another URL), sitemap, referringUrls. richResultsResult lists detected structured data and issues. Give the user inspectionResultLink. Requesting indexing is only possible in the Search Console UI, not through the API.\n\n[INDEX-AUDIT] Get candidate URLs from the user, a sitemap, or gsc_query_search_analytics [\"page\"]. Call gsc_inspect_url once per URL (quota 600/min, 2000/day per property; stop and report if you hit 429). Leave languageCode at its default so coverageState stays in English and groups consistently. Group results by coverageState and list URLs per problem with the fix: noindex -> remove tag; blocked by robots.txt -> allow; canonical mismatch -> align canonical/internal links; \"Discovered/Crawled - currently not indexed\" -> improve content quality and internal links.\n\n[SITEMAPS] gsc_list_sitemaps -> per sitemap: lastSubmitted, lastDownloaded (stale if much older than lastSubmitted), isPending, errors, warnings, contents[].submitted. For a sitemap index pass sitemapIndex to list its children. To (re)submit: gsc_submit_sitemap (needs the write scope).\n\n[SECTION] Filter page with \"contains\" \"/blog/\" (or includingRegex \"^https://www\\.example\\.com/(blog|news)/\"), then dimensions [\"query\"] or [\"page\"] as needed; compare with the rest of the site using \"notContains\"."
+      }
+    },
+    {
+      "name": "gsc_list_sites",
+      "description": "List every Search Console property the authorised Google account can see, with its permission level (siteOwner, siteFullUser, siteRestrictedUser, siteUnverifiedUser). Call this first: every other tool needs a siteUrl exactly as returned here.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webmasters/v3/sites"
+      }
+    },
+    {
+      "name": "gsc_get_site",
+      "description": "Get one Search Console property and the authorised account's permission level on it. Useful to confirm access before running reports, or to check whether a property is verified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "The property exactly as gsc_list_sites returns it: a URL-prefix property with protocol and trailing slash ('https://www.example.com/') or a domain property ('sc-domain:example.com'). Pass it raw, not URL-encoded."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webmasters/v3/sites/{site_url}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gsc_query_search_analytics",
+      "description": "Query Google Search performance data (clicks, impressions, ctr, average position) for a property, grouped by any of query, page, country, device, searchAppearance, date or hour, with filters. Read-only. Rows are sorted by clicks descending; max 25,000 rows per call (page with startRow). See gsc_seo_playbook for ready-made request bodies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "The property exactly as gsc_list_sites returns it: a URL-prefix property with protocol and trailing slash ('https://www.example.com/') or a domain property ('sc-domain:example.com'). Pass it raw, not URL-encoded."
+          },
+          "startDate": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD, Pacific Time. Up to 16 months back."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, Pacific Time, inclusive."
+          },
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "query",
+                "page",
+                "country",
+                "device",
+                "searchAppearance",
+                "date",
+                "hour"
+              ]
+            },
+            "description": "Group rows by these dimensions, in this order (each row's `keys` follow it). Omit for a single totals row."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "web",
+              "image",
+              "video",
+              "news",
+              "discover",
+              "googleNews"
+            ],
+            "description": "Search type. Default web. discover and googleNews have no query dimension and no position."
+          },
+          "dimensionFilterGroups": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Filters, e.g. [{\"groupType\":\"and\",\"filters\":[{\"dimension\":\"country\",\"operator\":\"equals\",\"expression\":\"ita\"},{\"dimension\":\"page\",\"operator\":\"contains\",\"expression\":\"/blog/\"}]}]. Operators: equals, notEquals, contains, notContains, includingRegex, excludingRegex (RE2)."
+          },
+          "aggregationType": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "byPage",
+              "byProperty"
+            ],
+            "description": "How impressions are counted: byProperty (once per property per search) or byPage (once per URL). Default auto: byPage when grouping or filtering by page, else byProperty."
+          },
+          "rowLimit": {
+            "type": "integer",
+            "description": "Rows to return, 1-25000. Default 1000."
+          },
+          "startRow": {
+            "type": "integer",
+            "description": "Zero-based offset for paging past rowLimit. Default 0."
+          },
+          "dataState": {
+            "type": "string",
+            "enum": [
+              "final",
+              "all",
+              "hourly_all"
+            ],
+            "description": "final = finalised days only (default); all = include the last, still incomplete days (as the Search Console UI does); hourly_all = required with the hour dimension."
+          }
+        },
+        "required": [
+          "site_url",
+          "startDate",
+          "endDate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/webmasters/v3/sites/{site_url}/searchAnalytics/query",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "dimensions": "$dimensions",
+          "type": "$type",
+          "dimensionFilterGroups": "$dimensionFilterGroups",
+          "aggregationType": "$aggregationType",
+          "rowLimit": "$rowLimit",
+          "startRow": "$startRow",
+          "dataState": "$dataState"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gsc_inspect_url",
+      "description": "Inspect how Google sees one URL: index verdict, coverage state (indexed, crawled or discovered but not indexed, excluded by noindex, canonical issues), last crawl, Google-selected vs declared canonical, robots.txt and fetch state, rich results. Read-only; does not request indexing. Quota 2,000/day and 600/min per property.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "The property exactly as gsc_list_sites returns it: a URL-prefix property with protocol and trailing slash ('https://www.example.com/') or a domain property ('sc-domain:example.com'). Pass it raw, not URL-encoded."
+          },
+          "inspectionUrl": {
+            "type": "string",
+            "description": "Full URL to inspect. Must belong to the property, e.g. 'https://www.example.com/blog/post'."
+          },
+          "languageCode": {
+            "type": "string",
+            "description": "IETF language tag for the human-readable fields, e.g. 'en-US', 'it-IT', 'de-DE'. Default en-US. coverageState is translated too ('Inviata e indicizzata'), so keep the default when grouping or matching states across URLs."
+          }
+        },
+        "required": [
+          "site_url",
+          "inspectionUrl"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/urlInspection/index:inspect",
+        "bodyMapping": {
+          "inspectionUrl": "$inspectionUrl",
+          "siteUrl": "$site_url",
+          "languageCode": "$languageCode"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gsc_list_sitemaps",
+      "description": "List the sitemaps submitted for a property: path, last submitted and last downloaded times, pending state, sitemap-index flag, error and warning counts, and submitted URL counts per content type. Pass sitemapIndex to list the children of a sitemap index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "The property exactly as gsc_list_sites returns it: a URL-prefix property with protocol and trailing slash ('https://www.example.com/') or a domain property ('sc-domain:example.com'). Pass it raw, not URL-encoded."
+          },
+          "sitemapIndex": {
+            "type": "string",
+            "description": "Full URL of a sitemap index; returns only the sitemaps it contains."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webmasters/v3/sites/{site_url}/sitemaps",
+        "encodePathParams": true,
+        "queryParams": {
+          "sitemapIndex": "$sitemapIndex"
+        }
+      }
+    },
+    {
+      "name": "gsc_get_sitemap",
+      "description": "Get the status of one submitted sitemap: last submitted and downloaded, pending, errors, warnings and submitted URL counts per content type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "The property exactly as gsc_list_sites returns it: a URL-prefix property with protocol and trailing slash ('https://www.example.com/') or a domain property ('sc-domain:example.com'). Pass it raw, not URL-encoded."
+          },
+          "feedpath": {
+            "type": "string",
+            "description": "Full URL of the sitemap, e.g. 'https://www.example.com/sitemap.xml'. Pass it raw, not URL-encoded."
+          }
+        },
+        "required": [
+          "site_url",
+          "feedpath"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webmasters/v3/sites/{site_url}/sitemaps/{feedpath}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gsc_submit_sitemap",
+      "description": "Submit (or resubmit) a sitemap for a property so Google fetches it. Requires the read-write webmasters scope and owner or full-user permission. Returns an empty body on success; check with gsc_get_sitemap.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "The property exactly as gsc_list_sites returns it: a URL-prefix property with protocol and trailing slash ('https://www.example.com/') or a domain property ('sc-domain:example.com'). Pass it raw, not URL-encoded."
+          },
+          "feedpath": {
+            "type": "string",
+            "description": "Full URL of the sitemap, e.g. 'https://www.example.com/sitemap.xml'. It must be on the property."
+          }
+        },
+        "required": [
+          "site_url",
+          "feedpath"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/webmasters/v3/sites/{site_url}/sitemaps/{feedpath}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gsc_delete_sitemap",
+      "description": "Remove a sitemap from a property's sitemap report. Google stops reading it from Search Console, but it does not deindex any URL. Requires the read-write scope. Ask the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "The property exactly as gsc_list_sites returns it: a URL-prefix property with protocol and trailing slash ('https://www.example.com/') or a domain property ('sc-domain:example.com'). Pass it raw, not URL-encoded."
+          },
+          "feedpath": {
+            "type": "string",
+            "description": "Full URL of the sitemap to remove, as listed by gsc_list_sitemaps."
+          }
+        },
+        "required": [
+          "site_url",
+          "feedpath"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/webmasters/v3/sites/{site_url}/sitemaps/{feedpath}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gsc_add_site",
+      "description": "Add a property to the authorised account's Search Console. It is added unverified (siteUnverifiedUser); ownership must then be verified in the Search Console UI before any data is available. Requires the read-write scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "Property to add: 'https://www.example.com/' (URL prefix, trailing slash) or 'sc-domain:example.com' (domain property)."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/webmasters/v3/sites/{site_url}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "gsc_remove_site",
+      "description": "Remove a property from the authorised account's Search Console list. The account loses access to its reports until it is added and verified again. Requires the read-write scope. Always confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_url": {
+            "type": "string",
+            "description": "The property exactly as gsc_list_sites returns it: a URL-prefix property with protocol and trailing slash ('https://www.example.com/') or a domain property ('sc-domain:example.com'). Pass it raw, not URL-encoded."
+          }
+        },
+        "required": [
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/webmasters/v3/sites/{site_url}",
+        "encodePathParams": true
+      }
+    }
+  ]
+}

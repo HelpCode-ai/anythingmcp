@@ -59,6 +59,78 @@ describe('RestEngine', () => {
     );
   });
 
+  describe('encodePathParams', () => {
+    it('leaves path values verbatim by default', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'GET', path: '/files/{path}' },
+        { path: 'docs/report.pdf' },
+      );
+
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'https://api.example.com/files/docs/report.pdf' }),
+      );
+    });
+
+    it('percent-encodes a URL used as a path identifier when the tool opts in', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        { baseUrl: 'https://searchconsole.googleapis.com', authType: 'NONE' },
+        {
+          method: 'GET',
+          path: '/webmasters/v3/sites/{site_url}/sitemaps/{feedpath}',
+          encodePathParams: true,
+        },
+        {
+          site_url: 'https://www.example.com/',
+          feedpath: 'https://www.example.com/sitemap.xml',
+        },
+      );
+
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url:
+            'https://searchconsole.googleapis.com/webmasters/v3/sites/' +
+            'https%3A%2F%2Fwww.example.com%2F/sitemaps/' +
+            'https%3A%2F%2Fwww.example.com%2Fsitemap.xml',
+        }),
+      );
+    });
+
+    it('encodes the colon of a domain property', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        { baseUrl: 'https://searchconsole.googleapis.com', authType: 'NONE' },
+        { method: 'GET', path: '/webmasters/v3/sites/{site_url}', encodePathParams: true },
+        { site_url: 'sc-domain:example.com' },
+      );
+
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://searchconsole.googleapis.com/webmasters/v3/sites/sc-domain%3Aexample.com',
+        }),
+      );
+    });
+
+    it('does not read $ in a value as a replacement pattern', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'GET', path: '/items/{id}' },
+        { id: "a$&b$'c" },
+      );
+
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({ url: "https://api.example.com/items/a$&b$'c" }),
+      );
+    });
+  });
+
   it('hands back only the response headers the mapping asked for, lower-cased', async () => {
     mockedAxios.mockResolvedValue({
       data: [{ id: 1 }],

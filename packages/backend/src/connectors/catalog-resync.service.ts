@@ -311,6 +311,9 @@ export class CatalogResyncService {
               endpointMapping: ct.endpointMapping as any,
               responseMapping: (ct.responseMapping as any) ?? undefined,
               useProxy: ct.useProxy === true,
+              // Only on create: on an existing tool this column may hold the
+              // operator's own override.
+              annotations: (ct.annotations as any) ?? undefined,
             },
           });
           createdCount++;
