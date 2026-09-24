@@ -2,7 +2,8 @@ import { Module, MiddlewareConsumer, NestModule, Logger, ClassSerializerIntercep
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { join } from 'path';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { MCP_STRATEGY } from '@rekog/mcp-nest';
 import { McpAuthModule } from '@rekog/mcp-nest-auth';
 import { mcpStrategy } from './mcp-server/mcp-strategy';
@@ -39,6 +40,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { CloudModule } from './ee/cloud/cloud.module';
 import { getRequiredSecret } from './common/secrets.util';
 import { AppLoggerModule } from './common/logger.module';
+import { SentryContextInterceptor } from './common/sentry-context.interceptor';
 
 // Determine deployment and auth mode from env
 const useCloud = process.env.DEPLOYMENT_MODE === 'cloud';
@@ -86,6 +88,10 @@ if (useOAuth) {
 
 @Module({
   imports: [
+    // Sentry first, so its instrumentation wraps every module below. Inert
+    // when SENTRY_DSN is unset (instrument.ts never calls Sentry.init).
+    SentryModule.forRoot(),
+
     // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
@@ -138,6 +144,11 @@ if (useOAuth) {
     ...cloudImports,
   ],
   providers: [
+    // Reports exceptions Nest turns into a 500 response, which otherwise never
+    // reach Sentry. HttpExceptions (4xx, auth failures) are expected and are
+    // not reported. Must stay the first APP_FILTER.
+    { provide: APP_FILTER, useClass: SentryGlobalFilter },
+    { provide: APP_INTERCEPTOR, useClass: SentryContextInterceptor },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: EmailVerifiedGuard },
     // Injected by McpServerService, which registers the tools defined in the

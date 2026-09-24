@@ -18,6 +18,7 @@ const geistMono = Geist_Mono({
 import { LicenseWall } from '@/components/license-wall';
 import { GoogleTagManager, GoogleTagManagerNoscript } from '@/components/google-tag-manager';
 import { CookieConsentBanner } from '@/components/cookie-consent';
+import { SentryConfig } from '@/components/sentry-config';
 
 export const metadata: Metadata = {
   title: 'AnythingMCP — Custom connectors for Claude, ChatGPT, Copilot & any AI agent',
@@ -70,6 +71,7 @@ export default function RootLayout({
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <SentryConfig />
         <GoogleTagManager />
       </head>
       <body>
