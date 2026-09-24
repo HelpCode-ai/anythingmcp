@@ -76,8 +76,8 @@ describe('KgObservationalService.ingestOrganization', () => {
       },
       toolInvocation: { findMany: toolInvocationFindMany },
       $queryRaw: queryRaw,
+      $executeRaw: jest.fn().mockResolvedValue(0),
       kgValueSeen: {
-        createMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: jest.fn().mockResolvedValue(setup.valueSeen ?? []),
       },
       kgEdge: {
@@ -212,9 +212,13 @@ describe('KgObservationalService.ingestOrganization', () => {
     });
     await svc.ingestOrganization(ORG);
 
-    expect(prisma.kgValueSeen.createMany).toHaveBeenCalledWith(
-      expect.objectContaining({ skipDuplicates: true }),
-    );
+    const [sql, ...params] = prisma.$executeRaw.mock.calls[0];
+    expect(sql.join('?')).toContain('ON CONFLICT');
+    // ids, organizationId, connectorId, valueHash, entity, field, direction
+    expect(params).toHaveLength(7);
+    expect(params[1]).toEqual([ORG]);
+    expect(params[2]).toEqual(['c2']);
+    expect(params[6]).toEqual(['output']);
     expect(prisma.kgValueSeen.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ take: 20_000 }),
     );
