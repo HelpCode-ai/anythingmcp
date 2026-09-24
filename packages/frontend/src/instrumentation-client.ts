@@ -9,6 +9,8 @@
 import * as Sentry from '@sentry/nextjs';
 import {
   BROWSER_CONFIG_GLOBAL,
+  BROWSER_DENY_URLS,
+  BROWSER_IGNORE_ERRORS,
   scrubBreadcrumb,
   scrubEvent,
   type BrowserSentryConfig,
@@ -33,6 +35,9 @@ function init(): void {
     beforeSend: scrubEvent,
     beforeSendTransaction: scrubEvent,
     beforeBreadcrumb: scrubBreadcrumb,
+    // Noise from extensions and link scanners: see lib/sentry-scrub.ts.
+    ignoreErrors: BROWSER_IGNORE_ERRORS,
+    denyUrls: BROWSER_DENY_URLS,
   });
 }
 
