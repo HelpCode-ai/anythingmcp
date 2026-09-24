@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { extractEntity } from './static/entity-extraction';
@@ -30,9 +31,8 @@ const COMPRESSION_ALLOWANCE = 8;
 /** Occurrence rows read back per correlate pass. */
 const MAX_CORRELATE_ROWS = 20_000;
 /**
- * Rows per createMany and hashes per correlate query. Prisma compiles each
- * statement synchronously, and one statement carrying a 5,000-row export's
- * worth of parameters held the event loop for over a second.
+ * Rows per insert and hashes per correlate query, with the event loop handed
+ * back in between.
  */
 const WRITE_CHUNK = 1000;
 
@@ -258,10 +258,7 @@ export class KgObservationalService {
       // produces_consumes / same_identity links are still found. The unique key
       // keeps a value seen a thousand times as one row.
       for (let i = 0; i < valueRows.length; i += WRITE_CHUNK) {
-        await this.prisma.kgValueSeen.createMany({
-          data: valueRows.slice(i, i + WRITE_CHUNK),
-          skipDuplicates: true,
-        });
+        await this.insertValueRows(valueRows.slice(i, i + WRITE_CHUNK));
         await yieldToEventLoop();
       }
       const hashes = [...newHashes];
@@ -396,6 +393,29 @@ export class KgObservationalService {
       yield { inv, input: p?.input, output: p?.output };
       await yieldToEventLoop();
     }
+  }
+
+  /**
+   * One statement with seven array parameters, however many rows. Prisma's
+   * createMany compiles a parameter per column per row, synchronously: 1,000
+   * rows held the production event loop for 330-630 ms per call.
+   */
+  private async insertValueRows(rows: ValueRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    const col = <K extends keyof ValueRow>(k: K) => rows.map((r) => r[k]);
+    await this.prisma.$executeRaw`
+      INSERT INTO kg_value_seen
+        (id, organization_id, connector_id, value_hash, entity, field, direction)
+      SELECT * FROM unnest(
+        ${rows.map(() => randomUUID())}::text[],
+        ${col('organizationId')}::text[],
+        ${col('connectorId')}::text[],
+        ${col('valueHash')}::text[],
+        ${col('entity')}::text[],
+        ${col('field')}::text[],
+        ${col('direction')}::text[]
+      )
+      ON CONFLICT (organization_id, connector_id, value_hash, entity, field, direction) DO NOTHING`;
   }
 
   private async advanceWatermarks(
