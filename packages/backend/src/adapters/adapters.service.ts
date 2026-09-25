@@ -16,6 +16,7 @@ import {
   withoutOperatorProvided,
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
+import { normalizeBaseUrlVariables } from '../common/base-url-variable.util';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
@@ -98,6 +99,18 @@ export class AdaptersService {
           typeof v === 'string' ? v.trim() : v,
         ]),
       ) as Record<string, string>;
+
+      // A base URL built from a variable (Substack, Magento, WordPress, …)
+      // needs that variable to be a whole URL. `yourname.substack.com` gets
+      // its https:// here; a value that is not a web address at all is
+      // refused while the user is still on the form, naming the variable.
+      // The normalised value is what gets stored, so the environment-variable
+      // editor shows what is actually used.
+      credentials = normalizeBaseUrlVariables(
+        adapter.connector.baseUrl,
+        credentials,
+        adapter.connector.type,
+      );
     }
 
     // Resolve {{VAR}} placeholders in authConfig with provided credentials

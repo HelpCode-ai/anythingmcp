@@ -65,6 +65,27 @@ describe('ConnectorsService.executeConnectorCall placeholders', () => {
     );
   });
 
+  it('names the variable when its value has no https://, instead of the SSRF error', async () => {
+    // An install from before the save-time check: the bare host went straight
+    // into the base URL, and every call failed with "SSRF guard: invalid URL".
+    const connector = {
+      ...substack({ SUBSTACK_PUBLICATION_URL: 'yourname.substack.com' }),
+      baseUrl: 'yourname.substack.com',
+    };
+
+    await expect(
+      service.executeConnectorCall(
+        connector,
+        { method: 'GET', path: '/api/v1/posts' },
+        {},
+        'substack_list_posts',
+      ),
+    ).rejects.toThrow(
+      /^SUBSTACK_PUBLICATION_URL must be a full URL such as https:\/\/yourname\.substack\.com, not "yourname\.substack\.com"\. The request from the connector behind substack_list_posts was not sent/,
+    );
+    expect(restEngine.execute).not.toHaveBeenCalled();
+  });
+
   it('resolves credentials in authConfig at call time too', async () => {
     const connector = {
       ...substack({ TOKEN: 'secret-token' }),

@@ -344,6 +344,25 @@ export const connectors = {
       body: data,
       token,
     }),
+  /**
+   * Partial update of OAuth 1.0a credentials. Only the fields sent change; the
+   * stored values are never returned to the browser.
+   */
+  updateOAuth1Config: (
+    id: string,
+    data: {
+      consumerKey?: string;
+      consumerSecret?: string;
+      token?: string;
+      tokenSecret?: string;
+    },
+    token: string,
+  ) =>
+    request<{ message: string }>(`/api/connectors/${id}/oauth1-config`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
   delete: (id: string, token: string) =>
     request(`/api/connectors/${id}`, { method: 'DELETE', token }),
   test: (id: string, token: string) =>
