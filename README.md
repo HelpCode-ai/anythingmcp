@@ -257,7 +257,7 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 | 🛍️ E-commerce | Amazon Seller, Etsy, Shopware 6, WooCommerce, Mercado Libre 🌎, Oxomi |
 | 👥 HR &amp; field service | Personio, HRWorks, Kenjo, MFR Mobile Field Report |
 | 🏛️ Government &amp; public data | VIES VAT, Handelsregister, UK Companies House 🇬🇧, DESTATIS, Bundesbank, OpenPLZ, NINA |
-| 🏦 Banking &amp; payments | N26, Wise 🇬🇧, PAYONE, Razorpay 🇮🇳, Paystack 🇳🇬 |
+| 🏦 Banking &amp; payments | Revolut Business, Wise 🇬🇧, PAYONE, Razorpay 🇮🇳, Paystack 🇳🇬 |
 | 💬 Messaging &amp; communication | WhatsApp, LINE 🇯🇵, TeamViewer |
 | 🎾 Sports &amp; Web3 | Playtomic, Sorare |
 | 🏗️ Construction &amp; mapping | PlanRadar, HERE Geocoding |

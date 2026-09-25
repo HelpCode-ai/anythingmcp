@@ -243,7 +243,7 @@ AI クライアントは MCP を使いますが、業務システムは REST、S
 | 🛍️ E コマース | Amazon Seller、Etsy、Shopware 6、WooCommerce、Mercado Libre 🌎、Oxomi |
 | 👥 人事・フィールドサービス | Personio、HRWorks、Kenjo、MFR Mobile Field Report |
 | 🏛️ 行政・公開データ | VIES VAT、Handelsregister、UK Companies House 🇬🇧、DESTATIS、Bundesbank、OpenPLZ、NINA |
-| 🏦 銀行・決済 | N26、Wise 🇬🇧、PAYONE、Razorpay 🇮🇳、Paystack 🇳🇬 |
+| 🏦 銀行・決済 | Revolut Business、Wise 🇬🇧、PAYONE、Razorpay 🇮🇳、Paystack 🇳🇬 |
 | 💬 メッセージング・通信 | WhatsApp、LINE 🇯🇵、TeamViewer |
 | 🎾 スポーツ・Web3 | Playtomic、Sorare |
 | 🏗️ 建設・地図 | PlanRadar、HERE Geocoding |

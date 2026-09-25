@@ -98,7 +98,7 @@ const CONNECTORS = `AnythingMCP ships ${COUNT} pre-built connectors (${KEYLESS} 
 • E-commerce — Etsy, Shopware 6, WooCommerce, Mercado Libre, ImmobilienScout24
 • HR — Personio, HRWorks, Kenjo
 • Government & public data — VIES VAT, Handelsregister, DESTATIS, OpenPLZ
-• Banking & payments — N26, Wise, PAYONE
+• Banking & payments — Revolut Business, Wise, PAYONE
 • Messaging — WhatsApp, LINE
 • Sports & Web3 — Playtomic, Sorare
 
