@@ -3,11 +3,10 @@
 # AnythingMCP Cloud — weekly "stuck users" report, run by a systemd timer on
 # the droplet (deploy/cloud/systemd/anythingmcp-stuck-report.{service,timer}).
 #
-# Why: on 2026-09-25 a query run by hand found 71 organizations whose tool
-# calls had never once succeeded — 21 of them active in the previous 30 days —
-# and several catalog connectors (Reddit, Vinted, Buffer, ImmobilienScout24…)
-# with no successful call for anyone. Nobody knew. This mails the same
-# picture every Monday morning:
+# Why: on 2026-09-25 a query run by hand found organizations whose tool
+# calls had never once succeeded, and several catalog connectors with no
+# successful call for anyone. Nobody knew. This mails the same picture every
+# Monday morning:
 #
 #   1. organizations that made tool calls in the window and have NEVER had a
 #      successful one, marked NEW or STILL STUCK against the previous report;
