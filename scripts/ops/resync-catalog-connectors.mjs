@@ -36,16 +36,22 @@
  * pointed somewhere else on purpose (a proxy, a sandbox) is left alone and
  * listed.
  *
- * Run it inside the app container AFTER the release carrying the adapter
+ * Run it inside the backend container AFTER the release carrying the adapter
  * change is deployed — the diff is computed against the catalog compiled into
  * that container:
  *
- *   docker cp scripts/ops/resync-catalog-connectors.mjs amcp-cloud-app:/app/backend/resync.mjs
- *   docker exec -w /app/backend amcp-cloud-app node resync.mjs buffer \
+ *   docker cp scripts/ops/resync-catalog-connectors.mjs amcp-cloud-backend:/app/backend/resync.mjs
+ *   docker exec -w /app/backend amcp-cloud-backend node resync.mjs buffer \
  *     --base-url-from=https://graphql.buffer.com,https://api.buffer.com/graphql        # dry run
- *   docker exec -w /app/backend amcp-cloud-app node resync.mjs buffer \
+ *   docker exec -w /app/backend amcp-cloud-backend node resync.mjs buffer \
  *     --base-url-from=https://graphql.buffer.com,https://api.buffer.com/graphql --apply
- *   docker restart amcp-cloud-app     # the tool registry caches connector tools
+ *   # These three on the droplet host, not in the container. The restart takes the API
+ *   # down for ~30-60 s; silence the uptime probe first. It honours an expiry
+ *   # epoch in this file (deploy/cloud/uptime-probe.sh, as deploy-cloud.yml
+ *   # does), so a forgotten marker lapses by itself after 10 minutes:
+ *   mkdir -p /var/lib/anythingmcp-probe && echo $(( $(date -u +%s) + 600 )) > /var/lib/anythingmcp-probe/maintenance
+ *   docker restart amcp-cloud-backend     # the tool registry caches connector tools
+ *   rm -f /var/lib/anythingmcp-probe/maintenance
  *
  * Prints connector ids and what changed; no credentials, no customer data.
  */
@@ -76,7 +82,7 @@ if (!slug || !getAdapter(slug)) {
   process.exit(1);
 }
 if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL is not set — run this inside the app container.');
+  console.error('DATABASE_URL is not set — run this inside the backend container.');
   process.exit(1);
 }
 
@@ -151,6 +157,6 @@ console.log(
 for (const { id } of unmanaged) {
   console.log(`! ${id}: on an old ${slug} base URL but not catalog-managed (no adapterSlug) — not touched`);
 }
-if (!APPLY && counts.synced > 0) console.log('Re-run with --apply, then restart the app.');
+if (!APPLY && counts.synced > 0) console.log('Re-run with --apply, then restart the backend (see the header).');
 
 await prisma.$disconnect();
