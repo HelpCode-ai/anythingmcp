@@ -3,6 +3,7 @@ const a = adapter as unknown as {
   requiredEnvVars: string[];
   connector: { baseUrl: string; authType: string; authConfig: any };
   tools: { name: string; endpointMapping: { method: string } }[];
+  probe?: { tool: string; params?: Record<string, unknown> };
 };
 describe('reddit adapter — static spec conformance', () => {
   it('reads via oauth.reddit.com (NOT www.reddit.com)', () =>
@@ -19,8 +20,17 @@ describe('reddit adapter — static spec conformance', () => {
     expect(a.requiredEnvVars).toEqual(['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET']);
   });
 
-  it('pins a User-Agent (Reddit blocks requests without one)', () => {
-    expect(a.connector.authConfig.extraHeaders['User-Agent']).toMatch(/AnythingMCP/);
+  it("pins a User-Agent in Reddit's <platform>:<app id>:<version> (by /u/<name>) format", () => {
+    // Reddit throttles generic agents; the token service forwards this same
+    // header to the token request, so it identifies both legs.
+    expect(a.connector.authConfig.extraHeaders['User-Agent']).toMatch(
+      /^[a-z]+:[\w.-]+:v?[\w.]+ \(by \/u\/[\w-]+\)$/,
+    );
+  });
+
+  it('probes a public read at install, so a wrong client ID/secret shows on the form', () => {
+    expect(a.probe?.tool).toBe('reddit_get_subreddit_about');
+    expect(a.tools.map((t) => t.name)).toContain(a.probe!.tool);
   });
 
   it('exposes read-only tools only (app-only cannot post/vote/whoami)', () => {
