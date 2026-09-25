@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Agent Skills Finder">
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#7C3AED"/>
+  <path d="M20 16h18l8 8v24a4 4 0 0 1-4 4H20a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4z" fill="#fff" opacity=".95"/>
+  <path d="M38 16v6a2 2 0 0 0 2 2h6" fill="none" stroke="#7C3AED" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M22 30h14M22 36h10" stroke="#C4B5FD" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="38" cy="41" r="6" fill="none" stroke="#7C3AED" stroke-width="3"/>
+  <path d="m42.5 45.5 5 5" stroke="#7C3AED" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

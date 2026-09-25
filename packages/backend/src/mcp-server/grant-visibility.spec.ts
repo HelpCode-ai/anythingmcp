@@ -54,6 +54,7 @@ function build(
     {} as any,
     {} as any,
     { resolve: jest.fn().mockResolvedValue(grant) } as any,
+    { create: jest.fn() } as any,
   );
   return controller;
 }
@@ -226,6 +227,7 @@ describe('grant-scoped visibility on the shared /mcp', () => {
         {} as any,
         {} as any,
         { resolve: jest.fn().mockResolvedValue(null) } as any,
+        { create: jest.fn() } as any,
       );
 
     const listFor = async (user: any) => {

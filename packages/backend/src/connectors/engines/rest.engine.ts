@@ -144,7 +144,16 @@ export class RestEngine {
     const resolvedEndpointHeaders: Record<string, string> = {};
     if (endpointMapping.headers) {
       for (const [key, value] of Object.entries(endpointMapping.headers)) {
-        if (typeof value === 'string' && value.startsWith('$')) {
+        if (typeof value === 'string' && value.includes('${')) {
+          // `Bearer ${API_KEY}`: interpolated like a query parameter, and the
+          // header is left out when any part is empty. An optional key then
+          // means "send it when set", not `Authorization: Bearer ` with
+          // nothing after it, which most APIs answer with 401.
+          const interpolated = this.resolveValue(value, params);
+          if (interpolated !== undefined) {
+            resolvedEndpointHeaders[key] = String(interpolated);
+          }
+        } else if (typeof value === 'string' && value.startsWith('$')) {
           const paramVal = params[value.substring(1)];
           if (paramVal !== undefined) {
             resolvedEndpointHeaders[key] = String(paramVal);

@@ -59,6 +59,45 @@ describe('RestEngine', () => {
     );
   });
 
+  describe('endpoint headers with ${…} templates', () => {
+    const send = async (headers: Record<string, string>, params: Record<string, unknown>) => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'GET', path: '/x', headers },
+        params,
+      );
+      return (mockedAxios.mock.calls[0][0] as unknown as { headers: Record<string, string> }).headers;
+    };
+
+    it('interpolates a value into a longer header', async () => {
+      // bluesky sends `Bearer ${access_jwt}`; it used to go out literally.
+      const h = await send({ Authorization: 'Bearer ${access_jwt}' }, { access_jwt: 'jwt-1' });
+      expect(h.Authorization).toBe('Bearer jwt-1');
+    });
+
+    it('interpolates a header that is only a template', async () => {
+      // greenhouse sends `${on_behalf_of}`; it used to be dropped.
+      const h = await send({ 'On-Behalf-Of': '${on_behalf_of}' }, { on_behalf_of: '42' });
+      expect(h['On-Behalf-Of']).toBe('42');
+    });
+
+    it('leaves the header out when the optional value is empty or missing', async () => {
+      // SkillsMP answers `Authorization: Bearer ` with 401 but serves an
+      // anonymous request, so an unset optional key must mean no header.
+      expect(await send({ Authorization: 'Bearer ${SKILLSMP_API_KEY}' }, { SKILLSMP_API_KEY: '' }))
+        .not.toHaveProperty('Authorization');
+      jest.clearAllMocks();
+      expect(await send({ Authorization: 'Bearer ${SKILLSMP_API_KEY}' }, {}))
+        .not.toHaveProperty('Authorization');
+    });
+
+    it('keeps the $param form unchanged', async () => {
+      const h = await send({ 'X-Request-ID': '$request_id' }, { request_id: 'r-1' });
+      expect(h['X-Request-ID']).toBe('r-1');
+    });
+  });
+
   describe('encodePathParams', () => {
     it('leaves path values verbatim by default', async () => {
       mockedAxios.mockResolvedValue({ data: {} });
