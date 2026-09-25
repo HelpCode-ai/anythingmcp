@@ -60,6 +60,7 @@ describe('McpEndpointController — tenant isolation', () => {
       kgService as any,
       sessionManager as any,
       grants as any,
+      { create: jest.fn() } as any,
     );
   });
 
@@ -210,6 +211,7 @@ describe('McpEndpointController — structuredContent', () => {
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
       { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
       { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { create: jest.fn() } as any,
     );
 
     const entries = (controller as any).planToolSet({
@@ -275,5 +277,203 @@ describe('McpEndpointController — structuredContent', () => {
     expect(result.structuredContent).toBeUndefined();
     expect(result).not.toHaveProperty('structured');
     expect(result.isError).toBe(true);
+  });
+});
+
+/**
+ * The knowledge graph reaches the model two ways on a per-server endpoint: the
+ * kg_how_to_obtain tool and the knowledge-graph resource. Both must stay inside
+ * the connectors the caller's role lets them use, not just the ones assigned to
+ * the server.
+ */
+describe('McpEndpointController — knowledge graph scope', () => {
+  const tool = (id: string, connectorId: string) => ({
+    id,
+    connectorId,
+    name: id,
+    description: `${id} tool`,
+    parameters: { type: 'object', properties: {} },
+    connectorConfig: { envVars: {} },
+  });
+  const serverTools = [tool('crm_get_customer', 'c-crm'), tool('fibu_get_ledger', 'c-fibu')];
+
+  function make() {
+    const kgService = {
+      lookup: jest.fn().mockResolvedValue({ entities: [] }),
+      describeForResource: jest.fn().mockResolvedValue('# Knowledge graph'),
+    };
+    const controller = new McpEndpointController(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      kgService as any,
+      {} as any,
+      {} as any,
+      { create: jest.fn() } as any,
+    );
+    return { controller: controller as any, kgService };
+  }
+
+  const params = (allowedToolIds: string[] | null, kgEnabled = true) => ({
+    serverTools,
+    allowedToolIds,
+    captureIntent: false,
+    kgEnabled,
+    invocationContext: {
+      organizationId: 'org-A',
+      authMethod: 'jwt',
+      mcpServerId: 'srv-1',
+      mcpServerName: 'Sales',
+      connectorIds: ['c-crm', 'c-fibu'],
+    },
+  });
+
+  function fakeServer() {
+    const resources: any[] = [];
+    const tools = new Map<string, any>();
+    return {
+      resources,
+      tools,
+      registerResource: jest.fn((name, uri, meta, read) => {
+        resources.push({ name, uri, meta, read });
+        return { remove: jest.fn() };
+      }),
+      registerTool: jest.fn((name, _meta, handler) => {
+        tools.set(name, handler);
+        return { remove: jest.fn() };
+      }),
+    };
+  }
+
+  async function lookupScope(controller: any, kgService: any, allowed: string[] | null) {
+    const entries = controller.planToolSet(params(allowed));
+    const server = fakeServer();
+    entries.find((e: any) => e.name === 'kg_how_to_obtain').register(server);
+    await server.tools.get('kg_how_to_obtain')({ query: 'customer' });
+    return kgService.lookup.mock.calls.at(-1)[2].connectorIds;
+  }
+
+  it('kg_how_to_obtain only sees the connectors a restricted role can use', async () => {
+    const { controller, kgService } = make();
+    expect(await lookupScope(controller, kgService, ['crm_get_customer'])).toEqual(['c-crm']);
+  });
+
+  it('kg_how_to_obtain still sees every assigned connector for an unrestricted caller', async () => {
+    const { controller, kgService } = make();
+    expect(await lookupScope(controller, kgService, null)).toEqual(['c-crm', 'c-fibu']);
+  });
+
+  it('publishes the knowledge-graph resource, scoped to the role, built on read', async () => {
+    const { controller, kgService } = make();
+    const server = fakeServer();
+    controller.registerKgResource(server, params(['crm_get_customer']));
+
+    expect(server.resources).toHaveLength(1);
+    expect(server.resources[0].uri).toBe('anythingmcp://server/srv-1/knowledge-graph');
+    expect(server.resources[0].meta.mimeType).toBe('text/markdown');
+    expect(kgService.describeForResource).not.toHaveBeenCalled();
+
+    const result = await server.resources[0].read();
+    expect(kgService.describeForResource).toHaveBeenCalledWith('org-A', {
+      connectorIds: ['c-crm'],
+      mcpServerId: 'srv-1',
+      serverName: 'Sales',
+    });
+    expect(result.contents[0]).toEqual({
+      uri: 'anythingmcp://server/srv-1/knowledge-graph',
+      mimeType: 'text/markdown',
+      text: '# Knowledge graph',
+    });
+  });
+
+  it('publishes no knowledge-graph resource when the graph is off for the workspace', () => {
+    const { controller } = make();
+    const server = fakeServer();
+    controller.registerKgResource(server, params(null, false));
+    expect(server.registerResource).not.toHaveBeenCalled();
+  });
+});
+
+describe('McpEndpointController — skills_save_to_workspace', () => {
+  const tool = (name: string) => ({
+    id: `t-${name}`,
+    name,
+    description: name,
+    parameters: { type: 'object', properties: {} },
+    connectorType: 'REST',
+    connectorConfig: { envVars: {} },
+    endpointMapping: { method: 'GET', path: '/x' },
+  });
+
+  function plan(serverTools: any[], create = jest.fn().mockResolvedValue({ id: 'sk-1', status: 'pending' })) {
+    const controller = new McpEndpointController(
+      { findById: jest.fn() } as any,
+      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      { executeTool: jest.fn() } as any,
+      { getAllowedToolIds: jest.fn() } as any,
+      { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
+      { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
+      { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { create } as any,
+    );
+    const entries = (controller as any).planToolSet({
+      serverTools,
+      allowedToolIds: null,
+      captureIntent: false,
+      invocationContext: { organizationId: 'org-A', mcpServerId: 'srv-A', connectorIds: [] },
+    });
+    return { entries, create };
+  }
+
+  it('is offered only on a server that has the Agent Skills Finder', () => {
+    expect(plan([tool('list_devices')]).entries.map((e: any) => e.name)).not.toContain(
+      'skills_save_to_workspace',
+    );
+    expect(plan([tool('skills_search'), tool('skills_get')]).entries.map((e: any) => e.name)).toContain(
+      'skills_save_to_workspace',
+    );
+  });
+
+  it('files the skill as a pending suggestion on this server, with its source', async () => {
+    const { entries, create } = plan([tool('skills_get')]);
+    let handler: any;
+    let config: any;
+    entries
+      .find((e: any) => e.name === 'skills_save_to_workspace')
+      .register({
+        registerTool: (_n: string, c: unknown, h: any) => {
+          config = c;
+          handler = h;
+          return {};
+        },
+      });
+
+    expect(config.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+
+    const result = await handler({
+      title: 'README generation',
+      whenToUse: 'When asked to write a README',
+      instruction: 'Start with a one-line summary, then install, usage, config.',
+      sourceUrl: 'https://github.com/bytedance/deer-flow/tree/8bb14fa/skills/public/code-documentation',
+      license: 'MIT',
+    });
+
+    expect(create).toHaveBeenCalledWith('org-A', {
+      title: 'README generation',
+      whenToUse: 'When asked to write a README',
+      instruction:
+        'Start with a one-line summary, then install, usage, config.\n\n' +
+        'Source: https://github.com/bytedance/deer-flow/tree/8bb14fa/skills/public/code-documentation (licence: MIT)',
+      mcpServerId: 'srv-A',
+      status: 'pending',
+    });
+    expect(JSON.parse(result.content[0].text)).toMatchObject({ saved: true, id: 'sk-1', status: 'pending' });
+  });
+
+  it('yields to a connector tool of the same name', () => {
+    const { entries } = plan([tool('skills_get'), tool('skills_save_to_workspace')]);
+    expect(entries.filter((e: any) => e.name === 'skills_save_to_workspace')).toHaveLength(1);
+    expect(entries.find((e: any) => e.name === 'skills_save_to_workspace').sig).not.toContain(':v1');
   });
 });

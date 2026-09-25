@@ -64,6 +64,7 @@ import * as wise from './gb/wise.json';
 import * as activecampaign from './intl/activecampaign.json';
 import * as acuityScheduling from './intl/acuity-scheduling.json';
 import * as adyen from './intl/adyen.json';
+import * as agentSkills from './intl/agent-skills.json';
 import * as agilecrm from './intl/agilecrm.json';
 import * as airtable from './intl/airtable.json';
 import * as amazonSeller from './intl/amazon-seller.json';
@@ -446,6 +447,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   activecampaign as unknown as AdapterDefinition,
   acuityScheduling as unknown as AdapterDefinition,
   adyen as unknown as AdapterDefinition,
+  agentSkills as unknown as AdapterDefinition,
   agilecrm as unknown as AdapterDefinition,
   airtable as unknown as AdapterDefinition,
   amazonSeller as unknown as AdapterDefinition,

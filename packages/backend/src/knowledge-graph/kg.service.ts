@@ -565,6 +565,132 @@ export class KgService {
     return { query, entities: matchedEntities, howToObtain, relatedTo: relatedTo.slice(0, 25), skills };
   }
 
+  /**
+   * The graph as a Markdown map, for the per-server MCP resource
+   * `anythingmcp://server/<id>/knowledge-graph`.
+   *
+   * Same scope as lookup(): only entities of the given connectors, only active
+   * edges with BOTH ends in scope, and the skills applied to this server or to
+   * those connectors. The caller passes the connectors the requesting user may
+   * actually use, so a role that denies a connector never sees its entities.
+   * Bounded, because a client attaches the whole resource to the model's
+   * context; kg_how_to_obtain answers the long tail.
+   */
+  async describeForResource(
+    organizationId: string,
+    opts: { connectorIds: string[]; mcpServerId?: string; serverName?: string },
+  ): Promise<string> {
+    const MAX_ENTITIES = 150;
+    const MAX_RELATIONS = 250;
+    const MAX_TOOLS = 6;
+    const MAX_FIELDS = 8;
+
+    const title = `# Knowledge graph${opts.serverName ? ` for ${opts.serverName}` : ''}`;
+    const intro =
+      'How the data behind the tools on this MCP server fits together: which entities each ' +
+      'connector exposes, which tools read or write them, and which values connect one entity ' +
+      'to another. Use it to plan a chain of tool calls. For a single entity or parameter, ' +
+      'the kg_how_to_obtain tool gives the same information on demand.';
+
+    const [nodes, skills] = await Promise.all([
+      opts.connectorIds.length
+        ? this.prisma.kgNode.findMany({
+            where: { organizationId, connectorId: { in: opts.connectorIds } },
+            select: {
+              id: true,
+              entity: true,
+              label: true,
+              description: true,
+              fields: true,
+              toolNames: true,
+              connector: { select: { name: true } },
+            },
+            orderBy: [{ observations: 'desc' }, { entity: 'asc' }],
+          })
+        : Promise.resolve([]),
+      this.scopedSkills(organizationId, {
+        connectorIds: opts.connectorIds,
+        mcpServerId: opts.mcpServerId,
+      }),
+    ]);
+
+    if (nodes.length === 0) {
+      return [
+        title,
+        '',
+        intro,
+        '',
+        '_The graph has no entities for the connectors you can use on this server yet. ' +
+          'It fills in as connectors are synced and used._',
+      ].join('\n');
+    }
+
+    const nodeIds = nodes.map((n) => n.id);
+    const edges = await this.prisma.kgEdge.findMany({
+      where: {
+        organizationId,
+        status: 'active',
+        sourceNodeId: { in: nodeIds },
+        targetNodeId: { in: nodeIds },
+      },
+      select: { sourceNodeId: true, targetNodeId: true, kind: true, matchKey: true, note: true },
+      orderBy: [{ confidence: 'desc' }, { observations: 'desc' }],
+      take: MAX_RELATIONS + 1,
+    });
+
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const name = (id: string) => {
+      const n = byId.get(id);
+      return n ? `${n.label} (${n.connector?.name ?? 'unknown connector'})` : '?';
+    };
+    const oneLine = (text: string, max = 160) => {
+      const flat = text.replace(/\s+/g, ' ').trim();
+      return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+    };
+    const KIND: Record<string, string> = {
+      references: 'refers to',
+      produces_consumes: 'feeds',
+      same_identity: 'is the same record as',
+      related: 'is used together with',
+    };
+
+    const shown = nodes.slice(0, MAX_ENTITIES);
+    const out: string[] = [title, '', intro, '', `## Entities (${nodes.length})`, ''];
+    for (const n of shown) {
+      const tools = ((n.toolNames as string[] | null) ?? []).slice(0, MAX_TOOLS);
+      const fields = ((n.fields as Array<{ name: string }> | null) ?? [])
+        .map((f) => f?.name)
+        .filter(Boolean)
+        .slice(0, MAX_FIELDS);
+      const parts = [`- **${n.label}** (${n.connector?.name ?? 'unknown connector'})`];
+      if (n.description) parts.push(`: ${oneLine(n.description)}`);
+      out.push(parts.join(''));
+      if (tools.length) out.push(`  - tools: ${tools.map((t) => `\`${t}\``).join(', ')}`);
+      if (fields.length) out.push(`  - key fields: ${fields.map((f) => `\`${f}\``).join(', ')}`);
+    }
+    if (nodes.length > shown.length) {
+      out.push('', `_${nodes.length - shown.length} more entities not listed; ask kg_how_to_obtain about them._`);
+    }
+
+    out.push('', `## How they connect (${Math.min(edges.length, MAX_RELATIONS)}${edges.length > MAX_RELATIONS ? '+' : ''})`, '');
+    if (edges.length === 0) {
+      out.push('_No confirmed connections between these entities yet._');
+    }
+    for (const e of edges.slice(0, MAX_RELATIONS)) {
+      const via = e.matchKey ? ` via \`${e.matchKey}\`` : '';
+      const note = e.note ? `: ${oneLine(e.note, 120)}` : '';
+      out.push(`- ${name(e.sourceNodeId)} ${KIND[e.kind] ?? e.kind} ${name(e.targetNodeId)}${via}${note}`);
+    }
+
+    if (skills.length) {
+      out.push('', `## Workspace skills (${skills.length})`, '');
+      for (const sk of skills) {
+        out.push(`- **${sk.title}**${sk.whenToUse ? `: ${oneLine(sk.whenToUse)}` : ''}`);
+      }
+    }
+    return out.join('\n');
+  }
+
   /** Applied skills for the scope (server-wide skills + assigned connectors'). */
   private async scopedSkills(
     organizationId: string,

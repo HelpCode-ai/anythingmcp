@@ -144,7 +144,16 @@ export class RestEngine {
     const resolvedEndpointHeaders: Record<string, string> = {};
     if (endpointMapping.headers) {
       for (const [key, value] of Object.entries(endpointMapping.headers)) {
-        if (typeof value === 'string' && value.startsWith('$')) {
+        if (typeof value === 'string' && value.includes('${')) {
+          // `Bearer ${API_KEY}`: interpolated like a query parameter, and the
+          // header is left out when any part is empty. An optional key then
+          // means "send it when set", not `Authorization: Bearer ` with
+          // nothing after it, which most APIs answer with 401.
+          const interpolated = this.resolveValue(value, params);
+          if (interpolated !== undefined) {
+            resolvedEndpointHeaders[key] = String(interpolated);
+          }
+        } else if (typeof value === 'string' && value.startsWith('$')) {
           const paramVal = params[value.substring(1)];
           if (paramVal !== undefined) {
             resolvedEndpointHeaders[key] = String(paramVal);
@@ -182,6 +191,7 @@ export class RestEngine {
         const raw = String(mappedQuery['__rawquery']);
         delete mappedQuery['__rawquery'];
         for (const [k, v] of new URLSearchParams(raw)) {
+          if (isUnsafeKey(k)) continue;
           mappedQuery[k] = v;
         }
       }
@@ -658,6 +668,7 @@ export class RestEngine {
     ) {
       bodyParams = {};
       for (const [k, v] of new URLSearchParams(axiosConfig.data)) {
+        if (isUnsafeKey(k)) continue;
         bodyParams[k] = v;
       }
     }
@@ -757,6 +768,15 @@ export class RestEngine {
     }
     return value;
   }
+}
+
+/**
+ * Keys that would reach an object's prototype chain instead of naming a
+ * parameter. The query and form strings parsed here come from tool arguments,
+ * so from the model; no API names a parameter like this.
+ */
+function isUnsafeKey(key: string): boolean {
+  return key === '__proto__' || key === 'constructor' || key === 'prototype';
 }
 
 /**

@@ -113,6 +113,18 @@ test('required-env warning preserves the explanatory operator guidance', () => {
   assert.equal(result.warnings[0].message, 'requiredEnvVars contains "GOOD_KEY" but it\'s not auto-injected via {{GOOD_KEY}} (operator must set it for documentation, agent passes it as a tool param)');
 });
 
+test('an optional key used as ${VAR} in a tool header counts as referenced', () => {
+  const withTemplate = adapter({
+    requiredEnvVars: [],
+    optionalEnvVars: ['GOOD_KEY'],
+    tools: [{ name: 'good_lookup', description: 'x'.repeat(60), parameters: { type: 'object', properties: {} },
+      endpointMapping: { method: 'GET', path: '/x', headers: { Authorization: 'Bearer ${GOOD_KEY}' } } }],
+  });
+  assert.deepEqual(validateAdapter(withTemplate, 'good.json', 'de').warnings, []);
+  const unused = adapter({ requiredEnvVars: [], optionalEnvVars: ['GOOD_KEY'] });
+  assert.equal(validateAdapter(unused, 'good.json', 'de').warnings[0].rule, 'optional-env-reference');
+});
+
 test('leftover TODO markers are non-blocking warnings with the path of each one', () => {
   const draft = adapter({
     description: 'TODO: describe this adapter',

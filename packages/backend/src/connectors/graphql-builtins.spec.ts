@@ -98,3 +98,36 @@ describe('buildGraphqlBuiltinTools', () => {
     },
   );
 });
+
+describe('slugifyForPrefix without a backtracking regex', () => {
+  // The previous implementation, kept here as the reference the new one must
+  // match. Its trim regex was polynomial on long runs of underscores.
+  const reference = (name: string) =>
+    name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'graphql';
+
+  it('matches the previous output on awkward and random inputs', () => {
+    const fixed = ['', '___', '--a--', 'A__B', ' x ', 'Ärger Öl', 'İstanbul API', '9lives', '..', 'a/b\\c'];
+    const alphabet = 'aZ9_-. /\\ÄéİßŁ\t\n@';
+    const random = Array.from({ length: 2000 }, (_, i) => {
+      let str = '';
+      let seed = i * 2654435761;
+      const len = (i % 17) + 1;
+      for (let j = 0; j < len; j++) {
+        seed = (seed * 1103515245 + 12345) >>> 0;
+        str += alphabet[seed % alphabet.length];
+      }
+      return str;
+    });
+    for (const input of [...fixed, ...random]) {
+      expect(slugifyForPrefix(input)).toBe(reference(input));
+    }
+  });
+
+  it('stays linear on the input that made the old regex crawl', () => {
+    const hostile = '_'.repeat(50_000) + '!';
+    const started = Date.now();
+    expect(slugifyForPrefix(hostile)).toBe('graphql');
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+});
+

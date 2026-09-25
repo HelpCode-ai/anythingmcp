@@ -209,8 +209,12 @@ The bridge configuration that transforms MCP tool calls into API requests.
 | `"$param"` in queryParams | Query string | Added as `?param=value` |
 | `"$param"` in bodyMapping | JSON body | Included in request body |
 | `"$param"` in headers | HTTP headers | Sent as request header |
+| `"Bearer ${param}"` in headers | HTTP headers | Interpolated; the header is left out when any `${…}` is empty or unset |
 
 The `$` prefix means "take the value from the tool input parameter with this name."
+Connector variables are available the same way, so an optional key is written as
+`"headers": { "Authorization": "Bearer ${MY_API_KEY}" }`: sent when the variable is set, omitted
+when it is empty, rather than going out as `Authorization: Bearer ` with nothing after it.
 
 A `{param}` value is inserted verbatim, slashes included, so a file path can span several segments. When
 the identifier is itself a URL (a Search Console property such as `https://www.example.com/`, a sitemap
