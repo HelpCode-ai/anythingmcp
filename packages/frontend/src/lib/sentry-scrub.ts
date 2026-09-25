@@ -110,6 +110,13 @@ export const BROWSER_IGNORE_ERRORS: Array<string | RegExp> = [
   /Object Not Found Matching Id:\d+, MethodName:\w+, ParamCount:\d+/,
   // Wallet extensions injecting into every page.
   /MetaMask/,
+  // Telegram's in-app browser calls its own bridge from an injected script
+  // and throws when the host app lacks the method (ANYTHINGMCP-CLOUD-FRONTEND-4).
+  /Error invoking postEvent: Method not found/,
+  // React Server Components stream cut mid-response by the network (seen on
+  // mobile connections, ANYTHINGMCP-WEBSITE-A). Next falls back to a full
+  // navigation; there is nothing to fix on our side.
+  /^Connection closed\.$/,
 ];
 
 /** Errors raised by scripts browser extensions inject into the page. */
