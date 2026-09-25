@@ -733,6 +733,7 @@ export class McpEndpointController {
     const entries = this.planToolSet(params);
     const handles = this.registerAll(mcpServer, entries, serverId);
     const signature = this.aggregateSig(entries);
+    this.registerKgResource(mcpServer, params);
 
     // 6. Create transport and handle the request — stateless by default, or a
     // long-lived session when MCP_STATEFUL_SESSIONS is enabled. Stateful keeps
@@ -1227,7 +1228,7 @@ export class McpEndpointController {
       !registeredNames.has('kg_how_to_obtain')
     ) {
       const orgId = invocationContext.organizationId;
-      const scopeConnectorIds = invocationContext.connectorIds;
+      const scopeConnectorIds = this.kgScopeConnectorIds(params);
       const scopeServerId = invocationContext.mcpServerId;
       entries.push({
         name: 'kg_how_to_obtain',
@@ -1271,6 +1272,60 @@ export class McpEndpointController {
     }
 
     return entries;
+  }
+
+  /**
+   * Connectors whose part of the knowledge graph this caller may see: the
+   * server's assigned connectors, narrowed to the ones the caller's role lets
+   * them use at least one tool of. kg_how_to_obtain used to scope by the
+   * assignment alone, so a role-restricted user could read the entities,
+   * fields and tool names of connectors their role denies.
+   */
+  private kgScopeConnectorIds(params: ToolSetParams): string[] {
+    const { serverTools, allowedToolIds, invocationContext } = params;
+    if (allowedToolIds === null) return invocationContext.connectorIds;
+    const allowed = new Set(allowedToolIds);
+    return [
+      ...new Set(serverTools.filter((t) => allowed.has(t.id)).map((t) => t.connectorId)),
+    ];
+  }
+
+  /**
+   * Publishes the workspace knowledge graph as a read-only MCP resource, so a
+   * client can attach the whole map to the model's context instead of asking
+   * kg_how_to_obtain one entity at a time. Same scope as that tool. The content
+   * is built when the resource is read, so it is never staler than the graph.
+   */
+  private registerKgResource(mcpServer: McpServer, params: ToolSetParams): void {
+    const { kgEnabled, invocationContext } = params;
+    const orgId = invocationContext.organizationId;
+    if (!kgEnabled || !orgId) return;
+    const connectorIds = this.kgScopeConnectorIds(params);
+    const uri = `anythingmcp://server/${invocationContext.mcpServerId}/knowledge-graph`;
+    mcpServer.registerResource(
+      'knowledge-graph',
+      uri,
+      {
+        title: 'Knowledge graph',
+        description:
+          'Entities, tools and connections across the connectors on this MCP server that ' +
+          'you can use, plus the workspace skills. Attach it when planning multi-step work.',
+        mimeType: 'text/markdown',
+      },
+      async () => ({
+        contents: [
+          {
+            uri,
+            mimeType: 'text/markdown',
+            text: await this.kgService.describeForResource(orgId, {
+              connectorIds,
+              mcpServerId: invocationContext.mcpServerId,
+              serverName: invocationContext.mcpServerName,
+            }),
+          },
+        ],
+      }),
+    );
   }
 
   /** Aggregate content signature of a planned tool set. */
