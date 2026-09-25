@@ -136,7 +136,11 @@ export default function ConnectorDetailPage() {
 
   // Environment variables
   const [showEnvVars, setShowEnvVars] = useState(false);
-  const [envVarEntries, setEnvVarEntries] = useState<{ key: string; value: string }[]>([]);
+  // `masked`: a stored secret. The server never sends its value, so the field
+  // starts empty and is sent back empty unless retyped, which keeps it.
+  const [envVarEntries, setEnvVarEntries] = useState<
+    { key: string; value: string; masked?: boolean }[]
+  >([]);
   const [savingEnvVars, setSavingEnvVars] = useState(false);
 
   const fetchConnector = async () => {
@@ -188,7 +192,14 @@ export default function ConnectorDetailPage() {
       // Load env vars
       const ev = c.envVars as Record<string, string> | null;
       if (ev && typeof ev === 'object') {
-        setEnvVarEntries(Object.entries(ev).map(([key, value]) => ({ key, value: String(value) })));
+        const masked = new Set<string>(c.maskedEnvVars || []);
+        setEnvVarEntries(
+          Object.entries(ev).map(([key, value]) => ({
+            key,
+            value: masked.has(key) ? '' : String(value ?? ''),
+            masked: masked.has(key),
+          })),
+        );
       }
     } catch {
       router.push('/connectors');
@@ -587,8 +598,15 @@ export default function ConnectorDetailPage() {
           envVars[entry.key.trim()] = entry.value;
         }
       }
-      await connectors.updateEnvVars(id, envVars, token);
-      setMsg('Environment variables saved');
+      // A masked secret nobody retyped goes out empty, which the server
+      // reads as "keep the stored value". Its value is never in the browser.
+      const result = await connectors.updateEnvVars(id, envVars, token);
+      const warnings = result?.warnings ?? [];
+      setMsg(
+        warnings.length
+          ? `Environment variables saved. ${warnings.join(' ')}`
+          : 'Environment variables saved',
+      );
       fetchConnector();
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
@@ -1142,7 +1160,7 @@ export default function ConnectorDetailPage() {
                 </p>
               )}
               {connector.type !== 'DATABASE' && connector.type !== 'MCP' && (
-                <HeadersEditor rows={editHeaderRows} onChange={setEditHeaderRows} />
+                <HeadersEditor rows={editHeaderRows} onChange={setEditHeaderRows} maskedKeys={connector.maskedHeaders} />
               )}
               <div>
                 <label className="block text-sm font-medium mb-1">Instructions</label>
@@ -1259,23 +1277,32 @@ export default function ConnectorDetailPage() {
                   <input
                     type="text"
                     value={entry.key}
+                    // Renaming a stored secret would save the new name empty and
+                    // drop the old one; remove it and add a new one instead.
+                    readOnly={entry.masked}
+                    aria-label="Variable name"
                     onChange={(e) => {
                       const updated = [...envVarEntries];
                       updated[i] = { ...entry, key: e.target.value };
                       setEnvVarEntries(updated);
                     }}
                     placeholder="VAR_NAME"
-                    className="w-1/3 border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
+                    className={cn(
+                      'w-1/3 border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]',
+                      entry.masked && 'text-[var(--text-2)]',
+                    )}
                   />
                   <input
-                    type="text"
+                    type={entry.masked ? 'password' : 'text'}
+                    autoComplete={entry.masked ? 'new-password' : 'off'}
                     value={entry.value}
+                    aria-label={`Value of ${entry.key.trim() || 'new variable'}`}
                     onChange={(e) => {
                       const updated = [...envVarEntries];
                       updated[i] = { ...entry, value: e.target.value };
                       setEnvVarEntries(updated);
                     }}
-                    placeholder="value"
+                    placeholder={entry.masked ? 'Set — leave empty to keep current' : 'value'}
                     className="flex-1 border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
                   />
                   <button

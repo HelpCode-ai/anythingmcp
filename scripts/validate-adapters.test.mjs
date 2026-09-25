@@ -94,6 +94,20 @@ test('connector, auth, optional-env shape, and empty tools are blocking families
   ]);
 });
 
+test('envVarAliases must be keyed by a current variable and list only previous names', () => {
+  const ok = validateAdapter(adapter({ envVarAliases: { GOOD_KEY: ['OLD_KEY'] } }), 'good.json', 'de');
+  assert.deepEqual(ok.errors, []);
+
+  const shape = validateAdapter(adapter({ envVarAliases: { GOOD_KEY: 'OLD_KEY' } }), 'good.json', 'de');
+  assert.deepEqual(shape.errors.map(({ rule }) => rule), ['env-alias-shape']);
+
+  const wrong = validateAdapter(adapter({ envVarAliases: { OLD_KEY: ['GOOD_KEY'] } }), 'good.json', 'de');
+  assert.deepEqual(wrong.errors.map(({ rule, path }) => [rule, path]), [
+    ['env-alias-unknown', 'envVarAliases.OLD_KEY'],
+    ['env-alias-current', 'envVarAliases.OLD_KEY'],
+  ]);
+});
+
 test('required-env warning preserves the explanatory operator guidance', () => {
   const result = validateAdapter(adapter(), 'good.json', 'de');
   assert.equal(result.warnings[0].message, 'requiredEnvVars contains "GOOD_KEY" but it\'s not auto-injected via {{GOOD_KEY}} (operator must set it for documentation, agent passes it as a tool param)');

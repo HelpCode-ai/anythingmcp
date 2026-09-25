@@ -241,6 +241,21 @@ export function validateAdapter(adapter, file, region) {
     }
   }
 
+  if (adapter.envVarAliases !== undefined) {
+    const aliases = adapter.envVarAliases;
+    const declared = [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
+    if (!aliases || typeof aliases !== 'object' || Array.isArray(aliases) || Object.values(aliases).some((v) => !Array.isArray(v) || v.some((n) => typeof n !== 'string'))) {
+      errors.push(error('env-alias-shape', 'envVarAliases', 'envVarAliases must map a variable name to an array of its previous names', 'Use { "CURRENT_NAME": ["OLD_NAME"] }.', 'adapter-fields'));
+    } else {
+      for (const [envVar, previous] of Object.entries(aliases)) {
+        if (!declared.includes(envVar)) errors.push(error('env-alias-unknown', `envVarAliases.${envVar}`, `envVarAliases names "${envVar}", which is not in requiredEnvVars or optionalEnvVars`, 'Key the alias by the current variable name.', 'adapter-fields'));
+        for (const old of previous) {
+          if (declared.includes(old)) errors.push(error('env-alias-current', `envVarAliases.${envVar}`, `"${old}" is a current variable and cannot also be a previous name`, 'List only names the adapter no longer uses.', 'adapter-fields'));
+        }
+      }
+    }
+  }
+
   const slugUnderscored = adapter.slug.replace(/-/g, '_');
   if (!Array.isArray(adapter.tools) || adapter.tools.length === 0) {
     errors.push(error('tools', 'tools', 'tools array is empty', 'Add at least one tool definition to the tools array.', 'tools'));
