@@ -22,11 +22,11 @@ cd anythingmcp && docker compose up -d
 
 ### Step 2: Import the ImmobilienScout24 Adapter
 
-Open `http://localhost:3000/connectors/store` and click **Import** on the ImmobilienScout24 API adapter. Enter your OAuth Client ID and Client Secret when prompted.
+Open `http://localhost:3000/connectors/store` and click **Import** on the ImmobilienScout24 API adapter. Enter your ImmobilienScout24 **consumer key** and **consumer secret** when prompted: the API key pair from the self-service portal, not the e-mail address and password you log in with.
 
 ### Step 3: Get API Access
 
-Register at the [IS24 Developer Center](https://api.immobilienscout24.de/) and create an application to get OAuth credentials.
+Sign in to the [ImmobilienScout24 self-service portal](https://selfservice.immobilienscout24.de) with a business account and generate an API key set (sandbox or production). Production use is paid, and the Search API additionally requires a [content-partner permission](https://api.immobilienscout24.de/more/api-permission-request/).
 
 ### Step 4: Connect to Your AI Agent
 
