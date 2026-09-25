@@ -38,6 +38,7 @@ import { WsdlParser } from './parsers/wsdl.parser';
 import { GraphqlParser } from './parsers/graphql.parser';
 import { PostmanParser } from './parsers/postman.parser';
 import { CurlParser } from './parsers/curl.parser';
+import { describeSpecError, readRemoteSpec } from './parsers/spec-read-error';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { McpOAuthService } from './mcp-oauth.service';
 import { CatalogResyncService } from './catalog-resync.service';
@@ -1053,9 +1054,14 @@ export class ConnectorsController {
       case 'REST': {
         let parsed;
         if (connector.specUrl) {
-          parsed = await this.openApiParser.parseSpecFromUrl(connector.specUrl);
+          const specUrl = connector.specUrl;
+          parsed = await readRemoteSpec('OpenAPI specification', () =>
+            this.openApiParser.parseSpecFromUrl(specUrl),
+          );
         } else if (connector.specData) {
-          parsed = await this.openApiParser.parseSpec(connector.specData as any);
+          parsed = await readRemoteSpec('OpenAPI specification', () =>
+            this.openApiParser.parseSpec(connector.specData as any),
+          );
         } else {
           return { error: 'No spec URL or spec data provided for this connector' };
         }
@@ -1065,13 +1071,15 @@ export class ConnectorsController {
       }
       case 'SOAP': {
         const wsdlUrl = connector.specUrl || connector.baseUrl;
-        parsedTools = await this.wsdlParser.parse(wsdlUrl);
+        parsedTools = await readRemoteSpec('WSDL', () => this.wsdlParser.parse(wsdlUrl));
         break;
       }
       case 'GRAPHQL': {
         const headers = connector.headers as Record<string, string> | undefined;
-        parsedTools = await this.graphqlParser.parse(
-          connector.baseUrl, headers || undefined, connector.specUrl || undefined,
+        parsedTools = await readRemoteSpec('GraphQL schema', () =>
+          this.graphqlParser.parse(
+            connector.baseUrl, headers || undefined, connector.specUrl || undefined,
+          ),
         );
         break;
       }
@@ -1217,7 +1225,7 @@ export class ConnectorsController {
       }
     } catch (err: any) {
       this.logger.warn(`Import failed for connector ${id}: ${err.message}`);
-      return { error: `Import failed: ${err.message}` };
+      return { error: `Import failed: ${describeSpecError(err)}` };
     }
 
     // Auto-populate healthcheckPath when first detected from an OpenAPI import,
