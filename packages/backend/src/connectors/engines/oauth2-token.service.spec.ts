@@ -2,6 +2,7 @@ import { OAuth2TokenService } from './oauth2-token.service';
 import { PrismaService } from '../../common/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { generateKeyPairSync, verify } from 'crypto';
 import { encrypt, decrypt } from '../../common/crypto/encryption.util';
 import * as etsyAdapter from '../../adapters/intl/etsy.json';
 
@@ -727,6 +728,126 @@ describe('OAuth2TokenService', () => {
 
     it('still returns an empty token for a connector without an authorization URL', async () => {
       await expect(service.getAccessToken({ clientId: 'id' }, 'conn-x')).resolves.toBe('');
+    });
+  });
+
+  describe('private_key_jwt (Revolut Business)', () => {
+    const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    // What an env var holds after a paste into a single-line input.
+    const pastedPem = privateKey
+      .export({ type: 'pkcs1', format: 'pem' })
+      .toString()
+      .replace(/\n/g, '');
+    const revolut = {
+      tokenUrl: 'https://b2b.revolut.com/api/1.0/auth/token',
+      clientId: 'revolut-client-id',
+      refreshToken: 'oa_prod_refresh',
+      tokenAuthMethod: 'private_key_jwt',
+      clientAssertion: {
+        privateKey: pastedPem,
+        claims: { iss: 'cloud.anythingmcp.com', aud: 'https://revolut.com' },
+      },
+    };
+
+    it('refreshes with a freshly signed assertion and no client secret', async () => {
+      mockedAxios.post.mockResolvedValue({
+        // Revolut's refresh answer carries no new refresh token.
+        data: { access_token: 'oa_prod_new', token_type: 'bearer', expires_in: 2399 },
+      });
+
+      await expect(service.refreshToken(revolut)).resolves.toBe('oa_prod_new');
+
+      const [url, body, opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(url).toBe('https://b2b.revolut.com/api/1.0/auth/token');
+      const form = new URLSearchParams(body);
+      expect(form.get('grant_type')).toBe('refresh_token');
+      expect(form.get('refresh_token')).toBe('oa_prod_refresh');
+      expect(form.get('client_assertion_type')).toBe(
+        'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+      );
+      expect(form.has('client_id')).toBe(false);
+      expect(form.has('client_secret')).toBe(false);
+      expect(opts.headers.Authorization).toBeUndefined();
+
+      const [h, p, sig] = String(form.get('client_assertion')).split('.');
+      const claims = JSON.parse(Buffer.from(p, 'base64url').toString());
+      expect(claims.iss).toBe('cloud.anythingmcp.com');
+      expect(claims.sub).toBe('revolut-client-id');
+      expect(claims.aud).toBe('https://revolut.com');
+      expect(claims.exp - claims.iat).toBe(300);
+      expect(
+        verify('sha256', Buffer.from(`${h}.${p}`), publicKey, Buffer.from(sig, 'base64url')),
+      ).toBe(true);
+    });
+
+    it('keeps the refresh token Revolut did not rotate', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { access_token: 'at2', expires_in: 2399 } });
+      mockPrisma.connector.findUnique.mockResolvedValue({
+        authConfig: encrypt(JSON.stringify(revolut), encryptionKey),
+        envVars: {},
+      });
+      await service.refreshToken(revolut, 'conn-rev');
+      const saved = JSON.parse(
+        decrypt(mockPrisma.connector.update.mock.calls[0][0].data.authConfig, encryptionKey),
+      );
+      expect(saved.accessToken).toBe('at2');
+      expect(saved.refreshToken).toBe('oa_prod_refresh');
+    });
+
+    it('resolves the key from env vars when reading the row back', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { access_token: 'at3', expires_in: 2399 } });
+      const stored = {
+        ...revolut,
+        clientAssertion: {
+          privateKey: '{{REVOLUT_PRIVATE_KEY}}',
+          claims: { iss: '{{REVOLUT_REDIRECT_DOMAIN}}', aud: 'https://revolut.com' },
+        },
+      };
+      mockPrisma.connector.findUnique.mockResolvedValue({
+        authConfig: encrypt(JSON.stringify(stored), encryptionKey),
+        envVars: {
+          REVOLUT_PRIVATE_KEY: pastedPem,
+          REVOLUT_REDIRECT_DOMAIN: 'amcp.example.org',
+        },
+      });
+      await expect(service.refreshToken(stored, 'conn-rev2')).resolves.toBe('at3');
+      const form = new URLSearchParams((mockedAxios.post.mock.calls[0] as any)[1]);
+      const p = String(form.get('client_assertion')).split('.')[1];
+      expect(JSON.parse(Buffer.from(p, 'base64url').toString()).iss).toBe('amcp.example.org');
+    });
+
+    it('says the key is missing instead of calling the token endpoint', async () => {
+      const unset = {
+        ...revolut,
+        clientAssertion: { privateKey: '{{REVOLUT_PRIVATE_KEY}}', claims: revolut.clientAssertion.claims },
+      };
+      await expect(service.refreshToken(unset, undefined)).resolves.toBeNull();
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+      await expect(service.getAccessToken(unset)).rejects.toThrow(
+        /client assertion: the private key is not set \(\{\{REVOLUT_PRIVATE_KEY\}\} has no value\)/,
+      );
+    });
+
+    it('also authenticates a client_credentials grant without a secret', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { access_token: 'cc-at', expires_in: 600 } });
+      await expect(
+        service.getAccessToken({
+          grant: 'client_credentials',
+          tokenUrl: 'https://idp.example.com/token',
+          clientId: 'svc',
+          tokenAuthMethod: 'private_key_jwt',
+          clientAssertion: { privateKey: pastedPem },
+        }),
+      ).resolves.toBe('cc-at');
+      const form = new URLSearchParams((mockedAxios.post.mock.calls[0] as any)[1]);
+      expect(form.get('grant_type')).toBe('client_credentials');
+      const p = String(form.get('client_assertion')).split('.')[1];
+      // RFC 7523 defaults: iss = sub = client id, aud = token endpoint.
+      expect(JSON.parse(Buffer.from(p, 'base64url').toString())).toMatchObject({
+        iss: 'svc',
+        sub: 'svc',
+        aud: 'https://idp.example.com/token',
+      });
     });
   });
 });

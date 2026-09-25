@@ -33,7 +33,6 @@ import * as kimai from './de/kimai.json';
 import * as lexwareOffice from './de/lexware-office.json';
 import * as matrix42 from './de/matrix42.json';
 import * as mfrFieldservice from './de/mfr-fieldservice.json';
-import * as n26Openbanking from './de/n26-openbanking.json';
 import * as ninaWarnung from './de/nina-warnung.json';
 import * as openplz from './de/openplz.json';
 import * as openproject from './de/openproject.json';
@@ -189,6 +188,7 @@ import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as redmine from './intl/redmine.json';
 import * as resy from './intl/resy.json';
+import * as revolutBusiness from './intl/revolut-business.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
 import * as salesloft from './intl/salesloft.json';
@@ -416,7 +416,6 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   lexwareOffice as unknown as AdapterDefinition,
   matrix42 as unknown as AdapterDefinition,
   mfrFieldservice as unknown as AdapterDefinition,
-  n26Openbanking as unknown as AdapterDefinition,
   ninaWarnung as unknown as AdapterDefinition,
   openplz as unknown as AdapterDefinition,
   openproject as unknown as AdapterDefinition,
@@ -572,6 +571,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   reddit as unknown as AdapterDefinition,
   redmine as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
+  revolutBusiness as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,

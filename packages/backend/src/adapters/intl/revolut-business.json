@@ -1,0 +1,375 @@
+{
+  "slug": "revolut-business",
+  "name": "Revolut Business",
+  "description": "Read your Revolut Business accounts from any AI agent: balances, bank details, transactions, counterparties, expenses and exchange rates. Official Business API, read-only (READ scope), signed-JWT authentication with your own certificate. 10 tools.",
+  "instructions": "This connector reads your **Revolut Business** account through the official Business API: accounts and balances, bank details, transactions, counterparties, expenses and exchange rates. It is read-only: it cannot send payments, move money or change anything in your account.\n\n**What you need**: a Revolut Business account on the **Grow plan or higher** (Revolut includes the Business API from Grow upwards), and a Revolut user with permission to manage the API. Personal Revolut accounts are not supported: Revolut offers no API for them apart from PSD2 open banking, which is only open to licensed providers.\n\n**How authentication works**: Revolut does not issue a client secret. You create a key pair, upload the public certificate to Revolut, and AnythingMCP signs a short-lived token (a JWT, RS256, 5 minutes) with the private key whenever it needs an access token. Access tokens last 40 minutes and are renewed automatically; you authorize once.\n\n**Setup (about 10 minutes)**:\n1. On your computer, create the key pair (macOS/Linux terminal, or WSL on Windows):\n   `openssl genrsa -out privatecert.pem 2048`\n   `openssl req -new -x509 -key privatecert.pem -out publiccert.cer -days 1825`\n   Answer at least one of the certificate questions (for example the country); the others can stay empty.\n2. In Revolut Business, open **Settings → APIs → Business API** and click **Add API certificate**. Paste the whole content of `publiccert.cer` (including the BEGIN/END lines) into **X509 public key**.\n3. As **OAuth redirect URI** enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` if you host AnythingMCP yourself. Save, then copy the **Client ID** Revolut shows.\n4. Fill in the variables and install:\n   - `REVOLUT_CLIENT_ID`: the Client ID from step 3.\n   - `REVOLUT_PRIVATE_KEY`: the whole content of `privatecert.pem`, including the BEGIN/END lines. Pasting it into the single-line field is fine. It is stored encrypted and never shown again.\n   - `REVOLUT_REDIRECT_DOMAIN`: the domain of the redirect URI from step 3, without `https://` and without a path, for example `cloud.anythingmcp.com`. Revolut checks that the token was issued by that domain.\n5. Open the connector and click **Authorize with Provider**. Revolut asks you to confirm access (with two-factor authentication) and sends you back to the connector page.\n\n**Read-only by design**: the connector asks Revolut for the `READ` scope only, so even the access token cannot initiate payments. Keep your private key safe anyway: anyone who has it and the Client ID can request tokens for your account. To revoke access, delete the certificate in Revolut's Business API settings.\n\n**Sandbox**: to test with fake data, create a free account at https://sandbox-business.revolut.com, upload the certificate there instead, and in the connector's settings change the base URL to `https://sandbox-b2b.revolut.com/api/1.0`, the authorization URL to `https://sandbox-business.revolut.com/app-confirm` and the token URL to `https://sandbox-b2b.revolut.com/api/1.0/auth/token`. Then authorize again. Expenses are not available in the sandbox.\n\n**IP allow-list**: if you set a production IP allow-list on the certificate, it must include the address AnythingMCP calls from (on AnythingMCP Cloud, ask support for the current egress IP).\n\n**Paging**: transactions come newest first, up to 1000 per call. For the next page, call again with `to` set to the `created_at` of the last transaction you received. Counterparties page with `created_before`, expenses with `to`.\n\n**Troubleshooting**: \"invalid_request … The Token has expired\" or \"invalid client\" after authorizing usually means `REVOLUT_REDIRECT_DOMAIN` does not match the redirect URI's domain, or the private key does not belong to the uploaded certificate. A redirect back with an error about the redirect URI means the URI in Revolut does not exactly match the one in step 3.",
+  "region": "intl",
+  "category": "banking",
+  "icon": "revolut",
+  "docsUrl": "https://developer.revolut.com/docs/business/business-api",
+  "requiredEnvVars": [
+    "REVOLUT_CLIENT_ID",
+    "REVOLUT_PRIVATE_KEY",
+    "REVOLUT_REDIRECT_DOMAIN"
+  ],
+  "probe": {
+    "tool": "revolut_list_accounts"
+  },
+  "connector": {
+    "name": "Revolut Business",
+    "type": "REST",
+    "baseUrl": "https://b2b.revolut.com/api/1.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{REVOLUT_CLIENT_ID}}",
+      "authorizationUrl": "https://business.revolut.com/app-confirm",
+      "tokenUrl": "https://b2b.revolut.com/api/1.0/auth/token",
+      "scopes": "READ",
+      "tokenAuthMethod": "private_key_jwt",
+      "clientAssertion": {
+        "privateKey": "{{REVOLUT_PRIVATE_KEY}}",
+        "algorithm": "RS256",
+        "ttlSeconds": 300,
+        "claims": {
+          "iss": "{{REVOLUT_REDIRECT_DOMAIN}}",
+          "aud": "https://revolut.com"
+        }
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "revolut_list_accounts",
+      "description": "List all accounts of the Revolut Business account: id, name, currency, current balance, state (active/inactive) and whether the account is public. Call this first: the account id is needed by the other account and transaction tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts"
+      }
+    },
+    {
+      "name": "revolut_get_account",
+      "description": "Get one account: name, currency, current balance, state and timestamps. Use it to read a single balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (UUID) from revolut_list_accounts."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{account_id}"
+      }
+    },
+    {
+      "name": "revolut_get_account_bank_details",
+      "description": "Get the bank details other people use to pay into an account: IBAN, BIC, account number, sort code or routing number, beneficiary name and address, and which payment schemes (SEPA, Faster Payments, SWIFT, ...) each set supports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id (UUID) from revolut_list_accounts."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{account_id}/bank-details"
+      }
+    },
+    {
+      "name": "revolut_list_transactions",
+      "description": "List transactions, newest first (by created_at), up to 1000 per call. Each transaction has its type, state, amounts per leg with currency and balance after, counterparty, reference, merchant and card details for card payments. Filter by account, period, type or state. Next page: call again with `to` set to the created_at of the last transaction returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Only transactions of this account (UUID from revolut_list_accounts)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period, inclusive, ISO 8601 date or date-time (e.g. 2026-09-01 or 2026-09-01T00:00:00Z). Compared with created_at."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period, exclusive, ISO 8601 date or date-time. Defaults to now. Also used for paging."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Maximum transactions to return, 1-1000. Default 100.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this transaction type.",
+            "enum": [
+              "atm",
+              "card_payment",
+              "card_refund",
+              "card_chargeback",
+              "card_credit",
+              "charge",
+              "charge_refund",
+              "exchange",
+              "transfer",
+              "loan",
+              "fee",
+              "refund",
+              "topup",
+              "topup_return",
+              "tax",
+              "tax_refund",
+              "rev_payment"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "Only transactions in this state.",
+            "enum": [
+              "created",
+              "pending",
+              "completed",
+              "declined",
+              "failed",
+              "reverted"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions",
+        "queryParams": {
+          "account": "$account",
+          "from": "$from",
+          "to": "$to",
+          "count": "$count",
+          "type": "$type",
+          "state": "$state"
+        }
+      }
+    },
+    {
+      "name": "revolut_get_transaction",
+      "description": "Get one transaction by its id, with all legs, the counterparty, reference, merchant and card details, fees and related expense information.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Transaction id (UUID) from revolut_list_transactions."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transaction/{id}"
+      }
+    },
+    {
+      "name": "revolut_list_counterparties",
+      "description": "List the saved payees (counterparties), newest first: name, profile type, state and their bank accounts or cards. Filter by name (partial match), account number, sort code, IBAN or BIC. Next page: call again with `created_before` set to the created_at of the last counterparty returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name or part of the name."
+          },
+          "account_no": {
+            "type": "string",
+            "description": "Exact account number."
+          },
+          "sort_code": {
+            "type": "string",
+            "description": "Exact UK sort code. Only together with account_no."
+          },
+          "iban": {
+            "type": "string",
+            "description": "Exact IBAN."
+          },
+          "bic": {
+            "type": "string",
+            "description": "Exact BIC. Only together with iban."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only counterparties created before this ISO 8601 date-time. Used for paging."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum counterparties to return, 1-1000. Default 100.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/counterparties",
+        "queryParams": {
+          "name": "$name",
+          "account_no": "$account_no",
+          "sort_code": "$sort_code",
+          "iban": "$iban",
+          "bic": "$bic",
+          "created_before": "$created_before",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "revolut_get_counterparty",
+      "description": "Get one saved payee (counterparty) by id, with its bank accounts or cards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterparty_id": {
+            "type": "string",
+            "description": "Counterparty id (UUID) from revolut_list_counterparties or from a transaction."
+          }
+        },
+        "required": [
+          "counterparty_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/counterparty/{counterparty_id}"
+      }
+    },
+    {
+      "name": "revolut_get_exchange_rate",
+      "description": "Get Revolut's current sell exchange rate between two currencies, with the converted amount and the fee Revolut would charge. Read-only: it does not exchange anything.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Currency to sell, ISO 4217 (e.g. EUR)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Currency to buy, ISO 4217 (e.g. USD)."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount of the `from` currency. Default 1.00."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rate",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "amount": "$amount"
+        }
+      }
+    },
+    {
+      "name": "revolut_list_expenses",
+      "description": "List expenses (card payments, transfers and reimbursements with the receipts, VAT rates, categories and labels your team added), newest first by expense_date, up to 500 per call. Filter by period, state or transaction type. Next page: call again with `to` set to the expense_date of the last expense returned. Not available in the sandbox.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start, inclusive, ISO 8601 date-time. Compared with expense_date."
+          },
+          "to": {
+            "type": "string",
+            "description": "End, exclusive, ISO 8601 date-time. Defaults to now. Also used for paging."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Maximum expenses to return, 1-500. Default 100.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "state": {
+            "type": "string",
+            "description": "Only expenses in this state.",
+            "enum": [
+              "missing_info",
+              "awaiting_review",
+              "reverted",
+              "pending_reimbursement",
+              "refund_requested",
+              "refunded",
+              "approved",
+              "rejected"
+            ]
+          },
+          "transaction_type": {
+            "type": "string",
+            "description": "Only expenses whose transaction has this type.",
+            "enum": [
+              "atm",
+              "card_payment",
+              "fee",
+              "transfer",
+              "external",
+              "mileage_reimbursement",
+              "rev_payment"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "count": "$count",
+          "state": "$state",
+          "transaction_type": "$transaction_type"
+        }
+      }
+    },
+    {
+      "name": "revolut_get_expense",
+      "description": "Get one expense by id: its state, splits with category and tax rate, labels, receipt ids, the submitter and the related transaction. Not available in the sandbox.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "description": "Expense id (UUID) from revolut_list_expenses."
+          }
+        },
+        "required": [
+          "expense_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses/{expense_id}"
+      }
+    }
+  ]
+}

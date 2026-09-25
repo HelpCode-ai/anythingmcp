@@ -243,7 +243,7 @@ KI-Clients sprechen MCP, deine Systeme dagegen REST, SOAP, GraphQL und SQL. Eine
 | 🛍️ E-Commerce | Amazon Seller, Etsy, Shopware 6, WooCommerce, Mercado Libre 🌎, Oxomi |
 | 👥 Personalwesen &amp; Außendienst | Personio, HRWorks, Kenjo, MFR Mobile Field Report |
 | 🏛️ Behörden &amp; öffentliche Daten | VIES VAT, Handelsregister, UK Companies House 🇬🇧, DESTATIS, Bundesbank, OpenPLZ, NINA |
-| 🏦 Banking &amp; Zahlungen | N26, Wise 🇬🇧, PAYONE, Razorpay 🇮🇳, Paystack 🇳🇬 |
+| 🏦 Banking &amp; Zahlungen | Revolut Business, Wise 🇬🇧, PAYONE, Razorpay 🇮🇳, Paystack 🇳🇬 |
 | 💬 Messaging &amp; Kommunikation | WhatsApp, LINE 🇯🇵, TeamViewer |
 | 🎾 Sport &amp; Web3 | Playtomic, Sorare |
 | 🏗️ Bauwesen &amp; Karten | PlanRadar, HERE Geocoding |

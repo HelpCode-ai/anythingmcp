@@ -1,5 +1,6 @@
 import { McpOAuthService } from './mcp-oauth.service';
 import axios from 'axios';
+import { generateKeyPairSync, verify } from 'crypto';
 
 jest.mock('axios');
 // assertSafeOutboundUrl performs DNS/SSRF checks — stub it out for unit tests.
@@ -61,6 +62,67 @@ describe('McpOAuthService.exchangeCodeForTokens client authentication', () => {
     });
     const [, , config] = mockedAxios.post.mock.calls[0];
     expect((config as any).headers.Authorization).toMatch(/^Basic /);
+  });
+
+  // Revolut Business: "Exchange authorization code for access token"
+  // (developer.revolut.com) — grant_type, code, client_assertion_type and a
+  // client_assertion signed with the key whose certificate was uploaded.
+  it('signs a client assertion for private_key_jwt and sends no secret or client_id', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    await service.exchangeCodeForTokens({
+      ...baseParams,
+      tokenUrl: 'https://sandbox-b2b.revolut.com/api/1.0/auth/token',
+      clientSecret: undefined,
+      tokenAuthMethod: 'private_key_jwt',
+      clientAssertion: {
+        privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+        clientId: 'cid',
+        tokenUrl: 'https://sandbox-b2b.revolut.com/api/1.0/auth/token',
+        claims: { iss: 'cloud.anythingmcp.com', aud: 'https://revolut.com' },
+      },
+    });
+
+    const [, body, config] = mockedAxios.post.mock.calls[0];
+    const form = new URLSearchParams(String(body));
+    expect(form.get('grant_type')).toBe('authorization_code');
+    expect(form.get('code')).toBe('authcode');
+    expect(form.get('client_assertion_type')).toBe(
+      'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+    );
+    expect(form.has('client_id')).toBe(false);
+    expect(form.has('client_secret')).toBe(false);
+    expect((config as any).headers.Authorization).toBeUndefined();
+
+    const [h, p, sig] = String(form.get('client_assertion')).split('.');
+    const claims = JSON.parse(Buffer.from(p, 'base64url').toString());
+    expect(claims).toMatchObject({
+      iss: 'cloud.anythingmcp.com',
+      sub: 'cid',
+      aud: 'https://revolut.com',
+    });
+    expect(
+      verify('sha256', Buffer.from(`${h}.${p}`), publicKey, Buffer.from(sig, 'base64url')),
+    ).toBe(true);
+  });
+
+  it('refuses private_key_jwt without assertion settings instead of sending nothing', async () => {
+    await expect(
+      service.exchangeCodeForTokens({ ...baseParams, tokenAuthMethod: 'private_key_jwt' }),
+    ).rejects.toThrow(/no client assertion settings/);
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it("reports the provider's own error when the exchange is refused", async () => {
+    mockedAxios.post.mockRejectedValue({
+      message: 'Request failed with status code 400',
+      response: {
+        status: 400,
+        data: { error: 'invalid_request', error_description: 'The Token has expired.' },
+      },
+    });
+    await expect(service.exchangeCodeForTokens({ ...baseParams })).rejects.toThrow(
+      'Token exchange failed: HTTP 400: invalid_request: The Token has expired.',
+    );
   });
 });
 

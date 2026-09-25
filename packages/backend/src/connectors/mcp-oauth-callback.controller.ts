@@ -65,6 +65,7 @@ export class McpOAuthCallbackController {
         clientSecret: flow.clientSecret,
         codeVerifier: flow.codeVerifier,
         tokenAuthMethod: flow.tokenAuthMethod,
+        clientAssertion: flow.clientAssertion,
       });
 
       this.logger.log(

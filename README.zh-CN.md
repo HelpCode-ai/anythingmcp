@@ -243,7 +243,7 @@ AI 客户端使用 MCP，而你的系统使用 REST、SOAP、GraphQL 和 SQL。�
 | 🛍️ 电子商务 | Amazon Seller、Etsy、Shopware 6、WooCommerce、Mercado Libre 🌎、Oxomi |
 | 👥 人力资源与现场服务 | Personio、HRWorks、Kenjo、MFR Mobile Field Report |
 | 🏛️ 政务与公开数据 | VIES VAT、Handelsregister、UK Companies House 🇬🇧、DESTATIS、Bundesbank、OpenPLZ、NINA |
-| 🏦 银行与支付 | N26、Wise 🇬🇧、PAYONE、Razorpay 🇮🇳、Paystack 🇳🇬 |
+| 🏦 银行与支付 | Revolut Business、Wise 🇬🇧、PAYONE、Razorpay 🇮🇳、Paystack 🇳🇬 |
 | 💬 消息与通信 | WhatsApp、LINE 🇯🇵、TeamViewer |
 | 🎾 体育与 Web3 | Playtomic、Sorare |
 | 🏗️ 建筑与地图 | PlanRadar、HERE Geocoding |
