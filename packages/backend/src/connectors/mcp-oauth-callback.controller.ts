@@ -108,49 +108,17 @@ export class McpOAuthCallbackController {
           flow.connectorId,
         );
 
-        const remoteTools = await this.mcpClientEngine.listTools({
-          baseUrl: connector.baseUrl,
-          authType: 'OAUTH2',
-          authConfig: {
-            accessToken: tokens.accessToken,
-          },
-          headers: connector.headers as Record<string, string>,
-        });
-
-        for (const rt of remoteTools) {
-          try {
-            await this.prisma.mcpTool.create({
-              data: {
-                connectorId: flow.connectorId,
-                name: rt.name,
-                description: rt.description || `MCP tool: ${rt.name}`,
-                parameters: rt.inputSchema as any,
-                // Default path, not a user choice — resolveMcpEndpointUrl()
-                // treats it as unset when the base URL has a path (#501).
-                endpointMapping: {
-                  method: rt.name,
-                  path: '/mcp',
-                } as any,
-                // The upstream server is authoritative about its own tools.
-                annotations: (rt.annotations ?? null) as any,
-              },
-            });
-            toolsImported++;
-          } catch (err: any) {
-            // Skip duplicates
-            if (err.code !== 'P2002') {
-              this.logger.warn(
-                `Failed to import tool ${rt.name}: ${err.message}`,
-              );
-            }
-          }
+        // A REST or GraphQL connector already has its tools. Discovery used
+        // to run for them too and relied on the host not speaking MCP; Google
+        // does (searchconsole.googleapis.com), so authorising the Search
+        // Console connector added three MCP tools mapped as REST calls.
+        if (connector.type === 'MCP') {
+          toolsImported = await this.importRemoteTools(
+            flow.connectorId,
+            connector,
+            tokens.accessToken,
+          );
         }
-
-        await this.mcpServer.reloadConnectorTools(flow.connectorId);
-
-        this.logger.log(
-          `Auto-discovered ${toolsImported} tools for connector ${flow.connectorId}`,
-        );
       } catch (discoverErr: any) {
         this.logger.warn(
           `Tool discovery failed after OAuth (will proceed anyway): ${discoverErr.message}`,
@@ -173,5 +141,58 @@ export class McpOAuthCallbackController {
         `${frontendUrl}/connectors/${flow.connectorId}?oauth=error&message=${encodeURIComponent(error.message)}`,
       );
     }
+  }
+
+  /** Import the tools a remote MCP server lists, skipping ones already present. */
+  private async importRemoteTools(
+    connectorId: string,
+    connector: { baseUrl: string; headers: unknown },
+    accessToken: string,
+  ): Promise<number> {
+    let toolsImported = 0;
+    const remoteTools = await this.mcpClientEngine.listTools({
+      baseUrl: connector.baseUrl,
+      authType: 'OAUTH2',
+      authConfig: {
+        accessToken,
+      },
+      headers: connector.headers as Record<string, string>,
+    });
+
+    for (const rt of remoteTools) {
+      try {
+        await this.prisma.mcpTool.create({
+          data: {
+            connectorId,
+            name: rt.name,
+            description: rt.description || `MCP tool: ${rt.name}`,
+            parameters: rt.inputSchema as any,
+            // Default path, not a user choice — resolveMcpEndpointUrl()
+            // treats it as unset when the base URL has a path (#501).
+            endpointMapping: {
+              method: rt.name,
+              path: '/mcp',
+            } as any,
+            // The upstream server is authoritative about its own tools.
+            annotations: (rt.annotations ?? null) as any,
+          },
+        });
+        toolsImported++;
+      } catch (err: any) {
+        // Skip duplicates
+        if (err.code !== 'P2002') {
+          this.logger.warn(
+            `Failed to import tool ${rt.name}: ${err.message}`,
+          );
+        }
+      }
+    }
+
+    await this.mcpServer.reloadConnectorTools(connectorId);
+
+    this.logger.log(
+      `Auto-discovered ${toolsImported} tools for connector ${connectorId}`,
+    );
+    return toolsImported;
   }
 }
