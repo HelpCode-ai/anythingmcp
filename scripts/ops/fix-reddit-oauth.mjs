@@ -31,12 +31,18 @@
  * catalog no longer ships are soft-deprecated exactly as a full catalog
  * re-sync would (deprecatedAt set, disabled; nothing is deleted).
  *
- * Run it inside the app container, which holds ENCRYPTION_KEY and DATABASE_URL:
+ * Run it inside the backend container, which holds ENCRYPTION_KEY and DATABASE_URL:
  *
- *   docker cp scripts/ops/fix-reddit-oauth.mjs amcp-cloud-app:/app/backend/fix-reddit.mjs
- *   docker exec -w /app/backend amcp-cloud-app node fix-reddit.mjs            # dry run
- *   docker exec -w /app/backend amcp-cloud-app node fix-reddit.mjs --apply
- *   docker restart amcp-cloud-app     # the tool registry caches connector config
+ *   docker cp scripts/ops/fix-reddit-oauth.mjs amcp-cloud-backend:/app/backend/fix-reddit.mjs
+ *   docker exec -w /app/backend amcp-cloud-backend node fix-reddit.mjs            # dry run
+ *   docker exec -w /app/backend amcp-cloud-backend node fix-reddit.mjs --apply
+ *   # These three on the droplet host, not in the container. The restart takes the API
+ *   # down for ~30-60 s; silence the uptime probe first. It honours an expiry
+ *   # epoch in this file (deploy/cloud/uptime-probe.sh, as deploy-cloud.yml
+ *   # does), so a forgotten marker lapses by itself after 10 minutes:
+ *   mkdir -p /var/lib/anythingmcp-probe && echo $(( $(date -u +%s) + 600 )) > /var/lib/anythingmcp-probe/maintenance
+ *   docker restart amcp-cloud-backend     # the tool registry caches connector config
+ *   rm -f /var/lib/anythingmcp-probe/maintenance
  *
  * Secrets never reach stdout: it prints connector ids, which case applied, and
  * whether the client ID/secret are present, never their values.
@@ -61,7 +67,7 @@ const CATALOG_TOOLS = new Set([
 
 const KEY = process.env.ENCRYPTION_KEY;
 if (!KEY) {
-  console.error('ENCRYPTION_KEY is not set — run this inside the app container.');
+  console.error('ENCRYPTION_KEY is not set — run this inside the backend container.');
   process.exit(1);
 }
 
@@ -207,6 +213,6 @@ console.log(
   `\n${APPLY ? 'Patched' : 'Would patch'} ${patched} of ${rows.length} Reddit connectors ` +
     `(${skipped} unchanged or left alone). ${needCustomer} still need the customer's client ID and secret.`,
 );
-if (!APPLY && patched > 0) console.log('Re-run with --apply, then restart the app.');
+if (!APPLY && patched > 0) console.log('Re-run with --apply, then restart the backend (see the header).');
 
 await prisma.$disconnect();

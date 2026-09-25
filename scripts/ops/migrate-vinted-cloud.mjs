@@ -27,14 +27,27 @@
  * A connector is recognised by `config.adapterSlug`, or — for installs that
  * predate the baseline — by a www.vinted.* base URL.
  *
- * Run it inside the app container, which holds ENCRYPTION_KEY and DATABASE_URL,
+ * Safe to re-run. A connector already at the target — base URL, LOGIN_TOKEN
+ * with this adapter's authConfig, `config.adapterVersion` equal to this
+ * adapter's, every catalog tool present, live and matching the catalog
+ * (description, parameters, endpoint, useProxy off), and no live tool the
+ * catalog dropped — is listed as "already current" and not written. Without
+ * this check a dry run after --apply listed every connector as still to do.
+ *
+ * Run it inside the backend container, which holds ENCRYPTION_KEY and DATABASE_URL,
  * after the release carrying the new adapter is deployed:
  *
- *   docker cp scripts/ops/migrate-vinted-cloud.mjs amcp-cloud-app:/app/backend/migrate-vinted.mjs
- *   docker cp packages/backend/src/adapters/intl/vinted.json amcp-cloud-app:/app/backend/vinted.json
- *   docker exec -w /app/backend amcp-cloud-app node migrate-vinted.mjs vinted.json            # dry run
- *   docker exec -w /app/backend amcp-cloud-app node migrate-vinted.mjs vinted.json --apply
- *   docker restart amcp-cloud-app     # the tool registry caches connector config
+ *   docker cp scripts/ops/migrate-vinted-cloud.mjs amcp-cloud-backend:/app/backend/migrate-vinted.mjs
+ *   docker cp packages/backend/src/adapters/intl/vinted.json amcp-cloud-backend:/app/backend/vinted.json
+ *   docker exec -w /app/backend amcp-cloud-backend node migrate-vinted.mjs vinted.json            # dry run
+ *   docker exec -w /app/backend amcp-cloud-backend node migrate-vinted.mjs vinted.json --apply
+ *   # These three on the droplet host, not in the container. The restart takes the API
+ *   # down for ~30-60 s; silence the uptime probe first. It honours an expiry
+ *   # epoch in this file (deploy/cloud/uptime-probe.sh, as deploy-cloud.yml
+ *   # does), so a forgotten marker lapses by itself after 10 minutes:
+ *   mkdir -p /var/lib/anythingmcp-probe && echo $(( $(date -u +%s) + 600 )) > /var/lib/anythingmcp-probe/maintenance
+ *   docker restart amcp-cloud-backend     # the tool registry caches connector config
+ *   rm -f /var/lib/anythingmcp-probe/maintenance
  *
  * Prints connector ids and what changed; never secrets.
  */
@@ -57,7 +70,7 @@ if (adapter.slug !== 'vinted' || adapter.connector.authType !== 'LOGIN_TOKEN') {
 
 const KEY = process.env.ENCRYPTION_KEY;
 if (!KEY) {
-  console.error('ENCRYPTION_KEY is not set — run this inside the app container.');
+  console.error('ENCRYPTION_KEY is not set — run this inside the backend container.');
   process.exit(1);
 }
 
@@ -137,9 +150,53 @@ const rows = await prisma.connector.findMany({
 const catalogByName = new Map(adapter.tools.map((t) => [t.name, t]));
 const authConfig = encrypt(JSON.stringify(adapter.connector.authConfig));
 const hasMapping = (m) => m !== null && m !== undefined;
+const same = (a, b) => JSON.stringify(canonicalize(a ?? null)) === JSON.stringify(canonicalize(b ?? null));
+const targetAuth = canonicalize(adapter.connector.authConfig);
+
+/** Stored authConfig equals the adapter's. Undecryptable → not current. */
+function authIsCurrent(stored) {
+  if (!stored) return false;
+  try {
+    return same(JSON.parse(decrypt(stored)), targetAuth);
+  } catch {
+    return false;
+  }
+}
+
+/** Every reason the row is not yet at the target state; empty when it is. */
+function pendingChanges(c, cfg) {
+  const why = [];
+  if (c.baseUrl !== adapter.connector.baseUrl) why.push('baseUrl');
+  if (c.authType !== 'LOGIN_TOKEN' || !authIsCurrent(c.authConfig)) why.push('auth');
+  if (cfg.adapterSlug !== 'vinted' || cfg.adapterVersion !== adapterVersion) why.push('adapterVersion');
+  const byName = new Map(c.tools.map((t) => [t.name, t]));
+  for (const ct of adapter.tools) {
+    const et = byName.get(ct.name);
+    if (
+      !et ||
+      et.deprecatedAt ||
+      et.useProxy ||
+      et.description !== ct.description ||
+      !same(et.parameters, ct.parameters) ||
+      !same(et.endpointMapping, ct.endpointMapping)
+    ) {
+      why.push(`tool ${ct.name}`);
+    }
+  }
+  for (const t of c.tools) if (!t.deprecatedAt && !catalogByName.has(t.name)) why.push(`tool -${t.name}`);
+  return why;
+}
+
+let migrated = 0;
+let current = 0;
 
 for (const c of rows) {
   const cfg = c.config && typeof c.config === 'object' ? c.config : {};
+  if (pendingChanges(c, cfg).length === 0) {
+    console.log(`= ${c.id} — already current`);
+    current++;
+    continue;
+  }
   const baseline = typeof cfg.instructionsBaseline === 'string' ? cfg.instructionsBaseline : null;
   const userEdited = baseline !== null && baseline !== hashInstructions(c.instructions);
   const notes = [`baseUrl ${c.baseUrl} → ${adapter.connector.baseUrl}`, `auth ${c.authType} → LOGIN_TOKEN`];
@@ -213,9 +270,13 @@ for (const c of rows) {
     await prisma.$transaction([connectorUpdate, ...updates, ...creates, ...deprecates]);
   }
   console.log(`${APPLY ? '✓' : '→'} ${c.id} — ${notes.join(', ')}`);
+  migrated++;
 }
 
-console.log(`\n${APPLY ? 'Migrated' : 'Would migrate'} ${rows.length} Vinted connectors (adapterVersion ${adapterVersion}).`);
-if (!APPLY && rows.length > 0) console.log('Re-run with --apply, then restart the app.');
+console.log(
+  `\n${APPLY ? 'Migrated' : 'Would migrate'} ${migrated} of ${rows.length} Vinted connectors ` +
+    `(${current} already current; adapterVersion ${adapterVersion}).`,
+);
+if (!APPLY && migrated > 0) console.log('Re-run with --apply, then restart the backend (see the header).');
 
 await prisma.$disconnect();
