@@ -194,3 +194,63 @@ describe('AdaptersService import probe', () => {
     expect(probe).toBeNull();
   });
 });
+
+describe('AdaptersService install — a base URL variable without https://', () => {
+  function build() {
+    const prisma = {
+      connector: {
+        create: jest.fn().mockResolvedValue({ id: 'c1' }),
+        // The import probe looks the connector up; nothing found = no probe.
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      mcpTool: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      {} as any,
+    );
+    return { service, prisma };
+  }
+
+  it('stores yourname.substack.com as https://yourname.substack.com', async () => {
+    const { service, prisma } = build();
+
+    await service.importAdapter('substack', 'u1', 'org1', {
+      SUBSTACK_PUBLICATION_URL: 'yourname.substack.com',
+    });
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.baseUrl).toBe('https://yourname.substack.com');
+    expect(data.config.baseUrlBaseline).toBe('https://yourname.substack.com');
+    expect(data.envVars).toEqual({
+      SUBSTACK_PUBLICATION_URL: 'https://yourname.substack.com',
+    });
+  });
+
+  it('keeps the rest of the path the adapter appends', async () => {
+    const { service, prisma } = build();
+
+    await service.importAdapter('magento', 'u1', 'org1', {
+      MAGENTO_BASE_URL: 'shop.example.com',
+      MAGENTO_ACCESS_TOKEN: 'token',
+    });
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.baseUrl).toBe('https://shop.example.com/rest/default/V1');
+  });
+
+  it('refuses a value that is not a web address, naming the variable', async () => {
+    const { service, prisma } = build();
+
+    await expect(
+      service.importAdapter('substack', 'u1', 'org1', {
+        SUBSTACK_PUBLICATION_URL: 'someone@example.com',
+      }),
+    ).rejects.toThrow(
+      /^SUBSTACK_PUBLICATION_URL must be a full URL such as https:\/\/example\.com — it looks like an e-mail address/,
+    );
+    expect(prisma.connector.create).not.toHaveBeenCalled();
+  });
+});

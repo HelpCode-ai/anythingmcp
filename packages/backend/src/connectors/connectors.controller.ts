@@ -45,6 +45,7 @@ import { CatalogResyncService } from './catalog-resync.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { DeploymentService } from '../common/deployment.service';
 import { validateBaseUrl } from './base-url.util';
+import { normalizeBaseUrlVariables } from '../common/base-url-variable.util';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
@@ -269,6 +270,36 @@ class UpdateOAuthConfigDto {
   @IsString()
   @IsIn(['', 'client_secret_post', 'client_secret_basic', 'basic', 'post'])
   tokenAuthMethod?: string;
+}
+
+class UpdateOAuth1ConfigDto {
+  @ApiPropertyOptional({
+    description:
+      'OAuth 1.0a consumer key (the application key the provider issued, not a login).',
+  })
+  @IsOptional()
+  @IsString()
+  consumerKey?: string;
+
+  @ApiPropertyOptional({ description: 'OAuth 1.0a consumer secret.' })
+  @IsOptional()
+  @IsString()
+  consumerSecret?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Access token, for three-legged (user-context) OAuth 1.0a. Empty string removes it.',
+  })
+  @IsOptional()
+  @IsString()
+  token?: string;
+
+  @ApiPropertyOptional({
+    description: 'Access token secret, paired with `token`. Empty string removes it.',
+  })
+  @IsOptional()
+  @IsString()
+  tokenSecret?: string;
 }
 
 class ImportToolsDto {
@@ -825,6 +856,71 @@ export class ConnectorsController {
     return { message: 'OAuth configuration updated' };
   }
 
+  @Patch(':id/oauth1-config')
+  @ApiOperation({
+    summary: 'Update the OAuth 1.0a credentials of a connector (partial)',
+    description:
+      'Merges the supplied fields into the connector\'s existing authConfig, ' +
+      'so a field left out keeps its stored value — the editor sends only ' +
+      'what the user typed, and never receives the stored values back. The ' +
+      'consumer key and secret cannot be emptied; an empty `token` or ' +
+      '`tokenSecret` removes it (back to two-legged signing).',
+  })
+  async updateOAuth1Config(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateOAuth1ConfigDto,
+  ) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+
+    if (connector.authType !== 'OAUTH1') {
+      throw new BadRequestException('Connector auth type must be OAUTH1');
+    }
+
+    const patch: Record<string, unknown> = {};
+    for (const key of ['consumerKey', 'consumerSecret'] as const) {
+      if (dto[key] === undefined) continue;
+      const value = dto[key].trim();
+      if (!value) {
+        throw new BadRequestException(
+          `The ${key === 'consumerKey' ? 'consumer key' : 'consumer secret'} ` +
+            'cannot be empty. Leave the field out to keep the stored value.',
+        );
+      }
+      patch[key] = value;
+    }
+    // Two ImmobilienScout24 installs had the account's e-mail address as the
+    // consumer key, and IS24 answered "Consumer not found" to every call. No
+    // provider issues consumer keys of that shape.
+    if (
+      typeof patch.consumerKey === 'string' &&
+      /^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(patch.consumerKey)
+    ) {
+      throw new BadRequestException(
+        'The consumer key looks like an e-mail address. It is the key of the ' +
+          'application registered with the provider, not your login — copy it ' +
+          'from the provider\'s developer or API-key page.',
+      );
+    }
+    for (const key of ['token', 'tokenSecret'] as const) {
+      if (dto[key] === undefined) continue;
+      // undefined is dropped when the merged config is serialised, so an
+      // empty value removes the field rather than storing "".
+      patch[key] = dto[key].trim() || undefined;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return { message: 'Nothing to update' };
+    }
+
+    await this.connectorsService.updateAuthConfigMerge(id, patch);
+    // The tool registry holds its own decrypted copy of authConfig and signs
+    // every call with it; without a reload the old key stays in use.
+    await this.mcpServer.reloadConnectorTools(id);
+    return { message: 'OAuth 1.0a credentials updated' };
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Delete connector' })
   async remove(@Req() req: any, @Param('id') id: string) {
@@ -1282,11 +1378,25 @@ export class ConnectorsController {
     // Rebuild via Object.fromEntries (no dynamic user-keyed property write) so
     // a stray leading/trailing space in a pasted value can't survive into the
     // encrypted authConfig and produce a 401 the UI can't explain.
-    const envVars: Record<string, string> = Object.fromEntries(
+    const trimmed: Record<string, string> = Object.fromEntries(
       Object.entries(body.envVars || {}).map(([k, v]) => [
         k.trim(),
         typeof v === 'string' ? v.trim() : v,
       ]),
+    );
+
+    const cfg = connector.config as { adapterSlug?: string } | null;
+    const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
+
+    // The variable a base URL starts with (`{{SUBSTACK_PUBLICATION_URL}}`)
+    // must hold a whole URL: add the missing https:// to a bare host, refuse
+    // anything else with the variable's name. Catalog connectors store the
+    // resolved URL, so the template comes from the catalog; a hand-built
+    // connector keeps its template as the base URL itself.
+    const envVars = normalizeBaseUrlVariables(
+      adapter ? adapter.connector.baseUrl : connector.baseUrl,
+      trimmed,
+      connector.type,
     );
 
     const updateData: {
@@ -1301,8 +1411,6 @@ export class ConnectorsController {
     // encrypted). Re-resolve them from the template here so editing env vars
     // actually changes the credentials used for requests — otherwise the UI
     // shows the new value while auth keeps using the old one.
-    const cfg = connector.config as { adapterSlug?: string } | null;
-    const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
     if (adapter) {
       const merged = {
         ...((connector.envVars as Record<string, string> | null) || {}),

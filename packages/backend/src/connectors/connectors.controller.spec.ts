@@ -421,3 +421,199 @@ describe('ConnectorsController base-URL validation', () => {
     expect(connectorsService.update).toHaveBeenCalled();
   });
 });
+
+describe('OAuth 1.0a credentials endpoint', () => {
+  const oauth1Connector = (over: Record<string, unknown> = {}) => ({
+    id: 'c1',
+    type: 'REST',
+    authType: 'OAUTH1',
+    userId: 'u1',
+    organizationId: 'org1',
+    ...over,
+  });
+
+  const build = (connector: any) =>
+    buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(connector),
+        updateAuthConfigMerge: jest.fn().mockResolvedValue(connector),
+      },
+    });
+
+  it('merges only the fields that were typed, trimmed', async () => {
+    // "Leave empty to keep current": the form sends only what the user typed,
+    // so the stored secret must survive a new consumer key.
+    const { controller, connectorsService, mcpServer } = build(oauth1Connector());
+
+    const res = await controller.updateOAuth1Config(req('ADMIN'), 'c1', {
+      consumerKey: '  MyAppKey-123  ',
+    });
+
+    expect(connectorsService.updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+      consumerKey: 'MyAppKey-123',
+    });
+    expect(mcpServer.reloadConnectorTools).toHaveBeenCalledWith('c1');
+    expect(JSON.stringify(res)).not.toContain('MyAppKey-123');
+  });
+
+  it('passes both halves through when both are typed', async () => {
+    const { controller, connectorsService } = build(oauth1Connector());
+
+    await controller.updateOAuth1Config(req('ADMIN'), 'c1', {
+      consumerKey: 'key',
+      consumerSecret: 'secret',
+    });
+
+    expect(connectorsService.updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+      consumerKey: 'key',
+      consumerSecret: 'secret',
+    });
+  });
+
+  it('removes the access token when it is sent empty', async () => {
+    const { controller, connectorsService } = build(oauth1Connector());
+
+    await controller.updateOAuth1Config(req('ADMIN'), 'c1', {
+      token: '',
+      tokenSecret: ' ',
+    });
+
+    expect(connectorsService.updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+      token: undefined,
+      tokenSecret: undefined,
+    });
+  });
+
+  it('refuses to empty the consumer key or secret', async () => {
+    const { controller, connectorsService } = build(oauth1Connector());
+
+    await expect(
+      controller.updateOAuth1Config(req('ADMIN'), 'c1', { consumerSecret: '  ' }),
+    ).rejects.toThrow(/consumer secret cannot be empty/);
+    expect(connectorsService.updateAuthConfigMerge).not.toHaveBeenCalled();
+  });
+
+  it('refuses an e-mail address as the consumer key', async () => {
+    const { controller, connectorsService } = build(oauth1Connector());
+
+    await expect(
+      controller.updateOAuth1Config(req('ADMIN'), 'c1', {
+        consumerKey: 'someone@example.com',
+      }),
+    ).rejects.toThrow(/looks like an e-mail address/);
+    expect(connectorsService.updateAuthConfigMerge).not.toHaveBeenCalled();
+  });
+
+  it('does not write anything when nothing was typed', async () => {
+    const { controller, connectorsService, mcpServer } = build(oauth1Connector());
+
+    await controller.updateOAuth1Config(req('ADMIN'), 'c1', {});
+
+    expect(connectorsService.updateAuthConfigMerge).not.toHaveBeenCalled();
+    expect(mcpServer.reloadConnectorTools).not.toHaveBeenCalled();
+  });
+
+  it('rejects connectors that do not use OAuth 1.0a', async () => {
+    const { controller, connectorsService } = build(
+      oauth1Connector({ authType: 'OAUTH2' }),
+    );
+
+    await expect(
+      controller.updateOAuth1Config(req('ADMIN'), 'c1', { consumerKey: 'key' }),
+    ).rejects.toThrow(BadRequestException);
+    expect(connectorsService.updateAuthConfigMerge).not.toHaveBeenCalled();
+  });
+
+  it('rejects VIEWER', async () => {
+    const { controller, connectorsService } = build(oauth1Connector());
+
+    await expect(
+      controller.updateOAuth1Config(req('VIEWER'), 'c1', { consumerKey: 'key' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(connectorsService.updateAuthConfigMerge).not.toHaveBeenCalled();
+  });
+
+  it('rejects an editor who does not own the connector', async () => {
+    const { controller, connectorsService } = build(
+      oauth1Connector({ userId: 'someone-else' }),
+    );
+
+    await expect(
+      controller.updateOAuth1Config(req('EDITOR'), 'c1', { consumerKey: 'key' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(connectorsService.updateAuthConfigMerge).not.toHaveBeenCalled();
+  });
+});
+
+describe('PUT :id/env-vars — a base URL variable without https://', () => {
+  const build = (connector: any) =>
+    buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(connector),
+        update: jest.fn().mockResolvedValue(connector),
+      },
+    });
+
+  it('adds https:// to the Substack publication, in the variable and the base URL', async () => {
+    const { controller, connectorsService } = build({
+      id: 'c1',
+      type: 'REST',
+      userId: 'u1',
+      organizationId: 'org1',
+      baseUrl: 'yourname.substack.com',
+      envVars: { SUBSTACK_PUBLICATION_URL: 'yourname.substack.com' },
+      config: { adapterSlug: 'substack' },
+    });
+
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { SUBSTACK_PUBLICATION_URL: ' yourname.substack.com ' },
+    });
+
+    expect(connectorsService.update).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        envVars: { SUBSTACK_PUBLICATION_URL: 'https://yourname.substack.com' },
+        baseUrl: 'https://yourname.substack.com',
+      }),
+    );
+  });
+
+  it('refuses a value that is not a web address, naming the variable', async () => {
+    const { controller, connectorsService } = build({
+      id: 'c1',
+      type: 'REST',
+      userId: 'u1',
+      organizationId: 'org1',
+      baseUrl: 'https://yourname.substack.com',
+      envVars: {},
+      config: { adapterSlug: 'substack' },
+    });
+
+    await expect(
+      controller.updateEnvVars(req('ADMIN'), 'c1', {
+        envVars: { SUBSTACK_PUBLICATION_URL: 'someone@example.com' },
+      }),
+    ).rejects.toThrow(/^SUBSTACK_PUBLICATION_URL must be a full URL/);
+    expect(connectorsService.update).not.toHaveBeenCalled();
+  });
+
+  it('uses the stored template of a hand-built connector', async () => {
+    const { controller, connectorsService } = build({
+      id: 'c1',
+      type: 'REST',
+      userId: 'u1',
+      organizationId: 'org1',
+      baseUrl: '{{SHOP_URL}}/api',
+      envVars: {},
+      config: null,
+    });
+
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { SHOP_URL: 'shop.example.com', TOKEN: 'abc' },
+    });
+
+    expect(connectorsService.update).toHaveBeenCalledWith('c1', {
+      envVars: { SHOP_URL: 'https://shop.example.com', TOKEN: 'abc' },
+    });
+  });
+});

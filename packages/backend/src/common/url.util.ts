@@ -3,7 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 // Connector types whose baseUrl is an http(s) endpoint. DATABASE connectors
 // carry their own scheme (mysql://, mongodb://, sqlite:, …) and must not be
 // rewritten to https.
-const HTTP_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP']);
+export const HTTP_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP']);
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 
@@ -33,6 +33,15 @@ export function normalizeConnectorBaseUrl(
 
   // Non-HTTP connectors (DATABASE, etc.) keep their own scheme verbatim.
   if (type && !HTTP_CONNECTOR_TYPES.has(type)) {
+    return trimmed;
+  }
+
+  // A base URL that starts with a variable (`{{SHOP_URL}}/api`) gets its
+  // scheme from the variable's value. Prefixing it here stored
+  // `https://{{SHOP_URL}}/api`, which becomes `https://https://shop…` the
+  // moment the variable holds a full URL. The value is checked instead when it
+  // is saved (base-url-variable.util) and again at call time.
+  if (/^\{\{[^{}]+\}\}/.test(trimmed)) {
     return trimmed;
   }
 

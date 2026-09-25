@@ -16,6 +16,7 @@ import {
 } from '../common/env-interpolation.util';
 import { CALLER_CONTEXT_PREFIX } from '../common/caller-context.util';
 import { assertNoUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
+import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
@@ -247,6 +248,15 @@ export class ConnectorsService {
         { baseUrl, headers, authConfig },
         `the "${connector.name}" connector`,
       );
+      assertAbsoluteBaseUrl(
+        {
+          baseUrl,
+          connectorType: connector.type,
+          template: connector.baseUrl,
+          envVars,
+        },
+        `the "${connector.name}" connector`,
+      );
 
       switch (connector.type) {
         case 'REST': {
@@ -461,6 +471,15 @@ export class ConnectorsService {
         queryParams: resolvedMapping.queryParams,
         headers: resolved.headers,
         authConfig,
+      },
+      toolName ? `the connector behind ${toolName}` : `the "${connector.name}" connector`,
+    );
+    assertAbsoluteBaseUrl(
+      {
+        baseUrl: resolved.baseUrl,
+        connectorType: connector.type,
+        template: connector.baseUrl,
+        envVars,
       },
       toolName ? `the connector behind ${toolName}` : `the "${connector.name}" connector`,
     );

@@ -76,6 +76,12 @@ export default function ConnectorDetailPage() {
   const [editOauthAuthUrl, setEditOauthAuthUrl] = useState('');
   const [editOauthTokenUrl, setEditOauthTokenUrl] = useState('');
   const [editOauthScopes, setEditOauthScopes] = useState('');
+  // OAuth 1.0a credentials. Never pre-filled (the server does not send them
+  // back); an empty field keeps the stored value.
+  const [editOauth1Key, setEditOauth1Key] = useState('');
+  const [editOauth1Secret, setEditOauth1Secret] = useState('');
+  const [editOauth1Token, setEditOauth1Token] = useState('');
+  const [editOauth1TokenSecret, setEditOauth1TokenSecret] = useState('');
   // LOGIN_TOKEN (credentials → short-lived token, auto-refreshed) fields
   const [editLtLoginUrl, setEditLtLoginUrl] = useState('');
   const [editLtMethod, setEditLtMethod] = useState('POST');
@@ -158,6 +164,7 @@ export default function ConnectorDetailPage() {
       // Don't pre-fill credentials — they are encrypted on the server
       setEditAuthKey('');
       setEditAuthValue('');
+      resetOauth1Fields();
       // The auth method is not secret, so it can be shown. Without this the
       // select would always read "body" and saving any other field would
       // silently reset a connector configured for HTTP Basic.
@@ -211,6 +218,13 @@ export default function ConnectorDetailPage() {
     fetchConnector();
   }, [token, id]);
 
+  const resetOauth1Fields = () => {
+    setEditOauth1Key('');
+    setEditOauth1Secret('');
+    setEditOauth1Token('');
+    setEditOauth1TokenSecret('');
+  };
+
   const buildAuthConfig = () => {
     // Only send authConfig if the user filled in credential fields;
     // empty fields mean "keep existing credentials on the server".
@@ -224,6 +238,26 @@ export default function ConnectorDetailPage() {
       case 'BASIC_AUTH':
         if (!editAuthKey && !editAuthValue) return undefined;
         return { username: editAuthKey, password: editAuthValue };
+      case 'OAUTH1': {
+        // A connector that already signs with OAuth 1.0a is patched field by
+        // field instead (see handleSave), so the stored secret
+        // survives a corrected consumer key. Switching to OAuth 1.0a from
+        // another scheme writes a complete config, so both halves are needed.
+        if (connector.authType === 'OAUTH1') return undefined;
+        const consumerKey = editOauth1Key.trim();
+        const consumerSecret = editOauth1Secret.trim();
+        if (!consumerKey || !consumerSecret) {
+          throw new Error('Enter the consumer key and consumer secret to switch to OAuth 1.0a.');
+        }
+        const token = editOauth1Token.trim();
+        const tokenSecret = editOauth1TokenSecret.trim();
+        return {
+          consumerKey,
+          consumerSecret,
+          ...(token ? { token } : {}),
+          ...(tokenSecret ? { tokenSecret } : {}),
+        };
+      }
       case 'LOGIN_TOKEN': {
         // Re-entering the password is required to (re)write the whole config;
         // leaving it empty keeps the existing encrypted credentials untouched.
@@ -266,6 +300,20 @@ export default function ConnectorDetailPage() {
       };
       const authConfig = buildAuthConfig();
       if (authConfig) data.authConfig = authConfig;
+
+      // OAuth 1.0a on a connector that already uses it: send only the fields
+      // that were typed, merged server-side. Done before the main update so a
+      // refused value (e.g. an e-mail address as consumer key) saves nothing.
+      if (editAuthType === 'OAUTH1' && connector.authType === 'OAUTH1') {
+        const oauth1Patch: Record<string, string> = {};
+        if (editOauth1Key.trim()) oauth1Patch.consumerKey = editOauth1Key.trim();
+        if (editOauth1Secret.trim()) oauth1Patch.consumerSecret = editOauth1Secret.trim();
+        if (editOauth1Token.trim()) oauth1Patch.token = editOauth1Token.trim();
+        if (editOauth1TokenSecret.trim()) oauth1Patch.tokenSecret = editOauth1TokenSecret.trim();
+        if (Object.keys(oauth1Patch).length > 0) {
+          await connectors.updateOAuth1Config(id, oauth1Patch, token);
+        }
+      }
       if (connector.type !== 'DATABASE' && connector.type !== 'MCP') {
         // Editor is pre-filled with current headers, so this round-trips
         // untouched headers and applies any edits/removals the user made.
@@ -914,7 +962,7 @@ export default function ConnectorDetailPage() {
                 <label className="block text-sm font-medium mb-1">Authentication</label>
                 <AppSelect
                   value={editAuthType}
-                  onValueChange={(v) => { setEditAuthType(v); setEditAuthKey(''); setEditAuthValue(''); setEditLtPassword(''); }}
+                  onValueChange={(v) => { setEditAuthType(v); setEditAuthKey(''); setEditAuthValue(''); setEditLtPassword(''); resetOauth1Fields(); }}
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                   options={[
                     { value: 'NONE', label: 'None' },
@@ -922,6 +970,10 @@ export default function ConnectorDetailPage() {
                     { value: 'BEARER_TOKEN', label: 'Bearer Token' },
                     { value: 'BASIC_AUTH', label: 'Basic Auth' },
                     { value: 'OAUTH2', label: 'OAuth 2.0' },
+                    // Signing is implemented by the REST engine only.
+                    ...(connector.type === 'REST' || connector.authType === 'OAUTH1'
+                      ? [{ value: 'OAUTH1', label: 'OAuth 1.0a' }]
+                      : []),
                     { value: 'LOGIN_TOKEN', label: 'Login → Token (auto-refresh)' },
                   ]}
                 />
@@ -1002,6 +1054,37 @@ export default function ConnectorDetailPage() {
                   </p>
                 </div>
               )}
+              {editAuthType === 'OAUTH1' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="edit-oauth1-consumer-key" className="block text-sm font-medium mb-1">Consumer Key</label>
+                      <input id="edit-oauth1-consumer-key" type="text" autoComplete="off" value={editOauth1Key} onChange={(e) => setEditOauth1Key(e.target.value)} placeholder={connector.authType === 'OAUTH1' ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    </div>
+                    <div>
+                      <label htmlFor="edit-oauth1-consumer-secret" className="block text-sm font-medium mb-1">Consumer Secret</label>
+                      <input id="edit-oauth1-consumer-secret" type="password" autoComplete="new-password" value={editOauth1Secret} onChange={(e) => setEditOauth1Secret(e.target.value)} placeholder={connector.authType === 'OAUTH1' ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="edit-oauth1-token" className="block text-sm font-medium mb-1">Access Token (optional)</label>
+                      <input id="edit-oauth1-token" type="password" autoComplete="new-password" value={editOauth1Token} onChange={(e) => setEditOauth1Token(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    </div>
+                    <div>
+                      <label htmlFor="edit-oauth1-token-secret" className="block text-sm font-medium mb-1">Token Secret (optional)</label>
+                      <input id="edit-oauth1-token-secret" type="password" autoComplete="new-password" value={editOauth1TokenSecret} onChange={(e) => setEditOauth1TokenSecret(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-[var(--text-3)]">
+                    The consumer key and secret belong to the application registered with the
+                    provider — not your login e-mail or password. {connector.authType === 'OAUTH1'
+                      ? 'Leave a field empty to keep the stored value; stored values are never shown.'
+                      : 'Both are required to switch to OAuth 1.0a.'} The access token is only for
+                    APIs that act on behalf of a user (three-legged).
+                  </p>
+                </div>
+              )}
               {editAuthType === 'LOGIN_TOKEN' && (
                 <div className="space-y-3">
                   <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-xs text-[var(--t-info-fg)]">
@@ -1053,7 +1136,7 @@ export default function ConnectorDetailPage() {
                   </label>
                 </div>
               )}
-              {editAuthType !== 'NONE' && editAuthType !== 'OAUTH2' && editAuthType !== 'LOGIN_TOKEN' && (
+              {editAuthType !== 'NONE' && editAuthType !== 'OAUTH2' && editAuthType !== 'OAUTH1' && editAuthType !== 'LOGIN_TOKEN' && (
                 <p className="text-xs text-[var(--text-3)]">
                   Leave credential fields empty to keep the current values.
                 </p>
