@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — 258 个连接器，其中 20 个无需 API 密钥。将 REST、SOAP/WSDL、GraphQL、SQL 和 MCP 系统转化为 Claude、ChatGPT、Copilot 和 Gemini 的工具。" width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP — 257 个连接器，其中 20 个无需 API 密钥。将 REST、SOAP/WSDL、GraphQL、SQL 和 MCP 系统转化为 Claude、ChatGPT、Copilot 和 Gemini 的工具。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>让 Claude、ChatGPT 和 Copilot 安全访问企业已经在使用的软件。</strong><br/>
-  258 个现成适配器，无需编写代码即可连接任意 REST、SOAP、GraphQL 或 SQL 系统，全部运行在你自己的基础设施上，并能学习各个系统之间的关系。
+  257 个现成适配器，无需编写代码即可连接任意 REST、SOAP、GraphQL 或 SQL 系统，全部运行在你自己的基础设施上，并能学习各个系统之间的关系。
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 本文反复使用的三个术语，分别指不同的概念：
 
-- **适配器（adapter）**：本仓库随附的 258 个 JSON 定义之一，例如 DATEV、weclapp、DHL、Deutsche Bahn、Shopware、Personio、Handelsregister 等。其中 20 个完全不需要 API 密钥，其余适配器会在导入时要求你提供相应凭据。
+- **适配器（adapter）**：本仓库随附的 257 个 JSON 定义之一，例如 DATEV、weclapp、DHL、Deutsche Bahn、Shopware、Personio、Handelsregister 等。其中 20 个完全不需要 API 密钥，其余适配器会在导入时要求你提供相应凭据。
 - **连接器（connector）**：在工作区中配置好的适配器，或你自己的 OpenAPI 规范、Postman 集合、WSDL、GraphQL 端点或数据库。只要有可连接的目标，就能在几分钟内完成配置，无需编写 MCP 服务器。
 - **MCP 服务器**：你提供给 Claude 的那个 URL。它只公开分配给它的连接器，不会公开其他连接器。
 
@@ -234,7 +234,7 @@ AI 客户端使用 MCP，而你的系统使用 REST、SOAP、GraphQL 和 SQL。�
 
 ## 适配器目录
 
-258 个适配器，提供 1,800 多个工具。**其中 20 个不需要 API 密钥**，其余适配器会在导入时要求提供凭据，导入后工具即可立即使用。每个适配器都在 [anythingmcp.com/guides](https://anythingmcp.com/guides) 上提供七种语言的设置指南。
+257 个适配器，提供 1,800 多个工具。**其中 20 个不需要 API 密钥**，其余适配器会在导入时要求提供凭据，导入后工具即可立即使用。每个适配器都在 [anythingmcp.com/guides](https://anythingmcp.com/guides) 上提供七种语言的设置指南。
 
 | 分类 | 示例 |
 |---|---|
