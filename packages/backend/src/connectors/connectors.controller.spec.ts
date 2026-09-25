@@ -193,6 +193,25 @@ describe('OAuth2 config endpoints', () => {
       });
     });
 
+    it('stores "in body" explicitly for client_credentials, whose default is Basic', async () => {
+      // Otherwise saving the form on an Amadeus connector (which needs body
+      // credentials) would clear the setting and fall back to Basic.
+      const { encrypt } = require('../common/crypto/encryption.util');
+      const authConfig = encrypt(
+        JSON.stringify({ grant: 'client_credentials', tokenAuthMethod: 'client_secret_post' }),
+        VALID_ENCRYPTION_KEY,
+      );
+      const { controller, connectorsService } = build(oauthConnector({ authConfig }));
+
+      await controller.updateOAuthConfig(req('ADMIN'), 'c1', {
+        tokenAuthMethod: '',
+      });
+
+      expect(connectorsService.updateAuthConfigMerge).toHaveBeenCalledWith('c1', {
+        tokenAuthMethod: 'client_secret_post',
+      });
+    });
+
     it('does not write anything when the body is empty', async () => {
       const { controller, connectorsService } = build(oauthConnector());
 
@@ -266,6 +285,19 @@ describe('OAuth2 config endpoints', () => {
 
       expect(result.tokenAuthMethod).toBe('client_secret_post');
       expect(result.hasClientSecret).toBe(false);
+    });
+
+    it('reports Basic for client_credentials with nothing stored, as the token service sends', async () => {
+      const { encrypt } = require('../common/crypto/encryption.util');
+      const authConfig = encrypt(
+        JSON.stringify({ grant: 'client_credentials', clientId: 'x', clientSecret: 'y' }),
+        VALID_ENCRYPTION_KEY,
+      );
+      const { controller } = build(oauthConnector({ authConfig }));
+
+      const result = await controller.getOAuthConfig(req('ADMIN'), 'c1');
+
+      expect(result.tokenAuthMethod).toBe('client_secret_basic');
     });
 
     it('degrades gracefully when the stored config cannot be decrypted', async () => {

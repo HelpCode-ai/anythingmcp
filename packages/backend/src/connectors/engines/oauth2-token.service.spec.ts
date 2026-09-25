@@ -383,6 +383,32 @@ describe('OAuth2TokenService', () => {
       expect(body).not.toContain('client_secret=');
     });
 
+    it('sends client credentials as form fields when tokenAuthMethod is client_secret_post (Amadeus)', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'amadeus-at', expires_in: 1799 },
+      });
+
+      const token = await service.refreshToken({
+        grant: 'client_credentials',
+        tokenAuthMethod: 'client_secret_post',
+        tokenUrl: 'https://api.amadeus.com/v1/security/oauth2/token',
+        clientId: 'api-key',
+        clientSecret: 'api-secret',
+      });
+
+      expect(token).toBe('amadeus-at');
+      const [, body, opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(new URLSearchParams(body)).toEqual(
+        new URLSearchParams(
+          'grant_type=client_credentials&client_id=api-key&client_secret=api-secret',
+        ),
+      );
+      expect(opts.headers['Content-Type']).toBe(
+        'application/x-www-form-urlencoded',
+      );
+      expect(opts.headers.Authorization).toBeUndefined();
+    });
+
     it('returns null when client_credentials grant lacks clientId/Secret', async () => {
       const token = await service.refreshToken({
         grant: 'client_credentials',
