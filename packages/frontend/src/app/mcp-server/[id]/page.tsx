@@ -30,9 +30,19 @@ export default function McpServerDetailPage() {
   const [generatedKey, setGeneratedKey] = useState('');
   const [keyMsg, setKeyMsg] = useState('');
 
-  // Connector assignment state
+  // Connector assignment state. A change is saved the moment it is made: the
+  // list used to wait for a "Save assignments" button below it, which went
+  // off screen once a workspace had a few connectors, and a server looked
+  // configured while exposing no tools at all.
   const [assignedIds, setAssignedIds] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
+  const [assignStatus, setAssignStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [assignError, setAssignError] = useState('');
+  // The set the next change starts from (state lags behind rapid clicks),
+  // the last one the server accepted, and a chain that keeps writes in order.
+  const currentIds = useRef<Set<string>>(new Set());
+  const savedIds = useRef<Set<string>>(new Set());
+  const saveChain = useRef<Promise<void>>(Promise.resolve());
+  const saveSeq = useRef(0);
 
   const [copied, setCopied] = useState('');
   const [connectClient, setConnectClient] = useState<string | null>(null);
@@ -71,7 +81,10 @@ export default function McpServerDetailPage() {
       setEditDescription(srv.description || '');
       setEditInstructions(srv.instructions || '');
       setAllConnectors(conns);
-      setAssignedIds(new Set(srv.connectors?.map((c: any) => c.connector.id) || []));
+      const ids = new Set<string>(srv.connectors?.map((c: any) => c.connector.id) || []);
+      currentIds.current = ids;
+      savedIds.current = ids;
+      setAssignedIds(ids);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [token, id]);
 
@@ -105,27 +118,38 @@ export default function McpServerDetailPage() {
     } catch {}
   };
 
-  const handleToggleConnector = (connectorId: string) => {
-    setAssignedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(connectorId)) next.delete(connectorId);
-      else next.add(connectorId);
-      return next;
+  const saveAssignments = (next: Set<string>) => {
+    if (!token || !id) return;
+    currentIds.current = next;
+    setAssignedIds(next);
+    setAssignStatus('saving');
+    const seq = ++saveSeq.current;
+    saveChain.current = saveChain.current.then(async () => {
+      try {
+        await mcpServers.assignConnectors(id, Array.from(next), token);
+        savedIds.current = next;
+        if (seq === saveSeq.current) {
+          setAssignStatus('saved');
+          setAssignError('');
+        }
+      } catch (err: any) {
+        // Put the list back to what the server has, so the ticks never claim
+        // more than the endpoint exposes.
+        if (seq === saveSeq.current) {
+          currentIds.current = savedIds.current;
+          setAssignedIds(new Set(savedIds.current));
+          setAssignStatus('error');
+          setAssignError(err?.message || 'Could not save');
+        }
+      }
     });
   };
 
-  const handleSaveConnectors = async () => {
-    if (!token || !id) return;
-    setSaving(true);
-    try {
-      await mcpServers.assignConnectors(id, Array.from(assignedIds), token);
-      setSaveMsg('Connectors updated');
-      setTimeout(() => setSaveMsg(''), 2000);
-    } catch (err: any) {
-      setSaveMsg(`Error: ${err.message}`);
-    } finally {
-      setSaving(false);
-    }
+  const handleToggleConnector = (connectorId: string) => {
+    const next = new Set(currentIds.current);
+    if (next.has(connectorId)) next.delete(connectorId);
+    else next.add(connectorId);
+    saveAssignments(next);
   };
 
   const handleGenerateKey = async () => {
@@ -706,17 +730,29 @@ export default function McpServerDetailPage() {
         {/* Assigned Connectors */}
         <Card className="p-[22px]">
           <div className="mb-1.5 flex items-center justify-between">
-            <div className="text-sm font-semibold">Assigned connectors ({assignedIds.size})</div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-semibold">Assigned connectors ({assignedIds.size})</div>
+              <span
+                role="status"
+                aria-live="polite"
+                className="text-[12px]"
+                style={{ color: assignStatus === 'error' ? 'var(--danger)' : 'var(--text-3)' }}
+              >
+                {assignStatus === 'saving' && 'Saving…'}
+                {assignStatus === 'saved' && 'Saved'}
+                {assignStatus === 'error' && `Not saved: ${assignError}`}
+              </span>
+            </div>
             {allConnectors.length > 0 && (
               <div className="flex gap-1.5">
                 <button
-                  onClick={() => setAssignedIds(new Set(allConnectors.map((c) => c.id)))}
+                  onClick={() => saveAssignments(new Set(allConnectors.map((c) => c.id)))}
                   className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-[10px] py-[5px] text-[12px] text-[var(--text-2)] hover:border-[var(--border-strong)]"
                 >
                   Select all
                 </button>
                 <button
-                  onClick={() => setAssignedIds(new Set())}
+                  onClick={() => saveAssignments(new Set())}
                   className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-[10px] py-[5px] text-[12px] text-[var(--text-2)] hover:border-[var(--border-strong)]"
                 >
                   Deselect all
@@ -725,7 +761,7 @@ export default function McpServerDetailPage() {
             )}
           </div>
           <p className="mb-[14px] text-[12.5px] text-[var(--text-3)]">
-            Select which connectors expose their tools through this server.
+            Select which connectors expose their tools through this server. Changes are saved as you make them.
           </p>
           {allConnectors.length === 0 ? (
             <p className="text-[12.5px] text-[var(--text-3)]">No connectors available. Create a connector first.</p>
@@ -765,9 +801,15 @@ export default function McpServerDetailPage() {
                   );
                 })}
               </div>
-              <Button onClick={handleSaveConnectors} disabled={saving} variant="primary" size="lg" className="mt-1.5">
-                {saving ? 'Saving...' : 'Save assignments'}
-              </Button>
+              {assignStatus === 'saved' && (
+                // Clients fetch the tool list once, when they connect. Without
+                // this, "I added the connector and Claude sees nothing" reads
+                // as a broken server.
+                <p className="mt-2 text-[12.5px] text-[var(--text-3)]">
+                  AI clients that are already connected keep the tool list they loaded. Refresh it there: in
+                  Claude, open the connector and choose <span className="font-medium">⋮ → Refresh tools list</span>.
+                </p>
+              )}
             </>
           )}
         </Card>
