@@ -49,18 +49,34 @@ export interface GraphqlBuiltinOptions {
  *   slugifyForPrefix("")                    → "graphql" (safe fallback)
  */
 export function slugifyForPrefix(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+  // One pass instead of `.replace(/^_+|_+$/g, '')`, which backtracks
+  // polynomially on a long run of underscores (CodeQL js/polynomial-redos).
+  let slug = '';
+  let pendingUnderscore = false;
+  for (const ch of name.toLowerCase()) {
+    if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) {
+      if (pendingUnderscore && slug) slug += '_';
+      slug += ch;
+      pendingUnderscore = false;
+    } else {
+      pendingUnderscore = true;
+    }
+  }
   return slug || 'graphql';
+}
+
+/** `url` without trailing slashes, without the backtracking `/\/+$/`. */
+function trimTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === '/') end--;
+  return url.slice(0, end);
 }
 
 export function buildGraphqlBuiltinTools(
   opts: GraphqlBuiltinOptions,
 ): GraphqlBuiltinTool[] {
   const { prefix, displayName, baseUrl } = opts;
-  const schemaUrl = opts.schemaUrl || `${baseUrl.replace(/\/+$/, '')}/schema`;
+  const schemaUrl = opts.schemaUrl || `${trimTrailingSlashes(baseUrl)}/schema`;
 
   const variablesSchema = {
     type: 'object',

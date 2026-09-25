@@ -182,6 +182,7 @@ export class RestEngine {
         const raw = String(mappedQuery['__rawquery']);
         delete mappedQuery['__rawquery'];
         for (const [k, v] of new URLSearchParams(raw)) {
+          if (isUnsafeKey(k)) continue;
           mappedQuery[k] = v;
         }
       }
@@ -658,6 +659,7 @@ export class RestEngine {
     ) {
       bodyParams = {};
       for (const [k, v] of new URLSearchParams(axiosConfig.data)) {
+        if (isUnsafeKey(k)) continue;
         bodyParams[k] = v;
       }
     }
@@ -757,6 +759,15 @@ export class RestEngine {
     }
     return value;
   }
+}
+
+/**
+ * Keys that would reach an object's prototype chain instead of naming a
+ * parameter. The query and form strings parsed here come from tool arguments,
+ * so from the model; no API names a parameter like this.
+ */
+function isUnsafeKey(key: string): boolean {
+  return key === '__proto__' || key === 'constructor' || key === 'prototype';
 }
 
 /**

@@ -190,6 +190,22 @@ describe('RestEngine', () => {
     expect(sent.params).not.toHaveProperty('__rawquery');
   });
 
+  it('drops __rawquery keys that would reach the prototype chain', async () => {
+    // The fragment comes from a tool argument, so from the model.
+    mockedAxios.mockResolvedValue({ data: {} });
+
+    await engine.execute(
+      { baseUrl: 'https://api.example.com', authType: 'NONE' },
+      { method: 'GET', path: '/article', queryParams: { __rawquery: '$filter' } },
+      { filter: '__proto__=x&constructor=y&prototype=z&name-eq=ok' },
+    );
+
+    const sent = mockedAxios.mock.calls[0][0] as unknown as { params: Record<string, unknown> };
+    expect(Object.keys(sent.params)).toEqual(['name-eq']);
+    expect(Object.getPrototypeOf(sent.params)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).x).toBeUndefined();
+  });
+
   it('omits __rawquery entirely when the source param is absent', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
 
