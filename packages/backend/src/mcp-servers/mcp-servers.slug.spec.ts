@@ -57,3 +57,42 @@ describe('MCP server slugs', () => {
     await expect(service.create('u1', 'org1', { name: 'X', slug: 'x' })).rejects.toBe(other);
   });
 });
+
+describe('McpServersService.createDefaultForUser — slug', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { McpServersService } = require('./mcp-servers.service');
+
+  function build(existing: string[], name = 'Mario Rossi') {
+    const create = jest.fn(async ({ data }: any) => ({ id: 'srv', ...data }));
+    const prisma = {
+      mcpServerConfig: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn(async ({ where }: any) =>
+          existing.filter((s) => where.slug.in.includes(s)).map((slug) => ({ slug })),
+        ),
+        create,
+      },
+      user: { findUnique: jest.fn().mockResolvedValue({ name, email: 'm@example.test' }) },
+    };
+    return { svc: new McpServersService(prisma as any, {} as any, {} as any), create };
+  }
+
+  it('takes `default` when it is free', async () => {
+    const { svc, create } = build([]);
+    await svc.createDefaultForUser('u1', 'org1');
+    expect(create.mock.calls[0][0].data.slug).toBe('default');
+  });
+
+  it('gives a second member default-<name>', async () => {
+    const { svc, create } = build(['default']);
+    await svc.createDefaultForUser('u2', 'org1');
+    expect(create.mock.calls[0][0].data.slug).toBe('default-mario-rossi');
+  });
+
+  it('numbers a member whose display name is already taken', async () => {
+    // This used to hit the unique (org, slug) index and fail the sign-up.
+    const { svc, create } = build(['default', 'default-mario-rossi', 'default-mario-rossi-2']);
+    await svc.createDefaultForUser('u3', 'org1');
+    expect(create.mock.calls[0][0].data.slug).toBe('default-mario-rossi-3');
+  });
+});

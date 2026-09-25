@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { adapters, users } from '@/lib/api';
 import { LogoIcon } from '@/components/logo-icon';
-import { DEMO_CONNECTORS, type DemoConnector } from '@/lib/demo-connectors';
+import { ConnectorLogo } from '@/components/connector-logo';
+import { StarterPack } from '@/components/starter-pack';
 
 // A small, curated subset of slugs known to actually work end-to-end
 // today, ordered by popularity from the production analytics
@@ -30,28 +31,6 @@ export default function WelcomePage() {
   const router = useRouter();
   const [starters, setStarters] = useState<any[]>([]);
   const [skipping, setSkipping] = useState(false);
-  const [demoLoading, setDemoLoading] = useState<string | null>(null);
-  const [demoError, setDemoError] = useState('');
-
-  // One-click demo: install a no-auth connector and jump straight to the
-  // connector page with ?autorun so the user sees a real successful tool
-  // call as their first action — the "aha moment" before any credentials.
-  const startDemo = async (d: DemoConnector) => {
-    if (!token || demoLoading) return;
-    setDemoError('');
-    setDemoLoading(d.slug);
-    try {
-      const res = await adapters.import(d.slug, token);
-      router.push(
-        `/connectors/${res.connectorId}?demoTool=${encodeURIComponent(d.tool)}&autorun=1&from=welcome`,
-      );
-    } catch (err: any) {
-      setDemoError(
-        `Couldn't start the ${d.name} demo${err?.message ? `: ${err.message}` : ''}. Try another or browse the marketplace.`,
-      );
-      setDemoLoading(null);
-    }
-  };
 
   useEffect(() => {
     // Bounce to /login if the user landed here unauthenticated.
@@ -126,46 +105,16 @@ export default function WelcomePage() {
           </h1>
           <p className="text-[var(--text-2)] max-w-xl mx-auto">
             AnythingMCP turns any API into MCP tools your AI agent can call.
-            Pick a starter from the marketplace or paste your own OpenAPI
-            spec — should take about a minute.
+            Start with a few ready-made connectors, pick more from the
+            marketplace, or bring your own API.
           </p>
         </div>
 
-        {/* Try-instantly rail — no credentials, auto-runs a real call.
-            This is the fastest path to a first successful tool result, so
-            it sits above the marketplace/custom choices. */}
-        <div className="mb-8">
-          <h3 className="text-sm font-semibold mb-1 text-[var(--text)]">
-            Try one instantly — no keys, no setup
-          </h3>
-          <p className="text-xs text-[var(--text-2)] mb-3">
-            We&apos;ll install it and run a real call so you can see a live result in seconds.
-          </p>
-          {demoError && (
-            <div className="mb-3 p-2.5 rounded-[9px] text-xs bg-[var(--t-danger-bg)] text-[var(--t-danger-fg)]">
-              {demoError}
-            </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {DEMO_CONNECTORS.map((d) => (
-              <button
-                key={d.slug}
-                onClick={() => startDemo(d)}
-                disabled={!!demoLoading}
-                className="text-left border border-[var(--border)] rounded-[14px] p-4 bg-[var(--surface)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors disabled:opacity-60"
-              >
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-xl">{d.emoji}</span>
-                  <span className="font-semibold text-sm text-[var(--text)]">{d.name}</span>
-                </div>
-                <p className="text-xs text-[var(--text-2)] mb-3">{d.blurb}</p>
-                <span className="text-sm font-medium text-[var(--brand)]">
-                  {demoLoading === d.slug ? 'Starting…' : 'Try it →'}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Starter pack: keyless connectors, ticked by default, added in one
+            click and put on the user's MCP server. It replaces the old
+            single-connector demo, and offers the same live "Try it" call
+            for each connector once it is added. */}
+        {token && <StarterPack token={token} />}
 
         {/* Two big paths — marketplace vs custom */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
@@ -210,35 +159,16 @@ export default function WelcomePage() {
         {starters.length > 0 && (
           <div>
             <h3 className="text-sm font-semibold mb-3 text-[var(--text-2)]">
-              Popular starters
+              Popular connectors (sign in with your account)
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-4 gap-3">
               {starters.map((a) => (
                 <Link
                   key={a.slug}
                   href={`/connectors/store?install=${encodeURIComponent(a.slug)}&from=welcome`}
                   className="border border-[var(--border)] rounded-[12px] p-3 bg-[var(--surface)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors flex items-center gap-3"
                 >
-                  <div className="text-2xl shrink-0">
-                    {a.icon === 'sendcloud' && '📦'}
-                    {a.icon === 'playtomic' && '🎾'}
-                    {a.icon === 'github' && '🐙'}
-                    {a.icon === 'twitter' && '🐦'}
-                    {a.icon === 'slack' && '💬'}
-                    {a.icon === 'notion' && '📝'}
-                    {a.icon === 'stripe' && '💳'}
-                    {a.icon === 'helpscout' && '🛟'}
-                    {![
-                      'sendcloud',
-                      'playtomic',
-                      'github',
-                      'twitter',
-                      'slack',
-                      'notion',
-                      'stripe',
-                      'helpscout',
-                    ].includes(a.icon) && '🔌'}
-                  </div>
+                  <ConnectorLogo icon={a.icon} name={a.name} small />
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate text-[var(--text)]">{a.name}</div>
                     <div className="text-xs text-[var(--text-2)] truncate">
