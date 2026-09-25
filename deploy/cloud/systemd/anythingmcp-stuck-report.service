@@ -1,0 +1,13 @@
+[Unit]
+Description=AnythingMCP Cloud weekly stuck-users report (one run; see the timer)
+Documentation=https://github.com/HelpCode-ai/anythingmcp/blob/main/deploy/cloud/stuck-users-report.sh
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/anythingmcp-cloud/stuck-users-report.sh
+Environment=ENV_FILE=/opt/anythingmcp-cloud/.env
+Environment=STATE_DIR=/var/lib/anythingmcp-report
+StateDirectory=anythingmcp-report
+TimeoutStartSec=15min

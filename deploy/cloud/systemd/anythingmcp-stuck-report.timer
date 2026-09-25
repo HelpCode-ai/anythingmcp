@@ -1,0 +1,12 @@
+[Unit]
+Description=Mail the AnythingMCP Cloud stuck-users report every Monday morning
+
+[Timer]
+OnCalendar=Mon *-*-* 07:00:00 Europe/Berlin
+# A Monday missed because the droplet was down runs at the next boot.
+Persistent=true
+AccuracySec=1min
+Unit=anythingmcp-stuck-report.service
+
+[Install]
+WantedBy=timers.target
