@@ -893,10 +893,7 @@ export class ConnectorsController {
     // Two ImmobilienScout24 installs had the account's e-mail address as the
     // consumer key, and IS24 answered "Consumer not found" to every call. No
     // provider issues consumer keys of that shape.
-    if (
-      typeof patch.consumerKey === 'string' &&
-      /^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(patch.consumerKey)
-    ) {
+    if (typeof patch.consumerKey === 'string' && looksLikeEmail(patch.consumerKey)) {
       throw new BadRequestException(
         'The consumer key looks like an e-mail address. It is the key of the ' +
           'application registered with the provider, not your login — copy it ' +
@@ -1621,4 +1618,19 @@ export class ConnectorsController {
       skipped: [] as string[],
     };
   }
+}
+
+/**
+ * Whether a credential field holds an e-mail address rather than a key.
+ * Written without a backtracking regex: the value is user input, and the
+ * equivalent `^[^\s@/]+@[^\s@/]+\.[^\s@/]+$` is polynomial on crafted
+ * strings (CodeQL js/polynomial-redos).
+ */
+export function looksLikeEmail(value: string): boolean {
+  if (value.length > 320 || /[\s/]/.test(value)) return false;
+  const at = value.indexOf('@');
+  if (at <= 0 || at !== value.lastIndexOf('@')) return false;
+  const domain = value.slice(at + 1);
+  const dot = domain.lastIndexOf('.');
+  return dot > 0 && dot < domain.length - 1;
 }
