@@ -6,6 +6,11 @@ import { encrypt, decrypt } from '../../common/crypto/encryption.util';
 import { getRequiredSecret } from '../../common/secrets.util';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { interpolateDeep } from '../../common/env-interpolation.util';
+import {
+  clientAssertionParams,
+  clientAssertionSettingsFrom,
+  isPrivateKeyJwt,
+} from './client-assertion.util';
 
 /** Refresh tokens that expire within this window (5 minutes). */
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -72,7 +77,11 @@ export class OAuth2TokenService {
     // also needs a stored refreshToken.
     const hasRefreshCapability =
       grant === 'client_credentials'
-        ? !!(authConfig.tokenUrl && authConfig.clientId && authConfig.clientSecret)
+        ? !!(
+            authConfig.tokenUrl &&
+            authConfig.clientId &&
+            (authConfig.clientSecret || isPrivateKeyJwt(authConfig.tokenAuthMethod))
+          )
         : !!(authConfig.refreshToken && authConfig.tokenUrl);
     const tokenNearExpiry = this.isTokenNearExpiry(authConfig, cacheKey);
 
@@ -176,6 +185,9 @@ export class OAuth2TokenService {
       ? String(authConfig.clientSecret)
       : undefined;
     const scope = authConfig.scope ? String(authConfig.scope) : undefined;
+    // private_key_jwt: the client proves itself with a JWT signed by its own
+    // key (RFC 7523), so there is no client secret to send or to require.
+    const privateKeyJwt = isPrivateKeyJwt(authConfig.tokenAuthMethod);
 
     if (!tokenUrl) {
       this.logger.warn('OAuth2 refresh: missing tokenUrl');
@@ -188,7 +200,7 @@ export class OAuth2TokenService {
       // sent via HTTP Basic Authorization header (RFC 6749 §2.3.1). We rely
       // on the Basic header path and keep the body to grant_type + scope,
       // unless the adapter sets tokenAuthMethod: client_secret_post.
-      if (!clientId || !clientSecret) {
+      if (!clientId || (!clientSecret && !privateKeyJwt)) {
         this.logger.warn(
           'OAuth2 client_credentials: missing clientId/clientSecret',
         );
@@ -214,7 +226,12 @@ export class OAuth2TokenService {
       if (grant === 'client_credentials') {
         body = { grant_type: 'client_credentials' };
         if (scope) body.scope = scope;
-        if (
+        if (privateKeyJwt) {
+          Object.assign(
+            body,
+            clientAssertionParams(clientAssertionSettingsFrom(authConfig, tokenUrl)),
+          );
+        } else if (
           authConfig.tokenAuthMethod === 'post' ||
           authConfig.tokenAuthMethod === 'client_secret_post'
         ) {
@@ -237,7 +254,15 @@ export class OAuth2TokenService {
         const useBasic =
           authConfig.tokenAuthMethod === 'basic' ||
           authConfig.tokenAuthMethod === 'client_secret_basic';
-        if (useBasic && clientId && clientSecret) {
+        if (privateKeyJwt) {
+          // A new assertion per request: Revolut Business rejects a refresh
+          // whose assertion has expired, and asks for short-lived ones. The
+          // client id travels in the assertion's `sub`, not the body.
+          Object.assign(
+            body,
+            clientAssertionParams(clientAssertionSettingsFrom(authConfig, tokenUrl)),
+          );
+        } else if (useBasic && clientId && clientSecret) {
           // client_secret_basic — credentials in the Authorization header.
           // DATEV and other confidential-client providers reject body creds.
           if (clientId) body.client_id = clientId;

@@ -53,6 +53,7 @@ import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
 import { resolveRestAuthorizeSettings } from './oauth-authorize-settings';
+import type { ClientAssertionSettings } from './engines/client-assertion.util';
 import {
   mergeMaskedEnvVars,
   mergeMaskedHeaders,
@@ -269,13 +270,15 @@ class UpdateOAuthConfigDto {
       '`client_secret_basic` sends them as an HTTP Basic header (RFC 6749 ' +
       '§2.3.1). Providers such as Datto RMM and DATEV reject body-supplied ' +
       'credentials with 401 and require basic. Applies to both the initial ' +
-      'authorization-code exchange and later token refreshes. Empty string ' +
-      'resets to the default.',
-    enum: ['', 'client_secret_post', 'client_secret_basic', 'basic', 'post'],
+      'authorization-code exchange and later token refreshes. ' +
+      '`private_key_jwt` signs a client assertion (RFC 7523) with the key in ' +
+      'authConfig.clientAssertion instead of sending a secret (Revolut ' +
+      'Business). Empty string resets to the default.',
+    enum: ['', 'client_secret_post', 'client_secret_basic', 'basic', 'post', 'private_key_jwt'],
   })
   @IsOptional()
   @IsString()
-  @IsIn(['', 'client_secret_post', 'client_secret_basic', 'basic', 'post'])
+  @IsIn(['', 'client_secret_post', 'client_secret_basic', 'basic', 'post', 'private_key_jwt'])
   tokenAuthMethod?: string;
 }
 
@@ -1003,6 +1006,7 @@ export class ConnectorsController {
       let tokenAuthMethod: string | undefined = authConfig.tokenAuthMethod
         ? String(authConfig.tokenAuthMethod)
         : undefined;
+      let clientAssertion: ClientAssertionSettings | undefined;
       // REST/GraphQL only: the auth config fields to write on success in place
       // of the historical "client settings as stored" (see PendingOAuthFlow).
       let persistAuthConfig: Record<string, unknown> | undefined;
@@ -1056,6 +1060,7 @@ export class ConnectorsController {
         tokenEndpoint = settings.tokenUrl;
         scope = settings.scope;
         tokenAuthMethod = settings.tokenAuthMethod;
+        clientAssertion = settings.clientAssertion;
         // The client id/secret stay as stored (placeholders included, so a
         // later env var edit still reaches them); only what was taken from
         // the catalog is added.
@@ -1084,6 +1089,7 @@ export class ConnectorsController {
         clientSecret,
         tokenUrl: tokenEndpoint,
         tokenAuthMethod,
+        clientAssertion,
         persistAuthConfig,
         createdAt: Date.now(),
       });

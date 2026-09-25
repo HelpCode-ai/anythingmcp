@@ -176,7 +176,7 @@ export default function ConnectorDetailPage() {
         connectors
           .getOAuthConfig(id, token)
           .then((r) => {
-            setEditTokenAuthMethod(r.tokenAuthMethod || 'client_secret_post');
+            setEditTokenAuthMethod(normalizeTokenAuthMethod(r.tokenAuthMethod));
             setEditOauthAuthUrl(r.authorizationUrl || '');
             setEditOauthTokenUrl(r.tokenUrl || '');
             setEditOauthScopes(r.scopes || '');
@@ -340,10 +340,12 @@ export default function ConnectorDetailPage() {
       // the endpoints captured during authorization).
       if (editAuthType === 'OAUTH2' && connector.type !== 'MCP') {
         const oauthPatch: Record<string, string> = {
+          // The default (body) is stored as ''. Anything else is sent as
+          // chosen: a catalog adapter may use a method this form cannot set
+          // up by itself (Revolut's private_key_jwt), and saving an unrelated
+          // field must not switch it off.
           tokenAuthMethod:
-            editTokenAuthMethod === 'client_secret_basic'
-              ? 'client_secret_basic'
-              : '',
+            editTokenAuthMethod === 'client_secret_post' ? '' : editTokenAuthMethod,
         };
         if (editAuthKey) oauthPatch.clientId = editAuthKey;
         if (editAuthValue) oauthPatch.clientSecret = editAuthValue;
@@ -1059,10 +1061,14 @@ export default function ConnectorDetailPage() {
                     >
                       <option value="client_secret_post">Client secret in body (default)</option>
                       <option value="client_secret_basic">HTTP Basic header (client_secret_basic)</option>
+                      {editTokenAuthMethod === 'private_key_jwt' && (
+                        <option value="private_key_jwt">Signed JWT with your private key (private_key_jwt)</option>
+                      )}
                     </select>
                     <p className="mt-1 text-xs text-[var(--text-3)]">
-                      Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM
-                      and DATEV require it. Applies to refreshes too. Re-authorize after changing it.
+                      {editTokenAuthMethod === 'private_key_jwt'
+                        ? 'Set by the connector: a short-lived JWT signed with the private key from the environment variables replaces the client secret.'
+                        : 'Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM and DATEV require it. Applies to refreshes too. Re-authorize after changing it.'}
                     </p>
                   </div>
                   <p className="text-xs text-[var(--text-3)]">
@@ -1766,4 +1772,15 @@ export default function ConnectorDetailPage() {
       )}
     </AppShell>
   );
+}
+
+/**
+ * The select's value for a stored token-endpoint auth method. Older rows and
+ * catalog adapters store the short aliases (DATEV's `basic`); shown as-is they
+ * matched no option and saving the form turned them back into the default.
+ */
+function normalizeTokenAuthMethod(method: string | undefined): string {
+  if (method === 'basic') return 'client_secret_basic';
+  if (!method || method === 'post') return 'client_secret_post';
+  return method;
 }
