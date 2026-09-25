@@ -716,6 +716,17 @@ export class ConnectorsController {
     return updated;
   }
 
+  /** The stored OAuth2 grant, or undefined when there is none or it cannot be read. */
+  private readOAuthGrant(authConfig: string | null): string | undefined {
+    if (!authConfig) return undefined;
+    try {
+      const cfg = JSON.parse(decrypt(authConfig, this.encryptionKey));
+      return typeof cfg?.grant === 'string' ? cfg.grant : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   @Get(':id/oauth-config')
   @ApiOperation({
     summary: 'Read the non-secret OAuth2 settings of a connector',
@@ -743,7 +754,14 @@ export class ConnectorsController {
       authorizationUrl: str(cfg.authorizationUrl),
       tokenUrl: str(cfg.tokenUrl),
       scopes: str(cfg.scopes),
-      tokenAuthMethod: str(cfg.tokenAuthMethod) || 'client_secret_post',
+      // Report what the token service will actually do. With nothing stored,
+      // the client_credentials grant sends HTTP Basic, not body credentials;
+      // showing "in body" there made the form misstate every such connector.
+      tokenAuthMethod:
+        str(cfg.tokenAuthMethod) ||
+        (cfg.grant === 'client_credentials'
+          ? 'client_secret_basic'
+          : 'client_secret_post'),
       hasClientSecret: !!cfg.clientSecret,
       hasAccessToken: !!cfg.accessToken,
       hasRefreshToken: !!cfg.refreshToken,
@@ -787,8 +805,16 @@ export class ConnectorsController {
       if (dto[key] !== undefined) patch[key] = dto[key];
     }
     if (dto.tokenAuthMethod !== undefined) {
-      // Empty = back to the default (credentials in the body).
-      patch.tokenAuthMethod = dto.tokenAuthMethod || undefined;
+      // Empty = back to the default (credentials in the body). Except that
+      // "in the body" is not the default of the client_credentials grant —
+      // the token service sends HTTP Basic there unless told otherwise — so
+      // for that grant the form's "in body" choice has to be stored as such,
+      // or saving the form would quietly switch e.g. Amadeus back to Basic.
+      patch.tokenAuthMethod =
+        dto.tokenAuthMethod ||
+        (this.readOAuthGrant(connector.authConfig) === 'client_credentials'
+          ? 'client_secret_post'
+          : undefined);
     }
 
     if (Object.keys(patch).length === 0) {

@@ -75,6 +75,27 @@ describe('assertNoUnresolvedPlaceholders', () => {
     ).toThrow(/This connector is missing/);
   });
 
+  it('catches a base URL that is nothing but a placeholder (Substack)', () => {
+    expect(() =>
+      assertNoUnresolvedPlaceholders(
+        { baseUrl: '{{SUBSTACK_PUBLICATION_URL}}', path: '/api/v1/posts' },
+        'the connector behind substack_list_posts',
+      ),
+    ).toThrow(
+      /^The connector behind substack_list_posts is missing a value for SUBSTACK_PUBLICATION_URL\. The request was not sent/,
+    );
+  });
+
+  it('checks the query mapping too', () => {
+    expect(() =>
+      assertNoUnresolvedPlaceholders({
+        baseUrl: 'https://api.example.com',
+        path: '/items',
+        queryParams: { q: '$q', tenant: '{{TENANT_ID}}' },
+      }),
+    ).toThrow(/missing a value for TENANT_ID/);
+  });
+
   it('ignores the body, which may carry braces of its own', () => {
     // A request body is the caller's business and some upstreams take templates
     // verbatim; only auth, base URL, path and headers are credential-bearing.

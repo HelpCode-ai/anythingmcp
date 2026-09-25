@@ -159,7 +159,8 @@ export class OAuth2TokenService {
       // SAP S/4HANA Cloud Public Edition and most service-to-service OAuth2
       // servers reject client_id/client_secret in the body — they MUST be
       // sent via HTTP Basic Authorization header (RFC 6749 §2.3.1). We rely
-      // on the Basic header path and keep the body to grant_type + scope.
+      // on the Basic header path and keep the body to grant_type + scope,
+      // unless the adapter sets tokenAuthMethod: client_secret_post.
       if (!clientId || !clientSecret) {
         this.logger.warn(
           'OAuth2 client_credentials: missing clientId/clientSecret',
@@ -186,10 +187,21 @@ export class OAuth2TokenService {
       if (grant === 'client_credentials') {
         body = { grant_type: 'client_credentials' };
         if (scope) body.scope = scope;
-        const basic = Buffer.from(`${clientId}:${clientSecret}`).toString(
-          'base64',
-        );
-        headers.Authorization = `Basic ${basic}`;
+        if (
+          authConfig.tokenAuthMethod === 'post' ||
+          authConfig.tokenAuthMethod === 'client_secret_post'
+        ) {
+          // client_secret_post — the other method RFC 6749 §2.3.1 allows,
+          // and the only one some servers document: Amadeus's token
+          // endpoint takes client_id/client_secret as form fields.
+          body.client_id = String(clientId);
+          body.client_secret = String(clientSecret);
+        } else {
+          const basic = Buffer.from(`${clientId}:${clientSecret}`).toString(
+            'base64',
+          );
+          headers.Authorization = `Basic ${basic}`;
+        }
       } else {
         body = {
           grant_type: 'refresh_token',

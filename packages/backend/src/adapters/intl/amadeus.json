@@ -1,20 +1,24 @@
 {
   "slug": "amadeus",
   "name": "Amadeus for Developers",
-  "description": "Drive Amadeus Travel APIs (flight offers, hotel search, airport autocomplete, points of interest) from any AI agent. 8 tools, OAuth2 client-credentials Bearer auth.",
-  "instructions": "This connector uses the Amadeus Self-Service REST APIs (developers.amadeus.com).\n\n**Setup**:\n1. Register at https://developers.amadeus.com → **My Self-Service Workspace → Create New App**.\n2. Get **API Key** + **API Secret**. Use the **test** environment by default (free, real data, low rate limits); switch to production after applying for production access.\n3. Run OAuth2 client_credentials flow to get an access token (~30 min expiry):\n   ```\n   POST https://test.api.amadeus.com/v1/security/oauth2/token\n   grant_type=client_credentials&client_id=...&client_secret=...\n   ```\n4. Set `AMADEUS_ACCESS_TOKEN`. Refresh externally.\n\n**Authentication**: `Authorization: Bearer ${AMADEUS_ACCESS_TOKEN}`.\n\n**Test vs Production base URL**:\n  - Test: `https://test.api.amadeus.com`\n  - Production: `https://api.amadeus.com`\nThe adapter uses test by default; switch to production by overriding `AMADEUS_BASE_URL` env var (not exposed as a connector field — change baseUrl in your fork).\n\n**Date format**: ISO 8601 (YYYY-MM-DD).\n\n**Currency / Locale**: most search endpoints accept `currencyCode` (ISO 4217) and locale-specific responses.\n\n**Rate limits**: test environment is heavily throttled (~10 req/sec). On 429 back off significantly.\n\n**Out of scope here**: booking flow (Flight Create Orders requires special partnership), Self-Service vs Enterprise APIs differences, Amadeus Travel Channel API, hotel ratings via Sabre (different vendor).",
+  "description": "Drive Amadeus Travel APIs (flight offers, hotel search, airport autocomplete, points of interest) from any AI agent. 8 tools, OAuth2 client-credentials auth with automatic token renewal. Note: Amadeus closed its Self-Service developer portal on 2026-07-17; only accounts that still hold working API keys can use this connector.",
+  "instructions": "This connector uses the Amadeus Self-Service REST APIs (developers.amadeus.com).\n\n**Availability**: Amadeus decommissioned the Self-Service portal on 2026-07-17. New registrations are closed, Self-Service keys were disabled, and the test host `test.api.amadeus.com` no longer resolves. Install this connector only if Amadeus has confirmed your keys still work (for example through an Amadeus Enterprise agreement); otherwise every call fails at the token step.\n\n**Setup**:\n1. In your Amadeus workspace, open the app and copy its **API Key** and **API Secret**.\n2. Put the API Key in `AMADEUS_CLIENT_ID` and the API Secret in `AMADEUS_CLIENT_SECRET`.\n\n**Authentication**: OAuth2 client-credentials. The connector POSTs `grant_type=client_credentials&client_id=…&client_secret=…` (form-encoded) to `/v1/security/oauth2/token`, sends the returned token as `Authorization: Bearer …`, and fetches a new one before it expires (Amadeus tokens last about 30 minutes). You never paste an access token.\n\n**Test vs Production**:\n  - Production: `https://api.amadeus.com` (the adapter default; token URL `https://api.amadeus.com/v1/security/oauth2/token`)\n  - Test: `https://test.api.amadeus.com` (token URL `https://test.api.amadeus.com/v1/security/oauth2/token`). This host stopped resolving with the portal shutdown; use it only if Amadeus gives you access to it again.\nKeys are issued per environment: a test key does not work against production and vice versa. To switch, change the connector's base URL **and** the token URL in its authentication settings to the same host.\n\n**Date format**: ISO 8601 (YYYY-MM-DD).\n\n**Currency / Locale**: most search endpoints accept `currencyCode` (ISO 4217) and locale-specific responses.\n\n**Rate limits**: the test environment was heavily throttled (~10 req/sec); production limits depend on your agreement. On 429 back off significantly.\n\n**Out of scope here**: booking flow (Flight Create Orders requires special partnership), Self-Service vs Enterprise APIs differences, Amadeus Travel Channel API, hotel ratings via Sabre (different vendor).",
   "region": "intl",
   "category": "travel",
   "icon": "amadeus",
   "docsUrl": "https://developers.amadeus.com/self-service",
-  "requiredEnvVars": ["AMADEUS_ACCESS_TOKEN"],
+  "requiredEnvVars": ["AMADEUS_CLIENT_ID", "AMADEUS_CLIENT_SECRET"],
   "connector": {
     "name": "Amadeus Self-Service",
     "type": "REST",
-    "baseUrl": "https://test.api.amadeus.com",
-    "authType": "BEARER_TOKEN",
+    "baseUrl": "https://api.amadeus.com",
+    "authType": "OAUTH2",
     "authConfig": {
-      "token": "{{AMADEUS_ACCESS_TOKEN}}"
+      "grant": "client_credentials",
+      "tokenAuthMethod": "client_secret_post",
+      "tokenUrl": "https://api.amadeus.com/v1/security/oauth2/token",
+      "clientId": "{{AMADEUS_CLIENT_ID}}",
+      "clientSecret": "{{AMADEUS_CLIENT_SECRET}}"
     }
   },
   "tools": [

@@ -246,6 +246,7 @@ export class AdaptersService {
         connector,
         tool.endpointMapping as any,
         call.params,
+        call.toolName,
       );
       const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
       return {

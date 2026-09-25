@@ -341,6 +341,7 @@ export class DynamicMcpTools {
         {
           baseUrl: engineConfig.baseUrl,
           path: interpolatedMapping.path,
+          queryParams: interpolatedMapping.queryParams,
           headers: engineConfig.headers,
           authConfig,
         },
