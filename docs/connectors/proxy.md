@@ -78,7 +78,7 @@ rate-limited APIs. Default is `false`.
 ```
 
 Adapters shipped with `useProxy: true` today: Deutsche Bahn, Playtomic
-(+ public), Sorare, OpenTable, Resy, Vinted, Untappd, idealista, Trenitalia,
+(+ public), Sorare, OpenTable, Resy, Untappd, idealista, Trenitalia,
 ImmobilienScout24, Etsy, Mercado Libre.
 
 For GraphQL adapters, if any tool opts in, the auto-injected

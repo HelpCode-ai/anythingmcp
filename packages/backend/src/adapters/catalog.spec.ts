@@ -229,7 +229,17 @@ describe('adapter catalog', () => {
         const cfg = adapter.connector.authConfig as Record<string, unknown>;
         expect(cfg).toBeDefined();
         expect(typeof cfg.loginUrl).toBe('string');
-        expect(typeof cfg.tokenJsonPath).toBe('string');
+        // Same rule as LoginTokenService: a token read from a cookie has no
+        // JSON path, it names the cookie instead.
+        if (cfg.tokenSource === 'cookie') {
+          expect(typeof cfg.cookieName).toBe('string');
+        } else {
+          expect(typeof cfg.tokenJsonPath).toBe('string');
+        }
+        // performLogin refuses to start without both, even when the body
+        // does not use them.
+        expect(typeof cfg.username).toBe('string');
+        expect(typeof cfg.password).toBe('string');
         if (cfg.passwordHashing) {
           const ph = cfg.passwordHashing as Record<string, unknown>;
           expect(VALID_PASSWORD_HASHING_SCHEMES.has(String(ph.scheme))).toBe(true);
