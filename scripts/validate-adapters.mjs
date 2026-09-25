@@ -95,8 +95,12 @@ export function adapterResult(loaded, file, region) {
   return { region, file, ...validateAdapter(loaded.adapter, file, region) };
 }
 
+// `{{VAR}}` is resolved into auth/base URL/headers; `${VAR}` inside a tool's
+// mapping reads the same connector variable at call time (and leaves an
+// endpoint header out when it is empty, which is how an optional key works).
 function isPlaceholderReferenced(envVar, adapter) {
-  return JSON.stringify(adapter).includes(`{{${envVar}}}`);
+  const json = JSON.stringify(adapter);
+  return json.includes(`{{${envVar}}}`) || json.includes(`\${${envVar}}`);
 }
 
 // Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:

@@ -50,6 +50,7 @@ import { DynamicMcpTools } from './dynamic-mcp-tools';
 import { RolesService } from '../roles/roles.service';
 import { registerDemoTools } from './mcp-demo.tools';
 import { KgService } from '../knowledge-graph/kg.service';
+import { KgSkillService } from '../knowledge-graph/kg-skill.service';
 import { outputSchemaToZodShape } from '../connectors/output-schema.util';
 import {
   annotationsSignature,
@@ -136,6 +137,12 @@ interface InvocationContext {
   intent?: string;
 }
 
+/** Built-in companion of the Agent Skills Finder adapter. */
+const SKILLS_SAVE_TOOL = 'skills_save_to_workspace';
+// Workspace skills are stored up to 2000 characters; leave room for the
+// source line appended to every saved skill.
+const SKILL_INSTRUCTION_MAX = 1800;
+
 /**
  * Per-server MCP endpoint controller.
  *
@@ -160,6 +167,7 @@ export class McpEndpointController {
     private readonly kgService: KgService,
     private readonly sessionManager: McpSessionManager,
     private readonly grants: McpConnectionGrantService,
+    private readonly kgSkills: KgSkillService,
   ) {}
 
   // Streamable-HTTP response framing. Default: SSE-framed responses
@@ -1265,6 +1273,91 @@ export class McpEndpointController {
                 content: [
                   { type: 'text' as const, text: JSON.stringify(result, null, 2) },
                 ],
+              };
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+
+    // Companion to the Agent Skills Finder connector: its tools find and read
+    // a skill, this one files it as a *suggested* workspace skill. It lives
+    // here rather than in the adapter because it writes to this workspace,
+    // which no REST call can do. Only offered where the finder is assigned,
+    // and never applied directly: a skill is third-party text the model will
+    // follow, so an admin approves it under AI Skills before it reaches any
+    // server's instructions.
+    if (
+      registeredNames.has('skills_get') &&
+      invocationContext.organizationId &&
+      invocationContext.mcpServerId &&
+      !registeredNames.has(SKILLS_SAVE_TOOL)
+    ) {
+      const orgId = invocationContext.organizationId;
+      const serverId = invocationContext.mcpServerId;
+      entries.push({
+        name: SKILLS_SAVE_TOOL,
+        sig: `${SKILLS_SAVE_TOOL}:v1`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            SKILLS_SAVE_TOOL,
+            {
+              description:
+                'Propose a skill you found with skills_search / skills_get as a reusable skill for this ' +
+                'MCP server. It is saved as a SUGGESTION: an admin reviews it under AI Skills and only ' +
+                'then does it become part of this server\'s instructions. Condense the skill into the ' +
+                'steps and rules that matter (instruction max 1800 characters); do not paste the whole ' +
+                'SKILL.md. Always pass the source URL and licence. Ask the user before calling.',
+              inputSchema: {
+                title: z.string().min(3).max(160).describe('Short name, e.g. "README generation".'),
+                whenToUse: z
+                  .string()
+                  .max(1000)
+                  .describe('When the model should apply it, e.g. "When asked to write or improve a README".'),
+                instruction: z
+                  .string()
+                  .min(20)
+                  .max(SKILL_INSTRUCTION_MAX)
+                  .describe('The condensed procedure and rules, in your own words.'),
+                sourceUrl: z
+                  .string()
+                  .url()
+                  .max(180)
+                  .describe('GitHub URL of the skill folder or SKILL.md, ideally pinned to a commit.'),
+                license: z
+                  .string()
+                  .max(80)
+                  .describe('SPDX id from skills_repo_info (e.g. "MIT", "Apache-2.0"), or "unknown".'),
+              },
+              annotations: {
+                title: 'Save skill to workspace',
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: false,
+                openWorldHint: false,
+              },
+            },
+            async (args: {
+              title: string;
+              whenToUse: string;
+              instruction: string;
+              sourceUrl: string;
+              license: string;
+            }) => {
+              const saved = await this.kgSkills.create(orgId, {
+                title: args.title,
+                whenToUse: args.whenToUse,
+                instruction: `${args.instruction.trim()}\n\nSource: ${args.sourceUrl} (licence: ${args.license || 'unknown'})`,
+                mcpServerId: serverId,
+                status: 'pending',
+              });
+              const result = {
+                saved: true,
+                id: saved.id,
+                status: saved.status,
+                next: 'An admin must approve it in AnythingMCP under AI Skills → Suggested before it is used.',
+              };
+              return {
+                content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
               };
             },
           ) as unknown as ToolHandle,
