@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # =============================================================================
 # AnythingMCP — Unified (Backend + Frontend) Multi-Stage Dockerfile
 # =============================================================================
@@ -77,8 +78,18 @@ COPY packages/frontend/ ./packages/frontend/
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Sentry: the commit being built names the release. The auth token for the
+# source map upload is a BuildKit secret, never an ARG, so it cannot end up in
+# a layer or `docker history`. Without it (any build but our publish workflow)
+# the upload is skipped; the maps are deleted from the output either way.
+ARG SENTRY_RELEASE=
+ENV SENTRY_RELEASE=$SENTRY_RELEASE
+
 WORKDIR /app/packages/frontend
-RUN npm run build
+RUN --mount=type=secret,id=sentry_auth_token \
+    export SENTRY_AUTH_TOKEN="$(cat /run/secrets/sentry_auth_token 2>/dev/null || true)" && \
+    echo "Sentry auth token: $([ -n "$SENTRY_AUTH_TOKEN" ] && echo present || echo absent)" && \
+    npm run build
 
 # ── Stage 4: Production ─────────────────────────────────────────────────────
 FROM node:${NODE_VERSION} AS runner
@@ -87,6 +98,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Release reported by backend and frontend when an operator sets SENTRY_DSN.
+ARG SENTRY_RELEASE=
+ENV SENTRY_RELEASE=$SENTRY_RELEASE
 
 RUN addgroup --system --gid 1001 appuser && \
     adduser --system --uid 1001 appuser

@@ -48,6 +48,19 @@
 		reverse_proxy backend:4000
 	}
 
+	# ── Sentry tunnel ──────────────────────────────────────────────────────
+	# Browser error reports, forwarded by Next.js to Sentry (tunnelRoute in
+	# next.config.ts). Next passes every request header on, and Sentry derives
+	# a location from the client address even with IP storage off, so the
+	# visitor's address is not given to it.
+	handle /monitoring {
+		reverse_proxy frontend:3000 {
+			header_up -X-Forwarded-For
+			header_up -X-Real-IP
+			header_up -Forwarded
+		}
+	}
+
 	# ── Frontend (Next.js) ─────────────────────────────────────────────────
 	# Its own container: a backend restart leaves the app reachable, and the
 	# frontend can never take the API down with it.

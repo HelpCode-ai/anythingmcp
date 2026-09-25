@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { buildPricingUrl } from '@/lib/marketing';
+import { buildManagePlanUrl } from '@/lib/marketing';
 
 type Usage = Awaited<ReturnType<typeof license.getUsage>>;
 
@@ -20,7 +20,7 @@ const NEXT_TIER: Record<string, string> = {
  * advisory by product decision (May 2026).
  */
 export function UsageBanner() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [usage, setUsage] = useState<Usage | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
@@ -57,12 +57,18 @@ export function UsageBanner() {
         <strong>{next}</strong> for higher limits.
       </span>{' '}
       <a
-        href={`${buildPricingUrl()}&utm_source=soft-warn&utm_medium=banner&utm_campaign=usage-cap`}
+        // Only Starter and Team see this banner, so everyone who clicks it
+        // already has a subscription: change it, do not buy a second one.
+        href={buildManagePlanUrl(user?.email, {
+          utm_source: 'soft-warn',
+          utm_medium: 'banner',
+          utm_campaign: 'usage-cap',
+        })}
         target="_blank"
         rel="noopener noreferrer"
         className="underline font-medium hover:no-underline"
       >
-        Upgrade now
+        Change plan
       </a>{' '}
       <button
         type="button"

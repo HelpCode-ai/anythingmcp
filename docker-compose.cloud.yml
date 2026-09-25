@@ -86,6 +86,14 @@ services:
       - HEAP_WARN_PERCENT=${HEAP_WARN_PERCENT:-75}
       - HEALTH_HEAP_PERCENT=${HEALTH_HEAP_PERCENT:-90}
       - DEPLOYMENT_MODE=cloud
+      # Sentry (packages/backend/src/instrument.ts). Unset DSN = off. The
+      # release is baked into the image by the publish workflow.
+      # SENTRY_VERIFY_TOKEN enables GET /health/sentry-verify for a one-off
+      # end-to-end check; leave it empty otherwise.
+      - SENTRY_DSN=${SENTRY_DSN_BACKEND:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.05}
+      - SENTRY_VERIFY_TOKEN=${SENTRY_VERIFY_TOKEN:-}
       - NEXT_PUBLIC_API_URL=https://${DOMAIN}
       - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
       - REDIS_URL=redis://redis:6379
@@ -211,6 +219,13 @@ services:
       - NEXT_PUBLIC_API_URL=https://${DOMAIN}
       - GTM_ID=${GTM_ID:-}
       - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
+      # Sentry: server runtime, and handed to the browser by the root layout
+      # (components/sentry-config.tsx). Unset DSN = off, nothing on the page.
+      - SENTRY_DSN=${SENTRY_DSN_FRONTEND:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_FRONTEND_TRACES_SAMPLE_RATE:-0}
+      - SENTRY_BROWSER_TRACES_SAMPLE_RATE=${SENTRY_BROWSER_TRACES_SAMPLE_RATE:-0.1}
+      - SENTRY_VERIFY_TOKEN=${SENTRY_VERIFY_TOKEN:-}
     healthcheck:
       # A static file under public/, served by the standalone server without
       # touching the backend: this probe answers for the frontend alone.

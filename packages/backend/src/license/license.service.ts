@@ -36,6 +36,10 @@ export interface RemoteVerifyResponse {
   features?: Record<string, any>;
   expiresAt?: string;
   error?: string;
+  /** Set while a paid licence's renewal payment is failing. */
+  paymentIssue?: boolean;
+  /** End of the payment grace period (also returned as expiresAt). */
+  graceUntil?: string;
 }
 
 @Injectable()
@@ -87,10 +91,14 @@ export class LicenseService implements OnModuleInit {
       throw new Error('No active license for this organization.');
     }
     try {
+      // The licence API opens a portal only for this server, by its service
+      // token: a licence key alone is not a billing credential. What makes it
+      // safe to hand back a URL here is that the key is the one bound to the
+      // signed-in admin's own workspace.
       const { data } = await axios.post(
         `${this.apiBase}/api/billing/portal`,
         { licenseKey: license.licenseKey, returnUrl },
-        { timeout: 15000 },
+        { timeout: 15000, headers: this.serviceHeaders() },
       );
       if (!data?.url) throw new Error('No portal URL returned.');
       return { url: data.url as string };
@@ -304,6 +312,71 @@ export class LicenseService implements OnModuleInit {
     return out;
   }
 
+  /**
+   * Re-verify the cloud's paid licences against the licence server.
+   *
+   * Until now a paid licence was verified once, when it was activated, and
+   * never again: a subscription that was cancelled or stopped being paid on
+   * Stripe stayed `active` here for good. Runs from the onboarding cron (every
+   * six hours) and picks the licences not verified in the last 20 hours, so
+   * each one is checked about once a day.
+   *
+   * verifyLicense writes the outcome: a revoked or expired licence stops being
+   * `active`; one whose renewal is failing stays active with expiresAt set to
+   * the end of its grace period, which the licence guard enforces. A licence
+   * server that cannot be reached changes nothing, and the licence is retried
+   * on the next run.
+   */
+  async reverifyPaidLicenses(
+    limit = 50,
+  ): Promise<{ checked: number; deactivated: number; inGrace: number; unreachable: number }> {
+    const out = { checked: 0, deactivated: 0, inGrace: 0, unreachable: 0 };
+    if (!this.deployment.isCloud()) return out;
+
+    const due = await this.prisma.license.findMany({
+      where: {
+        status: 'active',
+        plan: { not: 'trial' },
+        OR: [
+          { lastVerifiedAt: null },
+          { lastVerifiedAt: { lt: new Date(Date.now() - 20 * 60 * 60 * 1000) } },
+        ],
+      },
+      select: { licenseKey: true, organizationId: true },
+      orderBy: { lastVerifiedAt: { sort: 'asc', nulls: 'first' } },
+      take: limit,
+    });
+
+    for (const { licenseKey, organizationId } of due) {
+      out.checked++;
+      const result = await this.verifyLicense(licenseKey);
+      if (result.valid) {
+        if (result.paymentIssue) {
+          out.inGrace++;
+          this.logger.warn(
+            `Licence ${licenseKey.slice(0, 9)}… (org ${organizationId}) has a failing payment; allowed until ${result.graceUntil}.`,
+          );
+        }
+      } else if (result.error === 'Verification service unreachable') {
+        out.unreachable++;
+      } else {
+        out.deactivated++;
+        this.logger.warn(
+          `Licence ${licenseKey.slice(0, 9)}… (org ${organizationId}) deactivated: ${result.error}.`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    if (out.checked > 0) {
+      this.logger.log(
+        `Licence re-verification: checked=${out.checked} deactivated=${out.deactivated} ` +
+          `inGrace=${out.inGrace} unreachable=${out.unreachable}`,
+      );
+    }
+    return out;
+  }
+
   // ── License Activation ─────────────────────────────────────────────────────
 
   async activateLicense(licenseKey: string): Promise<boolean> {
@@ -359,7 +432,7 @@ export class LicenseService implements OnModuleInit {
     try {
       const { data } = await axios.get<RemoteVerifyResponse>(
         `${this.apiBase}/api/license/verify`,
-        { params: { key: licenseKey }, timeout: 10000 },
+        { params: { key: licenseKey }, timeout: 10000, headers: this.serviceHeaders() },
       );
 
       // Update local record
@@ -375,8 +448,11 @@ export class LicenseService implements OnModuleInit {
           : null;
         updateData.status = 'active';
       } else {
-        updateData.status =
-          data.error?.includes('expired') ? 'expired' : 'invalid';
+        updateData.status = data.error?.includes('revoked')
+          ? 'revoked'
+          : data.error?.includes('expired')
+            ? 'expired'
+            : 'invalid';
       }
 
       await this.prisma.license
@@ -426,6 +502,28 @@ export class LicenseService implements OnModuleInit {
   // ── Admin: Set License Key ─────────────────────────────────────────────────
 
   async setLicenseKey(licenseKey: string, organizationId?: string): Promise<LicenseInfo> {
+    // A key already bound to one workspace is not moved to another. The upsert
+    // below is keyed on the licence key and used to overwrite organizationId,
+    // so pasting a paying customer's key into any free workspace took their
+    // licence away from them — the licence wall locked them out — and gave the
+    // new workspace their plan, and with it their billing portal. Holding a
+    // key proves nothing: keys travel in URLs, emails and screenshots.
+    // Self-hosted is one tenant, where the admin owns every workspace.
+    if (this.deployment.isCloud() && organizationId) {
+      const bound = await this.prisma.license.findUnique({
+        where: { licenseKey },
+        select: { organizationId: true },
+      });
+      if (bound?.organizationId && bound.organizationId !== organizationId) {
+        this.logger.warn(
+          `Refused to move licence …${licenseKey.slice(-4)} from workspace ${bound.organizationId} to ${organizationId}`,
+        );
+        throw new Error(
+          'This license key is already active in another workspace. If it is yours, contact support@anythingmcp.com to move it.',
+        );
+      }
+    }
+
     // Verify remotely first
     const verification = await this.verifyLicense(licenseKey);
 

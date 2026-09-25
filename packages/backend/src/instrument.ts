@@ -5,9 +5,13 @@
  * Opt-in: SENTRY_DSN unset → no-op. Self-hosted users see no behaviour
  * change unless they explicitly want error reporting.
  *
- * Sensitive headers and DTO fields are scrubbed via Sentry's beforeSend.
+ * What reaches Sentry is decided by an allowlist, not a blocklist: this
+ * server carries MCP tool arguments, connector responses and OAuth codes,
+ * i.e. other companies' business data and credentials. See
+ * ./common/sentry-scrub.ts for the exact rules.
  */
 import * as Sentry from '@sentry/nestjs';
+import { scrubBreadcrumb, scrubEvent } from './common/sentry-scrub';
 
 const dsn = process.env.SENTRY_DSN;
 
@@ -31,49 +35,24 @@ if (dsn) {
 
     sendDefaultPii: false,
 
-    beforeSend(event) {
-      // Strip auth headers and known credential fields. Pino already
-      // redacts these in logs; Sentry lives outside that pipeline.
-      const headers = event?.request?.headers;
-      if (headers && typeof headers === 'object') {
-        for (const k of Object.keys(headers)) {
-          const lower = k.toLowerCase();
-          if (
-            lower === 'authorization' ||
-            lower === 'cookie' ||
-            lower === 'x-api-key' ||
-            lower === 'set-cookie'
-          ) {
-            (headers as Record<string, unknown>)[k] = '[Redacted]';
-          }
-        }
-      }
-      const data = event?.request?.data as unknown;
-      if (data && typeof data === 'object') {
-        scrub(data as Record<string, unknown>);
-      }
-      return event;
-    },
-  });
-}
+    integrations: [
+      // The SDK attaches incoming request bodies by default ('medium'). On
+      // this server that is the arguments of every MCP tool call.
+      Sentry.httpIntegration({ maxIncomingRequestBodySize: 'none' }),
+      Sentry.requestDataIntegration({
+        include: {
+          cookies: false,
+          data: false,
+          headers: true, // reduced to user-agent in scrubEvent
+          ip: false,
+          query_string: false,
+          url: true, // query and fragment stripped in scrubEvent
+        },
+      }),
+    ],
 
-function scrub(obj: Record<string, unknown>): void {
-  for (const key of Object.keys(obj)) {
-    const lower = key.toLowerCase();
-    if (
-      lower.includes('password') ||
-      lower.includes('token') ||
-      lower.includes('secret') ||
-      lower.includes('apikey') ||
-      lower.includes('api_key') ||
-      lower.includes('credential')
-    ) {
-      obj[key] = '[Redacted]';
-      continue;
-    }
-    const v = obj[key];
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      scrub(v as Record<string, unknown>);
-    }
-  }
+    beforeSend: scrubEvent,
+    beforeSendTransaction: scrubEvent,
+    beforeBreadcrumb: scrubBreadcrumb,
+  });
 }

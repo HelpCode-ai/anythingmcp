@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors } from '@/lib/api';
@@ -20,6 +21,12 @@ const CONNECTOR_TYPES = [
   { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', tone: 'bg-[var(--t-purple-bg)] text-[var(--t-purple-fg)]' },
   { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, or SQLite. Supports read-only or read-write mode.', tone: 'bg-[var(--t-emerald-bg)] text-[var(--t-emerald-fg)]' },
 ];
+
+// Shared by the type buttons and the marketplace link. A native <button>
+// centres its content vertically, so without flex-col + justify-start a card
+// with a two-line description sat its header lower than its row neighbours.
+const typeCardClass =
+  'flex h-full flex-col items-start justify-start rounded-[13px] border bg-[var(--surface)] p-4 text-left transition-all';
 
 const inputClass =
   'h-9 w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-3)] outline-none focus:border-[var(--border-strong)]';
@@ -208,22 +215,47 @@ export default function NewConnectorPage() {
     >
       <div className="mx-auto w-full max-w-[880px]">
         <h2 className="mb-[3px] text-[15px] font-semibold text-[var(--text)]">Choose connector type</h2>
-        <p className="mb-4 text-[13px] text-[var(--text-3)]">Select the type of API you want to connect to.</p>
+        <p className="mb-4 text-[13px] text-[var(--text-3)]">Start from a ready-made connector, or connect your own API.</p>
 
         <div className="mb-6 grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
+          {/* Most services people add already have a ready-made adapter, so the
+              marketplace sits in the grid as a peer of the custom types rather
+              than behind a sidebar link. It navigates away instead of opening
+              the form below, hence the arrow. */}
+          <Link
+            href="/connectors/store"
+            className={cn(
+              typeCardClass,
+              'group border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]'
+            )}
+          >
+            <div className="mb-[9px] flex w-full items-center gap-[11px]">
+              <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] bg-[var(--t-success-bg)] text-[var(--t-success-fg)]">
+                <StoreIcon />
+              </span>
+              <span className="text-[14px] font-semibold text-[var(--text)]">Marketplace</span>
+              <span className="ml-auto text-[var(--text-3)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--brand)]">
+                <ArrowRightIcon />
+              </span>
+            </div>
+            <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">
+              Pick a ready-made connector for a popular service. Auth and tools are pre-configured, just add your credentials.
+            </p>
+          </Link>
           {CONNECTOR_TYPES.map((type) => (
             <button
               key={type.id}
+              type="button"
               onClick={() => setSelectedType(type.id)}
               className={cn(
-                'rounded-[13px] border bg-[var(--surface)] p-4 text-left transition-all',
+                typeCardClass,
                 selectedType === type.id
                   ? 'border-[var(--brand)] bg-[var(--brand-tint)]'
                   : 'border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]'
               )}
             >
               <div className="mb-[9px] flex items-center gap-[11px]">
-                <span className={cn('flex h-[38px] w-[38px] items-center justify-center rounded-[10px]', type.tone)}>
+                <span className={cn('flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px]', type.tone)}>
                   {TYPE_ICONS[type.id]}
                 </span>
                 <span className="text-[14px] font-semibold text-[var(--text)]">{type.name}</span>
@@ -639,6 +671,25 @@ function DatabaseIcon() {
       <ellipse cx="12" cy="5" rx="9" ry="3" />
       <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" />
       <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />
+    </svg>
+  );
+}
+function StoreIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" />
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" />
+      <path d="M2 7h20" />
+      <path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7" />
+    </svg>
+  );
+}
+function ArrowRightIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 12h14" />
+      <path d="m12 5 7 7-7 7" />
     </svg>
   );
 }

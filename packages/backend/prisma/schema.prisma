@@ -1322,6 +1322,10 @@ model KgValueSeen {
   direction      String // input | output
   seenAt         DateTime @default(now()) @map("seen_at")
 
+  // One row per distinct occurrence. Without it a value seen in every call was
+  // stored once per call, and re-ingesting the same invocations stored it again
+  // (5.8 M of 6.1 M rows on cloud were copies by 24 Sep 2026).
+  @@unique([organizationId, connectorId, valueHash, entity, field, direction], map: "kg_value_seen_occurrence_key")
   @@index([organizationId, valueHash])
   @@index([seenAt])
   @@map("kg_value_seen")

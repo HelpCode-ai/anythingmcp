@@ -181,6 +181,16 @@ function derive(tool: AnnotationSource): ToolAnnotations {
   let destructive: boolean | undefined;
   let idempotent: boolean | undefined;
 
+  // `static` returns a canned payload on every connector type — the
+  // playbooks REST adapters ship as their first tool, for one. It never
+  // reaches an engine, so it cannot touch anything.
+  if (method === 'static') {
+    annotations.readOnlyHint = true;
+    annotations.destructiveHint = false;
+    annotations.idempotentHint = true;
+    return annotations;
+  }
+
   switch (type) {
     case 'REST':
     case 'WEBHOOK': {
@@ -211,11 +221,6 @@ function derive(tool: AnnotationSource): ToolAnnotations {
     }
 
     case 'DATABASE': {
-      // `static` returns a canned payload — it cannot touch anything.
-      if (method === 'static') {
-        readOnly = true;
-        break;
-      }
       if (method === 'mongo_schema') {
         readOnly = true;
         break;

@@ -10,6 +10,29 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 const KEY_RE = /^AMCP-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}$/;
+const PENDING_KEY = 'amcp_pending_license_key';
+
+/**
+ * The key arrives from the marketing site's checkout page as `#key=…`. It used
+ * to be `?key=…`, which put a licence key into our access logs, analytics
+ * page_location and the login redirect — and a key was enough to open the
+ * customer's billing portal. A fragment is never sent to a server. `?key=` is
+ * still read so a success tab opened before the switch keeps working.
+ *
+ * Whichever it came in, it is taken out of the address bar at once, and kept
+ * in sessionStorage (this tab only) if the user has to sign in first, so the
+ * login redirect no longer carries it either.
+ */
+function takeKeyFromLocation(queryKey: string | null): string {
+  if (typeof window === 'undefined') return '';
+  const fromHash = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('key');
+  const found = fromHash || queryKey || sessionStorage.getItem(PENDING_KEY) || '';
+  if (fromHash || queryKey) {
+    window.history.replaceState(null, '', window.location.pathname);
+  }
+  if (found) sessionStorage.setItem(PENDING_KEY, found);
+  return found;
+}
 
 type Phase = 'loading' | 'activating' | 'success' | 'error' | 'invalid';
 
@@ -17,7 +40,7 @@ function LicenseActivateInner() {
   const { token, user, isLoading } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const rawKey = searchParams.get('key') || '';
+  const [rawKey] = useState(() => takeKeyFromLocation(searchParams.get('key')));
   const key = rawKey.toUpperCase();
   const [phase, setPhase] = useState<Phase>('loading');
   const [message, setMessage] = useState('');
@@ -41,8 +64,8 @@ function LicenseActivateInner() {
     }
 
     if (!token || !user) {
-      const next = `/settings/license/activate?key=${encodeURIComponent(key)}`;
-      router.replace(`/login?redirect=${encodeURIComponent(next)}`);
+      // The key waits in sessionStorage; the redirect carries only the path.
+      router.replace(`/login?redirect=${encodeURIComponent('/settings/license/activate')}`);
       ran.current = true;
       return;
     }
@@ -58,6 +81,7 @@ function LicenseActivateInner() {
     setPhase('activating');
     license.setKey(key, token)
       .then((res) => {
+        sessionStorage.removeItem(PENDING_KEY);
         setPhase('success');
         setMessage(res.message || 'License activated successfully.');
         setTimeout(() => router.replace('/settings/license'), 1500);
