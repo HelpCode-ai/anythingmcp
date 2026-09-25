@@ -23,6 +23,10 @@ export const ProductEvents = {
   API_KEY_GENERATED: 'api_key_generated',
   /** Left the post-attach page having copied nothing at all. */
   LEFT_WITHOUT_COPY: 'left_page_without_copy',
+  /** Saw the starter pack on /welcome. Read against the next one: how many take it. */
+  STARTER_PACK_VIEWED: 'starter_pack_viewed',
+  /** Installed connectors from the starter pack. metadata.adapterSlug = comma list. */
+  STARTER_PACK_INSTALLED: 'starter_pack_installed',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];

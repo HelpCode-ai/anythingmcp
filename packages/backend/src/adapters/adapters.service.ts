@@ -17,6 +17,7 @@ import {
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
 import { normalizeBaseUrlVariables } from '../common/base-url-variable.util';
+import { STARTER_PACK } from './starter-pack';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
@@ -56,6 +57,48 @@ export class AdaptersService {
       ...adapter,
       requiredEnvVars: withoutOperatorProvided(adapter.requiredEnvVars) ?? [],
     };
+  }
+
+  /**
+   * The starter pack as this deployment can serve it, for this workspace.
+   * An entry drops out when its adapter is missing, hidden here, or would
+   * need a value from the user (the pack promises one click and no keys);
+   * `installed` marks the ones the workspace already has, so the page can
+   * show them as done instead of offering a duplicate.
+   */
+  async starterPack(organizationId: string): Promise<StarterPackItem[]> {
+    const installed = await this.installedAdapterSlugs(organizationId);
+    const items: StarterPackItem[] = [];
+    for (const entry of STARTER_PACK) {
+      const adapter = getAdapter(entry.slug);
+      if (!adapter || !this.isInstallableHere(adapter)) continue;
+      if ((withoutOperatorProvided(adapter.requiredEnvVars) ?? []).length > 0) continue;
+      items.push({
+        slug: entry.slug,
+        name: adapter.name,
+        pitch: entry.pitch,
+        icon: adapter.icon,
+        category: adapter.category,
+        toolCount: adapter.tools.length,
+        preselected: entry.preselected,
+        installed: installed.has(entry.slug),
+      });
+    }
+    return items;
+  }
+
+  /** Catalog slugs this workspace already has a connector for. */
+  async installedAdapterSlugs(organizationId: string): Promise<Set<string>> {
+    const rows = await this.prisma.connector.findMany({
+      where: { organizationId },
+      select: { config: true },
+    });
+    const slugs = new Set<string>();
+    for (const r of rows) {
+      const slug = (r.config as { adapterSlug?: unknown } | null)?.adapterSlug;
+      if (typeof slug === 'string') slugs.add(slug);
+    }
+    return slugs;
   }
 
   /**
@@ -395,6 +438,17 @@ export class AdaptersService {
     }
     return obj;
   }
+}
+
+export interface StarterPackItem {
+  slug: string;
+  name: string;
+  pitch: string;
+  icon: string;
+  category: string;
+  toolCount: number;
+  preselected: boolean;
+  installed: boolean;
 }
 
 export type ImportProbeResult =

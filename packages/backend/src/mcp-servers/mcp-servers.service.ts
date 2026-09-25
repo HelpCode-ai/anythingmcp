@@ -289,15 +289,22 @@ export class McpServersService {
     // Generate a unique slug within the org
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
     const userLabel = user?.name || user?.email?.split('@')[0] || userId.slice(-6);
-    let slug = 'default';
-
-    // Check if 'default' slug already exists in this org
-    const slugExists = await this.prisma.mcpServerConfig.findFirst({
-      where: { organizationId, slug: 'default' },
-    });
-    if (slugExists) {
-      slug = `default-${this.generateSlug(userLabel)}`;
-    }
+    // `default`, then `default-<name>`, then `default-<name>-2`… Two members
+    // with the same display name used to collide on the second one, and the
+    // unique (org, slug) index turned their sign-up into a 500.
+    const base = `default-${this.generateSlug(userLabel)}`;
+    const candidates = ['default', base];
+    for (let n = 2; n <= 50; n++) candidates.push(`${base}-${n}`);
+    const taken = new Set(
+      (
+        await this.prisma.mcpServerConfig.findMany({
+          where: { organizationId, slug: { in: candidates } },
+          select: { slug: true },
+        })
+      ).map((r) => r.slug),
+    );
+    const slug =
+      candidates.find((c) => !taken.has(c)) ?? `${base}-${userId.slice(-6).toLowerCase()}`;
 
     return this.prisma.mcpServerConfig.create({
       data: {
