@@ -56,6 +56,12 @@ Use `NONE`, `API_KEY`, `BEARER_TOKEN`, `BASIC`, `BASIC_AUTH`, `OAUTH2`,
 reference environment variables with `{{VAR}}` where the connector injects
 them.
 
+For `OAUTH2`, `authConfig.tokenAuthMethod` says how the client authenticates
+at the token endpoint: `client_secret_post` (default), `client_secret_basic`,
+or `private_key_jwt`, which signs a short-lived client assertion with a private
+key instead of sending a secret (see
+[REST connectors](connectors/rest.md#signed-client-assertion-private_key_jwt)).
+
 ### HMAC-signed requests
 
 Some APIs never receive the secret: each request carries a digest computed

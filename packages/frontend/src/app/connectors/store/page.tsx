@@ -858,7 +858,7 @@ function describeImport(
 /** Convert ENV_VAR_NAME to a human-readable label */
 function formatEnvVarLabel(envVar: string): string {
   return envVar
-    .replace(/^(PAYONE_|DHL_|IS24_|WECLAPP_|DESTATIS_|N26_|TEAMVIEWER_|MFR_|FASTBILL_|BILLOMAT_|DATEV_|SCOPEVISIO_|KENJO_)/, '')
+    .replace(/^(PAYONE_|DHL_|IS24_|WECLAPP_|DESTATIS_|TEAMVIEWER_|MFR_|FASTBILL_|BILLOMAT_|DATEV_|SCOPEVISIO_|KENJO_)/, '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }

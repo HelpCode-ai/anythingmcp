@@ -1,5 +1,10 @@
 import { interpolateDeep } from '../common/env-interpolation.util';
 import { findUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
+import {
+  clientAssertionSettingsFrom,
+  isPrivateKeyJwt,
+  type ClientAssertionSettings,
+} from './engines/client-assertion.util';
 
 /**
  * What the "Authorize with Provider" flow of a REST/GraphQL connector needs,
@@ -30,6 +35,8 @@ export interface RestAuthorizeSettings {
   tokenUrl: string;
   scope?: string;
   tokenAuthMethod?: string;
+  /** private_key_jwt only: how to sign the client assertion (resolved). */
+  clientAssertion?: ClientAssertionSettings;
   /**
    * Settings taken from the catalog because the row lacked them, to be
    * written to the row's authConfig once the authorization succeeds, so the
@@ -80,15 +87,29 @@ export function resolveRestAuthorizeSettings(
   const merged = { ...cfg, ...adopted };
   const clientId = str(merged.clientId) ?? '';
   const clientSecret = str(merged.clientSecret);
+  const tokenUrl = str(merged.tokenUrl) ?? '';
+  const tokenAuthMethod = str(merged.tokenAuthMethod);
+
+  // private_key_jwt signs with a key instead of sending a secret, so the key
+  // and the claims (Revolut's `iss` is the redirect domain) are what has to
+  // be set before the provider can be asked for consent.
+  const clientAssertion = isPrivateKeyJwt(tokenAuthMethod)
+    ? clientAssertionSettingsFrom(merged, tokenUrl)
+    : undefined;
 
   return {
     clientId,
     clientSecret,
     authorizationUrl: str(merged.authorizationUrl) ?? '',
-    tokenUrl: str(merged.tokenUrl) ?? '',
+    tokenUrl,
     scope: str(merged.scopes),
-    tokenAuthMethod: str(merged.tokenAuthMethod),
+    tokenAuthMethod,
+    clientAssertion,
     adopted,
-    missingVars: findUnresolvedPlaceholders([clientId, clientSecret ?? '']),
+    missingVars: findUnresolvedPlaceholders(
+      clientAssertion
+        ? [clientId, clientAssertion.privateKey, clientAssertion.claims ?? {}]
+        : [clientId, clientSecret ?? ''],
+    ),
   };
 }

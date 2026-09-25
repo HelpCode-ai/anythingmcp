@@ -120,4 +120,34 @@ describe('resolveRestAuthorizeSettings', () => {
     expect(settings.authorizationUrl).toBe('');
     expect(settings.adopted).toEqual({});
   });
+
+  describe('private_key_jwt (Revolut Business)', () => {
+    const revolut = getAdapter('revolut-business')!.connector.authConfig!;
+
+    it('resolves the signing key and claims from the env vars', () => {
+      const settings = resolveRestAuthorizeSettings(revolut, {
+        REVOLUT_CLIENT_ID: 'rev-client',
+        REVOLUT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----abc-----END PRIVATE KEY-----',
+        REVOLUT_REDIRECT_DOMAIN: 'cloud.anythingmcp.com',
+      });
+      expect(settings.missingVars).toEqual([]);
+      expect(settings.clientSecret).toBeUndefined();
+      expect(settings.tokenAuthMethod).toBe('private_key_jwt');
+      expect(settings.clientAssertion).toEqual({
+        privateKey: '-----BEGIN PRIVATE KEY-----abc-----END PRIVATE KEY-----',
+        clientId: 'rev-client',
+        tokenUrl: 'https://b2b.revolut.com/api/1.0/auth/token',
+        algorithm: 'RS256',
+        ttlSeconds: 300,
+        keyId: undefined,
+        claims: { iss: 'cloud.anythingmcp.com', aud: 'https://revolut.com' },
+      });
+    });
+
+    it('names the key and domain variables instead of a client secret when unset', () => {
+      const settings = resolveRestAuthorizeSettings(revolut, { REVOLUT_CLIENT_ID: 'rev-client' });
+      expect(settings.missingVars).toEqual(['REVOLUT_PRIVATE_KEY', 'REVOLUT_REDIRECT_DOMAIN']);
+    });
+  });
 });
+
