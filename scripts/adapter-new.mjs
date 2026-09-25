@@ -11,7 +11,7 @@
  * to fill in carries a `TODO` marker, and `validate-adapters.mjs` reports each
  * one as a `todo-marker` warning so an unfinished file is easy to spot.
  */
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -119,12 +119,21 @@ export function scaffold({ slug, region, auth, force = false, root = DEFAULT_ADA
 
   const file = `${slug}.json`;
   const fullPath = join(root, region, file);
-  if (existsSync(fullPath) && !force) {
-    throw new ScaffoldError(`${display(fullPath)} already exists; pass --force to overwrite it`);
-  }
 
   mkdirSync(dirname(fullPath), { recursive: true });
-  writeFileSync(fullPath, `${JSON.stringify(buildSkeleton({ slug, region, auth }), null, 2)}\n`);
+  // 'wx' creates the file or fails if it exists, in one step. Checking first
+  // and writing after leaves a window in which the file can appear (CodeQL
+  // js/file-system-race).
+  try {
+    writeFileSync(fullPath, `${JSON.stringify(buildSkeleton({ slug, region, auth }), null, 2)}\n`, {
+      flag: force ? 'w' : 'wx',
+    });
+  } catch (e) {
+    if (e?.code === 'EEXIST') {
+      throw new ScaffoldError(`${display(fullPath)} already exists; pass --force to overwrite it`);
+    }
+    throw e;
+  }
 
   const result = adapterResult(loadAdapter(fullPath), file, region);
   return { fullPath, result };
