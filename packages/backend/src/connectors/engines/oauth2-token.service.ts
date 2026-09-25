@@ -5,6 +5,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { encrypt, decrypt } from '../../common/crypto/encryption.util';
 import { getRequiredSecret } from '../../common/secrets.util';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { interpolateDeep } from '../../common/env-interpolation.util';
 
 /** Refresh tokens that expire within this window (5 minutes). */
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -75,6 +76,7 @@ export class OAuth2TokenService {
         : !!(authConfig.refreshToken && authConfig.tokenUrl);
     const tokenNearExpiry = this.isTokenNearExpiry(authConfig, cacheKey);
 
+    let refreshFailed = false;
     if (hasRefreshCapability && tokenNearExpiry) {
       this.logger.debug(`OAuth2 (${grant}): token near expiry, proactive refresh...`);
       const refreshed = await this.refreshTokenWithMutex(authConfig, connectorId);
@@ -82,6 +84,7 @@ export class OAuth2TokenService {
         return refreshed;
       }
       // Refresh failed — fall through to return stored token
+      refreshFailed = true;
     }
 
     // 3. Return the best available token (cached or stored)
@@ -115,6 +118,30 @@ export class OAuth2TokenService {
       // Lets the install-form probe classify this as rejected credentials.
       err.status = 401;
       throw err;
+    }
+    // The refresh-token grant, with nothing to send. Same reasoning as above:
+    // `Authorization: Bearer ` earns the API's vaguest answer — Etsy's is
+    // `403 Invalid access token: not a Bearer token`, which sent a user
+    // looking at the token's format when the refresh token itself had been
+    // refused. Only reached when there is no token at all, so a connector that
+    // has one (stored, or cached) behaves exactly as before.
+    if (grant !== 'client_credentials' && !stored) {
+      if (refreshFailed) {
+        const reason = cacheKey ? this.lastRefreshError.get(cacheKey) : undefined;
+        throw unauthorized(
+          `OAuth2: could not renew the access token at ${hostOf(authConfig.tokenUrl)}` +
+            (reason ? ` (${reason})` : '') +
+            '. No request was sent to the API. If the refresh token was refused, ' +
+            'authorize the connector again (Authorize with Provider on its page in AnythingMCP) ' +
+            'or replace its refresh token.',
+        );
+      }
+      if (!authConfig.refreshToken && authConfig.authorizationUrl) {
+        throw unauthorized(
+          'OAuth2: this connector has not been authorized yet. No request was sent to the API. ' +
+            'Open the connector in AnythingMCP and click Authorize with Provider.',
+        );
+      }
     }
     return stored;
   }
@@ -339,10 +366,20 @@ export class OAuth2TokenService {
     try {
       const connector = await this.prisma.connector.findUnique({
         where: { id: connectorId },
-        select: { authConfig: true },
+        select: { authConfig: true, envVars: true },
       });
       if (!connector?.authConfig) return null;
-      return JSON.parse(decrypt(connector.authConfig, this.encryptionKey));
+      // Resolved like the tool path resolves the snapshot it hands us. A
+      // connector whose credentials were typed after install keeps
+      // `{{ETSY_REFRESH_TOKEN}}` (and the client id/secret) as placeholders in
+      // authConfig, with the values in envVars; merging the raw row over the
+      // resolved snapshot put the placeholders back, and the token endpoint
+      // was sent `refresh_token={{ETSY_REFRESH_TOKEN}}`. Literal values
+      // contain no placeholder and pass through unchanged.
+      return interpolateDeep(
+        JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
+        (connector.envVars as Record<string, string> | null) ?? {},
+      );
     } catch (err: any) {
       this.logger.warn(
         `OAuth2: failed to load fresh authConfig for ${connectorId}: ${err.message}`,
@@ -391,6 +428,21 @@ export class OAuth2TokenService {
         `OAuth2: failed to persist refreshed token: ${err.message}`,
       );
     }
+  }
+}
+
+/** An error the install-form probe and the tool path classify as rejected credentials. */
+function unauthorized(message: string): Error & { status?: number } {
+  const err = new Error(message) as Error & { status?: number };
+  err.status = 401;
+  return err;
+}
+
+function hostOf(url: unknown): string {
+  try {
+    return new URL(String(url)).host;
+  } catch {
+    return 'the token endpoint';
   }
 }
 
