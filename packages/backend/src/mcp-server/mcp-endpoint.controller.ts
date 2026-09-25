@@ -432,6 +432,9 @@ export class McpEndpointController {
       res.status(200);
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
+      // The body echoes the request id; nosniff keeps any browser from
+      // reading this stream as anything but the event stream it is.
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       res.end(`event: message\ndata: ${JSON.stringify(payload)}\n\n`);
     }
     return true;
