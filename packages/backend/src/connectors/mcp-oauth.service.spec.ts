@@ -195,3 +195,87 @@ describe('McpOAuthService.buildAuthorizationUrl', () => {
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
   });
 });
+
+/**
+ * Every browser authorization runs PKCE (RFC 7636, S256): Etsy refuses an
+ * authorization request without it, and providers that do not use it ignore
+ * the extra parameters. The verifier never leaves the server until the token
+ * exchange; it is stored with the state.
+ */
+describe('McpOAuthService PKCE', () => {
+  const service = new McpOAuthService();
+
+  it('derives the S256 challenge exactly as RFC 7636 appendix B does', () => {
+    expect(
+      service.generateCodeChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'),
+    ).toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
+  });
+
+  it('generates verifiers within the RFC 7636 alphabet and length (43-128)', () => {
+    const verifier = service.generateCodeVerifier();
+    expect(verifier).toMatch(/^[A-Za-z0-9\-._~]{43,128}$/);
+    expect(service.generateCodeVerifier()).not.toBe(verifier);
+  });
+
+  it('puts the challenge, never the verifier, on the authorization URL (Etsy shape)', () => {
+    const verifier = service.generateCodeVerifier();
+    const url = new URL(
+      service.buildAuthorizationUrl({
+        authorizationEndpoint: 'https://www.etsy.com/oauth/connect',
+        clientId: 'keystring',
+        redirectUri: 'https://cloud.anythingmcp.com/api/mcp-oauth/callback',
+        codeChallenge: service.generateCodeChallenge(verifier),
+        state: 'state-1',
+        scope: 'email_r shops_r listings_r transactions_r',
+      }),
+    );
+    expect(url.origin + url.pathname).toBe('https://www.etsy.com/oauth/connect');
+    expect(url.searchParams.get('response_type')).toBe('code');
+    expect(url.searchParams.get('code_challenge')).toBe(
+      service.generateCodeChallenge(verifier),
+    );
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    // Etsy wants the scopes space-separated.
+    expect(url.searchParams.get('scope')).toBe('email_r shops_r listings_r transactions_r');
+    expect(url.toString()).not.toContain(verifier);
+  });
+
+  it('sends the stored verifier with the code at the token endpoint', async () => {
+    mockedAxios.post.mockReset();
+    mockedAxios.post.mockResolvedValue({
+      data: { access_token: '123.at', refresh_token: '123.rt', expires_in: 3600 },
+    } as any);
+
+    await service.exchangeCodeForTokens({
+      tokenUrl: 'https://api.etsy.com/v3/public/oauth/token',
+      code: 'the-code',
+      redirectUri: 'https://cloud.anythingmcp.com/api/mcp-oauth/callback',
+      clientId: 'keystring',
+      clientSecret: 'secret',
+      codeVerifier: 'the-verifier',
+    });
+
+    const params = new URLSearchParams(String(mockedAxios.post.mock.calls[0][1]));
+    expect(params.get('grant_type')).toBe('authorization_code');
+    expect(params.get('code_verifier')).toBe('the-verifier');
+    expect(params.get('client_id')).toBe('keystring');
+  });
+
+  it('keeps the verifier with its state, for ten minutes', () => {
+    const s = new McpOAuthService();
+    const flow = {
+      codeVerifier: 'v',
+      connectorId: 'c',
+      userId: 'u',
+      redirectUri: 'r',
+      clientId: 'id',
+      tokenUrl: 't',
+      createdAt: Date.now(),
+    };
+    s.storePendingFlow('state-a', flow);
+    expect(s.getPendingFlow('state-a')?.codeVerifier).toBe('v');
+    expect(s.getPendingFlow('state-b')).toBeUndefined();
+    s.storePendingFlow('state-old', { ...flow, createdAt: Date.now() - 11 * 60 * 1000 });
+    expect(s.getPendingFlow('state-old')).toBeUndefined();
+  });
+});

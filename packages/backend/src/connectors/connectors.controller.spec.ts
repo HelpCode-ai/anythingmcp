@@ -1,5 +1,7 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConnectorsController } from './connectors.controller';
+import { McpOAuthService } from './mcp-oauth.service';
+import { encrypt } from '../common/crypto/encryption.util';
 
 const VALID_ENCRYPTION_KEY = 'a'.repeat(48);
 
@@ -10,6 +12,8 @@ function buildController(overrides: {
   licenseGuard?: any;
   mcpServers?: any;
   deployment?: any;
+  mcpOAuthService?: any;
+  serverUrl?: string;
 } = {}) {
   const connectorsService = overrides.connectorsService ?? {
     create: jest.fn().mockResolvedValue({ id: 'c1', type: 'REST' }),
@@ -24,7 +28,11 @@ function buildController(overrides: {
   const licenseGuard = overrides.licenseGuard ?? {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
   };
-  const configService = { get: jest.fn().mockReturnValue(VALID_ENCRYPTION_KEY) };
+  const configService = {
+    get: jest.fn((key: string) =>
+      key === 'SERVER_URL' ? overrides.serverUrl : VALID_ENCRYPTION_KEY,
+    ),
+  };
   const mcpServers = overrides.mcpServers ?? {
     attachToDefaultServer: jest
       .fn()
@@ -40,7 +48,7 @@ function buildController(overrides: {
     {} as any, // postmanParser
     {} as any, // curlParser
     {} as any, // mcpClientEngine
-    {} as any, // mcpOAuthService
+    (overrides.mcpOAuthService ?? {}) as any, // mcpOAuthService
     {} as any, // catalogResync
     prisma as any,
     mcpServer as any,
@@ -615,5 +623,127 @@ describe('PUT :id/env-vars — a base URL variable without https://', () => {
     expect(connectorsService.update).toHaveBeenCalledWith('c1', {
       envVars: { SHOP_URL: 'https://shop.example.com', TOKEN: 'abc' },
     });
+  });
+});
+
+/**
+ * "Authorize with Provider" on REST connectors. The Etsy cases use the shape
+ * of rows installed before the adapter could be authorized in the browser:
+ * no authorizationUrl or scopes stored, and — for credentials typed after
+ * install — the client id/secret as placeholders with the values in envVars.
+ */
+describe('POST :id/oauth/authorize (REST)', () => {
+  const SERVER = 'https://cloud.anythingmcp.com';
+
+  const setup = (connector: Record<string, unknown>) => {
+    const mcpOAuthService = new McpOAuthService();
+    const store = jest.spyOn(mcpOAuthService, 'storePendingFlow');
+    const { controller } = buildController({
+      connectorsService: { findById: jest.fn().mockResolvedValue(connector) },
+      mcpOAuthService,
+      serverUrl: SERVER,
+    });
+    return { controller, store, mcpOAuthService };
+  };
+
+  const row = (authConfig: Record<string, unknown>, over: Record<string, unknown> = {}) => ({
+    id: 'c1',
+    type: 'REST',
+    authType: 'OAUTH2',
+    userId: 'u1',
+    organizationId: 'org1',
+    config: { adapterSlug: 'etsy' },
+    envVars: null,
+    authConfig: encrypt(JSON.stringify(authConfig), VALID_ENCRYPTION_KEY),
+    ...over,
+  });
+
+  const legacyEtsy = {
+    grant: 'refresh_token',
+    tokenUrl: 'https://api.etsy.com/v3/public/oauth/token',
+    clientId: '{{ETSY_CLIENT_ID}}',
+    clientSecret: '{{ETSY_CLIENT_SECRET}}',
+    refreshToken: '12345678.working-refresh-token',
+    extraHeaders: { 'x-api-key': '{{ETSY_CLIENT_ID}}:{{ETSY_CLIENT_SECRET}}' },
+  };
+
+  it('starts Etsy PKCE authorization for an existing row, resolving env vars and using the catalog endpoints', async () => {
+    const { controller, store } = setup(
+      row(legacyEtsy, {
+        envVars: { ETSY_CLIENT_ID: 'keystring', ETSY_CLIENT_SECRET: 'secret' },
+      }),
+    );
+
+    const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+
+    const url = new URL(result.authorizationUrl);
+    expect(url.origin + url.pathname).toBe('https://www.etsy.com/oauth/connect');
+    expect(url.searchParams.get('client_id')).toBe('keystring');
+    expect(url.searchParams.get('redirect_uri')).toBe(`${SERVER}/api/mcp-oauth/callback`);
+    expect(url.searchParams.get('scope')).toBe('email_r shops_r listings_r transactions_r');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+
+    const [state, flow] = store.mock.calls[0];
+    expect(url.searchParams.get('state')).toBe(state);
+    // The verifier stays on the server; the URL carries its S256 image.
+    expect(url.searchParams.get('code_challenge')).toBe(
+      new McpOAuthService().generateCodeChallenge(flow.codeVerifier),
+    );
+    expect(result.authorizationUrl).not.toContain(flow.codeVerifier);
+    expect(flow).toMatchObject({
+      clientId: 'keystring',
+      clientSecret: 'secret',
+      tokenUrl: 'https://api.etsy.com/v3/public/oauth/token',
+      tokenAuthMethod: undefined,
+      persistAuthConfig: {
+        authorizationUrl: 'https://www.etsy.com/oauth/connect',
+        scopes: 'email_r shops_r listings_r transactions_r',
+      },
+    });
+  });
+
+  it('asks for the client credentials before sending anyone to Etsy', async () => {
+    const { controller, store } = setup(row(legacyEtsy));
+    const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+    expect(result.error).toContain('ETSY_CLIENT_ID and ETSY_CLIENT_SECRET');
+    expect(result.authorizationUrl).toBeUndefined();
+    expect(store).not.toHaveBeenCalled();
+  });
+
+  it('uses a row\'s own endpoints unchanged (DATEV)', async () => {
+    const { controller, store } = setup(
+      row(
+        {
+          clientId: 'cid',
+          clientSecret: 'sec',
+          authorizationUrl: 'https://login.datev.de/openidsandbox/authorize',
+          tokenUrl: 'https://sandbox-api.datev.de/token',
+          tokenAuthMethod: 'basic',
+          scopes: 'datev:accounting:clients accounting:clients:read accounting:documents',
+        },
+        { config: { adapterSlug: 'datev-sandbox' } },
+      ),
+    );
+
+    const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+
+    const url = new URL(result.authorizationUrl);
+    expect(url.host).toBe('login.datev.de');
+    expect(url.searchParams.get('client_id')).toBe('cid');
+    expect(store.mock.calls[0][1]).toMatchObject({
+      clientId: 'cid',
+      clientSecret: 'sec',
+      tokenUrl: 'https://sandbox-api.datev.de/token',
+      tokenAuthMethod: 'basic',
+      persistAuthConfig: {},
+    });
+  });
+
+  it('still reports a missing authorization URL for a connector outside the catalog', async () => {
+    const { controller } = setup(
+      row({ clientId: 'id', tokenUrl: 'https://x.example/token' }, { config: null }),
+    );
+    const result: any = await controller.initiateOAuth(req('ADMIN'), 'c1');
+    expect(result.error).toBe('No authorization URL configured for this connector');
   });
 });

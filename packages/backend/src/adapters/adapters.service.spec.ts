@@ -193,6 +193,42 @@ describe('AdaptersService import probe', () => {
     });
     expect(probe).toBeNull();
   });
+
+  // Etsy and Pinterest take either a pasted refresh token or the browser
+  // flow; the template always says {{ETSY_REFRESH_TOKEN}}, so the decision is
+  // made on what the install resolved it to.
+  const etsyLike = {
+    connector: {
+      authType: 'OAUTH2',
+      authConfig: {
+        clientId: '{{ETSY_CLIENT_ID}}',
+        refreshToken: '{{ETSY_REFRESH_TOKEN}}',
+        authorizationUrl: 'https://www.etsy.com/oauth/connect',
+        tokenUrl: 'https://api.etsy.com/v3/public/oauth/token',
+      },
+    },
+    tools: [{ name: 'me', parameters: {}, endpointMapping: { method: 'GET', path: '/users/me' } }],
+  };
+
+  it('does not probe when the refresh token was left empty for the browser flow', async () => {
+    const probe = await (service as any).runImportProbe(etsyLike, 'connector-1', {
+      ...etsyLike.connector.authConfig,
+      clientId: 'keystring',
+      refreshToken: '',
+    });
+    expect(probe).toBeNull();
+  });
+
+  it('still probes when a refresh token was pasted, as it always has', async () => {
+    const probing = Object.create(AdaptersService.prototype) as any;
+    probing.prisma = { connector: { findUnique: jest.fn().mockResolvedValue(null) } };
+    await probing.runImportProbe(etsyLike, 'connector-1', {
+      ...etsyLike.connector.authConfig,
+      clientId: 'keystring',
+      refreshToken: '12345678.pasted',
+    });
+    expect(probing.prisma.connector.findUnique).toHaveBeenCalled();
+  });
 });
 
 describe('AdaptersService install — a base URL variable without https://', () => {

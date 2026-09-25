@@ -52,6 +52,7 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
+import { resolveRestAuthorizeSettings } from './oauth-authorize-settings';
 import {
   interpolateDeep,
   interpolateString,
@@ -964,6 +965,12 @@ export class ConnectorsController {
       let authorizationEndpoint: string;
       let tokenEndpoint: string;
       let scope: string | undefined;
+      let tokenAuthMethod: string | undefined = authConfig.tokenAuthMethod
+        ? String(authConfig.tokenAuthMethod)
+        : undefined;
+      // REST/GraphQL only: the auth config fields to write on success in place
+      // of the historical "client settings as stored" (see PendingOAuthFlow).
+      let persistAuthConfig: Record<string, unknown> | undefined;
 
       if (connector.type === 'MCP') {
         // MCP: discover OAuth metadata from remote server
@@ -986,12 +993,38 @@ export class ConnectorsController {
           clientSecret = authConfig.clientSecret ? String(authConfig.clientSecret) : undefined;
         }
       } else {
-        // REST/GraphQL: use authConfig values directly
-        clientId = String(authConfig.clientId || '');
-        clientSecret = authConfig.clientSecret ? String(authConfig.clientSecret) : undefined;
-        authorizationEndpoint = String(authConfig.authorizationUrl || '');
-        tokenEndpoint = String(authConfig.tokenUrl || '');
-        scope = authConfig.scopes ? String(authConfig.scopes) : undefined;
+        // REST/GraphQL: the stored authConfig, with {{VAR}} resolved from the
+        // connector's env vars, and — for a catalog connector installed before
+        // its adapter could be authorized in the browser — the catalog's
+        // endpoints where the row has none.
+        const adapterSlug = (connector.config as { adapterSlug?: string } | null)
+          ?.adapterSlug;
+        const catalogAuth = adapterSlug
+          ? getAdapter(adapterSlug)?.connector.authConfig
+          : undefined;
+        const settings = resolveRestAuthorizeSettings(
+          authConfig,
+          connector.envVars as Record<string, string> | null,
+          catalogAuth,
+        );
+        if (settings.missingVars.length > 0) {
+          return {
+            error:
+              `Set ${settings.missingVars.join(' and ')} in this connector's ` +
+              'environment variables first: the provider needs the client ' +
+              'credentials of your app to authorize it.',
+          };
+        }
+        clientId = settings.clientId;
+        clientSecret = settings.clientSecret;
+        authorizationEndpoint = settings.authorizationUrl;
+        tokenEndpoint = settings.tokenUrl;
+        scope = settings.scope;
+        tokenAuthMethod = settings.tokenAuthMethod;
+        // The client id/secret stay as stored (placeholders included, so a
+        // later env var edit still reaches them); only what was taken from
+        // the catalog is added.
+        persistAuthConfig = settings.adopted;
       }
 
       if (!clientId) {
@@ -1015,9 +1048,8 @@ export class ConnectorsController {
         clientId,
         clientSecret,
         tokenUrl: tokenEndpoint,
-        tokenAuthMethod: authConfig.tokenAuthMethod
-          ? String(authConfig.tokenAuthMethod)
-          : undefined,
+        tokenAuthMethod,
+        persistAuthConfig,
         createdAt: Date.now(),
       });
 

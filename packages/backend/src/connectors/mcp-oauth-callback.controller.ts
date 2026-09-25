@@ -74,13 +74,16 @@ export class McpOAuthCallbackController {
       // 2. Store tokens (encrypted) in the connector's authConfig. Merge, don't
       // replace — preserves static config (authorizationUrl, scopes) needed for
       // later re-authorization.
-      await this.connectorsService.updateAuthConfigMerge(flow.connectorId, {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+      const clientSettings = flow.persistAuthConfig ?? {
         tokenUrl: flow.tokenUrl,
         clientId: flow.clientId,
         clientSecret: flow.clientSecret,
         tokenAuthMethod: flow.tokenAuthMethod,
+      };
+      await this.connectorsService.updateAuthConfigMerge(flow.connectorId, {
+        ...clientSettings,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
         expiresIn: tokens.expiresIn,
         expiresAt: Date.now() + (tokens.expiresIn || 3600) * 1000,
         authorizedAt: new Date().toISOString(),

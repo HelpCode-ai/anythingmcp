@@ -213,7 +213,11 @@ export class AdaptersService {
       `Imported adapter "${slug}" as connector ${connector.id} with ${toolsCreated} tools`,
     );
 
-    const probe = await this.runImportProbe(adapter, connector.id);
+    const probe = await this.runImportProbe(
+      adapter,
+      connector.id,
+      resolvedAuthConfig as Record<string, unknown> | null,
+    );
 
     return { connectorId: connector.id, toolsCreated, probe };
   }
@@ -232,16 +236,24 @@ export class AdaptersService {
   private async runImportProbe(
     adapter: AdapterDefinition,
     connectorId: string,
+    resolvedAuthConfig?: Record<string, unknown> | null,
   ): Promise<ImportProbeResult | null> {
     // An OAuth2 connector authorised in the browser (authorizationUrl, no
     // refresh token of its own) holds no token until the user completes that
     // step on the connector page. Probing it now can only return a 401 that
     // the form would present as a wrong credential.
-    const auth = adapter.connector.authConfig as Record<string, unknown> | undefined;
+    //
+    // Judged on the config as installed, not the catalog template: Etsy and
+    // Pinterest take either a pasted refresh token or the browser flow, so
+    // the template always says `{{ETSY_REFRESH_TOKEN}}` and only the resolved
+    // value says whether one was given. One that was is probed, as before.
+    const auth = (resolvedAuthConfig ?? adapter.connector.authConfig) as
+      | Record<string, unknown>
+      | undefined;
     if (
       adapter.connector.authType === 'OAUTH2' &&
       auth?.authorizationUrl &&
-      !auth.refreshToken
+      !hasUsableValue(auth.refreshToken)
     ) {
       return null;
     }
@@ -394,6 +406,11 @@ export type ImportProbeResult =
       status: number | null;
       message: string;
     };
+
+/** Set, and not a `{{VAR}}` placeholder left over from the template. */
+function hasUsableValue(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== '' && !/\{\{[^}]+\}\}/.test(value);
+}
 
 /** A short, printable slice of the probe's response for the install form. */
 function truncateSample(value: unknown, max = 600): string {
