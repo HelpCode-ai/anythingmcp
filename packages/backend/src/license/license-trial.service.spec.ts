@@ -133,6 +133,19 @@ describe('LicenseService — trial acquisition', () => {
   });
 });
 
+describe('LicenseService — a trial answer without a key', () => {
+  it('fails clearly instead of storing a licence with no key', async () => {
+    // The licence API answers anonymous callers without the key (it goes by
+    // email); only the service token gets it back.
+    mockedAxios.post.mockResolvedValueOnce({ data: { ok: true, message: 'emailed' } });
+    const { svc, prisma } = makeService();
+    await expect(svc.requestTrialLicense('a@example.com', 'A', 'org-1')).rejects.toThrow(
+      'Failed to start trial',
+    );
+    expect(prisma.license.upsert).not.toHaveBeenCalled();
+  });
+});
+
 describe('LicenseService — repairMissingTrials', () => {
   beforeEach(() => {
     jest.clearAllMocks();

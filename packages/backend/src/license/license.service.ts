@@ -205,6 +205,15 @@ export class LicenseService implements OnModuleInit {
 
     try {
       const data = await this.postTrialWithRetry({ email, name, instanceId });
+      if (!data?.licenseKey) {
+        // The licence API hands the key back only to this server, by its
+        // service token; anyone else is told it went by email. Without a key
+        // there is nothing to activate here.
+        this.logger.error(
+          'Trial request answered without a licence key: LICENSE_SERVICE_TOKEN is missing or not accepted by the licence API.',
+        );
+        throw new Error('Trial licence API did not return a key');
+      }
 
       // Auto-activate the trial key locally
       await this.prisma.license.upsert({
@@ -379,14 +388,19 @@ export class LicenseService implements OnModuleInit {
 
   // ── License Activation ─────────────────────────────────────────────────────
 
-  async activateLicense(licenseKey: string): Promise<boolean> {
+  async activateLicense(licenseKey: string, organizationId?: string): Promise<boolean> {
     const instanceId = await this.getInstanceId();
 
     try {
+      // On Cloud the licence API is told which workspace the key now belongs
+      // to, so it can report the binding and refuse the key elsewhere. It
+      // records that only from this server (service token). Self-hosted sends
+      // no workspace: there, one admin owns every workspace.
+      const cloudOrg = this.deployment.isCloud() ? organizationId : undefined;
       await axios.post(
         `${this.apiBase}/api/license/activate`,
-        { licenseKey, instanceId },
-        { timeout: 10000 },
+        { licenseKey, instanceId, ...(cloudOrg && { organizationId: cloudOrg }) },
+        { timeout: 10000, headers: this.serviceHeaders() },
       );
 
       await this.prisma.license.update({
@@ -518,6 +532,8 @@ export class LicenseService implements OnModuleInit {
         this.logger.warn(
           `Refused to move licence …${licenseKey.slice(-4)} from workspace ${bound.organizationId} to ${organizationId}`,
         );
+        // The licence site alerts us and emails the licence's owner.
+        this.reportRebindAttempt(licenseKey, organizationId, bound.organizationId).catch(() => {});
         throw new Error(
           'This license key is already active in another workspace. If it is yours, contact support@anythingmcp.com to move it.',
         );
@@ -569,11 +585,37 @@ export class LicenseService implements OnModuleInit {
     }
 
     // Activate in background
-    this.activateLicense(licenseKey).catch((err) =>
+    this.activateLicense(licenseKey, organizationId).catch((err) =>
       this.logger.warn(`License activation failed: ${err.message}`),
     );
 
     return this.toLicenseInfo(license);
+  }
+
+  /**
+   * Tell the licence site that a key bound to one workspace was just entered
+   * in another and refused. It holds the owner's address and our alert
+   * channel; the binding itself stays here. Best effort: the refusal stands
+   * whether or not the report arrives.
+   */
+  async reportRebindAttempt(
+    licenseKey: string,
+    organizationId: string,
+    boundOrganizationId: string,
+  ): Promise<void> {
+    const headers = this.serviceHeaders();
+    if (!headers['x-amcp-service-token']) return;
+    try {
+      await axios.post(
+        `${this.apiBase}/api/license/rebind-attempt`,
+        { licenseKey, organizationId, boundOrganizationId },
+        { timeout: 10000, headers },
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Could not report the refused move of licence …${licenseKey.slice(-4)}: ${err?.response?.status ?? err?.message}`,
+      );
+    }
   }
 
   // ── Get Current License ────────────────────────────────────────────────────

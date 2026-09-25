@@ -201,6 +201,73 @@ describe('LicenseService — a licence key stays with its workspace', () => {
   });
 });
 
+describe('LicenseService — bindings are reported to the licence site', () => {
+  const KEY = 'AMCP-1111-2222-3333-4444';
+  const OLD = process.env.LICENSE_SERVICE_TOKEN;
+  const axios = require('axios');
+  beforeEach(() => {
+    process.env.LICENSE_SERVICE_TOKEN = 'svc-token-0123456789abcdef';
+  });
+  afterEach(() => {
+    process.env.LICENSE_SERVICE_TOKEN = OLD;
+    jest.restoreAllMocks();
+  });
+
+  it('tells the licence site which workspace a key was activated in (cloud), as this server', async () => {
+    const licenses = [mkLicense({ licenseKey: KEY, organizationId: 'org-1' })];
+    const { svc, prisma } = makeService({ isCloud: true, licenses, settings: { instance_id: 'cloud-1' } });
+    (prisma.license.update as jest.Mock).mockResolvedValue({});
+    const post = jest.spyOn(axios, 'post').mockResolvedValue({ data: { activated: true } });
+
+    await expect(svc.activateLicense(KEY, 'org-1')).resolves.toBe(true);
+    expect(post).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/license\/activate$/),
+      { licenseKey: KEY, instanceId: 'cloud-1', organizationId: 'org-1' },
+      expect.objectContaining({ headers: { 'x-amcp-service-token': 'svc-token-0123456789abcdef' } }),
+    );
+  });
+
+  it('sends no workspace from a self-hosted instance', async () => {
+    const { svc, prisma } = makeService({ isCloud: false, licenses: [], settings: { instance_id: 'inst-1' } });
+    (prisma.license.update as jest.Mock).mockResolvedValue({});
+    const post = jest.spyOn(axios, 'post').mockResolvedValue({ data: { activated: true } });
+
+    await svc.activateLicense(KEY, 'org-1');
+    expect(post.mock.calls[0][1]).toEqual({ licenseKey: KEY, instanceId: 'inst-1' });
+  });
+
+  it('reports a refused move with both workspaces, and still refuses it', async () => {
+    const licenses = [mkLicense({ licenseKey: KEY, plan: 'team', organizationId: 'org-paying' })];
+    const { svc } = makeService({ isCloud: true, licenses });
+    const post = jest.spyOn(axios, 'post').mockResolvedValue({ data: { reported: true } });
+
+    await expect(svc.setLicenseKey(KEY, 'org-other')).rejects.toThrow(/already active in another workspace/);
+    await new Promise((r) => setImmediate(r));
+    expect(post).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/license\/rebind-attempt$/),
+      { licenseKey: KEY, organizationId: 'org-other', boundOrganizationId: 'org-paying' },
+      expect.objectContaining({ headers: { 'x-amcp-service-token': 'svc-token-0123456789abcdef' } }),
+    );
+    expect(licenses[0].organizationId).toBe('org-paying');
+  });
+
+  it('refuses the move even when the report cannot be delivered', async () => {
+    const licenses = [mkLicense({ licenseKey: KEY, organizationId: 'org-paying' })];
+    const { svc } = makeService({ isCloud: true, licenses });
+    jest.spyOn(axios, 'post').mockRejectedValue(new Error('down'));
+
+    await expect(svc.setLicenseKey(KEY, 'org-other')).rejects.toThrow(/already active in another workspace/);
+  });
+
+  it('reports nothing without a service token (self-hosted has none)', async () => {
+    delete process.env.LICENSE_SERVICE_TOKEN;
+    const { svc } = makeService({ isCloud: true, licenses: [] });
+    const post = jest.spyOn(axios, 'post');
+    await svc.reportRebindAttempt(KEY, 'org-b', 'org-a');
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
 describe('LicenseService — billing portal', () => {
   const OLD = process.env.LICENSE_SERVICE_TOKEN;
   afterEach(() => {

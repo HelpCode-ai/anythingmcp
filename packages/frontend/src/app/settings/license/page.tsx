@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { license } from '@/lib/api';
-import { buildManagePlanUrl, buildPricingUrl } from '@/lib/marketing';
+import { buildPricingUrl } from '@/lib/marketing';
+import { useManagePlan } from '@/lib/use-manage-plan';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,7 @@ export default function LicenseSettingsPage() {
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [openingPortal, setOpeningPortal] = useState(false);
+  const managePlan = useManagePlan();
 
   const isCloud = deploymentMode === 'cloud';
   // The Stripe billing portal only applies to a real paid subscription —
@@ -291,7 +293,8 @@ export default function LicenseSettingsPage() {
             <p className="text-sm text-[var(--text-2)] mb-4">
               To move to another plan,{' '}
               <a
-                href={buildManagePlanUrl(user?.email)}
+                href={managePlan.href}
+                onClick={managePlan.onClick}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[var(--brand)] hover:underline font-medium"

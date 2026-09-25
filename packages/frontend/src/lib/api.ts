@@ -62,7 +62,15 @@ export const auth = {
       body: { email, password },
     }),
   register: (email: string, password: string, name: string, acceptTerms: boolean) =>
-    request<{ accessToken: string; user: any; isFirstUser?: boolean }>('/api/auth/register', {
+    // Self-hosted answers with a session. Cloud answers `verificationRequired`
+    // whether or not the address already has an account; sign in to continue.
+    request<{
+      accessToken?: string;
+      user?: any;
+      isFirstUser?: boolean;
+      verificationRequired?: boolean;
+      message?: string;
+    }>('/api/auth/register', {
       method: 'POST',
       body: { email, password, name, acceptTerms },
     }),

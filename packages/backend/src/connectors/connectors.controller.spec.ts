@@ -937,12 +937,73 @@ describe('Connector secrets are never returned', () => {
     expect(result.attachedToServer).toEqual({ id: 's1', name: 'Default' });
   });
 
-  it('decrypts nothing into the response', async () => {
-    // authConfig stays the opaque ciphertext it always was.
+  describe('authConfig is never part of a response', () => {
     const authConfig = encrypt(JSON.stringify({ token: TOKEN }), VALID_ENCRYPTION_KEY);
-    const { controller } = build(catalogConnector({ authConfig }));
-    const result: any = await controller.findOne(req('VIEWER'), 'c1');
-    expect(JSON.stringify(result)).not.toContain(TOKEN);
+    const withAuth = (over: Record<string, unknown> = {}) =>
+      catalogConnector({ authConfig, ...over });
+    const expectNoAuthConfig = (result: any) => {
+      expect(result).not.toHaveProperty('authConfig');
+      expect(JSON.stringify(result)).not.toContain(authConfig);
+      expect(JSON.stringify(result)).not.toContain(TOKEN);
+    };
+
+    it.each(['VIEWER', 'EDITOR', 'ADMIN'])('GET :id for %s', async (role) => {
+      const { controller } = build(withAuth());
+      expectNoAuthConfig(await controller.findOne(req(role), 'c1'));
+    });
+
+    it.each(['VIEWER', 'EDITOR', 'ADMIN'])('GET / for %s', async (role) => {
+      const { controller } = build(withAuth());
+      const result: any[] = await controller.list(req(role), {} as any);
+      expect(result).toHaveLength(1);
+      expectNoAuthConfig(result[0]);
+    });
+
+    it('PUT :id, also when new credentials were sent', async () => {
+      const { controller, connectorsService } = build(withAuth({ userId: 'u1' }));
+      const result: any = await controller.update(req('ADMIN'), 'c1', {
+        name: 'x',
+        authConfig: { token: 'new-token-value' },
+      });
+      // The credentials still reach the service; only the response omits them.
+      expect(connectorsService.update).toHaveBeenCalledWith(
+        'c1',
+        expect.objectContaining({ authConfig: { token: 'new-token-value' } }),
+      );
+      expectNoAuthConfig(result);
+      expect(JSON.stringify(result)).not.toContain('new-token-value');
+    });
+
+    it('POST / (create)', async () => {
+      const { controller } = buildController({
+        connectorsService: {
+          create: jest.fn().mockResolvedValue(withAuth({ config: null })),
+        },
+      });
+      const result: any = await controller.create(req('EDITOR'), {
+        name: 'x',
+        type: 'REST' as any,
+        baseUrl: 'https://example.invalid',
+        authType: 'BEARER_TOKEN' as any,
+        authConfig: { token: TOKEN },
+      });
+      expectNoAuthConfig(result);
+      expect(result.attachedToServer).toEqual({ id: 's1', name: 'Default' });
+    });
+
+    it('PUT :id/env-vars', async () => {
+      const { controller } = build(withAuth({ userId: 'u1', config: null }));
+      const result: any = await controller.updateEnvVars(req('EDITOR'), 'c1', {
+        envVars: { WHATSAPP_ACCESS_TOKEN: '', WHATSAPP_BUSINESS_ACCOUNT_ID: '1' },
+      });
+      expectNoAuthConfig(result);
+      expect(result).toHaveProperty('warnings');
+    });
+
+    it('drops a decrypted authConfig as well as the stored ciphertext', async () => {
+      const { controller } = build(withAuth({ authConfig: { token: TOKEN } }));
+      expectNoAuthConfig(await controller.findOne(req('ADMIN'), 'c1'));
+    });
   });
 });
 
