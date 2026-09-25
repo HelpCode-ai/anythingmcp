@@ -119,10 +119,18 @@ export class McpServersController {
   @ApiQuery({ name: 'limit', required: false, type: Number, description: '1..200' })
   @ApiQuery({ name: 'offset', required: false, type: Number })
   async list(@Req() req: any, @Query() pagination: PaginationQueryDto) {
-    return this.mcpServersService.findAllByOrg(req.user.organizationId, {
+    const servers = await this.mcpServersService.findAllByOrg(req.user.organizationId, {
       limit: pagination.limit,
       offset: pagination.offset,
     });
+    // A stats query failing must not take the server list down with it.
+    const usage = await this.mcpServersService
+      .usageByServer(servers.map((s) => s.id))
+      .catch(() => new Map<string, { calls30d: number; lastCallAt: Date | null }>());
+    return servers.map((s) => ({
+      ...s,
+      usage: usage.get(s.id) ?? { calls30d: 0, lastCallAt: null },
+    }));
   }
 
   @Post()

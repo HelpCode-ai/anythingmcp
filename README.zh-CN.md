@@ -183,7 +183,7 @@ AI 分析**默认关闭**。需要同时启用全局环境变量开关*和*工�
 
 ## 无需代码，创建自定义 Claude 连接器
 
-Claude 支持**自定义连接器**：在 *Settings → Connectors* 中添加一次远程 MCP 服务器，即可在 Claude.ai、Claude Desktop 和 Claude Code 中使用。AnythingMCP 可以**从你已有的任意 API 创建这样的连接器**，无需编写 MCP 服务器：
+Claude 支持**自定义连接器**：在 *Customize → Connectors* 中添加一次远程 MCP 服务器，即可在 Claude.ai、Claude Desktop 和 Claude Code 中使用。AnythingMCP 可以**从你已有的任意 API 创建这样的连接器**，无需编写 MCP 服务器：
 
 1. 导入 API 规范，或选择一个预置适配器。
 2. 在**可视化编辑器**中调整工具名称、描述和参数，由你决定 AI 能够看到的内容。

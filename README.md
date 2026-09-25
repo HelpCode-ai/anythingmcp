@@ -199,7 +199,7 @@ drop is a field you don't pay for in the context window.
 
 ## Build custom Claude connectors — no code
 
-Claude supports **custom connectors**: remote MCP servers you add once in *Settings → Connectors*, and that work across Claude.ai, Claude Desktop and Claude Code. AnythingMCP creates that connector **from any API you already have** — without writing an MCP server:
+Claude supports **custom connectors**: remote MCP servers you add once in *Customize → Connectors*, and that work across Claude.ai, Claude Desktop and Claude Code. AnythingMCP creates that connector **from any API you already have** — without writing an MCP server:
 
 1. Import your API spec, or pick a pre-built adapter
 2. Adjust tool names, descriptions and parameters in the **visual editor** — what the AI sees is up to you

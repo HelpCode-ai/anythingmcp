@@ -183,7 +183,7 @@ AI 分析は**既定では無効**です。全体の環境変数フラグ*と*�
 
 ## コードを書かずに独自の Claude コネクターを作る
 
-Claude は**カスタムコネクター**をサポートしています。*Settings → Connectors* でリモート MCP サーバーを一度追加すると、Claude.ai、Claude Desktop、Claude Code で利用できます。AnythingMCP なら、**既存の任意の API からそのコネクターを作成**でき、MCP サーバーを実装する必要はありません。
+Claude は**カスタムコネクター**をサポートしています。*Customize → Connectors* でリモート MCP サーバーを一度追加すると、Claude.ai、Claude Desktop、Claude Code で利用できます。AnythingMCP なら、**既存の任意の API からそのコネクターを作成**でき、MCP サーバーを実装する必要はありません。
 
 1. API 仕様をインポートするか、既製のアダプターを選びます。
 2. **ビジュアルエディター**でツール名、説明、パラメーターを調整します。AI に何を見せるかは自分で決められます。

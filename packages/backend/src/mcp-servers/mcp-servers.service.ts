@@ -23,6 +23,37 @@ export class McpServersService {
     });
   }
 
+  /**
+   * Tool calls each server actually served over the last 30 days, and when the
+   * last one was. The list used to say "N clients connected" from the API key
+   * count, which read 0 on servers used every day over OAuth.
+   *
+   * count + max(created_at) only, so Postgres answers from the
+   * (mcp_server_id, created_at) index without touching the rows: ~130 ms for
+   * the busiest server on cloud (260k calls in 30 days).
+   */
+  async usageByServer(
+    serverIds: string[],
+  ): Promise<Map<string, { calls30d: number; lastCallAt: Date | null }>> {
+    const usage = new Map<string, { calls30d: number; lastCallAt: Date | null }>();
+    if (serverIds.length === 0) return usage;
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const rows = await this.prisma.toolInvocation.groupBy({
+      by: ['mcpServerId'],
+      where: { mcpServerId: { in: serverIds }, createdAt: { gte: since } },
+      _count: { _all: true },
+      _max: { createdAt: true },
+    });
+    for (const row of rows) {
+      if (!row.mcpServerId) continue;
+      usage.set(row.mcpServerId, {
+        calls30d: row._count._all,
+        lastCallAt: row._max.createdAt ?? null,
+      });
+    }
+    return usage;
+  }
+
   async findAllByOrg(
     organizationId: string,
     opts?: { limit?: number; offset?: number },
