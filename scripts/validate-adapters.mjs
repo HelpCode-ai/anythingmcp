@@ -6,7 +6,8 @@
  * Exits with code 0 if all adapters pass, 1 if any fail.
  *
  * Hard gates (fail CI): required fields, filename/slug agreement, supported
- * connector and authentication types, and a non-empty tools array.
+ * connector and authentication types, a non-empty tools array, and GraphQL
+ * tools whose variables the engine would drop (rule graphql-variables).
  *
  * Soft warnings (printed with --warn, but do not fail CI): short instructions,
  * unprefixed tool names, short tool descriptions, missing parameter
@@ -113,6 +114,96 @@ function collectTodoMarkers(value, path, warnings) {
   }
 }
 
+const GRAPHQL_OPERATION_METHODS = new Set(['query', 'mutation', 'subscription']);
+
+/**
+ * The variable definitions of a GraphQL operation, e.g. for
+ * `query Q($id: ID!, $first: Int = 20) { … }` →
+ * [{ name: 'id', required: true }, { name: 'first', required: false }].
+ * Returns [] for an anonymous `{ … }` document. Deliberately dependency-free:
+ * a variable definition is `$name: Type [= default] [@directive]`, and a
+ * default value cannot contain a `$`, so splitting on `$` is exact enough.
+ */
+export function graphqlVariableDefinitions(document) {
+  const head = /^\s*(?:query|mutation|subscription)\b\s*[A-Za-z_]?\w*\s*\(/.exec(document);
+  if (!head) return [];
+  let depth = 1;
+  let end = head[0].length;
+  while (end < document.length && depth > 0) {
+    if (document[end] === '(') depth++;
+    else if (document[end] === ')') depth--;
+    end++;
+  }
+  return document
+    .slice(head[0].length, end - 1)
+    .split('$')
+    .slice(1)
+    .map((def) => {
+      const m = /^([A-Za-z_]\w*)\s*:\s*([^=@]*?)\s*(=|@|,|$)/.exec(def.trim());
+      if (!m) return null;
+      return { name: m[1], required: m[2].trim().endsWith('!') && m[3] !== '=' };
+    })
+    .filter(Boolean);
+}
+
+/** True when a `$param` reference is nested somewhere inside an object or array. */
+function hasNestedParamRef(value) {
+  if (typeof value === 'string') return /^\$[A-Za-z_]/.test(value);
+  if (Array.isArray(value)) return value.some(hasNestedParamRef);
+  if (value && typeof value === 'object') return Object.values(value).some(hasNestedParamRef);
+  return false;
+}
+
+/**
+ * The GraphQL engine (packages/backend/src/connectors/engines/graphql.engine.ts)
+ * builds `variables` from exactly two places: `endpointMapping.queryParams`, one
+ * flat entry per variable whose value is `"$param"` or a literal, or the whole
+ * map from the tool param named by `variablesFromParam`. Anything else is
+ * silently dropped — Buffer, Slab, Tidio and Wave put theirs under
+ * `bodyMapping.variables` and every call went out with `"variables":{}`.
+ */
+function graphqlVariableErrors(adapter, tool, base) {
+  const errors = [];
+  const em = tool.endpointMapping;
+  if (!em || typeof em !== 'object' || !GRAPHQL_OPERATION_METHODS.has(em.method)) return errors;
+  const at = `${base}.endpointMapping`;
+  const docs = 'graphql-variables';
+  const rule = 'graphql-variables';
+
+  if (em.bodyMapping !== undefined) {
+    errors.push(error(rule, `${at}.bodyMapping`, `tool "${tool.name}" sets bodyMapping, which the GraphQL engine never reads — its variables are sent as {}`, 'Move each variable to endpointMapping.queryParams as "<variableName>": "$<toolParam>" (inline input objects in the operation instead of passing an $input object).', docs));
+  }
+  const queryParams = em.queryParams && typeof em.queryParams === 'object' ? em.queryParams : {};
+  const params = tool.parameters?.properties && typeof tool.parameters.properties === 'object' ? tool.parameters.properties : {};
+  const envVars = new Set([...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])]);
+  for (const [key, value] of Object.entries(queryParams)) {
+    if (value && typeof value === 'object' && hasNestedParamRef(value)) {
+      errors.push(error(rule, `${at}.queryParams.${key}`, `tool "${tool.name}" nests $param references inside queryParams.${key}; the engine resolves only top-level "$param" values and would send the text "$…" literally`, `Declare one variable per parameter and build the input object inside the operation, e.g. input: { id: $id }.`, docs));
+    } else if (typeof value === 'string' && /^\$[A-Za-z_]\w*$/.test(value)) {
+      const name = value.slice(1);
+      if (!(name in params) && !envVars.has(name)) {
+        errors.push(error(rule, `${at}.queryParams.${key}`, `tool "${tool.name}" maps variable "${key}" from "${value}", which is neither a tool parameter nor an env var — it is always sent empty`, `Add "${name}" to the tool's parameters, or fix the reference.`, docs));
+      }
+    }
+  }
+
+  // A generic tool that takes the whole operation as input declares nothing up front.
+  if (typeof em.path !== 'string' || /^\$[A-Za-z_]\w*$/.test(em.path) || em.variablesFromParam) return errors;
+  const declared = graphqlVariableDefinitions(em.path);
+  const declaredNames = new Set(declared.map((d) => d.name));
+  for (const key of Object.keys(queryParams)) {
+    if (!declaredNames.has(key)) {
+      errors.push(error(rule, `${at}.queryParams.${key}`, `tool "${tool.name}" sends variable "${key}", which the operation does not declare — the server ignores it`, `Declare $${key} in the operation, or rename the queryParams key to the variable it is meant for.`, docs));
+    }
+  }
+  for (const def of declared) {
+    if (def.required && !(def.name in queryParams)) {
+      errors.push(error(rule, `${at}.path`, `tool "${tool.name}" declares required variable $${def.name} but queryParams never supplies it — every call fails`, `Add "${def.name}": "$<toolParam>" to endpointMapping.queryParams.`, docs));
+    }
+  }
+  return errors;
+}
+
 export function validateAdapter(adapter, file, region) {
   const errors = [];
   const warnings = [];
@@ -170,6 +261,7 @@ export function validateAdapter(adapter, file, region) {
         if (!pdef || typeof pdef !== 'object' || !pdef.description) warnings.push(warning('parameter-description', `${base}.parameters.properties.${pname}`, `tool "${tool.name}" parameter "${pname}" missing description`));
       }
     }
+    if (adapter.connector?.type === 'GRAPHQL') errors.push(...graphqlVariableErrors(adapter, tool, base));
   }
   // Last, so existing warnings keep their order.
   collectTodoMarkers(adapter, '$', warnings);

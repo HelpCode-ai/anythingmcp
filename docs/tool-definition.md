@@ -247,7 +247,7 @@ The selected headers are added to the tool result next to the body, and a
 | Connector | method | path | queryParams | bodyMapping | headers |
 |-----------|--------|------|-------------|-------------|---------|
 | **REST** | HTTP method (`GET`, `POST`, etc.) | URL path with `{param}` | Query string params | JSON body fields | HTTP headers |
-| **GraphQL** | `query` or `mutation` | The GraphQL query string | GraphQL variables | — | HTTP headers |
+| **GraphQL** | `query` or `mutation` | The GraphQL query string | GraphQL variables (see [GraphQL variables](#graphql-variables)) | — (ignored) | HTTP headers |
 | **SOAP** | SOAP operation name | Port/binding path | — | SOAP parameters | HTTP headers |
 | **Database** | `query` or `static` | SQL/MongoDB query with `$param` | — | — | — |
 | **MCP** | Remote tool name | — | — | Passed through | — |
@@ -286,6 +286,25 @@ Every adapter with `connector.type === "GRAPHQL"` is automatically extended with
 - `<slug>_graphql_subscription` — execute an arbitrary `subscription` (transport availability depends on the upstream API)
 
 Adapter authors don't need to declare them.
+
+### GraphQL variables
+
+The GraphQL engine builds the request's `variables` from exactly two places:
+
+- `queryParams` — one **flat** entry per variable, keyed by the variable name as the operation declares it, whose value is `"$toolParam"` or a literal;
+- `variablesFromParam` — the whole map, taken from one tool parameter (generic tools only).
+
+Nothing else is read. `bodyMapping` in particular is ignored, so `"bodyMapping": { "variables": { … } }` sends `"variables": {}` on every call, and a `$param` nested inside a `queryParams` object is sent as the literal text `"$param"`. Where an API takes an input object, declare one variable per field and build the object inside the operation:
+
+```json
+{
+  "method": "mutation",
+  "path": "mutation CreateCustomer($businessId: ID!, $name: String!, $email: String) { customerCreate(input: { businessId: $businessId, name: $name, email: $email }) { didSucceed } }",
+  "queryParams": { "businessId": "$business_id", "name": "$name", "email": "$email" }
+}
+```
+
+`node scripts/validate-adapters.mjs` enforces this for `GRAPHQL` adapters (rule `graphql-variables`): no `bodyMapping`, no nested `$param` in `queryParams`, every `queryParams` key declared by the operation, every non-null variable without a default supplied, and every `"$name"` a tool parameter or an env var. A `REST` connector that POSTs to a `/graphql` path builds its body with `bodyMapping` as usual and is not affected.
 
 ### SOAP Example
 

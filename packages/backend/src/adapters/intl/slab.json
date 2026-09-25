@@ -1,13 +1,15 @@
 {
   "slug": "slab",
   "name": "Slab",
-  "description": "Drive Slab (team wiki) from any AI agent via its GraphQL API: posts, topics, users, search. 6 tools, Bearer auth.",
-  "instructions": "This connector uses the Slab GraphQL API (api.slab.com/v1/graphql).\n\n**Setup**:\n1. Sign in to Slab → top-right avatar → **Account Settings → Tokens → Create token**.\n2. Pick scopes: at minimum `read posts`, `read topics`, `read users`.\n3. Set `SLAB_API_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${SLAB_API_TOKEN}`.\n\n**GraphQL-only**: Slab has no REST. The adapter exposes a few curated mutations + queries as wrappers; for arbitrary queries use the auto-injected GraphQL builtins (each GRAPHQL adapter gets `slab_graphql_schema`, `slab_graphql_query`, `slab_graphql_mutation` automatically).\n\n**Post format**: Slab posts use a JSON content tree (Slate.js-like). Reading is straightforward; writing requires composing the AST OR using the markdown-import endpoint.\n\n**Topics = folders**: posts live in topics (hierarchical).\n\n**Out of scope here**: post-content editing via AST (use markdown import), integrations, billing.",
+  "description": "Read and organize Slab (team wiki) from any AI agent via its GraphQL API: search posts, read a post, list topics and their posts, create a post. 6 tools, API token (Business and Enterprise plans).",
+  "instructions": "This connector uses the Slab GraphQL API (`https://api.slab.com/v1/graphql`). Schema reference: https://studio.apollographql.com/public/Slab/variant/current/schema/reference\n\n**Setup**:\n1. Slab's API is available on the **Business** and **Enterprise** plans only.\n2. In Slab open **Team Settings → Developer** and copy the API token.\n3. Set `SLAB_API_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${SLAB_API_TOKEN}`.\n\n**What the token can see**: the API acts as the *Slab Bot* user. A post or topic Slab Bot has no access to is missing from every result — if something you expect is not there, give Slab Bot access to it in Slab.\n\n**Workflow**:\n1. `slab_search_posts` to find posts by text (cursor-paginated: pass `pageInfo.endCursor` back as `after`), or `slab_list_topics` → `slab_get_topic_posts` to browse.\n2. `slab_get_post` with a post ID for the full post.\n3. `slab_create_post` to add a new, empty post, optionally inside a topic.\n\n**Post content is Quill Delta JSON, not Markdown**: `content` is a list of `{ insert, attributes }` operations — the text is the concatenation of the `insert` strings, formatting sits in `attributes`. Writing content goes through `updatePostContent(id, delta)` with a Delta *change* (`retain` / `delete` / `insert`), which you can send with `slab_graphql_mutation`.\n\n**Topics = folders**: posts live in topics, which can be nested (`parent`).\n\n**Beyond the typed tools**: every GRAPHQL adapter gets `slab_graphql_query` / `slab_graphql_mutation` for any operation in the schema reference above (users, comments, `updatePost`, `addTopicToPost`, `syncPost` for mirroring an external Markdown document, …).\n\n**Out of scope here**: integrations, billing, workspace export.",
   "region": "intl",
   "category": "knowledge",
   "icon": "slab",
-  "docsUrl": "https://help.slab.com/en/articles/3138084-slab-api",
-  "requiredEnvVars": ["SLAB_API_TOKEN"],
+  "docsUrl": "https://help.slab.com/en/articles/6545629-developer-tools-api-webhooks",
+  "requiredEnvVars": [
+    "SLAB_API_TOKEN"
+  ],
   "connector": {
     "name": "Slab GraphQL",
     "type": "GRAPHQL",
@@ -17,110 +19,138 @@
       "token": "{{SLAB_API_TOKEN}}"
     }
   },
+  "probe": {
+    "tool": "slab_get_organization"
+  },
   "tools": [
     {
-      "name": "slab_me",
-      "description": "Return the user the token belongs to (id, name, email, organization). Use the auto-injected slab_graphql_query for more complex selections.",
-      "parameters": { "type": "object", "properties": {} },
+      "name": "slab_get_organization",
+      "description": "Return the Slab organization the token belongs to (id, name, host). A cheap call to check that the token works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
       "endpointMapping": {
         "method": "query",
-        "path": "{ me { id name email organization { id name } } }"
+        "path": "query Organization { organization { id name host } }"
       }
     },
     {
       "name": "slab_get_post",
-      "description": "Fetch a post by ID with title + content (in markdown) + topics + owner.",
+      "description": "Fetch one post by ID: title, owner, topics, timestamps and its content as Quill Delta JSON (the text is the concatenation of the insert strings).",
       "parameters": {
         "type": "object",
         "properties": {
-          "id": { "type": "string", "description": "Post ID." }
+          "id": {
+            "type": "string",
+            "description": "Post ID, from slab_search_posts or slab_get_topic_posts."
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query GetPost($id: ID!) { post(id: $id) { id title content(format: MARKDOWN) updatedAt owner { name } topics { id name } } }",
-        "bodyMapping": {
-          "variables": { "id": "$id" }
+        "path": "query GetPost($id: ID!) { post(id: $id) { id title content insertedAt updatedAt publishedAt archivedAt linkAccess owner { id name } topics { id name } } }",
+        "queryParams": {
+          "id": "$id"
         }
       }
     },
     {
       "name": "slab_search_posts",
-      "description": "Search posts by query text.",
+      "description": "Full-text search over the posts Slab Bot can see. Returns title, a highlighted snippet and the post's ID, owner and topics. Cursor-paginated: pass pageInfo.endCursor back as after.",
       "parameters": {
         "type": "object",
         "properties": {
-          "query": { "type": "string", "description": "Search text." },
-          "first": { "type": "integer", "description": "Max results." }
+          "query": {
+            "type": "string",
+            "description": "Search text."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Max results per page (default 20)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from the previous page's pageInfo.endCursor."
+          }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query SearchPosts($q: String!, $first: Int) { search(query: $q, first: $first) { edges { node { ... on Post { id title updatedAt owner { name } } } } } }",
-        "bodyMapping": {
-          "variables": { "q": "$query", "first": "$first" }
+        "path": "query SearchPosts($query: String!, $first: Int = 20, $after: String) { search(query: $query, types: [POST], first: $first, after: $after) { pageInfo { hasNextPage endCursor } edges { node { ... on PostSearchResult { title highlight post { id title updatedAt publishedAt owner { name } topics { id name } } } } } } }",
+        "queryParams": {
+          "query": "$query",
+          "first": "$first",
+          "after": "$after"
         }
       }
     },
     {
       "name": "slab_list_topics",
-      "description": "List top-level topics in the organization.",
+      "description": "List every topic (folder) of the organization with its ID, name and parent topic. Slab returns the whole list at once, without paging.",
       "parameters": {
         "type": "object",
-        "properties": {
-          "first": { "type": "integer", "description": "Max topics." }
-        }
+        "properties": {}
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query ListTopics($first: Int) { topics(first: $first) { edges { node { id name description parent { id name } } } } }",
-        "bodyMapping": {
-          "variables": { "first": "$first" }
-        }
+        "path": "query ListTopics { organization { topics { id name parent { id name } } } }"
       }
     },
     {
       "name": "slab_get_topic_posts",
-      "description": "List posts within a topic.",
+      "description": "List the posts inside one topic (ID, title, timestamps). Slab returns them all at once, without paging.",
       "parameters": {
         "type": "object",
         "properties": {
-          "topicId": { "type": "string", "description": "Topic ID." },
-          "first": { "type": "integer", "description": "Max results." }
+          "topicId": {
+            "type": "string",
+            "description": "Topic ID, from slab_list_topics."
+          }
         },
-        "required": ["topicId"]
+        "required": [
+          "topicId"
+        ]
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query TopicPosts($id: ID!, $first: Int) { topic(id: $id) { id name posts(first: $first) { edges { node { id title updatedAt } } } } }",
-        "bodyMapping": {
-          "variables": { "id": "$topicId", "first": "$first" }
+        "path": "query TopicPosts($id: ID!) { topic(id: $id) { id name posts { id title updatedAt publishedAt archivedAt } } }",
+        "queryParams": {
+          "id": "$topicId"
         }
       }
     },
     {
       "name": "slab_create_post",
-      "description": "Create a post from markdown content.",
+      "description": "Create a new, empty post with a title, optionally inside a topic. Slab creates posts blank: add content afterwards with updatePostContent (Quill Delta) via slab_graphql_mutation.",
       "parameters": {
         "type": "object",
         "properties": {
-          "title": { "type": "string", "description": "Post title." },
-          "content": { "type": "string", "description": "Markdown content." },
-          "topicIds": { "type": "array", "description": "Topic IDs to place the post in." }
+          "title": {
+            "type": "string",
+            "description": "Post title."
+          },
+          "topicId": {
+            "type": "string",
+            "description": "Topic to create the post in, from slab_list_topics."
+          }
         },
-        "required": ["title", "content"]
+        "required": [
+          "title"
+        ]
       },
       "endpointMapping": {
         "method": "mutation",
-        "path": "mutation CreatePost($title: String!, $content: String!, $topics: [ID!]) { postCreate(title: $title, content: $content, format: MARKDOWN, topicIds: $topics) { id title } }",
-        "bodyMapping": {
-          "variables": {
-            "title": "$title",
-            "content": "$content",
-            "topics": "$topicIds"
-          }
+        "path": "mutation CreatePost($title: String, $topicId: ID) { createPost(title: $title, topicId: $topicId) { id title insertedAt topics { id name } } }",
+        "queryParams": {
+          "title": "$title",
+          "topicId": "$topicId"
         }
       }
     }

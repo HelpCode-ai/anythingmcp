@@ -24,6 +24,17 @@
  *           wrong consumer key: authConfig is never touched here, and an
  *           e-mail address typed into the key field has to be replaced by
  *           its owner (reinstall with the real key pair).
+ *   slab, wave-accounting
+ *           GraphQL variables moved from bodyMapping (never read by the
+ *           engine, so every call sent "variables":{}) to queryParams, and the
+ *           operations were corrected against each vendor's published schema.
+ *           slab_me is replaced by slab_get_organization (the old tool is
+ *           soft-deprecated, the new one added). Base URLs unchanged, so no
+ *           --base-url-from.
+ *   tidio   NOT repairable here: the adapter moved from a GraphQL connector
+ *           to Tidio's real REST API with a different auth pair. Connector
+ *           type, authConfig and env vars are never touched by a resync, so an
+ *           existing install must be deleted and reinstalled.
  *
  * It calls the compiled CatalogResyncService itself, so the rules are the
  * shipped ones, not a copy: operator-written response mappings, role access,
