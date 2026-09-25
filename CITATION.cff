@@ -13,7 +13,7 @@ abstract: >
   server that exposes REST, SOAP/WSDL and GraphQL APIs, SQL/NoSQL databases
   and other MCP servers as tools for AI clients such as Claude, ChatGPT,
   Google Gemini, GitHub Copilot and Cursor, without writing code. It ships
-  258 pre-built adapters (Deutsche Bahn, DATEV, weclapp, DHL, Shopware,
+  257 pre-built adapters (Deutsche Bahn, DATEV, weclapp, DHL, Shopware,
   Personio, Handelsregister, etc.), a per-workspace knowledge graph served
   over MCP, per-tool response mapping, OAuth2/RBAC/SSO/SCIM governance, an
   audit log and a visual tool editor.

@@ -193,4 +193,100 @@ describe('AdaptersService import probe', () => {
     });
     expect(probe).toBeNull();
   });
+
+  // Etsy and Pinterest take either a pasted refresh token or the browser
+  // flow; the template always says {{ETSY_REFRESH_TOKEN}}, so the decision is
+  // made on what the install resolved it to.
+  const etsyLike = {
+    connector: {
+      authType: 'OAUTH2',
+      authConfig: {
+        clientId: '{{ETSY_CLIENT_ID}}',
+        refreshToken: '{{ETSY_REFRESH_TOKEN}}',
+        authorizationUrl: 'https://www.etsy.com/oauth/connect',
+        tokenUrl: 'https://api.etsy.com/v3/public/oauth/token',
+      },
+    },
+    tools: [{ name: 'me', parameters: {}, endpointMapping: { method: 'GET', path: '/users/me' } }],
+  };
+
+  it('does not probe when the refresh token was left empty for the browser flow', async () => {
+    const probe = await (service as any).runImportProbe(etsyLike, 'connector-1', {
+      ...etsyLike.connector.authConfig,
+      clientId: 'keystring',
+      refreshToken: '',
+    });
+    expect(probe).toBeNull();
+  });
+
+  it('still probes when a refresh token was pasted, as it always has', async () => {
+    const probing = Object.create(AdaptersService.prototype) as any;
+    probing.prisma = { connector: { findUnique: jest.fn().mockResolvedValue(null) } };
+    await probing.runImportProbe(etsyLike, 'connector-1', {
+      ...etsyLike.connector.authConfig,
+      clientId: 'keystring',
+      refreshToken: '12345678.pasted',
+    });
+    expect(probing.prisma.connector.findUnique).toHaveBeenCalled();
+  });
+});
+
+describe('AdaptersService install — a base URL variable without https://', () => {
+  function build() {
+    const prisma = {
+      connector: {
+        create: jest.fn().mockResolvedValue({ id: 'c1' }),
+        // The import probe looks the connector up; nothing found = no probe.
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      mcpTool: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      {} as any,
+    );
+    return { service, prisma };
+  }
+
+  it('stores yourname.substack.com as https://yourname.substack.com', async () => {
+    const { service, prisma } = build();
+
+    await service.importAdapter('substack', 'u1', 'org1', {
+      SUBSTACK_PUBLICATION_URL: 'yourname.substack.com',
+    });
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.baseUrl).toBe('https://yourname.substack.com');
+    expect(data.config.baseUrlBaseline).toBe('https://yourname.substack.com');
+    expect(data.envVars).toEqual({
+      SUBSTACK_PUBLICATION_URL: 'https://yourname.substack.com',
+    });
+  });
+
+  it('keeps the rest of the path the adapter appends', async () => {
+    const { service, prisma } = build();
+
+    await service.importAdapter('magento', 'u1', 'org1', {
+      MAGENTO_BASE_URL: 'shop.example.com',
+      MAGENTO_ACCESS_TOKEN: 'token',
+    });
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.baseUrl).toBe('https://shop.example.com/rest/default/V1');
+  });
+
+  it('refuses a value that is not a web address, naming the variable', async () => {
+    const { service, prisma } = build();
+
+    await expect(
+      service.importAdapter('substack', 'u1', 'org1', {
+        SUBSTACK_PUBLICATION_URL: 'someone@example.com',
+      }),
+    ).rejects.toThrow(
+      /^SUBSTACK_PUBLICATION_URL must be a full URL such as https:\/\/example\.com — it looks like an e-mail address/,
+    );
+    expect(prisma.connector.create).not.toHaveBeenCalled();
+  });
 });

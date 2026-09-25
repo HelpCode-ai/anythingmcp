@@ -17,6 +17,7 @@ import {
   interpolateDeep,
 } from '../common/env-interpolation.util';
 import { assertNoUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
+import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import {
   CALLER_CONTEXT_PREFIX,
   buildCallerContextVars,
@@ -341,8 +342,21 @@ export class DynamicMcpTools {
         {
           baseUrl: engineConfig.baseUrl,
           path: interpolatedMapping.path,
+          queryParams: interpolatedMapping.queryParams,
           headers: engineConfig.headers,
           authConfig,
+        },
+        `the connector behind ${tool.name}`,
+      );
+      // A base URL without https:// (a variable typed as `shop.example.com`
+      // on an older install) would otherwise fail in the SSRF guard as
+      // "invalid URL", naming neither the variable nor the fix.
+      assertAbsoluteBaseUrl(
+        {
+          baseUrl: engineConfig.baseUrl,
+          connectorType: tool.connectorType,
+          template: tool.connectorConfig.baseUrl,
+          envVars,
         },
         `the connector behind ${tool.name}`,
       );

@@ -9,6 +9,15 @@ on:
         default: "latest"
         type: string
 
+# One deploy at a time. On 2026-09-25 two runs of the same commit started two
+# minutes apart; the second failed in `docker pull` ("unable to lease
+# content") while the first was swapping containers. Worse cases are easy to
+# picture: a second run recording the first's half-started release as its
+# rollback point, or sharing /tmp/anythingmcp-deploy with it. Queue instead.
+concurrency:
+  group: deploy-cloud
+  cancel-in-progress: false
+
 jobs:
   deploy:
     name: Deploy to Cloud Droplet

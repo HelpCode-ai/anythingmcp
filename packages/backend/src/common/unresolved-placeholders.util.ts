@@ -12,7 +12,7 @@
  * something completely different.
  *
  * So: refuse to make the call, and name the variables the workspace has to set.
- * Only auth, base URL, path and headers are checked. A body may legitimately
+ * Only auth, base URL, path, query and headers are checked. A body may legitimately
  * carry braces (a template the upstream itself renders), and a wrong body is
  * the caller's business, not a missing credential.
  */
@@ -46,6 +46,8 @@ export function findUnresolvedPlaceholders(value: unknown): string[] {
 export interface RequestShape {
   baseUrl?: string;
   path?: string;
+  /** The tool's query mapping (`$param` references and literals), not caller values. */
+  queryParams?: Record<string, unknown> | null;
   headers?: Record<string, string> | null;
   authConfig?: unknown;
 }
@@ -64,6 +66,7 @@ export function assertNoUnresolvedPlaceholders(
   const missing = findUnresolvedPlaceholders({
     baseUrl: request.baseUrl,
     path: request.path,
+    queryParams: request.queryParams ?? undefined,
     headers: request.headers ?? undefined,
     authConfig: request.authConfig,
   });

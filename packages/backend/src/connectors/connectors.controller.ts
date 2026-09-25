@@ -45,16 +45,24 @@ import { CatalogResyncService } from './catalog-resync.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { DeploymentService } from '../common/deployment.service';
 import { validateBaseUrl } from './base-url.util';
+import { normalizeBaseUrlVariables } from '../common/base-url-variable.util';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
+import { resolveRestAuthorizeSettings } from './oauth-authorize-settings';
 import {
-  interpolateDeep,
-  interpolateString,
-} from '../common/env-interpolation.util';
+  mergeMaskedEnvVars,
+  mergeMaskedHeaders,
+  secretContext,
+  toPublicConnector,
+} from './connector-secrets.util';
+import {
+  describeMissing,
+  rebuildCatalogCredentials,
+} from './catalog-env-rebuild.util';
 
 class CreateConnectorDto {
   @ApiProperty({
@@ -271,6 +279,36 @@ class UpdateOAuthConfigDto {
   tokenAuthMethod?: string;
 }
 
+class UpdateOAuth1ConfigDto {
+  @ApiPropertyOptional({
+    description:
+      'OAuth 1.0a consumer key (the application key the provider issued, not a login).',
+  })
+  @IsOptional()
+  @IsString()
+  consumerKey?: string;
+
+  @ApiPropertyOptional({ description: 'OAuth 1.0a consumer secret.' })
+  @IsOptional()
+  @IsString()
+  consumerSecret?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Access token, for three-legged (user-context) OAuth 1.0a. Empty string removes it.',
+  })
+  @IsOptional()
+  @IsString()
+  token?: string;
+
+  @ApiPropertyOptional({
+    description: 'Access token secret, paired with `token`. Empty string removes it.',
+  })
+  @IsOptional()
+  @IsString()
+  tokenSecret?: string;
+}
+
 class ImportToolsDto {
   @ApiProperty({
     enum: ['openapi', 'wsdl', 'graphql', 'postman', 'curl', 'json', 'mcp'],
@@ -415,7 +453,10 @@ class ImportAllDto {
 
 class UpdateEnvVarsDto {
   @ApiProperty({
-    description: 'New env-var map. Replaces the existing map entirely.',
+    description:
+      'New env-var map. Replaces the existing map: a name left out is removed. ' +
+      'Secrets are returned empty by the read endpoints (see `maskedEnvVars`); ' +
+      'sending one back empty keeps its stored value.',
     type: 'object',
     additionalProperties: { type: 'string' },
     example: { ACME_TENANT_ID: '42', ACME_API_KEY: 'sk_…' },
@@ -483,10 +524,11 @@ export class ConnectorsController {
   @ApiQuery({ name: 'limit', required: false, type: Number, description: '1..200' })
   @ApiQuery({ name: 'offset', required: false, type: Number })
   async list(@Req() req: any, @Query() pagination: PaginationQueryDto) {
-    return this.connectorsService.findByOrg(req.user.organizationId, {
+    const rows = await this.connectorsService.findByOrg(req.user.organizationId, {
       limit: pagination.limit,
       offset: pagination.offset,
     });
+    return rows.map((c) => toPublicConnector(c));
   }
 
   @Post()
@@ -569,7 +611,7 @@ export class ConnectorsController {
       );
     }
 
-    return { ...connector, attachedToServer: attachedTo };
+    return { ...toPublicConnector(connector), attachedToServer: attachedTo };
   }
 
   /**
@@ -651,38 +693,49 @@ export class ConnectorsController {
     summary: 'Export all connectors and tools as JSON for backup/migration',
     description:
       'Returns all connectors with their tools, environment variables, ' +
-      'and configuration. Auth credentials are excluded for security.',
+      'and configuration. authConfig is never exported. Secret environment ' +
+      'variables and headers are exported only to admins, so that a backup ' +
+      'can be restored; for every other role they are left empty and named ' +
+      'in `maskedEnvVars` / `maskedHeaders`.',
   })
   async exportAll(@Req() req: any) {
     const allConnectors = await this.prisma.connector.findMany({
       where: { organizationId: req.user.organizationId },
       include: { tools: true },
     });
+    const includeSecrets = req.user.role === 'ADMIN';
 
-    const exportData = allConnectors.map((c) => ({
-      name: c.name,
-      type: c.type,
-      baseUrl: c.baseUrl,
-      isActive: c.isActive,
-      authType: c.authType,
-      specUrl: c.specUrl,
-      headers: c.headers,
-      config: c.config,
-      envVars: c.envVars,
-      tools: c.tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        isEnabled: t.isEnabled,
-        parameters: t.parameters,
-        endpointMapping: t.endpointMapping,
-        responseMapping: t.responseMapping,
-        outputSchema: t.outputSchema,
-      })),
-    }));
+    const exportData = allConnectors.map((c) => {
+      const masked = includeSecrets ? null : toPublicConnector(c);
+      return {
+        name: c.name,
+        type: c.type,
+        baseUrl: c.baseUrl,
+        isActive: c.isActive,
+        authType: c.authType,
+        specUrl: c.specUrl,
+        headers: masked ? masked.headers : c.headers,
+        config: c.config,
+        envVars: masked ? masked.envVars : c.envVars,
+        ...(masked
+          ? { maskedEnvVars: masked.maskedEnvVars, maskedHeaders: masked.maskedHeaders }
+          : {}),
+        tools: c.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          isEnabled: t.isEnabled,
+          parameters: t.parameters,
+          endpointMapping: t.endpointMapping,
+          responseMapping: t.responseMapping,
+          outputSchema: t.outputSchema,
+        })),
+      };
+    });
 
     return {
       version: '1.0',
       exportedAt: new Date().toISOString(),
+      secretsIncluded: includeSecrets,
       connectors: exportData,
     };
   }
@@ -692,7 +745,7 @@ export class ConnectorsController {
   async findOne(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertOrgMatch(connector, req);
-    return connector;
+    return toPublicConnector(connector);
   }
 
   @Put(':id')
@@ -707,13 +760,42 @@ export class ConnectorsController {
     if (dto.baseUrl !== undefined) {
       this.assertUsableBaseUrl(dto.baseUrl, connector.type);
     }
-    const updated = await this.connectorsService.update(id, dto);
+    // Switching to OAuth 1.0a writes a whole authConfig through this route,
+    // so it gets the same check as PATCH :id/oauth1-config.
+    if ((dto.authType ?? connector.authType) === 'OAUTH1') {
+      const consumerKey = dto.authConfig?.consumerKey;
+      if (typeof consumerKey === 'string') {
+        assertConsumerKeyIsNotEmail(consumerKey.trim());
+      }
+    }
+    // The form was filled from a masked copy: a secret it sends back empty
+    // means "unchanged", not "erase".
+    const ctx = secretContext(connector);
+    const data = { ...dto };
+    if (dto.envVars) {
+      data.envVars = mergeMaskedEnvVars(dto.envVars, connector.envVars, ctx);
+    }
+    if (dto.headers) {
+      data.headers = mergeMaskedHeaders(dto.headers, connector.headers, ctx);
+    }
+    const updated = await this.connectorsService.update(id, data);
     // The registry keeps its own copy of the connector — base URL, headers,
     // auth — and reads it on every call. Without this, a changed base URL
     // showed in the form and was ignored by every tool until the next
     // restart; the env-vars and tool routes already reload, this one did not.
     await this.mcpServer.reloadConnectorTools(id);
-    return updated;
+    return toPublicConnector(updated);
+  }
+
+  /** The stored OAuth2 grant, or undefined when there is none or it cannot be read. */
+  private readOAuthGrant(authConfig: string | null): string | undefined {
+    if (!authConfig) return undefined;
+    try {
+      const cfg = JSON.parse(decrypt(authConfig, this.encryptionKey));
+      return typeof cfg?.grant === 'string' ? cfg.grant : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   @Get(':id/oauth-config')
@@ -743,7 +825,14 @@ export class ConnectorsController {
       authorizationUrl: str(cfg.authorizationUrl),
       tokenUrl: str(cfg.tokenUrl),
       scopes: str(cfg.scopes),
-      tokenAuthMethod: str(cfg.tokenAuthMethod) || 'client_secret_post',
+      // Report what the token service will actually do. With nothing stored,
+      // the client_credentials grant sends HTTP Basic, not body credentials;
+      // showing "in body" there made the form misstate every such connector.
+      tokenAuthMethod:
+        str(cfg.tokenAuthMethod) ||
+        (cfg.grant === 'client_credentials'
+          ? 'client_secret_basic'
+          : 'client_secret_post'),
       hasClientSecret: !!cfg.clientSecret,
       hasAccessToken: !!cfg.accessToken,
       hasRefreshToken: !!cfg.refreshToken,
@@ -787,8 +876,16 @@ export class ConnectorsController {
       if (dto[key] !== undefined) patch[key] = dto[key];
     }
     if (dto.tokenAuthMethod !== undefined) {
-      // Empty = back to the default (credentials in the body).
-      patch.tokenAuthMethod = dto.tokenAuthMethod || undefined;
+      // Empty = back to the default (credentials in the body). Except that
+      // "in the body" is not the default of the client_credentials grant —
+      // the token service sends HTTP Basic there unless told otherwise — so
+      // for that grant the form's "in body" choice has to be stored as such,
+      // or saving the form would quietly switch e.g. Amadeus back to Basic.
+      patch.tokenAuthMethod =
+        dto.tokenAuthMethod ||
+        (this.readOAuthGrant(connector.authConfig) === 'client_credentials'
+          ? 'client_secret_post'
+          : undefined);
     }
 
     if (Object.keys(patch).length === 0) {
@@ -797,6 +894,64 @@ export class ConnectorsController {
 
     await this.connectorsService.updateAuthConfigMerge(id, patch);
     return { message: 'OAuth configuration updated' };
+  }
+
+  @Patch(':id/oauth1-config')
+  @ApiOperation({
+    summary: 'Update the OAuth 1.0a credentials of a connector (partial)',
+    description:
+      'Merges the supplied fields into the connector\'s existing authConfig, ' +
+      'so a field left out keeps its stored value — the editor sends only ' +
+      'what the user typed, and never receives the stored values back. The ' +
+      'consumer key and secret cannot be emptied; an empty `token` or ' +
+      '`tokenSecret` removes it (back to two-legged signing).',
+  })
+  async updateOAuth1Config(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateOAuth1ConfigDto,
+  ) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+
+    if (connector.authType !== 'OAUTH1') {
+      throw new BadRequestException('Connector auth type must be OAUTH1');
+    }
+
+    const patch: Record<string, unknown> = {};
+    for (const key of ['consumerKey', 'consumerSecret'] as const) {
+      if (dto[key] === undefined) continue;
+      const value = dto[key].trim();
+      if (!value) {
+        throw new BadRequestException(
+          `The ${key === 'consumerKey' ? 'consumer key' : 'consumer secret'} ` +
+            'cannot be empty. Leave the field out to keep the stored value.',
+        );
+      }
+      patch[key] = value;
+    }
+    // Two ImmobilienScout24 installs had the account's e-mail address as the
+    // consumer key, and IS24 answered "Consumer not found" to every call. No
+    // provider issues consumer keys of that shape.
+    if (typeof patch.consumerKey === 'string') {
+      assertConsumerKeyIsNotEmail(patch.consumerKey);
+    }
+    for (const key of ['token', 'tokenSecret'] as const) {
+      if (dto[key] === undefined) continue;
+      // undefined is dropped when the merged config is serialised, so an
+      // empty value removes the field rather than storing "".
+      patch[key] = dto[key].trim() || undefined;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return { message: 'Nothing to update' };
+    }
+
+    await this.connectorsService.updateAuthConfigMerge(id, patch);
+    // The tool registry holds its own decrypted copy of authConfig and signs
+    // every call with it; without a reload the old key stays in use.
+    await this.mcpServer.reloadConnectorTools(id);
+    return { message: 'OAuth 1.0a credentials updated' };
   }
 
   @Delete(':id')
@@ -845,6 +1000,12 @@ export class ConnectorsController {
       let authorizationEndpoint: string;
       let tokenEndpoint: string;
       let scope: string | undefined;
+      let tokenAuthMethod: string | undefined = authConfig.tokenAuthMethod
+        ? String(authConfig.tokenAuthMethod)
+        : undefined;
+      // REST/GraphQL only: the auth config fields to write on success in place
+      // of the historical "client settings as stored" (see PendingOAuthFlow).
+      let persistAuthConfig: Record<string, unknown> | undefined;
 
       if (connector.type === 'MCP') {
         // MCP: discover OAuth metadata from remote server
@@ -867,12 +1028,38 @@ export class ConnectorsController {
           clientSecret = authConfig.clientSecret ? String(authConfig.clientSecret) : undefined;
         }
       } else {
-        // REST/GraphQL: use authConfig values directly
-        clientId = String(authConfig.clientId || '');
-        clientSecret = authConfig.clientSecret ? String(authConfig.clientSecret) : undefined;
-        authorizationEndpoint = String(authConfig.authorizationUrl || '');
-        tokenEndpoint = String(authConfig.tokenUrl || '');
-        scope = authConfig.scopes ? String(authConfig.scopes) : undefined;
+        // REST/GraphQL: the stored authConfig, with {{VAR}} resolved from the
+        // connector's env vars, and — for a catalog connector installed before
+        // its adapter could be authorized in the browser — the catalog's
+        // endpoints where the row has none.
+        const adapterSlug = (connector.config as { adapterSlug?: string } | null)
+          ?.adapterSlug;
+        const catalogAuth = adapterSlug
+          ? getAdapter(adapterSlug)?.connector.authConfig
+          : undefined;
+        const settings = resolveRestAuthorizeSettings(
+          authConfig,
+          connector.envVars as Record<string, string> | null,
+          catalogAuth,
+        );
+        if (settings.missingVars.length > 0) {
+          return {
+            error:
+              `Set ${settings.missingVars.join(' and ')} in this connector's ` +
+              'environment variables first: the provider needs the client ' +
+              'credentials of your app to authorize it.',
+          };
+        }
+        clientId = settings.clientId;
+        clientSecret = settings.clientSecret;
+        authorizationEndpoint = settings.authorizationUrl;
+        tokenEndpoint = settings.tokenUrl;
+        scope = settings.scope;
+        tokenAuthMethod = settings.tokenAuthMethod;
+        // The client id/secret stay as stored (placeholders included, so a
+        // later env var edit still reaches them); only what was taken from
+        // the catalog is added.
+        persistAuthConfig = settings.adopted;
       }
 
       if (!clientId) {
@@ -896,9 +1083,8 @@ export class ConnectorsController {
         clientId,
         clientSecret,
         tokenUrl: tokenEndpoint,
-        tokenAuthMethod: authConfig.tokenAuthMethod
-          ? String(authConfig.tokenAuthMethod)
-          : undefined,
+        tokenAuthMethod,
+        persistAuthConfig,
         createdAt: Date.now(),
       });
 
@@ -1256,11 +1442,30 @@ export class ConnectorsController {
     // Rebuild via Object.fromEntries (no dynamic user-keyed property write) so
     // a stray leading/trailing space in a pasted value can't survive into the
     // encrypted authConfig and produce a 401 the UI can't explain.
-    const envVars: Record<string, string> = Object.fromEntries(
+    const trimmed: Record<string, string> = Object.fromEntries(
       Object.entries(body.envVars || {}).map(([k, v]) => [
         k.trim(),
         typeof v === 'string' ? v.trim() : v,
       ]),
+    );
+
+    const cfg = connector.config as { adapterSlug?: string } | null;
+    const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
+    const stored = (connector.envVars as Record<string, string> | null) || {};
+
+    // The editor never receives stored secrets, so it sends them back empty
+    // when they were not retyped: keep the stored value for those.
+    const kept = mergeMaskedEnvVars(trimmed, stored, secretContext(connector));
+
+    // The variable a base URL starts with (`{{SUBSTACK_PUBLICATION_URL}}`)
+    // must hold a whole URL: add the missing https:// to a bare host, refuse
+    // anything else with the variable's name. Catalog connectors store the
+    // resolved URL, so the template comes from the catalog; a hand-built
+    // connector keeps its template as the base URL itself.
+    const envVars = normalizeBaseUrlVariables(
+      adapter ? adapter.connector.baseUrl : connector.baseUrl,
+      kept,
+      connector.type,
     );
 
     const updateData: {
@@ -1269,37 +1474,59 @@ export class ConnectorsController {
       baseUrl?: string;
       headers?: Record<string, string>;
     } = { envVars };
+    const warnings: string[] = [];
 
     // For catalog-installed connectors, authConfig/baseUrl/headers were
     // resolved from the adapter template at import time and frozen (auth
-    // encrypted). Re-resolve them from the template here so editing env vars
-    // actually changes the credentials used for requests — otherwise the UI
-    // shows the new value while auth keeps using the old one.
-    const cfg = connector.config as { adapterSlug?: string } | null;
-    const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
+    // encrypted). Re-resolve the fields that use a changed variable, so
+    // editing a variable changes the credentials used for requests, and leave
+    // the rest — a key corrected in the auth editor, issued OAuth tokens, a
+    // custom header — as stored. See catalog-env-rebuild.util.ts.
     if (adapter) {
-      const merged = {
-        ...((connector.envVars as Record<string, string> | null) || {}),
-        ...envVars,
-      };
-      if (adapter.connector.authConfig) {
-        updateData.authConfig = interpolateDeep(
-          adapter.connector.authConfig as Record<string, unknown>,
-          merged,
+      const rebuilt = rebuildCatalogCredentials({
+        adapter,
+        connectorAuthType: connector.authType,
+        storedAuthConfig: this.readAuthConfig(connector.authConfig),
+        storedBaseUrl: connector.baseUrl,
+        storedHeaders: (connector.headers as Record<string, string> | null) ?? null,
+        previousEnvVars: stored,
+        nextEnvVars: envVars,
+      });
+      if (rebuilt.authConfig) {
+        const consumerKey = rebuilt.authConfig.consumerKey;
+        if (connector.authType === 'OAUTH1' && typeof consumerKey === 'string') {
+          assertConsumerKeyIsNotEmail(
+            consumerKey,
+            rebuilt.authFieldVariables.consumerKey?.join(', '),
+          );
+        }
+        updateData.authConfig = rebuilt.authConfig;
+      }
+      if (rebuilt.baseUrl !== undefined) updateData.baseUrl = rebuilt.baseUrl;
+      if (rebuilt.headers) updateData.headers = rebuilt.headers;
+      for (const { variable, from } of rebuilt.aliasesUsed) {
+        warnings.push(
+          `${variable} is not set; used ${from}, its name in earlier versions ` +
+            `of this connector. Rename ${from} to ${variable} to silence this.`,
         );
       }
-      updateData.baseUrl = interpolateString(adapter.connector.baseUrl, merged);
-      const adapterHeaders = (
-        adapter.connector as { headers?: Record<string, string> }
-      ).headers;
-      if (adapterHeaders) {
-        updateData.headers = interpolateDeep(adapterHeaders, merged);
-      }
+      warnings.push(...describeMissing(rebuilt.missing));
     }
 
     const updated = await this.connectorsService.update(id, updateData);
     await this.mcpServer.reloadConnectorTools(id);
-    return updated;
+    return { ...toPublicConnector(updated), warnings };
+  }
+
+  /** The stored authConfig, or null when there is none or it cannot be read. */
+  private readAuthConfig(authConfig: string | null): Record<string, unknown> | null {
+    if (!authConfig) return null;
+    try {
+      const cfg = JSON.parse(decrypt(authConfig, this.encryptionKey));
+      return cfg && typeof cfg === 'object' ? cfg : null;
+    } catch {
+      return null;
+    }
   }
 
   @Get(':id/catalog-diff')
@@ -1487,4 +1714,36 @@ export class ConnectorsController {
       skipped: [] as string[],
     };
   }
+}
+
+/**
+ * Whether a credential field holds an e-mail address rather than a key.
+ * Written without a backtracking regex: the value is user input, and the
+ * equivalent `^[^\s@/]+@[^\s@/]+\.[^\s@/]+$` is polynomial on crafted
+ * strings (CodeQL js/polynomial-redos).
+ */
+export function looksLikeEmail(value: string): boolean {
+  if (value.length > 320 || /[\s/]/.test(value)) return false;
+  const at = value.indexOf('@');
+  if (at <= 0 || at !== value.lastIndexOf('@')) return false;
+  const domain = value.slice(at + 1);
+  const dot = domain.lastIndexOf('.');
+  return dot > 0 && dot < domain.length - 1;
+}
+
+/**
+ * Refuse an e-mail address as an OAuth 1.0a consumer key. Two
+ * ImmobilienScout24 installs had the account's login there, and IS24 answered
+ * "Consumer not found" to every call; no provider issues keys of that shape.
+ * `source` names where the value came from (an environment variable) when it
+ * was not typed into the consumer key field itself.
+ */
+export function assertConsumerKeyIsNotEmail(value: string, source?: string): void {
+  if (!looksLikeEmail(value)) return;
+  throw new BadRequestException(
+    `The consumer key${source ? ` (${source})` : ''} looks like an e-mail ` +
+      'address. It is the key of the application registered with the ' +
+      'provider, not your login — copy it from the provider\'s developer or ' +
+      'API-key page.',
+  );
 }

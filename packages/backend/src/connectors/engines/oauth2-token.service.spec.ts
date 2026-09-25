@@ -2,7 +2,8 @@ import { OAuth2TokenService } from './oauth2-token.service';
 import { PrismaService } from '../../common/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { encrypt } from '../../common/crypto/encryption.util';
+import { encrypt, decrypt } from '../../common/crypto/encryption.util';
+import * as etsyAdapter from '../../adapters/intl/etsy.json';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -383,6 +384,32 @@ describe('OAuth2TokenService', () => {
       expect(body).not.toContain('client_secret=');
     });
 
+    it('sends client credentials as form fields when tokenAuthMethod is client_secret_post (Amadeus)', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'amadeus-at', expires_in: 1799 },
+      });
+
+      const token = await service.refreshToken({
+        grant: 'client_credentials',
+        tokenAuthMethod: 'client_secret_post',
+        tokenUrl: 'https://api.amadeus.com/v1/security/oauth2/token',
+        clientId: 'api-key',
+        clientSecret: 'api-secret',
+      });
+
+      expect(token).toBe('amadeus-at');
+      const [, body, opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(new URLSearchParams(body)).toEqual(
+        new URLSearchParams(
+          'grant_type=client_credentials&client_id=api-key&client_secret=api-secret',
+        ),
+      );
+      expect(opts.headers['Content-Type']).toBe(
+        'application/x-www-form-urlencoded',
+      );
+      expect(opts.headers.Authorization).toBeUndefined();
+    });
+
     it('returns null when client_credentials grant lacks clientId/Secret', async () => {
       const token = await service.refreshToken({
         grant: 'client_credentials',
@@ -405,6 +432,70 @@ describe('OAuth2TokenService', () => {
       });
 
       expect(token).toBe('fresh');
+    });
+
+    it("forwards the adapter's User-Agent to the token request, and nothing else from extraHeaders", async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'rd', expires_in: 3600 },
+      });
+
+      await service.refreshToken({
+        grant: 'client_credentials',
+        tokenUrl: 'https://www.reddit.com/api/v1/access_token',
+        clientId: 'id',
+        clientSecret: 'secret',
+        extraHeaders: {
+          'User-Agent': 'web:anythingmcp:v1 (by /u/anythingmcp)',
+          'x-api-key': 'belongs-to-the-api',
+        },
+      });
+
+      const [, , opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(opts.headers['User-Agent']).toBe(
+        'web:anythingmcp:v1 (by /u/anythingmcp)',
+      );
+      expect(opts.headers['x-api-key']).toBeUndefined();
+    });
+
+    it('throws what the token endpoint said instead of sending an empty bearer', async () => {
+      // Reddit's real answer to a wrong client ID/secret.
+      mockedAxios.post.mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 401'), {
+          response: { status: 401, data: { message: 'Unauthorized', error: 401 } },
+        }),
+      );
+
+      const call = service.getAccessToken(
+        {
+          grant: 'client_credentials',
+          tokenUrl: 'https://www.reddit.com/api/v1/access_token',
+          clientId: 'wrong-id',
+          clientSecret: 'wrong-secret',
+        },
+        'conn-rd',
+      );
+
+      await expect(call).rejects.toMatchObject({
+        status: 401,
+        message: expect.stringContaining(
+          'could not obtain an access token from www.reddit.com (HTTP 401: Unauthorized)',
+        ),
+      });
+      await expect(call).rejects.not.toThrow(/wrong-secret|wrong-id/);
+    });
+
+    it('still falls back to a stored token when a client_credentials refresh fails', async () => {
+      mockedAxios.post.mockRejectedValue(new Error('ETIMEDOUT'));
+
+      const token = await service.getAccessToken({
+        grant: 'client_credentials',
+        tokenUrl: 'https://example.com/oauth/token',
+        clientId: 'id',
+        clientSecret: 'secret',
+        accessToken: 'persisted-at',
+      });
+
+      expect(token).toBe('persisted-at');
     });
   });
 
@@ -449,6 +540,193 @@ describe('OAuth2TokenService', () => {
         'Basic ' + Buffer.from('cid:sec').toString('base64'),
       );
       expect(body).not.toContain('client_secret=');
+    });
+  });
+
+  /**
+   * Etsy connectors installed with a pasted refresh token are in daily use.
+   * The adapter gained an authorization URL (so new installs can authorize in
+   * the browser), but installed rows keep the authConfig they were created
+   * with — the catalog re-sync never touches auth. These pin the refresh path
+   * those rows depend on, with the row shaped exactly as an import produces it.
+   */
+  describe('Etsy connectors installed with a refresh token (existing rows)', () => {
+    const etsyTemplate = (etsyAdapter as any).connector.authConfig as Record<string, unknown>;
+    const fill = (value: unknown, vars: Record<string, string>): any =>
+      JSON.parse(
+        JSON.stringify(value).replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars ? vars[k] : m)),
+      );
+    const creds = {
+      ETSY_CLIENT_ID: 'keystring123',
+      ETSY_CLIENT_SECRET: 'sharedsecret456',
+      ETSY_REFRESH_TOKEN: '12345678.pasted-refresh-token',
+    };
+    // A row created before the adapter had authorizationUrl/scopes.
+    const legacyRow = () => {
+      const row = fill(etsyTemplate, creds);
+      delete row.authorizationUrl;
+      delete row.scopes;
+      return row;
+    };
+    const storeRow = (row: Record<string, unknown>, envVars?: Record<string, string>) =>
+      mockPrisma.connector.findUnique.mockResolvedValue({
+        authConfig: encrypt(JSON.stringify(row), encryptionKey),
+        envVars: envVars ?? null,
+      });
+
+    it('refreshes with the stored token, client credentials in the body, no Basic header', async () => {
+      const row = legacyRow();
+      storeRow(row);
+      mockedAxios.post.mockResolvedValue({
+        data: {
+          access_token: '12345678.new-access',
+          refresh_token: '12345678.rotated-refresh',
+          expires_in: 3600,
+        },
+      });
+
+      const token = await service.getAccessToken(row, 'etsy-conn');
+
+      expect(token).toBe('12345678.new-access');
+      const [url, body, opts] = mockedAxios.post.mock.calls[0] as any[];
+      expect(url).toBe('https://api.etsy.com/v3/public/oauth/token');
+      const params = new URLSearchParams(String(body));
+      expect(params.get('grant_type')).toBe('refresh_token');
+      expect(params.get('refresh_token')).toBe('12345678.pasted-refresh-token');
+      expect(params.get('client_id')).toBe('keystring123');
+      expect(params.get('client_secret')).toBe('sharedsecret456');
+      expect(opts.headers.Authorization).toBeUndefined();
+      // The API key belongs to the API calls, not the token request.
+      expect(opts.headers['x-api-key']).toBeUndefined();
+    });
+
+    it('stores the rotated refresh token and uses it for the next refresh', async () => {
+      const row = legacyRow();
+      storeRow(row);
+      mockedAxios.post.mockResolvedValueOnce({
+        data: { access_token: 'AT1', refresh_token: 'RT-rotated-1', expires_in: 3600 },
+      });
+
+      await service.refreshToken(row, 'etsy-conn');
+
+      const saved = mockPrisma.connector.update.mock.calls[0][0].data.authConfig;
+      const persisted = JSON.parse(decrypt(saved, encryptionKey));
+      expect(persisted.refreshToken).toBe('RT-rotated-1');
+      expect(persisted.accessToken).toBe('AT1');
+      // Everything else on the row is kept as it was.
+      expect(persisted.extraHeaders).toEqual(row.extraHeaders);
+      expect(persisted.clientId).toBe('keystring123');
+      expect(persisted.authorizationUrl).toBeUndefined();
+
+      // Second refresh: the registry still holds the old snapshot, the DB the
+      // rotated token. Etsy has already invalidated the old one.
+      storeRow(persisted);
+      mockedAxios.post.mockResolvedValueOnce({
+        data: { access_token: 'AT2', refresh_token: 'RT-rotated-2', expires_in: 3600 },
+      });
+      await service.refreshToken(row, 'etsy-conn');
+      const second = new URLSearchParams(String(mockedAxios.post.mock.calls[1][1]));
+      expect(second.get('refresh_token')).toBe('RT-rotated-1');
+    });
+
+    it('behaves the same once the row also carries the new authorization settings', async () => {
+      // A row authorized in the browser: same template, plus authorizationUrl
+      // and scopes. The refresh request must be byte-for-byte the same shape.
+      const row = fill(etsyTemplate, creds);
+      expect(row.authorizationUrl).toBe('https://www.etsy.com/oauth/connect');
+      storeRow(row);
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'AT', refresh_token: 'RT2', expires_in: 3600 },
+      });
+
+      await expect(service.getAccessToken(row, 'etsy-conn')).resolves.toBe('AT');
+      const params = new URLSearchParams(String(mockedAxios.post.mock.calls[0][1]));
+      expect([...params.keys()].sort()).toEqual(
+        ['client_id', 'client_secret', 'grant_type', 'refresh_token'],
+      );
+    });
+
+    it('keeps serving a stored access token when a refresh fails', async () => {
+      const row = { ...legacyRow(), accessToken: 'still-valid', expiresAt: Date.now() + 60_000 };
+      storeRow(row);
+      mockedAxios.post.mockRejectedValue(new Error('ETIMEDOUT'));
+
+      await expect(service.getAccessToken(row, 'etsy-conn')).resolves.toBe('still-valid');
+    });
+
+    it('resolves credentials that live in env vars when reading the row back', async () => {
+      // Credentials typed after install: authConfig keeps the placeholders, the
+      // values are in envVars. The tool path hands us a resolved snapshot, and
+      // the fresh read from the DB must not put the placeholders back.
+      const row = fill(etsyTemplate, {});
+      delete row.authorizationUrl;
+      delete row.scopes;
+      storeRow(row, creds);
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'AT', refresh_token: 'RT2', expires_in: 3600 },
+      });
+
+      await service.getAccessToken(fill(row, creds), 'etsy-conn');
+
+      const params = new URLSearchParams(String(mockedAxios.post.mock.calls[0][1]));
+      expect(params.get('refresh_token')).toBe('12345678.pasted-refresh-token');
+      expect(params.get('client_id')).toBe('keystring123');
+      expect(String(mockedAxios.post.mock.calls[0][1])).not.toContain('%7B%7B');
+    });
+  });
+
+  describe('no token to send', () => {
+    it('says the refresh token was refused instead of sending an empty bearer', async () => {
+      // Etsy's answer to `Bearer ` is "403 Invalid access token: not a Bearer
+      // token", which sends people looking at the wrong thing.
+      mockedAxios.post.mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 400'), {
+          response: {
+            status: 400,
+            data: { error: 'invalid_grant', error_description: 'Invalid refresh token' },
+          },
+        }),
+      );
+
+      const call = service.getAccessToken(
+        {
+          tokenUrl: 'https://api.etsy.com/v3/public/oauth/token',
+          clientId: 'id',
+          clientSecret: 'secret',
+          refreshToken: 'bad-token',
+        },
+        'conn-bad',
+      );
+
+      await expect(call).rejects.toMatchObject({
+        status: 401,
+        message: expect.stringContaining(
+          'could not renew the access token at api.etsy.com (HTTP 400: invalid_grant: Invalid refresh token)',
+        ),
+      });
+      await expect(call).rejects.not.toThrow(/bad-token|secret/);
+    });
+
+    it('says the connector has not been authorized when it never was', async () => {
+      const call = service.getAccessToken(
+        {
+          authorizationUrl: 'https://www.etsy.com/oauth/connect',
+          tokenUrl: 'https://api.etsy.com/v3/public/oauth/token',
+          clientId: 'id',
+          refreshToken: '',
+        },
+        'conn-new',
+      );
+
+      await expect(call).rejects.toMatchObject({
+        status: 401,
+        message: expect.stringContaining('has not been authorized yet'),
+      });
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('still returns an empty token for a connector without an authorization URL', async () => {
+      await expect(service.getAccessToken({ clientId: 'id' }, 'conn-x')).resolves.toBe('');
     });
   });
 });

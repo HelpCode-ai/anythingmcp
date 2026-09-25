@@ -843,6 +843,7 @@ export class ToolsController {
         tool.connector,
         tool.endpointMapping as any,
         inputs,
+        tool.name,
       );
       const durationMs = Date.now() - startTime;
       const withNote = callerContextNote ? { note: callerContextNote } : {};

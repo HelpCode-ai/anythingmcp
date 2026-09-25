@@ -144,8 +144,12 @@ export default function ConnectorsPage() {
       a.download = `anythingmcp-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setMsg('Configuration exported');
-      setTimeout(() => setMsg(''), 3000);
+      setMsg(
+        data.secretsIncluded === false
+          ? 'Configuration exported without secret values (only admins can export them)'
+          : 'Configuration exported',
+      );
+      setTimeout(() => setMsg(''), data.secretsIncluded === false ? 6000 : 3000);
     } catch (err: any) {
       setMsg(`Export failed: ${err.message}`);
     }

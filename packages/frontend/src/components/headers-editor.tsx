@@ -16,18 +16,25 @@ const labelClass = 'mb-1.5 block text-[12.5px] font-medium text-[var(--text)]';
  * `rows` array; empty rows are kept for editing and filtered out at submit time
  * via {@link headerRowsToObject}. Values render as text (not password) so users
  * can verify what they typed — connector headers are not necessarily secrets.
+ * A header the server reports as a stored secret (`maskedKeys`) is the
+ * exception: it arrives empty and renders as a password field.
  */
 export function HeadersEditor({
   rows,
   onChange,
   label = 'Custom headers',
   hint = 'Sent on every request to this API. Useful for APIs that require extra headers (e.g. Autotask: Username, Secret, ApiIntegrationCode).',
+  maskedKeys,
 }: {
   rows: HeaderRow[];
   onChange: (rows: HeaderRow[]) => void;
   label?: string;
   hint?: string;
+  /** Headers holding a stored secret: the server sends them empty, and an
+   *  empty value sent back keeps the stored one. */
+  maskedKeys?: string[];
 }) {
+  const masked = new Set(maskedKeys ?? []);
   const update = (i: number, patch: Partial<HeaderRow>) =>
     onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   const add = () => onChange([...rows, { key: '', value: '' }]);
@@ -43,15 +50,19 @@ export function HeadersEditor({
               <input
                 type="text"
                 value={row.key}
+                readOnly={masked.has(row.key)}
+                aria-label="Header name"
                 onChange={(e) => update(i, { key: e.target.value })}
                 placeholder="Header-Name"
                 className={cn(inputClass, 'font-mono text-[13px]')}
               />
               <input
-                type="text"
+                type={masked.has(row.key) ? 'password' : 'text'}
+                autoComplete={masked.has(row.key) ? 'new-password' : 'off'}
                 value={row.value}
+                aria-label={`Value of header ${row.key.trim() || 'new header'}`}
                 onChange={(e) => update(i, { value: e.target.value })}
-                placeholder="value"
+                placeholder={masked.has(row.key) ? 'Set — leave empty to keep current' : 'value'}
                 className={cn(inputClass, 'font-mono text-[13px]')}
               />
               <button

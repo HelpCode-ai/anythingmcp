@@ -344,6 +344,25 @@ export const connectors = {
       body: data,
       token,
     }),
+  /**
+   * Partial update of OAuth 1.0a credentials. Only the fields sent change; the
+   * stored values are never returned to the browser.
+   */
+  updateOAuth1Config: (
+    id: string,
+    data: {
+      consumerKey?: string;
+      consumerSecret?: string;
+      token?: string;
+      tokenSecret?: string;
+    },
+    token: string,
+  ) =>
+    request<{ message: string }>(`/api/connectors/${id}/oauth1-config`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
   delete: (id: string, token: string) =>
     request(`/api/connectors/${id}`, { method: 'DELETE', token }),
   test: (id: string, token: string) =>
@@ -364,10 +383,12 @@ export const connectors = {
     request<{ message: string; tools: any[] }>(`/api/connectors/${id}/import-spec`, { method: 'POST', token }),
   importTools: (id: string, data: { source: string; content?: string; url?: string }, token: string) =>
     request<{ message: string; tools: any[]; skipped?: string[] }>(`/api/connectors/${id}/import`, { method: 'POST', body: data, token }),
+  // Secrets come back from the server empty and named in `maskedEnvVars`;
+  // sending one back empty keeps its stored value.
   updateEnvVars: (id: string, envVars: Record<string, string>, token: string) =>
-    request(`/api/connectors/${id}/env-vars`, { method: 'PUT', body: { envVars }, token }),
+    request<{ warnings?: string[]; maskedEnvVars?: string[] }>(`/api/connectors/${id}/env-vars`, { method: 'PUT', body: { envVars }, token }),
   exportAll: (token: string) =>
-    request<{ version: string; exportedAt: string; connectors: any[] }>('/api/connectors/export-all', { token }),
+    request<{ version: string; exportedAt: string; secretsIncluded?: boolean; connectors: any[] }>('/api/connectors/export-all', { token }),
   importAll: (data: { connectors: any[] }, token: string) =>
     request<{ message: string; created: number; skipped: number; tools: number }>('/api/connectors/import-all', { method: 'POST', body: data, token }),
   healthCheck: (token: string) =>

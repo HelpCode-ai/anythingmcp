@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { KgSkillService } from '../knowledge-graph/kg-skill.service';
 import { McpSessionManager } from './mcp-session.manager';
@@ -86,30 +86,74 @@ export class McpServersService {
   }
 
   async create(userId: string, organizationId: string, data: { name: string; slug?: string; description?: string; instructions?: string }) {
-    const slug = data.slug || this.generateSlug(data.name);
-    return this.prisma.mcpServerConfig.create({
-      data: {
-        userId,
-        organizationId,
-        name: data.name,
-        slug,
-        description: data.description,
-        instructions: data.instructions,
-      },
-      include: {
-        _count: { select: { connectors: true, apiKeys: true } },
-      },
-    });
+    // A slug derived from the name is ours to choose, so pick a free one
+    // ("sales", "sales-2", …). A slug the user typed is theirs: if it is
+    // taken, say so instead of renaming it behind their back.
+    const slug = data.slug || (await this.freeSlug(organizationId, this.generateSlug(data.name)));
+    return this.withSlugConflict(slug, () =>
+      this.prisma.mcpServerConfig.create({
+        data: {
+          userId,
+          organizationId,
+          name: data.name,
+          slug,
+          description: data.description,
+          instructions: data.instructions,
+        },
+        include: {
+          _count: { select: { connectors: true, apiKeys: true } },
+        },
+      }),
+    );
   }
 
   async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean }) {
-    return this.prisma.mcpServerConfig.update({
-      where: { id },
-      data,
-      include: {
-        _count: { select: { connectors: true, apiKeys: true } },
-      },
-    });
+    return this.withSlugConflict(data.slug, () =>
+      this.prisma.mcpServerConfig.update({
+        where: { id },
+        data,
+        include: {
+          _count: { select: { connectors: true, apiKeys: true } },
+        },
+      }),
+    );
+  }
+
+  /** `base`, or `base-2`, `base-3`, … whichever is not taken in the organization. */
+  private async freeSlug(organizationId: string, base: string): Promise<string> {
+    const taken = new Set(
+      (
+        await this.prisma.mcpServerConfig.findMany({
+          where: { organizationId, slug: { startsWith: base } },
+          select: { slug: true },
+        })
+      ).map((s) => s.slug),
+    );
+    if (!taken.has(base)) return base;
+    for (let n = 2; ; n++) {
+      const candidate = `${base}-${n}`;
+      if (!taken.has(candidate)) return candidate;
+    }
+  }
+
+  /**
+   * The (organization, slug) unique index is the source of truth. Two servers
+   * with the same slug surfaced as a Prisma P2002 and a 500
+   * (ANYTHINGMCP-CLOUD-BACKEND-4); it is the user's input, so it is a 409 the
+   * dashboard can show.
+   */
+  private async withSlugConflict<T>(slug: string | undefined, write: () => Promise<T>): Promise<T> {
+    try {
+      return await write();
+    } catch (err: any) {
+      const target = String(err?.meta?.target ?? err?.message ?? '');
+      if (err?.code === 'P2002' && /slug/.test(target)) {
+        throw new ConflictException(
+          `An MCP server with the slug "${slug ?? ''}" already exists in this organization. Choose another slug.`,
+        );
+      }
+      throw err;
+    }
   }
 
   async delete(id: string) {

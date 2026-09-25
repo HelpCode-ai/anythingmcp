@@ -287,6 +287,57 @@ describe('RestEngine', () => {
     );
   });
 
+  describe('unresolved {{VAR}} placeholders', () => {
+    const saved = process.env.SSRF_GUARD;
+    // The SSRF guard is off under jest by default; switch it on so the test
+    // proves the placeholder check runs first, not merely that nothing ran.
+    beforeEach(() => {
+      process.env.SSRF_GUARD = 'enabled';
+    });
+    afterEach(() => {
+      if (saved === undefined) delete process.env.SSRF_GUARD;
+      else process.env.SSRF_GUARD = saved;
+    });
+
+    it('names the missing variable instead of failing in the SSRF guard', async () => {
+      const call = engine.execute(
+        { baseUrl: '{{SUBSTACK_PUBLICATION_URL}}', authType: 'NONE' },
+        { method: 'GET', path: '/api/v1/posts' },
+        {},
+      );
+
+      await expect(call).rejects.toThrow(
+        /missing a value for SUBSTACK_PUBLICATION_URL\. The request was not sent/,
+      );
+      await expect(call).rejects.not.toThrow(/SSRF guard/);
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+
+    it('checks the query mapping as well', async () => {
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          { method: 'GET', path: '/items', queryParams: { key: '{{API_KEY}}' } },
+          {},
+        ),
+      ).rejects.toThrow(/missing a value for API_KEY/);
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+
+    it('does not mistake braces in a caller argument for a missing variable', async () => {
+      process.env.SSRF_GUARD = 'disabled';
+      mockedAxios.mockResolvedValue({ data: {} });
+
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'GET', path: '/search/{q}', queryParams: { term: '$term' } },
+        { q: '{{literal}}', term: '{{also literal}}' },
+      );
+
+      expect(mockedAxios).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('should inject basic auth', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
 

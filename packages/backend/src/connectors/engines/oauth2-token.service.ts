@@ -5,6 +5,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { encrypt, decrypt } from '../../common/crypto/encryption.util';
 import { getRequiredSecret } from '../../common/secrets.util';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { interpolateDeep } from '../../common/env-interpolation.util';
 
 /** Refresh tokens that expire within this window (5 minutes). */
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -29,6 +30,10 @@ export class OAuth2TokenService {
 
   // Per-key mutex to prevent concurrent refresh storms
   private refreshInFlight = new Map<string, Promise<string | null>>();
+
+  // Why the last token request for a key failed, in words safe to show the
+  // caller (status + the provider's error code, never the request).
+  private lastRefreshError = new Map<string, string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -71,6 +76,7 @@ export class OAuth2TokenService {
         : !!(authConfig.refreshToken && authConfig.tokenUrl);
     const tokenNearExpiry = this.isTokenNearExpiry(authConfig, cacheKey);
 
+    let refreshFailed = false;
     if (hasRefreshCapability && tokenNearExpiry) {
       this.logger.debug(`OAuth2 (${grant}): token near expiry, proactive refresh...`);
       const refreshed = await this.refreshTokenWithMutex(authConfig, connectorId);
@@ -78,6 +84,7 @@ export class OAuth2TokenService {
         return refreshed;
       }
       // Refresh failed — fall through to return stored token
+      refreshFailed = true;
     }
 
     // 3. Return the best available token (cached or stored)
@@ -88,7 +95,55 @@ export class OAuth2TokenService {
       }
     }
 
-    return String(authConfig.accessToken || '');
+    const stored = String(authConfig.accessToken || '');
+    // A client_credentials connector has no token but the one it fetches. When
+    // that fetch fails, sending `Authorization: Bearer ` anyway only trades the
+    // token endpoint's precise answer for the API's vaguest one: Reddit
+    // answers an empty bearer with its HTML "Blocked" page, and 52 calls
+    // failed that way with nobody able to tell a wrong client secret from a
+    // bot wall. Stop here and say what the token endpoint said.
+    if (grant === 'client_credentials' && !stored) {
+      const reason = cacheKey ? this.lastRefreshError.get(cacheKey) : undefined;
+      let host = 'the token endpoint';
+      try {
+        host = new URL(String(authConfig.tokenUrl)).host;
+      } catch {
+        // keep the generic wording
+      }
+      const err = new Error(
+        `OAuth2 client_credentials: could not obtain an access token from ${host}` +
+          (reason ? ` (${reason})` : '') +
+          '. No request was sent to the API. Check the client ID and client secret.',
+      ) as Error & { status?: number };
+      // Lets the install-form probe classify this as rejected credentials.
+      err.status = 401;
+      throw err;
+    }
+    // The refresh-token grant, with nothing to send. Same reasoning as above:
+    // `Authorization: Bearer ` earns the API's vaguest answer — Etsy's is
+    // `403 Invalid access token: not a Bearer token`, which sent a user
+    // looking at the token's format when the refresh token itself had been
+    // refused. Only reached when there is no token at all, so a connector that
+    // has one (stored, or cached) behaves exactly as before.
+    if (grant !== 'client_credentials' && !stored) {
+      if (refreshFailed) {
+        const reason = cacheKey ? this.lastRefreshError.get(cacheKey) : undefined;
+        throw unauthorized(
+          `OAuth2: could not renew the access token at ${hostOf(authConfig.tokenUrl)}` +
+            (reason ? ` (${reason})` : '') +
+            '. No request was sent to the API. If the refresh token was refused, ' +
+            'authorize the connector again (Authorize with Provider on its page in AnythingMCP) ' +
+            'or replace its refresh token.',
+        );
+      }
+      if (!authConfig.refreshToken && authConfig.authorizationUrl) {
+        throw unauthorized(
+          'OAuth2: this connector has not been authorized yet. No request was sent to the API. ' +
+            'Open the connector in AnythingMCP and click Authorize with Provider.',
+        );
+      }
+    }
+    return stored;
   }
 
   /**
@@ -131,7 +186,8 @@ export class OAuth2TokenService {
       // SAP S/4HANA Cloud Public Edition and most service-to-service OAuth2
       // servers reject client_id/client_secret in the body — they MUST be
       // sent via HTTP Basic Authorization header (RFC 6749 §2.3.1). We rely
-      // on the Basic header path and keep the body to grant_type + scope.
+      // on the Basic header path and keep the body to grant_type + scope,
+      // unless the adapter sets tokenAuthMethod: client_secret_post.
       if (!clientId || !clientSecret) {
         this.logger.warn(
           'OAuth2 client_credentials: missing clientId/clientSecret',
@@ -148,14 +204,31 @@ export class OAuth2TokenService {
       const headers: Record<string, string> = {
         'Content-Type': 'application/x-www-form-urlencoded',
       };
+      // The adapter's User-Agent applies to the token request too. Reddit
+      // throttles generic agents ("axios/1.x" is one) and asks every client,
+      // token endpoint included, to identify itself. Only the User-Agent is
+      // forwarded: other extraHeaders (Etsy's x-api-key) belong to the API.
+      const userAgent = findHeader(authConfig.extraHeaders, 'user-agent');
+      if (userAgent) headers['User-Agent'] = userAgent;
 
       if (grant === 'client_credentials') {
         body = { grant_type: 'client_credentials' };
         if (scope) body.scope = scope;
-        const basic = Buffer.from(`${clientId}:${clientSecret}`).toString(
-          'base64',
-        );
-        headers.Authorization = `Basic ${basic}`;
+        if (
+          authConfig.tokenAuthMethod === 'post' ||
+          authConfig.tokenAuthMethod === 'client_secret_post'
+        ) {
+          // client_secret_post — the other method RFC 6749 §2.3.1 allows,
+          // and the only one some servers document: Amadeus's token
+          // endpoint takes client_id/client_secret as form fields.
+          body.client_id = String(clientId);
+          body.client_secret = String(clientSecret);
+        } else {
+          const basic = Buffer.from(`${clientId}:${clientSecret}`).toString(
+            'base64',
+          );
+          headers.Authorization = `Basic ${basic}`;
+        }
       } else {
         body = {
           grant_type: 'refresh_token',
@@ -188,13 +261,17 @@ export class OAuth2TokenService {
         },
       );
 
+      const cacheKey = connectorId || tokenUrl;
       const { access_token, expires_in, refresh_token: newRefreshToken } =
         response.data;
-      if (!access_token) return null;
+      if (!access_token) {
+        this.lastRefreshError.set(cacheKey, 'the response carried no access_token');
+        return null;
+      }
+      this.lastRefreshError.delete(cacheKey);
 
       // Cache the new token
       const expiresInMs = (expires_in || 3600) * 1000;
-      const cacheKey = connectorId || tokenUrl;
       this.tokenCache.set(cacheKey, {
         accessToken: access_token,
         expiresAt: Date.now() + expiresInMs,
@@ -216,6 +293,10 @@ export class OAuth2TokenService {
       return access_token;
     } catch (err: any) {
       this.logger.warn(`OAuth2 (${grant}) token refresh failed: ${err.message}`);
+      this.lastRefreshError.set(
+        connectorId || tokenUrl,
+        describeTokenError(err),
+      );
       return null;
     }
   }
@@ -285,10 +366,20 @@ export class OAuth2TokenService {
     try {
       const connector = await this.prisma.connector.findUnique({
         where: { id: connectorId },
-        select: { authConfig: true },
+        select: { authConfig: true, envVars: true },
       });
       if (!connector?.authConfig) return null;
-      return JSON.parse(decrypt(connector.authConfig, this.encryptionKey));
+      // Resolved like the tool path resolves the snapshot it hands us. A
+      // connector whose credentials were typed after install keeps
+      // `{{ETSY_REFRESH_TOKEN}}` (and the client id/secret) as placeholders in
+      // authConfig, with the values in envVars; merging the raw row over the
+      // resolved snapshot put the placeholders back, and the token endpoint
+      // was sent `refresh_token={{ETSY_REFRESH_TOKEN}}`. Literal values
+      // contain no placeholder and pass through unchanged.
+      return interpolateDeep(
+        JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
+        (connector.envVars as Record<string, string> | null) ?? {},
+      );
     } catch (err: any) {
       this.logger.warn(
         `OAuth2: failed to load fresh authConfig for ${connectorId}: ${err.message}`,
@@ -338,4 +429,47 @@ export class OAuth2TokenService {
       );
     }
   }
+}
+
+/** An error the install-form probe and the tool path classify as rejected credentials. */
+function unauthorized(message: string): Error & { status?: number } {
+  const err = new Error(message) as Error & { status?: number };
+  err.status = 401;
+  return err;
+}
+
+function hostOf(url: unknown): string {
+  try {
+    return new URL(String(url)).host;
+  } catch {
+    return 'the token endpoint';
+  }
+}
+
+/** Case-insensitive lookup in an adapter's extraHeaders object. */
+function findHeader(headers: unknown, name: string): string | undefined {
+  if (!headers || typeof headers !== 'object') return undefined;
+  for (const [k, v] of Object.entries(headers as Record<string, unknown>)) {
+    if (k.toLowerCase() === name && typeof v === 'string' && v) return v;
+  }
+  return undefined;
+}
+
+/**
+ * A token-endpoint failure in words that are safe to hand back to the caller:
+ * the HTTP status plus the provider's own error code (RFC 6749 §5.2
+ * `error`/`error_description`, or Reddit's `message`). Never the raw body,
+ * which might be an HTML page, and never anything from the request.
+ */
+function describeTokenError(err: any): string {
+  const status = err?.response?.status;
+  if (typeof status !== 'number') return String(err?.code || err?.message || 'network error');
+  const data = err.response.data;
+  const fields =
+    data && typeof data === 'object'
+      ? [data.error, data.error_description, data.message]
+          .filter((v) => typeof v === 'string' && v.length > 0)
+          .map((v: string) => v.slice(0, 120))
+      : [];
+  return [`HTTP ${status}`, ...new Set(fields)].join(': ');
 }

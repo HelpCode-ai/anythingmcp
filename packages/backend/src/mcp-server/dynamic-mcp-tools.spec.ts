@@ -508,3 +508,27 @@ describe('DynamicMcpTools — credentials that were filled in after the install'
     expect(JSON.stringify(res)).toMatch(/SHOP_ID, SHOP_SECRET/);
   });
 });
+
+describe('DynamicMcpTools — a base URL variable without https://', () => {
+  it('names the variable instead of failing in the SSRF guard', async () => {
+    // A Substack install from before the save-time check: the publication was
+    // typed as a bare host and stored as the base URL verbatim.
+    const tool = makeTool();
+    tool.connectorConfig = {
+      baseUrl: 'yourname.substack.com',
+      authType: 'NONE',
+      envVars: { SUBSTACK_PUBLICATION_URL: 'yourname.substack.com' },
+    };
+    const { executor, restEngine } = build(tool, { engineResult: { ok: true } });
+
+    const res = await executor.executeTool('list_devices', {});
+
+    expect(restEngine.execute).not.toHaveBeenCalled();
+    expect(res.isError).toBe(true);
+    const text = JSON.stringify(res);
+    expect(text).toContain(
+      'SUBSTACK_PUBLICATION_URL must be a full URL such as https://yourname.substack.com',
+    );
+    expect(text).not.toMatch(/SSRF/);
+  });
+});

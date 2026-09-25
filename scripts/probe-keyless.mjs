@@ -13,7 +13,7 @@
  *
  * Run it from a datacenter address (CI runner, the cloud droplet) — a
  * residential IP proves nothing. Dependency-free on purpose so it can be
- * copied into the app container and run there.
+ * copied into the backend container and run there.
  *
  *   node scripts/probe-keyless.mjs            # table for every keyless adapter
  *   node scripts/probe-keyless.mjs --check    # exit 1 if a non-selfHostOnly one fails
@@ -30,6 +30,21 @@
  * `{{VAR}}` placeholders in the base URL are filled from PROBE_<VAR> in the
  * environment (e.g. PROBE_MOTIS_URL for deutsche-bahn); an unfilled one is
  * reported as `skipped`.
+ *
+ * "Keyless" means the user supplies nothing, not `authType: NONE`. An adapter
+ * whose auth is fully described by its own JSON — no `{{VAR}}` in authConfig,
+ * no requiredEnvVars beyond operator-provided ones — is probed too, with its
+ * auth reproduced here. Vinted is the case that made this necessary: it moved
+ * to LOGIN_TOKEN with an anonymous session (HEAD the catalog page, read the
+ * `access_token_web` cookie, send it as a Bearer token), and the NONE-only
+ * filter silently dropped it from the weekly run. Supported:
+ *   - NONE
+ *   - LOGIN_TOKEN, mirroring login-token.service.ts: tokenSource `cookie`
+ *     (last non-empty Set-Cookie value, as a browser keeps it) or `body`
+ *     (tokenJsonPath), then headerName/headerTemplate/extraHeaders as in
+ *     injectLoginTokenHeaders(). Password hashing (bcrypt) is not.
+ * Anything else with static credentials is listed as `unsupported-auth`, a
+ * warning like `no-probe`, so it shows up instead of vanishing.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -65,10 +80,20 @@ function loadAdapters() {
   return out;
 }
 
+/**
+ * No user-supplied credentials: every required env var is operator-provided,
+ * and — for any auth type other than NONE — the authConfig carries no `{{VAR}}`
+ * placeholder, i.e. the adapter JSON alone is enough to authenticate.
+ */
 function isKeyless(a) {
-  if (a.connector?.authType !== 'NONE') return false;
-  return (a.requiredEnvVars || []).every((v) => OPERATOR_PROVIDED.has(v));
+  if (!(a.requiredEnvVars || []).every((v) => OPERATOR_PROVIDED.has(v))) return false;
+  const authType = a.connector?.authType;
+  if (!authType || authType === 'NONE') return true;
+  return !/\{\{\w+\}\}/.test(JSON.stringify(a.connector.authConfig ?? {}));
 }
+
+const PROBED_AUTH = new Set(['NONE', 'LOGIN_TOKEN']);
+const USER_AGENT = 'anythingmcp/1.0 (+https://anythingmcp.com)';
 
 /** Mirror of RestEngine.resolveValue for the subset a probe needs. */
 function resolveValue(value, params) {
@@ -130,6 +155,117 @@ function pickProbe(a) {
   return { tool, params };
 }
 
+/** Mirror of jsonPath() in login-token.service.ts. */
+function jsonPath(value, path) {
+  let cur = value;
+  for (const p of path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean)) {
+    if (cur === undefined || cur === null) return undefined;
+    cur = Array.isArray(cur) ? cur[Number(p)] : typeof cur === 'object' ? cur[p] : undefined;
+  }
+  return cur;
+}
+
+/** Mirror of interpolateDeep() in login-token.service.ts. */
+function interpolateDeep(value, params) {
+  if (typeof value === 'string') {
+    const full = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+    if (full) return params[full[1]] ?? '';
+    return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, n) => params[n] ?? '');
+  }
+  if (Array.isArray(value)) return value.map((v) => interpolateDeep(v, params));
+  if (value && typeof value === 'object') {
+    const o = {};
+    for (const [k, v] of Object.entries(value)) o[k] = interpolateDeep(v, params);
+    return o;
+  }
+  return value;
+}
+
+/**
+ * Last non-empty value of a cookie across every Set-Cookie header — mirror of
+ * extractSetCookieValue(). Vinted clears `access_token_web` on one domain and
+ * sets the real one on another in the same response; the first match is empty.
+ */
+function lastSetCookie(headers, name) {
+  const all = typeof headers.getSetCookie === 'function' ? headers.getSetCookie() : [headers.get('set-cookie') || ''];
+  let found = null;
+  for (const entry of all) {
+    const t = entry.trimStart();
+    if (!t.startsWith(`${name}=`)) continue;
+    const end = t.indexOf(';');
+    const v = t.slice(name.length + 1, end === -1 ? undefined : end);
+    if (v) found = v;
+  }
+  return found;
+}
+
+async function timedFetch(url, init) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal, redirect: 'follow' });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Obtain a LOGIN_TOKEN the way login-token.service.ts performLogin() does and
+ * return the headers injectLoginTokenHeaders() would add. Throws an Error with
+ * a `verdict` on failure; never prints the token.
+ */
+async function loginTokenHeaders(cfg) {
+  const fail = (verdict, note, status) => Object.assign(new Error(note), { verdict, status });
+  if (cfg.passwordHashing && cfg.passwordHashing.scheme !== 'none') {
+    throw fail('unsupported-auth', `LOGIN_TOKEN passwordHashing ${cfg.passwordHashing.scheme}`);
+  }
+  if (!cfg.loginUrl) throw fail('bad-probe', 'LOGIN_TOKEN without loginUrl');
+  const params = { username: cfg.username ?? '', password: cfg.password ?? '', passwordHashed: cfg.password ?? '', aud: cfg.aud ?? '', otp: cfg.otp ?? '' };
+  let data;
+  if (cfg.loginBody !== undefined) data = interpolateDeep(cfg.loginBody, params);
+  else if (cfg.loginBodyTemplate) data = JSON.parse(cfg.loginBodyTemplate.replace(/\$\{(\w+)\}/g, (_, n) => params[n] ?? ''));
+  else data = params;
+
+  const method = String(cfg.loginMethod || 'POST').toUpperCase();
+  const url = new URL(cfg.loginUrl);
+  let body;
+  // axios sends `data` as the query string for GET and drops it for HEAD.
+  if (method === 'GET' && data && typeof data === 'object') {
+    for (const [k, v] of Object.entries(data)) url.searchParams.set(k, String(v));
+  } else if (method !== 'GET' && method !== 'HEAD' && data !== null && data !== undefined) {
+    body = JSON.stringify(data);
+  }
+  const headers = { 'User-Agent': USER_AGENT, 'Content-Type': 'application/json', ...(cfg.loginHeaders || {}) };
+
+  let res;
+  try {
+    res = await timedFetch(url, { method, headers, body });
+  } catch (err) {
+    throw fail('login-failed', `login ${method} ${url.origin}${url.pathname}: ${err?.name === 'AbortError' ? 'timeout' : err?.cause?.code || err?.message}`);
+  }
+  const text = method === 'HEAD' ? '' : await res.text().catch(() => '');
+  if (res.status >= 400) {
+    const v = classify(res.status, text, res.headers);
+    throw fail(v === 'bot-blocked' ? 'bot-blocked' : 'login-failed', `login ${method} ${url.origin}${url.pathname} answered HTTP ${res.status}`, res.status);
+  }
+
+  let token;
+  if (cfg.tokenSource === 'cookie') {
+    token = lastSetCookie(res.headers, cfg.cookieName);
+    if (!token) throw fail('login-failed', `login set no non-empty "${cfg.cookieName}" cookie`, res.status);
+  } else {
+    let json;
+    try { json = JSON.parse(text); } catch { /* not JSON */ }
+    token = jsonPath(json, cfg.tokenJsonPath || '');
+    if (!token || typeof token !== 'string') throw fail('login-failed', `no token at "${cfg.tokenJsonPath}" in login response`, res.status);
+  }
+  const aud = cfg.audJsonPath ? undefined : cfg.aud;
+  const fill = (s) => s.replace(/\$\{token\}/g, token).replace(/\$\{aud\}/g, aud || '');
+  const out = { [cfg.headerName || 'Authorization']: fill(cfg.headerTemplate || 'Bearer ${token}') };
+  for (const [k, v] of Object.entries(cfg.extraHeaders || {})) out[k] = fill(String(v));
+  return out;
+}
+
 function fillTemplate(str, env) {
   const missing = [];
   const out = str.replace(/\{\{(\w+)\}\}/g, (_, name) => {
@@ -161,6 +297,8 @@ function classify(status, bodyText, headers) {
 }
 
 async function probe(a) {
+  const authType = a.connector.authType || 'NONE';
+  if (!PROBED_AUTH.has(authType)) return { slug: a.slug, verdict: 'unsupported-auth', note: `authType ${authType} is not reproduced by this probe` };
   const picked = pickProbe(a);
   if (picked.error) return { slug: a.slug, verdict: picked.error === 'no-probe' ? 'no-probe' : 'bad-probe', note: picked.error };
   const { tool, params } = picked;
@@ -177,7 +315,7 @@ async function probe(a) {
   const q = resolveValue(em.queryParams || {}, params);
   for (const [k, v] of Object.entries(q)) url.searchParams.set(k, String(v));
 
-  const headers = { 'User-Agent': 'anythingmcp/1.0 (+https://anythingmcp.com)' };
+  const headers = { 'User-Agent': USER_AGENT };
   for (const [k, v] of Object.entries(a.connector.headers || {})) headers[k] = fillTemplate(String(v), process.env).out;
   for (const [k, v] of Object.entries(em.headers || {})) headers[k] = String(resolveValue(v, params) ?? '');
 
@@ -192,19 +330,25 @@ async function probe(a) {
     if (!Object.keys(headers).some((h) => h.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
   }
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   const started = Date.now();
+  let authNote;
+  if (authType === 'LOGIN_TOKEN') {
+    try {
+      Object.assign(headers, await loginTokenHeaders(a.connector.authConfig || {}));
+      authNote = 'anonymous LOGIN_TOKEN';
+    } catch (err) {
+      return { slug: a.slug, tool: tool.name, status: err.status ?? 0, ms: Date.now() - started, verdict: err.verdict || 'login-failed', note: err.message };
+    }
+  }
+
   try {
-    const res = await fetch(url, { method, headers, body, signal: ctrl.signal, redirect: 'follow' });
+    const res = await timedFetch(url, { method, headers, body });
     const text = await res.text().catch(() => '');
     const verdict = classify(res.status, text, res.headers);
-    return { slug: a.slug, tool: tool.name, status: res.status, ms: Date.now() - started, verdict, url: url.origin + url.pathname };
+    return { slug: a.slug, tool: tool.name, status: res.status, ms: Date.now() - started, verdict, note: authNote, url: url.origin + url.pathname };
   } catch (err) {
     const note = err?.name === 'AbortError' ? `timeout after ${TIMEOUT_MS / 1000}s` : String(err?.cause?.code || err?.message || err);
     return { slug: a.slug, tool: tool.name, status: 0, ms: Date.now() - started, verdict: 'unreachable', note, url: url.origin + url.pathname };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -224,17 +368,19 @@ for (const a of adapters) {
   );
 }
 
-const FAIL = new Set(['bot-blocked', 'auth-required', 'upstream-error', 'unreachable', 'bad-probe']);
+const FAIL = new Set(['bot-blocked', 'auth-required', 'login-failed', 'upstream-error', 'unreachable', 'bad-probe']);
 const failing = results.filter((r) => FAIL.has(r.verdict) && !r.selfHostOnly);
 const noProbe = results.filter((r) => r.verdict === 'no-probe');
+const unsupported = results.filter((r) => r.verdict === 'unsupported-auth');
 
 console.log('');
 console.log(
   `${results.length} keyless adapters probed: ${results.filter((r) => r.verdict === 'ok').length} ok, ` +
-    `${failing.length} failing, ${noProbe.length} without a probe, ` +
+    `${failing.length} failing, ${noProbe.length} without a probe, ${unsupported.length} with unsupported auth, ` +
     `${results.filter((r) => r.verdict === 'skipped').length} skipped.`,
 );
 if (noProbe.length) console.log(`No probe (add a "probe" field): ${noProbe.map((r) => r.slug).join(', ')}`);
+if (unsupported.length) console.log(`Static credentials this probe cannot reproduce yet: ${unsupported.map((r) => r.slug).join(', ')}`);
 
 if (CHECK && failing.length) {
   for (const r of failing) {

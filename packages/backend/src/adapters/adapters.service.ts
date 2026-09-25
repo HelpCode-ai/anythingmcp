@@ -16,6 +16,7 @@ import {
   withoutOperatorProvided,
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
+import { normalizeBaseUrlVariables } from '../common/base-url-variable.util';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
@@ -98,6 +99,18 @@ export class AdaptersService {
           typeof v === 'string' ? v.trim() : v,
         ]),
       ) as Record<string, string>;
+
+      // A base URL built from a variable (Substack, Magento, WordPress, …)
+      // needs that variable to be a whole URL. `yourname.substack.com` gets
+      // its https:// here; a value that is not a web address at all is
+      // refused while the user is still on the form, naming the variable.
+      // The normalised value is what gets stored, so the environment-variable
+      // editor shows what is actually used.
+      credentials = normalizeBaseUrlVariables(
+        adapter.connector.baseUrl,
+        credentials,
+        adapter.connector.type,
+      );
     }
 
     // Resolve {{VAR}} placeholders in authConfig with provided credentials
@@ -200,7 +213,11 @@ export class AdaptersService {
       `Imported adapter "${slug}" as connector ${connector.id} with ${toolsCreated} tools`,
     );
 
-    const probe = await this.runImportProbe(adapter, connector.id);
+    const probe = await this.runImportProbe(
+      adapter,
+      connector.id,
+      resolvedAuthConfig as Record<string, unknown> | null,
+    );
 
     return { connectorId: connector.id, toolsCreated, probe };
   }
@@ -219,16 +236,24 @@ export class AdaptersService {
   private async runImportProbe(
     adapter: AdapterDefinition,
     connectorId: string,
+    resolvedAuthConfig?: Record<string, unknown> | null,
   ): Promise<ImportProbeResult | null> {
     // An OAuth2 connector authorised in the browser (authorizationUrl, no
     // refresh token of its own) holds no token until the user completes that
     // step on the connector page. Probing it now can only return a 401 that
     // the form would present as a wrong credential.
-    const auth = adapter.connector.authConfig as Record<string, unknown> | undefined;
+    //
+    // Judged on the config as installed, not the catalog template: Etsy and
+    // Pinterest take either a pasted refresh token or the browser flow, so
+    // the template always says `{{ETSY_REFRESH_TOKEN}}` and only the resolved
+    // value says whether one was given. One that was is probed, as before.
+    const auth = (resolvedAuthConfig ?? adapter.connector.authConfig) as
+      | Record<string, unknown>
+      | undefined;
     if (
       adapter.connector.authType === 'OAUTH2' &&
       auth?.authorizationUrl &&
-      !auth.refreshToken
+      !hasUsableValue(auth.refreshToken)
     ) {
       return null;
     }
@@ -246,6 +271,7 @@ export class AdaptersService {
         connector,
         tool.endpointMapping as any,
         call.params,
+        call.toolName,
       );
       const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
       return {
@@ -380,6 +406,11 @@ export type ImportProbeResult =
       status: number | null;
       message: string;
     };
+
+/** Set, and not a `{{VAR}}` placeholder left over from the template. */
+function hasUsableValue(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== '' && !/\{\{[^}]+\}\}/.test(value);
+}
 
 /** A short, printable slice of the probe's response for the install form. */
 function truncateSample(value: unknown, max = 600): string {

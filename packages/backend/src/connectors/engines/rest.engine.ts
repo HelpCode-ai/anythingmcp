@@ -15,6 +15,7 @@ import {
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 
@@ -108,6 +109,19 @@ export class RestEngine {
           'endpoint mapping — it should be a path like /users/{id}.',
       );
     }
+
+    // Callers resolve {{VAR}} and check for leftovers themselves, with the
+    // tool's name in the message. This is the backstop for any that do not:
+    // a leftover in the base URL otherwise reaches the SSRF guard below and
+    // comes back as "SSRF guard: invalid URL '{{VAR}}/...'", which reads like
+    // a blocked request rather than a variable nobody set. Checked on the
+    // mapping, before `{param}` substitution, so a caller's own argument that
+    // happens to contain braces is never mistaken for a missing variable.
+    assertNoUnresolvedPlaceholders({
+      baseUrl: config.baseUrl,
+      path,
+      queryParams: endpointMapping.queryParams,
+    });
     for (const [key, value] of Object.entries(params)) {
       const segment = endpointMapping.encodePathParams
         ? encodeURIComponent(String(value))
@@ -468,9 +482,15 @@ export class RestEngine {
         };
         break;
       case 'BASIC_AUTH':
+        // An empty password is a real configuration, not a missing one:
+        // Companies House (and other key-as-username APIs) want exactly
+        // `Basic base64("<key>:")`, which axios produces from password "".
+        // An absent password must mean the same thing; String(undefined)
+        // would send `<key>:undefined`, which those APIs reject as a
+        // malformed header rather than as a wrong key.
         axiosConfig.auth = {
-          username: String(config.authConfig.username),
-          password: String(config.authConfig.password),
+          username: String(config.authConfig.username ?? ''),
+          password: String(config.authConfig.password ?? ''),
         };
         break;
       case 'OAUTH2': {

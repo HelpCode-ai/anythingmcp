@@ -29,6 +29,15 @@ interface PendingOAuthFlow {
    *    body credentials with 401 invalid_client.
    */
   tokenAuthMethod?: string;
+  /**
+   * The auth config fields the callback writes next to the issued tokens.
+   * Unset (MCP connectors, whose client may come from dynamic registration),
+   * the callback writes the client settings above, as it always has. REST and
+   * GraphQL connectors set it: their client settings are already stored — as
+   * typed, placeholders included, while the values above are resolved — so
+   * only what the flow took from the catalog is added.
+   */
+  persistAuthConfig?: Record<string, unknown>;
   createdAt: number;
 }
 
