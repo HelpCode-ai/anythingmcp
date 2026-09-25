@@ -477,3 +477,53 @@ describe('McpEndpointController — skills_save_to_workspace', () => {
     expect(entries.find((e: any) => e.name === 'skills_save_to_workspace').sig).not.toContain(':v1');
   });
 });
+
+/**
+ * The global /mcp endpoint answers tools/list itself. On the event-stream path
+ * the body echoes the request id, so HTML-significant characters are escaped
+ * (CodeQL js/reflected-xss); the JSON a client parses must be unchanged.
+ */
+describe('McpEndpointController — tools/list event stream', () => {
+  const OLD = process.env.MCP_STREAMABLE_JSON_RESPONSE;
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.MCP_STREAMABLE_JSON_RESPONSE;
+    else process.env.MCP_STREAMABLE_JSON_RESPONSE = OLD;
+  });
+
+  it('escapes < > & in the stream and parses back to the same JSON', () => {
+    delete process.env.MCP_STREAMABLE_JSON_RESPONSE;
+    const controller = new McpEndpointController(
+      {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
+    ) as any;
+    const id = '</script><img src=x onerror=alert(1)>&';
+    const req: any = {
+      body: { jsonrpc: '2.0', id, method: 'tools/list' },
+      visibleTools: [
+        {
+          id: 't1',
+          name: 'crm_get_customer',
+          description: 'Get a <customer> & more',
+          parameters: { type: 'object', properties: {} },
+          connectorConfig: { envVars: {} },
+        },
+      ],
+    };
+    let written = '';
+    const res: any = {
+      status: jest.fn().mockReturnThis(),
+      setHeader: jest.fn(),
+      end: jest.fn((chunk: string) => {
+        written = chunk;
+      }),
+    };
+
+    expect(controller.answerToolsList(req, res, new Set(['t1']))).toBe(true);
+
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
+    expect(res.setHeader).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
+    expect(written).not.toMatch(/[<>&]/);
+    const parsed = JSON.parse(written.replace(/^event: message\ndata: /, '').trim());
+    expect(parsed.id).toBe(id);
+    expect(parsed.result.tools[0].description).toBe('Get a <customer> & more');
+  });
+});

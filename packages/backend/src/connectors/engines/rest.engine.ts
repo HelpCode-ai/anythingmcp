@@ -190,10 +190,9 @@ export class RestEngine {
       if (typeof mappedQuery['__rawquery'] === 'string') {
         const raw = String(mappedQuery['__rawquery']);
         delete mappedQuery['__rawquery'];
-        for (const [k, v] of new URLSearchParams(raw)) {
-          if (isUnsafeKey(k)) continue;
-          mappedQuery[k] = v;
-        }
+        // fromEntries creates own data properties, so a key can never reach
+        // the prototype; the unsafe names are dropped as well.
+        Object.assign(mappedQuery, safeEntries(new URLSearchParams(raw)));
       }
       axiosConfig.params = {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
@@ -666,11 +665,7 @@ export class RestEngine {
       contentType.includes('application/x-www-form-urlencoded') &&
       typeof axiosConfig.data === 'string'
     ) {
-      bodyParams = {};
-      for (const [k, v] of new URLSearchParams(axiosConfig.data)) {
-        if (isUnsafeKey(k)) continue;
-        bodyParams[k] = v;
-      }
+      bodyParams = safeEntries(new URLSearchParams(axiosConfig.data));
     }
 
     const header = buildOAuth1Header({
@@ -777,6 +772,11 @@ export class RestEngine {
  */
 function isUnsafeKey(key: string): boolean {
   return key === '__proto__' || key === 'constructor' || key === 'prototype';
+}
+
+/** Parsed pairs as a plain object, built from own data properties only. */
+function safeEntries(params: URLSearchParams): Record<string, string> {
+  return Object.fromEntries([...params].filter(([key]) => !isUnsafeKey(key)));
 }
 
 /**

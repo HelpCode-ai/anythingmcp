@@ -441,9 +441,15 @@ export class McpEndpointController {
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       // The body echoes the request id; nosniff keeps any browser from
-      // reading this stream as anything but the event stream it is.
+      // reading this stream as anything but the event stream it is, and the
+      // HTML-significant characters are escaped as JSON unicode escapes, which
+      // leaves the JSON identical once parsed.
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.end(`event: message\ndata: ${JSON.stringify(payload)}\n\n`);
+      const data = JSON.stringify(payload)
+        .replace(/&/g, '\\u0026')
+        .replace(/</g, '\\u003c')
+        .replace(/>/g, '\\u003e');
+      res.end(`event: message\ndata: ${data}\n\n`);
     }
     return true;
   }
