@@ -118,13 +118,16 @@ jobs:
           NEXT_PUBLIC_API_URL: http://localhost:4000
 
   release-script:
-    name: Cloud release script (rollback)
+    name: Cloud release script (blue/green)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      # deploy/cloud/release.sh is what puts the previous release back when a
-      # cloud deploy fails; it only ever runs in anger in production. Exercise
-      # its three paths (healthy, broken image, broken compose) on every PR.
+      # deploy/cloud/release.sh swaps the cloud's app containers blue/green;
+      # it only ever runs in anger in production. Exercise it on every PR,
+      # under load through Caddy: the migration from the single-container
+      # layout, healthy releases with zero failed requests, broken image,
+      # broken compose, wrong Caddyfile, a failure after the switch, repeated
+      # releases, the cold fallback — and nothing orphaned after any of them.
       - name: Exercise release.sh against a throwaway stack
         run: bash deploy/cloud/release.test.sh
 

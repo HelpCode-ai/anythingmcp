@@ -114,14 +114,15 @@ fi
 mkdir -p "$STATE_DIR"
 prev=$(cat "$STATE_DIR/state" 2>/dev/null || echo "up")   # "up" | "down:<epoch>"
 
-# A deploy recreates the two app containers, and Caddy answers 502 for the ~20 s
-# in between. On 21 Sep that window landed on a tick and mailed a DOWN for a
-# planned deploy — the kind of false page that teaches you to ignore the real
-# one. deploy-cloud.yml writes an expiry epoch here before it touches a
-# container and clears it on every exit path, the failing ones included. The
-# marker carries an expiry rather than being a bare flag so that a deploy killed
-# mid-flight cannot silence the probe for good: the silence ends by itself and a
-# site still down mails as usual.
+# A planned outage writes an expiry epoch here. On 21 Sep a deploy's ~20 s of
+# 502 landed on a tick and mailed a DOWN for it — the kind of false page that
+# teaches you to ignore the real one. Deploys are blue/green since 25 Sep and
+# have no outage to hide, so a normal deploy no longer writes the marker;
+# deploy/cloud/release.sh writes it only when it has to fall back to
+# stop-then-start, and clears it on every exit path. Operators may write one
+# by hand for manual work. The marker carries an expiry rather than being a
+# bare flag so that a run killed mid-flight cannot silence the probe for good:
+# the silence ends by itself and a site still down mails as usual.
 maintenance_until=$(head -1 "$STATE_DIR/maintenance" 2>/dev/null | tr -cd '0-9')
 [ -n "$maintenance_until" ] || maintenance_until=0
 

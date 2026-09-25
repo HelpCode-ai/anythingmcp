@@ -29,13 +29,13 @@
  *   docker cp scripts/ops/fix-etsy-api-key.mjs amcp-cloud-backend:/app/backend/fix-etsy.mjs
  *   docker exec -w /app/backend amcp-cloud-backend node fix-etsy.mjs            # dry run
  *   docker exec -w /app/backend amcp-cloud-backend node fix-etsy.mjs --apply
- *   # These three on the droplet host, not in the container. The restart takes the API
- *   # down for ~30-60 s; silence the uptime probe first. It honours an expiry
- *   # epoch in this file (deploy/cloud/uptime-probe.sh, as deploy-cloud.yml
- *   # does), so a forgotten marker lapses by itself after 10 minutes:
- *   mkdir -p /var/lib/anythingmcp-probe && echo $(( $(date -u +%s) + 600 )) > /var/lib/anythingmcp-probe/maintenance
- *   docker restart amcp-cloud-backend     # the tool registry caches connector config
- *   rm -f /var/lib/anythingmcp-probe/maintenance
+ *   # Then, on the droplet host, bring the running backend's tool registry up
+ *   # to date — no restart, no downtime. It reloads, from the database, every
+ *   # connector written since the backend loaded it (McpServerService.
+ *   # catchUpRegistry). This used to be `docker restart amcp-cloud-backend`,
+ *   # 30-60 s of API downtime; if a full restart is ever wanted, use the
+ *   # zero-downtime one: `bash /opt/anythingmcp-cloud/release.sh --restart`.
+ *   docker exec amcp-cloud-backend wget -qO- --post-data= http://127.0.0.1:4000/internal/registry/catch-up
  *
  * Secrets never reach stdout: it prints connector ids and which case applied.
  */
