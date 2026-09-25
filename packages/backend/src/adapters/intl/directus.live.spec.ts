@@ -1,4 +1,5 @@
 import * as adapter from './directus.json';
+import { applyResponseTransform } from '../../connectors/response-transform.util';
 import { RestEngine } from '../../connectors/engines/rest.engine';
 import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../../connectors/engines/login-token.service';
@@ -9,8 +10,10 @@ type Tool = {
   endpointMapping: {
     method: string;
     path: string;
+    encodePathParams?: boolean;
     queryParams?: Record<string, string>;
   };
+  responseMapping?: Record<string, unknown>;
 };
 
 const a = adapter as unknown as {
@@ -97,6 +100,34 @@ describe('directus adapter — static spec conformance', () => {
     for (const tool of a.tools) {
       expect(tool.name.startsWith('directus_')).toBe(true);
     }
+  });
+});
+
+describe('directus adapter — identifiers and paging', () => {
+  it('percent-encodes every value it puts in the request path', () => {
+    // Sent verbatim, a collection called "../users" would turn
+    // /items/{collection} into /users, and a "?" would add query parameters:
+    // still read-only, but outside what these tools say they do.
+    const withPathParams = a.tools.filter((t) => t.endpointMapping.path.includes('{'));
+    expect(withPathParams.map((t) => t.name).sort()).toEqual([
+      'directus_get_item',
+      'directus_list_fields',
+      'directus_list_items',
+    ]);
+    for (const t of withPathParams) {
+      expect(t.endpointMapping.encodePathParams).toBe(true);
+    }
+  });
+
+  it('keeps meta next to the items when it was asked for, and returns the items alone otherwise', () => {
+    const listItems = a.tools.find((t) => t.name === 'directus_list_items')!;
+    const items = [{ id: 1, title: 'Hello' }];
+
+    expect(
+      applyResponseTransform({ data: items, meta: { total_count: 42 } }, listItems.responseMapping).value,
+    ).toEqual({ data: items, meta: { total_count: 42 } });
+    expect(applyResponseTransform({ data: items }, listItems.responseMapping).value).toEqual(items);
+    expect(applyResponseTransform({ data: [] }, listItems.responseMapping).value).toEqual([]);
   });
 });
 
