@@ -51,7 +51,7 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 <details>
 <summary><strong>How do I create a custom connector for Claude?</strong></summary>
 
-Run AnythingMCP (self-hosted or [Cloud](https://cloud.anythingmcp.com)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under *Settings → Connectors*. No code required — the [Claude guide](integrations/claude.md) walks through it in ~5 minutes.
+Run AnythingMCP (self-hosted or [Cloud](https://cloud.anythingmcp.com)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under *Customize → Connectors*. No code required — the [Claude guide](integrations/claude.md) walks through it in ~5 minutes.
 </details>
 
 <details>

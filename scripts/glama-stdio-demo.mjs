@@ -85,7 +85,7 @@ server, then connect your AI client to http://localhost:4000/mcp.
 Managed cloud: ${CLOUD} · Guides: ${SITE}/guides`;
 
 const CONNECT = {
-  claude: `Claude: Settings → Connectors → add your AnythingMCP server URL as a custom connector (OAuth 2.0 supported). Guide: ${SITE}/guides`,
+  claude: `Claude: Customize → Connectors → + → add your AnythingMCP server URL as a custom connector (OAuth 2.0 supported). Guide: ${SITE}/guides`,
   chatgpt: `ChatGPT: AnythingMCP is the MCP backend behind "apps in ChatGPT" (formerly connectors). Add it as a connector/app, or use it as the tool layer of an Apps SDK app. Guide: ${SITE}/guides`,
   gemini: `Google Gemini: point Gemini's MCP tooling at your AnythingMCP server URL over HTTP/SSE. Guide: ${SITE}/guides`,
   copilot: `GitHub Copilot: add your AnythingMCP server URL as an MCP server (Streamable HTTP). Guide: ${SITE}/guides`,

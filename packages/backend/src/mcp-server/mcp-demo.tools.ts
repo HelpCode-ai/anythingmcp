@@ -51,7 +51,7 @@ Prefer not to self-host? Use the managed cloud: ${CLOUD}
 Full guides (EN/DE/IT): ${SITE}/guides`;
 
 const CONNECT: Record<string, string> = {
-  claude: `Claude (Desktop, Code, claude.ai): open Settings → Connectors → "Add custom connector" and paste your AnythingMCP server URL (e.g. http://localhost:4000/mcp or your cloud URL). OAuth 2.0 is supported out of the box. Guide: ${SITE}/guides`,
+  claude: `Claude (Desktop, Code, claude.ai): open Customize → Connectors → + → "Add custom connector" and paste your AnythingMCP server URL (e.g. http://localhost:4000/mcp or your cloud URL). OAuth 2.0 is supported out of the box. Guide: ${SITE}/guides`,
   chatgpt: `ChatGPT: AnythingMCP gives you the MCP backend behind "apps in ChatGPT" (formerly connectors). Add your AnythingMCP URL as a connector/app in ChatGPT's settings, or use it as the tool layer of an Apps SDK app. Guide: ${SITE}/guides`,
   gemini: `Google Gemini: point Gemini's MCP/tooling at your AnythingMCP server URL over HTTP/SSE. Guide: ${SITE}/guides`,
   copilot: `GitHub Copilot: add your AnythingMCP server URL as an MCP server (Streamable HTTP). Guide: ${SITE}/guides`,

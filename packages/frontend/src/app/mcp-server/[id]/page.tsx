@@ -10,6 +10,12 @@ import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
+// Opens claude.ai straight on its "Add custom connector" dialog. Connectors
+// moved from Settings to Customize → Connectors; the old settings URL now only
+// says so. Connectors added on claude.ai also appear in Claude Desktop.
+const CLAUDE_ADD_CONNECTOR_URL =
+  'https://claude.ai/new?modal=add-custom-connector#customize/connectors';
+
 export default function McpServerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { token } = useAuth();
@@ -270,7 +276,7 @@ export default function McpServerDetailPage() {
   // IMPORTANT: Claude *Desktop* does NOT accept this — its
   // claude_desktop_config.json only spawns local stdio commands, so a remote
   // http/url entry is silently skipped ("not a valid MCP server
-  // configuration"). For Claude Desktop use the Settings → Connectors UI, or
+  // configuration"). For Claude Desktop use Customize → Connectors, or
   // the mcp-remote bridge (claudeDesktopBridge* below).
   const claudeConfigOAuth = `{
   "mcpServers": {
@@ -456,11 +462,15 @@ export default function McpServerDetailPage() {
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. Click the button below to open Claude&apos;s connector settings.<br />
-              2. Click <strong>Add custom connector</strong>.<br />
-              3. Paste the MCP endpoint URL below.
+              1. Click the button below: Claude opens its <strong>Add custom connector</strong> dialog.<br />
+              2. Enter a name and paste the MCP endpoint URL below, then click <strong>Add</strong>.<br />
+              3. Click <strong>Connect</strong> and approve access.
             </p>
-            {linkAction('https://claude.ai/customize/connectors', 'Open Claude Settings', true)}
+            {linkAction(CLAUDE_ADD_CONNECTOR_URL, 'Add to Claude', true)}
+            <p className="text-xs leading-[1.55] text-[var(--text-3)]">
+              Dialog not showing? In Claude open <strong>Customize → Connectors</strong>,
+              click <strong>+</strong>, then <strong>Add custom connector</strong>.
+            </p>
             {endpointRow('modal-endpoint')}
           </div>
         );
@@ -475,11 +485,11 @@ export default function McpServerDetailPage() {
               commands, so Claude skips it as &ldquo;not a valid MCP server configuration&rdquo;.
             </p>
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. Open <strong>Settings → Connectors</strong> (button below).<br />
-              2. Click <strong>Add custom connector</strong>.<br />
-              3. Paste the MCP endpoint URL below.
+              1. Open <strong>Customize → Connectors</strong> (in Claude Desktop, or with the button below).<br />
+              2. Click <strong>+</strong>, then <strong>Add custom connector</strong>.<br />
+              3. Enter a name and paste the MCP endpoint URL below, then click <strong>Add</strong>.
             </p>
-            {linkAction('https://claude.ai/customize/connectors', 'Open Claude Settings', true)}
+            {linkAction(CLAUDE_ADD_CONNECTOR_URL, 'Add to Claude', true)}
             {endpointRow('modal-claude-desktop-url')}
 
             <details className="group pt-1">

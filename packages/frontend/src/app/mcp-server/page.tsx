@@ -199,7 +199,7 @@ export default function McpServerListPage() {
                           )}
                         </div>
                         <div className="mt-0.5 text-xs text-[var(--text-3)]">
-                          {s._count?.apiKeys || 0} client{(s._count?.apiKeys || 0) === 1 ? '' : 's'} connected
+                          {usageLine(s.usage)}
                         </div>
                       </div>
                     </div>
@@ -253,6 +253,26 @@ export default function McpServerListPage() {
       </div>
     </AppShell>
   );
+}
+
+/**
+ * What a server has actually been doing. The card used to count API keys as
+ * "clients connected", which read 0 on servers used daily over OAuth.
+ */
+function usageLine(usage?: { calls30d: number; lastCallAt: string | null }): string {
+  if (!usage?.lastCallAt || usage.calls30d === 0) return 'No calls in the last 30 days';
+  const calls = `${usage.calls30d.toLocaleString('en-US')} call${usage.calls30d === 1 ? '' : 's'} in 30 days`;
+  return `Last used ${timeAgo(usage.lastCallAt)} · ${calls}`;
+}
+
+function timeAgo(iso: string): string {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 function ServerIcon() {
