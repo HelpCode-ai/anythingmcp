@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { inferJsonSchema, mergeSchema, outputSchemaToZodShape } from './output-schema.util';
 
 describe('output-schema.util — prototype-pollution guard', () => {
@@ -31,5 +32,25 @@ describe('output-schema.util — prototype-pollution guard', () => {
     expect(schema.properties.name.type).toBe('string');
     expect(schema.properties.age.type).toBe('integer');
     expect(schema.properties.ok.type).toBe('boolean');
+  });
+});
+
+describe('output-schema.util — served shape', () => {
+  // Search Console returns {rows, responseAggregationType} when a query
+  // matches and only {responseAggregationType} when it does not.
+  const schema = inferJsonSchema({
+    rows: [{ keys: ['a'], clicks: 1 }],
+    responseAggregationType: 'byPage',
+  });
+
+  it('accepts a response that omits a key the sample had', () => {
+    const served = z.object(outputSchemaToZodShape(schema)!);
+    expect(served.safeParse({ responseAggregationType: 'byPage' }).success).toBe(true);
+  });
+
+  it('still accepts the full response and unknown extra keys', () => {
+    const served = z.object(outputSchemaToZodShape(schema)!).passthrough();
+    expect(served.safeParse({ rows: [], responseAggregationType: 'byPage' }).success).toBe(true);
+    expect(served.safeParse({ rows: [], extra: 1 }).success).toBe(true);
   });
 });

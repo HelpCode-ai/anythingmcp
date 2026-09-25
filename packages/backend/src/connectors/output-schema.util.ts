@@ -73,9 +73,16 @@ export function mergeSchema(a: JsonSchema | null, b: JsonSchema | null): JsonSch
 }
 
 /**
- * Permissive Zod raw shape for serving: one `z.any()` per top-level property of
- * an object schema. Returns null when the schema isn't an object with
- * properties (we only serve outputSchema for object-shaped responses).
+ * Permissive Zod raw shape for serving: one optional `z.any()` per top-level
+ * property of an object schema. Returns null when the schema isn't an object
+ * with properties (we only serve outputSchema for object-shaped responses).
+ *
+ * `.optional()` is required, not decoration. In Zod 4 a bare `z.any()` object
+ * key is required, so a response that omits a key the sample had fails the
+ * MCP SDK's structuredContent validation ("expected nonoptional, received
+ * undefined") and the whole call errors. APIs omit keys all the time: Google
+ * Search Console leaves out `rows` when a query matches nothing, which broke
+ * every empty or past-the-end gsc_query_search_analytics call.
  */
 export function outputSchemaToZodShape(
   schema: unknown,
@@ -86,7 +93,7 @@ export function outputSchemaToZodShape(
   }
   const entries = Object.keys(s.properties)
     .filter(safeKey)
-    .map((k) => [k, z.any()] as const);
+    .map((k) => [k, z.any().optional()] as const);
   if (entries.length === 0) return null;
   return Object.fromEntries(entries);
 }
