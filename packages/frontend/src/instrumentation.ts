@@ -3,7 +3,7 @@
  * delegates to the appropriate Sentry config file based on which runtime
  * Next has booted.
  *
- * No-op everywhere when SENTRY_DSN / NEXT_PUBLIC_SENTRY_DSN are unset.
+ * No-op everywhere when SENTRY_DSN is unset.
  */
 
 export async function register() {
@@ -16,20 +16,6 @@ export async function register() {
 }
 
 // Capture errors thrown from React Server Components / route handlers.
-// Wrapper instead of re-exporting so a missing helper in older sentry
-// versions doesn't break the build.
-import * as SentryNext from '@sentry/nextjs';
+import * as Sentry from '@sentry/nextjs';
 
-type CaptureFn = (
-  err: unknown,
-  request: Request,
-  context: { routerKind: string; routePath: string; routeType: string },
-) => void | Promise<void>;
-
-export const onRequestError: CaptureFn = async (err, request, context) => {
-  const fn = (SentryNext as unknown as { captureRequestError?: CaptureFn })
-    .captureRequestError;
-  if (typeof fn === 'function') {
-    await fn(err, request, context);
-  }
-};
+export const onRequestError = Sentry.captureRequestError;

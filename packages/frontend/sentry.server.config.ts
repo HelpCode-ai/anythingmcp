@@ -1,25 +1,26 @@
 /**
- * Sentry server-side init for Next.js. No-op when SENTRY_DSN is unset.
+ * Sentry server-side init for Next.js (Node runtime). No-op when SENTRY_DSN is
+ * unset. Read at runtime from the container's env, never baked into the image.
  */
 import * as Sentry from '@sentry/nextjs';
+import { sampleRate, scrubBreadcrumb, scrubEvent } from './src/lib/sentry-scrub';
 
-const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN;
+const dsn = process.env.SENTRY_DSN;
 
 if (dsn) {
-  const sample = (raw: string | undefined, fallback: number) => {
-    const n = raw === undefined ? NaN : Number(raw);
-    return Number.isFinite(n) && n >= 0 && n <= 1 ? n : fallback;
-  };
-
   Sentry.init({
     dsn,
-    environment:
-      process.env.SENTRY_ENVIRONMENT ||
-      process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ||
-      process.env.NODE_ENV ||
-      'development',
+    environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
     release: process.env.SENTRY_RELEASE,
-    tracesSampleRate: sample(process.env.SENTRY_TRACES_SAMPLE_RATE, 0),
+    tracesSampleRate: sampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, 0),
     sendDefaultPii: false,
+    integrations: [
+      // This server proxies /mcp and /api to the backend: the default would
+      // attach MCP tool arguments to any error raised on the way through.
+      Sentry.httpIntegration({ maxIncomingRequestBodySize: 'none' }),
+    ],
+    beforeSend: scrubEvent,
+    beforeSendTransaction: scrubEvent,
+    beforeBreadcrumb: scrubBreadcrumb,
   });
 }

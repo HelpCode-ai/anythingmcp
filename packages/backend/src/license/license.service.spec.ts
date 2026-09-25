@@ -223,3 +223,116 @@ describe('LicenseService — billing portal', () => {
     );
   });
 });
+
+describe('LicenseService — paid licences are re-verified', () => {
+  // A paid licence used to be verified once, at activation. A subscription
+  // cancelled or left unpaid on Stripe then stayed `active` in the cloud for
+  // good: on 24 Sep 2026 one workspace was still calling tools two days after
+  // its renewal failed.
+  const axios = require('axios');
+  let get: jest.SpyInstance;
+  beforeEach(() => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    get = jest.spyOn(axios, 'get');
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    get.mockRestore();
+  });
+
+  function make(rows: Array<{ licenseKey: string; organizationId: string }>) {
+    const updates: any[] = [];
+    const prisma = {
+      license: {
+        findMany: jest.fn().mockResolvedValue(rows),
+        update: jest.fn(async (args: any) => {
+          updates.push(args);
+          return {};
+        }),
+      },
+    };
+    const deployment = { isCloud: () => true };
+    const svc = new LicenseService(prisma as any, {} as any, deployment as any);
+    return { svc, prisma, updates };
+  }
+
+  async function run(svc: LicenseService) {
+    const p = svc.reverifyPaidLicenses();
+    await jest.runAllTimersAsync();
+    return p;
+  }
+
+  it('asks only for active paid licences not verified in the last 20 hours', async () => {
+    const { svc, prisma } = make([]);
+    await run(svc);
+    const where = prisma.license.findMany.mock.calls[0][0].where;
+    expect(where.status).toBe('active');
+    expect(where.plan).toEqual({ not: 'trial' });
+    expect(where.OR[0]).toEqual({ lastVerifiedAt: null });
+  });
+
+  it('deactivates a revoked licence and marks an expired one expired', async () => {
+    const { svc, updates } = make([
+      { licenseKey: 'AMCP-AAAA-0000-0000-0001', organizationId: 'o1' },
+      { licenseKey: 'AMCP-BBBB-0000-0000-0002', organizationId: 'o2' },
+    ]);
+    get
+      .mockResolvedValueOnce({ data: { valid: false, error: 'License has been revoked' } })
+      .mockResolvedValueOnce({ data: { valid: false, error: 'License has expired' } });
+
+    await expect(run(svc)).resolves.toEqual({ checked: 2, deactivated: 2, inGrace: 0, unreachable: 0 });
+    expect(updates.map((u) => [u.where.licenseKey, u.data.status])).toEqual([
+      ['AMCP-AAAA-0000-0000-0001', 'revoked'],
+      ['AMCP-BBBB-0000-0000-0002', 'expired'],
+    ]);
+  });
+
+  it('keeps a licence in its payment grace period active, until the date it was given', async () => {
+    const { svc, updates } = make([{ licenseKey: 'AMCP-CCCC-0000-0000-0003', organizationId: 'o3' }]);
+    get.mockResolvedValueOnce({
+      data: {
+        valid: true,
+        plan: 'team',
+        expiresAt: '2026-09-29T09:00:00.000Z',
+        paymentIssue: true,
+        graceUntil: '2026-09-29T09:00:00.000Z',
+      },
+    });
+
+    await expect(run(svc)).resolves.toMatchObject({ checked: 1, inGrace: 1, deactivated: 0 });
+    expect(updates[0].data).toMatchObject({
+      status: 'active',
+      plan: 'team',
+      expiresAt: new Date('2026-09-29T09:00:00.000Z'),
+    });
+  });
+
+  it('changes nothing when the licence server cannot be reached', async () => {
+    const { svc, updates } = make([{ licenseKey: 'AMCP-DDDD-0000-0000-0004', organizationId: 'o4' }]);
+    get.mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'ECONNABORTED' }));
+
+    await expect(run(svc)).resolves.toMatchObject({ checked: 1, unreachable: 1, deactivated: 0 });
+    expect(updates).toHaveLength(0);
+  });
+
+  it('presents the service token so the daily sweep is not rate limited as the public', async () => {
+    process.env.LICENSE_SERVICE_TOKEN = 'test-service-token-0123456789';
+    const { svc } = make([{ licenseKey: 'AMCP-EEEE-0000-0000-0005', organizationId: 'o5' }]);
+    get.mockResolvedValueOnce({ data: { valid: true, plan: 'starter' } });
+    await run(svc);
+    expect(get.mock.calls[0][1].headers).toEqual({ 'x-amcp-service-token': 'test-service-token-0123456789' });
+    delete process.env.LICENSE_SERVICE_TOKEN;
+  });
+
+  it('does nothing on a self-hosted instance', async () => {
+    const prisma = { license: { findMany: jest.fn() } };
+    const svc = new LicenseService(prisma as any, {} as any, { isCloud: () => false } as any);
+    await expect(svc.reverifyPaidLicenses()).resolves.toEqual({
+      checked: 0,
+      deactivated: 0,
+      inGrace: 0,
+      unreachable: 0,
+    });
+    expect(prisma.license.findMany).not.toHaveBeenCalled();
+  });
+});

@@ -1,7 +1,7 @@
 {
   "name": "anythingmcp",
-  "version": "0.11.0",
-  "description": "Give Claude, ChatGPT and Copilot safe access to the software your company already runs. 257 pre-built adapters plus any REST, SOAP/WSDL, GraphQL or SQL system as MCP tools, no code. Self-hosted, open source (AGPL-3.0).",
+  "version": "0.12.0",
+  "description": "Give Claude, ChatGPT and Copilot safe access to the software your company already runs. 258 pre-built adapters plus any REST, SOAP/WSDL, GraphQL or SQL system as MCP tools, no code. Self-hosted, open source (AGPL-3.0).",
   "private": true,
   "license": "AGPL-3.0-only",
   "engines": {

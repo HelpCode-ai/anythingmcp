@@ -2,7 +2,9 @@ import { Module, MiddlewareConsumer, NestModule, Logger, ClassSerializerIntercep
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { join } from 'path';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import * as Sentry from '@sentry/nestjs';
+import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { MCP_STRATEGY } from '@rekog/mcp-nest';
 import { McpAuthModule } from '@rekog/mcp-nest-auth';
 import { mcpStrategy } from './mcp-server/mcp-strategy';
@@ -39,6 +41,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { CloudModule } from './ee/cloud/cloud.module';
 import { getRequiredSecret } from './common/secrets.util';
 import { AppLoggerModule } from './common/logger.module';
+import { SentryContextInterceptor } from './common/sentry-context.interceptor';
 
 // Determine deployment and auth mode from env
 const useCloud = process.env.DEPLOYMENT_MODE === 'cloud';
@@ -80,12 +83,24 @@ if (useOAuth) {
         // `openid email` is silently narrowed to nothing.
         scopesSupported: ['openid', 'email'],
       },
+      // The module verifies at bootstrap that cookie-parser is mounted by
+      // looking for an Express layer whose handler is named `cookieParser`.
+      // With Sentry on, its Express instrumentation wraps every handler as
+      // `layerHandlePatched`, the check finds nothing and throws, and the
+      // backend never starts: that took the cloud down on 2026-09-24. main.ts
+      // always mounts cookie-parser (see the regression test in
+      // main-cookie-parser.spec.ts), so the check is skipped only then.
+      skipCookieParserCheck: Sentry.isInitialized(),
     }),
   );
 }
 
 @Module({
   imports: [
+    // Sentry first, so its instrumentation wraps every module below. Inert
+    // when SENTRY_DSN is unset (instrument.ts never calls Sentry.init).
+    SentryModule.forRoot(),
+
     // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
@@ -138,6 +153,11 @@ if (useOAuth) {
     ...cloudImports,
   ],
   providers: [
+    // Reports exceptions Nest turns into a 500 response, which otherwise never
+    // reach Sentry. HttpExceptions (4xx, auth failures) are expected and are
+    // not reported. Must stay the first APP_FILTER.
+    { provide: APP_FILTER, useClass: SentryGlobalFilter },
+    { provide: APP_INTERCEPTOR, useClass: SentryContextInterceptor },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: EmailVerifiedGuard },
     // Injected by McpServerService, which registers the tools defined in the

@@ -33,6 +33,12 @@ export function proxy(request: NextRequest) {
     // the key in sessionStorage, and it holds no data — the API it calls is
     // authenticated.
     pathname === '/settings/license/activate' ||
+    // Sentry tunnel (tunnelRoute in next.config.ts). Errors on /login and
+    // /register come from signed-out visitors; redirecting them to /login
+    // would drop exactly those reports.
+    pathname === '/monitoring' ||
+    // 404 unless SENTRY_VERIFY_TOKEN is set; see app/sentry-verify.
+    pathname === '/sentry-verify' ||
     pathname.includes('.')
   ) {
     return NextResponse.next();

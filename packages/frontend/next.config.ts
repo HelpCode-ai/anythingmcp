@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import { withSentryConfig } from '@sentry/nextjs/config';
 
 // Internal backend URL for rewrites — never use the public URL here to avoid loops
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || 'http://localhost:4000';
@@ -35,4 +36,26 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Source maps are uploaded to our Sentry project when the build has a
+// SENTRY_AUTH_TOKEN (the Docker publish workflow passes it as a BuildKit
+// secret) and deleted from the output either way, so the public image never
+// serves them. Self-hosted builds without the token skip the upload. Nothing
+// here decides where a running instance reports: that is SENTRY_DSN, read at
+// runtime (see components/sentry-config.tsx).
+export default withSentryConfig(nextConfig, {
+  org: 'helpcodeai-gmbh',
+  project: 'anythingmcp-cloud-frontend',
+  // The organization is in Sentry's EU region.
+  sentryUrl: 'https://de.sentry.io/',
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  release: { name: process.env.SENTRY_RELEASE },
+  widenClientFileUpload: true,
+  sourcemaps: { deleteSourcemapsAfterUpload: true },
+  // Browser events go to /monitoring on this origin and are forwarded to
+  // Sentry, so ad blockers do not hide them. Exempted in proxy.ts.
+  tunnelRoute: '/monitoring',
+  telemetry: false,
+  // Always log: a silent failed upload only shows up later as unreadable
+  // stack traces.
+  silent: false,
+});
