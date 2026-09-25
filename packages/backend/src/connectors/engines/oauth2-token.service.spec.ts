@@ -406,6 +406,70 @@ describe('OAuth2TokenService', () => {
 
       expect(token).toBe('fresh');
     });
+
+    it("forwards the adapter's User-Agent to the token request, and nothing else from extraHeaders", async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: { access_token: 'rd', expires_in: 3600 },
+      });
+
+      await service.refreshToken({
+        grant: 'client_credentials',
+        tokenUrl: 'https://www.reddit.com/api/v1/access_token',
+        clientId: 'id',
+        clientSecret: 'secret',
+        extraHeaders: {
+          'User-Agent': 'web:anythingmcp:v1 (by /u/anythingmcp)',
+          'x-api-key': 'belongs-to-the-api',
+        },
+      });
+
+      const [, , opts] = mockedAxios.post.mock.calls[0] as any;
+      expect(opts.headers['User-Agent']).toBe(
+        'web:anythingmcp:v1 (by /u/anythingmcp)',
+      );
+      expect(opts.headers['x-api-key']).toBeUndefined();
+    });
+
+    it('throws what the token endpoint said instead of sending an empty bearer', async () => {
+      // Reddit's real answer to a wrong client ID/secret.
+      mockedAxios.post.mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 401'), {
+          response: { status: 401, data: { message: 'Unauthorized', error: 401 } },
+        }),
+      );
+
+      const call = service.getAccessToken(
+        {
+          grant: 'client_credentials',
+          tokenUrl: 'https://www.reddit.com/api/v1/access_token',
+          clientId: 'wrong-id',
+          clientSecret: 'wrong-secret',
+        },
+        'conn-rd',
+      );
+
+      await expect(call).rejects.toMatchObject({
+        status: 401,
+        message: expect.stringContaining(
+          'could not obtain an access token from www.reddit.com (HTTP 401: Unauthorized)',
+        ),
+      });
+      await expect(call).rejects.not.toThrow(/wrong-secret|wrong-id/);
+    });
+
+    it('still falls back to a stored token when a client_credentials refresh fails', async () => {
+      mockedAxios.post.mockRejectedValue(new Error('ETIMEDOUT'));
+
+      const token = await service.getAccessToken({
+        grant: 'client_credentials',
+        tokenUrl: 'https://example.com/oauth/token',
+        clientId: 'id',
+        clientSecret: 'secret',
+        accessToken: 'persisted-at',
+      });
+
+      expect(token).toBe('persisted-at');
+    });
   });
 
   describe('rolling refresh tokens', () => {

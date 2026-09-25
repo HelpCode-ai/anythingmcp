@@ -30,6 +30,10 @@ export class OAuth2TokenService {
   // Per-key mutex to prevent concurrent refresh storms
   private refreshInFlight = new Map<string, Promise<string | null>>();
 
+  // Why the last token request for a key failed, in words safe to show the
+  // caller (status + the provider's error code, never the request).
+  private lastRefreshError = new Map<string, string>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -88,7 +92,31 @@ export class OAuth2TokenService {
       }
     }
 
-    return String(authConfig.accessToken || '');
+    const stored = String(authConfig.accessToken || '');
+    // A client_credentials connector has no token but the one it fetches. When
+    // that fetch fails, sending `Authorization: Bearer ` anyway only trades the
+    // token endpoint's precise answer for the API's vaguest one: Reddit
+    // answers an empty bearer with its HTML "Blocked" page, and 52 calls
+    // failed that way with nobody able to tell a wrong client secret from a
+    // bot wall. Stop here and say what the token endpoint said.
+    if (grant === 'client_credentials' && !stored) {
+      const reason = cacheKey ? this.lastRefreshError.get(cacheKey) : undefined;
+      let host = 'the token endpoint';
+      try {
+        host = new URL(String(authConfig.tokenUrl)).host;
+      } catch {
+        // keep the generic wording
+      }
+      const err = new Error(
+        `OAuth2 client_credentials: could not obtain an access token from ${host}` +
+          (reason ? ` (${reason})` : '') +
+          '. No request was sent to the API. Check the client ID and client secret.',
+      ) as Error & { status?: number };
+      // Lets the install-form probe classify this as rejected credentials.
+      err.status = 401;
+      throw err;
+    }
+    return stored;
   }
 
   /**
@@ -148,6 +176,12 @@ export class OAuth2TokenService {
       const headers: Record<string, string> = {
         'Content-Type': 'application/x-www-form-urlencoded',
       };
+      // The adapter's User-Agent applies to the token request too. Reddit
+      // throttles generic agents ("axios/1.x" is one) and asks every client,
+      // token endpoint included, to identify itself. Only the User-Agent is
+      // forwarded: other extraHeaders (Etsy's x-api-key) belong to the API.
+      const userAgent = findHeader(authConfig.extraHeaders, 'user-agent');
+      if (userAgent) headers['User-Agent'] = userAgent;
 
       if (grant === 'client_credentials') {
         body = { grant_type: 'client_credentials' };
@@ -188,13 +222,17 @@ export class OAuth2TokenService {
         },
       );
 
+      const cacheKey = connectorId || tokenUrl;
       const { access_token, expires_in, refresh_token: newRefreshToken } =
         response.data;
-      if (!access_token) return null;
+      if (!access_token) {
+        this.lastRefreshError.set(cacheKey, 'the response carried no access_token');
+        return null;
+      }
+      this.lastRefreshError.delete(cacheKey);
 
       // Cache the new token
       const expiresInMs = (expires_in || 3600) * 1000;
-      const cacheKey = connectorId || tokenUrl;
       this.tokenCache.set(cacheKey, {
         accessToken: access_token,
         expiresAt: Date.now() + expiresInMs,
@@ -216,6 +254,10 @@ export class OAuth2TokenService {
       return access_token;
     } catch (err: any) {
       this.logger.warn(`OAuth2 (${grant}) token refresh failed: ${err.message}`);
+      this.lastRefreshError.set(
+        connectorId || tokenUrl,
+        describeTokenError(err),
+      );
       return null;
     }
   }
@@ -338,4 +380,32 @@ export class OAuth2TokenService {
       );
     }
   }
+}
+
+/** Case-insensitive lookup in an adapter's extraHeaders object. */
+function findHeader(headers: unknown, name: string): string | undefined {
+  if (!headers || typeof headers !== 'object') return undefined;
+  for (const [k, v] of Object.entries(headers as Record<string, unknown>)) {
+    if (k.toLowerCase() === name && typeof v === 'string' && v) return v;
+  }
+  return undefined;
+}
+
+/**
+ * A token-endpoint failure in words that are safe to hand back to the caller:
+ * the HTTP status plus the provider's own error code (RFC 6749 §5.2
+ * `error`/`error_description`, or Reddit's `message`). Never the raw body,
+ * which might be an HTML page, and never anything from the request.
+ */
+function describeTokenError(err: any): string {
+  const status = err?.response?.status;
+  if (typeof status !== 'number') return String(err?.code || err?.message || 'network error');
+  const data = err.response.data;
+  const fields =
+    data && typeof data === 'object'
+      ? [data.error, data.error_description, data.message]
+          .filter((v) => typeof v === 'string' && v.length > 0)
+          .map((v: string) => v.slice(0, 120))
+      : [];
+  return [`HTTP ${status}`, ...new Set(fields)].join(': ');
 }
