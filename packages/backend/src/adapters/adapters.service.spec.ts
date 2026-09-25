@@ -290,3 +290,60 @@ describe('AdaptersService install — a base URL variable without https://', () 
     expect(prisma.connector.create).not.toHaveBeenCalled();
   });
 });
+
+describe('AdaptersService starter pack', () => {
+  const { STARTER_PACK } = jest.requireActual('./starter-pack');
+  const { getAdapter } = jest.requireActual('./catalog');
+
+  function service(opts: { mode?: string; installed?: string[] } = {}) {
+    const svc = Object.create(AdaptersService.prototype) as AdaptersService;
+    (svc as any).configService = { get: (k: string) => (k === 'DEPLOYMENT_MODE' ? opts.mode : undefined) };
+    (svc as any).prisma = {
+      connector: {
+        findMany: jest.fn().mockResolvedValue(
+          [...(opts.installed ?? []), null].map((slug) => ({ config: slug ? { adapterSlug: slug } : null })),
+        ),
+      },
+    };
+    return svc;
+  }
+
+  const saved = process.env.MOTIS_INTERNAL_URL;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.MOTIS_INTERNAL_URL;
+    else process.env.MOTIS_INTERNAL_URL = saved;
+  });
+
+  it('lists only adapters that exist, are keyless and install with no input', () => {
+    for (const entry of STARTER_PACK) {
+      const a = getAdapter(entry.slug);
+      expect({ slug: entry.slug, exists: !!a }).toEqual({ slug: entry.slug, exists: true });
+      expect({ slug: entry.slug, authType: a.connector.authType }).toEqual({ slug: entry.slug, authType: 'NONE' });
+      expect({ slug: entry.slug, selfHostOnly: !!a.selfHostOnly }).toEqual({ slug: entry.slug, selfHostOnly: false });
+      expect(entry.pitch.length).toBeLessThanOrEqual(110);
+    }
+    expect(STARTER_PACK.filter((e: any) => e.preselected).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('leaves out Deutsche Bahn unless the operator provides MOTIS', async () => {
+    delete process.env.MOTIS_INTERNAL_URL;
+    const without = await service().starterPack('org1');
+    expect(without.map((i) => i.slug)).not.toContain('deutsche-bahn');
+
+    process.env.MOTIS_INTERNAL_URL = 'http://motis:8080';
+    const withMotis = await service({ mode: 'cloud' }).starterPack('org1');
+    expect(withMotis.map((i) => i.slug)).toContain('deutsche-bahn');
+  });
+
+  it('marks what the workspace already has and carries the card fields', async () => {
+    const items = await service({ installed: ['hackernews'] }).starterPack('org1');
+    const hn = items.find((i) => i.slug === 'hackernews')!;
+    expect(hn).toMatchObject({ installed: true, name: 'Hacker News', icon: 'hackernews', preselected: true });
+    expect(hn.toolCount).toBeGreaterThan(0);
+    expect(items.find((i) => i.slug === 'nominatim')!.installed).toBe(false);
+    // Order follows the pack definition.
+    expect(items.map((i) => i.slug)).toEqual(
+      STARTER_PACK.map((e: any) => e.slug).filter((s: string) => s !== 'deutsche-bahn'),
+    );
+  });
+});

@@ -422,7 +422,35 @@ export const adapters = {
       `/api/adapters/${slug}/import`,
       { method: 'POST', token, body: credentials ? { credentials } : undefined },
     ),
+  starterPack: (token: string) =>
+    request<StarterPackItem[]>('/api/adapters/starter-pack', { token }),
+  installStarterPack: (slugs: string[], token: string) =>
+    request<{
+      results: StarterPackInstallResult[];
+      server: { id: string; name: string } | null;
+    }>('/api/adapters/starter-pack/install', { method: 'POST', token, body: { slugs } }),
 };
+
+/** A keyless connector offered to a new workspace (see /welcome). */
+export interface StarterPackItem {
+  slug: string;
+  name: string;
+  pitch: string;
+  icon: string;
+  category: string;
+  toolCount: number;
+  preselected: boolean;
+  installed: boolean;
+}
+
+export interface StarterPackInstallResult {
+  slug: string;
+  status: 'installed' | 'already_installed' | 'failed';
+  connectorId?: string;
+  toolsCreated?: number;
+  probeOk?: boolean | null;
+  error?: string;
+}
 
 /** Outcome of the read-only call the backend makes right after an import. */
 export type ImportProbeResult =
