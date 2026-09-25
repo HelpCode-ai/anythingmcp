@@ -415,6 +415,48 @@ export class EmailService {
     });
   }
 
+  // ── Sign-up with an address that already has an account (SMTP only) ────
+  // Registration answers the same whether or not the address is taken, so the
+  // owner of an existing account hears about the attempt here instead. Cloud
+  // has system SMTP; without SMTP this is skipped.
+
+  async sendExistingAccountEmail(
+    to: string,
+    loginUrl: string,
+    resetUrl: string,
+  ): Promise<boolean> {
+    const transport = await this.createTransporter();
+    if (!transport) {
+      this.logger.warn('SMTP not configured; existing-account notice not sent.');
+      return false;
+    }
+    try {
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        subject: 'You already have an AnythingMCP account',
+        html: `
+          <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+            <h2 style="color: #2563eb;">You already have an account</h2>
+            <p>Someone — probably you — just tried to create a new AnythingMCP account with this email address. There already is one, so no new account was created.</p>
+            <a href="${loginUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 16px 0;">
+              Sign in
+            </a>
+            <p>Forgot your password? <a href="${resetUrl}" style="color: #2563eb;">Reset it here</a>.</p>
+            <p style="color: #737373; font-size: 14px;">If this wasn't you, you can ignore this email; nothing has changed on your account.</p>
+            <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+            <p style="color: #a3a3a3; font-size: 12px;">AnythingMCP</p>
+          </div>
+        `,
+        text: `You already have an account\n\nSomeone — probably you — just tried to create a new AnythingMCP account with this email address. There already is one, so no new account was created.\n\nSign in: ${loginUrl}\nForgot your password? ${resetUrl}\n\nIf this wasn't you, you can ignore this email; nothing has changed on your account.`,
+      });
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send existing-account notice: ${err}`);
+      return false;
+    }
+  }
+
   // ── Onboarding Reminder (SMTP only) ───────────────────────────────────
   // Cloud-only drip. Self-hosted instances generally don't have SMTP set
   // up and the external website API has no template for it, so we skip
