@@ -1,183 +1,376 @@
 {
   "slug": "buffer",
   "name": "Buffer",
-  "description": "Manage Buffer (social media scheduling: channels, posts, idea queue, analytics) from any AI agent via GraphQL. 8 tools, Bearer token.",
-  "instructions": "This connector wraps the Buffer Publish GraphQL API (graphql.buffer.com).\n\n**Setup**:\n1. Sign in at https://publish.buffer.com → top-right avatar → **Settings → API access → Generate personal access token**.\n2. Set `BUFFER_ACCESS_TOKEN`.\n\n**Authentication**: `Authorization: Bearer ${BUFFER_ACCESS_TOKEN}`.\n\n**GraphQL-only**: Buffer's modern API is GraphQL. The auto-injected `buffer_graphql_query` / `buffer_graphql_mutation` / `buffer_graphql_schema` builtins cover anything not in the typed wrappers below.\n\n**Channel = connected social account** (Twitter, LinkedIn, Facebook, Instagram, Mastodon, TikTok, Pinterest, YouTube, Bluesky, Threads). Each has an ID; posts must specify channelId(s).\n\n**Post status**: `PENDING_APPROVAL`, `SCHEDULED`, `SENT`, `FAILED`, `DRAFT`.\n\n**Rate limits**: 60 req/min per token. 429 with `Retry-After`.\n\n**Out of scope here**: organization/team membership, billing, Pablo image editor, the Analyze (analytics) deep reports.",
+  "description": "Manage Buffer (social media scheduling: organizations, channels, posts, ideas) from any AI agent via Buffer's GraphQL API. 9 tools, API key.",
+  "instructions": "This connector wraps Buffer's public GraphQL API at `https://api.buffer.com` (docs: https://developers.buffer.com). It replaces the legacy `api.bufferapp.com` REST API; Buffer's API is available on every plan, including Free.\n\n**Setup**:\n1. Sign in to Buffer and open **Settings → API** (https://publish.buffer.com/settings/api).\n2. Click **Generate API Key** (Personal Access tab). Free accounts can hold one key, paid plans up to five.\n3. Paste the key into `BUFFER_ACCESS_TOKEN`. It is sent as `Authorization: Bearer <key>` and acts as your own account: every organization and channel you can see in Buffer, with no per-organization scoping.\n\n**Workflow**: everything hangs off an organization ID.\n1. `buffer_current_user` — your account and its organizations (take the `id` of the one to work in).\n2. `buffer_list_channels` — the connected social accounts of that organization (take a channel `id`).\n3. `buffer_create_post` on one channel (call it once per channel to post the same text to several), or `buffer_create_idea` to park content at organization level.\n4. `buffer_list_posts` / `buffer_list_ideas` to read them back, `buffer_update_post`, `buffer_send_now`, `buffer_delete_post` to change them.\n\n**Scheduling (`mode`)**: `addToQueue` (next free slot of the channel's posting schedule, default), `shareNext` (top of the queue), `shareNow`, or `customScheduled` together with `due_at` (ISO 8601, UTC). `save_to_draft: true` stores a draft instead.\n\n**Post status**: `draft`, `needs_approval`, `scheduled`, `sending`, `sent`, `error`.\n\n**Errors**: mutations answer with a typed payload, not an HTTP error — a result carrying only `message` (e.g. `InvalidInputError`, `LimitReachedError`) means the change was refused; read the message. A 401 `UNAUTHENTICATED` means the API key is missing, wrong or revoked.\n\n**Media**: pass `assets` as a list where each entry holds exactly one of `image`, `video` or `document`, e.g. `[{\"image\": {\"url\": \"https://…/photo.jpg\"}}]`. Buffer does not host files: the URL must be publicly reachable.\n\n**Network-specific options** (Instagram post/story/reel, Pinterest board, YouTube title, threads, first comments) go in `metadata`, keyed by network — see the PostInputMetaData reference at https://developers.buffer.com/reference.html.\n\n**Rate limits** (per API key, rolling windows): 100 requests / 15 min on every plan; 250 / day on Free and Essentials, 500 on Team; 3,000–15,000 / 30 days depending on plan. A 429 carries `Retry-After` — wait that long instead of retrying.\n\n**Beyond the typed tools**: `buffer_graphql_query` / `buffer_graphql_mutation` run any operation from the reference (tags, post metrics, content items). Buffer does not publish its schema without authentication, so `buffer_graphql_schema` cannot load it — use https://developers.buffer.com/reference.html instead.",
   "region": "intl",
   "category": "social",
   "icon": "buffer",
-  "docsUrl": "https://buffer.com/developers/api",
-  "requiredEnvVars": ["BUFFER_ACCESS_TOKEN"],
+  "docsUrl": "https://developers.buffer.com/guides/getting-started.html",
+  "requiredEnvVars": [
+    "BUFFER_ACCESS_TOKEN"
+  ],
   "connector": {
     "name": "Buffer GraphQL API",
     "type": "GRAPHQL",
-    "baseUrl": "https://api.buffer.com/graphql",
+    "baseUrl": "https://api.buffer.com",
     "authType": "BEARER_TOKEN",
     "authConfig": {
       "token": "{{BUFFER_ACCESS_TOKEN}}"
     }
   },
+  "probe": {
+    "tool": "buffer_current_user"
+  },
   "tools": [
     {
       "name": "buffer_current_user",
-      "description": "Return the authenticated user with their orgs.",
-      "parameters": { "type": "object", "properties": {} },
+      "description": "Return the authenticated Buffer account (id, email, name, timezone) with the organizations it belongs to. Start here: every other tool needs an organization ID from this result.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
       "endpointMapping": {
         "method": "query",
-        "path": "{ currentUser { id email name organizations { id name } } }"
+        "path": "query Account { account { id email name timezone organizations { id name channelCount } } }"
       }
     },
     {
       "name": "buffer_list_channels",
-      "description": "List connected social channels for an organization.",
+      "description": "List the connected social channels (X/Twitter, LinkedIn, Instagram, Facebook, Mastodon, Bluesky, Threads, TikTok, Pinterest, YouTube, …) of an organization, with their IDs, network, timezone and whether the queue is paused or the channel disconnected.",
       "parameters": {
         "type": "object",
         "properties": {
-          "organization_id": { "type": "string", "description": "Org ID." }
+          "organization_id": {
+            "type": "string",
+            "description": "Organization ID, from buffer_current_user (account.organizations[].id)."
+          }
         },
-        "required": ["organization_id"]
+        "required": [
+          "organization_id"
+        ]
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query ListChannels($orgId: ID!) { organization(id: $orgId) { channels { id name service serviceType timezone avatar } } }",
-        "bodyMapping": { "variables": { "orgId": "$organization_id" } }
+        "path": "query Channels($organizationId: OrganizationId!) { channels(input: { organizationId: $organizationId }) { id name displayName service descriptor timezone isQueuePaused isDisconnected isLocked } }",
+        "queryParams": {
+          "organizationId": "$organization_id"
+        }
       }
     },
     {
       "name": "buffer_list_posts",
-      "description": "List posts on a channel with status filter.",
+      "description": "List posts of an organization, newest page first, optionally filtered by channel IDs and status. Cursor-paginated: pass pageInfo.endCursor back as after.",
       "parameters": {
         "type": "object",
         "properties": {
-          "channel_id": { "type": "string", "description": "Channel ID." },
-          "status": { "type": "string", "description": "PENDING_APPROVAL, SCHEDULED, SENT, FAILED, DRAFT." },
-          "first": { "type": "integer", "description": "Page size." },
-          "after": { "type": "string", "description": "Cursor." }
+          "organization_id": {
+            "type": "string",
+            "description": "Organization ID, from buffer_current_user (account.organizations[].id)."
+          },
+          "channel_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only posts on these channel IDs. Omit for every channel."
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "needs_approval",
+                "scheduled",
+                "sending",
+                "sent",
+                "error"
+              ]
+            },
+            "description": "Only posts in these statuses, e.g. [\"scheduled\"]. Omit for all."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Page size (default 20)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from the previous page (pageInfo.endCursor)."
+          }
         },
-        "required": ["channel_id"]
+        "required": [
+          "organization_id"
+        ]
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query ListPosts($channelId: ID!, $status: PostStatus, $first: Int, $after: String) { channel(id: $channelId) { posts(status: $status, first: $first, after: $after) { edges { node { id status text dueAt sentAt sentLink media { url type } } } pageInfo { endCursor hasNextPage } } } }",
-        "bodyMapping": {
-          "variables": {
-            "channelId": "$channel_id",
-            "status": "$status",
-            "first": "$first",
-            "after": "$after"
-          }
+        "path": "query Posts($organizationId: OrganizationId!, $channelIds: [ChannelId!], $status: [PostStatus!], $first: Int = 20, $after: String) { posts(first: $first, after: $after, input: { organizationId: $organizationId, filter: { channelIds: $channelIds, status: $status } }) { edges { node { id status text dueAt sentAt createdAt channelId channelService shareMode externalLink error { message } } } pageInfo { endCursor hasNextPage } } }",
+        "queryParams": {
+          "organizationId": "$organization_id",
+          "channelIds": "$channel_ids",
+          "status": "$status",
+          "first": "$first",
+          "after": "$after"
         }
       }
     },
     {
       "name": "buffer_create_post",
-      "description": "Schedule or save a draft post on one or more channels.",
+      "description": "Create a post on ONE channel: add it to the queue, schedule it for a time, publish it now, or save it as a draft. To post the same content to several channels, call once per channel. Returns the post, or a message explaining why Buffer refused it.",
       "parameters": {
         "type": "object",
         "properties": {
-          "organization_id": { "type": "string", "description": "Org ID." },
-          "channel_ids": { "type": "array", "description": "Array of channel IDs." },
-          "text": { "type": "string", "description": "Post text." },
-          "due_at": { "type": "string", "description": "ISO 8601 schedule time. Omit for queue / draft." },
-          "save_as_draft": { "type": "boolean", "description": "If true, save as draft instead of scheduling." },
-          "media_urls": { "type": "array", "description": "Array of image / video URLs." },
-          "link": { "type": "string", "description": "Link URL (for link-preview channels)." }
+          "channel_id": {
+            "type": "string",
+            "description": "Channel ID, from buffer_list_channels."
+          },
+          "text": {
+            "type": "string",
+            "description": "Post text."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "addToQueue",
+              "shareNext",
+              "shareNow",
+              "customScheduled"
+            ],
+            "description": "How to schedule: addToQueue (next free queue slot), shareNext (top of the queue), shareNow (publish immediately) or customScheduled (at due_at). Default addToQueue."
+          },
+          "scheduling_type": {
+            "type": "string",
+            "enum": [
+              "automatic",
+              "notification"
+            ],
+            "description": "automatic (Buffer publishes it, default) or notification (Buffer reminds you to publish it by hand, for networks or formats it cannot post directly)."
+          },
+          "due_at": {
+            "type": "string",
+            "description": "ISO 8601 UTC time, required with mode customScheduled (e.g. 2026-10-01T09:00:00Z)."
+          },
+          "save_to_draft": {
+            "type": "boolean",
+            "description": "true saves a draft instead of scheduling it."
+          },
+          "assets": {
+            "type": "array",
+            "description": "Media to attach, in order. Each entry holds exactly one of image, video or document, e.g. [{\"image\": {\"url\": \"https://example.com/photo.jpg\"}}]. URLs must be publicly reachable.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag IDs to apply."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Network-specific options keyed by network, e.g. {\"instagram\": {\"type\": \"post\", \"shouldShareToFeed\": true}}. See PostInputMetaData in the Buffer reference."
+          }
         },
-        "required": ["organization_id", "channel_ids", "text"]
+        "required": [
+          "channel_id",
+          "text"
+        ]
       },
       "endpointMapping": {
         "method": "mutation",
-        "path": "mutation Create($input: CreatePostInput!) { createPost(input: $input) { post { id status } } }",
-        "bodyMapping": {
-          "variables": {
-            "input": {
-              "organizationId": "$organization_id",
-              "channelIds": "$channel_ids",
-              "text": "$text",
-              "dueAt": "$due_at",
-              "saveAsDraft": "$save_as_draft",
-              "mediaUrls": "$media_urls",
-              "link": "$link"
-            }
-          }
+        "path": "mutation CreatePost($channelId: ChannelId!, $text: String, $mode: ShareMode! = addToQueue, $schedulingType: SchedulingType! = automatic, $dueAt: DateTime, $saveToDraft: Boolean, $assets: [AssetInput!], $tagIds: [TagId!], $metadata: PostInputMetaData) { createPost(input: { channelId: $channelId, text: $text, mode: $mode, schedulingType: $schedulingType, dueAt: $dueAt, saveToDraft: $saveToDraft, assets: $assets, tagIds: $tagIds, metadata: $metadata }) { ... on PostActionSuccess { post { id status dueAt channelId text } } ... on MutationError { message } } }",
+        "queryParams": {
+          "channelId": "$channel_id",
+          "text": "$text",
+          "mode": "$mode",
+          "schedulingType": "$scheduling_type",
+          "dueAt": "$due_at",
+          "saveToDraft": "$save_to_draft",
+          "assets": "$assets",
+          "tagIds": "$tag_ids",
+          "metadata": "$metadata"
         }
       }
     },
     {
       "name": "buffer_update_post",
-      "description": "Update a scheduled post's text, schedule, or media.",
+      "description": "Edit a post that has not been sent yet: text, schedule, media or tags. Only the fields you pass change; everything omitted is kept as it is.",
       "parameters": {
         "type": "object",
         "properties": {
-          "post_id": { "type": "string", "description": "Post ID." },
-          "text": { "type": "string", "description": "New text." },
-          "due_at": { "type": "string", "description": "New ISO 8601 time." },
-          "media_urls": { "type": "array", "description": "Replace media URLs." }
+          "post_id": {
+            "type": "string",
+            "description": "Post ID, from buffer_list_posts or buffer_create_post."
+          },
+          "text": {
+            "type": "string",
+            "description": "New text."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "addToQueue",
+              "shareNext",
+              "shareNow",
+              "customScheduled"
+            ],
+            "description": "New scheduling: addToQueue (next free queue slot), shareNext (top of the queue), shareNow (publish immediately) or customScheduled (at due_at). Omit to keep the current schedule."
+          },
+          "due_at": {
+            "type": "string",
+            "description": "New ISO 8601 UTC time (with mode customScheduled)."
+          },
+          "save_to_draft": {
+            "type": "boolean",
+            "description": "true turns the post back into a draft."
+          },
+          "assets": {
+            "type": "array",
+            "description": "Replaces the whole media list (same shape as in buffer_create_post); [] removes all media. Omit to keep it.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Replaces the tag list."
+          }
         },
-        "required": ["post_id"]
+        "required": [
+          "post_id"
+        ]
       },
       "endpointMapping": {
         "method": "mutation",
-        "path": "mutation Update($input: UpdatePostInput!) { updatePost(input: $input) { post { id status dueAt } } }",
-        "bodyMapping": {
-          "variables": {
-            "input": {
-              "id": "$post_id",
-              "text": "$text",
-              "dueAt": "$due_at",
-              "mediaUrls": "$media_urls"
-            }
-          }
+        "path": "mutation EditPost($id: PostId!, $text: String, $mode: ShareMode, $dueAt: DateTime, $saveToDraft: Boolean, $assets: [AssetInput!], $tagIds: [TagId!]) { editPost(input: { id: $id, text: $text, mode: $mode, dueAt: $dueAt, saveToDraft: $saveToDraft, assets: $assets, tagIds: $tagIds }) { ... on PostActionSuccess { post { id status dueAt text } } ... on MutationError { message } } }",
+        "queryParams": {
+          "id": "$post_id",
+          "text": "$text",
+          "mode": "$mode",
+          "dueAt": "$due_at",
+          "saveToDraft": "$save_to_draft",
+          "assets": "$assets",
+          "tagIds": "$tag_ids"
         }
       }
     },
     {
       "name": "buffer_delete_post",
-      "description": "Delete a post.",
+      "description": "Delete a post by ID. Posts that are publishing or already published may not be deletable; the result then carries a message instead of the deleted ID.",
       "parameters": {
         "type": "object",
         "properties": {
-          "post_id": { "type": "string", "description": "Post ID." }
+          "post_id": {
+            "type": "string",
+            "description": "Post ID to delete."
+          }
         },
-        "required": ["post_id"]
+        "required": [
+          "post_id"
+        ]
       },
       "endpointMapping": {
         "method": "mutation",
-        "path": "mutation Delete($id: ID!) { deletePost(id: $id) { success } }",
-        "bodyMapping": { "variables": { "id": "$post_id" } }
+        "path": "mutation DeletePost($id: PostId!) { deletePost(input: { id: $id }) { ... on DeletePostSuccess { id } ... on MutationError { message } } }",
+        "queryParams": {
+          "id": "$post_id"
+        }
       }
     },
     {
       "name": "buffer_send_now",
-      "description": "Send a scheduled post immediately, regardless of due_at.",
+      "description": "Publish a queued or scheduled post immediately instead of at its slot. Buffer has no separate send-now call: this edits the post with mode shareNow and leaves everything else unchanged.",
       "parameters": {
         "type": "object",
         "properties": {
-          "post_id": { "type": "string", "description": "Post ID." }
+          "post_id": {
+            "type": "string",
+            "description": "Post ID to publish now."
+          }
         },
-        "required": ["post_id"]
+        "required": [
+          "post_id"
+        ]
       },
       "endpointMapping": {
         "method": "mutation",
-        "path": "mutation SendNow($id: ID!) { sendPostNow(id: $id) { post { id status sentAt } } }",
-        "bodyMapping": { "variables": { "id": "$post_id" } }
+        "path": "mutation SendNow($id: PostId!) { editPost(input: { id: $id, mode: shareNow }) { ... on PostActionSuccess { post { id status dueAt sentAt } } ... on MutationError { message } } }",
+        "queryParams": {
+          "id": "$post_id"
+        }
       }
     },
     {
       "name": "buffer_list_ideas",
-      "description": "List ideas from the org-wide idea queue.",
+      "description": "List the ideas (content not yet assigned to a channel) of an organization. Cursor-paginated: pass pageInfo.endCursor back as after.",
       "parameters": {
         "type": "object",
         "properties": {
-          "organization_id": { "type": "string", "description": "Org ID." },
-          "first": { "type": "integer", "description": "Page size." }
+          "organization_id": {
+            "type": "string",
+            "description": "Organization ID, from buffer_current_user (account.organizations[].id)."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Page size (default 20)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from the previous page (pageInfo.endCursor)."
+          }
         },
-        "required": ["organization_id"]
+        "required": [
+          "organization_id"
+        ]
       },
       "endpointMapping": {
         "method": "query",
-        "path": "query Ideas($orgId: ID!, $first: Int) { organization(id: $orgId) { ideas(first: $first) { edges { node { id text createdAt } } } } }",
-        "bodyMapping": { "variables": { "orgId": "$organization_id", "first": "$first" } }
+        "path": "query Ideas($organizationId: OrganizationId!, $first: Int = 20, $after: String) { ideas(first: $first, after: $after, input: { organizationId: $organizationId }) { edges { node { id content { title text services date } groupId createdAt updatedAt } } pageInfo { endCursor hasNextPage } } }",
+        "queryParams": {
+          "organizationId": "$organization_id",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "buffer_create_idea",
+      "description": "Save an idea in an organization: content you want to publish later, not yet tied to a channel or a time. Turn it into a post later with buffer_create_post.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization ID, from buffer_current_user (account.organizations[].id)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short heading (optional)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Body of the idea."
+          }
+        },
+        "required": [
+          "organization_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateIdea($organizationId: ID!, $title: String, $text: String) { createIdea(input: { organizationId: $organizationId, content: { title: $title, text: $text } }) { ... on Idea { id content { title text } } ... on IdeaResponse { idea { id content { title text } } } ... on MutationError { message } } }",
+        "queryParams": {
+          "organizationId": "$organization_id",
+          "title": "$title",
+          "text": "$text"
+        }
       }
     }
   ]

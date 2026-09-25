@@ -1,39 +1,52 @@
 {
   "slug": "vinted",
   "name": "Vinted",
-  "description": "Search Vinted's second-hand fashion marketplace from any AI assistant. Find items by text query, filter by category, price, brand, size, condition. 3 tools, no auth — reverse-engineered from the Vinted mobile app.",
-  "instructions": "This connector wraps the Vinted mobile app's internal API (www.vinted.fr — works across all 16 Vinted markets).\n\n**Setup**: nothing. The endpoints exposed here are the same the Vinted iOS app uses for catalog discovery.\n\n**What it does NOT do**: complete purchases, message sellers, or create listings. Write operations require a logged-in session and Vinted's mobile anti-bot checks. Use this connector to *find* items; transact in the Vinted app.\n\n**Markets**: Vinted operates in 16 countries (FR, DE, IT, ES, NL, BE, AT, PL, CZ, SK, LT, LV, PT, FI, UK, US). The catalog is shared but with different default currencies and language preferences. Pass `currency=EUR`, `currency=GBP`, etc. to filter prices accordingly.\n\n**Pricing**: prices come as floats with `currency`. `price_numeric` is the parsed amount.\n\n**Suggested starter prompts**:\n- \"Find Stone Island jackets size L under €50 on Vinted, sorted by newest.\"\n- \"Search 'Carhartt WIP' in Vinted, EUR, pages 1-3, condition 'very good'.\"\n- \"What filters are available for searching trousers on Vinted?\"",
+  "description": "Search Vinted's second-hand fashion marketplace from any AI assistant: find items by text, category, brand, size, condition, colour and price, and look up the filter IDs to do it. 3 tools, no account or API key — Vinted's own website API with an anonymous session token fetched automatically.",
+  "instructions": "This connector uses the internal API behind the Vinted website (api.vinted.fr). Vinted has no official public API for the catalog: this is the one its own web app calls, it is undocumented, and Vinted changes it without notice (in September 2026 it retired www.vinted.fr/api/v2/catalog/items, which is why earlier versions of this connector failed on every call).\n\n**Setup**: nothing to enter. On the first call the connector requests https://www.vinted.fr/catalog once, keeps the anonymous `access_token_web` session cookie Vinted hands to every visitor, and sends it as a bearer token. The token lasts 24 hours; the connector renews it on its own, and again whenever Vinted answers 401.\n\n**Workflow**:\n1. Optional: `vinted_get_categories` for category IDs and `vinted_get_filters` (filter_code = brand, size, status, color or material) for the IDs of brands, sizes, conditions, colours and materials, with item counts for the current search.\n2. `vinted_search_items` with `search_text` and any of those IDs (comma-separated for several).\n\n**Condition IDs** (`status_ids`): 6 new with tags, 1 new without tags, 2 very good, 3 good, 4 satisfactory.\n\n**Limits**:\n- Read-only: no buying, messaging, favourites or listing. Those need a logged-in Vinted account and happen in the Vinted app.\n- One market: the catalog is served for vinted.fr, prices are in EUR, titles and filter names are in French. Items listed in other EU markets appear too.\n- A search reaches at most 960 items (e.g. 10 pages of 96); narrow it with filters rather than paging further. `total_entries` is capped at 960 for the same reason.\n- Size IDs depend on the category: pass `catalog_ids` to `vinted_get_filters` with filter_code=size, or the answer lists every size chart (about 30 KB).\n- Unofficial: if Vinted moves the endpoint or blocks the session request, calls fail with 401/403/404 until the connector is updated. Use it for occasional lookups, in line with Vinted's terms, not for bulk collection.\n\n**Suggested starter prompts**:\n- \"Find Stone Island jackets size L under €150 on Vinted, newest first.\"\n- \"Search Vinted for 'Carhartt WIP' trousers in very good condition.\"\n- \"Which brands have the most 'veste en jean' listings on Vinted right now?\"",
   "region": "intl",
   "category": "e-commerce",
   "icon": "vinted",
   "docsUrl": "https://www.vinted.com",
-  "selfHostOnly": true,
   "featured": true,
   "priority": 80,
   "requiredEnvVars": [],
+  "probe": {
+    "tool": "vinted_search_items",
+    "params": {
+      "search_text": "jacket",
+      "per_page": 1
+    }
+  },
   "connector": {
     "name": "Vinted Catalog API",
     "type": "REST",
-    "baseUrl": "https://www.vinted.fr",
-    "authType": "NONE",
-    "authConfig": {}
+    "baseUrl": "https://api.vinted.fr",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://www.vinted.fr/catalog",
+      "loginMethod": "HEAD",
+      "loginBody": null,
+      "username": "anonymous",
+      "password": "anonymous",
+      "tokenSource": "cookie",
+      "cookieName": "access_token_web",
+      "tokenTTLSeconds": 72000,
+      "proactiveRefreshSeconds": 3600,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    }
   },
   "tools": [
     {
       "name": "vinted_search_items",
-      "description": "Free-text search across Vinted's catalog. Returns a paginated list of items with id, title, price, currency, brand, size, condition, photos, seller info.",
-      "useProxy": true,
+      "description": "Search Vinted's catalog by free text, with optional category, brand, size, condition, colour, material and price filters. Returns up to 96 items per page with id, title, brand, size and condition, price and price with buyer fees (EUR), link, main photo and seller.",
       "parameters": {
         "type": "object",
         "properties": {
           "search_text": {
             "type": "string",
             "description": "Free-text query (e.g. 'Stone Island jacket', 'Carhartt WIP trousers')."
-          },
-          "currency": {
-            "type": "string",
-            "description": "Currency code: EUR, GBP, PLN, CZK, USD.",
-            "default": "EUR"
           },
           "order": {
             "type": "string",
@@ -43,40 +56,53 @@
               "price_low_to_high",
               "price_high_to_low"
             ],
-            "default": "relevance"
+            "default": "relevance",
+            "description": "Sort order."
           },
           "page": {
             "type": "integer",
             "default": 1,
-            "minimum": 1
+            "minimum": 1,
+            "description": "Page number. A search reaches at most 960 items in total."
           },
           "per_page": {
             "type": "integer",
             "default": 24,
             "minimum": 1,
-            "maximum": 96
+            "maximum": 96,
+            "description": "Items per page (max 96)."
           },
           "catalog_ids": {
             "type": "string",
-            "description": "Optional comma-separated Vinted catalog (category) IDs."
+            "description": "Optional comma-separated category IDs from vinted_get_categories (e.g. '5' men, '1904' women)."
           },
           "brand_ids": {
             "type": "string",
-            "description": "Optional comma-separated brand IDs."
+            "description": "Optional comma-separated brand IDs from vinted_get_filters (filter_code=brand), e.g. '362' Carhartt."
           },
           "size_ids": {
             "type": "string",
-            "description": "Optional comma-separated size IDs."
+            "description": "Optional comma-separated size IDs from vinted_get_filters (filter_code=size). Size IDs depend on the category."
           },
           "status_ids": {
             "type": "string",
-            "description": "Optional condition filter: '6' new with tags, '1' new without tags, '2' very good, '3' good, '4' satisfactory."
+            "description": "Optional condition filter, comma-separated: '6' new with tags, '1' new without tags, '2' very good, '3' good, '4' satisfactory."
+          },
+          "color_ids": {
+            "type": "string",
+            "description": "Optional comma-separated colour IDs from vinted_get_filters (filter_code=color), e.g. '1' black."
+          },
+          "material_ids": {
+            "type": "string",
+            "description": "Optional comma-separated material IDs from vinted_get_filters (filter_code=material)."
           },
           "price_from": {
-            "type": "number"
+            "type": "number",
+            "description": "Optional minimum price in EUR."
           },
           "price_to": {
-            "type": "number"
+            "type": "number",
+            "description": "Optional maximum price in EUR."
           }
         },
         "required": [
@@ -85,54 +111,104 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v2/catalog/items",
+        "path": "/svc-catalogue/items",
         "queryParams": {
           "search_text": "$search_text",
-          "currency": "$currency",
           "order": "$order",
           "page": "$page",
           "per_page": "$per_page",
-          "catalog_ids": "$catalog_ids",
-          "brand_ids": "$brand_ids",
-          "size_ids": "$size_ids",
-          "status_ids": "$status_ids",
+          "attribute_ids[catalog]": "$catalog_ids",
+          "attribute_ids[brand]": "$brand_ids",
+          "attribute_ids[size]": "$size_ids",
+          "attribute_ids[status]": "$status_ids",
+          "attribute_ids[color]": "$color_ids",
+          "attribute_ids[material]": "$material_ids",
           "price_from": "$price_from",
           "price_to": "$price_to"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{pagination: pagination.{current_page: current_page, per_page: per_page, total_pages: total_pages, total_entries: total_entries}, items: items[].{id: id, title: title, brand: item_box.first_line, size_and_condition: item_box.second_line, price: price.amount, total_price_with_fees: total_item_price.amount, currency: price.currency_code, url: join('', ['https://www.vinted.fr', url]), photo: photo.url, seller: user.login, favourites: favourite_count, promoted: promoted}}"
         }
       }
     },
     {
       "name": "vinted_get_filters",
-      "description": "Get the available filter options for Vinted catalog search — categories, brands, sizes, colors, conditions. Useful before search to know what filter IDs are queryable.",
-      "useProxy": true,
+      "description": "List the options of one Vinted search filter — brand, size, status (condition), color or material — with their IDs and how many items match, for an optional search text and category. Use the IDs in vinted_search_items.",
       "parameters": {
         "type": "object",
         "properties": {
+          "filter_code": {
+            "type": "string",
+            "enum": [
+              "brand",
+              "size",
+              "status",
+              "color",
+              "material"
+            ],
+            "description": "Which filter to list."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Optional: count options for this query (e.g. 'veste en jean')."
+          },
           "catalog_ids": {
             "type": "string",
-            "description": "Optional: limit filter discovery to a specific catalog (e.g. one category)."
+            "description": "Optional comma-separated category IDs from vinted_get_categories (e.g. '5' men, '1904' women). Recommended for filter_code=size, whose options depend on the category."
+          }
+        },
+        "required": [
+          "filter_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/svc-filters/filters/facets",
+        "queryParams": {
+          "filter_code": "$filter_code",
+          "search_text": "$search_text",
+          "attribute_ids[catalog]": "$catalog_ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{filter_code: filter_code, options: options[].{id: id, title: title, items_count: items_count, options: options[].{id: id, title: title, items_count: items_count, options: options[].{id: id, title: title, items_count: items_count}}}}"
+        }
+      }
+    },
+    {
+      "name": "vinted_get_categories",
+      "description": "List Vinted categories with their IDs and item counts, for an optional search text. Pass a category ID in catalog_ids to get its subcategories. Use the IDs as catalog_ids in vinted_search_items and vinted_get_filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Optional: count items per category for this query."
+          },
+          "catalog_ids": {
+            "type": "string",
+            "description": "Optional category ID whose subcategories to list (e.g. '5' men, '1904' women)."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/api/v2/catalog/filters",
+        "path": "/svc-filters/faceted_categories",
         "queryParams": {
-          "catalog_ids": "$catalog_ids"
+          "search_text": "$search_text",
+          "attribute_ids[catalog]": "$catalog_ids"
         }
-      }
-    },
-    {
-      "name": "vinted_homepage",
-      "description": "Get Vinted's curated homepage feed — featured items, promoted closets, banners. Useful for editorial discovery.",
-      "useProxy": true,
-      "parameters": {
-        "type": "object",
-        "properties": {}
       },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/api/v2/homepage/all"
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "categories[].{id: id, title: title, item_count: item_count, url: join('', ['https://www.vinted.fr', url])}"
+        }
       }
     }
   ]

@@ -310,6 +310,29 @@ describe('extractSetCookieValue helper', () => {
     expect(extractSetCookieValue(headers, 'B1SESSION')).toBe('XYZ789');
   });
 
+  it('skips a deletion of the same cookie and returns the value that is set', () => {
+    // Vinted's anonymous session: the cookie is cleared on one domain and set
+    // on another in the same response, deletion first.
+    const headers = {
+      'set-cookie': [
+        'access_token_web=; Max-Age=-1; Domain=.www.vinted.fr; Path=/',
+        'access_token_web=eyJ.real.token; Domain=.vinted.fr; Path=/; HttpOnly',
+      ],
+    };
+    expect(extractSetCookieValue(headers, 'access_token_web')).toBe(
+      'eyJ.real.token',
+    );
+  });
+
+  it('returns null when the cookie is only ever cleared', () => {
+    expect(
+      extractSetCookieValue(
+        { 'set-cookie': ['B1SESSION=; Max-Age=-1; Path=/'] },
+        'B1SESSION',
+      ),
+    ).toBeNull();
+  });
+
   it('returns null when the named cookie is absent', () => {
     expect(
       extractSetCookieValue({ 'set-cookie': 'other=1' }, 'B1SESSION'),

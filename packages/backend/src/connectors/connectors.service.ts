@@ -10,7 +10,11 @@ import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
-import { interpolateDeep } from '../common/env-interpolation.util';
+import {
+  interpolateConnectorConfig,
+  interpolateDeep,
+} from '../common/env-interpolation.util';
+import { CALLER_CONTEXT_PREFIX } from '../common/caller-context.util';
 import { assertNoUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { normalizeConnectorBaseUrl } from '../common/url.util';
@@ -395,20 +399,9 @@ export class ConnectorsService {
       staticResponse?: string;
     },
     params: Record<string, unknown>,
+    /** Names the tool in the missing-variable error, as the MCP path does. */
+    toolName?: string,
   ): Promise<unknown> {
-    const authConfig = connector.authConfig
-      ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
-      : undefined;
-
-    const config = {
-      baseUrl: connector.baseUrl,
-      authType: connector.authType,
-      authConfig,
-      headers: connector.headers as Record<string, string>,
-      specUrl: connector.specUrl ?? undefined,
-      connectorId: connector.id,
-    };
-
     // Inject env vars as parameter defaults
     const envVars = connector.envVars as Record<string, string> | undefined;
     const mergedParams = envVars
@@ -435,6 +428,52 @@ export class ConnectorsService {
       }
       return { text: endpointMapping.staticResponse };
     }
+
+    // Resolve {{VAR}} at call time, exactly as DynamicMcpTools does, then
+    // refuse to send what is left. This path (the in-app "Run Test" and the
+    // install probe) used to skip both, so a connector installed without its
+    // base-URL variable failed with "SSRF guard: invalid URL
+    // '{{SUBSTACK_PUBLICATION_URL}}/api/v1/posts'", which names neither the
+    // variable nor the fix — and a variable filled in after install was
+    // never picked up here at all.
+    const resolveVars = { reservedPrefix: CALLER_CONTEXT_PREFIX };
+    const authConfig = connector.authConfig
+      ? interpolateDeep(
+          JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
+          envVars ?? {},
+          resolveVars,
+        )
+      : undefined;
+    const { config: resolved, endpointMapping: resolvedMapping } =
+      interpolateConnectorConfig(
+        {
+          baseUrl: connector.baseUrl,
+          headers: (connector.headers as Record<string, string>) ?? undefined,
+        },
+        endpointMapping,
+        envVars ?? {},
+        resolveVars,
+      );
+    assertNoUnresolvedPlaceholders(
+      {
+        baseUrl: resolved.baseUrl,
+        path: resolvedMapping.path,
+        queryParams: resolvedMapping.queryParams,
+        headers: resolved.headers,
+        authConfig,
+      },
+      toolName ? `the connector behind ${toolName}` : `the "${connector.name}" connector`,
+    );
+    endpointMapping = { ...endpointMapping, ...resolvedMapping };
+
+    const config = {
+      baseUrl: resolved.baseUrl,
+      authType: connector.authType,
+      authConfig,
+      headers: resolved.headers as Record<string, string>,
+      specUrl: connector.specUrl ?? undefined,
+      connectorId: connector.id,
+    };
 
     switch (connector.type) {
       case 'REST': {
