@@ -276,6 +276,11 @@ export interface AdapterMeta {
    *  them as an empty string so the placeholder resolves instead of leaking
    *  into the request verbatim. */
   optionalEnvVars?: string[];
+  /** Variables renamed since earlier versions of the adapter: current name →
+   *  the names installs made before the rename still hold. Saving environment
+   *  variables reads the old name when the current one is not set, so an older
+   *  install keeps working instead of getting an unresolved `{{VAR}}`. */
+  envVarAliases?: Record<string, string[]>;
   toolCount: number;
   /** Content-addressed version of the adapter's installable content (tools +
    *  connector meta + instructions). Stamped onto a connector at install

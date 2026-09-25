@@ -11,6 +11,14 @@
     "IS24_CONSUMER_KEY",
     "IS24_CONSUMER_SECRET"
   ],
+  "envVarAliases": {
+    "IS24_CONSUMER_KEY": [
+      "IS24_CLIENT_ID"
+    ],
+    "IS24_CONSUMER_SECRET": [
+      "IS24_CLIENT_SECRET"
+    ]
+  },
   "connector": {
     "name": "ImmobilienScout24",
     "type": "REST",

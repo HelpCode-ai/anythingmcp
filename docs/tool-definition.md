@@ -27,6 +27,12 @@ not duplicate a required variable.
 Keep the required envelope fields above at the adapter root; use arrays for
 `requiredEnvVars` and `optionalEnvVars`, and do not list one variable in both.
 
+When a variable is renamed, list its previous names under `envVarAliases`,
+keyed by the current name: `{ "IS24_CONSUMER_KEY": ["IS24_CLIENT_ID"] }`.
+Connectors installed before the rename still hold the old name; saving their
+environment variables reads it when the current one is not set, instead of
+leaving an unresolved `{{IS24_CONSUMER_KEY}}` in the credentials.
+
 ### Tools
 
 Each entry in `tools` needs a string `name`, a useful `description`, and its
