@@ -18,6 +18,9 @@
   <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/open%20source-AGPL--3.0-2563eb?labelColor=0b1220" alt="Open source, AGPL-3.0"></a>
   <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/docker/pulls/helpcodeai/anythingmcp?logo=docker&logoColor=white&color=2563eb&labelColor=0b1220" alt="Docker pulls"></a>
+  <a href="#the-adapter-catalog"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FHelpCode-ai%2Fanythingmcp%2Fbadges%2Fadapters.json" alt="Adapters in the catalog"></a>
+  <a href="#the-adapter-catalog"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FHelpCode-ai%2Fanythingmcp%2Fbadges%2Ftools.json" alt="Tools across all adapters"></a>
+  <a href="#the-adapter-catalog"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FHelpCode-ai%2Fanythingmcp%2Fbadges%2Fkeyless.json" alt="Adapters that need no API key"></a>
 </p>
 
 **Claude answering a question no chatbot could answer**, because the data lives in a field-service system that speaks REST, not MCP:
