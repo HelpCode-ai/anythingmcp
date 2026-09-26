@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 258 connectors, 21 of them with no API key." width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 259 connectors, 21 of them with no API key." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Turn any REST/OpenAPI, SOAP, GraphQL or SQL API into MCP tools for Claude, ChatGPT and Copilot.</strong><br/>
-  A self-hosted MCP server and gateway, no code, 258 ready connectors including ERP and e-commerce: SAP Business One, Odoo, Xentral, weclapp, Shopware, WooCommerce, Amazon Seller, Kaufland and more.
+  A self-hosted MCP server and gateway, no code, 259 ready connectors including ERP and e-commerce: SAP Business One, Odoo, Xentral, weclapp, Shopware, WooCommerce, Amazon Seller, Kaufland and more.
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 Three words appear throughout and mean three different things:
 
-- an **adapter** is one of the 258 JSON definitions that ship in this repo — SAP Business One, Odoo, weclapp, Xentral, Shopware, WooCommerce, Amazon Seller, DHL and the rest. 21 of them need no API key at all; the others ask for your credentials at import.
+- an **adapter** is one of the 259 JSON definitions that ship in this repo — SAP Business One, Odoo, weclapp, Xentral, Shopware, WooCommerce, Amazon Seller, DHL and the rest. 21 of them need no API key at all; the others ask for your credentials at import.
 - a **connector** is an adapter, or your own OpenAPI spec / Postman collection / WSDL / GraphQL endpoint / database, once you have configured it in your workspace. Anything you can point at, in minutes, without writing an MCP server.
 - an **MCP server** is the URL you hand to Claude. It exposes the connectors you assign to it, and nothing else.
 
@@ -332,7 +332,7 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 
 ## The adapter catalog
 
-258 adapters, exposing 2,400+ tools. **21 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+259 adapters, exposing 2,400+ tools. **21 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Examples |
 |---|---|

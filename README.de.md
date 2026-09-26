@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 258 Connectors, 21 davon ohne API-Schlüssel." width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 259 Connectors, 21 davon ohne API-Schlüssel." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Mach aus jeder REST-/OpenAPI-, SOAP-, GraphQL- oder SQL-API MCP-Tools für Claude, ChatGPT und Copilot.</strong><br/>
-  Selbst gehosteter MCP-Server und MCP-Gateway, ohne Code. 258 fertige Adapter, auch für ERP und E-Commerce: SAP Business One, Xentral, weclapp, Shopware, WooCommerce, Amazon Seller, Kaufland und viele mehr.
+  Selbst gehosteter MCP-Server und MCP-Gateway, ohne Code. 259 fertige Adapter, auch für ERP und E-Commerce: SAP Business One, Xentral, weclapp, Shopware, WooCommerce, Amazon Seller, Kaufland und viele mehr.
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 Drei Begriffe tauchen immer wieder auf und bezeichnen unterschiedliche Dinge:
 
-- Ein **Adapter** ist eine der 258 JSON-Definitionen in diesem Repository — SAP Business One, Odoo, weclapp, Xentral, Shopware, WooCommerce, Amazon Seller, DHL und viele weitere. 21 davon benötigen überhaupt keinen API-Schlüssel; bei den anderen gibst du deine Zugangsdaten beim Import an.
+- Ein **Adapter** ist eine der 259 JSON-Definitionen in diesem Repository — SAP Business One, Odoo, weclapp, Xentral, Shopware, WooCommerce, Amazon Seller, DHL und viele weitere. 21 davon benötigen überhaupt keinen API-Schlüssel; bei den anderen gibst du deine Zugangsdaten beim Import an.
 - Ein **Connector** entsteht, wenn du einen Adapter oder deine eigene OpenAPI-Spezifikation, Postman-Collection, WSDL, einen GraphQL-Endpunkt oder eine Datenbank in deinem Workspace konfigurierst. In wenigen Minuten lässt sich so eine Verbindung einrichten, ohne einen MCP-Server zu programmieren.
 - Ein **MCP-Server** ist die URL, die du Claude übergibst. Er stellt ausschließlich die Connectors bereit, die du ihm zuweist.
 
@@ -334,7 +334,7 @@ KI-Clients sprechen MCP, deine Systeme dagegen REST, SOAP, GraphQL und SQL. Eine
 
 ## Der Adapterkatalog
 
-258 Adapter mit mehr als 2.400 Tools. **21 benötigen keinen API-Schlüssel**. Bei den übrigen gibst du deine Zugangsdaten beim Import an; danach stehen die Tools sofort bereit. Für jeden Adapter gibt es auf [anythingmcp.com/guides](https://anythingmcp.com/guides) eine Einrichtungsanleitung in sieben Sprachen.
+259 Adapter mit mehr als 2.400 Tools. **21 benötigen keinen API-Schlüssel**. Bei den übrigen gibst du deine Zugangsdaten beim Import an; danach stehen die Tools sofort bereit. Für jeden Adapter gibt es auf [anythingmcp.com/guides](https://anythingmcp.com/guides) eine Einrichtungsanleitung in sieben Sprachen.
 
 | Kategorie | Beispiele |
 |---|---|

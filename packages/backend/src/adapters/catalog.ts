@@ -95,6 +95,7 @@ import * as crisp from './intl/crisp.json';
 import * as datadog from './intl/datadog.json';
 import * as dchub from './intl/dchub.json';
 import * as deel from './intl/deel.json';
+import * as directus from './intl/directus.json';
 import * as discordBot from './intl/discord-bot.json';
 import * as drip from './intl/drip.json';
 import * as dropbox from './intl/dropbox.json';
@@ -478,6 +479,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   datadog as unknown as AdapterDefinition,
   dchub as unknown as AdapterDefinition,
   deel as unknown as AdapterDefinition,
+  directus as unknown as AdapterDefinition,
   discordBot as unknown as AdapterDefinition,
   drip as unknown as AdapterDefinition,
   dropbox as unknown as AdapterDefinition,
