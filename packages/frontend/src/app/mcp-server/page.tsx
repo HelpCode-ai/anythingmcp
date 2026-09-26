@@ -216,6 +216,19 @@ export default function McpServerListPage() {
                     <p className="mb-3 text-[13px] text-[var(--text-2)]">{s.description}</p>
                   )}
 
+                  <p className="mb-3 text-xs text-[var(--text-3)]">
+                    {s.connectors?.length ? (
+                      <>
+                        Exposes{' '}
+                        <span className="text-[var(--text-2)]">
+                          {s.connectors.map((c: any) => c.connector.name).join(', ')}
+                        </span>
+                      </>
+                    ) : (
+                      'No connectors assigned yet'
+                    )}
+                  </p>
+
                   {/* Endpoint URL row with copy */}
                   <div className="mb-4 flex items-center gap-2 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
                     <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--text-2)]">
