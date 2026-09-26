@@ -1,4 +1,62 @@
+# AnythingMCP Cloud — Caddy.
+#
+# ── Blue/green ─────────────────────────────────────────────────────────────
+# The app runs in two colours, backend-blue/frontend-blue and backend-green/
+# frontend-green (docker-compose.cloud.yml); one serves at a time. WHICH one
+# is not in this file: it is the word in /config/amcp-colour inside the Caddy
+# container (the caddy_config volume), read once per request (the `vars`
+# line at the top of the site) and matched on by the handlers below. deploy/cloud/release.sh switches colour by rewriting that
+# one word, atomically — no config reload. A reload hands the listening
+# socket from the old server to the new one, and a connection accepted in
+# that instant can be closed unanswered: measured 2026-09-25, 3 dropped
+# requests in 50 reloads at ~50 req/s. The file switch drops none, requests
+# already on the old colour finish there, and Caddy's admin API still counts
+# in-flight requests per colour (backend-blue:4000 and backend-green:4000 are
+# separate upstreams), which is how the release knows when the old colour
+# has drained. This file changes, and Caddy reloads, only when routes change.
+#
+# With no colour file (a fresh caddy_config volume) every app route answers
+# 503 until release.sh has written one.
+#
+# Edit this file in the repository; the copy on the host is overwritten in
+# place by every release that changes it (in place: the bind mount follows the
+# inode, so a rename would leave Caddy reading the old file).
+
+(backend) {
+	@blue vars amcp_colour blue
+	@green vars amcp_colour green
+	handle @blue {
+		reverse_proxy backend-blue:4000
+	}
+	handle @green {
+		reverse_proxy backend-green:4000
+	}
+	handle {
+		respond "No live release selected" 503
+	}
+}
+
+(frontend) {
+	@blue vars amcp_colour blue
+	@green vars amcp_colour green
+	handle @blue {
+		reverse_proxy frontend-blue:3000
+	}
+	handle @green {
+		reverse_proxy frontend-green:3000
+	}
+	handle {
+		respond "No live release selected" 503
+	}
+}
+
 {$DOMAIN} {
+	# Read the colour ONCE per request; every matcher below compares this
+	# value. Two matchers each reading the file could straddle a switch
+	# (the first sees the old word, the second the new) and match neither:
+	# the release test caught exactly that, one 503 in ~4000 requests.
+	vars amcp_colour {file./config/amcp-colour}
+
 	# ── Backend ────────────────────────────────────────────────────────────
 	# This list must match the `rewrites()` in packages/frontend/next.config.ts.
 	#
@@ -12,40 +70,40 @@
 	# OAuth endpoints Claude and ChatGPT connect through never depend on which
 	# process happens to be listening next door.
 	handle /api/* {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /health* {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /mcp {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /mcp/* {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /.well-known/* {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /auth/* {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /sso/* {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /authorize {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /callback {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /token {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /register {
-		reverse_proxy backend:4000
+		import backend
 	}
 	handle /userinfo {
-		reverse_proxy backend:4000
+		import backend
 	}
 
 	# ── Sentry tunnel ──────────────────────────────────────────────────────
@@ -54,10 +112,24 @@
 	# a location from the client address even with IP storage off, so the
 	# visitor's address is not given to it.
 	handle /monitoring {
-		reverse_proxy frontend:3000 {
-			header_up -X-Forwarded-For
-			header_up -X-Real-IP
-			header_up -Forwarded
+		@blue vars amcp_colour blue
+		@green vars amcp_colour green
+		handle @blue {
+			reverse_proxy frontend-blue:3000 {
+				header_up -X-Forwarded-For
+				header_up -X-Real-IP
+				header_up -Forwarded
+			}
+		}
+		handle @green {
+			reverse_proxy frontend-green:3000 {
+				header_up -X-Forwarded-For
+				header_up -X-Real-IP
+				header_up -Forwarded
+			}
+		}
+		handle {
+			respond "No live release selected" 503
 		}
 	}
 
@@ -65,6 +137,6 @@
 	# Its own container: a backend restart leaves the app reachable, and the
 	# frontend can never take the API down with it.
 	handle {
-		reverse_proxy frontend:3000
+		import frontend
 	}
 }

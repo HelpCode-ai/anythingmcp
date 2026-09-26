@@ -9,13 +9,13 @@
  *   node scripts/ops/migrate-deutsche-bahn-cloud.mjs http://motis:8080 > /tmp/db.sql
  *   scp /tmp/db.sql root@<droplet>:/tmp/db.sql
  *   ssh root@<droplet> 'docker exec -i amcp-cloud-postgres psql -U amcp -d anythingmcp -v ON_ERROR_STOP=1 -1 -f - < /tmp/db.sql'
- *   # The restart takes the API down for ~30-60 s; silence the uptime probe
- *   # first. It honours an expiry
- *   # epoch in this file (deploy/cloud/uptime-probe.sh, as deploy-cloud.yml
- *   # does), so a forgotten marker lapses by itself after 10 minutes:
- *   ssh root@<droplet> 'mkdir -p /var/lib/anythingmcp-probe && echo $(( $(date -u +%s) + 600 )) > /var/lib/anythingmcp-probe/maintenance'
- *   ssh root@<droplet> 'docker restart amcp-cloud-backend'     # the tool registry is in memory
- *   ssh root@<droplet> 'rm -f /var/lib/anythingmcp-probe/maintenance'
+ *   # Then bring the running backend's tool registry up to date — no restart,
+ *   # no downtime. It reloads, from the database, every connector written
+ *   # since the backend loaded it (the SQL above sets updated_at for exactly
+ *   # this). This used to be `docker restart amcp-cloud-backend`, 30-60 s of
+ *   # API downtime; if a full restart is ever wanted, use the zero-downtime
+ *   # one: `bash /opt/anythingmcp-cloud/release.sh --restart`.
+ *   ssh root@<droplet> 'docker exec amcp-cloud-backend wget -qO- --post-data= http://127.0.0.1:4000/internal/registry/catch-up'
  *
  * Why not the catalog re-sync: the change is structural (every endpoint
  * moved) so the boot-time reconciler will not apply it, the per-connector
