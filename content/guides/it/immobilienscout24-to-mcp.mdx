@@ -18,7 +18,7 @@ git clone https://github.com/HelpCode-ai/anythingmcp.git
 cd anythingmcp && docker compose up -d
 ```
 
-Apri `http://localhost:3000/connectors/store`, importa l'adattatore ImmobilienScout24 e inserisci Client ID e Client Secret OAuth.
+Apri `http://localhost:3000/connectors/store`, importa l'adattatore ImmobilienScout24 e inserisci **consumer key** e **consumer secret** di ImmobilienScout24: la coppia di chiavi API generata nel [portale self-service](https://selfservice.immobilienscout24.de) (serve un account business), non l'e-mail e la password con cui accedi. L'API di ricerca richiede inoltre un [permesso da content partner](https://api.immobilienscout24.de/more/api-permission-request/).
 
 ```json
 {

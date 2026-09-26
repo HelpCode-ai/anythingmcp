@@ -62,7 +62,15 @@ export const auth = {
       body: { email, password },
     }),
   register: (email: string, password: string, name: string, acceptTerms: boolean) =>
-    request<{ accessToken: string; user: any; isFirstUser?: boolean }>('/api/auth/register', {
+    // Self-hosted answers with a session. Cloud answers `verificationRequired`
+    // whether or not the address already has an account; sign in to continue.
+    request<{
+      accessToken?: string;
+      user?: any;
+      isFirstUser?: boolean;
+      verificationRequired?: boolean;
+      message?: string;
+    }>('/api/auth/register', {
       method: 'POST',
       body: { email, password, name, acceptTerms },
     }),
@@ -344,6 +352,25 @@ export const connectors = {
       body: data,
       token,
     }),
+  /**
+   * Partial update of OAuth 1.0a credentials. Only the fields sent change; the
+   * stored values are never returned to the browser.
+   */
+  updateOAuth1Config: (
+    id: string,
+    data: {
+      consumerKey?: string;
+      consumerSecret?: string;
+      token?: string;
+      tokenSecret?: string;
+    },
+    token: string,
+  ) =>
+    request<{ message: string }>(`/api/connectors/${id}/oauth1-config`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
   delete: (id: string, token: string) =>
     request(`/api/connectors/${id}`, { method: 'DELETE', token }),
   test: (id: string, token: string) =>
@@ -364,12 +391,14 @@ export const connectors = {
     request<{ message: string; tools: any[] }>(`/api/connectors/${id}/import-spec`, { method: 'POST', token }),
   importTools: (id: string, data: { source: string; content?: string; url?: string }, token: string) =>
     request<{ message: string; tools: any[]; skipped?: string[] }>(`/api/connectors/${id}/import`, { method: 'POST', body: data, token }),
+  // Secrets come back from the server empty and named in `maskedEnvVars`;
+  // sending one back empty keeps its stored value.
   updateEnvVars: (id: string, envVars: Record<string, string>, token: string) =>
-    request(`/api/connectors/${id}/env-vars`, { method: 'PUT', body: { envVars }, token }),
+    request<{ warnings?: string[]; maskedEnvVars?: string[] }>(`/api/connectors/${id}/env-vars`, { method: 'PUT', body: { envVars }, token }),
   exportAll: (token: string) =>
-    request<{ version: string; exportedAt: string; connectors: any[] }>('/api/connectors/export-all', { token }),
+    request<{ version: string; exportedAt: string; secretsIncluded?: boolean; connectors: any[] }>('/api/connectors/export-all', { token }),
   importAll: (data: { connectors: any[] }, token: string) =>
-    request<{ message: string; created: number; skipped: number; tools: number }>('/api/connectors/import-all', { method: 'POST', body: data, token }),
+    request<{ message: string; created: number; skipped: number; tools: number; errors?: string[] }>('/api/connectors/import-all', { method: 'POST', body: data, token }),
   healthCheck: (token: string) =>
     request<{ total: number; healthy: number; unhealthy: number; connectors: any[] }>('/api/connectors/health-check', { token }),
   oauthAuthorize: (id: string, token: string) =>
@@ -401,7 +430,35 @@ export const adapters = {
       `/api/adapters/${slug}/import`,
       { method: 'POST', token, body: credentials ? { credentials } : undefined },
     ),
+  starterPack: (token: string) =>
+    request<StarterPackItem[]>('/api/adapters/starter-pack', { token }),
+  installStarterPack: (slugs: string[], token: string) =>
+    request<{
+      results: StarterPackInstallResult[];
+      server: { id: string; name: string } | null;
+    }>('/api/adapters/starter-pack/install', { method: 'POST', token, body: { slugs } }),
 };
+
+/** A keyless connector offered to a new workspace (see /welcome). */
+export interface StarterPackItem {
+  slug: string;
+  name: string;
+  pitch: string;
+  icon: string;
+  category: string;
+  toolCount: number;
+  preselected: boolean;
+  installed: boolean;
+}
+
+export interface StarterPackInstallResult {
+  slug: string;
+  status: 'installed' | 'already_installed' | 'failed';
+  connectorId?: string;
+  toolsCreated?: number;
+  probeOk?: boolean | null;
+  error?: string;
+}
 
 /** Outcome of the read-only call the backend makes right after an import. */
 export type ImportProbeResult =

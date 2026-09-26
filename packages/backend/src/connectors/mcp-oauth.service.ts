@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import axios from 'axios';
 import { assertSafeOutboundUrl } from '../common/ssrf.util';
+import {
+  clientAssertionParams,
+  isPrivateKeyJwt,
+  type ClientAssertionSettings,
+} from './engines/client-assertion.util';
 
 interface OAuthMetadata {
   issuer: string;
@@ -27,8 +32,21 @@ interface PendingOAuthFlow {
    *  - 'basic'            → HTTP Basic Authorization header
    *    (client_secret_basic). Required by providers like DATEV that reject
    *    body credentials with 401 invalid_client.
+   *  - 'private_key_jwt' → a JWT signed with the client's private key
+   *    (RFC 7523), built from `clientAssertion` at exchange time.
    */
   tokenAuthMethod?: string;
+  /** Signing settings for private_key_jwt (resolved; held in memory only). */
+  clientAssertion?: ClientAssertionSettings;
+  /**
+   * The auth config fields the callback writes next to the issued tokens.
+   * Unset (MCP connectors, whose client may come from dynamic registration),
+   * the callback writes the client settings above, as it always has. REST and
+   * GraphQL connectors set it: their client settings are already stored — as
+   * typed, placeholders included, while the values above are resolved — so
+   * only what the flow took from the catalog is added.
+   */
+  persistAuthConfig?: Record<string, unknown>;
   createdAt: number;
 }
 
@@ -278,6 +296,7 @@ export class McpOAuthService {
     clientSecret?: string;
     codeVerifier: string;
     tokenAuthMethod?: string;
+    clientAssertion?: ClientAssertionSettings;
   }): Promise<{
     accessToken: string;
     refreshToken?: string;
@@ -286,6 +305,7 @@ export class McpOAuthService {
     const useBasic =
       params.tokenAuthMethod === 'basic' ||
       params.tokenAuthMethod === 'client_secret_basic';
+    const privateKeyJwt = isPrivateKeyJwt(params.tokenAuthMethod);
 
     const body: Record<string, string> = {
       grant_type: 'authorization_code',
@@ -300,7 +320,18 @@ export class McpOAuthService {
       Accept: 'application/json',
     };
 
-    if (useBasic && params.clientSecret) {
+    if (privateKeyJwt) {
+      // private_key_jwt (RFC 7523 §2.2): a JWT signed with the client's own
+      // key replaces the secret. The client id is the assertion's `sub`;
+      // Revolut Business documents the exchange without a client_id field.
+      if (!params.clientAssertion) {
+        throw new Error(
+          'Token exchange failed: private_key_jwt is configured but no client assertion settings were found',
+        );
+      }
+      delete body.client_id;
+      Object.assign(body, clientAssertionParams(params.clientAssertion));
+    } else if (useBasic && params.clientSecret) {
       // client_secret_basic (RFC 6749 §2.3.1): credentials go in the
       // Authorization header, NOT the body. Providers like DATEV reject a
       // body-supplied client_secret for confidential clients with 401.
@@ -314,18 +345,40 @@ export class McpOAuthService {
     }
 
     this.logger.debug(
-      `Exchanging auth code at ${params.tokenUrl} (auth=${useBasic ? 'basic' : 'post'})`,
+      `Exchanging auth code at ${params.tokenUrl} (auth=${privateKeyJwt ? 'private_key_jwt' : useBasic ? 'basic' : 'post'})`,
     );
 
     await assertSafeOutboundUrl(params.tokenUrl);
-    const response = await axios.post(
-      params.tokenUrl,
-      new URLSearchParams(body).toString(),
-      {
-        headers,
-        timeout: 10000,
-      },
-    );
+    let response;
+    try {
+      response = await axios.post(
+        params.tokenUrl,
+        new URLSearchParams(body).toString(),
+        {
+          headers,
+          timeout: 10000,
+        },
+      );
+    } catch (err: any) {
+      // Say what the provider said (RFC 6749 §5.2 error/error_description),
+      // not only axios's "Request failed with status code 400": the reason
+      // is usually a setting the user can fix, such as a wrong redirect URI
+      // or an expired assertion.
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      const reason =
+        data && typeof data === 'object'
+          ? [data.error, data.error_description, data.message]
+              .filter((v: unknown) => typeof v === 'string' && v.length > 0)
+              .map((v: string) => v.slice(0, 200))
+          : [];
+      if (typeof status === 'number') {
+        throw new Error(
+          `Token exchange failed: HTTP ${status}${reason.length ? `: ${[...new Set(reason)].join(': ')}` : ''}`,
+        );
+      }
+      throw err;
+    }
 
     const data = response.data;
     if (data.error) {

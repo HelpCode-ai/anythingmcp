@@ -9,6 +9,15 @@ on:
         default: "latest"
         type: string
 
+# One deploy at a time. On 2026-09-25 two runs of the same commit started two
+# minutes apart; the second failed in `docker pull` ("unable to lease
+# content") while the first was swapping containers. Worse cases are easy to
+# picture: a second run recording the first's half-started release as its
+# rollback point, or sharing /tmp/anythingmcp-deploy with it. Queue instead.
+concurrency:
+  group: deploy-cloud
+  cancel-in-progress: false
+
 jobs:
   deploy:
     name: Deploy to Cloud Droplet
@@ -23,7 +32,7 @@ jobs:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/cloud/stuck-users-report.sh,deploy/cloud/systemd/anythingmcp-stuck-report.service,deploy/cloud/systemd/anythingmcp-stuck-report.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
           target: /tmp/anythingmcp-deploy
           overwrite: true
 
@@ -37,10 +46,11 @@ jobs:
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
           envs: CRON_SECRET,LICENSE_SERVICE_TOKEN
-          # The action's default is 10m. A release that fails and is rolled
-          # back can take longer (up to 5 min waiting for the new containers,
-          # the site checks, up to 5 min more for the previous ones), and a
-          # timeout mid-rollback would leave neither release running.
+          # The action's default is 10m. A release can take longer (up to
+          # 5 min waiting for the new containers, the site checks, up to
+          # 2 min draining the old ones), and a timeout mid-release would
+          # leave it half done — the old colour still serving, but the job
+          # unable to say so.
           command_timeout: 30m
           script: |
             set -e
@@ -73,6 +83,20 @@ jobs:
             systemctl daemon-reload
             systemctl enable --now anythingmcp-probe.timer
             systemctl is-active anythingmcp-probe.timer
+
+            # Weekly stuck-users report, Monday 07:00 Europe/Berlin: orgs whose
+            # tool calls have never succeeded, connectors failing for everyone,
+            # signups that never got going. Read-only on the database. Mails
+            # REPORT_TO (else UPTIME_ALERT_TO) through this directory's SMTP_*;
+            # with neither set it writes to the journal. The timer does not fire
+            # on install, only on the next Monday.
+            install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/stuck-users-report.sh ./stuck-users-report.sh
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-stuck-report.service /etc/systemd/system/
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-stuck-report.timer /etc/systemd/system/
+            systemctl daemon-reload
+            systemctl enable --now anythingmcp-stuck-report.timer
+            systemctl is-active anythingmcp-stuck-report.timer
+
             mkdir -p ./deploy/motis
             cp /tmp/anythingmcp-deploy/deploy/motis/* ./deploy/motis/
             rm -rf ./deploy/cloud/db-rest
@@ -98,24 +122,16 @@ jobs:
               fi
             fi
 
-            # Silence the host uptime probe for the length of this deploy.
-            # Recreating the two app containers leaves Caddy answering 502 for
-            # ~20 s, and on 21 Sep that window landed on a probe tick: a DOWN
-            # mail for a planned deploy, which is how an alert stops being read.
-            # The marker is an expiry, not a flag, and the trap clears it on
-            # every exit path — including a failed release, rolled back or not —
-            # so a deploy that actually breaks the site still mails within a
-            # minute. 30 min covers the slowest failed-and-rolled-back release.
-            mkdir -p /var/lib/anythingmcp-probe
-            echo $(( $(date -u +%s) + 1800 )) > /var/lib/anythingmcp-probe/maintenance
-            trap 'rm -f /var/lib/anythingmcp-probe/maintenance; rm -rf /tmp/anythingmcp-deploy' EXIT
+            trap 'rm -rf /tmp/anythingmcp-deploy' EXIT
 
-            # Swap backend and frontend to the new release, reload Caddy, check
-            # the site through it, and roll everything back if any of that
-            # fails: see deploy/cloud/release.sh. On 2026-09-24 a release that
-            # could not start stayed in place and the API answered 502 until
-            # someone intervened; now the previous release comes back and this
-            # job goes red.
+            # Blue/green: start the new release next to the one serving, check
+            # it privately and then publicly, switch Caddy, stop the old one —
+            # see deploy/cloud/release.sh. A release that fails its checks is
+            # removed before it serves anything and this job goes red with the
+            # previous release still serving. The uptime probe is no longer
+            # silenced for the deploy: a healthy one has no downtime to hide.
+            # release.sh silences it itself only when it has to fall back to
+            # stop-then-start (no room on the host for two backends).
             bash /tmp/anythingmcp-deploy/deploy/cloud/release.sh
 
             docker image prune -f

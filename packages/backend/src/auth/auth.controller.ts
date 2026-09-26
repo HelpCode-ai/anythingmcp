@@ -38,6 +38,34 @@ import { SsoEnforcementService } from './sso-enforcement.service';
 import { Roles, RolesGuard } from './roles.guard';
 import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
 
+/**
+ * Registration and password reset answer the same whether or not the address
+ * has an account, and no sooner than this, so that the time the answer takes
+ * does not tell the two apart either (creating an account does more work than
+ * noticing one exists). Read at call time so tests can shrink it.
+ */
+const neutralFloorMs = () => Number(process.env.AUTH_NEUTRAL_FLOOR_MS ?? 700);
+
+async function answerNoSoonerThan<T>(startedAt: number, value: T): Promise<T> {
+  const wait = startedAt + neutralFloorMs() - Date.now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  return value;
+}
+
+/** The answer to every cloud sign-up, new address or not. */
+export const NEUTRAL_REGISTRATION = {
+  verificationRequired: true,
+  message:
+    'Check your inbox. We have sent an email to this address: a verification code if it is new here, or a sign-in link if it already has an account.',
+};
+
+export const NEUTRAL_PASSWORD_RESET = {
+  message: 'If the email exists, a reset link has been sent.',
+};
+
+/** At most one "you already have an account" email per address per hour. */
+const EXISTING_ACCOUNT_NOTICE_MS = 60 * 60 * 1000;
+
 class RecoveryLoginDto {
   @ApiProperty()
   @IsEmail()
@@ -161,6 +189,10 @@ class AcceptInviteDto {
 @Controller('api/auth')
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
+  /** Addresses sent an existing-account notice, and when. */
+  private readonly existingAccountNotices = new Map<string, number>();
+  /** Compared against when an address has no account, so a failed login costs the same bcrypt time. */
+  private dummyHash: Promise<string> | null = null;
 
   constructor(
     private readonly authService: AuthService,
@@ -190,7 +222,12 @@ export class AuthController {
     );
   }
 
-  private async createAndSendVerificationCode(userId: string, email: string, req?: any): Promise<boolean> {
+  private async createAndSendVerificationCode(
+    userId: string,
+    email: string,
+    req?: any,
+    opts: { sendInBackground?: boolean } = {},
+  ): Promise<boolean> {
     // Invalidate old tokens
     await this.prisma.emailVerificationToken.updateMany({
       where: { userId, usedAt: null },
@@ -212,12 +249,13 @@ export class AuthController {
     const verifyUrl = `${instanceUrl}/verify-email?token=${linkToken}`;
 
     // Send email
-    try {
-      return await this.emailService.sendVerificationEmail(email, code, verifyUrl);
-    } catch (err) {
+    const send = this.emailService.sendVerificationEmail(email, code, verifyUrl).catch((err) => {
       this.logger.error(`Failed to send verification email to ${email}: ${err}`);
       return false;
-    }
+    });
+    // The code exists either way; only the delivery is left running.
+    if (opts.sendInBackground) return true;
+    return send;
   }
 
   @Post('login/recovery')
@@ -283,6 +321,10 @@ export class AuthController {
   async login(@Req() req: any, @Body() dto: LoginDto) {
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
+      // Same bcrypt work as a wrong password, so the time taken does not say
+      // whether the address has an account.
+      this.dummyHash ??= this.authService.hashPassword(crypto.randomBytes(16).toString('hex'));
+      await this.authService.comparePassword(dto.password, await this.dummyHash);
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -325,9 +367,16 @@ export class AuthController {
       mcpRoleId: user.mcpRoleId,
     });
 
-    // If user hasn't verified email, resend a verification code
+    // If user hasn't verified email, resend a verification code — unless one
+    // went out in the last minute: a cloud sign-up logs in straight after
+    // registering, and a second code would only void the first.
     if (!user.emailVerified) {
-      await this.createAndSendVerificationCode(user.id, user.email, req);
+      const justSent = await this.prisma.emailVerificationToken.count({
+        where: { userId: user.id, usedAt: null, createdAt: { gt: new Date(Date.now() - 60_000) } },
+      });
+      if (justSent === 0) {
+        await this.createAndSendVerificationCode(user.id, user.email, req);
+      }
     }
 
     // Check if ADMIN needs to complete license setup
@@ -355,58 +404,49 @@ export class AuthController {
 
   @Post('register')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Register a new user account' })
+  @ApiOperation({
+    summary: 'Register a new user account',
+    description:
+      'Self-hosted: returns an access token for the new account. Cloud: returns ' +
+      '`{ verificationRequired: true, message }` whether or not the address already ' +
+      'has an account, and emails either a verification code or a sign-in link; ' +
+      'sign in with the same credentials to continue.',
+  })
   async register(@Req() req: any, @Body() dto: RegisterDto) {
-    const existing = await this.usersService.findByEmail(dto.email);
-    if (existing) {
-      throw new ConflictException('Email already registered');
-    }
-
-    const userCount = await this.usersService.count();
     const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
+    const userCount = await this.usersService.count();
 
-    // In cloud mode: every self-registered user is ADMIN of their own org
-    // In self-hosted: first user is ADMIN, others are EDITOR
-    const role = (isCloud || userCount === 0) ? 'ADMIN' : 'EDITOR';
-
+    // Closed registration is refused before the address is looked at, so
+    // this answer does not depend on whether it has an account.
     if (userCount > 0 && this.configService.get<string>('ALLOW_OPEN_REGISTRATION') !== 'true') {
       throw new ForbiddenException(
         'Registration is disabled. Please contact an administrator for an invitation.',
       );
     }
-    let organizationId: string;
 
-    if (!isCloud && userCount > 0) {
-      // Self-hosted: join the existing (first) organization
-      const existingOrg = await this.prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } });
-      organizationId = existingOrg!.id;
-    } else {
-      // Cloud or first user: create a new organization
-      const orgName = `${dto.name || dto.email.split('@')[0]}'s Workspace`;
-      const org = await this.organizationsService.create(orgName);
-      organizationId = org.id;
+    if (isCloud) return this.registerCloud(req, dto);
+
+    const existing = await this.usersService.findByEmail(dto.email);
+    if (existing) {
+      throw new ConflictException('Email already registered');
     }
 
-    const passwordHash = await this.authService.hashPassword(dto.password);
-    const user = await this.usersService.create({
-      email: dto.email,
-      passwordHash,
-      name: dto.name,
-      role: role as any,
-      organizationId,
-    });
+    // Self-hosted: first user is ADMIN of a new organization, later ones
+    // join the existing (first) organization as EDITOR.
+    const role = userCount === 0 ? 'ADMIN' : 'EDITOR';
+    let organizationId: string | undefined;
+    if (userCount > 0) {
+      const existingOrg = await this.prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } });
+      organizationId = existingOrg!.id;
+    }
 
-    // Create organization membership
-    await this.organizationsService.addMember(user.id, organizationId, role as any);
-
-    // Create default MCP server for new user
-    await this.mcpServersService.createDefaultForUser(user.id, organizationId);
+    const { user, organizationId: orgId } = await this.createAccount(dto, role, organizationId);
 
     const token = this.authService.generateToken({
       sub: user.id,
       email: user.email,
       role: user.role,
-      organizationId,
+      organizationId: orgId,
       mcpRoleId: user.mcpRoleId,
     });
 
@@ -420,11 +460,85 @@ export class AuthController {
         email: user.email,
         name: user.name,
         role: user.role,
-        organizationId,
+        organizationId: orgId,
         emailVerified: false,
       },
       isFirstUser: role === 'ADMIN',
     };
+  }
+
+  /**
+   * Cloud sign-up. Anyone can sign up here, so the answer must not say
+   * whether an address already has an account — "Email already registered"
+   * did, to anyone who asked. Every sign-up gets NEUTRAL_REGISTRATION, no
+   * sooner than the same floor; what differs goes to the address itself: a
+   * verification code for a new account, a sign-in and reset link for an
+   * existing one. The client then signs in with the credentials it just sent,
+   * which works only for the account it has just created.
+   */
+  private async registerCloud(req: any, dto: RegisterDto) {
+    const startedAt = Date.now();
+    const existing = await this.usersService.findByEmail(dto.email);
+
+    if (existing) {
+      // The bcrypt work account creation would have done.
+      await this.authService.hashPassword(dto.password);
+      this.noticeExistingAccount(existing.email);
+      return answerNoSoonerThan(startedAt, NEUTRAL_REGISTRATION);
+    }
+
+    try {
+      const { user } = await this.createAccount(dto, 'ADMIN');
+      await this.createAndSendVerificationCode(user.id, user.email, req, { sendInBackground: true });
+    } catch (err: any) {
+      // Two sign-ups for one new address at once: the other one won.
+      if (err?.code !== 'P2002') throw err;
+      this.noticeExistingAccount(dto.email);
+    }
+    return answerNoSoonerThan(startedAt, NEUTRAL_REGISTRATION);
+  }
+
+  /** Create the user, their membership and default MCP server; a new organization unless one is given. */
+  private async createAccount(dto: RegisterDto, role: 'ADMIN' | 'EDITOR', organizationId?: string) {
+    let orgId = organizationId;
+    if (!orgId) {
+      const orgName = `${dto.name || dto.email.split('@')[0]}'s Workspace`;
+      const org = await this.organizationsService.create(orgName);
+      orgId = org.id;
+    }
+
+    const passwordHash = await this.authService.hashPassword(dto.password);
+    const user = await this.usersService.create({
+      email: dto.email,
+      passwordHash,
+      name: dto.name,
+      role: role as any,
+      organizationId: orgId,
+    });
+
+    // Create organization membership
+    await this.organizationsService.addMember(user.id, orgId, role as any);
+
+    // Create default MCP server for new user
+    await this.mcpServersService.createDefaultForUser(user.id, orgId);
+
+    return { user, organizationId: orgId };
+  }
+
+  /** Email the owner of an existing account about a sign-up attempt, at most hourly. Never awaited. */
+  private noticeExistingAccount(email: string): void {
+    const key = email.toLowerCase();
+    const now = Date.now();
+    const last = this.existingAccountNotices.get(key);
+    if (last && now - last < EXISTING_ACCOUNT_NOTICE_MS) return;
+    this.existingAccountNotices.set(key, now);
+    for (const [k, t] of this.existingAccountNotices) {
+      if (now - t >= EXISTING_ACCOUNT_NOTICE_MS) this.existingAccountNotices.delete(k);
+    }
+    const base = this.getFrontendUrl();
+    this.emailService
+      .sendExistingAccountEmail(email, `${base}/login`, `${base}/forgot-password`)
+      .catch((err) => this.logger.warn(`Existing-account notice failed: ${err?.message ?? err}`));
   }
 
   // ── Email Verification ───────────────────────────────────────────────────────
@@ -790,10 +904,13 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Request password reset email' })
   async forgotPassword(@Req() req: any, @Body() dto: ForgotPasswordDto) {
-    // Always return success to prevent email enumeration
+    // The same answer, no sooner than the same floor, whether or not the
+    // address has an account; the email is sent after the answer, so a slow
+    // mail server does not give an existing account away either.
+    const startedAt = Date.now();
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
-      return { message: 'If the email exists, a reset link has been sent.' };
+      return answerNoSoonerThan(startedAt, NEUTRAL_PASSWORD_RESET);
     }
 
     // SSO-only account: issue no reset token. Gating login alone would leave
@@ -805,7 +922,7 @@ export class AuthController {
       this.logger.warn(
         `Password reset refused for SSO-only account: ${user.email}`,
       );
-      return { message: 'If the email exists, a reset link has been sent.' };
+      return answerNoSoonerThan(startedAt, NEUTRAL_PASSWORD_RESET);
     }
 
     // Generate secure token
@@ -824,19 +941,19 @@ export class AuthController {
     // Build reset URL
     const resetUrl = `${this.getFrontendUrl(req)}/reset-password?token=${resetToken}`;
 
-    // Send email
-    const sent = await this.emailService.sendPasswordResetEmail(
-      user.email,
-      resetUrl,
-    );
+    // Send email (not awaited, see above)
+    this.emailService
+      .sendPasswordResetEmail(user.email, resetUrl)
+      .then((sent) => {
+        if (!sent) {
+          this.logger.warn(
+            `Password reset requested for ${dto.email} but email could not be sent (SMTP not configured)`,
+          );
+        }
+      })
+      .catch((err) => this.logger.warn(`Password reset email failed: ${err?.message ?? err}`));
 
-    if (!sent) {
-      this.logger.warn(
-        `Password reset requested for ${dto.email} but email could not be sent (SMTP not configured)`,
-      );
-    }
-
-    return { message: 'If the email exists, a reset link has been sent.' };
+    return answerNoSoonerThan(startedAt, NEUTRAL_PASSWORD_RESET);
   }
 
   @Post('reset-password')

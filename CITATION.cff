@@ -10,13 +10,14 @@ url: "https://github.com/HelpCode-ai/anythingmcp"
 repository-code: "https://github.com/HelpCode-ai/anythingmcp"
 abstract: >
   AnythingMCP is an open-source, self-hosted Model Context Protocol (MCP)
-  server that exposes REST, SOAP/WSDL and GraphQL APIs, SQL/NoSQL databases
-  and other MCP servers as tools for AI clients such as Claude, ChatGPT,
-  Google Gemini, GitHub Copilot and Cursor, without writing code. It ships
-  259 pre-built adapters (Deutsche Bahn, DATEV, weclapp, DHL, Shopware,
-  Personio, Handelsregister, etc.), a per-workspace knowledge graph served
-  over MCP, per-tool response mapping, OAuth2/RBAC/SSO/SCIM governance, an
-  audit log and a visual tool editor.
+  server that turns REST/OpenAPI, SOAP/WSDL and GraphQL APIs, SQL/NoSQL
+  databases and other MCP servers into tools for AI clients such as Claude,
+  ChatGPT, Google Gemini, GitHub Copilot and Cursor, without writing code.
+  It ships 259 pre-built adapters, with a focus on ERP and e-commerce
+  systems (SAP Business One, Odoo, Xentral, JTL-Wawi, weclapp, Shopware,
+  WooCommerce, Amazon Seller, Kaufland, OTTO, etc.), a per-workspace
+  knowledge graph served over MCP, per-tool response mapping,
+  OAuth2/RBAC/SSO/SCIM governance, an audit log and a visual tool editor.
 keywords:
   - model-context-protocol
   - mcp
@@ -31,4 +32,7 @@ keywords:
   - soap-to-mcp
   - graphql-to-mcp
   - database-to-mcp
+  - openapi-to-mcp
+  - erp
+  - ecommerce
 license: AGPL-3.0-only

@@ -16,6 +16,8 @@ import {
   withoutOperatorProvided,
 } from './cloud-managed-env';
 import { pickProbe } from './probe.util';
+import { normalizeBaseUrlVariables } from '../common/base-url-variable.util';
+import { STARTER_PACK } from './starter-pack';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
@@ -55,6 +57,48 @@ export class AdaptersService {
       ...adapter,
       requiredEnvVars: withoutOperatorProvided(adapter.requiredEnvVars) ?? [],
     };
+  }
+
+  /**
+   * The starter pack as this deployment can serve it, for this workspace.
+   * An entry drops out when its adapter is missing, hidden here, or would
+   * need a value from the user (the pack promises one click and no keys);
+   * `installed` marks the ones the workspace already has, so the page can
+   * show them as done instead of offering a duplicate.
+   */
+  async starterPack(organizationId: string): Promise<StarterPackItem[]> {
+    const installed = await this.installedAdapterSlugs(organizationId);
+    const items: StarterPackItem[] = [];
+    for (const entry of STARTER_PACK) {
+      const adapter = getAdapter(entry.slug);
+      if (!adapter || !this.isInstallableHere(adapter)) continue;
+      if ((withoutOperatorProvided(adapter.requiredEnvVars) ?? []).length > 0) continue;
+      items.push({
+        slug: entry.slug,
+        name: adapter.name,
+        pitch: entry.pitch,
+        icon: adapter.icon,
+        category: adapter.category,
+        toolCount: adapter.tools.length,
+        preselected: entry.preselected,
+        installed: installed.has(entry.slug),
+      });
+    }
+    return items;
+  }
+
+  /** Catalog slugs this workspace already has a connector for. */
+  async installedAdapterSlugs(organizationId: string): Promise<Set<string>> {
+    const rows = await this.prisma.connector.findMany({
+      where: { organizationId },
+      select: { config: true },
+    });
+    const slugs = new Set<string>();
+    for (const r of rows) {
+      const slug = (r.config as { adapterSlug?: unknown } | null)?.adapterSlug;
+      if (typeof slug === 'string') slugs.add(slug);
+    }
+    return slugs;
   }
 
   /**
@@ -98,6 +142,18 @@ export class AdaptersService {
           typeof v === 'string' ? v.trim() : v,
         ]),
       ) as Record<string, string>;
+
+      // A base URL built from a variable (Substack, Magento, WordPress, …)
+      // needs that variable to be a whole URL. `yourname.substack.com` gets
+      // its https:// here; a value that is not a web address at all is
+      // refused while the user is still on the form, naming the variable.
+      // The normalised value is what gets stored, so the environment-variable
+      // editor shows what is actually used.
+      credentials = normalizeBaseUrlVariables(
+        adapter.connector.baseUrl,
+        credentials,
+        adapter.connector.type,
+      );
     }
 
     // Resolve {{VAR}} placeholders in authConfig with provided credentials
@@ -200,7 +256,11 @@ export class AdaptersService {
       `Imported adapter "${slug}" as connector ${connector.id} with ${toolsCreated} tools`,
     );
 
-    const probe = await this.runImportProbe(adapter, connector.id);
+    const probe = await this.runImportProbe(
+      adapter,
+      connector.id,
+      resolvedAuthConfig as Record<string, unknown> | null,
+    );
 
     return { connectorId: connector.id, toolsCreated, probe };
   }
@@ -219,16 +279,24 @@ export class AdaptersService {
   private async runImportProbe(
     adapter: AdapterDefinition,
     connectorId: string,
+    resolvedAuthConfig?: Record<string, unknown> | null,
   ): Promise<ImportProbeResult | null> {
     // An OAuth2 connector authorised in the browser (authorizationUrl, no
     // refresh token of its own) holds no token until the user completes that
     // step on the connector page. Probing it now can only return a 401 that
     // the form would present as a wrong credential.
-    const auth = adapter.connector.authConfig as Record<string, unknown> | undefined;
+    //
+    // Judged on the config as installed, not the catalog template: Etsy and
+    // Pinterest take either a pasted refresh token or the browser flow, so
+    // the template always says `{{ETSY_REFRESH_TOKEN}}` and only the resolved
+    // value says whether one was given. One that was is probed, as before.
+    const auth = (resolvedAuthConfig ?? adapter.connector.authConfig) as
+      | Record<string, unknown>
+      | undefined;
     if (
       adapter.connector.authType === 'OAUTH2' &&
       auth?.authorizationUrl &&
-      !auth.refreshToken
+      !hasUsableValue(auth.refreshToken)
     ) {
       return null;
     }
@@ -246,6 +314,7 @@ export class AdaptersService {
         connector,
         tool.endpointMapping as any,
         call.params,
+        call.toolName,
       );
       const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
       return {
@@ -371,6 +440,17 @@ export class AdaptersService {
   }
 }
 
+export interface StarterPackItem {
+  slug: string;
+  name: string;
+  pitch: string;
+  icon: string;
+  category: string;
+  toolCount: number;
+  preselected: boolean;
+  installed: boolean;
+}
+
 export type ImportProbeResult =
   | { ok: true; toolName: string; durationMs: number; sample: string }
   | {
@@ -380,6 +460,11 @@ export type ImportProbeResult =
       status: number | null;
       message: string;
     };
+
+/** Set, and not a `{{VAR}}` placeholder left over from the template. */
+function hasUsableValue(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== '' && !/\{\{[^}]+\}\}/.test(value);
+}
 
 /** A short, printable slice of the probe's response for the install form. */
 function truncateSample(value: unknown, max = 600): string {

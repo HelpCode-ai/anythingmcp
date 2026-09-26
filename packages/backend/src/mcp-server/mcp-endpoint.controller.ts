@@ -50,11 +50,17 @@ import { DynamicMcpTools } from './dynamic-mcp-tools';
 import { RolesService } from '../roles/roles.service';
 import { registerDemoTools } from './mcp-demo.tools';
 import { KgService } from '../knowledge-graph/kg.service';
+import { KgSkillService } from '../knowledge-graph/kg-skill.service';
 import { outputSchemaToZodShape } from '../connectors/output-schema.util';
 import {
   annotationsSignature,
   deriveToolAnnotations,
 } from './tool-annotations';
+import {
+  ResourcePlan,
+  callerConnectorIds,
+  planServerResources,
+} from './mcp-resources';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -136,6 +142,12 @@ interface InvocationContext {
   intent?: string;
 }
 
+/** Built-in companion of the Agent Skills Finder adapter. */
+const SKILLS_SAVE_TOOL = 'skills_save_to_workspace';
+// Workspace skills are stored up to 2000 characters; leave room for the
+// source line appended to every saved skill.
+const SKILL_INSTRUCTION_MAX = 1800;
+
 /**
  * Per-server MCP endpoint controller.
  *
@@ -160,6 +172,7 @@ export class McpEndpointController {
     private readonly kgService: KgService,
     private readonly sessionManager: McpSessionManager,
     private readonly grants: McpConnectionGrantService,
+    private readonly kgSkills: KgSkillService,
   ) {}
 
   // Streamable-HTTP response framing. Default: SSE-framed responses
@@ -432,7 +445,16 @@ export class McpEndpointController {
       res.status(200);
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
-      res.end(`event: message\ndata: ${JSON.stringify(payload)}\n\n`);
+      // The body echoes the request id; nosniff keeps any browser from
+      // reading this stream as anything but the event stream it is, and the
+      // HTML-significant characters are escaped as JSON unicode escapes, which
+      // leaves the JSON identical once parsed.
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      const data = JSON.stringify(payload)
+        .replace(/&/g, '\\u0026')
+        .replace(/</g, '\\u003c')
+        .replace(/>/g, '\\u003e');
+      res.end(`event: message\ndata: ${data}\n\n`);
     }
     return true;
   }
@@ -664,26 +686,35 @@ export class McpEndpointController {
       }
     }
 
-    // 2. Get connector IDs and composed instructions for this server
-    const [connectorIds, instructions] = await Promise.all([
+    // 2. Get the connectors assigned to this server and, if the user is
+    // identified, the tools their role allows. The role is scoped to THIS
+    // server's organization so it is read from their membership of it, not
+    // from the cached active-org role.
+    const [connectorIds, allowedToolIds] = await Promise.all([
       this.mcpServersService.getConnectorIds(serverId),
-      this.mcpServersService.getComposedInstructions(serverId),
+      user?.sub
+        ? this.rolesService.getAllowedToolIds(user.sub, mcpServerConfig.organizationId)
+        : Promise.resolve(null as string[] | null),
     ]);
 
-    // 3. Filter tools to only those from assigned connectors
+    // 3. Filter tools to only those from assigned connectors (planToolSet
+    // then applies the role filter).
     const allTools = this.toolRegistry.getAllTools();
     const serverTools = allTools.filter((t) => connectorIds.includes(t.connectorId));
 
-    // 4. Further filter by role-based access if user is identified. Scope to
-    // THIS server's organization so the caller's role is read from their
-    // membership of it, not from the cached active-org role.
-    let allowedToolIds: string[] | null = null;
-    if (user?.sub) {
-      allowedToolIds = await this.rolesService.getAllowedToolIds(
-        user.sub,
-        mcpServerConfig.organizationId,
-      );
-    }
+    // 4. The connectors this caller can use: the owners of the tools that
+    // survive both filters. Instructions and resources are scoped to exactly
+    // this set, so neither can describe a connector the tool list hides.
+    const visibleConnectorIds = callerConnectorIds(
+      serverTools,
+      allowedToolIds,
+      connectorIds,
+    );
+    const content = await this.mcpServersService.getVisibleContent(
+      serverId,
+      visibleConnectorIds,
+    );
+    const instructions = content.instructions;
 
     // 5. Create a per-request MCP server with only the assigned tools
     const mcpServer = new McpServer(
@@ -730,6 +761,18 @@ export class McpEndpointController {
     const entries = this.planToolSet(params);
     const handles = this.registerAll(mcpServer, entries, serverId);
     const signature = this.aggregateSig(entries);
+    this.registerKgResource(mcpServer, params);
+    this.registerServerResources(
+      mcpServer,
+      planServerResources({
+        serverId: mcpServerConfig.id,
+        serverName: mcpServerConfig.name,
+        instructions,
+        connectors: content.connectors,
+        resources: content.resources,
+      }),
+      serverId,
+    );
 
     // 6. Create transport and handle the request — stateless by default, or a
     // long-lived session when MCP_STATEFUL_SESSIONS is enabled. Stateful keeps
@@ -1016,6 +1059,8 @@ export class McpEndpointController {
    *
    * Note: principal, org, intent/KG switches are fixed at session creation;
    * toggling those org settings mid-session only takes effect on reconnect.
+   * The same holds for the initialize instructions and the MCP resources:
+   * both are a snapshot taken when the session was created.
    */
   private makeRebuild(
     sessionId: string,
@@ -1224,7 +1269,7 @@ export class McpEndpointController {
       !registeredNames.has('kg_how_to_obtain')
     ) {
       const orgId = invocationContext.organizationId;
-      const scopeConnectorIds = invocationContext.connectorIds;
+      const scopeConnectorIds = this.kgScopeConnectorIds(params);
       const scopeServerId = invocationContext.mcpServerId;
       entries.push({
         name: 'kg_how_to_obtain',
@@ -1267,7 +1312,195 @@ export class McpEndpointController {
       });
     }
 
+    // Companion to the Agent Skills Finder connector: its tools find and read
+    // a skill, this one files it as a *suggested* workspace skill. It lives
+    // here rather than in the adapter because it writes to this workspace,
+    // which no REST call can do. Only offered where the finder is assigned,
+    // and never applied directly: a skill is third-party text the model will
+    // follow, so an admin approves it under AI Skills before it reaches any
+    // server's instructions.
+    if (
+      registeredNames.has('skills_get') &&
+      invocationContext.organizationId &&
+      invocationContext.mcpServerId &&
+      !registeredNames.has(SKILLS_SAVE_TOOL)
+    ) {
+      const orgId = invocationContext.organizationId;
+      const serverId = invocationContext.mcpServerId;
+      entries.push({
+        name: SKILLS_SAVE_TOOL,
+        sig: `${SKILLS_SAVE_TOOL}:v1`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            SKILLS_SAVE_TOOL,
+            {
+              description:
+                'Propose a skill you found with skills_search / skills_get as a reusable skill for this ' +
+                'MCP server. It is saved as a SUGGESTION: an admin reviews it under AI Skills and only ' +
+                'then does it become part of this server\'s instructions. Condense the skill into the ' +
+                'steps and rules that matter (instruction max 1800 characters); do not paste the whole ' +
+                'SKILL.md. Always pass the source URL and licence. Ask the user before calling.',
+              inputSchema: {
+                title: z.string().min(3).max(160).describe('Short name, e.g. "README generation".'),
+                whenToUse: z
+                  .string()
+                  .max(1000)
+                  .describe('When the model should apply it, e.g. "When asked to write or improve a README".'),
+                instruction: z
+                  .string()
+                  .min(20)
+                  .max(SKILL_INSTRUCTION_MAX)
+                  .describe('The condensed procedure and rules, in your own words.'),
+                sourceUrl: z
+                  .string()
+                  .url()
+                  .max(180)
+                  .describe('GitHub URL of the skill folder or SKILL.md, ideally pinned to a commit.'),
+                license: z
+                  .string()
+                  .max(80)
+                  .describe('SPDX id from skills_repo_info (e.g. "MIT", "Apache-2.0"), or "unknown".'),
+              },
+              annotations: {
+                title: 'Save skill to workspace',
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: false,
+                openWorldHint: false,
+              },
+            },
+            async (args: {
+              title: string;
+              whenToUse: string;
+              instruction: string;
+              sourceUrl: string;
+              license: string;
+            }) => {
+              const saved = await this.kgSkills.create(orgId, {
+                title: args.title,
+                whenToUse: args.whenToUse,
+                instruction: `${args.instruction.trim()}\n\nSource: ${args.sourceUrl} (licence: ${args.license || 'unknown'})`,
+                mcpServerId: serverId,
+                status: 'pending',
+              });
+              const result = {
+                saved: true,
+                id: saved.id,
+                status: saved.status,
+                next: 'An admin must approve it in AnythingMCP under AI Skills → Suggested before it is used.',
+              };
+              return {
+                content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+              };
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+
     return entries;
+  }
+
+  /**
+   * Connectors whose part of the knowledge graph this caller may see: the
+   * server's assigned connectors, narrowed to the ones the caller's role lets
+   * them use at least one tool of. kg_how_to_obtain used to scope by the
+   * assignment alone, so a role-restricted user could read the entities,
+   * fields and tool names of connectors their role denies.
+   */
+  private kgScopeConnectorIds(params: ToolSetParams): string[] {
+    const { serverTools, allowedToolIds, invocationContext } = params;
+    return callerConnectorIds(
+      serverTools,
+      allowedToolIds,
+      invocationContext.connectorIds,
+    );
+  }
+
+  /**
+   * Registers the caller's instructions and stored resources (see
+   * mcp-resources.ts). The plan is built from content already narrowed to the
+   * connectors this caller can use, so a resource that is not registered here
+   * is simply absent: `resources/read` of its URI answers "not found", the
+   * same as for a URI that never existed, and says nothing about whether
+   * another tenant or a denied connector owns it.
+   *
+   * Content is resolved when the server is built, like the tool list. A live
+   * stateful session therefore keeps this snapshot until the client
+   * re-initializes; rebuild() reconciles tools only.
+   */
+  private registerServerResources(
+    mcpServer: McpServer,
+    plan: ResourcePlan,
+    serverId: string,
+  ): void {
+    for (const uri of plan.ambiguous) {
+      this.logger.warn(
+        `MCP resource URI ${uri} is claimed more than once on server ${serverId}; serving none of them.`,
+      );
+    }
+    for (const uri of plan.rejected) {
+      this.logger.warn(
+        `Stored MCP resource with invalid or reserved URI "${uri}" on server ${serverId}; skipped.`,
+      );
+    }
+    for (const r of plan.resources) {
+      try {
+        mcpServer.registerResource(
+          r.name,
+          r.uri,
+          {
+            title: r.title,
+            ...(r.description ? { description: r.description } : {}),
+            mimeType: r.mimeType,
+          },
+          async () => ({
+            contents: [{ uri: r.uri, mimeType: r.mimeType, text: r.text }],
+          }),
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Failed to register resource ${r.uri} on server ${serverId}: ${err.message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Publishes the workspace knowledge graph as a read-only MCP resource, so a
+   * client can attach the whole map to the model's context instead of asking
+   * kg_how_to_obtain one entity at a time. Same scope as that tool. The content
+   * is built when the resource is read, so it is never staler than the graph.
+   */
+  private registerKgResource(mcpServer: McpServer, params: ToolSetParams): void {
+    const { kgEnabled, invocationContext } = params;
+    const orgId = invocationContext.organizationId;
+    if (!kgEnabled || !orgId) return;
+    const connectorIds = this.kgScopeConnectorIds(params);
+    const uri = `anythingmcp://server/${invocationContext.mcpServerId}/knowledge-graph`;
+    mcpServer.registerResource(
+      'knowledge-graph',
+      uri,
+      {
+        title: 'Knowledge graph',
+        description:
+          'Entities, tools and connections across the connectors on this MCP server that ' +
+          'you can use, plus the workspace skills. Attach it when planning multi-step work.',
+        mimeType: 'text/markdown',
+      },
+      async () => ({
+        contents: [
+          {
+            uri,
+            mimeType: 'text/markdown',
+            text: await this.kgService.describeForResource(orgId, {
+              connectorIds,
+              mcpServerId: invocationContext.mcpServerId,
+              serverName: invocationContext.mcpServerName,
+            }),
+          },
+        ],
+      }),
+    );
   }
 
   /** Aggregate content signature of a planned tool set. */

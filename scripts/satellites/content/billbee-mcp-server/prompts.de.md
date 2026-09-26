@@ -1,0 +1,6 @@
+- Welche Bestellungen von gestern sind noch nicht versendet?
+- Finde die Billbee-Bestellung zur Kaufland-Bestellnummer 123-456.
+- Zeig mir alle Bestellungen von Kunde 4711 in diesem Jahr.
+- Welche Artikel haben einen niedrigen Bestand?
+- Was kostet der Artikel mit der EAN 4006381333931, und wie viele haben wir?
+- Welche Versandanbieter sind eingerichtet?

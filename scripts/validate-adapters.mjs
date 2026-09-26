@@ -6,11 +6,13 @@
  * Exits with code 0 if all adapters pass, 1 if any fail.
  *
  * Hard gates (fail CI): required fields, filename/slug agreement, supported
- * connector and authentication types, and a non-empty tools array.
+ * connector and authentication types, a non-empty tools array, and GraphQL
+ * tools whose variables the engine would drop (rule graphql-variables).
  *
  * Soft warnings (printed with --warn, but do not fail CI): short instructions,
- * unprefixed tool names, short tool descriptions, and missing parameter
- * descriptions. Environment-reference checks are also informational because
+ * unprefixed tool names, short tool descriptions, missing parameter
+ * descriptions, and leftover TODO markers from the scaffolder.
+ * Environment-reference checks are also informational because
  * some adapters document values supplied as tool parameters.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -20,12 +22,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
 const DEFAULT_ADAPTERS_DIR = join(REPO_ROOT, 'packages/backend/src/adapters');
-const REGIONS = [
+export const REGIONS = [
   'de', 'gb', 'intl', 'br', 'in', 'jp', 'ng',
   'it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk',
 ];
 const ALLOWED_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'DATABASE', 'LOGIN_TOKEN']);
-const ALLOWED_AUTH_TYPES = new Set(['NONE', 'API_KEY', 'BEARER_TOKEN', 'BASIC', 'BASIC_AUTH', 'OAUTH2', 'OAUTH1', 'LOGIN_TOKEN', 'QUERY_AUTH', 'CONNECTION_STRING', 'HMAC']);
+export const ALLOWED_AUTH_TYPES = new Set(['NONE', 'API_KEY', 'BEARER_TOKEN', 'BASIC', 'BASIC_AUTH', 'OAUTH2', 'OAUTH1', 'LOGIN_TOKEN', 'QUERY_AUTH', 'CONNECTION_STRING', 'HMAC']);
 const REQUIRED_TOP_LEVEL = ['slug', 'name', 'description', 'region', 'category', 'icon', 'docsUrl', 'requiredEnvVars', 'connector', 'tools'];
 const MIN_INSTRUCTIONS_LEN = 800;
 const MIN_TOOL_DESCRIPTION_LEN = 60;
@@ -93,8 +95,117 @@ export function adapterResult(loaded, file, region) {
   return { region, file, ...validateAdapter(loaded.adapter, file, region) };
 }
 
+// `{{VAR}}` is resolved into auth/base URL/headers; `${VAR}` inside a tool's
+// mapping reads the same connector variable at call time (and leaves an
+// endpoint header out when it is empty, which is how an optional key works).
 function isPlaceholderReferenced(envVar, adapter) {
-  return JSON.stringify(adapter).includes(`{{${envVar}}}`);
+  const json = JSON.stringify(adapter);
+  return json.includes(`{{${envVar}}}`) || json.includes(`\${${envVar}}`);
+}
+
+// Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:
+// real adapters mention "to-do" lists, and only the uppercase word is ours.
+const TODO_MARKER = /\bTODO\b/;
+
+/** Walk every string in the adapter and warn where a TODO marker is left. */
+function collectTodoMarkers(value, path, warnings) {
+  if (typeof value === 'string') {
+    if (TODO_MARKER.test(value)) warnings.push(warning('todo-marker', path, `leftover TODO marker at ${path} — finish or remove it before submitting`));
+  } else if (Array.isArray(value)) {
+    value.forEach((item, i) => collectTodoMarkers(item, `${path}[${i}]`, warnings));
+  } else if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) collectTodoMarkers(item, path === '$' ? key : `${path}.${key}`, warnings);
+  }
+}
+
+const GRAPHQL_OPERATION_METHODS = new Set(['query', 'mutation', 'subscription']);
+
+/**
+ * The variable definitions of a GraphQL operation, e.g. for
+ * `query Q($id: ID!, $first: Int = 20) { … }` →
+ * [{ name: 'id', required: true }, { name: 'first', required: false }].
+ * Returns [] for an anonymous `{ … }` document. Deliberately dependency-free:
+ * a variable definition is `$name: Type [= default] [@directive]`, and a
+ * default value cannot contain a `$`, so splitting on `$` is exact enough.
+ */
+export function graphqlVariableDefinitions(document) {
+  const head = /^\s*(?:query|mutation|subscription)\b\s*[A-Za-z_]?\w*\s*\(/.exec(document);
+  if (!head) return [];
+  let depth = 1;
+  let end = head[0].length;
+  while (end < document.length && depth > 0) {
+    if (document[end] === '(') depth++;
+    else if (document[end] === ')') depth--;
+    end++;
+  }
+  return document
+    .slice(head[0].length, end - 1)
+    .split('$')
+    .slice(1)
+    .map((def) => {
+      const m = /^([A-Za-z_]\w*)\s*:\s*([^=@]*?)\s*(=|@|,|$)/.exec(def.trim());
+      if (!m) return null;
+      return { name: m[1], required: m[2].trim().endsWith('!') && m[3] !== '=' };
+    })
+    .filter(Boolean);
+}
+
+/** True when a `$param` reference is nested somewhere inside an object or array. */
+function hasNestedParamRef(value) {
+  if (typeof value === 'string') return /^\$[A-Za-z_]/.test(value);
+  if (Array.isArray(value)) return value.some(hasNestedParamRef);
+  if (value && typeof value === 'object') return Object.values(value).some(hasNestedParamRef);
+  return false;
+}
+
+/**
+ * The GraphQL engine (packages/backend/src/connectors/engines/graphql.engine.ts)
+ * builds `variables` from exactly two places: `endpointMapping.queryParams`, one
+ * flat entry per variable whose value is `"$param"` or a literal, or the whole
+ * map from the tool param named by `variablesFromParam`. Anything else is
+ * silently dropped — Buffer, Slab, Tidio and Wave put theirs under
+ * `bodyMapping.variables` and every call went out with `"variables":{}`.
+ */
+function graphqlVariableErrors(adapter, tool, base) {
+  const errors = [];
+  const em = tool.endpointMapping;
+  if (!em || typeof em !== 'object' || !GRAPHQL_OPERATION_METHODS.has(em.method)) return errors;
+  const at = `${base}.endpointMapping`;
+  const docs = 'graphql-variables';
+  const rule = 'graphql-variables';
+
+  if (em.bodyMapping !== undefined) {
+    errors.push(error(rule, `${at}.bodyMapping`, `tool "${tool.name}" sets bodyMapping, which the GraphQL engine never reads — its variables are sent as {}`, 'Move each variable to endpointMapping.queryParams as "<variableName>": "$<toolParam>" (inline input objects in the operation instead of passing an $input object).', docs));
+  }
+  const queryParams = em.queryParams && typeof em.queryParams === 'object' ? em.queryParams : {};
+  const params = tool.parameters?.properties && typeof tool.parameters.properties === 'object' ? tool.parameters.properties : {};
+  const envVars = new Set([...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])]);
+  for (const [key, value] of Object.entries(queryParams)) {
+    if (value && typeof value === 'object' && hasNestedParamRef(value)) {
+      errors.push(error(rule, `${at}.queryParams.${key}`, `tool "${tool.name}" nests $param references inside queryParams.${key}; the engine resolves only top-level "$param" values and would send the text "$…" literally`, `Declare one variable per parameter and build the input object inside the operation, e.g. input: { id: $id }.`, docs));
+    } else if (typeof value === 'string' && /^\$[A-Za-z_]\w*$/.test(value)) {
+      const name = value.slice(1);
+      if (!(name in params) && !envVars.has(name)) {
+        errors.push(error(rule, `${at}.queryParams.${key}`, `tool "${tool.name}" maps variable "${key}" from "${value}", which is neither a tool parameter nor an env var — it is always sent empty`, `Add "${name}" to the tool's parameters, or fix the reference.`, docs));
+      }
+    }
+  }
+
+  // A generic tool that takes the whole operation as input declares nothing up front.
+  if (typeof em.path !== 'string' || /^\$[A-Za-z_]\w*$/.test(em.path) || em.variablesFromParam) return errors;
+  const declared = graphqlVariableDefinitions(em.path);
+  const declaredNames = new Set(declared.map((d) => d.name));
+  for (const key of Object.keys(queryParams)) {
+    if (!declaredNames.has(key)) {
+      errors.push(error(rule, `${at}.queryParams.${key}`, `tool "${tool.name}" sends variable "${key}", which the operation does not declare — the server ignores it`, `Declare $${key} in the operation, or rename the queryParams key to the variable it is meant for.`, docs));
+    }
+  }
+  for (const def of declared) {
+    if (def.required && !(def.name in queryParams)) {
+      errors.push(error(rule, `${at}.path`, `tool "${tool.name}" declares required variable $${def.name} but queryParams never supplies it — every call fails`, `Add "${def.name}": "$<toolParam>" to endpointMapping.queryParams.`, docs));
+    }
+  }
+  return errors;
 }
 
 export function validateAdapter(adapter, file, region) {
@@ -134,6 +245,21 @@ export function validateAdapter(adapter, file, region) {
     }
   }
 
+  if (adapter.envVarAliases !== undefined) {
+    const aliases = adapter.envVarAliases;
+    const declared = [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
+    if (!aliases || typeof aliases !== 'object' || Array.isArray(aliases) || Object.values(aliases).some((v) => !Array.isArray(v) || v.some((n) => typeof n !== 'string'))) {
+      errors.push(error('env-alias-shape', 'envVarAliases', 'envVarAliases must map a variable name to an array of its previous names', 'Use { "CURRENT_NAME": ["OLD_NAME"] }.', 'adapter-fields'));
+    } else {
+      for (const [envVar, previous] of Object.entries(aliases)) {
+        if (!declared.includes(envVar)) errors.push(error('env-alias-unknown', `envVarAliases.${envVar}`, `envVarAliases names "${envVar}", which is not in requiredEnvVars or optionalEnvVars`, 'Key the alias by the current variable name.', 'adapter-fields'));
+        for (const old of previous) {
+          if (declared.includes(old)) errors.push(error('env-alias-current', `envVarAliases.${envVar}`, `"${old}" is a current variable and cannot also be a previous name`, 'List only names the adapter no longer uses.', 'adapter-fields'));
+        }
+      }
+    }
+  }
+
   const slugUnderscored = adapter.slug.replace(/-/g, '_');
   if (!Array.isArray(adapter.tools) || adapter.tools.length === 0) {
     errors.push(error('tools', 'tools', 'tools array is empty', 'Add at least one tool definition to the tools array.', 'tools'));
@@ -154,7 +280,10 @@ export function validateAdapter(adapter, file, region) {
         if (!pdef || typeof pdef !== 'object' || !pdef.description) warnings.push(warning('parameter-description', `${base}.parameters.properties.${pname}`, `tool "${tool.name}" parameter "${pname}" missing description`));
       }
     }
+    if (adapter.connector?.type === 'GRAPHQL') errors.push(...graphqlVariableErrors(adapter, tool, base));
   }
+  // Last, so existing warnings keep their order.
+  collectTodoMarkers(adapter, '$', warnings);
   return { errors, warnings };
 }
 

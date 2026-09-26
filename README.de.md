@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — 259 Connectors, 20 davon ohne API-Schlüssel. Deine REST-, SOAP/WSDL-, GraphQL-, SQL- und MCP-Systeme werden zu Tools für Claude, ChatGPT, Copilot und Gemini." width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 259 Connectors, 21 davon ohne API-Schlüssel." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <strong>Gib Claude, ChatGPT und Copilot sicheren Zugriff auf die Software, die dein Unternehmen bereits nutzt.</strong><br/>
-  259 fertige Adapter, beliebige REST-/SOAP-/GraphQL-/SQL-Systeme ohne eigenen Code, auf deiner eigenen Infrastruktur — und ein System, das lernt, wie deine Anwendungen zusammenhängen.
+  <strong>Mach aus jeder REST-/OpenAPI-, SOAP-, GraphQL- oder SQL-API MCP-Tools für Claude, ChatGPT und Copilot.</strong><br/>
+  Selbst gehosteter MCP-Server und MCP-Gateway, ohne Code. 259 fertige Adapter, auch für ERP und E-Commerce: SAP Business One, Xentral, weclapp, Shopware, WooCommerce, Amazon Seller, Kaufland und viele mehr.
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 **Claude beantwortet eine Frage, die zuvor kein Chatbot beantworten konnte**, weil die Daten in einem Außendienstsystem liegen, das REST statt MCP spricht:
 
 <p align="center">
-  <img src="docs/assets/demo-claude.gif" alt="Claude beantwortet die Frage, welche Firmen ein Techniker letzte Woche besucht hat, und ruft dafür von AnythingMCP bereitgestellte Tools an einem laufenden Außendienstsystem auf." width="100%" />
+  <img src="docs/assets/demo-claude.gif" alt="AnythingMCP in Claude: Auf die Frage, welche Firmen ein Techniker letzte Woche besucht hat, ruft Claude MCP-Tools auf, die AnythingMCP aus der REST-API eines Außendienstsystems erzeugt hat." width="100%" />
 </p>
 
 **Selbst ausprobieren** — drei Zeilen, ohne das Repository zu klonen, [Details weiter unten](#run-it-yourself):
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 Drei Begriffe tauchen immer wieder auf und bezeichnen unterschiedliche Dinge:
 
-- Ein **Adapter** ist eine der 259 JSON-Definitionen in diesem Repository — DATEV, weclapp, DHL, Deutsche Bahn, Shopware, Personio, Handelsregister und viele weitere. 20 davon benötigen überhaupt keinen API-Schlüssel; bei den anderen gibst du deine Zugangsdaten beim Import an.
+- Ein **Adapter** ist eine der 259 JSON-Definitionen in diesem Repository — SAP Business One, Odoo, weclapp, Xentral, Shopware, WooCommerce, Amazon Seller, DHL und viele weitere. 21 davon benötigen überhaupt keinen API-Schlüssel; bei den anderen gibst du deine Zugangsdaten beim Import an.
 - Ein **Connector** entsteht, wenn du einen Adapter oder deine eigene OpenAPI-Spezifikation, Postman-Collection, WSDL, einen GraphQL-Endpunkt oder eine Datenbank in deinem Workspace konfigurierst. In wenigen Minuten lässt sich so eine Verbindung einrichten, ohne einen MCP-Server zu programmieren.
 - Ein **MCP-Server** ist die URL, die du Claude übergibst. Er stellt ausschließlich die Connectors bereit, die du ihm zuweist.
 
@@ -93,6 +93,105 @@ Der Schnellstart bindet die Dienste bewusst an `127.0.0.1`: Es gibt davor noch k
 
 ---
 
+<a id="connect-any-system"></a>
+
+## Jedes System anbinden
+
+Die meisten Unternehmen haben noch keine MCP-Server. Sie haben eine REST-API, ein ERP, einen SOAP-Dienst und eine Datenbank. Aus jedem dieser Systeme werden MCP-Tools, und eine einzige MCP-Server-URL stellt sie Claude, ChatGPT oder Copilot bereit.
+
+<a id="openapi--rest-api-to-mcp"></a>
+
+### OpenAPI / REST-API zu MCP
+
+Importiere eine OpenAPI-3.x- oder Swagger-2.0-Spezifikation per URL oder durch Einfügen, und jede Operation wird zu einem MCP-Tool, bei dem Parameter, Authentifizierung und Endpunkt-Zuordnung bereits ausgefüllt sind. Im visuellen Editor gibst du den Tools passende Namen und Beschreibungen, damit das Modell das richtige auswählt. [Dokumentation zum REST-Connector](docs/connectors/rest.md) · [Anleitung](https://anythingmcp.com/de/guides/rest-api-to-mcp) · [5-Minuten-Demo: openapi-to-mcp](https://github.com/HelpCode-ai/openapi-to-mcp)
+
+<a id="soap--wsdl-to-mcp"></a>
+
+### SOAP / WSDL zu MCP
+
+Gib AnythingMCP eine WSDL, und jede SOAP-Operation wird zu einem Tool: Envelopes, Parameterreihenfolge und WCF-Dienste übernimmt AnythingMCP für dich, mit Basic-, Bearer- oder API-Key-Authentifizierung. So bringst du einen SOAP-Dienst aus dem Jahr 2009 in Minuten statt Wochen vor ein Modell von 2026. [Dokumentation zum SOAP-Connector](docs/connectors/soap.md) · [Anleitung](https://anythingmcp.com/de/guides/soap-to-mcp) · [5-Minuten-Demo: soap-to-mcp](https://github.com/HelpCode-ai/soap-to-mcp)
+
+<a id="sql-database-to-mcp"></a>
+
+### SQL-Datenbank zu MCP
+
+PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite und MongoDB. Der Connector erzeugt Tools für Schema, Beispiele und Abfragen; du entscheidest, ob das Modell selbst SQL schreibt oder nur die Parameter von Abfragen ausfüllt, die du vorgegeben hast. Die Abfrage-Tools sind standardmäßig schreibgeschützt: AnythingMCP führt ein einzelnes SELECT aus und blockiert Schreibzugriffe und verkettete Statements. Gib ihm zusätzlich einen Datenbankbenutzer mit reinem Lesezugriff und eine Rolle, die nur die Tools sieht, die sie wirklich braucht. [Dokumentation zum Datenbank-Connector](docs/connectors/database.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp) · [5-Minuten-Demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
+
+<a id="graphql-to-mcp"></a>
+
+### GraphQL zu MCP
+
+Per Introspection werden die Queries und Mutations eines GraphQL-Endpunkts zu MCP-Tools, oder du definierst die Operationen selbst. [Dokumentation zum GraphQL-Connector](docs/connectors/graphql.md) · [Anleitung](https://anythingmcp.com/de/guides/graphql-to-mcp)
+
+<a id="postman-collection-to-mcp"></a>
+
+### Postman-Collection zu MCP
+
+Importiere eine Postman-Collection im Format v2.1: Ordner, Authentifizierung, Body-Modi und `{{variables}}` werden übernommen, und jeder Request wird zu einem Tool. Mit cURL-Befehlen funktioniert es genauso. [Dokumentation zum Postman-Import](docs/connectors/rest.md#from-postman-collection)
+
+---
+
+<a id="erp-connectors"></a>
+
+## ERP-Connectors
+
+Fertige Adapter für die ERP-Systeme, in denen die meisten Fragen zu Aufträgen, Beständen und Rechnungen ihre Antwort finden. Adapter installieren, Zugangsdaten eintragen, und die Tools stehen auf deinem MCP-Server bereit. Jeder Name führt zur passenden Einrichtungsanleitung.
+
+| System | Markt | Tools | Was die KI damit kann |
+|---|---|---|---|
+| [SAP Business One](https://anythingmcp.com/de/guides/connect-sap-business-one-to-claude) | Weltweit | 12 | Geschäftspartner, Artikel, Aufträge, Rechnungen, Angebote, Lieferungen; Kundenaufträge anlegen |
+| [SAP S/4HANA Cloud](https://anythingmcp.com/de/guides/connect-sap-s4hana-cloud-to-claude) | Weltweit | 15 | Geschäftspartner, Kundenaufträge und Bestellungen, Fakturen, Lieferungen, Buchungsbelege |
+| [Odoo](https://anythingmcp.com/de/guides/connect-odoo-to-claude) | Weltweit | 11 | Jedes Modell: Partner, Kundenaufträge, Rechnungen, Produkte; anlegen und ändern |
+| [Microsoft Dynamics NAV](https://anythingmcp.com/de/guides/connect-dynamics-nav-to-claude) | Weltweit | 6 | Jede veröffentlichte OData-Seite: Kunden, Artikel, Kundenaufträge; anlegen und ändern |
+| [ERPNext](https://anythingmcp.com/de/guides/connect-erpnext-to-claude) | Weltweit | 11 | Jeder DocType: Kunden, Kundenaufträge, Rechnungen, Artikel, Lagerbestand |
+| [Dolibarr](https://anythingmcp.com/de/guides/connect-dolibarr-to-claude) | Weltweit | 10 | Geschäftspartner, Rechnungen, Aufträge, Angebote, Produkte, Lagerbestand |
+| [JTL-Wawi](https://anythingmcp.com/de/guides/connect-jtl-wawi-to-claude) † | DE | 9 | Artikel, Bestand pro Lager, Kunden, Kundenaufträge, Lieferungen |
+| [Xentral](https://anythingmcp.com/de/guides/connect-xentral-to-claude) | DE | 7 | Artikel, Kunden, Kundenaufträge, Rechnungen, Lagerbestand |
+| [weclapp](https://anythingmcp.com/de/guides/connect-weclapp-to-claude) | DACH | 11 | Kunden, Kundenaufträge, Rechnungen, Artikel, Angebote, Verkaufschancen |
+| [Sage 100](https://anythingmcp.com/de/guides/connect-sage-100-to-claude) † | DE | 6 | Adressen, Artikel, Verkaufsbelege, jede Entität der Web API |
+| [Haufe X360](https://anythingmcp.com/de/guides/connect-haufe-x360-to-claude) † | DE | 7 | Kunden, Lagerartikel, Kundenaufträge, Rechnungen, Lieferungen |
+| [ScopeVisio](https://anythingmcp.com/de/guides/connect-scopevisio-to-claude) | DE | 6 | Kontakte, Rechnungen, Projekte, Aufgaben |
+| [AFAS Profit](https://anythingmcp.com/de/guides/connect-afas-profit-to-claude) † | NL | 6 | Jeder GetConnector: Debitoren, Rechnungen, Mitarbeitende |
+| [Zucchetti](https://anythingmcp.com/de/guides/connect-zucchetti-to-claude) † | IT | 6 | Anagrafiche (Stammdaten), Belege, Artikel |
+| [TeamSystem](https://anythingmcp.com/de/guides/connect-teamsystem-to-claude) † | IT | 6 | Kunden, Lieferanten, Rechnungen, Artikel |
+| [Axonaut](https://anythingmcp.com/de/guides/connect-axonaut-to-claude) † | FR | 9 | Unternehmen, Rechnungen, Angebote, Ausgaben, Produkte, Projekte |
+
+† Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Mandanten getestet. Wenn du eines dieser Systeme einsetzt, freuen wir uns sehr über einen Erfahrungsbericht oder einen Fix.
+
+**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server)
+
+**Dein ERP ist nicht dabei, oder es ist eine Eigenentwicklung bzw. läuft on-premises?** Binde es über seine [REST-API](#openapi--rest-api-to-mcp), seine [SOAP-Dienste](#soap--wsdl-to-mcp) oder direkt über seine [SQL-Datenbank](#sql-database-to-mcp) an, mit reinem Lesezugriff. So betreibt [KOCH Freiburg](https://www.kochfreiburg.de/) sein ERP im Produktivbetrieb.
+
+---
+
+<a id="e-commerce--marketplace-connectors"></a>
+
+## E-Commerce- &amp; Marktplatz-Connectors
+
+Shops und Marktplätze, von Amazon und eBay bis zu den Marktplätzen im DACH-Raum. Jeder Name führt zur passenden Einrichtungsanleitung.
+
+| System | Markt | Tools | Was die KI damit kann |
+|---|---|---|---|
+| [Amazon Seller Central](https://anythingmcp.com/de/guides/connect-amazon-seller-to-claude) | Weltweit | 15 | Bestellungen, Katalog, FBA-Bestand, Angebote, Gebühren, Finanzereignisse, Berichte |
+| [WooCommerce](https://anythingmcp.com/de/guides/connect-woocommerce-to-claude) | Weltweit | 49 | Produkte, Varianten, Lagerbestand, Bestellungen, Erstattungen, Kunden, Berichte |
+| [Shopware 6](https://anythingmcp.com/de/guides/connect-shopware-6-to-claude) | DACH | 6 | Storefront-Katalog über die Store API: Produkte, Kategorien, Cross-Selling |
+| [Magento 2 / Adobe Commerce](https://anythingmcp.com/de/guides/connect-magento-to-claude) | Weltweit | 12 | Produkte, Lagerbestand, Bestellungen, Kunden |
+| [BigCommerce](https://anythingmcp.com/de/guides/connect-bigcommerce-to-claude) | Weltweit | 14 | Produkte, Varianten, Bestand, Bestellungen, Kunden |
+| [eBay Sell](https://anythingmcp.com/de/guides/connect-ebay-sell-to-claude) | Weltweit | 10 | Bestand, Angebote, Bestellungen, Streitfälle, Preisänderungen |
+| [Etsy](https://anythingmcp.com/de/guides/connect-etsy-to-claude) | Weltweit | 9 | Listings, Belege (Bestellungen), Bewertungen |
+| [Ecwid](https://anythingmcp.com/de/guides/connect-ecwid-to-claude) | Weltweit | 10 | Produkte, Kategorien, Bestellungen, Kunden |
+| [Kaufland Marketplace](https://anythingmcp.com/de/guides/connect-kaufland-to-claude) | DE | 8 | Bestellungen und Bestelleinheiten, Sendungen, Tickets, Storefronts |
+| [OTTO Market](https://anythingmcp.com/de/guides/connect-otto-market-to-claude) † | DE | 8 | Bestellungen, Produkte, Retouren, Bestands- und Preisänderungen |
+| [Zalando Direct Ship](https://anythingmcp.com/de/guides/connect-zalando-zds-to-claude) † | EU | 7 | Bestellungen, Sendungen, Retouren, Bestand, Preise |
+| [Billbee](https://anythingmcp.com/guides/connect-billbee-to-claude) | DACH | 8 | Bestellungen, Produkte, Kunden, Versanddienstleister |
+| [Mercado Libre](https://anythingmcp.com/de/guides/connect-mercado-libre-to-claude) | LATAM | 4 | Artikelsuche, Verkäuferbestellungen |
+
+† Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Verkäuferkonto getestet.
+
+**Repositories:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server)
+
+---
+
 ## Was AnythingMCP verbindet, steuert und lernt
 
 ### Verbinden
@@ -107,7 +206,7 @@ Der Schnellstart bindet die Dienste bewusst an `127.0.0.1`: Es gibt davor noch k
 
 - **[Antworten gezielt formen](#control-what-the-model-sees)** — lege für jedes Tool genau fest, welche Felder das Modell erreichen, mit einer direkten Vorher-Nachher-Vorschau.
 - **Nur lesen, wo es darauf ankommt.** Jedes Tool trägt MCP-Annotationen (`readOnlyHint`, `destructiveHint`), die aus der Operation abgeleitet und pro Tool überschrieben werden können. So kann ein Client unterscheiden, ob eine Rechnung gelesen oder eine Gutschrift erstellt wird. Rollenbasierte Tool-Freigaben ermöglichen einen MCP-Server, der ausschließlich lesen darf — für die meisten ERP-Anbindungen der richtige Einstieg.
-- **Alle gängigen Authentifizierungsverfahren** — OAuth2 (PKCE und Client Credentials), Bearer, API Key, Basic, WS-Security, Client-Zertifikate, [LOGIN_TOKEN](docs/connectors/login-token-auth.md) und OAuth 1.0a.
+- **Alle gängigen Authentifizierungsverfahren** — OAuth2 (PKCE und Client Credentials), Bearer, API Key, Basic, HMAC-Signaturen, [LOGIN_TOKEN](docs/connectors/login-token-auth.md) und OAuth 1.0a.
 - **Audit-Logging** — jeder Tool-Aufruf wird mit Eingabe, Ausgabe, Dauer und Status in deiner eigenen Datenbank protokolliert.
 - **[SSO](docs/sso.md) und [SCIM](docs/scim-entra-setup.md)** — Entra ID, Google, Okta, Auth0 und generisches OIDC. Rollen werden bei jeder Anmeldung mit den Gruppen deines Verzeichnisdienstes synchronisiert. Deaktivierst du dort eine Person, verlieren auch ihr Workspace-Zugriff und ihre MCP-API-Schlüssel ihre Gültigkeit (nur beim Self-Hosting).
 
@@ -120,7 +219,7 @@ Der Schnellstart bindet die Dienste bewusst an `127.0.0.1`: Es gibt davor noch k
 
 ## AnythingMCP im Vergleich
 
-Die Projekte, mit denen AnythingMCP häufig verglichen wird, sind überwiegend MCP-Gateways: Sie bündeln vorhandene MCP-Server, begrenzen deren Zugriff und sichern sie ab. AnythingMCP setzt einen Schritt früher an, denn die meisten Unternehmen haben noch gar keine MCP-Server — sondern eine REST-API, einen SOAP-Dienst aus dem Jahr 2009 und eine Datenbank, die niemand direkt zugänglich machen möchte. Jedes der folgenden Projekte löst ein echtes Problem, nur eben nicht dasselbe.
+AnythingMCP ist ein MCP-Gateway, das einen Schritt früher ansetzt: Es erzeugt die MCP-Server aus den APIs, ERP-Systemen und Datenbanken, die du bereits betreibst, und stellt sie dann hinter einem einzigen Endpunkt bereit, mit begrenztem Zugriff und Audit-Log. Die anderen MCP-Gateways bündeln und sichern MCP-Server, die schon vorhanden sind, doch die meisten Unternehmen haben noch gar keine — sondern eine REST-API, einen SOAP-Dienst aus dem Jahr 2009 und eine Datenbank, die niemand direkt zugänglich machen möchte. Jedes der folgenden Projekte löst ein echtes Problem, nur eben nicht dasselbe.
 
 | | Was es ist | Wähle es stattdessen, wenn … |
 |---|---|---|
@@ -183,7 +282,7 @@ Das bringt zwei Vorteile zugleich: Sensible Felder gelangen nicht zum Modell, un
 
 ## Eigene Claude-Connectors erstellen — ohne Code
 
-Claude unterstützt **benutzerdefinierte Connectors**: entfernte MCP-Server, die du einmal unter *Settings → Connectors* hinzufügst und anschließend in Claude.ai, Claude Desktop und Claude Code nutzen kannst. AnythingMCP erzeugt einen solchen Connector **aus jeder bereits vorhandenen API** — ohne dass du einen MCP-Server programmieren musst:
+Claude unterstützt **benutzerdefinierte Connectors**: entfernte MCP-Server, die du einmal unter *Customize → Connectors* hinzufügst und anschließend in Claude.ai, Claude Desktop und Claude Code nutzen kannst. AnythingMCP erzeugt einen solchen Connector **aus jeder bereits vorhandenen API** — ohne dass du einen MCP-Server programmieren musst:
 
 1. Importiere deine API-Spezifikation oder wähle einen fertigen Adapter.
 2. Passe Tool-Namen, Beschreibungen und Parameter im **visuellen Editor** an — du bestimmst, was die KI sieht.
@@ -211,7 +310,7 @@ KI-Clients sprechen MCP, deine Systeme dagegen REST, SOAP, GraphQL und SQL. Eine
 | Du hast ältere SOAP-/WSDL-Dienste | **SOAP → MCP** mit automatischem WSDL-Parsing |
 | Du möchtest Datenbanken über KI-Agenten abfragen | **DB → MCP** mit automatisch erzeugten Abfrage-Tools (7 Engines) |
 | Du möchtest einen Endpunkt für alle APIs | **MCP-Middleware**, die mehrere Connectors zusammenführt |
-| Du brauchst einen MCP-Server für Deutsche Bahn / DHL / weclapp / … | **Der Adapterkatalog** — in einer Minute installieren und Zugangsdaten hinterlegen |
+| Du brauchst einen MCP-Server für SAP Business One / Odoo / Shopware / … | **Der Adapterkatalog** — in einer Minute installieren und Zugangsdaten hinterlegen |
 | Du kannst Zugangsdaten keinem Drittanbieter überlassen | **Betrieb auf deiner Infrastruktur**, Zugangsdaten mit AES-256-GCM verschlüsselt gespeichert |
 | Du brauchst Authentifizierung, Audit-Logs und RBAC | **OAuth2, Audit-Log und rollenbasierter Zugriff** sind eingebaut |
 | Ein Modell eines Drittanbieters würde jedes Feld der API-Antwort sehen | **[Response-Mapping pro Tool](#control-what-the-model-sees)** — Felder entfernen oder umformen, bevor sie dein Netzwerk verlassen |
@@ -221,12 +320,13 @@ KI-Clients sprechen MCP, deine Systeme dagegen REST, SOAP, GraphQL und SQL. Eine
 
 | | Anleitungen |
 |---|---|
-| Zugverbindungen, aktuelle Verspätungen und Routen abfragen | [Deutsche Bahn](https://anythingmcp.com/guides/deutsche-bahn-to-mcp) |
-| Mit Claude auf das ERP zugreifen | [weclapp](https://anythingmcp.com/guides/weclapp-to-mcp) · [Xentral](https://anythingmcp.com/guides/xentral-to-mcp) |
+| Mit Claude auf das ERP zugreifen | [SAP Business One](https://anythingmcp.com/de/guides/connect-sap-business-one-to-claude) · [Odoo](https://anythingmcp.com/de/guides/connect-odoo-to-claude) · [weclapp](https://anythingmcp.com/de/guides/weclapp-to-mcp) · [Xentral](https://anythingmcp.com/de/guides/xentral-to-mcp) |
+| Bestellungen, Bestände und Gebühren über Shops und Marktplätze hinweg prüfen | [Amazon Seller](https://anythingmcp.com/de/guides/connect-amazon-seller-to-claude) · [WooCommerce](https://anythingmcp.com/de/guides/connect-woocommerce-to-claude) · [Kaufland](https://anythingmcp.com/de/guides/connect-kaufland-to-claude) |
 | Pakete verfolgen | [DHL](https://anythingmcp.com/guides/dhl-tracking-to-mcp) · [GLS](https://anythingmcp.com/guides/gls-tracking-to-mcp) |
 | Eine Rechnung vor der Zahlung prüfen | [VIES VAT](https://anythingmcp.com/guides/vies-vat-to-mcp) · [Handelsregister](https://anythingmcp.com/guides/handelsregister-to-mcp) |
 | Einen KI-Agenten mit reinem Lesezugriff auf eine Produktionsdatenbank ausstatten | [Datenbank-Connectors](docs/connectors/database.md) |
 | Einen SOAP-Dienst aus dem Jahr 2009 mit einem Modell von 2026 verbinden | [SOAP → MCP](https://anythingmcp.com/guides/soap-to-mcp) |
+| Zugverbindungen, aktuelle Verspätungen und Routen abfragen | [Deutsche Bahn](https://anythingmcp.com/guides/deutsche-bahn-to-mcp) |
 
 ---
 
@@ -234,16 +334,16 @@ KI-Clients sprechen MCP, deine Systeme dagegen REST, SOAP, GraphQL und SQL. Eine
 
 ## Der Adapterkatalog
 
-259 Adapter mit mehr als 1.800 Tools. **20 benötigen keinen API-Schlüssel**. Bei den übrigen gibst du deine Zugangsdaten beim Import an; danach stehen die Tools sofort bereit. Für jeden Adapter gibt es auf [anythingmcp.com/guides](https://anythingmcp.com/guides) eine Einrichtungsanleitung in sieben Sprachen.
+259 Adapter mit mehr als 2.400 Tools. **21 benötigen keinen API-Schlüssel**. Bei den übrigen gibst du deine Zugangsdaten beim Import an; danach stehen die Tools sofort bereit. Für jeden Adapter gibt es auf [anythingmcp.com/guides](https://anythingmcp.com/guides) eine Einrichtungsanleitung in sieben Sprachen.
 
 | Kategorie | Beispiele |
 |---|---|
 | 📦 Logistik &amp; Versand | Deutsche Bahn, DHL, DPD, GLS, Shipcloud, Sendcloud |
-| 💼 ERP, Buchhaltung &amp; Rechnungsstellung | weclapp, Xentral, DATEV, Scopevisio, Billomat, FastBill |
-| 🛍️ E-Commerce | Amazon Seller, Etsy, Shopware 6, WooCommerce, Mercado Libre 🌎, Oxomi |
+| 💼 ERP, Buchhaltung &amp; Rechnungsstellung | [SAP Business One, Odoo, weclapp, Xentral und 12 weitere ERP-Systeme](#erp-connectors), Lexware Office, sevDesk, Exact Online, bexio |
+| 🛍️ E-Commerce | [Amazon Seller, WooCommerce, Shopware 6, Kaufland, OTTO und 8 weitere](#e-commerce--marketplace-connectors), Oxomi |
 | 👥 Personalwesen &amp; Außendienst | Personio, HRWorks, Kenjo, MFR Mobile Field Report |
 | 🏛️ Behörden &amp; öffentliche Daten | VIES VAT, Handelsregister, UK Companies House 🇬🇧, DESTATIS, Bundesbank, OpenPLZ, NINA |
-| 🏦 Banking &amp; Zahlungen | N26, Wise 🇬🇧, PAYONE, Razorpay 🇮🇳, Paystack 🇳🇬 |
+| 🏦 Banking &amp; Zahlungen | Revolut Business, Wise 🇬🇧, PAYONE, Razorpay 🇮🇳, Paystack 🇳🇬 |
 | 💬 Messaging &amp; Kommunikation | WhatsApp, LINE 🇯🇵, TeamViewer |
 | 🎾 Sport &amp; Web3 | Playtomic, Sorare |
 | 🏗️ Bauwesen &amp; Karten | PlanRadar, HERE Geocoding |
@@ -257,6 +357,33 @@ KI-Clients sprechen MCP, deine Systeme dagegen REST, SOAP, GraphQL und SQL. Eine
 ➡️ **[docs/guides.md](docs/guides.md)** — Einrichtung von Claude / ChatGPT / Gemini / Copilot / Cursor · Anleitungen für REST-, SOAP-, GraphQL-, Datenbank- und MCP-Brücken-Connectors · API-Referenz &amp; Deployment-Dokumentation · FAQ.
 
 Du suchst einen bestimmten Dienst? Für jeden Adapter gibt es eine Schritt-für-Schritt-Anleitung auf **[anythingmcp.com/guides](https://anythingmcp.com/guides)**.
+
+<a id="faq"></a>
+
+## FAQ
+
+**Wie verbinde ich mein ERP (SAP Business One, Odoo, Xentral …) mit Claude oder ChatGPT?**
+Installiere den Adapter deines ERP-Systems aus dem [Katalog](#erp-connectors), trage die API-Zugangsdaten ein und füge die URL deines MCP-Servers in Claude als benutzerdefinierten Connector oder in ChatGPT als App hinzu. Gibt es für dein ERP keinen Adapter, bindest du seine REST- oder SOAP-API oder seine SQL-Datenbank direkt an. Fang mit einer Rolle an, die nur lesen darf.
+
+**Wie mache ich aus einer OpenAPI-Spezifikation einen MCP-Server?**
+Lege einen REST-Connector an und importiere die Spezifikation per URL oder durch Einfügen. Jede Operation wird zu einem MCP-Tool am `/mcp`-Endpunkt deines Servers, ganz ohne Code. [So funktioniert es](docs/connectors/rest.md#from-openapi--swagger).
+
+**Kann ich einen SOAP-/WSDL-Dienst mit Claude verbinden?**
+Ja. AnythingMCP liest die WSDL ein, macht aus jeder Operation ein Tool und baut bei jedem Aufruf den SOAP-Envelope, auch für WCF-Dienste. Authentifiziert wird per HTTP Basic, Bearer oder API-Key-Header; WS-Security-Header sind noch nicht implementiert. [Dokumentation zum SOAP-Connector](docs/connectors/soap.md).
+
+**Kann Claude meine SQL-Server-, Oracle- oder PostgreSQL-Datenbank sicher abfragen?**
+Datenbank-Connectors sind standardmäßig schreibgeschützt: AnythingMCP führt nur ein einzelnes SELECT (oder `WITH … SELECT`) aus und blockiert Schreibzugriffe und verkettete Statements. Zusätzlich: Verwende einen Datenbankbenutzer, der ausschließlich SELECT-Rechte hat, setze nach Möglichkeit auf statische Abfragen, bei denen das Modell nur die Parameter liefert, und gib die Tools pro Rolle gezielt frei. Das Response-Mapping entfernt die Spalten, die das Modell nicht erreichen dürfen, und jede Abfrage landet im Audit-Log in deiner eigenen Datenbank.
+
+**Wie verbinde ich Shopware, WooCommerce oder Amazon Seller Central mit Claude?**
+Installiere den [E-Commerce-Adapter](#e-commerce--marketplace-connectors) für deinen Shop oder Marktplatz und autorisiere ihn. WooCommerce bringt 49 Tools mit, Amazon Seller Central nutzt die offizielle Selling Partner API, und der Shopware-6-Adapter liest den Storefront-Katalog über die Store API.
+
+**Ist AnythingMCP ein MCP-Gateway? Selbst gehostet und kostenlos?**
+Dreimal ja: ein MCP-Endpunkt vor allen Connectors, mit OAuth2, RBAC, SSO und Audit. Es läuft unter AGPL-3.0 auf deinen eigenen Servern, kommerzielle Nutzung eingeschlossen; [AnythingMCP Cloud](https://cloud.anythingmcp.com) ist die optionale gehostete Variante.
+
+**Worin unterscheidet es sich von Composio?**
+Composio ist ein gehosteter Katalog verwalteter Integrationen. AnythingMCP macht zusätzlich deine eigenen internen APIs, SOAP-Dienste und Datenbanken zu Tools und kann sämtliche Zugangsdaten auf deiner Infrastruktur halten. [Ausführlicher Vergleich](https://anythingmcp.com/de/vs/alternatives-to-composio).
+
+---
 
 ## Community &amp; Unterstützung
 

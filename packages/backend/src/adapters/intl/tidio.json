@@ -1,149 +1,315 @@
 {
   "slug": "tidio",
   "name": "Tidio",
-  "description": "Manage Tidio (live chat + AI chatbot) contacts, conversations, messages, tags via GraphQL from any AI agent. 7 tools, X-Tidio-Openapi-Token auth.",
-  "instructions": "This connector wraps the Tidio Public API (api.tidio.co/v1/graphql).\n\n**Setup**:\n1. Log into https://www.tidio.com → **Settings → Public API** (Tidio+ plan only).\n2. Generate an API token. Set `TIDIO_API_TOKEN`.\n\n**Authentication**: custom header `X-Tidio-Openapi-Token: ${TIDIO_API_TOKEN}` on every request.\n\n**GraphQL-only**: Tidio's Public API is GraphQL — the adapter exposes a few common queries/mutations as wrappers; for ad-hoc queries use the auto-injected `tidio_graphql_query` / `tidio_graphql_mutation` / `tidio_graphql_schema` builtins.\n\n**Visitor vs Contact**: Tidio tracks anonymous visitors (no email) and contacts (have email/identifier). Bind a visitor to a contact via `identify`.\n\n**Pagination**: cursor-based via Relay edges: `edges[].node`, `pageInfo {endCursor, hasNextPage}`.\n\n**Rate limits**: 10 req/sec per token + complexity budget. 429 with `Retry-After`.\n\n**Out of scope here**: chatbot flow editor, broadcast scheduling, A/B testing — these are UI-only.",
+  "description": "Manage Tidio (live chat, helpdesk and Lyro AI) contacts, contact conversations, tickets and ticket replies from any AI agent via the Tidio OpenAPI. 10 tools, Client ID + Client Secret (Tidio Plus or Premium).",
+  "instructions": "This connector wraps the Tidio OpenAPI, Tidio's REST API at `https://api.tidio.com` (docs: https://developers.tidio.com). Tidio has no GraphQL API.\n\n**Plan**: the OpenAPI is available on the **Plus** and **Premium** plans only (Starter, Growth and paid Lyro plans reach just the product-recommendation endpoints, which this connector does not use). Free has no API access.\n\n**Setup**:\n1. In the Tidio panel open **Settings → Developer → OpenAPI** (https://www.tidio.com/panel/settings/developer). Only the project owner and admins see this section.\n2. Click **Generate API Key**: Tidio shows a pair of keys once — copy both.\n3. Paste the key starting with `ci_` into `TIDIO_CLIENT_ID` and the one starting with `cs_` into `TIDIO_CLIENT_SECRET`.\n\n**Authentication**: every request carries `X-Tidio-Openapi-Client-Id` and `X-Tidio-Openapi-Client-Secret`, plus the mandatory version header `Accept: application/json; version=1`. The connector sends all three.\n\n**Workflow**:\n- Contacts: `tidio_list_contacts`, `tidio_get_contact_by_email`, `tidio_get_contact`, then `tidio_get_contact_messages` for the chat history with that contact, or `tidio_update_contact` to change name, email, phone or custom properties.\n- Tickets (helpdesk): `tidio_list_tickets` → `tidio_get_ticket` (with messages) → `tidio_reply_to_ticket`. Replying as an operator needs an operator ID from `tidio_list_operators`.\n\n**Live chats are read through the contact**: the OpenAPI has no endpoint to list conversations or to send a chat message as an operator; the chat history is `tidio_get_contact_messages`, and written replies go to tickets.\n\n**Contact properties**: `tidio_update_contact` only accepts properties already defined in the Tidio panel (Settings → Contact properties); an unknown property or a wrong type is answered with a validation error. A field set to null is cleared; a field left out stays untouched.\n\n**Pagination**: list tools answer with `meta.cursor`; pass it back as `cursor` for the next page. A null cursor means the last page.\n\n**Rate limits** (per project): Plus 60 requests/minute, Premium 120/minute. A 429 answers `too_many_requests`; `x-ratelimit-remaining` shows what is left.\n\n**Errors** come as `{ \"errors\": [{ \"code\", \"message\" }] }` — `not_found`, `not_valid`, `too_many_requests`, …\n\n**Out of scope here**: Lyro data sources and products, webhooks, the Analytics API.",
   "region": "intl",
   "category": "support",
   "icon": "tidio",
-  "docsUrl": "https://docs.tidio.com/public-api/",
-  "requiredEnvVars": ["TIDIO_API_TOKEN"],
+  "docsUrl": "https://developers.tidio.com/docs/openapi-authorization",
+  "requiredEnvVars": [
+    "TIDIO_CLIENT_ID",
+    "TIDIO_CLIENT_SECRET"
+  ],
   "connector": {
-    "name": "Tidio GraphQL API v1",
-    "type": "GRAPHQL",
-    "baseUrl": "https://api.tidio.co/v1/graphql",
+    "name": "Tidio OpenAPI",
+    "type": "REST",
+    "baseUrl": "https://api.tidio.com",
     "authType": "API_KEY",
     "authConfig": {
-      "headerName": "X-Tidio-Openapi-Token",
-      "apiKey": "{{TIDIO_API_TOKEN}}"
-    }
+      "headerName": "X-Tidio-Openapi-Client-Secret",
+      "apiKey": "{{TIDIO_CLIENT_SECRET}}",
+      "extraHeaders": {
+        "X-Tidio-Openapi-Client-Id": "{{TIDIO_CLIENT_ID}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json; version=1"
+    },
+    "healthcheckPath": "/project"
+  },
+  "probe": {
+    "tool": "tidio_get_project"
   },
   "tools": [
     {
       "name": "tidio_get_project",
-      "description": "Get info about the connected Tidio project (id, name, plan).",
-      "parameters": { "type": "object", "properties": {} },
+      "description": "Return the Tidio project the keys belong to: its project ID and whether it is currently online or offline.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
       "endpointMapping": {
-        "method": "query",
-        "path": "{ project { id name plan } }"
+        "method": "GET",
+        "path": "/project"
       }
     },
     {
       "name": "tidio_list_contacts",
-      "description": "List contacts.",
+      "description": "List contacts (identified website visitors) with their name, email, phone, language, country, consent and custom properties. Cursor-paginated: pass meta.cursor back as cursor.",
       "parameters": {
         "type": "object",
         "properties": {
-          "first": { "type": "integer", "description": "Page size." },
-          "after": { "type": "string", "description": "Cursor." }
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous page's meta.cursor; omit for the first page."
+          }
         }
       },
       "endpointMapping": {
-        "method": "query",
-        "path": "query ListContacts($first: Int, $after: String) { contacts(first: $first, after: $after) { edges { node { id name email phone tags { name } } } pageInfo { endCursor hasNextPage } } }",
-        "bodyMapping": { "variables": { "first": "$first", "after": "$after" } }
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "cursor": "$cursor"
+        }
       }
     },
     {
       "name": "tidio_get_contact_by_email",
-      "description": "Look up a contact by email.",
+      "description": "Find the contact(s) with an exact email address. Returns the same contact objects as tidio_list_contacts, so take the id from contacts[0].",
       "parameters": {
         "type": "object",
         "properties": {
-          "email": { "type": "string", "description": "Email." }
+          "email": {
+            "type": "string",
+            "description": "Email address to look up."
+          }
         },
-        "required": ["email"]
+        "required": [
+          "email"
+        ]
       },
       "endpointMapping": {
-        "method": "query",
-        "path": "query GetContact($email: String!) { contact(email: $email) { id name email phone tags { name } customAttributes { key value } } }",
-        "bodyMapping": { "variables": { "email": "$email" } }
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "tidio_get_contact",
+      "description": "Get one contact by ID with all its fields and custom properties.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact ID (UUID), from tidio_list_contacts or tidio_get_contact_by_email."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}"
       }
     },
     {
       "name": "tidio_update_contact",
-      "description": "Update / upsert a contact by email.",
+      "description": "Update a contact's email, first/last name, phone or custom properties. Only the fields you pass change; null clears a field. Custom properties must already exist in the Tidio panel.",
       "parameters": {
         "type": "object",
         "properties": {
-          "email": { "type": "string", "description": "Email (identifier)." },
-          "name": { "type": "string", "description": "New name." },
-          "phone": { "type": "string", "description": "Phone." },
-          "tags": { "type": "array", "description": "Tag name strings." }
-        },
-        "required": ["email"]
-      },
-      "endpointMapping": {
-        "method": "mutation",
-        "path": "mutation UpdateContact($input: UpdateContactInput!) { contactUpdate(input: $input) { contact { id email } } }",
-        "bodyMapping": {
-          "variables": {
-            "input": {
-              "email": "$email",
-              "name": "$name",
-              "phone": "$phone",
-              "tags": "$tags"
+          "contact_id": {
+            "type": "string",
+            "description": "Contact ID (UUID), from tidio_list_contacts or tidio_get_contact_by_email."
+          },
+          "email": {
+            "type": "string",
+            "description": "New email address."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "New first name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "New last name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "New phone number."
+          },
+          "properties": {
+            "type": "array",
+            "description": "Custom properties to set, as [{\"name\": \"shoe_size\", \"value\": \"44\"}]; a null value clears one.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
             }
           }
-        }
-      }
-    },
-    {
-      "name": "tidio_list_conversations",
-      "description": "List recent conversations.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "first": { "type": "integer", "description": "Page size." },
-          "after": { "type": "string", "description": "Cursor." },
-          "status": { "type": "string", "description": "OPEN, SOLVED, PENDING." }
-        }
-      },
-      "endpointMapping": {
-        "method": "query",
-        "path": "query ListConvs($first: Int, $after: String, $status: ConversationStatus) { conversations(first: $first, after: $after, status: $status) { edges { node { id status contact { id email } assignee { id name } lastMessageAt } } pageInfo { endCursor hasNextPage } } }",
-        "bodyMapping": {
-          "variables": { "first": "$first", "after": "$after", "status": "$status" }
-        }
-      }
-    },
-    {
-      "name": "tidio_get_conversation",
-      "description": "Get a single conversation with messages.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string", "description": "Conversation ID." }
         },
-        "required": ["id"]
+        "required": [
+          "contact_id"
+        ]
       },
       "endpointMapping": {
-        "method": "query",
-        "path": "query GetConv($id: ID!) { conversation(id: $id) { id status contact { id email } messages(first: 50) { edges { node { id content author { id name role } createdAt } } } } }",
-        "bodyMapping": { "variables": { "id": "$id" } }
+        "method": "PATCH",
+        "path": "/contacts/{contact_id}",
+        "headers": {
+          "Content-Type": "application/json; version=1"
+        },
+        "bodyMapping": {
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "phone": "$phone",
+          "properties": "$properties"
+        }
       }
     },
     {
-      "name": "tidio_send_message",
-      "description": "Send a message to a conversation as an operator.",
+      "name": "tidio_get_contact_messages",
+      "description": "Read the chat history with a contact: messages from the contact, operators and bots, plus a link to the conversation in the Tidio panel. Cursor-paginated: pass meta.cursor back as cursor.",
       "parameters": {
         "type": "object",
         "properties": {
-          "conversation_id": { "type": "string", "description": "Conversation ID." },
-          "content": { "type": "string", "description": "Message text." }
-        },
-        "required": ["conversation_id", "content"]
-      },
-      "endpointMapping": {
-        "method": "mutation",
-        "path": "mutation Send($input: SendMessageInput!) { messageSend(input: $input) { message { id } } }",
-        "bodyMapping": {
-          "variables": {
-            "input": {
-              "conversationId": "$conversation_id",
-              "content": "$content"
-            }
+          "contact_id": {
+            "type": "string",
+            "description": "Contact ID (UUID), from tidio_list_contacts or tidio_get_contact_by_email."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous page's meta.cursor; omit for the first page."
           }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}/messages",
+        "queryParams": {
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "tidio_list_tickets",
+      "description": "List helpdesk tickets with subject, status (open, pending, solved), priority, contact and assignee, without messages. Cursor-paginated: pass meta.cursor back as cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous page's meta.cursor; omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets",
+        "queryParams": {
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "tidio_get_ticket",
+      "description": "Get one helpdesk ticket with all its details and messages (public replies and internal notes).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "description": "Ticket ID, from tidio_list_tickets."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticket_id}"
+      }
+    },
+    {
+      "name": "tidio_reply_to_ticket",
+      "description": "Add a reply to a helpdesk ticket, as an operator (needs operator_id) or as the contact. message_type internal makes it a note only operators see.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "description": "Ticket ID, from tidio_list_tickets."
+          },
+          "content": {
+            "type": "string",
+            "description": "Reply text."
+          },
+          "author_type": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "contact"
+            ],
+            "description": "Who the reply is from: operator (default) or contact.",
+            "default": "operator"
+          },
+          "operator_id": {
+            "type": "string",
+            "description": "Operator ID (UUID) from tidio_list_operators; needed when author_type is operator."
+          },
+          "message_type": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal"
+            ],
+            "description": "public (sent to the contact) or internal (a note for operators)."
+          }
+        },
+        "required": [
+          "ticket_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{ticket_id}/reply",
+        "headers": {
+          "Content-Type": "application/json; version=1"
+        },
+        "bodyMapping": {
+          "author_type": "$author_type",
+          "content": "$content",
+          "operator_id": "$operator_id",
+          "message_type": "$message_type"
+        }
+      }
+    },
+    {
+      "name": "tidio_list_operators",
+      "description": "List the project's operators (support agents) with their IDs, names and emails — the operator_id for tidio_reply_to_ticket. Cursor-paginated: pass meta.cursor back as cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous page's meta.cursor; omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/operators",
+        "queryParams": {
+          "cursor": "$cursor"
         }
       }
     }

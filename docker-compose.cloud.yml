@@ -1,11 +1,237 @@
 # =============================================================================
 # AnythingMCP Cloud — Managed SaaS Deployment
 # =============================================================================
-# Usage:  docker compose -f docker-compose.cloud.yml up -d
+# Usage:  deploy/cloud/release.sh (via .github/workflows/deploy-cloud.yml).
+#         A bare `docker compose up -d` starts only the infrastructure: the app
+#         services are blue/green and belong to release.sh (see below).
 # Domain: cloud.anythingmcp.com
 # =============================================================================
 
 name: amcp-cloud
+
+# ── Backend and frontend: the app, in two colours ─────────────────────────
+# Until 2026-09-20 both processes ran in one container under start.sh's
+# liveness loop, which shut the container down whenever either process
+# died. That afternoon the backend exhausted its heap four times, and each
+# time the restart took the frontend and every tenant's MCP endpoint with
+# it. Now a backend crash restarts the backend. The image is the same;
+# `./start.sh backend` and `./start.sh frontend` exec one process each as
+# PID 1, so `docker stop` and the backend's own heap guard reach Node
+# directly and an exit becomes a restart through `restart: unless-stopped`.
+#
+# Each app service exists twice below, as <app>-blue and <app>-green, from
+# these two definitions. One colour serves; a release starts the other next
+# to it, checks it, moves Caddy over and only then stops the old one — see
+# deploy/cloud/release.sh. The colours sit behind compose profiles, so a
+# plain `docker compose up -d` never starts or recreates them: only
+# release.sh does, one colour at a time. Do not `up` them by hand.
+#
+# Whichever colour is live is renamed to amcp-cloud-backend and
+# amcp-cloud-frontend once the old one is gone, so `docker exec`, `docker
+# logs` and scripts/ops keep working with the names they always used. The
+# compose service (backend-blue / backend-green) is in the container's
+# com.docker.compose.service label; Caddy addresses the service name.
+x-backend: &backend
+  image: helpcodeai/anythingmcp:latest
+  command: ["./start.sh", "backend"]
+  expose:
+    - "4000"
+  # Hard ceiling for the kernel. It must sit far enough above the V8 cap
+  # that the backend's own guard (process-vitals.ts) acts first, and the
+  # margin is larger than it looks: on 21 Sep RSS ran 1.6 GB above the JS
+  # heap — native buffers, and V8's snapshot builder — so a 5 GB limit over
+  # a 4 GB heap was reached with the heap at 60 %, and the kernel killed
+  # the process nineteen times with no log line. 6 GB over 4 GB, with the
+  # guard now watching RSS against this limit as well (HEAP_RSS_EXIT_PERCENT),
+  # turns that into a logged, graceful restart. On the 7.9 GB droplet the
+  # rest — frontend, postgres, redis, motis, caddy — sits near 1 GB today.
+  # If NODE_MAX_OLD_SPACE_MB is raised, raise this too.
+  #
+  # During a release two backends run at once for a minute or two, and two
+  # of these limits (12 GB) do not fit the droplet. They do not have to:
+  # the limit is a ceiling for one runaway process, not a reservation, and
+  # what the overlap costs is the NEW backend's boot footprint (~0.7 GB
+  # steady, ~1.5 GB at the most while it loads the registry) on top of what
+  # the host already uses. release.sh checks that room exists before it
+  # starts the new colour (RELEASE_MIN_AVAILABLE_MB), aborts the new colour
+  # if the host runs short while it boots (RELEASE_MEM_ABORT_MB), and falls
+  # back to stop-then-start when the room is not there. The numbers and the
+  # reasoning are in release.sh's header.
+  mem_limit: ${BACKEND_MEM_LIMIT:-6g}
+  environment:
+    - NODE_ENV=production
+    - PORT=4000
+    # V8 old-space cap for the backend, read by start.sh. Left unset it
+    # defaults to 2048, which suits a 4 GB host; the tool registry outgrew
+    # that and crash-looped the instance on 10 Sep. Raise it in the server
+    # .env when the host has the RAM to back it — roughly half of total is a
+    # safe ceiling, since postgres, redis, motis and caddy share the box.
+    - NODE_MAX_OLD_SPACE_MB=${NODE_MAX_OLD_SPACE_MB:-2048}
+    # Heap guard (packages/backend/src/common/process-vitals.ts; every var
+    # documented in .env.example). The snapshot stays OFF here: on a heap
+    # this size V8's snapshot builder is what pushed RSS into the cgroup
+    # limit on 21 Sep. Enable it deliberately, at a low percentage, when a
+    # snapshot is wanted — the guard refuses it anyway unless the room is
+    # there.
+    - HEAP_SNAPSHOT_PERCENT=${HEAP_SNAPSHOT_PERCENT:-0}
+    - HEAP_EXIT_PERCENT=${HEAP_EXIT_PERCENT:-90}
+    - HEAP_RSS_EXIT_PERCENT=${HEAP_RSS_EXIT_PERCENT:-90}
+    - HEAP_WARN_PERCENT=${HEAP_WARN_PERCENT:-75}
+    - HEALTH_HEAP_PERCENT=${HEALTH_HEAP_PERCENT:-90}
+    - DEPLOYMENT_MODE=cloud
+    # Sentry (packages/backend/src/instrument.ts). Unset DSN = off. The
+    # release is baked into the image by the publish workflow.
+    # SENTRY_VERIFY_TOKEN enables GET /health/sentry-verify for a one-off
+    # end-to-end check; leave it empty otherwise.
+    - SENTRY_DSN=${SENTRY_DSN_BACKEND:-}
+    - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+    - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.05}
+    - SENTRY_VERIFY_TOKEN=${SENTRY_VERIFY_TOKEN:-}
+    - NEXT_PUBLIC_API_URL=https://${DOMAIN}
+    - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
+    - REDIS_URL=redis://redis:6379
+    - JWT_SECRET=${JWT_SECRET}
+    - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    # Shared secret for the onboarding-reminders GitHub Actions cron.
+    # Must match the repo secret ONBOARDING_CRON_SECRET. Unset = cron
+    # endpoint refuses all calls (self-host default).
+    - CRON_SECRET=${CRON_SECRET:-}
+    # Shared secret presented to anythingmcp.com as x-amcp-service-token when
+    # this backend asks for a licence on a user's behalf. The licence API
+    # rate-limits anonymous callers per IP, and every cloud trial request
+    # leaves from this one droplet, so without it the whole cloud shared a
+    # bucket of three trials an hour. Must match LICENSE_SERVICE_TOKEN on the
+    # website. Unset = public limit (self-host default).
+    - LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN:-}
+    - CORS_ORIGIN=https://${DOMAIN}
+    - SERVER_URL=https://${DOMAIN}
+    - FRONTEND_URL=https://${DOMAIN}
+    - MCP_AUTH_MODE=${MCP_AUTH_MODE:-oauth2}
+    # MCP Streamable HTTP response framing. `true` = single-shot
+    # `application/json` responses; `false` = SSE-framed `text/event-stream`.
+    # Microsoft Copilot Studio's MCP client cannot deserialize SSE-framed
+    # responses ("response could not be deserialized as JSON") and requires
+    # plain JSON, so the cloud defaults to JSON. This is spec-compliant and
+    # every compliant client (incl. Claude) handles it; combined with the
+    # default stateless mode (MCP_STATEFUL_SESSIONS unset) it also avoids the
+    # `-32001 Session not found` errors Copilot hits against stateful servers.
+    - MCP_STREAMABLE_JSON_RESPONSE=${MCP_STREAMABLE_JSON_RESPONSE:-true}
+    - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-true}
+    - LICENSE_API_URL=${LICENSE_API_URL:-https://anythingmcp.com}
+    # Operator analytics — cloud build only. Leave unset on self-hosted.
+    - GTM_ID=${GTM_ID:-}
+    - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
+    # Proxy / web-unblocker (e.g. Zyte API proxy mode). Tools with
+    # use_proxy=true route through this; unset = feature off everywhere.
+    - CONNECTOR_PROXY_URL=${CONNECTOR_PROXY_URL:-}
+    - PROXY_RATE_LIMIT_DEFAULT=${PROXY_RATE_LIMIT_DEFAULT:-100}
+    # Internal MOTIS instance for the Deutsche Bahn connector. When set, the
+    # adapter's MOTIS_URL is filled in automatically at import (and hidden
+    # from the install form), so cloud users never see or choose it.
+    # Self-hosters leave it unset and enter their own MOTIS URL.
+    - MOTIS_INTERNAL_URL=${MOTIS_INTERNAL_URL:-http://motis:8080}
+    # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
+    # a private docker IP, which the guard blocks by default). Harmless on
+    # self-host (no such host on their network).
+    - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-motis}
+    # Knowledge Graph — AI (LLM) features. Off unless KG_LLM_ENABLED=true AND a
+    # provider key are set; the per-workspace toggle still gates actual usage.
+    - KG_LLM_ENABLED=${KG_LLM_ENABLED:-false}
+    - KG_LLM_PROVIDER=${KG_LLM_PROVIDER:-}
+    - KG_LLM_MODEL=${KG_LLM_MODEL:-}
+    - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    # Domain-verification token for the OpenAI plugin directory; served at
+    # /.well-known/openai-apps-challenge. Unset = route answers 404.
+    - OPENAI_APPS_CHALLENGE_TOKEN=${OPENAI_APPS_CHALLENGE_TOKEN:-}
+    - KG_LLM_REDACT_INTENTS=${KG_LLM_REDACT_INTENTS:-true}
+    # System (operator) transactional-email fallback — used when a workspace
+    # hasn't set its own SMTP (e.g. Resend). Read only by the email sender,
+    # never exposed to workspace admins. Set these in the droplet .env.
+    - SMTP_HOST=${SMTP_HOST:-}
+    - SMTP_PORT=${SMTP_PORT:-587}
+    - SMTP_USER=${SMTP_USER:-}
+    - SMTP_PASS=${SMTP_PASS:-}
+    - SMTP_FROM=${SMTP_FROM:-}
+    - SMTP_SECURE=${SMTP_SECURE:-false}
+  volumes:
+    # One heap snapshot per process, written by the heap guard when the heap
+    # crosses HEAP_SNAPSHOT_PERCENT. A volume so it outlives the container
+    # that wrote it — the whole point is to read it after the restart.
+    - diagnostics:/app/diagnostics
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    # Cold start loads the full connector/tool catalog (~18.5k tools, ~90s).
+    # start_period must comfortably exceed that: during it, failing probes keep
+    # the container in "starting" (not "unhealthy"), so `docker compose --wait`
+    # in deploy-cloud.yml keeps waiting and the first healthy probe (~90s) turns
+    # the deploy green. Too short (was 30s) → the container flipped to unhealthy
+    # mid-boot and --wait aborted, failing a deploy that was actually coming up
+    # fine (false negative). A genuinely dead app never becomes healthy, so once
+    # start_period elapses it still goes unhealthy and the deploy fails for real.
+    #
+    # /health now also fails at HEALTH_HEAP_PERCENT of the heap limit, so the
+    # container reads unhealthy during a decline instead of right up to the
+    # abort. Docker does not restart an unhealthy container by itself; the
+    # backend's own guard exits, and this status is what a deploy and an
+    # outside probe see in the meantime.
+    start_period: 180s
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "5"
+
+x-frontend: &frontend
+  image: helpcodeai/anythingmcp:latest
+  command: ["./start.sh", "frontend"]
+  expose:
+    - "3000"
+  mem_limit: ${FRONTEND_MEM_LIMIT:-1g}
+  # Only what the Next.js server reads at runtime — found by grepping
+  # `process.env.` under packages/frontend/src, not by copying the backend's
+  # list. Its backend rewrites are baked at build time (see the note in
+  # deploy/cloud/Caddyfile — Caddy routes every backend path itself), so no
+  # database URL and no secrets here: a process that does not need them
+  # should not hold them.
+  #
+  # GTM_ID and COOKIE_DOMAIN are read server-side to render the Tag Manager
+  # snippet and the consent banner; leave them out and both silently vanish.
+  environment:
+    - NODE_ENV=production
+    - NEXT_PUBLIC_API_URL=https://${DOMAIN}
+    - GTM_ID=${GTM_ID:-}
+    - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
+    # Sentry: server runtime, and handed to the browser by the root layout
+    # (components/sentry-config.tsx). Unset DSN = off, nothing on the page.
+    - SENTRY_DSN=${SENTRY_DSN_FRONTEND:-}
+    - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+    - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_FRONTEND_TRACES_SAMPLE_RATE:-0}
+    - SENTRY_BROWSER_TRACES_SAMPLE_RATE=${SENTRY_BROWSER_TRACES_SAMPLE_RATE:-0.1}
+    - SENTRY_VERIFY_TOKEN=${SENTRY_VERIFY_TOKEN:-}
+  healthcheck:
+    # A static file under public/, served by the standalone server without
+    # touching the backend: this probe answers for the frontend alone.
+    test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/logo.svg"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 60s
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "5"
 
 services:
 
@@ -22,11 +248,10 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      backend:
-        condition: service_healthy
-      frontend:
-        condition: service_healthy
+    # No depends_on the app: which app containers exist, and which colour
+    # Caddy sends traffic to, is release.sh's business (the colour is a word
+    # in /config/amcp-colour, in the caddy_config volume; see the Caddyfile).
+    # Caddy starting before them only means a few 502s while the host boots.
     restart: unless-stopped
     # Docker's json-file driver is unbounded by default. On 2026-09-18 MOTIS's
     # debug log reached 32 GB and filled the droplet's 77 GB disk: every
@@ -39,207 +264,22 @@ services:
         max-size: "50m"
         max-file: "5"
 
-  # ── Backend and frontend: two containers, one image ──────────────────────
-  # Until 2026-09-20 both processes ran in one container under start.sh's
-  # liveness loop, which shut the container down whenever either process
-  # died. That afternoon the backend exhausted its heap four times, and each
-  # time the restart took the frontend and every tenant's MCP endpoint with
-  # it. Now a backend crash restarts the backend. The image is the same;
-  # `./start.sh backend` and `./start.sh frontend` exec one process each as
-  # PID 1, so `docker stop` and the backend's own heap guard reach Node
-  # directly and an exit becomes a restart through `restart: unless-stopped`.
-  backend:
-    image: helpcodeai/anythingmcp:latest
-    container_name: amcp-cloud-backend
-    command: ["./start.sh", "backend"]
-    expose:
-      - "4000"
-    # Hard ceiling for the kernel. It must sit far enough above the V8 cap
-    # that the backend's own guard (process-vitals.ts) acts first, and the
-    # margin is larger than it looks: on 21 Sep RSS ran 1.6 GB above the JS
-    # heap — native buffers, and V8's snapshot builder — so a 5 GB limit over
-    # a 4 GB heap was reached with the heap at 60 %, and the kernel killed
-    # the process nineteen times with no log line. 6 GB over 4 GB, with the
-    # guard now watching RSS against this limit as well (HEAP_RSS_EXIT_PERCENT),
-    # turns that into a logged, graceful restart. On the 7.9 GB droplet the
-    # rest — frontend, postgres, redis, motis, caddy — sits near 1 GB today.
-    # If NODE_MAX_OLD_SPACE_MB is raised, raise this too.
-    mem_limit: ${BACKEND_MEM_LIMIT:-6g}
-    environment:
-      - NODE_ENV=production
-      - PORT=4000
-      # V8 old-space cap for the backend, read by start.sh. Left unset it
-      # defaults to 2048, which suits a 4 GB host; the tool registry outgrew
-      # that and crash-looped the instance on 10 Sep. Raise it in the server
-      # .env when the host has the RAM to back it — roughly half of total is a
-      # safe ceiling, since postgres, redis, motis and caddy share the box.
-      - NODE_MAX_OLD_SPACE_MB=${NODE_MAX_OLD_SPACE_MB:-2048}
-      # Heap guard (packages/backend/src/common/process-vitals.ts; every var
-      # documented in .env.example). The snapshot stays OFF here: on a heap
-      # this size V8's snapshot builder is what pushed RSS into the cgroup
-      # limit on 21 Sep. Enable it deliberately, at a low percentage, when a
-      # snapshot is wanted — the guard refuses it anyway unless the room is
-      # there.
-      - HEAP_SNAPSHOT_PERCENT=${HEAP_SNAPSHOT_PERCENT:-0}
-      - HEAP_EXIT_PERCENT=${HEAP_EXIT_PERCENT:-90}
-      - HEAP_RSS_EXIT_PERCENT=${HEAP_RSS_EXIT_PERCENT:-90}
-      - HEAP_WARN_PERCENT=${HEAP_WARN_PERCENT:-75}
-      - HEALTH_HEAP_PERCENT=${HEALTH_HEAP_PERCENT:-90}
-      - DEPLOYMENT_MODE=cloud
-      # Sentry (packages/backend/src/instrument.ts). Unset DSN = off. The
-      # release is baked into the image by the publish workflow.
-      # SENTRY_VERIFY_TOKEN enables GET /health/sentry-verify for a one-off
-      # end-to-end check; leave it empty otherwise.
-      - SENTRY_DSN=${SENTRY_DSN_BACKEND:-}
-      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
-      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.05}
-      - SENTRY_VERIFY_TOKEN=${SENTRY_VERIFY_TOKEN:-}
-      - NEXT_PUBLIC_API_URL=https://${DOMAIN}
-      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=${JWT_SECRET}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      # Shared secret for the onboarding-reminders GitHub Actions cron.
-      # Must match the repo secret ONBOARDING_CRON_SECRET. Unset = cron
-      # endpoint refuses all calls (self-host default).
-      - CRON_SECRET=${CRON_SECRET:-}
-      # Shared secret presented to anythingmcp.com as x-amcp-service-token when
-      # this backend asks for a licence on a user's behalf. The licence API
-      # rate-limits anonymous callers per IP, and every cloud trial request
-      # leaves from this one droplet, so without it the whole cloud shared a
-      # bucket of three trials an hour. Must match LICENSE_SERVICE_TOKEN on the
-      # website. Unset = public limit (self-host default).
-      - LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN:-}
-      - CORS_ORIGIN=https://${DOMAIN}
-      - SERVER_URL=https://${DOMAIN}
-      - FRONTEND_URL=https://${DOMAIN}
-      - MCP_AUTH_MODE=${MCP_AUTH_MODE:-oauth2}
-      # MCP Streamable HTTP response framing. `true` = single-shot
-      # `application/json` responses; `false` = SSE-framed `text/event-stream`.
-      # Microsoft Copilot Studio's MCP client cannot deserialize SSE-framed
-      # responses ("response could not be deserialized as JSON") and requires
-      # plain JSON, so the cloud defaults to JSON. This is spec-compliant and
-      # every compliant client (incl. Claude) handles it; combined with the
-      # default stateless mode (MCP_STATEFUL_SESSIONS unset) it also avoids the
-      # `-32001 Session not found` errors Copilot hits against stateful servers.
-      - MCP_STREAMABLE_JSON_RESPONSE=${MCP_STREAMABLE_JSON_RESPONSE:-true}
-      - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-true}
-      - LICENSE_API_URL=${LICENSE_API_URL:-https://anythingmcp.com}
-      # Operator analytics — cloud build only. Leave unset on self-hosted.
-      - GTM_ID=${GTM_ID:-}
-      - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
-      # Proxy / web-unblocker (e.g. Zyte API proxy mode). Tools with
-      # use_proxy=true route through this; unset = feature off everywhere.
-      - CONNECTOR_PROXY_URL=${CONNECTOR_PROXY_URL:-}
-      - PROXY_RATE_LIMIT_DEFAULT=${PROXY_RATE_LIMIT_DEFAULT:-100}
-      # Internal MOTIS instance for the Deutsche Bahn connector. When set, the
-      # adapter's MOTIS_URL is filled in automatically at import (and hidden
-      # from the install form), so cloud users never see or choose it.
-      # Self-hosters leave it unset and enter their own MOTIS URL.
-      - MOTIS_INTERNAL_URL=${MOTIS_INTERNAL_URL:-http://motis:8080}
-      # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
-      # a private docker IP, which the guard blocks by default). Harmless on
-      # self-host (no such host on their network).
-      - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-motis}
-      # Knowledge Graph — AI (LLM) features. Off unless KG_LLM_ENABLED=true AND a
-      # provider key are set; the per-workspace toggle still gates actual usage.
-      - KG_LLM_ENABLED=${KG_LLM_ENABLED:-false}
-      - KG_LLM_PROVIDER=${KG_LLM_PROVIDER:-}
-      - KG_LLM_MODEL=${KG_LLM_MODEL:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      # Domain-verification token for the OpenAI plugin directory; served at
-      # /.well-known/openai-apps-challenge. Unset = route answers 404.
-      - OPENAI_APPS_CHALLENGE_TOKEN=${OPENAI_APPS_CHALLENGE_TOKEN:-}
-      - KG_LLM_REDACT_INTENTS=${KG_LLM_REDACT_INTENTS:-true}
-      # System (operator) transactional-email fallback — used when a workspace
-      # hasn't set its own SMTP (e.g. Resend). Read only by the email sender,
-      # never exposed to workspace admins. Set these in the droplet .env.
-      - SMTP_HOST=${SMTP_HOST:-}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER:-}
-      - SMTP_PASS=${SMTP_PASS:-}
-      - SMTP_FROM=${SMTP_FROM:-}
-      - SMTP_SECURE=${SMTP_SECURE:-false}
-    volumes:
-      # One heap snapshot per process, written by the heap guard when the heap
-      # crosses HEAP_SNAPSHOT_PERCENT. A volume so it outlives the container
-      # that wrote it — the whole point is to read it after the restart.
-      - diagnostics:/app/diagnostics
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      # Cold start loads the full connector/tool catalog (~18.5k tools, ~90s).
-      # start_period must comfortably exceed that: during it, failing probes keep
-      # the container in "starting" (not "unhealthy"), so `docker compose --wait`
-      # in deploy-cloud.yml keeps waiting and the first healthy probe (~90s) turns
-      # the deploy green. Too short (was 30s) → the container flipped to unhealthy
-      # mid-boot and --wait aborted, failing a deploy that was actually coming up
-      # fine (false negative). A genuinely dead app never becomes healthy, so once
-      # start_period elapses it still goes unhealthy and the deploy fails for real.
-      #
-      # /health now also fails at HEALTH_HEAP_PERCENT of the heap limit, so the
-      # container reads unhealthy during a decline instead of right up to the
-      # abort. Docker does not restart an unhealthy container by itself; the
-      # backend's own guard exits, and this status is what a deploy and an
-      # outside probe see in the meantime.
-      start_period: 180s
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "5"
-
-  frontend:
-    image: helpcodeai/anythingmcp:latest
-    container_name: amcp-cloud-frontend
-    command: ["./start.sh", "frontend"]
-    expose:
-      - "3000"
-    mem_limit: ${FRONTEND_MEM_LIMIT:-1g}
-    # Only what the Next.js server reads at runtime — found by grepping
-    # `process.env.` under packages/frontend/src, not by copying the backend's
-    # list. Its backend rewrites are baked at build time (see the note in
-    # deploy/cloud/Caddyfile — Caddy routes every backend path itself), so no
-    # database URL and no secrets here: a process that does not need them
-    # should not hold them.
-    #
-    # GTM_ID and COOKIE_DOMAIN are read server-side to render the Tag Manager
-    # snippet and the consent banner; leave them out and both silently vanish.
-    environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=https://${DOMAIN}
-      - GTM_ID=${GTM_ID:-}
-      - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
-      # Sentry: server runtime, and handed to the browser by the root layout
-      # (components/sentry-config.tsx). Unset DSN = off, nothing on the page.
-      - SENTRY_DSN=${SENTRY_DSN_FRONTEND:-}
-      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
-      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_FRONTEND_TRACES_SAMPLE_RATE:-0}
-      - SENTRY_BROWSER_TRACES_SAMPLE_RATE=${SENTRY_BROWSER_TRACES_SAMPLE_RATE:-0.1}
-      - SENTRY_VERIFY_TOKEN=${SENTRY_VERIFY_TOKEN:-}
-    healthcheck:
-      # A static file under public/, served by the standalone server without
-      # touching the backend: this probe answers for the frontend alone.
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/logo.svg"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "5"
+  backend-blue:
+    <<: *backend
+    container_name: amcp-cloud-backend-blue
+    profiles: [blue]
+  backend-green:
+    <<: *backend
+    container_name: amcp-cloud-backend-green
+    profiles: [green]
+  frontend-blue:
+    <<: *frontend
+    container_name: amcp-cloud-frontend-blue
+    profiles: [blue]
+  frontend-green:
+    <<: *frontend
+    container_name: amcp-cloud-frontend-green
+    profiles: [green]
 
   # PostgreSQL Database
   postgres:

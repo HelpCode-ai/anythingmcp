@@ -76,6 +76,12 @@ export default function ConnectorDetailPage() {
   const [editOauthAuthUrl, setEditOauthAuthUrl] = useState('');
   const [editOauthTokenUrl, setEditOauthTokenUrl] = useState('');
   const [editOauthScopes, setEditOauthScopes] = useState('');
+  // OAuth 1.0a credentials. Never pre-filled (the server does not send them
+  // back); an empty field keeps the stored value.
+  const [editOauth1Key, setEditOauth1Key] = useState('');
+  const [editOauth1Secret, setEditOauth1Secret] = useState('');
+  const [editOauth1Token, setEditOauth1Token] = useState('');
+  const [editOauth1TokenSecret, setEditOauth1TokenSecret] = useState('');
   // LOGIN_TOKEN (credentials → short-lived token, auto-refreshed) fields
   const [editLtLoginUrl, setEditLtLoginUrl] = useState('');
   const [editLtMethod, setEditLtMethod] = useState('POST');
@@ -130,7 +136,11 @@ export default function ConnectorDetailPage() {
 
   // Environment variables
   const [showEnvVars, setShowEnvVars] = useState(false);
-  const [envVarEntries, setEnvVarEntries] = useState<{ key: string; value: string }[]>([]);
+  // `masked`: a stored secret. The server never sends its value, so the field
+  // starts empty and is sent back empty unless retyped, which keeps it.
+  const [envVarEntries, setEnvVarEntries] = useState<
+    { key: string; value: string; masked?: boolean }[]
+  >([]);
   const [savingEnvVars, setSavingEnvVars] = useState(false);
 
   const fetchConnector = async () => {
@@ -158,6 +168,7 @@ export default function ConnectorDetailPage() {
       // Don't pre-fill credentials — they are encrypted on the server
       setEditAuthKey('');
       setEditAuthValue('');
+      resetOauth1Fields();
       // The auth method is not secret, so it can be shown. Without this the
       // select would always read "body" and saving any other field would
       // silently reset a connector configured for HTTP Basic.
@@ -165,7 +176,7 @@ export default function ConnectorDetailPage() {
         connectors
           .getOAuthConfig(id, token)
           .then((r) => {
-            setEditTokenAuthMethod(r.tokenAuthMethod || 'client_secret_post');
+            setEditTokenAuthMethod(normalizeTokenAuthMethod(r.tokenAuthMethod));
             setEditOauthAuthUrl(r.authorizationUrl || '');
             setEditOauthTokenUrl(r.tokenUrl || '');
             setEditOauthScopes(r.scopes || '');
@@ -181,7 +192,14 @@ export default function ConnectorDetailPage() {
       // Load env vars
       const ev = c.envVars as Record<string, string> | null;
       if (ev && typeof ev === 'object') {
-        setEnvVarEntries(Object.entries(ev).map(([key, value]) => ({ key, value: String(value) })));
+        const masked = new Set<string>(c.maskedEnvVars || []);
+        setEnvVarEntries(
+          Object.entries(ev).map(([key, value]) => ({
+            key,
+            value: masked.has(key) ? '' : String(value ?? ''),
+            masked: masked.has(key),
+          })),
+        );
       }
     } catch {
       router.push('/connectors');
@@ -211,6 +229,13 @@ export default function ConnectorDetailPage() {
     fetchConnector();
   }, [token, id]);
 
+  const resetOauth1Fields = () => {
+    setEditOauth1Key('');
+    setEditOauth1Secret('');
+    setEditOauth1Token('');
+    setEditOauth1TokenSecret('');
+  };
+
   const buildAuthConfig = () => {
     // Only send authConfig if the user filled in credential fields;
     // empty fields mean "keep existing credentials on the server".
@@ -224,6 +249,26 @@ export default function ConnectorDetailPage() {
       case 'BASIC_AUTH':
         if (!editAuthKey && !editAuthValue) return undefined;
         return { username: editAuthKey, password: editAuthValue };
+      case 'OAUTH1': {
+        // A connector that already signs with OAuth 1.0a is patched field by
+        // field instead (see handleSave), so the stored secret
+        // survives a corrected consumer key. Switching to OAuth 1.0a from
+        // another scheme writes a complete config, so both halves are needed.
+        if (connector.authType === 'OAUTH1') return undefined;
+        const consumerKey = editOauth1Key.trim();
+        const consumerSecret = editOauth1Secret.trim();
+        if (!consumerKey || !consumerSecret) {
+          throw new Error('Enter the consumer key and consumer secret to switch to OAuth 1.0a.');
+        }
+        const token = editOauth1Token.trim();
+        const tokenSecret = editOauth1TokenSecret.trim();
+        return {
+          consumerKey,
+          consumerSecret,
+          ...(token ? { token } : {}),
+          ...(tokenSecret ? { tokenSecret } : {}),
+        };
+      }
       case 'LOGIN_TOKEN': {
         // Re-entering the password is required to (re)write the whole config;
         // leaving it empty keeps the existing encrypted credentials untouched.
@@ -266,6 +311,20 @@ export default function ConnectorDetailPage() {
       };
       const authConfig = buildAuthConfig();
       if (authConfig) data.authConfig = authConfig;
+
+      // OAuth 1.0a on a connector that already uses it: send only the fields
+      // that were typed, merged server-side. Done before the main update so a
+      // refused value (e.g. an e-mail address as consumer key) saves nothing.
+      if (editAuthType === 'OAUTH1' && connector.authType === 'OAUTH1') {
+        const oauth1Patch: Record<string, string> = {};
+        if (editOauth1Key.trim()) oauth1Patch.consumerKey = editOauth1Key.trim();
+        if (editOauth1Secret.trim()) oauth1Patch.consumerSecret = editOauth1Secret.trim();
+        if (editOauth1Token.trim()) oauth1Patch.token = editOauth1Token.trim();
+        if (editOauth1TokenSecret.trim()) oauth1Patch.tokenSecret = editOauth1TokenSecret.trim();
+        if (Object.keys(oauth1Patch).length > 0) {
+          await connectors.updateOAuth1Config(id, oauth1Patch, token);
+        }
+      }
       if (connector.type !== 'DATABASE' && connector.type !== 'MCP') {
         // Editor is pre-filled with current headers, so this round-trips
         // untouched headers and applies any edits/removals the user made.
@@ -281,10 +340,12 @@ export default function ConnectorDetailPage() {
       // the endpoints captured during authorization).
       if (editAuthType === 'OAUTH2' && connector.type !== 'MCP') {
         const oauthPatch: Record<string, string> = {
+          // The default (body) is stored as ''. Anything else is sent as
+          // chosen: a catalog adapter may use a method this form cannot set
+          // up by itself (Revolut's private_key_jwt), and saving an unrelated
+          // field must not switch it off.
           tokenAuthMethod:
-            editTokenAuthMethod === 'client_secret_basic'
-              ? 'client_secret_basic'
-              : '',
+            editTokenAuthMethod === 'client_secret_post' ? '' : editTokenAuthMethod,
         };
         if (editAuthKey) oauthPatch.clientId = editAuthKey;
         if (editAuthValue) oauthPatch.clientSecret = editAuthValue;
@@ -539,8 +600,15 @@ export default function ConnectorDetailPage() {
           envVars[entry.key.trim()] = entry.value;
         }
       }
-      await connectors.updateEnvVars(id, envVars, token);
-      setMsg('Environment variables saved');
+      // A masked secret nobody retyped goes out empty, which the server
+      // reads as "keep the stored value". Its value is never in the browser.
+      const result = await connectors.updateEnvVars(id, envVars, token);
+      const warnings = result?.warnings ?? [];
+      setMsg(
+        warnings.length
+          ? `Environment variables saved. ${warnings.join(' ')}`
+          : 'Environment variables saved',
+      );
       fetchConnector();
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
@@ -914,7 +982,7 @@ export default function ConnectorDetailPage() {
                 <label className="block text-sm font-medium mb-1">Authentication</label>
                 <AppSelect
                   value={editAuthType}
-                  onValueChange={(v) => { setEditAuthType(v); setEditAuthKey(''); setEditAuthValue(''); setEditLtPassword(''); }}
+                  onValueChange={(v) => { setEditAuthType(v); setEditAuthKey(''); setEditAuthValue(''); setEditLtPassword(''); resetOauth1Fields(); }}
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                   options={[
                     { value: 'NONE', label: 'None' },
@@ -922,6 +990,10 @@ export default function ConnectorDetailPage() {
                     { value: 'BEARER_TOKEN', label: 'Bearer Token' },
                     { value: 'BASIC_AUTH', label: 'Basic Auth' },
                     { value: 'OAUTH2', label: 'OAuth 2.0' },
+                    // Signing is implemented by the REST engine only.
+                    ...(connector.type === 'REST' || connector.authType === 'OAUTH1'
+                      ? [{ value: 'OAUTH1', label: 'OAuth 1.0a' }]
+                      : []),
                     { value: 'LOGIN_TOKEN', label: 'Login → Token (auto-refresh)' },
                   ]}
                 />
@@ -989,16 +1061,51 @@ export default function ConnectorDetailPage() {
                     >
                       <option value="client_secret_post">Client secret in body (default)</option>
                       <option value="client_secret_basic">HTTP Basic header (client_secret_basic)</option>
+                      {editTokenAuthMethod === 'private_key_jwt' && (
+                        <option value="private_key_jwt">Signed JWT with your private key (private_key_jwt)</option>
+                      )}
                     </select>
                     <p className="mt-1 text-xs text-[var(--text-3)]">
-                      Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM
-                      and DATEV require it. Applies to refreshes too. Re-authorize after changing it.
+                      {editTokenAuthMethod === 'private_key_jwt'
+                        ? 'Set by the connector: a short-lived JWT signed with the private key from the environment variables replaces the client secret.'
+                        : 'Switch to HTTP Basic if the token exchange fails with 401 — Datto RMM and DATEV require it. Applies to refreshes too. Re-authorize after changing it.'}
                     </p>
                   </div>
                   <p className="text-xs text-[var(--text-3)]">
                     Leave Client ID / Client Secret empty to keep the stored values. Endpoints
                     are shown as configured and can be corrected here — useful when a connector
                     was switched to OAuth2 after creation and has none yet.
+                  </p>
+                </div>
+              )}
+              {editAuthType === 'OAUTH1' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="edit-oauth1-consumer-key" className="block text-sm font-medium mb-1">Consumer Key</label>
+                      <input id="edit-oauth1-consumer-key" type="text" autoComplete="off" value={editOauth1Key} onChange={(e) => setEditOauth1Key(e.target.value)} placeholder={connector.authType === 'OAUTH1' ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    </div>
+                    <div>
+                      <label htmlFor="edit-oauth1-consumer-secret" className="block text-sm font-medium mb-1">Consumer Secret</label>
+                      <input id="edit-oauth1-consumer-secret" type="password" autoComplete="new-password" value={editOauth1Secret} onChange={(e) => setEditOauth1Secret(e.target.value)} placeholder={connector.authType === 'OAUTH1' ? 'Leave empty to keep current' : ''} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="edit-oauth1-token" className="block text-sm font-medium mb-1">Access Token (optional)</label>
+                      <input id="edit-oauth1-token" type="password" autoComplete="new-password" value={editOauth1Token} onChange={(e) => setEditOauth1Token(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    </div>
+                    <div>
+                      <label htmlFor="edit-oauth1-token-secret" className="block text-sm font-medium mb-1">Token Secret (optional)</label>
+                      <input id="edit-oauth1-token-secret" type="password" autoComplete="new-password" value={editOauth1TokenSecret} onChange={(e) => setEditOauth1TokenSecret(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-[var(--text-3)]">
+                    The consumer key and secret belong to the application registered with the
+                    provider — not your login e-mail or password. {connector.authType === 'OAUTH1'
+                      ? 'Leave a field empty to keep the stored value; stored values are never shown.'
+                      : 'Both are required to switch to OAuth 1.0a.'} The access token is only for
+                    APIs that act on behalf of a user (three-legged).
                   </p>
                 </div>
               )}
@@ -1053,13 +1160,13 @@ export default function ConnectorDetailPage() {
                   </label>
                 </div>
               )}
-              {editAuthType !== 'NONE' && editAuthType !== 'OAUTH2' && editAuthType !== 'LOGIN_TOKEN' && (
+              {editAuthType !== 'NONE' && editAuthType !== 'OAUTH2' && editAuthType !== 'OAUTH1' && editAuthType !== 'LOGIN_TOKEN' && (
                 <p className="text-xs text-[var(--text-3)]">
                   Leave credential fields empty to keep the current values.
                 </p>
               )}
               {connector.type !== 'DATABASE' && connector.type !== 'MCP' && (
-                <HeadersEditor rows={editHeaderRows} onChange={setEditHeaderRows} />
+                <HeadersEditor rows={editHeaderRows} onChange={setEditHeaderRows} maskedKeys={connector.maskedHeaders} />
               )}
               <div>
                 <label className="block text-sm font-medium mb-1">Instructions</label>
@@ -1176,23 +1283,32 @@ export default function ConnectorDetailPage() {
                   <input
                     type="text"
                     value={entry.key}
+                    // Renaming a stored secret would save the new name empty and
+                    // drop the old one; remove it and add a new one instead.
+                    readOnly={entry.masked}
+                    aria-label="Variable name"
                     onChange={(e) => {
                       const updated = [...envVarEntries];
                       updated[i] = { ...entry, key: e.target.value };
                       setEnvVarEntries(updated);
                     }}
                     placeholder="VAR_NAME"
-                    className="w-1/3 border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
+                    className={cn(
+                      'w-1/3 border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]',
+                      entry.masked && 'text-[var(--text-2)]',
+                    )}
                   />
                   <input
-                    type="text"
+                    type={entry.masked ? 'password' : 'text'}
+                    autoComplete={entry.masked ? 'new-password' : 'off'}
                     value={entry.value}
+                    aria-label={`Value of ${entry.key.trim() || 'new variable'}`}
                     onChange={(e) => {
                       const updated = [...envVarEntries];
                       updated[i] = { ...entry, value: e.target.value };
                       setEnvVarEntries(updated);
                     }}
-                    placeholder="value"
+                    placeholder={entry.masked ? 'Set — leave empty to keep current' : 'value'}
                     className="flex-1 border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
                   />
                   <button
@@ -1656,4 +1772,15 @@ export default function ConnectorDetailPage() {
       )}
     </AppShell>
   );
+}
+
+/**
+ * The select's value for a stored token-endpoint auth method. Older rows and
+ * catalog adapters store the short aliases (DATEV's `basic`); shown as-is they
+ * matched no option and saving the form turned them back into the default.
+ */
+function normalizeTokenAuthMethod(method: string | undefined): string {
+  if (method === 'basic') return 'client_secret_basic';
+  if (!method || method === 'post') return 'client_secret_post';
+  return method;
 }

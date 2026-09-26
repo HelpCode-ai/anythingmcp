@@ -12,7 +12,12 @@ import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { randomBytes, timingSafeEqual } from 'crypto';
-import { AuthService } from './auth.service';
+import {
+  AuthService,
+  DASHBOARD_TOKEN_USE,
+  isForeignIssuedToken,
+  isTokenRevoked,
+} from './auth.service';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
 import { PrismaOAuthStore } from './prisma-oauth.store';
@@ -34,6 +39,20 @@ const PENDING_GRANT_COOKIE = 'pending_grant';
  * exactly which client and callback destination they are authorizing before
  * they submit their credentials.
  */
+/**
+ * The dashboard session cookie. Set by the frontend on sign-in (see
+ * `auth-context.tsx`) on the same origin that proxies /auth/* here, so it
+ * arrives with the top-level navigation from /authorize.
+ */
+const DASHBOARD_SESSION_COOKIE = 'amcp_token';
+
+/** A user identified from a still-valid dashboard session. */
+interface SessionUser {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
 interface ConsentContext {
   /** The OAuth client a connection grant would be keyed on. */
   clientId: string;
@@ -60,6 +79,7 @@ export class LoginController {
   @Get('login')
   async showLoginPage(
     @Query('error') error: string,
+    @Query('switch') switchAccount: string,
     @Req() req: Request,
     @Res() res: Response,
   ) {
@@ -84,11 +104,29 @@ export class LoginController {
       signed: true,
     });
 
-    const ssoProviders = await this.loadSsoProviders(req);
+    // Already signed in to the dashboard in this browser? Then the consent
+    // screen only needs an explicit "Approve", not the password again. Only
+    // inside an authorize flow, and never when the user asked to switch
+    // accounts.
+    const sessionUser =
+      consent && switchAccount !== '1'
+        ? await this.resolveDashboardSession(req)
+        : null;
+
+    const ssoProviders = sessionUser ? [] : await this.loadSsoProviders(req);
 
     res.setHeader('Content-Type', 'text/html');
+    // A one-click Approve is exactly what clickjacking wants: never framed.
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
     res.send(
-      this.renderLoginPage({ error, serverName, consent, csrfToken, ssoProviders }),
+      this.renderLoginPage({
+        error,
+        serverName,
+        consent,
+        csrfToken,
+        ssoProviders,
+        sessionUser,
+      }),
     );
   }
 
@@ -149,6 +187,23 @@ export class LoginController {
       }
     }
 
+    // "Approve as <signed-in user>". Nothing from the form is trusted: the
+    // identity is re-derived from the session cookie, with every check the
+    // dashboard API applies, and only inside an authorize flow.
+    if (body.action === 'approve-session') {
+      const consent = await this.loadConsentContext(req);
+      const sessionUser = consent
+        ? await this.resolveDashboardSession(req)
+        : null;
+      if (!sessionUser) {
+        return res.redirect(
+          `/auth/login?switch=1&error=${encodeURIComponent('Your session has expired. Please sign in.')}`,
+        );
+      }
+      this.logger.log(`Authorization approved from dashboard session: ${sessionUser.email}`);
+      return this.completeSignIn(req, res, sessionUser);
+    }
+
     const { email, password } = body;
 
     if (!email || !password) {
@@ -203,6 +258,18 @@ export class LoginController {
 
     this.logger.log(`Successful login for user: ${email}`);
 
+    return this.completeSignIn(req, res, user);
+  }
+
+  /**
+   * The identity is settled (password or dashboard session): hand it to the
+   * OAuth callback, after asking which servers the client may reach.
+   */
+  private async completeSignIn(
+    req: Request,
+    res: Response,
+    user: SessionUser,
+  ): Promise<void> {
     // Set a short-lived cookie with the user profile for the callback to read
     const profile = {
       id: user.id,
@@ -401,6 +468,59 @@ export class LoginController {
     res.clearCookie(PENDING_GRANT_COOKIE);
 
     res.redirect(`${this.getBaseUrl(req)}/callback`);
+  }
+
+  /**
+   * The user behind this browser's dashboard session, or null.
+   *
+   * Applies what `JwtStrategy` + `EmailVerifiedGuard` apply to the dashboard
+   * API — signature and expiry, a dashboard-issued token (not an MCP token
+   * signed with the same secret), not revoked, at least one active membership,
+   * and a verified email in cloud — because approving here is no more than
+   * the dashboard itself already lets this session do. Anything off falls
+   * back to the password form rather than erroring.
+   */
+  private async resolveDashboardSession(
+    req: Request,
+  ): Promise<SessionUser | null> {
+    const token = req.cookies?.[DASHBOARD_SESSION_COOKIE];
+    if (typeof token !== 'string' || !token) return null;
+
+    let payload: ReturnType<AuthService['verifyToken']>;
+    try {
+      payload = this.authService.verifyToken(token);
+    } catch {
+      return null;
+    }
+    if (
+      !payload?.sub ||
+      payload.tokenUse !== DASHBOARD_TOKEN_USE ||
+      isForeignIssuedToken(payload as unknown as Record<string, unknown>)
+    ) {
+      return null;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        emailVerified: true,
+        sessionsValidFrom: true,
+        memberships: {
+          where: { deactivatedAt: null },
+          select: { organizationId: true },
+          take: 1,
+        },
+      },
+    });
+    if (!user) return null;
+    if (isTokenRevoked(payload, user.sessionsValidFrom)) return null;
+    if (user.memberships.length === 0) return null;
+    if (this.deployment.isCloud() && !user.emailVerified) return null;
+
+    return { id: user.id, email: user.email, name: user.name };
   }
 
   /**
@@ -619,8 +739,10 @@ export class LoginController {
     consent: ConsentContext | null;
     csrfToken: string;
     ssoProviders: { id: string; name: string; type: string }[];
+    sessionUser?: SessionUser | null;
   }): string {
-    const { error, serverName, consent, csrfToken, ssoProviders } = params;
+    const { error, serverName, consent, csrfToken, ssoProviders, sessionUser } =
+      params;
 
     const errorHtml = error
       ? `<div class="error">${this.escapeHtml(error)}</div>`
@@ -651,7 +773,7 @@ export class LoginController {
       <p class="consent-lead">An application is requesting access to your
         <strong>${this.escapeHtml(serverName)}</strong> account:</p>
       <div class="consent-app">${this.escapeHtml(consent.clientName)}</div>
-      <p class="consent-redirect">After you sign in, your access will be sent to:</p>
+      <p class="consent-redirect">${sessionUser ? 'If you approve' : 'After you sign in'}, your access will be sent to:</p>
       <div class="consent-host">${this.escapeHtml(consent.redirectHost)}</div>
       <p class="consent-scope">${this.escapeHtml(consent.scopeText)}</p>
       <p class="consent-warn">Only continue if you started this and recognise the
@@ -665,12 +787,30 @@ export class LoginController {
 
     const submitLabel = consent ? 'Sign In &amp; Authorize' : 'Sign In';
 
+    // Signed in to the dashboard already: approve as that account, or switch.
+    // `switch=1` keeps the pending OAuth session (it lives in a cookie) and
+    // shows the password form instead.
+    const formHtml = sessionUser
+      ? `
+      <p class="signed-in">Signed in as <strong>${this.escapeHtml(sessionUser.email)}</strong></p>
+      <button type="submit" name="action" value="approve-session" autofocus>Approve</button>
+      ${denyButton}
+      <p class="switch"><a href="/auth/login?switch=1">Use a different account</a></p>`
+      : `
+      ${ssoHtml}
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" required autofocus placeholder="you@example.com">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required placeholder="Your password">
+      <button type="submit" name="action" value="approve">${submitLabel}</button>
+      ${denyButton}`;
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign In — ${this.escapeHtml(serverName)}</title>
+  <title>${sessionUser ? 'Authorize' : 'Sign In'} — ${this.escapeHtml(serverName)}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -789,6 +929,10 @@ export class LoginController {
       gap: 10px;
     }
     button.sso:hover { background: #f8fafc; }
+    .signed-in { font-size: 0.875rem; color: #555; margin-bottom: 12px; text-align: center; }
+    .switch { text-align: center; margin-top: 14px; font-size: 0.875rem; }
+    .switch a { color: #2563eb; text-decoration: none; }
+    .switch a:hover { text-decoration: underline; }
     .sso-mark { display: inline-flex; flex: none; width: 18px; height: 18px; }
     .sso-mark svg { width: 100%; height: 100%; }
     .divider {
@@ -809,19 +953,12 @@ export class LoginController {
 </head>
 <body>
   <div class="card">
-    <h1>Sign In</h1>
+    <h1>${sessionUser ? 'Authorize' : 'Sign In'}</h1>
     <p class="subtitle">Authorize access to ${this.escapeHtml(serverName)} MCP Server</p>
     ${errorHtml}
     ${consentHtml}
     <form method="POST" action="/auth/login">
-      <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">
-      ${ssoHtml}
-      <label for="email">Email</label>
-      <input type="email" id="email" name="email" required autofocus placeholder="you@example.com">
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" required placeholder="Your password">
-      <button type="submit" name="action" value="approve">${submitLabel}</button>
-      ${denyButton}
+      <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">${formHtml}
     </form>
   </div>
 </body>

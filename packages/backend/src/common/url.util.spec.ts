@@ -14,6 +14,14 @@ describe('normalizeConnectorBaseUrl', () => {
     );
   });
 
+  it('does not prefix a base URL that starts with a variable', () => {
+    // The variable supplies the scheme. `https://{{SHOP_URL}}/api` would turn
+    // into `https://https://shop.example.com/api` once SHOP_URL is filled in.
+    expect(normalizeConnectorBaseUrl('{{SHOP_URL}}/api', 'REST')).toBe(
+      '{{SHOP_URL}}/api',
+    );
+  });
+
   it('trims surrounding whitespace', () => {
     expect(normalizeConnectorBaseUrl('  https://api.example.com  ', 'REST')).toBe(
       'https://api.example.com',

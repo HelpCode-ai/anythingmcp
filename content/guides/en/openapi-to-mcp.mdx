@@ -1,0 +1,115 @@
+---
+title: "OpenAPI to MCP: Turn a Swagger Spec into an MCP Server"
+description: "Import an OpenAPI 3.x or Swagger 2.0 spec and every operation becomes an MCP tool for Claude, ChatGPT and Copilot. No code, self-hosted or cloud."
+category: "connectors"
+keyword: "openapi to mcp, swagger to mcp, api to mcp, api to mcp converter, convert api to mcp server, openapi mcp server"
+publishedAt: "2026-09-26"
+lang: "en"
+---
+
+**TL;DR:** Give AnythingMCP the URL of an OpenAPI or Swagger spec and every operation in it becomes an MCP tool, with its parameters, request body and auth already mapped. Claude, ChatGPT, Copilot and Cursor can call your API a few minutes later, without an MCP server written by hand.
+
+| Facts | |
+|---|---|
+| Spec versions | OpenAPI 3.0, OpenAPI 3.1, Swagger 2.0 |
+| Input | A spec URL, a Swagger UI page URL, or the spec pasted as JSON or YAML |
+| Tool names | From `operationId`, else `<method>_<path>`, capped at 64 characters |
+| Tool descriptions | From the operation's `summary` and `description` |
+| Auth | API key, bearer, Basic, OAuth 2.0 (incl. PKCE and client credentials), OAuth 1.0a, HMAC |
+| Hosting | Self-hosted with Docker (open source) or AnythingMCP Cloud |
+| Last verified | 2026-09-26 |
+
+## Step 1 — Run AnythingMCP
+
+```bash
+mkdir anythingmcp && cd anythingmcp
+curl -fsSLo docker-compose.yml \
+  https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docker-compose.quickstart.yml
+printf 'JWT_SECRET=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
+docker compose up -d   # → http://localhost:3000
+```
+
+Or sign in to [AnythingMCP Cloud](https://cloud.anythingmcp.com) if the API is reachable from the internet.
+
+## Step 2 — Create a REST connector and import the spec
+
+In **Connectors → New connector → REST**, set the API's base URL and its auth, then **Import → OpenAPI** with the spec URL. A link to a Swagger UI page works too: AnythingMCP finds the spec behind it (the URL in the page, an embedded `swagger-ui-init.js`, or common paths such as `/openapi.json` and `/swagger.json`).
+
+The same through the API:
+
+```bash
+curl -s http://localhost:4000/api/connectors/$CONNECTOR_ID/import \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"source": "openapi", "url": "https://petstore3.swagger.io/api/v3/openapi.json"}'
+```
+
+## Step 3 — Make the tools readable for the model
+
+A spec is written for developers; the model only sees tool names and descriptions. In the visual editor:
+
+- **Rename** tools whose `operationId` is cryptic (`get_v2_ord_lst` → `list_open_orders`).
+- **Rewrite descriptions** in the words your users ask with, including when to use the tool.
+- **Disable** operations the AI should never call, or leave them off the MCP server's role.
+- **Map the response** to the fields that matter; a large JSON payload costs context and can leak data.
+
+## Step 4 — Connect your AI client
+
+Add the MCP server URL to Claude (*Customize → Connectors*, [step by step](https://anythingmcp.com/claude-connectors)), ChatGPT, Cursor or VS Code. Every tool of the spec is available immediately; no restart.
+
+## How operations become tools
+
+| OpenAPI | MCP tool |
+|---|---|
+| `operationId: listOrders` | tool `listorders` |
+| no `operationId`, `GET /orders/{id}` | tool `get_orders` |
+| `summary` + `description` | tool description |
+| path, query and header parameters | input properties, `required` kept |
+| `requestBody` (JSON) | input properties mapped into the body |
+
+Names longer than 64 characters are shortened with a stable hash, so a re-import produces the same names and roles keep matching.
+
+## Keeping it in sync
+
+Re-import the spec whenever the API changes. Tools are matched by `operationId` (or by method and path), so changed operations are updated in place, new ones are created, and tools whose operation disappeared are disabled and marked deprecated instead of failing at call time. Role access, response mappings and tools you disabled by hand survive a re-import.
+
+One thing does not: names, descriptions and parameters are refreshed from the spec. If you rewrote a description for the model, put that wording into the spec's `summary` or `description`, so the next import keeps it.
+
+## Example prompts
+
+- "Which orders did customer 1042 place this month?" (a `GET /orders` with a filter)
+- "Create a support ticket for order 5531: parcel arrived damaged." (a `POST`, if the role allows it)
+- "What changed in the product catalog since Monday?"
+- "Check the status of job 88f2 and tell me when it finishes."
+
+## Security
+
+- Credentials are encrypted with AES-256-GCM and injected per call; the model never sees them.
+- Roles decide which operations each MCP server exposes; start with the GET operations only.
+- Per-tool response mapping removes fields before they reach the model.
+- Every call is logged with input, output, duration and status.
+
+## FAQ
+
+**How do I convert an OpenAPI spec to an MCP server?**
+Import the spec into a REST connector in AnythingMCP. Each operation becomes an MCP tool on your server's `/mcp` endpoint; add that URL to your AI client.
+
+**Does it support OpenAPI 3.1?**
+Yes, along with 3.0 and Swagger 2.0. JSON Schema constructs that 3.1 added are translated before the tools are built.
+
+**What if my API has no OpenAPI spec?**
+Import a Postman collection ([Postman to MCP](https://anythingmcp.com/guides/postman-to-mcp)) or cURL commands, or define the tools by hand in the editor.
+
+**Can I limit which endpoints the AI can call?**
+Yes. Assign the connector to an MCP server whose role whitelists only the tools you want; the others are invisible to that client.
+
+**My API is on the internal network. Does that work?**
+Self-host AnythingMCP on that network and add the API's hostname to `SSRF_ALLOWED_HOSTS`.
+
+**Is this different from the REST API guide?**
+[REST API to MCP](https://anythingmcp.com/guides/rest-api-to-mcp) covers any REST API, with or without a spec. This page is about the spec import: how an OpenAPI document turns into tools and stays in sync.
+
+## Related
+
+- [REST API to MCP](https://anythingmcp.com/guides/rest-api-to-mcp) · [Postman to MCP](https://anythingmcp.com/guides/postman-to-mcp) · [GraphQL to MCP](https://anythingmcp.com/guides/graphql-to-mcp) · [SOAP to MCP](https://anythingmcp.com/guides/soap-to-mcp)
+- [REST connector reference](https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/rest.md)
+- [Claude connectors](https://anythingmcp.com/claude-connectors)

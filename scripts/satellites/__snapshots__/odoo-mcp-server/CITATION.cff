@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+title: "odoo-mcp-server: Odoo MCP server: connect Odoo ERP to Claude & ChatGPT. Search, read, create and update any model: partners, orders, invoices."
+message: "If you use this software, please cite AnythingMCP, which it is built on."
+type: software
+authors:
+  - name: "keysersoft"
+repository-code: "https://github.com/keysersoft/odoo-mcp-server"
+url: "https://anythingmcp.com/guides/connect-odoo-to-claude"
+references:
+  - type: software
+    title: "AnythingMCP"
+    authors:
+      - name: "helpcode.ai GmbH"
+    repository-code: "https://github.com/HelpCode-ai/anythingmcp"

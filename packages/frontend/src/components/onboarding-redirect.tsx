@@ -55,9 +55,13 @@ export function OnboardingRedirect() {
     if (isExcluded(pathname)) return;
 
     // Dedupe per (path, userId) to avoid hammering the API on every render.
+    // The key is recorded only once an evaluation has run to the end. It
+    // used to be recorded up front, and `deploymentMode` or a refreshed
+    // `user` arriving a moment later re-ran this effect: the cleanup
+    // cancelled the evaluation in flight, the re-run saw the key and
+    // stopped, and nobody was ever sent to /welcome.
     const key = `${user.id}:${pathname}`;
     if (lastRun.current === key) return;
-    lastRun.current = key;
 
     let cancelled = false;
     const run = async () => {
@@ -74,6 +78,7 @@ export function OnboardingRedirect() {
           users.me(token),
         ]);
         if (cancelled) return;
+        lastRun.current = key;
         if (me?.emailVerified === false) return;
 
         // License gate — mirror LicenseWall's logic exactly so the two

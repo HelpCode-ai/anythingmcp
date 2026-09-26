@@ -19,6 +19,7 @@ export default function McpServerListPage() {
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -31,6 +32,7 @@ export default function McpServerListPage() {
   const handleCreate = async () => {
     if (!token || !newName.trim()) return;
     setCreating(true);
+    setCreateError('');
     try {
       const server = await mcpServers.create(
         { name: newName.trim(), description: newDescription.trim() || undefined },
@@ -41,7 +43,9 @@ export default function McpServerListPage() {
       setNewDescription('');
       setShowCreate(false);
       router.push(`/mcp-server/${server.id}`);
-    } catch {
+    } catch (err: any) {
+      // Used to be swallowed: a failed create left the button doing nothing.
+      setCreateError(err?.message || 'Could not create the MCP server');
     } finally {
       setCreating(false);
     }
@@ -99,13 +103,18 @@ export default function McpServerListPage() {
                   className="w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
                 />
               </div>
+              {createError && (
+                <div className="rounded-md border border-[var(--destructive-border)] bg-[var(--destructive-bg)] p-2.5 text-sm text-[var(--destructive-text)]">
+                  {createError}
+                </div>
+              )}
               <div className="flex gap-2 pt-1">
                 <Button onClick={handleCreate} disabled={!newName.trim() || creating}>
                   {creating ? 'Creating…' : 'Create'}
                 </Button>
                 <Button
                   variant="secondary"
-                  onClick={() => { setShowCreate(false); setNewName(''); setNewDescription(''); }}
+                  onClick={() => { setShowCreate(false); setNewName(''); setNewDescription(''); setCreateError(''); }}
                 >
                   Cancel
                 </Button>
@@ -190,7 +199,7 @@ export default function McpServerListPage() {
                           )}
                         </div>
                         <div className="mt-0.5 text-xs text-[var(--text-3)]">
-                          {s._count?.apiKeys || 0} client{(s._count?.apiKeys || 0) === 1 ? '' : 's'} connected
+                          {usageLine(s.usage)}
                         </div>
                       </div>
                     </div>
@@ -206,6 +215,19 @@ export default function McpServerListPage() {
                   {s.description && (
                     <p className="mb-3 text-[13px] text-[var(--text-2)]">{s.description}</p>
                   )}
+
+                  <p className="mb-3 text-xs text-[var(--text-3)]">
+                    {s.connectors?.length ? (
+                      <>
+                        Exposes{' '}
+                        <span className="text-[var(--text-2)]">
+                          {s.connectors.map((c: any) => c.connector.name).join(', ')}
+                        </span>
+                      </>
+                    ) : (
+                      'No connectors assigned yet'
+                    )}
+                  </p>
 
                   {/* Endpoint URL row with copy */}
                   <div className="mb-4 flex items-center gap-2 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
@@ -244,6 +266,26 @@ export default function McpServerListPage() {
       </div>
     </AppShell>
   );
+}
+
+/**
+ * What a server has actually been doing. The card used to count API keys as
+ * "clients connected", which read 0 on servers used daily over OAuth.
+ */
+function usageLine(usage?: { calls30d: number; lastCallAt: string | null }): string {
+  if (!usage?.lastCallAt || usage.calls30d === 0) return 'No calls in the last 30 days';
+  const calls = `${usage.calls30d.toLocaleString('en-US')} call${usage.calls30d === 1 ? '' : 's'} in 30 days`;
+  return `Last used ${timeAgo(usage.lastCallAt)} · ${calls}`;
+}
+
+function timeAgo(iso: string): string {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 function ServerIcon() {

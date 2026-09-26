@@ -27,6 +27,12 @@ not duplicate a required variable.
 Keep the required envelope fields above at the adapter root; use arrays for
 `requiredEnvVars` and `optionalEnvVars`, and do not list one variable in both.
 
+When a variable is renamed, list its previous names under `envVarAliases`,
+keyed by the current name: `{ "IS24_CONSUMER_KEY": ["IS24_CLIENT_ID"] }`.
+Connectors installed before the rename still hold the old name; saving their
+environment variables reads it when the current one is not set, instead of
+leaving an unresolved `{{IS24_CONSUMER_KEY}}` in the credentials.
+
 ### Tools
 
 Each entry in `tools` needs a string `name`, a useful `description`, and its
@@ -49,6 +55,12 @@ Use `NONE`, `API_KEY`, `BEARER_TOKEN`, `BASIC`, `BASIC_AUTH`, `OAUTH2`,
 `connector.authType`. Keep the corresponding credentials in `authConfig` and
 reference environment variables with `{{VAR}}` where the connector injects
 them.
+
+For `OAUTH2`, `authConfig.tokenAuthMethod` says how the client authenticates
+at the token endpoint: `client_secret_post` (default), `client_secret_basic`,
+or `private_key_jwt`, which signs a short-lived client assertion with a private
+key instead of sending a secret (see
+[REST connectors](connectors/rest.md#signed-client-assertion-private_key_jwt)).
 
 ### HMAC-signed requests
 
@@ -197,8 +209,12 @@ The bridge configuration that transforms MCP tool calls into API requests.
 | `"$param"` in queryParams | Query string | Added as `?param=value` |
 | `"$param"` in bodyMapping | JSON body | Included in request body |
 | `"$param"` in headers | HTTP headers | Sent as request header |
+| `"Bearer ${param}"` in headers | HTTP headers | Interpolated; the header is left out when any `${…}` is empty or unset |
 
 The `$` prefix means "take the value from the tool input parameter with this name."
+Connector variables are available the same way, so an optional key is written as
+`"headers": { "Authorization": "Bearer ${MY_API_KEY}" }`: sent when the variable is set, omitted
+when it is empty, rather than going out as `Authorization: Bearer ` with nothing after it.
 
 A `{param}` value is inserted verbatim, slashes included, so a file path can span several segments. When
 the identifier is itself a URL (a Search Console property such as `https://www.example.com/`, a sitemap
@@ -247,7 +263,7 @@ The selected headers are added to the tool result next to the body, and a
 | Connector | method | path | queryParams | bodyMapping | headers |
 |-----------|--------|------|-------------|-------------|---------|
 | **REST** | HTTP method (`GET`, `POST`, etc.) | URL path with `{param}` | Query string params | JSON body fields | HTTP headers |
-| **GraphQL** | `query` or `mutation` | The GraphQL query string | GraphQL variables | — | HTTP headers |
+| **GraphQL** | `query` or `mutation` | The GraphQL query string | GraphQL variables (see [GraphQL variables](#graphql-variables)) | — (ignored) | HTTP headers |
 | **SOAP** | SOAP operation name | Port/binding path | — | SOAP parameters | HTTP headers |
 | **Database** | `query` or `static` | SQL/MongoDB query with `$param` | — | — | — |
 | **MCP** | Remote tool name | — | — | Passed through | — |
@@ -286,6 +302,25 @@ Every adapter with `connector.type === "GRAPHQL"` is automatically extended with
 - `<slug>_graphql_subscription` — execute an arbitrary `subscription` (transport availability depends on the upstream API)
 
 Adapter authors don't need to declare them.
+
+### GraphQL variables
+
+The GraphQL engine builds the request's `variables` from exactly two places:
+
+- `queryParams` — one **flat** entry per variable, keyed by the variable name as the operation declares it, whose value is `"$toolParam"` or a literal;
+- `variablesFromParam` — the whole map, taken from one tool parameter (generic tools only).
+
+Nothing else is read. `bodyMapping` in particular is ignored, so `"bodyMapping": { "variables": { … } }` sends `"variables": {}` on every call, and a `$param` nested inside a `queryParams` object is sent as the literal text `"$param"`. Where an API takes an input object, declare one variable per field and build the object inside the operation:
+
+```json
+{
+  "method": "mutation",
+  "path": "mutation CreateCustomer($businessId: ID!, $name: String!, $email: String) { customerCreate(input: { businessId: $businessId, name: $name, email: $email }) { didSucceed } }",
+  "queryParams": { "businessId": "$business_id", "name": "$name", "email": "$email" }
+}
+```
+
+`node scripts/validate-adapters.mjs` enforces this for `GRAPHQL` adapters (rule `graphql-variables`): no `bodyMapping`, no nested `$param` in `queryParams`, every `queryParams` key declared by the operation, every non-null variable without a default supplied, and every `"$name"` a tool parameter or an env var. A `REST` connector that POSTs to a `/graphql` path builds its body with `bodyMapping` as usual and is not affected.
 
 ### SOAP Example
 

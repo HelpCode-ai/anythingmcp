@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — 259 个连接器，其中 20 个无需 API 密钥。将 REST、SOAP/WSDL、GraphQL、SQL 和 MCP 系统转化为 Claude、ChatGPT、Copilot 和 Gemini 的工具。" width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：259 个连接器，其中 21 个无需 API 密钥。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <strong>让 Claude、ChatGPT 和 Copilot 安全访问企业已经在使用的软件。</strong><br/>
-  259 个现成适配器，无需编写代码即可连接任意 REST、SOAP、GraphQL 或 SQL 系统，全部运行在你自己的基础设施上，并能学习各个系统之间的关系。
+  <strong>将任意 REST/OpenAPI、SOAP、GraphQL 或 SQL API 转化为 Claude、ChatGPT 和 Copilot 可用的 MCP 工具。</strong><br/>
+  自行托管的 MCP 服务器与网关，无需编写代码，259 个现成适配器开箱即用，涵盖 ERP 和电子商务：SAP Business One、Odoo、Xentral、weclapp、Shopware、WooCommerce、Amazon Seller、Kaufland 等。
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 **Claude 回答了一个此前聊天机器人无法回答的问题**，因为相关数据位于使用 REST 而非 MCP 的现场服务系统中：
 
 <p align="center">
-  <img src="docs/assets/demo-claude.gif" alt="Claude 回答某位技术人员上周走访了哪些公司的问题，并调用 AnythingMCP 针对实际运行中的现场服务系统提供的工具。" width="100%" />
+  <img src="docs/assets/demo-claude.gif" alt="AnythingMCP 在 Claude 中的效果：被问到某位技术人员上周走访了哪些公司时，Claude 调用 AnythingMCP 根据现场服务 REST API 生成的 MCP 工具。" width="100%" />
 </p>
 
 **自己运行试试** — 三行命令，无需克隆仓库，[详细说明见下文](#run-it-yourself)：
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 本文反复使用的三个术语，分别指不同的概念：
 
-- **适配器（adapter）**：本仓库随附的 259 个 JSON 定义之一，例如 DATEV、weclapp、DHL、Deutsche Bahn、Shopware、Personio、Handelsregister 等。其中 20 个完全不需要 API 密钥，其余适配器会在导入时要求你提供相应凭据。
+- **适配器（adapter）**：本仓库随附的 259 个 JSON 定义之一，例如 SAP Business One、Odoo、weclapp、Xentral、Shopware、WooCommerce、Amazon Seller、DHL 等。其中 21 个完全不需要 API 密钥，其余适配器会在导入时要求你提供相应凭据。
 - **连接器（connector）**：在工作区中配置好的适配器，或你自己的 OpenAPI 规范、Postman 集合、WSDL、GraphQL 端点或数据库。只要有可连接的目标，就能在几分钟内完成配置，无需编写 MCP 服务器。
 - **MCP 服务器**：你提供给 Claude 的那个 URL。它只公开分配给它的连接器，不会公开其他连接器。
 
@@ -93,6 +93,105 @@ docker compose up -d
 
 ---
 
+<a id="connect-any-system"></a>
+
+## 连接任意系统
+
+大多数企业还没有 MCP 服务器，它们有的是 REST API、ERP、SOAP 服务和数据库。每个系统都可以变成一组 MCP 工具，再通过一个 MCP 服务器 URL 提供给 Claude、ChatGPT 或 Copilot。
+
+<a id="openapi--rest-api-to-mcp"></a>
+
+### OpenAPI / REST API 转 MCP
+
+通过 URL 或直接粘贴导入 OpenAPI 3.x 或 Swagger 2.0 规范，每个操作都会成为一个 MCP 工具，参数、认证和端点映射均已自动填好。你可以在可视化编辑器中为工具重命名并添加描述，帮助模型选对工具。[REST 连接器文档](docs/connectors/rest.md) · [指南](https://anythingmcp.com/zh/guides/rest-api-to-mcp) · [5 分钟演示: openapi-to-mcp](https://github.com/HelpCode-ai/openapi-to-mcp)
+
+<a id="soap--wsdl-to-mcp"></a>
+
+### SOAP / WSDL 转 MCP
+
+将 AnythingMCP 指向一个 WSDL，每个 SOAP 操作都会成为一个工具：SOAP 信封、参数顺序和 WCF 服务都会自动处理，认证支持 Basic、Bearer 和 API 密钥。这样，2009 年的 SOAP 服务只需几分钟而不是几周，就能交给 2026 年的模型使用。[SOAP 连接器文档](docs/connectors/soap.md) · [指南](https://anythingmcp.com/zh/guides/soap-to-mcp) · [5 分钟演示: soap-to-mcp](https://github.com/HelpCode-ai/soap-to-mcp)
+
+<a id="sql-database-to-mcp"></a>
+
+### SQL 数据库转 MCP
+
+支持 PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite 和 MongoDB。连接器会生成查看 schema、示例和查询的工具；由你决定模型是自己编写 SQL，还是只为你预先写好的查询填写参数。查询工具默认只读，写操作会被拦截。此外，请为它配置一个只读数据库用户，并分配一个只能看到所需工具的角色。[数据库连接器文档](docs/connectors/database.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp) · [5 分钟演示: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
+
+<a id="graphql-to-mcp"></a>
+
+### GraphQL 转 MCP
+
+通过内省，GraphQL 端点的查询（query）和变更（mutation）会转化为 MCP 工具；你也可以自行定义操作。[GraphQL 连接器文档](docs/connectors/graphql.md) · [指南](https://anythingmcp.com/zh/guides/graphql-to-mcp)
+
+<a id="postman-collection-to-mcp"></a>
+
+### Postman 集合转 MCP
+
+导入 Postman v2.1 集合：文件夹、认证、请求体模式和 `{{variables}}` 都会保留，每个请求都会成为一个工具。cURL 命令同样适用。[Postman 导入文档](docs/connectors/rest.md#from-postman-collection)
+
+---
+
+<a id="erp-connectors"></a>
+
+## ERP 连接器
+
+为大多数订单、库存和发票问题背后的 ERP 提供现成适配器。安装适配器并填入凭据后，工具即可在你的 MCP 服务器上使用。点击系统名称即可查看对应的设置指南。
+
+| 系统 | 市场 | 工具数 | AI 可以做什么 |
+|---|---|---|---|
+| [SAP Business One](https://anythingmcp.com/zh/guides/connect-sap-business-one-to-claude) | 全球 | 12 | 业务伙伴、物料、订单、发票、报价单、交货单；创建销售订单 |
+| [SAP S/4HANA Cloud](https://anythingmcp.com/zh/guides/connect-sap-s4hana-cloud-to-claude) | 全球 | 15 | 业务伙伴、销售订单和采购订单、开票凭证、交货单、会计分录 |
+| [Odoo](https://anythingmcp.com/zh/guides/connect-odoo-to-claude) | 全球 | 11 | 任意模型：合作伙伴、销售订单、发票、产品；可创建和更新 |
+| [Microsoft Dynamics NAV](https://anythingmcp.com/zh/guides/connect-dynamics-nav-to-claude) | 全球 | 6 | 任意已发布的 OData 页面：客户、物料、销售订单；可创建和更新 |
+| [ERPNext](https://anythingmcp.com/zh/guides/connect-erpnext-to-claude) | 全球 | 11 | 任意 DocType：客户、销售订单、发票、物料、库存 |
+| [Dolibarr](https://anythingmcp.com/zh/guides/connect-dolibarr-to-claude) | 全球 | 10 | 第三方、发票、订单、商业提案、产品、库存 |
+| [JTL-Wawi](https://anythingmcp.com/zh/guides/connect-jtl-wawi-to-claude) † | DE | 9 | 商品、各仓库库存、客户、销售订单、发货 |
+| [Xentral](https://anythingmcp.com/zh/guides/connect-xentral-to-claude) | DE | 7 | 商品、客户、销售订单、发票、库存 |
+| [weclapp](https://anythingmcp.com/zh/guides/connect-weclapp-to-claude) | DACH | 11 | 客户、销售订单、发票、商品、报价单、销售机会 |
+| [Sage 100](https://anythingmcp.com/zh/guides/connect-sage-100-to-claude) † | DE | 6 | 地址、物料、销售单据、任意 Web API 实体 |
+| [Haufe X360](https://anythingmcp.com/zh/guides/connect-haufe-x360-to-claude) † | DE | 7 | 客户、库存物料、销售订单、发票、发货 |
+| [ScopeVisio](https://anythingmcp.com/zh/guides/connect-scopevisio-to-claude) | DE | 6 | 联系人、发票、项目、任务 |
+| [AFAS Profit](https://anythingmcp.com/zh/guides/connect-afas-profit-to-claude) † | NL | 6 | 任意 GetConnector：应收客户、发票、员工 |
+| [Zucchetti](https://anythingmcp.com/zh/guides/connect-zucchetti-to-claude) † | IT | 6 | 主数据（Anagrafiche）、单据、物料 |
+| [TeamSystem](https://anythingmcp.com/zh/guides/connect-teamsystem-to-claude) † | IT | 6 | 客户、供应商、发票、物料 |
+| [Axonaut](https://anythingmcp.com/zh/guides/connect-axonaut-to-claude) † | FR | 9 | 公司、发票、报价单、费用、产品、项目 |
+
+† 根据供应商公开的 API 文档构建，尚未在实际运行的租户上测试。如果你正在使用其中某个系统，非常欢迎提交问题反馈或修复。
+
+**代码仓库:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server)
+
+**你的 ERP 不在列表中，或者是定制开发、本地部署的系统？** 可以通过它的 [REST API](#openapi--rest-api-to-mcp)、[SOAP 服务](#soap--wsdl-to-mcp) 连接，也可以以只读方式直接连接它的 [SQL 数据库](#sql-database-to-mcp)。[KOCH Freiburg](https://www.kochfreiburg.de/) 在生产环境中就是这样接入其 ERP 的。
+
+---
+
+<a id="e-commerce--marketplace-connectors"></a>
+
+## 电子商务与电商平台连接器
+
+覆盖网店和电商平台，从 Amazon、eBay 到 DACH 地区的电商平台。点击系统名称即可查看对应的设置指南。
+
+| 系统 | 市场 | 工具数 | AI 可以做什么 |
+|---|---|---|---|
+| [Amazon Seller Central](https://anythingmcp.com/zh/guides/connect-amazon-seller-to-claude) | 全球 | 15 | 订单、商品目录、FBA 库存、报价、费用、财务事件、报表 |
+| [WooCommerce](https://anythingmcp.com/zh/guides/connect-woocommerce-to-claude) | 全球 | 49 | 商品、变体、库存、订单、退款、客户、报表 |
+| [Shopware 6](https://anythingmcp.com/zh/guides/connect-shopware-6-to-claude) | DACH | 6 | 通过 Store API 读取店面商品目录：商品、分类、交叉销售 |
+| [Magento 2 / Adobe Commerce](https://anythingmcp.com/zh/guides/connect-magento-to-claude) | 全球 | 12 | 商品、库存、订单、客户 |
+| [BigCommerce](https://anythingmcp.com/zh/guides/connect-bigcommerce-to-claude) | 全球 | 14 | 商品、变体、库存、订单、客户 |
+| [eBay Sell](https://anythingmcp.com/zh/guides/connect-ebay-sell-to-claude) | 全球 | 10 | 库存、报价、订单、纠纷、价格更新 |
+| [Etsy](https://anythingmcp.com/zh/guides/connect-etsy-to-claude) | 全球 | 9 | 商品刊登、收据（订单）、评价 |
+| [Ecwid](https://anythingmcp.com/zh/guides/connect-ecwid-to-claude) | 全球 | 10 | 商品、分类、订单、客户 |
+| [Kaufland Marketplace](https://anythingmcp.com/zh/guides/connect-kaufland-to-claude) | DE | 8 | 订单及订单单元、发货、工单、店铺 |
+| [OTTO Market](https://anythingmcp.com/zh/guides/connect-otto-market-to-claude) † | DE | 8 | 订单、商品、退货、库存和价格更新 |
+| [Zalando Direct Ship](https://anythingmcp.com/zh/guides/connect-zalando-zds-to-claude) † | EU | 7 | 订单、发货、退货、库存、价格 |
+| [Billbee](https://anythingmcp.com/guides/connect-billbee-to-claude) | DACH | 8 | 订单、商品、客户、物流服务商 |
+| [Mercado Libre](https://anythingmcp.com/zh/guides/connect-mercado-libre-to-claude) | LATAM | 4 | 商品搜索、卖家订单 |
+
+† 根据供应商公开的 API 文档构建，尚未在实际运行的卖家账户上测试。
+
+**代码仓库:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server)
+
+---
+
 ## 连接、管理与学习
 
 ### 连接
@@ -107,7 +206,7 @@ docker compose up -d
 
 - **[响应塑形](#control-what-the-model-sees)** — 精确定义每个工具可以向模型提供哪些字段，并实时预览处理前后的结果。
 - **在需要的地方只允许读取。** 每个工具都带有 MCP 注解（`readOnlyHint`、`destructiveHint`），根据操作类型生成，也可以按工具覆盖。因此，客户端能够区分读取发票和开具贷项通知单。基于角色的工具白名单可以让你发布一个只读 MCP 服务器，这也是大多数人在接入 ERP 时应采用的起点。
-- **覆盖常见认证方式** — OAuth2（PKCE 和 Client Credentials）、Bearer、API Key、Basic、WS-Security、客户端证书、[LOGIN_TOKEN](docs/connectors/login-token-auth.md) 和 OAuth 1.0a。
+- **覆盖常见认证方式** — OAuth2（PKCE 和 Client Credentials）、Bearer、API Key、Basic、HMAC 签名、[LOGIN_TOKEN](docs/connectors/login-token-auth.md) 和 OAuth 1.0a。
 - **审计日志** — 每次工具调用的输入、输出、耗时和状态都会记录在你自己的数据库中。
 - **[SSO](docs/sso.md) 和 [SCIM](docs/scim-entra-setup.md)** — 支持 Entra ID、Google、Okta、Auth0 及通用 OIDC。每次登录都会从目录服务的用户组同步角色。在目录中停用用户，其工作区访问权限和 MCP API 密钥也会随之失效（仅适用于自行托管版本）。
 
@@ -120,7 +219,7 @@ docker compose up -d
 
 ## AnythingMCP 与其他项目的区别
 
-经常被拿来与 AnythingMCP 比较的项目，大多是 MCP 网关：它们聚合、限定访问范围并保护你已经拥有的 MCP 服务器。AnythingMCP 从更早的一步开始，因为大多数企业根本还没有 MCP 服务器，只有 REST API、一个 2009 年的 SOAP 服务，以及不希望直接暴露的数据库。下面的每个项目都在解决实际问题，只是它们解决的并不是同一个问题。
+AnythingMCP 是一个从更早一步开始的 MCP 网关：它根据你已经在运行的 API、ERP 和数据库创建 MCP 服务器，再通过同一个端点提供服务、限定访问范围并进行审计。其他 MCP 网关负责聚合和保护你已经拥有的 MCP 服务器，但大多数企业至今还没有 MCP 服务器，只有 REST API、一个 2009 年的 SOAP 服务，以及不希望直接暴露的数据库。下面的每个项目都在解决实际问题，只是它们解决的并不是同一个问题。
 
 | | 项目定位 | 以下情况更适合选择它 |
 |---|---|---|
@@ -183,7 +282,7 @@ AI 分析**默认关闭**。需要同时启用全局环境变量开关*和*工�
 
 ## 无需代码，创建自定义 Claude 连接器
 
-Claude 支持**自定义连接器**：在 *Settings → Connectors* 中添加一次远程 MCP 服务器，即可在 Claude.ai、Claude Desktop 和 Claude Code 中使用。AnythingMCP 可以**从你已有的任意 API 创建这样的连接器**，无需编写 MCP 服务器：
+Claude 支持**自定义连接器**：在 *Customize → Connectors* 中添加一次远程 MCP 服务器，即可在 Claude.ai、Claude Desktop 和 Claude Code 中使用。AnythingMCP 可以**从你已有的任意 API 创建这样的连接器**，无需编写 MCP 服务器：
 
 1. 导入 API 规范，或选择一个预置适配器。
 2. 在**可视化编辑器**中调整工具名称、描述和参数，由你决定 AI 能够看到的内容。
@@ -211,7 +310,7 @@ AI 客户端使用 MCP，而你的系统使用 REST、SOAP、GraphQL 和 SQL。�
 | 存在旧的 SOAP / WSDL 服务 | 通过自动 WSDL 解析实现 **SOAP → MCP** 桥接 |
 | 需要通过 AI 智能体查询数据库 | 自动生成查询工具，实现 **DB → MCP**（7 种引擎） |
 | 希望用一个端点访问所有 API | 聚合多个连接器的 **MCP 中间件** |
-| 需要 Deutsche Bahn / DHL / weclapp 等服务的 MCP 服务器 | 使用**适配器目录**，一分钟内完成安装并配置凭据 |
+| 需要 SAP Business One / Odoo / Shopware 等系统的 MCP 服务器 | 使用**适配器目录**，一分钟内完成安装并配置凭据 |
 | 无法将凭据交给第三方 | **运行在你自己的基础设施上**，凭据以 AES-256-GCM 加密存储 |
 | 需要认证、审计日志和 RBAC | 内置 **OAuth2、审计日志和基于角色的访问控制**，无需自行实现 |
 | 第三方模型会看到 API 响应中的所有字段 | 使用**[每个工具独立的响应映射](#control-what-the-model-sees)**，在字段离开网络前将其删除或重组 |
@@ -221,12 +320,13 @@ AI 客户端使用 MCP，而你的系统使用 REST、SOAP、GraphQL 和 SQL。�
 
 | | 指南 |
 |---|---|
-| 查询列车、实时晚点信息和路线 | [Deutsche Bahn](https://anythingmcp.com/guides/deutsche-bahn-to-mcp) |
-| 通过 Claude 与 ERP 交互 | [weclapp](https://anythingmcp.com/guides/weclapp-to-mcp) · [Xentral](https://anythingmcp.com/guides/xentral-to-mcp) |
+| 通过 Claude 与 ERP 交互 | [SAP Business One](https://anythingmcp.com/zh/guides/connect-sap-business-one-to-claude) · [Odoo](https://anythingmcp.com/zh/guides/connect-odoo-to-claude) · [weclapp](https://anythingmcp.com/zh/guides/weclapp-to-mcp) · [Xentral](https://anythingmcp.com/zh/guides/xentral-to-mcp) |
+| 查看各网店和电商平台的订单、库存与费用 | [Amazon Seller](https://anythingmcp.com/zh/guides/connect-amazon-seller-to-claude) · [WooCommerce](https://anythingmcp.com/zh/guides/connect-woocommerce-to-claude) · [Kaufland](https://anythingmcp.com/zh/guides/connect-kaufland-to-claude) |
 | 追踪包裹 | [DHL](https://anythingmcp.com/guides/dhl-tracking-to-mcp) · [GLS](https://anythingmcp.com/guides/gls-tracking-to-mcp) |
 | 付款前核验发票 | [VIES VAT](https://anythingmcp.com/guides/vies-vat-to-mcp) · [Handelsregister](https://anythingmcp.com/guides/handelsregister-to-mcp) |
 | 让智能体以只读方式访问生产数据库 | [数据库连接器](docs/connectors/database.md) |
 | 将 2009 年的 SOAP 服务连接到 2026 年的模型 | [SOAP → MCP](https://anythingmcp.com/guides/soap-to-mcp) |
+| 查询列车、实时晚点信息和路线 | [Deutsche Bahn](https://anythingmcp.com/guides/deutsche-bahn-to-mcp) |
 
 ---
 
@@ -234,16 +334,16 @@ AI 客户端使用 MCP，而你的系统使用 REST、SOAP、GraphQL 和 SQL。�
 
 ## 适配器目录
 
-259 个适配器，提供 1,800 多个工具。**其中 20 个不需要 API 密钥**，其余适配器会在导入时要求提供凭据，导入后工具即可立即使用。每个适配器都在 [anythingmcp.com/guides](https://anythingmcp.com/guides) 上提供七种语言的设置指南。
+259 个适配器，提供 2,400 多个工具。**其中 21 个不需要 API 密钥**，其余适配器会在导入时要求提供凭据，导入后工具即可立即使用。每个适配器都在 [anythingmcp.com/guides](https://anythingmcp.com/guides) 上提供七种语言的设置指南。
 
 | 分类 | 示例 |
 |---|---|
 | 📦 物流与配送 | Deutsche Bahn、DHL、DPD、GLS、Shipcloud、Sendcloud |
-| 💼 ERP、会计与开票 | weclapp、Xentral、DATEV、Scopevisio、Billomat、FastBill |
-| 🛍️ 电子商务 | Amazon Seller、Etsy、Shopware 6、WooCommerce、Mercado Libre 🌎、Oxomi |
+| 💼 ERP、会计与开票 | [SAP Business One、Odoo、weclapp、Xentral 以及另外 12 款 ERP](#erp-connectors)、Lexware Office、sevDesk、Exact Online、bexio |
+| 🛍️ 电子商务 | [Amazon Seller、WooCommerce、Shopware 6、Kaufland、OTTO 以及另外 8 个平台](#e-commerce--marketplace-connectors)、Oxomi |
 | 👥 人力资源与现场服务 | Personio、HRWorks、Kenjo、MFR Mobile Field Report |
 | 🏛️ 政务与公开数据 | VIES VAT、Handelsregister、UK Companies House 🇬🇧、DESTATIS、Bundesbank、OpenPLZ、NINA |
-| 🏦 银行与支付 | N26、Wise 🇬🇧、PAYONE、Razorpay 🇮🇳、Paystack 🇳🇬 |
+| 🏦 银行与支付 | Revolut Business、Wise 🇬🇧、PAYONE、Razorpay 🇮🇳、Paystack 🇳🇬 |
 | 💬 消息与通信 | WhatsApp、LINE 🇯🇵、TeamViewer |
 | 🎾 体育与 Web3 | Playtomic、Sorare |
 | 🏗️ 建筑与地图 | PlanRadar、HERE Geocoding |
@@ -257,6 +357,33 @@ AI 客户端使用 MCP，而你的系统使用 REST、SOAP、GraphQL 和 SQL。�
 ➡️ **[docs/guides.md](docs/guides.md)** — Claude / ChatGPT / Gemini / Copilot / Cursor 设置 · REST / SOAP / GraphQL / 数据库 / MCP 桥接连接器指南 · API 参考与部署文档 · 常见问题。
 
 在寻找某个具体服务？每个适配器都在 **[anythingmcp.com/guides](https://anythingmcp.com/guides)** 上提供分步指南。
+
+<a id="faq"></a>
+
+## 常见问题
+
+**如何将我的 ERP（SAP Business One、Odoo、Xentral 等）连接到 Claude 或 ChatGPT？**
+从[目录](#erp-connectors)安装该 ERP 的适配器，填入 API 凭据，然后将 MCP 服务器 URL 作为自定义连接器添加到 Claude，或作为应用添加到 ChatGPT。如果你的 ERP 没有现成的适配器，可以直接连接它的 REST 或 SOAP API，或它的 SQL 数据库。建议先从只能读取的角色开始。
+
+**如何将 OpenAPI 规范转换为 MCP 服务器？**
+创建一个 REST 连接器，通过 URL 或直接粘贴导入规范；每个操作都会成为服务器 `/mcp` 端点上的一个 MCP 工具，无需编写代码。[工作原理](docs/connectors/rest.md#from-openapi--swagger)。
+
+**可以将 SOAP/WSDL 服务连接到 Claude 吗？**
+可以。AnythingMCP 会解析 WSDL，将每个操作转化为工具，并在每次调用时构建 SOAP 信封，也支持 WCF 服务。认证方式为 HTTP Basic、Bearer 或 API 密钥请求头；WS-Security 请求头尚未实现。[SOAP 连接器文档](docs/connectors/soap.md)。
+
+**Claude 能安全地查询我的 SQL Server、Oracle 或 PostgreSQL 数据库吗？**
+数据库连接器默认只读：AnythingMCP 只执行单条 SELECT（或 `WITH … SELECT`）语句，并拦截写操作和多条语句。在此基础上，请使用只有 SELECT 权限的数据库用户，尽量采用由模型只提供参数的静态查询，并按角色设置工具白名单。响应映射会删除不能到达模型的列，每次查询都会记录在你自己数据库中的审计日志里。
+
+**如何将 Shopware、WooCommerce 或 Amazon Seller Central 连接到 Claude？**
+为你的网店或电商平台安装对应的[电子商务适配器](#e-commerce--marketplace-connectors)并完成授权。WooCommerce 提供 49 个工具，Amazon Seller Central 使用官方的 Selling Partner API，Shopware 6 适配器则通过 Store API 读取店面商品目录。
+
+**AnythingMCP 是 MCP 网关吗？可以自行托管吗？免费吗？**
+三个问题的答案都是肯定的：它在所有连接器前提供一个统一的 MCP 端点，并具备 OAuth2、RBAC、SSO 和审计功能。它以 AGPL-3.0 许可证运行在你自己的服务器上，包括商业用途；[AnythingMCP Cloud](https://cloud.anythingmcp.com) 是可选的托管版本。
+
+**它与 Composio 有什么不同？**
+Composio 是一个托管的集成目录。AnythingMCP 还能将你自己的内部 API、SOAP 服务和数据库转化为工具，并且可以将所有凭据保留在你自己的基础设施上。[完整比较](https://anythingmcp.com/zh/vs/alternatives-to-composio)。
+
+---
 
 ## 社区与支持
 

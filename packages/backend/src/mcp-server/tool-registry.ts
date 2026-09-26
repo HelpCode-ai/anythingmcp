@@ -141,6 +141,19 @@ export class ToolRegistry {
   }
 
   /**
+   * How many tools each connector has in the registry. Compared against the
+   * database by McpServerService.catchUpRegistry to find connectors whose
+   * tool set changed without this process hearing about it.
+   */
+  countByConnector(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const tool of this.toolsById.values()) {
+      counts.set(tool.connectorId, (counts.get(tool.connectorId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  /**
    * Get the count of registered tools.
    */
   getToolCount(): number {

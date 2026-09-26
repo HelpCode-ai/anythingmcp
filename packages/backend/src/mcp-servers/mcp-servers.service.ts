@@ -1,7 +1,24 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { KgSkillService } from '../knowledge-graph/kg-skill.service';
 import { McpSessionManager } from './mcp-session.manager';
+
+/** What the per-server endpoint may serve as text to one caller. */
+export interface VisibleServerContent {
+  /** Composed instructions, exactly as served on initialize. */
+  instructions: string | undefined;
+  /** Visible connectors that have instructions of their own. */
+  connectors: Array<{ id: string; name: string; instructions: string }>;
+  /** Stored resource rows of visible connectors. */
+  resources: Array<{
+    connectorId: string;
+    uri: string;
+    name: string;
+    description: string | null;
+    mimeType: string;
+    fetchConfig: unknown;
+  }>;
+}
 
 @Injectable()
 export class McpServersService {
@@ -23,6 +40,37 @@ export class McpServersService {
     });
   }
 
+  /**
+   * Tool calls each server actually served over the last 30 days, and when the
+   * last one was. The list used to say "N clients connected" from the API key
+   * count, which read 0 on servers used every day over OAuth.
+   *
+   * count + max(created_at) only, so Postgres answers from the
+   * (mcp_server_id, created_at) index without touching the rows: ~130 ms for
+   * the busiest server on cloud (260k calls in 30 days).
+   */
+  async usageByServer(
+    serverIds: string[],
+  ): Promise<Map<string, { calls30d: number; lastCallAt: Date | null }>> {
+    const usage = new Map<string, { calls30d: number; lastCallAt: Date | null }>();
+    if (serverIds.length === 0) return usage;
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const rows = await this.prisma.toolInvocation.groupBy({
+      by: ['mcpServerId'],
+      where: { mcpServerId: { in: serverIds }, createdAt: { gte: since } },
+      _count: { _all: true },
+      _max: { createdAt: true },
+    });
+    for (const row of rows) {
+      if (!row.mcpServerId) continue;
+      usage.set(row.mcpServerId, {
+        calls30d: row._count._all,
+        lastCallAt: row._max.createdAt ?? null,
+      });
+    }
+    return usage;
+  }
+
   async findAllByOrg(
     organizationId: string,
     opts?: { limit?: number; offset?: number },
@@ -31,6 +79,12 @@ export class McpServersService {
       where: { organizationId },
       include: {
         _count: { select: { connectors: true, apiKeys: true } },
+        // Names only, for "exposes …" on the server cards: servers look alike
+        // and a client wired to the wrong one is otherwise invisible.
+        connectors: {
+          select: { connector: { select: { name: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
       },
       orderBy: { createdAt: 'asc' },
       ...(opts?.limit !== undefined ? { take: opts.limit } : {}),
@@ -86,30 +140,74 @@ export class McpServersService {
   }
 
   async create(userId: string, organizationId: string, data: { name: string; slug?: string; description?: string; instructions?: string }) {
-    const slug = data.slug || this.generateSlug(data.name);
-    return this.prisma.mcpServerConfig.create({
-      data: {
-        userId,
-        organizationId,
-        name: data.name,
-        slug,
-        description: data.description,
-        instructions: data.instructions,
-      },
-      include: {
-        _count: { select: { connectors: true, apiKeys: true } },
-      },
-    });
+    // A slug derived from the name is ours to choose, so pick a free one
+    // ("sales", "sales-2", …). A slug the user typed is theirs: if it is
+    // taken, say so instead of renaming it behind their back.
+    const slug = data.slug || (await this.freeSlug(organizationId, this.generateSlug(data.name)));
+    return this.withSlugConflict(slug, () =>
+      this.prisma.mcpServerConfig.create({
+        data: {
+          userId,
+          organizationId,
+          name: data.name,
+          slug,
+          description: data.description,
+          instructions: data.instructions,
+        },
+        include: {
+          _count: { select: { connectors: true, apiKeys: true } },
+        },
+      }),
+    );
   }
 
   async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean }) {
-    return this.prisma.mcpServerConfig.update({
-      where: { id },
-      data,
-      include: {
-        _count: { select: { connectors: true, apiKeys: true } },
-      },
-    });
+    return this.withSlugConflict(data.slug, () =>
+      this.prisma.mcpServerConfig.update({
+        where: { id },
+        data,
+        include: {
+          _count: { select: { connectors: true, apiKeys: true } },
+        },
+      }),
+    );
+  }
+
+  /** `base`, or `base-2`, `base-3`, … whichever is not taken in the organization. */
+  private async freeSlug(organizationId: string, base: string): Promise<string> {
+    const taken = new Set(
+      (
+        await this.prisma.mcpServerConfig.findMany({
+          where: { organizationId, slug: { startsWith: base } },
+          select: { slug: true },
+        })
+      ).map((s) => s.slug),
+    );
+    if (!taken.has(base)) return base;
+    for (let n = 2; ; n++) {
+      const candidate = `${base}-${n}`;
+      if (!taken.has(candidate)) return candidate;
+    }
+  }
+
+  /**
+   * The (organization, slug) unique index is the source of truth. Two servers
+   * with the same slug surfaced as a Prisma P2002 and a 500
+   * (ANYTHINGMCP-CLOUD-BACKEND-4); it is the user's input, so it is a 409 the
+   * dashboard can show.
+   */
+  private async withSlugConflict<T>(slug: string | undefined, write: () => Promise<T>): Promise<T> {
+    try {
+      return await write();
+    } catch (err: any) {
+      const target = String(err?.meta?.target ?? err?.message ?? '');
+      if (err?.code === 'P2002' && /slug/.test(target)) {
+        throw new ConflictException(
+          `An MCP server with the slug "${slug ?? ''}" already exists in this organization. Choose another slug.`,
+        );
+      }
+      throw err;
+    }
   }
 
   async delete(id: string) {
@@ -194,24 +292,128 @@ export class McpServersService {
   }
 
   /**
-   * Compose MCP server instructions from the server's own instructions
-   * plus all assigned connectors' instructions.
+   * Compose MCP server instructions from the server's own instructions plus
+   * the instructions of the connectors ONE CALLER may see.
+   *
+   * `visibleConnectorIds` is that caller's connector set as computed from the
+   * tool path (see `callerConnectorIds`). It used to be every assigned
+   * connector, so initialize handed a role-restricted caller the instructions
+   * (and connector-scoped skills) of connectors their role denies. For a
+   * caller who sees every assigned connector the result is unchanged.
    */
-  async getComposedInstructions(serverId: string): Promise<string | undefined> {
+  async getComposedInstructions(
+    serverId: string,
+    visibleConnectorIds: string[],
+  ): Promise<string | undefined> {
+    const { server, serverConnectors } = await this.loadVisibleConnectors(
+      serverId,
+      visibleConnectorIds,
+    );
+    return this.composeInstructions(serverId, server, serverConnectors);
+  }
+
+  /**
+   * Everything the per-server endpoint serves as text to one caller: the
+   * composed instructions (as on initialize) and the sources of its MCP
+   * resources, all narrowed to `visibleConnectorIds` AND to the server's own
+   * organization. Fails closed: an unknown server yields nothing.
+   */
+  async getVisibleContent(
+    serverId: string,
+    visibleConnectorIds: string[],
+  ): Promise<VisibleServerContent> {
+    const { server, serverConnectors } = await this.loadVisibleConnectors(
+      serverId,
+      visibleConnectorIds,
+    );
+    const instructions = await this.composeInstructions(
+      serverId,
+      server,
+      serverConnectors,
+    );
+    if (!server) return { instructions, connectors: [], resources: [] };
+
+    const connectors = serverConnectors
+      .filter((sc) => !!sc.connector.instructions)
+      .map((sc) => ({
+        id: sc.connector.id,
+        name: sc.connector.name,
+        instructions: sc.connector.instructions as string,
+      }));
+
+    // Stored resources of the same connectors. The organization and the
+    // assignment are re-stated in the query rather than trusted from the ids,
+    // so a stray id can never pull in another tenant's rows.
+    const connectorIds = serverConnectors.map((sc) => sc.connectorId);
+    const resources = connectorIds.length
+      ? await this.prisma.mcpResource.findMany({
+          where: {
+            connectorId: { in: connectorIds },
+            connector: {
+              organizationId: server.organizationId,
+              mcpServers: { some: { mcpServerId: serverId } },
+            },
+          },
+          select: {
+            connectorId: true,
+            uri: true,
+            name: true,
+            description: true,
+            mimeType: true,
+            fetchConfig: true,
+          },
+          orderBy: [{ connectorId: 'asc' }, { uri: 'asc' }],
+        })
+      : [];
+
+    return { instructions, connectors, resources };
+  }
+
+  /**
+   * The server and those of its connector assignments that are in
+   * `visibleConnectorIds` and belong to the server's organization. An empty
+   * visible set short-circuits: no query, no connectors.
+   */
+  private async loadVisibleConnectors(
+    serverId: string,
+    visibleConnectorIds: string[],
+  ): Promise<{
+    server: { instructions: string | null; organizationId: string } | null;
+    serverConnectors: Array<{
+      connectorId: string;
+      connector: { id: string; name: string; instructions: string | null };
+    }>;
+  }> {
     const server = await this.prisma.mcpServerConfig.findUnique({
       where: { id: serverId },
-      select: { instructions: true },
+      select: { instructions: true, organizationId: true },
     });
+    const visible = [...new Set(visibleConnectorIds)];
+    if (!server || visible.length === 0) return { server, serverConnectors: [] };
 
     const serverConnectors = await this.prisma.mcpServerConnector.findMany({
-      where: { mcpServerId: serverId },
+      where: {
+        mcpServerId: serverId,
+        connectorId: { in: visible },
+        connector: { organizationId: server.organizationId },
+      },
       include: {
         connector: {
-          select: { name: true, instructions: true },
+          select: { id: true, name: true, instructions: true },
         },
       },
     });
+    return { server, serverConnectors };
+  }
 
+  private async composeInstructions(
+    serverId: string,
+    server: { instructions: string | null } | null,
+    serverConnectors: Array<{
+      connectorId: string;
+      connector: { name: string; instructions: string | null };
+    }>,
+  ): Promise<string | undefined> {
     const parts: string[] = [];
 
     if (server?.instructions) {
@@ -224,8 +426,9 @@ export class McpServersService {
       }
     }
 
-    // Compose applied skills (server-scoped + this server's connector-scoped)
-    // dynamically, so editing/deleting a skill takes effect immediately.
+    // Compose applied skills (server-scoped + the visible connectors'
+    // connector-scoped ones) dynamically, so editing/deleting a skill takes
+    // effect immediately.
     const skillsText = await this.kgSkills.activeSkillsText(
       serverId,
       serverConnectors.map((sc) => sc.connectorId),
@@ -245,15 +448,22 @@ export class McpServersService {
     // Generate a unique slug within the org
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
     const userLabel = user?.name || user?.email?.split('@')[0] || userId.slice(-6);
-    let slug = 'default';
-
-    // Check if 'default' slug already exists in this org
-    const slugExists = await this.prisma.mcpServerConfig.findFirst({
-      where: { organizationId, slug: 'default' },
-    });
-    if (slugExists) {
-      slug = `default-${this.generateSlug(userLabel)}`;
-    }
+    // `default`, then `default-<name>`, then `default-<name>-2`… Two members
+    // with the same display name used to collide on the second one, and the
+    // unique (org, slug) index turned their sign-up into a 500.
+    const base = `default-${this.generateSlug(userLabel)}`;
+    const candidates = ['default', base];
+    for (let n = 2; n <= 50; n++) candidates.push(`${base}-${n}`);
+    const taken = new Set(
+      (
+        await this.prisma.mcpServerConfig.findMany({
+          where: { organizationId, slug: { in: candidates } },
+          select: { slug: true },
+        })
+      ).map((r) => r.slug),
+    );
+    const slug =
+      candidates.find((c) => !taken.has(c)) ?? `${base}-${userId.slice(-6).toLowerCase()}`;
 
     return this.prisma.mcpServerConfig.create({
       data: {

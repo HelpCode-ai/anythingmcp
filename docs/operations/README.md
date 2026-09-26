@@ -7,6 +7,6 @@ Documents that exist for the people running AnythingMCP in production rather tha
 | [`backup-restore.md`](./backup-restore.md) | What to back up, how, and how to restore. |
 | [`disaster-recovery.md`](./disaster-recovery.md) | RPO / RTO, failure modes, runbook drill. |
 | [`slo.md`](./slo.md) | Service level objectives + how we measure them. |
-| [`observability.md`](./observability.md) | Logs (always on), Sentry (opt-in), OpenTelemetry (opt-in). |
+| [`observability.md`](./observability.md) | Logs (always on), Sentry (opt-in), OpenTelemetry (opt-in), and the cloud host's uptime probe and weekly stuck-users report. |
 
 If you just installed AnythingMCP, read these in order.

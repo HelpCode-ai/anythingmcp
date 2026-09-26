@@ -1,0 +1,6 @@
+- Welche Kunden haben offene Aufträge über 5.000 EUR?
+- Zeig mir die letzten fünf Rechnungen von Müller GmbH und ob sie bezahlt sind.
+- Welche Rechnungen sind überfällig, und seit wie vielen Tagen?
+- Welche Angebote aus diesem Monat hat der Kunde noch nicht angenommen?
+- Wie ist der Bestand von Artikel 10045, und was kostet er?
+- Welche Verkaufschancen gibt es, gruppiert nach Phase und erwartetem Wert?

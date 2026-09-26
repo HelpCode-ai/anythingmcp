@@ -39,6 +39,7 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 | [API reference](api-reference.md) | Full REST API for connectors, tools, auth, audit |
 | [Tool definition format](tool-definition.md) | Parameters, endpoint mapping, response mapping |
 | [Knowledge Graph &amp; AI skills](knowledge-graph.md) | Per-workspace data-relationship map served over MCP, plus AI skills composed into server instructions |
+| [MCP resources](mcp-resources.md) | Read-only resources on per-server endpoints: URIs, role visibility, fail-closed rules |
 | [Deployment guide](deployment.md) | Docker, production setup, reverse proxy, env vars |
 | [Authentication](deployment.md#authentication) | OAuth2, JWT, API keys, MCP auth modes |
 | [Single sign-on](sso.md) | Entra ID, Google, Okta &amp; OIDC; role sync from directory groups; recovery codes — **self-hosted only** |
@@ -51,7 +52,7 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 <details>
 <summary><strong>How do I create a custom connector for Claude?</strong></summary>
 
-Run AnythingMCP (self-hosted or [Cloud](https://cloud.anythingmcp.com)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under *Settings → Connectors*. No code required — the [Claude guide](integrations/claude.md) walks through it in ~5 minutes.
+Run AnythingMCP (self-hosted or [Cloud](https://cloud.anythingmcp.com)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under *Customize → Connectors*. No code required — the [Claude guide](integrations/claude.md) walks through it in ~5 minutes.
 </details>
 
 <details>
@@ -117,5 +118,5 @@ Yes, with safety. PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB and SQLite 
 <details>
 <summary><strong>How is auth handled?</strong></summary>
 
-OAuth2 (PKCE + Client Credentials), Bearer Token, API Key, Basic Auth, query-parameter auth, WS-Security and TLS client certificates are all supported. Credentials are stored AES-256-GCM encrypted at rest. Per-user MCP API keys are issued on top so each AI client gets its own key with usage tracking.
+OAuth2 (PKCE + Client Credentials), Bearer Token, API Key, Basic Auth, query-parameter auth and HMAC request signing are supported. WS-Security headers and TLS client certificates are not implemented yet. Credentials are stored AES-256-GCM encrypted at rest. Per-user MCP API keys are issued on top so each AI client gets its own key with usage tracking.
 </details>

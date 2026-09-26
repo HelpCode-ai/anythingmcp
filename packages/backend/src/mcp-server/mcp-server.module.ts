@@ -4,6 +4,7 @@ import { ToolRegistry } from './tool-registry';
 import { DynamicMcpTools } from './dynamic-mcp-tools';
 import { McpEndpointController } from './mcp-endpoint.controller';
 import { WellKnownOAuthController } from './well-known-oauth.controller';
+import { RegistryCatchUpController } from './registry-catch-up.controller';
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
 import { RestEngine } from '../connectors/engines/rest.engine';
 import { GraphqlEngine } from '../connectors/engines/graphql.engine';
@@ -26,7 +27,7 @@ const ENGINES = [
 
 @Module({
   imports: [McpServersModule, LicenseModule],
-  controllers: [McpEndpointController, WellKnownOAuthController],
+  controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
   providers: [McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, OAuth2TokenService, LoginTokenService, GraphqlSchemaService, ...ENGINES],
   exports: [McpServerService, ToolRegistry],
 })

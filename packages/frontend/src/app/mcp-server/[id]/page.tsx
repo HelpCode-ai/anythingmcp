@@ -10,6 +10,12 @@ import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
+// Opens claude.ai straight on its "Add custom connector" dialog. Connectors
+// moved from Settings to Customize → Connectors; the old settings URL now only
+// says so. Connectors added on claude.ai also appear in Claude Desktop.
+const CLAUDE_ADD_CONNECTOR_URL =
+  'https://claude.ai/new?modal=add-custom-connector#customize/connectors';
+
 export default function McpServerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { token } = useAuth();
@@ -30,9 +36,19 @@ export default function McpServerDetailPage() {
   const [generatedKey, setGeneratedKey] = useState('');
   const [keyMsg, setKeyMsg] = useState('');
 
-  // Connector assignment state
+  // Connector assignment state. A change is saved the moment it is made: the
+  // list used to wait for a "Save assignments" button below it, which went
+  // off screen once a workspace had a few connectors, and a server looked
+  // configured while exposing no tools at all.
   const [assignedIds, setAssignedIds] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
+  const [assignStatus, setAssignStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [assignError, setAssignError] = useState('');
+  // The set the next change starts from (state lags behind rapid clicks),
+  // the last one the server accepted, and a chain that keeps writes in order.
+  const currentIds = useRef<Set<string>>(new Set());
+  const savedIds = useRef<Set<string>>(new Set());
+  const saveChain = useRef<Promise<void>>(Promise.resolve());
+  const saveSeq = useRef(0);
 
   const [copied, setCopied] = useState('');
   const [connectClient, setConnectClient] = useState<string | null>(null);
@@ -71,7 +87,10 @@ export default function McpServerDetailPage() {
       setEditDescription(srv.description || '');
       setEditInstructions(srv.instructions || '');
       setAllConnectors(conns);
-      setAssignedIds(new Set(srv.connectors?.map((c: any) => c.connector.id) || []));
+      const ids = new Set<string>(srv.connectors?.map((c: any) => c.connector.id) || []);
+      currentIds.current = ids;
+      savedIds.current = ids;
+      setAssignedIds(ids);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [token, id]);
 
@@ -105,27 +124,38 @@ export default function McpServerDetailPage() {
     } catch {}
   };
 
-  const handleToggleConnector = (connectorId: string) => {
-    setAssignedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(connectorId)) next.delete(connectorId);
-      else next.add(connectorId);
-      return next;
+  const saveAssignments = (next: Set<string>) => {
+    if (!token || !id) return;
+    currentIds.current = next;
+    setAssignedIds(next);
+    setAssignStatus('saving');
+    const seq = ++saveSeq.current;
+    saveChain.current = saveChain.current.then(async () => {
+      try {
+        await mcpServers.assignConnectors(id, Array.from(next), token);
+        savedIds.current = next;
+        if (seq === saveSeq.current) {
+          setAssignStatus('saved');
+          setAssignError('');
+        }
+      } catch (err: any) {
+        // Put the list back to what the server has, so the ticks never claim
+        // more than the endpoint exposes.
+        if (seq === saveSeq.current) {
+          currentIds.current = savedIds.current;
+          setAssignedIds(new Set(savedIds.current));
+          setAssignStatus('error');
+          setAssignError(err?.message || 'Could not save');
+        }
+      }
     });
   };
 
-  const handleSaveConnectors = async () => {
-    if (!token || !id) return;
-    setSaving(true);
-    try {
-      await mcpServers.assignConnectors(id, Array.from(assignedIds), token);
-      setSaveMsg('Connectors updated');
-      setTimeout(() => setSaveMsg(''), 2000);
-    } catch (err: any) {
-      setSaveMsg(`Error: ${err.message}`);
-    } finally {
-      setSaving(false);
-    }
+  const handleToggleConnector = (connectorId: string) => {
+    const next = new Set(currentIds.current);
+    if (next.has(connectorId)) next.delete(connectorId);
+    else next.add(connectorId);
+    saveAssignments(next);
   };
 
   const handleGenerateKey = async () => {
@@ -246,7 +276,7 @@ export default function McpServerDetailPage() {
   // IMPORTANT: Claude *Desktop* does NOT accept this — its
   // claude_desktop_config.json only spawns local stdio commands, so a remote
   // http/url entry is silently skipped ("not a valid MCP server
-  // configuration"). For Claude Desktop use the Settings → Connectors UI, or
+  // configuration"). For Claude Desktop use Customize → Connectors, or
   // the mcp-remote bridge (claudeDesktopBridge* below).
   const claudeConfigOAuth = `{
   "mcpServers": {
@@ -359,6 +389,25 @@ export default function McpServerDetailPage() {
     </div>
   );
 
+  const assignedConnectors = allConnectors.filter((c) => assignedIds.has(c.id));
+
+  // Says which connectors THIS url serves, next to every place it can be
+  // copied. Servers look alike ("Default", "AutoSkill"…), and a client wired to
+  // the wrong one showed tools the user thought they had removed.
+  const exposesLine = (className = '') => (
+    <p className={cn('text-[11.5px] leading-[1.5] text-[var(--text-3)]', className)}>
+      {assignedConnectors.length === 0 ? (
+        <>This URL exposes <strong className="text-[var(--text-2)]">no connectors yet</strong>. Tick some under Assigned connectors.</>
+      ) : (
+        <>
+          This URL exposes{' '}
+          <strong className="text-[var(--text-2)]">{assignedConnectors.map((c) => c.name).join(', ')}</strong>
+          {' '}and nothing else.
+        </>
+      )}
+    </p>
+  );
+
   const endpointRow = (copyKey: string) => (
     <div>
       <label className="mb-1.5 block text-[11px] text-[var(--text-3)]">MCP Endpoint URL</label>
@@ -371,6 +420,7 @@ export default function McpServerDetailPage() {
           {copied === copyKey ? 'Copied!' : 'Copy'}
         </button>
       </div>
+      {exposesLine('mt-1.5')}
     </div>
   );
 
@@ -432,11 +482,15 @@ export default function McpServerDetailPage() {
         return (
           <div className="space-y-4">
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. Click the button below to open Claude&apos;s connector settings.<br />
-              2. Click <strong>Add custom connector</strong>.<br />
-              3. Paste the MCP endpoint URL below.
+              1. Click the button below: Claude opens its <strong>Add custom connector</strong> dialog.<br />
+              2. Enter a name and paste the MCP endpoint URL below, then click <strong>Add</strong>.<br />
+              3. Click <strong>Connect</strong> and approve access.
             </p>
-            {linkAction('https://claude.ai/customize/connectors', 'Open Claude Settings', true)}
+            {linkAction(CLAUDE_ADD_CONNECTOR_URL, 'Add to Claude', true)}
+            <p className="text-xs leading-[1.55] text-[var(--text-3)]">
+              Dialog not showing? In Claude open <strong>Customize → Connectors</strong>,
+              click <strong>+</strong>, then <strong>Add custom connector</strong>.
+            </p>
             {endpointRow('modal-endpoint')}
           </div>
         );
@@ -451,11 +505,11 @@ export default function McpServerDetailPage() {
               commands, so Claude skips it as &ldquo;not a valid MCP server configuration&rdquo;.
             </p>
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
-              1. Open <strong>Settings → Connectors</strong> (button below).<br />
-              2. Click <strong>Add custom connector</strong>.<br />
-              3. Paste the MCP endpoint URL below.
+              1. Open <strong>Customize → Connectors</strong> (in Claude Desktop, or with the button below).<br />
+              2. Click <strong>+</strong>, then <strong>Add custom connector</strong>.<br />
+              3. Enter a name and paste the MCP endpoint URL below, then click <strong>Add</strong>.
             </p>
-            {linkAction('https://claude.ai/customize/connectors', 'Open Claude Settings', true)}
+            {linkAction(CLAUDE_ADD_CONNECTOR_URL, 'Add to Claude', true)}
             {endpointRow('modal-claude-desktop-url')}
 
             <details className="group pt-1">
@@ -539,7 +593,6 @@ export default function McpServerDetailPage() {
   };
 
   // Tools from assigned connectors
-  const assignedConnectors = allConnectors.filter((c) => assignedIds.has(c.id));
   const toolsList = assignedConnectors.flatMap((c) =>
     (c.tools || []).map((t: any) => ({ ...t, connectorName: c.name, connectorType: c.type })),
   );
@@ -599,9 +652,7 @@ export default function McpServerDetailPage() {
               {copied === 'endpoint' ? 'Copied!' : 'Copy'}
             </button>
           </div>
-          <p className="mb-3 text-[11.5px] text-[var(--text-3)]">
-            Each MCP server has its own unique endpoint. Only tools from assigned connectors are exposed.
-          </p>
+          {exposesLine('mb-3')}
 
           <div className="mb-[10px] text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--text-3)]">
             Quick Connect
@@ -706,17 +757,29 @@ export default function McpServerDetailPage() {
         {/* Assigned Connectors */}
         <Card className="p-[22px]">
           <div className="mb-1.5 flex items-center justify-between">
-            <div className="text-sm font-semibold">Assigned connectors ({assignedIds.size})</div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-semibold">Assigned connectors ({assignedIds.size})</div>
+              <span
+                role="status"
+                aria-live="polite"
+                className="text-[12px]"
+                style={{ color: assignStatus === 'error' ? 'var(--danger)' : 'var(--text-3)' }}
+              >
+                {assignStatus === 'saving' && 'Saving…'}
+                {assignStatus === 'saved' && 'Saved'}
+                {assignStatus === 'error' && `Not saved: ${assignError}`}
+              </span>
+            </div>
             {allConnectors.length > 0 && (
               <div className="flex gap-1.5">
                 <button
-                  onClick={() => setAssignedIds(new Set(allConnectors.map((c) => c.id)))}
+                  onClick={() => saveAssignments(new Set(allConnectors.map((c) => c.id)))}
                   className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-[10px] py-[5px] text-[12px] text-[var(--text-2)] hover:border-[var(--border-strong)]"
                 >
                   Select all
                 </button>
                 <button
-                  onClick={() => setAssignedIds(new Set())}
+                  onClick={() => saveAssignments(new Set())}
                   className="rounded-[8px] border border-[var(--border)] bg-[var(--surface)] px-[10px] py-[5px] text-[12px] text-[var(--text-2)] hover:border-[var(--border-strong)]"
                 >
                   Deselect all
@@ -725,7 +788,7 @@ export default function McpServerDetailPage() {
             )}
           </div>
           <p className="mb-[14px] text-[12.5px] text-[var(--text-3)]">
-            Select which connectors expose their tools through this server.
+            Select which connectors expose their tools through this server. Changes are saved as you make them.
           </p>
           {allConnectors.length === 0 ? (
             <p className="text-[12.5px] text-[var(--text-3)]">No connectors available. Create a connector first.</p>
@@ -765,9 +828,15 @@ export default function McpServerDetailPage() {
                   );
                 })}
               </div>
-              <Button onClick={handleSaveConnectors} disabled={saving} variant="primary" size="lg" className="mt-1.5">
-                {saving ? 'Saving...' : 'Save assignments'}
-              </Button>
+              {assignStatus === 'saved' && (
+                // Clients fetch the tool list once, when they connect. Without
+                // this, "I added the connector and Claude sees nothing" reads
+                // as a broken server.
+                <p className="mt-2 text-[12.5px] text-[var(--text-3)]">
+                  AI clients that are already connected keep the tool list they loaded. Refresh it there: in
+                  Claude, open the connector and choose <span className="font-medium">⋮ → Refresh tools list</span>.
+                </p>
+              )}
             </>
           )}
         </Card>

@@ -2,12 +2,13 @@
   "slug": "pinterest",
   "name": "Pinterest",
   "description": "Manage Pinterest (boards, pins, search, ads, audiences) from any AI agent via Business API. 9 tools, OAuth2 token.",
-  "instructions": "This connector wraps the Pinterest Business API v5 (api.pinterest.com/v5).\n\n**Setup — OAuth2**:\n1. Register at https://developers.pinterest.com → **Create app**.\n2. Configure redirect URI, run the OAuth flow at `https://www.pinterest.com/oauth/?response_type=code&client_id=...&redirect_uri=...&scope=boards:read,boards:write,pins:read,pins:write,user_accounts:read`.\n3. Exchange the code at `https://api.pinterest.com/v5/oauth/token`.\n4. Set `PINTEREST_CLIENT_ID`, `PINTEREST_CLIENT_SECRET`, `PINTEREST_REFRESH_TOKEN`.\n\n**Authentication**: OAuth2 with refresh — engine handles. Sends `Authorization: Bearer ACCESS_TOKEN`.\n\n**Sandbox available**: change baseUrl to `api-sandbox.pinterest.com/v5` for testing.\n\n**Pin formats**: standard pins point at an external image URL (`media_source: {source_type:'image_url', url:'...'}`) or use the upload endpoint for direct upload (multipart, out of scope here). Video pins require a separate upload flow.\n\n**Pagination**: `bookmark` (cursor) + `page_size` (default 25, max 100).\n\n**Rate limits**: 1000 req / hour per token (varies by endpoint). 429 with `Retry-After`.\n\n**Out of scope here**: video upload multipart, catalog feeds, ad campaign creation, trends, conversion API.",
+  "instructions": "This connector wraps the Pinterest API v5 (api.pinterest.com/v5). You authorize it once, in AnythingMCP; access tokens are then renewed automatically.\n\n**Setup**:\n1. Create an app at https://developers.pinterest.com/apps/.\n2. Under the app's **Redirect URIs**, add `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Pinterest requires an exact match.\n3. Enter the app's **App ID** as `PINTEREST_CLIENT_ID` and its **App secret key** as `PINTEREST_CLIENT_SECRET`, leave `PINTEREST_REFRESH_TOKEN` empty, and install.\n4. Open the connector and click **Authorize with Provider**. Sign in to Pinterest, approve, and you land back on the connector page with the tools ready.\n\n**Scopes**: `boards:read,boards:write,pins:read,pins:write,user_accounts:read`, which covers every tool here. Change them in the connector's OAuth settings and authorize again if you need others.\n\n**Already have a refresh token?** You can paste it into `PINTEREST_REFRESH_TOKEN` instead of step 4, if you obtained it yourself for the same app (authorization code from `https://www.pinterest.com/oauth/`, exchanged at `https://api.pinterest.com/v5/oauth/token`). Connectors set up that way keep working as they are.\n\n**Authentication**: the token endpoint is called with HTTP Basic client authentication (`client_id:client_secret`), as Pinterest requires. Every API call sends `Authorization: Bearer <access token>`. Access tokens last 30 days; the refresh token is renewed with them, and whatever new refresh token Pinterest returns is stored. If a call says the access token could not be renewed, authorize again from the connector page.\n\n**Sandbox available**: change baseUrl to `api-sandbox.pinterest.com/v5` for testing.\n\n**Pin formats**: standard pins point at an external image URL (`media_source: {source_type:'image_url', url:'...'}`) or use the upload endpoint for direct upload (multipart, out of scope here). Video pins require a separate upload flow.\n\n**Pagination**: `bookmark` (cursor) + `page_size` (default 25, max 100).\n\n**Rate limits**: 1000 req / hour per token (varies by endpoint). 429 with `Retry-After`.\n\n**Out of scope here**: video upload multipart, catalog feeds, ad campaign creation, trends, conversion API.",
   "region": "intl",
   "category": "social",
   "icon": "pinterest",
   "docsUrl": "https://developers.pinterest.com/docs/api/v5/",
-  "requiredEnvVars": ["PINTEREST_CLIENT_ID", "PINTEREST_CLIENT_SECRET", "PINTEREST_REFRESH_TOKEN"],
+  "requiredEnvVars": ["PINTEREST_CLIENT_ID", "PINTEREST_CLIENT_SECRET"],
+  "optionalEnvVars": ["PINTEREST_REFRESH_TOKEN"],
   "connector": {
     "name": "Pinterest Business API v5",
     "type": "REST",
@@ -17,7 +18,10 @@
       "clientId": "{{PINTEREST_CLIENT_ID}}",
       "clientSecret": "{{PINTEREST_CLIENT_SECRET}}",
       "refreshToken": "{{PINTEREST_REFRESH_TOKEN}}",
-      "tokenUrl": "https://api.pinterest.com/v5/oauth/token"
+      "authorizationUrl": "https://www.pinterest.com/oauth/",
+      "tokenUrl": "https://api.pinterest.com/v5/oauth/token",
+      "tokenAuthMethod": "basic",
+      "scopes": "boards:read,boards:write,pins:read,pins:write,user_accounts:read"
     }
   },
   "tools": [

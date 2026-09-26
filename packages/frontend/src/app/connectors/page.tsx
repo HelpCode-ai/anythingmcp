@@ -144,8 +144,12 @@ export default function ConnectorsPage() {
       a.download = `anythingmcp-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setMsg('Configuration exported');
-      setTimeout(() => setMsg(''), 3000);
+      setMsg(
+        data.secretsIncluded === false
+          ? 'Configuration exported without secret values (only admins can export them)'
+          : 'Configuration exported',
+      );
+      setTimeout(() => setMsg(''), data.secretsIncluded === false ? 6000 : 3000);
     } catch (err: any) {
       setMsg(`Export failed: ${err.message}`);
     }
@@ -158,7 +162,9 @@ export default function ConnectorsPage() {
       const parsed = JSON.parse(importJson);
       const data = parsed.connectors ? parsed : { connectors: Array.isArray(parsed) ? parsed : [parsed] };
       const result = await connectors.importAll(data, token);
-      setMsg(result.message);
+      // Per-connector failures (a trial limit, an invalid row) come back in
+      // `errors` with a 201, so show them rather than only the counts.
+      setMsg(result.errors?.length ? `${result.message}. ${result.errors.join('; ')}` : result.message);
       setShowImportModal(false);
       setImportJson('');
       const updated = await connectors.list(token);

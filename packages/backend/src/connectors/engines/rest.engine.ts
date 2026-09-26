@@ -15,6 +15,7 @@ import {
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 
@@ -108,6 +109,19 @@ export class RestEngine {
           'endpoint mapping — it should be a path like /users/{id}.',
       );
     }
+
+    // Callers resolve {{VAR}} and check for leftovers themselves, with the
+    // tool's name in the message. This is the backstop for any that do not:
+    // a leftover in the base URL otherwise reaches the SSRF guard below and
+    // comes back as "SSRF guard: invalid URL '{{VAR}}/...'", which reads like
+    // a blocked request rather than a variable nobody set. Checked on the
+    // mapping, before `{param}` substitution, so a caller's own argument that
+    // happens to contain braces is never mistaken for a missing variable.
+    assertNoUnresolvedPlaceholders({
+      baseUrl: config.baseUrl,
+      path,
+      queryParams: endpointMapping.queryParams,
+    });
     for (const [key, value] of Object.entries(params)) {
       const segment = endpointMapping.encodePathParams
         ? encodeURIComponent(String(value))
@@ -130,7 +144,16 @@ export class RestEngine {
     const resolvedEndpointHeaders: Record<string, string> = {};
     if (endpointMapping.headers) {
       for (const [key, value] of Object.entries(endpointMapping.headers)) {
-        if (typeof value === 'string' && value.startsWith('$')) {
+        if (typeof value === 'string' && value.includes('${')) {
+          // `Bearer ${API_KEY}`: interpolated like a query parameter, and the
+          // header is left out when any part is empty. An optional key then
+          // means "send it when set", not `Authorization: Bearer ` with
+          // nothing after it, which most APIs answer with 401.
+          const interpolated = this.resolveValue(value, params);
+          if (interpolated !== undefined) {
+            resolvedEndpointHeaders[key] = String(interpolated);
+          }
+        } else if (typeof value === 'string' && value.startsWith('$')) {
           const paramVal = params[value.substring(1)];
           if (paramVal !== undefined) {
             resolvedEndpointHeaders[key] = String(paramVal);
@@ -167,9 +190,9 @@ export class RestEngine {
       if (typeof mappedQuery['__rawquery'] === 'string') {
         const raw = String(mappedQuery['__rawquery']);
         delete mappedQuery['__rawquery'];
-        for (const [k, v] of new URLSearchParams(raw)) {
-          mappedQuery[k] = v;
-        }
+        // fromEntries creates own data properties, so a key can never reach
+        // the prototype; the unsafe names are dropped as well.
+        Object.assign(mappedQuery, safeEntries(new URLSearchParams(raw)));
       }
       axiosConfig.params = {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
@@ -468,9 +491,15 @@ export class RestEngine {
         };
         break;
       case 'BASIC_AUTH':
+        // An empty password is a real configuration, not a missing one:
+        // Companies House (and other key-as-username APIs) want exactly
+        // `Basic base64("<key>:")`, which axios produces from password "".
+        // An absent password must mean the same thing; String(undefined)
+        // would send `<key>:undefined`, which those APIs reject as a
+        // malformed header rather than as a wrong key.
         axiosConfig.auth = {
-          username: String(config.authConfig.username),
-          password: String(config.authConfig.password),
+          username: String(config.authConfig.username ?? ''),
+          password: String(config.authConfig.password ?? ''),
         };
         break;
       case 'OAUTH2': {
@@ -636,10 +665,7 @@ export class RestEngine {
       contentType.includes('application/x-www-form-urlencoded') &&
       typeof axiosConfig.data === 'string'
     ) {
-      bodyParams = {};
-      for (const [k, v] of new URLSearchParams(axiosConfig.data)) {
-        bodyParams[k] = v;
-      }
+      bodyParams = safeEntries(new URLSearchParams(axiosConfig.data));
     }
 
     const header = buildOAuth1Header({
@@ -737,6 +763,20 @@ export class RestEngine {
     }
     return value;
   }
+}
+
+/**
+ * Keys that would reach an object's prototype chain instead of naming a
+ * parameter. The query and form strings parsed here come from tool arguments,
+ * so from the model; no API names a parameter like this.
+ */
+function isUnsafeKey(key: string): boolean {
+  return key === '__proto__' || key === 'constructor' || key === 'prototype';
+}
+
+/** Parsed pairs as a plain object, built from own data properties only. */
+function safeEntries(params: URLSearchParams): Record<string, string> {
+  return Object.fromEntries([...params].filter(([key]) => !isUnsafeKey(key)));
 }
 
 /**

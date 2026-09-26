@@ -1,24 +1,38 @@
 {
   "slug": "immobilienscout24",
   "name": "ImmobilienScout24 API",
-  "description": "Search real estate listings on ImmobilienScout24, Germany's largest property portal, from any AI assistant. Find apartments and houses for sale or rent, resolve location GeoCodes, and read full listing detail. 3 tools, requires ImmobilienScout24 API credentials (OAuth 1.0a).",
-  "instructions": "This connector wraps the official ImmobilienScout24 REST API (`rest.immobilienscout24.de`).\n\n**Authentication — OAuth 1.0a (handled for you)**: unlike most APIs, ImmobilienScout24 never moved to OAuth 2.0. It requires every request to be **signed** with HMAC-SHA1 per the OAuth 1.0a protocol. AnythingMCP performs this signing automatically (two-legged / app-only) using your consumer key + secret — you do not exchange or refresh any token. Just provide the two credentials below.\n\n**Where to get the credentials** (`IS24_CLIENT_ID` = consumer key, `IS24_CLIENT_SECRET` = consumer secret):\n1. Go to the self-service portal: https://selfservice.immobilienscout24.de\n2. Log in with — or create — an ImmobilienScout24 account. ⚠️ A **business account is mandatory**; non-business accounts cannot be granted API access.\n3. Generate an API key set. You can issue keys for **sandbox** (free, for testing) and/or **production**.\n4. Production keys require accepting the API Terms of Use and are subject to ImmobilienScout24's published price list (paid). Some use cases require partner approval/vetting before production access is granted — this is not instant.\n5. Copy the generated **API key** into `IS24_CLIENT_ID` and the **secret** into `IS24_CLIENT_SECRET`.\n\nDocs: https://api.immobilienscout24.de/api-docs/get-started/get-your-client-credentials/\n\n**Scope**: this connector uses two-legged (app-only) signing, which covers public listing search and lookup. Acting on *your own* objects/leads (three-legged, user context) is not exposed here.\n\n**Workflow**:\n1. Resolve a location to a GeoCode with `is24_search_locations` (e.g. 'München Schwabing').\n2. Pass that geocode + a `realestatetype` to `is24_search_properties`.\n3. Read a single listing with `is24_get_property` using its expose ID.\n\n**Suggested starter prompts**:\n- \"Find apartments to rent in Berlin Mitte under €1500/month on ImmobilienScout24.\"\n- \"Look up the GeoCode for Hamburg Altona.\"\n- \"Show me ImmobilienScout24 expose 123456789 in detail.\"",
+  "description": "Search real estate listings on ImmobilienScout24, Germany's largest property portal, from any AI assistant. Resolve locations to GeoCodes, find apartments and houses for sale or rent, and read full listing detail. 3 tools, requires an ImmobilienScout24 API consumer key and secret (OAuth 1.0a) — not your login.",
+  "instructions": "This connector wraps the official ImmobilienScout24 REST API (`rest.immobilienscout24.de`).\n\n**Two fields, and neither is your login.** `IS24_CONSUMER_KEY` and `IS24_CONSUMER_SECRET` are the API key pair ImmobilienScout24 issues to an *application*, not the e-mail address and password you sign in to immobilienscout24.de with. An e-mail address in the key field is rejected by ImmobilienScout24 with `401 ERROR_AUTHENTICATION_REQUIRED — Consumer not found: <what you typed>`; if you see that message, the key field holds something other than a consumer key.\n\n**Where to get the key pair**:\n1. Open the self-service portal https://selfservice.immobilienscout24.de and sign in with an ImmobilienScout24 **business** account (private accounts cannot get API access; create a business account on the portal's *Manage Access* page if you have none).\n2. Generate an API key set for **Sandbox**, **Production**, or both. Generating keys accepts the API Terms of Use; production use is **paid** according to the price list in those terms.\n3. The portal shows a **key** and a **secret**, once — note them down. Paste the key into `IS24_CONSUMER_KEY` and the secret into `IS24_CONSUMER_SECRET`. ImmobilienScout24's documentation calls the same pair *consumer key* and *consumer secret*; the portal may label them *API key* / *Key* and *Secret*.\n\nDocs: https://api.immobilienscout24.de/api-docs/get-started/get-your-client-credentials/\n\n**Authentication — OAuth 1.0a (handled for you)**: ImmobilienScout24 never moved to OAuth 2.0; every request must be signed with HMAC-SHA1. AnythingMCP signs each call two-legged (app only) with your key and secret. There is no token to fetch, authorise or refresh.\n\n**Search needs a partner permission**: ImmobilienScout24 makes its Search API (`is24_search_properties`, `is24_get_property`) available only to *content partners*. A fresh key without that permission is answered with **403**; request it at https://api.immobilienscout24.de/more/api-permission-request/ with your existing key. A 401 means the key or secret is wrong; a 403 means the key is right but lacks the permission.\n\n**Keys are per environment**: the connector calls production (`rest.immobilienscout24.de`). Sandbox keys only work against `rest.sandbox-immobilienscout24.de` — change the connector's base URL to `https://rest.sandbox-immobilienscout24.de/restapi/api` to test with them.\n\n**Workflow**:\n1. Resolve a place to a GeoCode with `is24_search_locations` (e.g. 'München Schwabing').\n2. Pass that geocode and a `realestatetype` to `is24_search_properties`. Ranges use ImmobilienScout24's own `min-max` form: `price: \"-1500\"` (up to 1500), `livingspace: \"60-\"` (at least 60 m²), `numberofrooms: \"2-3\"`.\n3. Read one listing with `is24_get_property` using its expose ID.\n\n**Suggested starter prompts**:\n- \"Find apartments to rent in Berlin Mitte under €1500/month on ImmobilienScout24.\"\n- \"Look up the GeoCode for Hamburg Altona.\"\n- \"Show me ImmobilienScout24 expose 123456789 in detail.\"",
   "region": "de",
   "category": "real-estate",
   "icon": "immobilienscout24",
   "docsUrl": "https://api.immobilienscout24.de/api-docs/get-started/get-your-client-credentials/",
   "requiredEnvVars": [
-    "IS24_CLIENT_ID",
-    "IS24_CLIENT_SECRET"
+    "IS24_CONSUMER_KEY",
+    "IS24_CONSUMER_SECRET"
   ],
+  "envVarAliases": {
+    "IS24_CONSUMER_KEY": [
+      "IS24_CLIENT_ID"
+    ],
+    "IS24_CONSUMER_SECRET": [
+      "IS24_CLIENT_SECRET"
+    ]
+  },
   "connector": {
     "name": "ImmobilienScout24",
     "type": "REST",
     "baseUrl": "https://rest.immobilienscout24.de/restapi/api",
     "authType": "OAUTH1",
     "authConfig": {
-      "consumerKey": "{{IS24_CLIENT_ID}}",
-      "consumerSecret": "{{IS24_CLIENT_SECRET}}"
+      "consumerKey": "{{IS24_CONSUMER_KEY}}",
+      "consumerSecret": "{{IS24_CONSUMER_SECRET}}"
+    }
+  },
+  "probe": {
+    "tool": "is24_search_locations",
+    "params": {
+      "query": "Berlin"
     }
   },
   "tools": [
@@ -31,31 +45,27 @@
         "properties": {
           "geocode": {
             "type": "string",
-            "description": "GeoCode ID for the search location (e.g. '1276003001' for Berlin Mitte). Use is24_search_locations to find the code."
+            "description": "GeoCode of the search area (e.g. '1276003001046' for Berlin Mitte), from is24_search_locations. Several can be given comma-separated."
           },
           "realestatetype": {
             "type": "string",
-            "description": "Property type: 'apartmentrent', 'apartmentbuy', 'houserent', 'housebuy', 'office', 'store', 'gastronomy'"
+            "description": "Property type: 'apartmentrent', 'apartmentbuy', 'houserent', 'housebuy', 'office', 'store', 'gastronomy'."
           },
-          "price_min": {
-            "type": "number",
-            "description": "Minimum price (rent per month or purchase price)"
+          "price": {
+            "type": "string",
+            "description": "Price range as min-max, either side may be empty: '-1500' (up to 1500), '300000-450000'. Rent per month for rentals, purchase price for sales."
           },
-          "price_max": {
-            "type": "number",
-            "description": "Maximum price"
+          "livingspace": {
+            "type": "string",
+            "description": "Living space range in m² as min-max, e.g. '60-' (at least 60) or '60-90'."
           },
-          "livingspace_min": {
-            "type": "number",
-            "description": "Minimum living space in sqm"
-          },
-          "numberofrooms_min": {
-            "type": "number",
-            "description": "Minimum number of rooms"
+          "numberofrooms": {
+            "type": "string",
+            "description": "Number of rooms as min-max, e.g. '2-' (at least 2) or '2-3'."
           },
           "pagenumber": {
             "type": "number",
-            "description": "Page number for pagination (default: 1)"
+            "description": "Page number for pagination (default: 1, 20 results per page)."
           }
         },
         "required": [
@@ -69,10 +79,9 @@
         "queryParams": {
           "geocodes": "$geocode",
           "realestatetype": "$realestatetype",
-          "price.min": "$price_min",
-          "price.max": "$price_max",
-          "livingspace.min": "$livingspace_min",
-          "numberofrooms.min": "$numberofrooms_min",
+          "price": "$price",
+          "livingspace": "$livingspace",
+          "numberofrooms": "$numberofrooms",
           "pagenumber": "$pagenumber",
           "pagesize": "20"
         },
@@ -83,7 +92,7 @@
     },
     {
       "name": "is24_search_locations",
-      "description": "Search for ImmobilienScout24 GeoCode IDs by location name. Use this to find the geocode parameter needed for property searches.",
+      "description": "Resolve a place name, district or town in Germany to ImmobilienScout24 GeoCodes (Geo Auto Completion). Use the returned entity.id as the geocode for is24_search_properties.",
       "useProxy": true,
       "parameters": {
         "type": "object",
@@ -99,9 +108,11 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/gis/v1.0/geo/autocomplete",
+        "path": "/gis/v2.0/geoautocomplete/DEU",
         "queryParams": {
-          "i": "$query"
+          "i": "$query",
+          "t": "region,city,district,quarterOrTown",
+          "l": "20"
         },
         "headers": {
           "Accept": "application/json"

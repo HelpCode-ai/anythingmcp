@@ -1,0 +1,12 @@
+- Which orders from yesterday have not shipped yet, across all channels?
+- Which products are low on stock in WooCommerce, and how fast did they sell last month?
+- Summarise this week's returns by reason on OTTO and Zalando.
+- What are the Amazon fees on ASIN B0C1234567 at 24.90 EUR?
+- Which Etsy reviews this month are below four stars?
+- Find the Billbee order for Kaufland order 123-456.
+- Which eBay payment disputes are still open?
+- Compare order counts per channel for the last seven days.
+- Which Magento orders over 500 EUR came in this month?
+- Which products are in the Shopware catalog but missing a description?
+- Which Kaufland tickets are still waiting for an answer?
+- Set the stock of SKU LK-2040 to 50 in WooCommerce. (write tool, needs a role that allows it)

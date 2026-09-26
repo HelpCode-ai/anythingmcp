@@ -140,6 +140,11 @@ An adapter is one JSON file; the rest is generated and checked.
 1. Write `packages/backend/src/adapters/<region>/<slug>.json`. Filename must
    equal `slug`; prefix every tool `<slug_with_underscores>_`; see
    [docs/tool-definition.md](docs/tool-definition.md) for the envelope.
+   To start from a valid skeleton, run
+   `npm run adapter:new -- <slug> --region <region> --auth <type>`. It refuses
+   to overwrite an existing adapter unless you pass `--force`, and every spot
+   you still have to fill in is marked `TODO` (the validator reports each one
+   as a `todo-marker` warning).
 2. `node scripts/validate-adapters.mjs --warn` — clean.
 3. `node scripts/regenerate-catalog.mjs` — commit the `catalog.ts` diff.
 4. Add `<region>/<slug>.live.spec.ts` (copy `intl/todoist.live.spec.ts`):

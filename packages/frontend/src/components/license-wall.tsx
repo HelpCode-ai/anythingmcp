@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { buildManagePlanUrl, buildPricingUrl } from '@/lib/marketing';
+import { buildPricingUrl } from '@/lib/marketing';
+import { useManagePlan } from '@/lib/use-manage-plan';
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -16,7 +17,8 @@ import { cn } from '@/lib/utils';
 type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed';
 
 export function LicenseWall() {
-  const { token, user, deploymentMode } = useAuth();
+  const { token, deploymentMode } = useAuth();
+  const managePlan = useManagePlan();
   const [reason, setReason] = useState<BlockReason | null>(null);
   const [starting, setStarting] = useState(false);
   const [startErr, setStartErr] = useState<string | null>(null);
@@ -151,7 +153,8 @@ export function LicenseWall() {
             </>
           ) : reason === 'lapsed' ? (
             <a
-              href={buildManagePlanUrl(user?.email)}
+              href={managePlan.href}
+              onClick={managePlan.onClick}
               target="_blank"
               rel="noopener noreferrer"
               className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}

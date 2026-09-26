@@ -1,6 +1,6 @@
-# REST Connector — REST API to MCP
+# REST / OpenAPI to MCP
 
-> Convert any REST API into MCP tools. Import from OpenAPI, Postman, cURL, or define tools manually.
+AnythingMCP turns any REST API into MCP tools for Claude, ChatGPT and Copilot without code. Import an OpenAPI 3.x or Swagger 2.0 spec, a Postman collection or cURL commands, and every operation becomes a tool on your MCP server, with parameters, auth and endpoint mapping filled in. You can also define tools by hand.
 
 [Back to README](../../README.md)
 
@@ -84,10 +84,10 @@ Paste the spec URL or JSON/YAML content. Tools are auto-generated for each `path
 
 ```bash
 # Import from URL
-curl -s http://localhost:4000/api/connectors/$CONNECTOR_ID/import-spec \
+curl -s http://localhost:4000/api/connectors/$CONNECTOR_ID/import \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"specUrl": "https://petstore.swagger.io/v2/swagger.json"}'
+  -d '{"source": "openapi", "url": "https://petstore.swagger.io/v2/swagger.json"}'
 ```
 
 ### From Postman Collection
@@ -326,6 +326,39 @@ Example — Datto RMM:
 | Token endpoint authentication | **HTTP Basic header** |
 
 The API key and secret key of the technical user are entered on the provider's own consent screen.
+
+#### Signed client assertion (`private_key_jwt`)
+
+Some providers issue no client secret. The client registers a public key or certificate and proves who it
+is with a short-lived JWT signed by the matching private key (RFC 7523 §2.2). Revolut Business works this
+way. Set `tokenAuthMethod` to `private_key_jwt` and describe the signature under `clientAssertion`:
+
+```json
+"authConfig": {
+  "clientId": "{{REVOLUT_CLIENT_ID}}",
+  "authorizationUrl": "https://business.revolut.com/app-confirm",
+  "tokenUrl": "https://b2b.revolut.com/api/1.0/auth/token",
+  "tokenAuthMethod": "private_key_jwt",
+  "clientAssertion": {
+    "privateKey": "{{REVOLUT_PRIVATE_KEY}}",
+    "algorithm": "RS256",
+    "ttlSeconds": 300,
+    "keyId": "optional kid header",
+    "claims": { "iss": "{{REVOLUT_REDIRECT_DOMAIN}}", "aud": "https://revolut.com" }
+  }
+}
+```
+
+- A new assertion is signed for every token request (code exchange, refresh, `client_credentials`) and sent
+  as `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer` plus `client_assertion`.
+  No client secret and no `client_id` field are sent; the client id is the assertion's `sub`.
+- Claims default to RFC 7523: `iss` and `sub` are the client id, `aud` is the token URL, plus `iat`, `exp`
+  and a random `jti`. `claims` overrides any of them; `exp` is always `iat + ttlSeconds` (default 300,
+  at most 3600).
+- `algorithm`: `RS256` (default), `RS384`, `RS512`, `PS256`, `ES256` or `ES384`.
+- `privateKey` takes a PEM key, PKCS#1 (`BEGIN RSA PRIVATE KEY`), PKCS#8 (`BEGIN PRIVATE KEY`) or SEC1
+  (`BEGIN EC PRIVATE KEY`). A key pasted into a single-line field, with its line breaks gone, still works.
+  Passphrase-protected keys are refused with a message saying how to export one without a passphrase.
 
 ---
 

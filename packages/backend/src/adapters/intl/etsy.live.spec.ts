@@ -3,6 +3,8 @@ import { interpolateString } from '../../common/env-interpolation.util';
 
 const a = adapter as unknown as {
   requiredEnvVars: string[];
+  optionalEnvVars?: string[];
+  instructions: string;
   connector: {
     baseUrl: string;
     authType: string;
@@ -49,6 +51,30 @@ describe('etsy adapter — static spec conformance', () => {
   });
 
   /**
+   * New installs authorize in the browser: Etsy's authorization code flow with
+   * PKCE, which the platform always runs. A pasted refresh token still works,
+   * so ETSY_REFRESH_TOKEN is optional rather than gone — connectors installed
+   * that way are in daily use.
+   */
+  it('can be authorized in the browser, and still accepts a pasted refresh token', () => {
+    const auth = a.connector.authConfig;
+    expect(auth.authorizationUrl).toBe('https://www.etsy.com/oauth/connect');
+    // Space-separated, as Etsy documents; read-only, like every tool here.
+    expect(auth.scopes).toBe('email_r shops_r listings_r transactions_r');
+    // Etsy takes the client in the body (client_id, and the shared secret it
+    // checks). Basic would change the refresh request of every Etsy row.
+    expect(auth.tokenAuthMethod).toBeUndefined();
+    expect(a.requiredEnvVars).toEqual(['ETSY_CLIENT_ID', 'ETSY_CLIENT_SECRET']);
+    expect(a.optionalEnvVars).toEqual(['ETSY_REFRESH_TOKEN']);
+  });
+
+  it('tells users the callback URL to register', () => {
+    expect(a.instructions).toContain('https://cloud.anythingmcp.com/api/mcp-oauth/callback');
+    expect(a.instructions).toContain('/api/mcp-oauth/callback');
+    expect(a.instructions).toContain('Authorize with Provider');
+  });
+
+  /**
    * The API key must carry the keystring AND the shared secret, colon
    * separated, on every request — OAuth bearer or not.
    *
@@ -83,8 +109,8 @@ describe('etsy adapter — static spec conformance', () => {
     expect(a.connector.healthcheckPath).toBe('/openapi-ping');
   });
 
-  it('asks only for 3 env vars (client id/secret + initial refresh token)', () => {
-    expect(a.requiredEnvVars.sort()).toEqual([
+  it('asks for the same 3 env vars (client id/secret required, refresh token optional)', () => {
+    expect([...a.requiredEnvVars, ...(a.optionalEnvVars ?? [])].sort()).toEqual([
       'ETSY_CLIENT_ID',
       'ETSY_CLIENT_SECRET',
       'ETSY_REFRESH_TOKEN',

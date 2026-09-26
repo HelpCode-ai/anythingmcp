@@ -49,7 +49,10 @@ jobs:
         run: node scripts/validate-adapters.mjs
 
       - name: Test adapter validator diagnostics
-        run: node --test scripts/validate-adapters.test.mjs
+        run: node --test scripts/validate-adapters.test.mjs scripts/adapter-new.test.mjs
+
+      - name: Test the satellite generator
+        run: node --test scripts/satellites/satellites.test.mjs
 
       - name: Verify the quoted adapter count and license wording
         run: node scripts/adapter-count.mjs --check
@@ -118,15 +121,30 @@ jobs:
           NEXT_PUBLIC_API_URL: http://localhost:4000
 
   release-script:
-    name: Cloud release script (rollback)
+    name: Cloud release script (blue/green)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      # deploy/cloud/release.sh is what puts the previous release back when a
-      # cloud deploy fails; it only ever runs in anger in production. Exercise
-      # its three paths (healthy, broken image, broken compose) on every PR.
+      # deploy/cloud/release.sh swaps the cloud's app containers blue/green;
+      # it only ever runs in anger in production. Exercise it on every PR,
+      # under load through Caddy: the migration from the single-container
+      # layout, healthy releases with zero failed requests, broken image,
+      # broken compose, wrong Caddyfile, a failure after the switch, repeated
+      # releases, the cold fallback — and nothing orphaned after any of them.
       - name: Exercise release.sh against a throwaway stack
         run: bash deploy/cloud/release.test.sh
+
+  stuck-users-report:
+    name: Cloud stuck-users report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # deploy/cloud/stuck-users-report.sh runs once a week on the droplet with
+      # SQL written against the production schema. Run it against every
+      # migration and fake data on each PR, so a schema change that breaks it
+      # fails here instead of as a Monday without a report.
+      - name: Exercise the weekly report against a throwaway database and SMTP
+        run: bash deploy/cloud/stuck-users-report.test.sh
 
   docker:
     name: Docker build

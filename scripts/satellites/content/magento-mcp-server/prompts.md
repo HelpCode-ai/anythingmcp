@@ -1,0 +1,12 @@
+- Which orders from the last 24 hours are still pending?
+- Show order 000000123 with its items and shipping address.
+- Which products in the category "Doors" are out of stock?
+- What is the price and stock of SKU DR-1002?
+- Find the customer with e-mail anna@example.com and list her last orders.
+- Which products were updated this week?
+- Set the stock of SKU LK-2040 to 50 in the default source. (write)
+- Cancel order 000000131, the customer asked us to. (write)
+- List the category tree under "Hardware".
+- Which orders over 500 EUR came in this month?
+- How many customers registered in September?
+- Which SKUs have no image or description?

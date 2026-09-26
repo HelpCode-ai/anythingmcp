@@ -33,7 +33,6 @@ import * as kimai from './de/kimai.json';
 import * as lexwareOffice from './de/lexware-office.json';
 import * as matrix42 from './de/matrix42.json';
 import * as mfrFieldservice from './de/mfr-fieldservice.json';
-import * as n26Openbanking from './de/n26-openbanking.json';
 import * as ninaWarnung from './de/nina-warnung.json';
 import * as openplz from './de/openplz.json';
 import * as openproject from './de/openproject.json';
@@ -65,9 +64,9 @@ import * as wise from './gb/wise.json';
 import * as activecampaign from './intl/activecampaign.json';
 import * as acuityScheduling from './intl/acuity-scheduling.json';
 import * as adyen from './intl/adyen.json';
+import * as agentSkills from './intl/agent-skills.json';
 import * as agilecrm from './intl/agilecrm.json';
 import * as airtable from './intl/airtable.json';
-import * as amadeus from './intl/amadeus.json';
 import * as amazonSeller from './intl/amazon-seller.json';
 import * as apiFootball from './intl/api-football.json';
 import * as apollo from './intl/apollo.json';
@@ -190,6 +189,7 @@ import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as redmine from './intl/redmine.json';
 import * as resy from './intl/resy.json';
+import * as revolutBusiness from './intl/revolut-business.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
 import * as salesloft from './intl/salesloft.json';
@@ -278,6 +278,11 @@ export interface AdapterMeta {
    *  them as an empty string so the placeholder resolves instead of leaking
    *  into the request verbatim. */
   optionalEnvVars?: string[];
+  /** Variables renamed since earlier versions of the adapter: current name →
+   *  the names installs made before the rename still hold. Saving environment
+   *  variables reads the old name when the current one is not set, so an older
+   *  install keeps working instead of getting an unresolved `{{VAR}}`. */
+  envVarAliases?: Record<string, string[]>;
   toolCount: number;
   /** Content-addressed version of the adapter's installable content (tools +
    *  connector meta + instructions). Stamped onto a connector at install
@@ -412,7 +417,6 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   lexwareOffice as unknown as AdapterDefinition,
   matrix42 as unknown as AdapterDefinition,
   mfrFieldservice as unknown as AdapterDefinition,
-  n26Openbanking as unknown as AdapterDefinition,
   ninaWarnung as unknown as AdapterDefinition,
   openplz as unknown as AdapterDefinition,
   openproject as unknown as AdapterDefinition,
@@ -444,9 +448,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   activecampaign as unknown as AdapterDefinition,
   acuityScheduling as unknown as AdapterDefinition,
   adyen as unknown as AdapterDefinition,
+  agentSkills as unknown as AdapterDefinition,
   agilecrm as unknown as AdapterDefinition,
   airtable as unknown as AdapterDefinition,
-  amadeus as unknown as AdapterDefinition,
   amazonSeller as unknown as AdapterDefinition,
   apiFootball as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
@@ -569,6 +573,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   reddit as unknown as AdapterDefinition,
   redmine as unknown as AdapterDefinition,
   resy as unknown as AdapterDefinition,
+  revolutBusiness as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,

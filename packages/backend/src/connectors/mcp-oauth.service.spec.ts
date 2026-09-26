@@ -1,5 +1,6 @@
 import { McpOAuthService } from './mcp-oauth.service';
 import axios from 'axios';
+import { generateKeyPairSync, verify } from 'crypto';
 
 jest.mock('axios');
 // assertSafeOutboundUrl performs DNS/SSRF checks — stub it out for unit tests.
@@ -61,6 +62,67 @@ describe('McpOAuthService.exchangeCodeForTokens client authentication', () => {
     });
     const [, , config] = mockedAxios.post.mock.calls[0];
     expect((config as any).headers.Authorization).toMatch(/^Basic /);
+  });
+
+  // Revolut Business: "Exchange authorization code for access token"
+  // (developer.revolut.com) — grant_type, code, client_assertion_type and a
+  // client_assertion signed with the key whose certificate was uploaded.
+  it('signs a client assertion for private_key_jwt and sends no secret or client_id', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    await service.exchangeCodeForTokens({
+      ...baseParams,
+      tokenUrl: 'https://sandbox-b2b.revolut.com/api/1.0/auth/token',
+      clientSecret: undefined,
+      tokenAuthMethod: 'private_key_jwt',
+      clientAssertion: {
+        privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+        clientId: 'cid',
+        tokenUrl: 'https://sandbox-b2b.revolut.com/api/1.0/auth/token',
+        claims: { iss: 'cloud.anythingmcp.com', aud: 'https://revolut.com' },
+      },
+    });
+
+    const [, body, config] = mockedAxios.post.mock.calls[0];
+    const form = new URLSearchParams(String(body));
+    expect(form.get('grant_type')).toBe('authorization_code');
+    expect(form.get('code')).toBe('authcode');
+    expect(form.get('client_assertion_type')).toBe(
+      'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+    );
+    expect(form.has('client_id')).toBe(false);
+    expect(form.has('client_secret')).toBe(false);
+    expect((config as any).headers.Authorization).toBeUndefined();
+
+    const [h, p, sig] = String(form.get('client_assertion')).split('.');
+    const claims = JSON.parse(Buffer.from(p, 'base64url').toString());
+    expect(claims).toMatchObject({
+      iss: 'cloud.anythingmcp.com',
+      sub: 'cid',
+      aud: 'https://revolut.com',
+    });
+    expect(
+      verify('sha256', Buffer.from(`${h}.${p}`), publicKey, Buffer.from(sig, 'base64url')),
+    ).toBe(true);
+  });
+
+  it('refuses private_key_jwt without assertion settings instead of sending nothing', async () => {
+    await expect(
+      service.exchangeCodeForTokens({ ...baseParams, tokenAuthMethod: 'private_key_jwt' }),
+    ).rejects.toThrow(/no client assertion settings/);
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it("reports the provider's own error when the exchange is refused", async () => {
+    mockedAxios.post.mockRejectedValue({
+      message: 'Request failed with status code 400',
+      response: {
+        status: 400,
+        data: { error: 'invalid_request', error_description: 'The Token has expired.' },
+      },
+    });
+    await expect(service.exchangeCodeForTokens({ ...baseParams })).rejects.toThrow(
+      'Token exchange failed: HTTP 400: invalid_request: The Token has expired.',
+    );
   });
 });
 
@@ -193,5 +255,89 @@ describe('McpOAuthService.buildAuthorizationUrl', () => {
     expect(url.searchParams.get('client_id')).toBe('client-1');
     expect(url.searchParams.get('scope')).toBe('https://www.googleapis.com/auth/webmasters');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+  });
+});
+
+/**
+ * Every browser authorization runs PKCE (RFC 7636, S256): Etsy refuses an
+ * authorization request without it, and providers that do not use it ignore
+ * the extra parameters. The verifier never leaves the server until the token
+ * exchange; it is stored with the state.
+ */
+describe('McpOAuthService PKCE', () => {
+  const service = new McpOAuthService();
+
+  it('derives the S256 challenge exactly as RFC 7636 appendix B does', () => {
+    expect(
+      service.generateCodeChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'),
+    ).toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
+  });
+
+  it('generates verifiers within the RFC 7636 alphabet and length (43-128)', () => {
+    const verifier = service.generateCodeVerifier();
+    expect(verifier).toMatch(/^[A-Za-z0-9\-._~]{43,128}$/);
+    expect(service.generateCodeVerifier()).not.toBe(verifier);
+  });
+
+  it('puts the challenge, never the verifier, on the authorization URL (Etsy shape)', () => {
+    const verifier = service.generateCodeVerifier();
+    const url = new URL(
+      service.buildAuthorizationUrl({
+        authorizationEndpoint: 'https://www.etsy.com/oauth/connect',
+        clientId: 'keystring',
+        redirectUri: 'https://cloud.anythingmcp.com/api/mcp-oauth/callback',
+        codeChallenge: service.generateCodeChallenge(verifier),
+        state: 'state-1',
+        scope: 'email_r shops_r listings_r transactions_r',
+      }),
+    );
+    expect(url.origin + url.pathname).toBe('https://www.etsy.com/oauth/connect');
+    expect(url.searchParams.get('response_type')).toBe('code');
+    expect(url.searchParams.get('code_challenge')).toBe(
+      service.generateCodeChallenge(verifier),
+    );
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    // Etsy wants the scopes space-separated.
+    expect(url.searchParams.get('scope')).toBe('email_r shops_r listings_r transactions_r');
+    expect(url.toString()).not.toContain(verifier);
+  });
+
+  it('sends the stored verifier with the code at the token endpoint', async () => {
+    mockedAxios.post.mockReset();
+    mockedAxios.post.mockResolvedValue({
+      data: { access_token: '123.at', refresh_token: '123.rt', expires_in: 3600 },
+    } as any);
+
+    await service.exchangeCodeForTokens({
+      tokenUrl: 'https://api.etsy.com/v3/public/oauth/token',
+      code: 'the-code',
+      redirectUri: 'https://cloud.anythingmcp.com/api/mcp-oauth/callback',
+      clientId: 'keystring',
+      clientSecret: 'secret',
+      codeVerifier: 'the-verifier',
+    });
+
+    const params = new URLSearchParams(String(mockedAxios.post.mock.calls[0][1]));
+    expect(params.get('grant_type')).toBe('authorization_code');
+    expect(params.get('code_verifier')).toBe('the-verifier');
+    expect(params.get('client_id')).toBe('keystring');
+  });
+
+  it('keeps the verifier with its state, for ten minutes', () => {
+    const s = new McpOAuthService();
+    const flow = {
+      codeVerifier: 'v',
+      connectorId: 'c',
+      userId: 'u',
+      redirectUri: 'r',
+      clientId: 'id',
+      tokenUrl: 't',
+      createdAt: Date.now(),
+    };
+    s.storePendingFlow('state-a', flow);
+    expect(s.getPendingFlow('state-a')?.codeVerifier).toBe('v');
+    expect(s.getPendingFlow('state-b')).toBeUndefined();
+    s.storePendingFlow('state-old', { ...flow, createdAt: Date.now() - 11 * 60 * 1000 });
+    expect(s.getPendingFlow('state-old')).toBeUndefined();
   });
 });

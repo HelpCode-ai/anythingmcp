@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Demo SOAP 1.1 service for soap-to-mcp: a small warehouse inventory with
+  three operations. server.mjs answers it; AnythingMCP turns each operation
+  into an MCP tool.
+
+  Style: document/literal *wrapped*, the convention WCF and JAX-WS generate:
+  the request element carries the operation's name (GetItem) and the reply
+  element the name plus "Response". AnythingMCP builds requests that way.
+-->
+<definitions name="InventoryService"
+    targetNamespace="urn:example:inventory"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:tns="urn:example:inventory"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+
+  <types>
+    <xsd:schema targetNamespace="urn:example:inventory" elementFormDefault="qualified">
+      <xsd:complexType name="Item">
+        <xsd:sequence>
+          <xsd:element name="sku" type="xsd:string"/>
+          <xsd:element name="name" type="xsd:string"/>
+          <xsd:element name="warehouse" type="xsd:string"/>
+          <xsd:element name="onHand" type="xsd:int"/>
+          <xsd:element name="reorderLevel" type="xsd:int"/>
+          <xsd:element name="unitPrice" type="xsd:decimal"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:element name="GetItem">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="sku" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="GetItemResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="item" type="tns:Item" minOccurs="0"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="ListLowStock">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="warehouse" type="xsd:string" minOccurs="0"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="ListLowStockResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="item" type="tns:Item" minOccurs="0" maxOccurs="unbounded"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="GetOrderStatus">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="orderNumber" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="GetOrderStatusResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="orderNumber" type="xsd:string"/>
+            <xsd:element name="customer" type="xsd:string"/>
+            <xsd:element name="status" type="xsd:string"/>
+            <xsd:element name="promisedDate" type="xsd:date"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </types>
+
+  <message name="GetItemInput"><part name="parameters" element="tns:GetItem"/></message>
+  <message name="GetItemOutput"><part name="parameters" element="tns:GetItemResponse"/></message>
+  <message name="ListLowStockInput"><part name="parameters" element="tns:ListLowStock"/></message>
+  <message name="ListLowStockOutput"><part name="parameters" element="tns:ListLowStockResponse"/></message>
+  <message name="GetOrderStatusInput"><part name="parameters" element="tns:GetOrderStatus"/></message>
+  <message name="GetOrderStatusOutput"><part name="parameters" element="tns:GetOrderStatusResponse"/></message>
+
+  <portType name="InventoryPortType">
+    <operation name="GetItem">
+      <documentation>Look up one article by SKU: name, warehouse, quantity on hand, reorder level and unit price.</documentation>
+      <input message="tns:GetItemInput"/>
+      <output message="tns:GetItemOutput"/>
+    </operation>
+    <operation name="ListLowStock">
+      <documentation>List articles whose quantity on hand is at or below their reorder level, optionally for one warehouse.</documentation>
+      <input message="tns:ListLowStockInput"/>
+      <output message="tns:ListLowStockOutput"/>
+    </operation>
+    <operation name="GetOrderStatus">
+      <documentation>Status and promised delivery date of a sales order by order number.</documentation>
+      <input message="tns:GetOrderStatusInput"/>
+      <output message="tns:GetOrderStatusOutput"/>
+    </operation>
+  </portType>
+
+  <binding name="InventoryBinding" type="tns:InventoryPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetItem">
+      <soap:operation soapAction="urn:example:inventory/GetItem"/>
+      <input><soap:body use="literal"/></input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+    <operation name="ListLowStock">
+      <soap:operation soapAction="urn:example:inventory/ListLowStock"/>
+      <input><soap:body use="literal"/></input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+    <operation name="GetOrderStatus">
+      <soap:operation soapAction="urn:example:inventory/GetOrderStatus"/>
+      <input><soap:body use="literal"/></input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+  </binding>
+
+  <service name="InventoryService">
+    <port name="InventoryPort" binding="tns:InventoryBinding">
+      <soap:address location="http://soap-demo:8080/inventory"/>
+    </port>
+  </service>
+</definitions>

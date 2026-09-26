@@ -475,6 +475,12 @@ export function renderTemplate(
  * Example: extractSetCookieValue(headers, "B1SESSION") with
  *   Set-Cookie: B1SESSION=ABC123; Path=/; HttpOnly
  * returns "ABC123".
+ *
+ * When the same cookie is set more than once, the last non-empty value wins,
+ * as it does in a browser. Vinted clears `access_token_web` on one domain
+ * (`access_token_web=; Max-Age=-1`) and sets the real token on another in the
+ * same response; taking the first match returned the empty deletion and the
+ * login failed with "cookie not found".
  */
 export function extractSetCookieValue(
   headers: Record<string, unknown> | undefined,
@@ -488,6 +494,7 @@ export function extractSetCookieValue(
   if (!raw) return null;
   const entries = Array.isArray(raw) ? raw : [raw];
   const prefix = `${cookieName}=`;
+  let found: string | null = null;
   for (const entry of entries) {
     const trimmed = entry.trimStart();
     if (trimmed.startsWith(prefix)) {
@@ -496,10 +503,10 @@ export function extractSetCookieValue(
         prefix.length,
         valueEnd === -1 ? undefined : valueEnd,
       );
-      return value;
+      if (value) found = value;
     }
   }
-  return null;
+  return found;
 }
 
 export function interpolateDeep(
