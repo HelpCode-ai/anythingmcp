@@ -1,0 +1,1216 @@
+{
+  "$comment": "Satellite repositories generated from the adapter catalog. About, topics and website follow SEO-GITHUB-PLAN §3.12. `lastVerified: null` means nobody has confirmed the connector against a live system yet; such a satellite is generated but refused by --check-publish. `license: null` means the licence is not decided; no LICENSE file is written.",
+  "license": null,
+  "mainRepo": "HelpCode-ai/anythingmcp",
+  "baseTopics": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "claude",
+    "chatgpt",
+    "ai-agents",
+    "anythingmcp",
+    "claude-connectors"
+  ],
+  "owners": {
+    "HelpCode-ai": {
+      "maintainedBy": "Maintained by [helpcode.ai](https://helpcode.ai), the team that builds and maintains [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp)."
+    },
+    "kochfreiburg": {
+      "maintainedBy": "Maintained by [KOCH Freiburg GmbH](https://www.kochfreiburg.de/), which runs AnythingMCP in production. Built on [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp) by helpcode.ai."
+    },
+    "keysersoft": {
+      "maintainedBy": "Maintained by [@keysersoft](https://github.com/keysersoft), an AnythingMCP maintainer. Built on [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp) by helpcode.ai."
+    }
+  },
+  "satellites": [
+    {
+      "repo": "soap-to-mcp",
+      "owner": "HelpCode-ai",
+      "type": "generic",
+      "kind": "soap",
+      "system": "SOAP",
+      "adapters": [],
+      "wave": 1,
+      "about": "Turn any SOAP/WSDL web service into MCP tools for Claude & ChatGPT. Legacy SOAP APIs as AI tools, no code, self-hosted.",
+      "topics": [
+        "soap",
+        "wsdl",
+        "soap-to-mcp",
+        "legacy",
+        "api-integration",
+        "enterprise",
+        "no-code",
+        "self-hosted"
+      ],
+      "website": "https://anythingmcp.com/guides/soap-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "openapi-to-mcp",
+        "sql-to-mcp",
+        "erp-mcp-server"
+      ],
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "the bundled demo SOAP service (examples/inventory.wsdl)",
+        "how": "docker compose up + scripts/smoke.mjs"
+      }
+    },
+    {
+      "repo": "sql-to-mcp",
+      "owner": "HelpCode-ai",
+      "type": "generic",
+      "kind": "sql",
+      "system": "SQL",
+      "adapters": [
+        "postgres",
+        "mysql",
+        "mssql",
+        "oracle",
+        "mongodb"
+      ],
+      "wave": 1,
+      "about": "SQL to MCP: connect PostgreSQL, MySQL, SQL Server, Oracle or MongoDB to Claude & ChatGPT. Read-only, audited, no code.",
+      "topics": [
+        "sql",
+        "sql-to-mcp",
+        "database-mcp",
+        "text-to-sql",
+        "postgresql",
+        "mysql",
+        "sql-server",
+        "oracle-database",
+        "mongodb",
+        "self-hosted"
+      ],
+      "website": "https://anythingmcp.com/guides/database-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "mssql-mcp-server",
+        "oracle-mcp-server",
+        "soap-to-mcp"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "openapi-to-mcp",
+      "owner": "HelpCode-ai",
+      "type": "generic",
+      "kind": "openapi",
+      "system": "OpenAPI",
+      "adapters": [],
+      "wave": 1,
+      "about": "OpenAPI to MCP: turn any OpenAPI/Swagger or REST API into an MCP server for Claude & ChatGPT. Every endpoint a tool, no code.",
+      "topics": [
+        "openapi",
+        "openapi-to-mcp",
+        "rest-api",
+        "rest-to-mcp",
+        "api-to-mcp",
+        "swagger",
+        "api-integration",
+        "no-code",
+        "self-hosted"
+      ],
+      "website": "https://anythingmcp.com/guides/rest-api-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "postman-to-mcp",
+        "graphql-to-mcp",
+        "soap-to-mcp"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "graphql-to-mcp",
+      "owner": "HelpCode-ai",
+      "type": "generic",
+      "kind": "graphql",
+      "system": "GraphQL",
+      "adapters": [],
+      "wave": 2,
+      "about": "GraphQL to MCP: turn any GraphQL API into MCP tools for Claude & ChatGPT. Introspection to tools, no code, self-hosted.",
+      "topics": [
+        "graphql",
+        "graphql-to-mcp",
+        "api-to-mcp",
+        "api-integration",
+        "no-code",
+        "self-hosted"
+      ],
+      "website": "https://anythingmcp.com/guides/graphql-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "openapi-to-mcp",
+        "postman-to-mcp"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "postman-to-mcp",
+      "owner": "HelpCode-ai",
+      "type": "generic",
+      "kind": "postman",
+      "system": "Postman",
+      "adapters": [],
+      "wave": 2,
+      "about": "Postman to MCP: turn a Postman collection into an MCP server for Claude & ChatGPT. Every request becomes an AI tool, no code.",
+      "topics": [
+        "postman",
+        "postman-collection",
+        "api-to-mcp",
+        "rest-api",
+        "api-integration",
+        "no-code",
+        "self-hosted"
+      ],
+      "website": "https://anythingmcp.com/guides/postman-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "openapi-to-mcp",
+        "graphql-to-mcp"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "mssql-mcp-server",
+      "owner": "HelpCode-ai",
+      "type": "connector",
+      "system": "SQL Server",
+      "adapters": [
+        "mssql"
+      ],
+      "wave": 2,
+      "about": "SQL Server MCP server: let Claude & ChatGPT query Microsoft SQL Server read-only. Schema discovery, T-SQL, Windows/NTLM auth.",
+      "topics": [
+        "mssql",
+        "sql-server",
+        "t-sql",
+        "database-mcp",
+        "text-to-sql",
+        "on-premise",
+        "self-hosted"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-sql-server-to-claude",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "sql-to-mcp",
+        "oracle-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "oracle-mcp-server",
+      "owner": "HelpCode-ai",
+      "type": "connector",
+      "system": "Oracle Database",
+      "adapters": [
+        "oracle"
+      ],
+      "wave": 2,
+      "about": "Oracle Database MCP server: let Claude & ChatGPT query Oracle read-only. Schema discovery, SQL, encrypted credentials.",
+      "topics": [
+        "oracle",
+        "oracle-database",
+        "database-mcp",
+        "text-to-sql",
+        "sql",
+        "on-premise",
+        "enterprise",
+        "self-hosted"
+      ],
+      "website": "https://anythingmcp.com/guides/sql-database-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "sql-to-mcp",
+        "mssql-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "erp-mcp-server",
+      "owner": "HelpCode-ai",
+      "type": "umbrella",
+      "system": "ERP",
+      "category": "erp",
+      "adapters": [
+        "sap-business-one",
+        "sap-s4hana-cloud",
+        "odoo",
+        "dynamics-nav",
+        "erpnext",
+        "dolibarr",
+        "jtl-wawi",
+        "xentral",
+        "weclapp",
+        "sage-100",
+        "haufe-x360",
+        "scopevisio",
+        "afas-profit",
+        "zucchetti",
+        "teamsystem",
+        "axonaut"
+      ],
+      "wave": 1,
+      "about": "ERP MCP server: connect 16 ERPs (SAP, Odoo, JTL-Wawi, Xentral, weclapp, ERPNext…) to Claude & ChatGPT. Self-hosted or cloud.",
+      "topics": [
+        "erp",
+        "erp-integration",
+        "sap",
+        "odoo",
+        "erpnext",
+        "business-central",
+        "accounting",
+        "inventory-management",
+        "order-management",
+        "self-hosted"
+      ],
+      "website": "https://anythingmcp.com/guides/erp-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "sap-mcp-server",
+        "ecommerce-mcp-server",
+        "soap-to-mcp",
+        "sql-to-mcp",
+        "openapi-to-mcp"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "ecommerce-mcp-server",
+      "owner": "HelpCode-ai",
+      "type": "umbrella",
+      "system": "E-commerce",
+      "category": "e-commerce",
+      "adapters": [
+        "amazon-seller",
+        "woocommerce",
+        "shopware-6",
+        "magento",
+        "bigcommerce",
+        "ebay-sell",
+        "etsy",
+        "ecwid",
+        "kaufland",
+        "otto-market",
+        "zalando-zds",
+        "billbee",
+        "mercado-libre"
+      ],
+      "wave": 1,
+      "about": "E-commerce MCP server: connect Amazon, eBay, WooCommerce, Shopware, Kaufland, OTTO and 7 more to Claude & ChatGPT.",
+      "topics": [
+        "ecommerce",
+        "e-commerce",
+        "marketplace",
+        "multichannel",
+        "woocommerce",
+        "amazon-seller",
+        "ebay",
+        "order-management",
+        "inventory-management",
+        "self-hosted"
+      ],
+      "website": "https://anythingmcp.com/guides/ecommerce-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "erp-mcp-server",
+        "openapi-to-mcp"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "sap-mcp-server",
+      "owner": "HelpCode-ai",
+      "type": "umbrella",
+      "system": "SAP",
+      "adapters": [
+        "sap-business-one",
+        "sap-s4hana-cloud",
+        "sap-concur"
+      ],
+      "wave": 1,
+      "about": "SAP MCP server: connect SAP Business One, S/4HANA Cloud and Concur to Claude & ChatGPT. Orders, partners, invoices as AI tools.",
+      "topics": [
+        "sap",
+        "sap-business-one",
+        "s4hana",
+        "sap-s4hana",
+        "sap-concur",
+        "erp",
+        "erp-integration",
+        "enterprise"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-sap-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "related": [
+        "sap-business-one-mcp-server",
+        "erp-mcp-server",
+        "soap-to-mcp"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "sap-business-one-mcp-server",
+      "owner": "HelpCode-ai",
+      "type": "connector",
+      "system": "SAP Business One",
+      "adapters": [
+        "sap-business-one"
+      ],
+      "wave": 1,
+      "about": "SAP Business One MCP server: Claude & ChatGPT read partners, items, orders, invoices and quotations, and create sales orders.",
+      "topics": [
+        "sap",
+        "sap-business-one",
+        "sap-b1",
+        "erp",
+        "erp-integration",
+        "order-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-sap-business-one-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "sap-mcp-server",
+      "related": [
+        "sap-mcp-server",
+        "odoo-mcp-server",
+        "weclapp-mcp-server"
+      ],
+      "lastVerified": null,
+      "objects": {
+        "en": "business partners, items, sales orders, invoices, quotations and deliveries",
+        "de": "Geschäftspartner, Artikel, Aufträge, Rechnungen, Angebote und Lieferungen"
+      }
+    },
+    {
+      "repo": "jtl-wawi-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "JTL-Wawi",
+      "adapters": [
+        "jtl-wawi"
+      ],
+      "wave": 1,
+      "about": "JTL-Wawi MCP server: let Claude & ChatGPT read items, stock, customers, orders and shipments from your JTL Warenwirtschaft.",
+      "topics": [
+        "jtl-wawi",
+        "jtl",
+        "warenwirtschaft",
+        "erp",
+        "ecommerce",
+        "inventory-management",
+        "order-management",
+        "on-premise"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-jtl-wawi-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "billbee-mcp-server",
+        "kaufland-mcp-server",
+        "otto-market-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "xentral-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "Xentral",
+      "adapters": [
+        "xentral"
+      ],
+      "wave": 1,
+      "about": "Xentral MCP server: connect Xentral ERP to Claude & ChatGPT. Articles, customers, sales orders, invoices and stock as AI tools.",
+      "topics": [
+        "xentral",
+        "erp",
+        "erp-integration",
+        "warenwirtschaft",
+        "ecommerce",
+        "inventory-management",
+        "order-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-xentral-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "weclapp-mcp-server",
+        "jtl-wawi-mcp-server",
+        "billbee-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "weclapp-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "weclapp",
+      "adapters": [
+        "weclapp"
+      ],
+      "wave": 1,
+      "about": "weclapp MCP server: connect weclapp Cloud ERP to Claude & ChatGPT. Customers, orders, invoices, quotes and opportunities.",
+      "topics": [
+        "weclapp",
+        "erp",
+        "erp-integration",
+        "crm",
+        "accounting",
+        "order-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-weclapp-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "xentral-mcp-server",
+        "billbee-mcp-server",
+        "sap-business-one-mcp-server"
+      ],
+      "objects": {
+        "en": "customers, sales orders, invoices, articles, quotations and opportunities",
+        "de": "Kunden, Aufträge, Rechnungen, Artikel, Angebote und Verkaufschancen"
+      },
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "the weclapp REST API v2",
+        "how": "production traffic on AnythingMCP Cloud: more than 1,000 successful tool calls in the last 90 days",
+        "againstDe": "die weclapp REST-API v2",
+        "howDe": "Produktivbetrieb auf AnythingMCP Cloud: mehr als 1.000 erfolgreiche Tool-Aufrufe in den letzten 90 Tagen"
+      }
+    },
+    {
+      "repo": "business-central-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "Business Central",
+      "adapters": [
+        "dynamics-nav"
+      ],
+      "wave": 2,
+      "blockedBy": "Confirm the dynamics-nav adapter works against Business Central (§3.3); otherwise rename to dynamics-nav-mcp-server.",
+      "about": "Business Central MCP server: Claude & ChatGPT query and update any published OData page in Dynamics NAV or Business Central.",
+      "topics": [
+        "business-central",
+        "dynamics-nav",
+        "dynamics-365",
+        "navision",
+        "odata",
+        "erp",
+        "erp-integration",
+        "on-premise"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-dynamics-nav-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "sage-mcp-server",
+        "sap-business-one-mcp-server"
+      ],
+      "lastVerified": null,
+      "objects": {
+        "en": "customers, items, sales orders and any other published OData page"
+      }
+    },
+    {
+      "repo": "sage-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "Sage 100",
+      "adapters": [
+        "sage-100"
+      ],
+      "wave": 2,
+      "about": "Sage 100 MCP server: connect Sage 100 ERP to Claude & ChatGPT. Addresses, items, sales documents and any Web API entity.",
+      "topics": [
+        "sage-100",
+        "sage",
+        "erp",
+        "erp-integration",
+        "odata",
+        "on-premise"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-sage-100-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "business-central-mcp-server",
+        "haufe-x360-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "haufe-x360-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "Haufe X360",
+      "adapters": [
+        "haufe-x360"
+      ],
+      "wave": 3,
+      "about": "Haufe X360 MCP server: connect Haufe X360 ERP to Claude & ChatGPT. Customers, stock items, orders, invoices and shipments.",
+      "topics": [
+        "haufe-x360",
+        "haufe",
+        "acumatica",
+        "erp",
+        "erp-integration",
+        "order-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-haufe-x360-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "sage-mcp-server",
+        "weclapp-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "shopware-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "Shopware 6",
+      "adapters": [
+        "shopware-6"
+      ],
+      "wave": 1,
+      "about": "Shopware 6 MCP server: let Claude & ChatGPT search your Shopware catalog: products, categories and cross-sells (Store API).",
+      "topics": [
+        "shopware",
+        "shopware6",
+        "ecommerce",
+        "store-api",
+        "product-catalog"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-shopware-6-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "woocommerce-mcp-server",
+        "magento-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "kaufland-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "Kaufland",
+      "adapters": [
+        "kaufland"
+      ],
+      "wave": 1,
+      "about": "Kaufland Marketplace MCP server: Claude & ChatGPT read your Kaufland seller orders, units, shipments, tickets and storefronts.",
+      "topics": [
+        "kaufland",
+        "marketplace",
+        "ecommerce",
+        "order-management",
+        "multichannel"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-kaufland-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "otto-market-mcp-server",
+        "billbee-mcp-server",
+        "jtl-wawi-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "otto-market-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "OTTO Market",
+      "adapters": [
+        "otto-market"
+      ],
+      "wave": 1,
+      "about": "OTTO Market MCP server: connect the otto.de partner API to Claude & ChatGPT. Orders, products, returns, stock and price updates.",
+      "topics": [
+        "otto-market",
+        "otto",
+        "marketplace",
+        "ecommerce",
+        "order-management",
+        "inventory-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-otto-market-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "kaufland-mcp-server",
+        "billbee-mcp-server",
+        "jtl-wawi-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "billbee-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "Billbee",
+      "adapters": [
+        "billbee"
+      ],
+      "wave": 2,
+      "about": "Billbee MCP server: connect Billbee order management to Claude & ChatGPT. Orders, products, customers and shipping providers.",
+      "topics": [
+        "billbee",
+        "multichannel",
+        "order-management",
+        "warenwirtschaft",
+        "ecommerce",
+        "inventory-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-billbee-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "jtl-wawi-mcp-server",
+        "kaufland-mcp-server",
+        "otto-market-mcp-server"
+      ],
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "the Billbee REST API v1",
+        "how": "production traffic on AnythingMCP Cloud: 266 successful tool calls from 3 workspaces in the last 90 days"
+      }
+    },
+    {
+      "repo": "zalando-mcp-server",
+      "owner": "kochfreiburg",
+      "type": "connector",
+      "system": "Zalando",
+      "adapters": [
+        "zalando-zds"
+      ],
+      "wave": 2,
+      "about": "Zalando MCP server: connect Zalando Direct Ship (ZDS) partner APIs to Claude & ChatGPT. Orders, returns, stock and prices.",
+      "topics": [
+        "zalando",
+        "zalando-direct-ship",
+        "marketplace",
+        "ecommerce",
+        "order-management",
+        "fashion"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-zalando-zds-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "otto-market-mcp-server",
+        "kaufland-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "odoo-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Odoo",
+      "adapters": [
+        "odoo"
+      ],
+      "wave": 1,
+      "about": "Odoo MCP server: connect Odoo ERP to Claude & ChatGPT. Search, read, create and update any model: partners, orders, invoices.",
+      "topics": [
+        "odoo",
+        "odoo-erp",
+        "erp",
+        "erp-integration",
+        "crm",
+        "accounting",
+        "inventory-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-odoo-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "erpnext-mcp-server",
+        "dolibarr-mcp-server",
+        "sap-business-one-mcp-server"
+      ],
+      "objects": {
+        "en": "partners, sales orders, invoices, products and any other model"
+      },
+      "lastVerified": null
+    },
+    {
+      "repo": "exact-online-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Exact Online",
+      "adapters": [
+        "exact-online"
+      ],
+      "wave": 2,
+      "about": "Exact Online MCP server: connect Exact Online to Claude & ChatGPT. Invoices, receivables, items, stock and GL accounts.",
+      "topics": [
+        "exact-online",
+        "accounting",
+        "erp",
+        "erp-integration",
+        "bookkeeping",
+        "odata"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-exact-online-to-claude",
+      "languages": [
+        "en",
+        "nl"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "afas-mcp-server",
+        "odoo-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "afas-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "AFAS Profit",
+      "adapters": [
+        "afas-profit"
+      ],
+      "wave": 2,
+      "about": "AFAS Profit MCP server: connect AFAS Profit to Claude & ChatGPT. Any GetConnector, plus debtors, invoices and employees.",
+      "topics": [
+        "afas",
+        "afas-profit",
+        "erp",
+        "hr",
+        "accounting",
+        "erp-integration"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-afas-profit-to-claude",
+      "languages": [
+        "en",
+        "nl"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "exact-online-mcp-server",
+        "odoo-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "zucchetti-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Zucchetti",
+      "adapters": [
+        "zucchetti"
+      ],
+      "wave": 2,
+      "about": "Zucchetti MCP server: connect Zucchetti ERP & HR (gestionale) to Claude & ChatGPT. Anagrafiche, documents and items.",
+      "topics": [
+        "zucchetti",
+        "gestionale",
+        "erp",
+        "erp-integration",
+        "hr",
+        "italy"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-zucchetti-to-claude",
+      "languages": [
+        "en",
+        "it"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "teamsystem-mcp-server",
+        "odoo-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "teamsystem-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "TeamSystem",
+      "adapters": [
+        "teamsystem"
+      ],
+      "wave": 2,
+      "about": "TeamSystem MCP server: connect TeamSystem (gestionale) to Claude & ChatGPT. Customers, suppliers, invoices and items.",
+      "topics": [
+        "teamsystem",
+        "gestionale",
+        "erp",
+        "accounting",
+        "erp-integration",
+        "italy"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-teamsystem-to-claude",
+      "languages": [
+        "en",
+        "it"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "zucchetti-mcp-server",
+        "odoo-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "dolibarr-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Dolibarr",
+      "adapters": [
+        "dolibarr"
+      ],
+      "wave": 3,
+      "about": "Dolibarr MCP server: connect Dolibarr ERP & CRM to Claude & ChatGPT. Third parties, invoices, orders, proposals and stock.",
+      "topics": [
+        "dolibarr",
+        "erp",
+        "crm",
+        "erp-integration",
+        "invoicing",
+        "inventory-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-dolibarr-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "odoo-mcp-server",
+        "erpnext-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "erpnext-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "ERPNext",
+      "adapters": [
+        "erpnext"
+      ],
+      "wave": 3,
+      "about": "ERPNext MCP server: connect ERPNext/Frappe to Claude & ChatGPT. Read and write any DocType: customers, orders, invoices, stock.",
+      "topics": [
+        "erpnext",
+        "frappe",
+        "erp",
+        "erp-integration",
+        "accounting",
+        "inventory-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-erpnext-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "erp-mcp-server",
+      "related": [
+        "odoo-mcp-server",
+        "dolibarr-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "woocommerce-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "WooCommerce",
+      "adapters": [
+        "woocommerce"
+      ],
+      "wave": 1,
+      "about": "WooCommerce MCP server: 49 tools for Claude & ChatGPT. Products, variations, inventory, orders, refunds, customers and reports.",
+      "topics": [
+        "woocommerce",
+        "wordpress",
+        "woocommerce-api",
+        "ecommerce",
+        "order-management",
+        "inventory-management",
+        "product-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-woocommerce-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "shopware-mcp-server",
+        "magento-mcp-server",
+        "bigcommerce-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "magento-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Magento",
+      "adapters": [
+        "magento"
+      ],
+      "wave": 2,
+      "about": "Magento MCP server: Claude & ChatGPT manage products, stock, orders and customers in Magento 2 / Adobe Commerce.",
+      "topics": [
+        "magento",
+        "magento2",
+        "adobe-commerce",
+        "ecommerce",
+        "order-management",
+        "inventory-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-magento-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "woocommerce-mcp-server",
+        "shopware-mcp-server"
+      ],
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "the Magento 2 REST API",
+        "how": "production traffic on AnythingMCP Cloud: 19 successful tool calls from 3 workspaces in the last 90 days"
+      }
+    },
+    {
+      "repo": "amazon-seller-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Amazon Seller Central",
+      "adapters": [
+        "amazon-seller"
+      ],
+      "wave": 1,
+      "about": "Amazon Seller Central MCP server: connect the Selling Partner API to Claude & ChatGPT. Orders, catalog, FBA inventory, fees.",
+      "topics": [
+        "amazon-seller",
+        "amazon-sp-api",
+        "sp-api",
+        "selling-partner-api",
+        "amazon-fba",
+        "marketplace",
+        "ecommerce"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-amazon-seller-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "ebay-mcp-server",
+        "etsy-mcp-server",
+        "kaufland-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "ebay-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "eBay",
+      "adapters": [
+        "ebay-sell"
+      ],
+      "wave": 2,
+      "about": "eBay MCP server: connect the eBay Sell APIs to Claude & ChatGPT. Inventory, offers, orders, disputes and price updates.",
+      "topics": [
+        "ebay",
+        "ebay-api",
+        "ebay-seller",
+        "marketplace",
+        "ecommerce",
+        "order-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-ebay-sell-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "amazon-seller-mcp-server",
+        "etsy-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "bigcommerce-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "BigCommerce",
+      "adapters": [
+        "bigcommerce"
+      ],
+      "wave": 2,
+      "about": "BigCommerce MCP server: Claude & ChatGPT manage products, variants, inventory, orders and customers in your store.",
+      "topics": [
+        "bigcommerce",
+        "bigcommerce-api",
+        "ecommerce",
+        "order-management",
+        "inventory-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-bigcommerce-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "woocommerce-mcp-server",
+        "magento-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "etsy-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Etsy",
+      "adapters": [
+        "etsy"
+      ],
+      "wave": 2,
+      "about": "Etsy MCP server: connect your Etsy shop to Claude & ChatGPT. Listings, orders (receipts) and reviews via the Etsy Open API v3.",
+      "topics": [
+        "etsy",
+        "etsy-api",
+        "etsy-shop",
+        "ecommerce",
+        "marketplace",
+        "handmade"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-etsy-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "amazon-seller-mcp-server",
+        "ebay-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "ecwid-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Ecwid",
+      "adapters": [
+        "ecwid"
+      ],
+      "wave": 3,
+      "about": "Ecwid MCP server: connect Ecwid by Lightspeed to Claude & ChatGPT. Products, categories, orders and customers.",
+      "topics": [
+        "ecwid",
+        "lightspeed",
+        "ecommerce",
+        "order-management"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-ecwid-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "bigcommerce-mcp-server",
+        "woocommerce-mcp-server"
+      ],
+      "lastVerified": null
+    },
+    {
+      "repo": "mercado-libre-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Mercado Libre",
+      "adapters": [
+        "mercado-libre"
+      ],
+      "wave": 3,
+      "about": "Mercado Libre MCP server: connect Mercado Libre/Mercado Livre to Claude & ChatGPT. Search items, seller orders (MLB, MLA, MLM).",
+      "topics": [
+        "mercadolibre",
+        "mercado-libre",
+        "mercado-livre",
+        "marketplace",
+        "ecommerce",
+        "latam"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-mercado-libre-to-claude",
+      "languages": [
+        "en"
+      ],
+      "umbrella": "ecommerce-mcp-server",
+      "related": [
+        "amazon-seller-mcp-server",
+        "ebay-mcp-server"
+      ],
+      "lastVerified": null
+    }
+  ]
+}

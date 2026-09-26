@@ -1,0 +1,17 @@
+{
+  "name": "odoo-mcp-server",
+  "private": true,
+  "type": "module",
+  "description": "Odoo MCP server: connect Odoo ERP to Claude & ChatGPT. Search, read, create and update any model: partners, orders, invoices.",
+  "scripts": {
+    "smoke": "node scripts/smoke.mjs",
+    "render-tools": "node scripts/render-tools.mjs",
+    "sync": "node scripts/sync-adapter.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

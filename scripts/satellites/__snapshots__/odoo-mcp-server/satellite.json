@@ -1,0 +1,25 @@
+{
+  "$comment": "Read by scripts/install.sh, scripts/smoke.mjs and the sync workflow. Generated; edit satellites.config.json in HelpCode-ai/anythingmcp instead.",
+  "repo": "odoo-mcp-server",
+  "owner": "keysersoft",
+  "mainRepo": "HelpCode-ai/anythingmcp",
+  "adapters": [
+    {
+      "slug": "odoo",
+      "region": "intl",
+      "requiredEnvVars": [
+        "ODOO_URL",
+        "ODOO_DB",
+        "ODOO_API_KEY"
+      ]
+    }
+  ],
+  "setup": {
+    "type": "adapter"
+  },
+  "smokeCall": {
+    "tool": "odoo_list_partners",
+    "args": {},
+    "mayFailWithoutCredentials": true
+  }
+}

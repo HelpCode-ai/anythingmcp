@@ -1,0 +1,65 @@
+# odoo-mcp-server: AnythingMCP, pulled from Docker Hub.
+# Generated from docker-compose.quickstart.yml in HelpCode-ai/anythingmcp.
+# Start it with ./scripts/install.sh, which also writes .env.
+name: ${COMPOSE_PROJECT_NAME:-amcp}
+
+services:
+  app:
+    image: helpcodeai/anythingmcp:latest
+    # The published image is amd64 only (arm64 is blocked upstream by a Prisma
+    # bug — see .github/workflows/docker-publish.yml). Pinning the platform
+    # makes this file work on Apple Silicon too, through Docker Desktop's
+    # emulation. Measured at 24 s to a healthy API on an M-series laptop; older
+    # hardware emulating amd64 will be slower.
+    platform: linux/amd64
+    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-app
+    # Loopback only, and deliberately not configurable here: the quickstart has
+    # no TLS and no reverse proxy in front of it.
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+      - "127.0.0.1:${BACKEND_PORT:-4000}:4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - NEXT_PUBLIC_API_URL=http://localhost:${BACKEND_PORT:-4000}
+      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD:-amcp}@postgres:5432/anythingmcp
+      # Required. The app refuses to boot on a placeholder value, by design.
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env - openssl rand -hex 32}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env - openssl rand -hex 32}
+      - CORS_ORIGIN=http://localhost:${FRONTEND_PORT:-3000}
+      - SERVER_URL=http://localhost:${BACKEND_PORT:-4000}
+      - FRONTEND_URL=http://localhost:${FRONTEND_PORT:-3000}
+      # Anyone who can reach the port still needs an MCP credential.
+      - MCP_AUTH_MODE=legacy
+      - MCP_ALLOW_ANONYMOUS=false
+      # Invite-only after the first admin registers.
+      - ALLOW_OPEN_REGISTRATION=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=amcp
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-amcp}
+      - POSTGRES_DB=anythingmcp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amcp -d anythingmcp"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

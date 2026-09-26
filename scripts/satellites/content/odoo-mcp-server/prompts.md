@@ -1,0 +1,16 @@
+- Which confirmed sales orders over 10,000 EUR were created this month?
+- List the customer invoices that are overdue, with the residual amount per partner.
+- Which vendor bills are due in the next 14 days?
+- What is the on-hand quantity and cost of product FURN_8220?
+- How many open CRM leads do we have per salesperson?
+- Show the fields of the `stock.picking` model so we can query deliveries.
+- Which deliveries are late compared to their scheduled date?
+- Find the partner "Deco Addict" and list its last five sales orders.
+- Which quotations (draft sales orders) are older than 30 days?
+- Count the invoices posted last quarter and their total.
+- Which products sold the most units this year?
+- List the partners in Germany that have no sales order in the last 12 months.
+- Which purchase orders are still waiting for the vendor's confirmation?
+- Show the open tasks of project "Office Design" with their deadlines.
+- Create a draft quotation for Deco Addict with two units of product FURN_8220. (write)
+- Mark the lead "Office furniture refresh" as won. (write)

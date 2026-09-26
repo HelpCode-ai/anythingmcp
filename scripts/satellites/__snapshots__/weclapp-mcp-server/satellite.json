@@ -1,0 +1,24 @@
+{
+  "$comment": "Read by scripts/install.sh, scripts/smoke.mjs and the sync workflow. Generated; edit satellites.config.json in HelpCode-ai/anythingmcp instead.",
+  "repo": "weclapp-mcp-server",
+  "owner": "kochfreiburg",
+  "mainRepo": "HelpCode-ai/anythingmcp",
+  "adapters": [
+    {
+      "slug": "weclapp",
+      "region": "de",
+      "requiredEnvVars": [
+        "WECLAPP_TENANT",
+        "WECLAPP_API_TOKEN"
+      ]
+    }
+  ],
+  "setup": {
+    "type": "adapter"
+  },
+  "smokeCall": {
+    "tool": "weclapp_list_customers",
+    "args": {},
+    "mayFailWithoutCredentials": true
+  }
+}
