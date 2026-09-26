@@ -31,7 +31,8 @@ export function summarize(description = '') {
   const cut = flat.match(/^(.+?[.!?])(\s|$)/);
   let s = cut ? cut[1] : flat;
   if (s.length > 160) s = `${s.slice(0, 157).replace(/\s+\S*$/, '')}…`;
-  return s.replace(/\|/g, '\\|');
+  // Escape backslashes first, then pipes, so a description can't end a cell early.
+  return s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 }
 
 const READ_NAME = /(^|_)(list|get|search|find|read|count|describe|fields|schema|examples|matching|suggest|ids|participations|status|me|privileges)(_|$)/;

@@ -124,8 +124,9 @@ test('links to unpublished siblings are dropped when publishing', () => {
   const sat = config.satellites.find((s) => s.repo === 'weclapp-mcp-server');
   const available = new Set(['kochfreiburg/weclapp-mcp-server', 'HelpCode-ai/erp-mcp-server']);
   const files = buildSatellite(sat, { config: { ...config, license: null, available }, catalog: fixtureCatalog(), date: '2026-09-26', root: FIXTURES });
-  assert.ok(files['README.md'].includes('(https://github.com/HelpCode-ai/erp-mcp-server)'));
-  assert.ok(!files['README.md'].includes('https://github.com/kochfreiburg/xentral-mcp-server'));
+  const links = [...files['README.md'].matchAll(/\]\((https:\/\/github\.com\/[^)]+)\)/g)].map((m) => m[1]);
+  assert.ok(links.includes('https://github.com/HelpCode-ai/erp-mcp-server'));
+  assert.equal(links.filter((l) => l === 'https://github.com/kochfreiburg/xentral-mcp-server').length, 0);
 });
 
 test('access(): protocol first, then tool names; model-written SQL reads (engine guard)', () => {
