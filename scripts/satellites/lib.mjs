@@ -173,7 +173,9 @@ export function checkSatellite(sat, { config, catalog, topicCounts, content = {}
   }
   for (const a of adapters) {
     if (/\*\*Unverified/.test(a.instructions ?? '')) {
-      blockers.push(`adapter ${a.slug} declares itself unverified against a live tenant`);
+      // An umbrella lists every system and marks the unverified ones; a
+      // single-system satellite would be promoting one.
+      (sat.type === 'umbrella' ? warnings : blockers).push(`adapter ${a.slug} declares itself unverified against a live tenant`);
     }
   }
 
@@ -228,34 +230,96 @@ function smokeCall(sat, adapters) {
   return null;
 }
 
-/** docker-compose.yml: the main repository's quickstart, plus the demo service for generic satellites. */
+const healthy = (test) =>
+  `    healthcheck:\n      test: ${test}\n      interval: 3s\n      timeout: 3s\n      retries: 30\n    restart: unless-stopped\n`;
+const nodeService = (name, dir, port) =>
+  `  ${name}:\n    image: node:22-alpine\n    container_name: \${COMPOSE_PROJECT_NAME:-amcp}-${name}\n    working_dir: /srv\n    command: ["node", "server.mjs"]\n    volumes:\n      - ./examples/${dir}:/srv:ro\n    ports:\n      - "127.0.0.1:\${${port}:-8080}:8080"\n` +
+  healthy('["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]');
+
+/**
+ * The runnable demo each generic satellite ships, so a visitor sees the whole
+ * chain work in five minutes: the service(s) added to docker-compose, the
+ * files they need, how install.sh wires them up, and what smoke.mjs expects.
+ */
+export const DEMOS = {
+  soap: {
+    label: 'a demo SOAP service',
+    hosts: ['soap-demo'],
+    services: nodeService('soap-demo', 'soap-demo', 'SOAP_DEMO_PORT'),
+    files: { 'examples/soap-demo/server.mjs': 'soap-demo/server.mjs', 'examples/soap-demo/inventory.wsdl': 'soap-demo/inventory.wsdl' },
+    setup: { type: 'soap', name: 'Inventory (demo SOAP service)', baseUrl: 'http://soap-demo:8080/inventory', wsdl: 'http://soap-demo:8080/inventory?wsdl' },
+    // AnythingMCP names WSDL tools <service>_<operation>, lower-cased.
+    expectedTools: () => ['inventoryservice_getitem', 'inventoryservice_listlowstock', 'inventoryservice_getorderstatus'],
+    smokeCall: { tool: 'inventoryservice_getitem', args: { sku: 'DR-1001' } },
+  },
+  sql: {
+    label: 'demo PostgreSQL and MySQL databases',
+    hosts: ['pg-demo', 'mysql-demo'],
+    services:
+      '  pg-demo:\n    image: postgres:17-alpine\n    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-pg-demo\n    environment:\n      - POSTGRES_USER=shop_owner\n      - POSTGRES_PASSWORD=shop_owner\n      - POSTGRES_DB=shop\n    volumes:\n      - ./examples/sql-demo/postgres.sql:/docker-entrypoint-initdb.d/10-shop.sql:ro\n' +
+      healthy('["CMD-SHELL", "pg_isready -U shop_owner -d shop"]') +
+      '\n  mysql-demo:\n    image: mysql:8\n    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-mysql-demo\n    environment:\n      - MYSQL_ROOT_PASSWORD=root-demo\n      - MYSQL_DATABASE=shop\n    volumes:\n      - ./examples/sql-demo/mysql.sql:/docker-entrypoint-initdb.d/10-shop.sql:ro\n' +
+      // TCP, not the socket: during init MySQL runs a socket-only server that
+      // would answer the ping before the seed has run.
+      healthy('["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot-demo --silent"]'),
+    files: { 'examples/sql-demo/postgres.sql': 'sql-demo/postgres.sql', 'examples/sql-demo/mysql.sql': 'sql-demo/mysql.sql' },
+    setup: { type: 'adapter' },
+    // The demo databases, reached as the read-only user the seed creates.
+    envDefaults: {
+      POSTGRES_HOST: 'pg-demo', POSTGRES_PORT: '5432', POSTGRES_DATABASE: 'shop', POSTGRES_USER: 'amcp_reader', POSTGRES_PASSWORD: 'amcp_reader',
+      MYSQL_HOST: 'mysql-demo', MYSQL_PORT: '3306', MYSQL_DATABASE: 'shop', MYSQL_USER: 'amcp_reader', MYSQL_PASSWORD: 'amcp_reader',
+    },
+    expectedTools: (adapters) => adapters.filter((a) => ['postgres', 'mysql'].includes(a.slug)).flatMap((a) => a.tools.map((t) => t.name)),
+    smokeCall: {
+      tool: 'postgres_query',
+      args: { query: "SELECT c.name, o.order_number, o.order_date FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.status = 'OPEN' ORDER BY o.order_date LIMIT 10" },
+    },
+  },
+  openapi: {
+    label: 'a demo REST API with an OpenAPI spec',
+    hosts: ['api-demo'],
+    services: nodeService('api-demo', 'api-demo', 'API_DEMO_PORT'),
+    files: { 'examples/api-demo/server.mjs': 'api-demo/server.mjs' },
+    setup: {
+      type: 'openapi',
+      name: 'Orders API (demo)',
+      baseUrl: 'http://api-demo:8080',
+      spec: 'http://api-demo:8080/openapi.json',
+      authType: 'API_KEY',
+      authConfig: { headerName: 'X-Api-Key', apiKey: 'demo-key' },
+    },
+    // Tool names come from the spec's operationIds, lower-cased.
+    expectedTools: () => ['listcustomers', 'getcustomer', 'listorders', 'getorder', 'addordernote'],
+    smokeCall: { tool: 'listorders', args: { status: 'OPEN' } },
+  },
+};
+
+/** docker-compose.yml: the main repository's quickstart, plus the demo services of a generic satellite. */
 export function buildCompose(quickstart, sat) {
   let yml = quickstart;
+  const demo = DEMOS[sat.kind];
   const header = [
-    `# ${sat.repo}: AnythingMCP, pulled from Docker Hub${sat.kind === 'soap' ? ', plus a demo SOAP service' : ''}.`,
+    `# ${sat.repo}: AnythingMCP, pulled from Docker Hub${demo ? `, plus ${demo.label}` : ''}.`,
     '# Generated from docker-compose.quickstart.yml in HelpCode-ai/anythingmcp.',
     '# Start it with ./scripts/install.sh, which also writes .env.',
     '',
   ].join('\n');
   yml = yml.replace(/^# =+\n[\s\S]*?^# =+\n\n/m, header);
-  if (sat.kind === 'soap') {
+  if (demo) {
     const anchor = '      - ALLOW_OPEN_REGISTRATION=false\n';
     if (!yml.includes(anchor)) throw new Error('quickstart compose changed: registration anchor not found');
     yml = yml.replace(
       anchor,
-      `${anchor}      # The demo service is a private Docker hostname; the SSRF guard blocks\n      # those unless they are listed here.\n      - SSRF_ALLOWED_HOSTS=soap-demo\n`,
+      `${anchor}      # The demo services are private Docker hostnames; the SSRF guard blocks\n      # those unless they are listed here.\n      - SSRF_ALLOWED_HOSTS=${demo.hosts.join(',')}\n`,
     );
     const pg = '\n  postgres:\n';
     if (!yml.includes(pg)) throw new Error('quickstart compose changed: postgres service not found');
-    yml = yml.replace(
-      pg,
-      `\n  soap-demo:\n    image: node:22-alpine\n    container_name: \${COMPOSE_PROJECT_NAME:-amcp}-soap-demo\n    working_dir: /srv\n    command: ["node", "server.mjs"]\n    volumes:\n      - ./examples/soap-demo:/srv:ro\n    ports:\n      - "127.0.0.1:\${SOAP_DEMO_PORT:-8080}:8080"\n    healthcheck:\n      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]\n      interval: 3s\n      timeout: 3s\n      retries: 10\n    restart: unless-stopped\n${pg}`,
-    );
+    yml = yml.replace(pg, `\n${demo.services}${pg}`);
   }
   return yml;
 }
 
-function envExample(adapters) {
+function envExample(adapters, defaults = {}) {
   const lines = [
     '# Copied to .env by scripts/install.sh, which also fills the secrets.',
     '# Keep .env: ENCRYPTION_KEY decrypts every credential AnythingMCP stores.',
@@ -268,7 +332,7 @@ function envExample(adapters) {
   ];
   for (const a of adapters) {
     lines.push('', `# ${a.name}: fill these and re-run scripts/install.sh to install the connector.`);
-    for (const v of a.requiredEnvVars ?? []) lines.push(`${v}=`);
+    for (const v of a.requiredEnvVars ?? []) lines.push(`${v}=${defaults[v] ?? ''}`);
   }
   lines.push('', '# Written by scripts/install.sh.', 'MCP_URL=', 'MCP_API_KEY=');
   return `${lines.join('\n')}\n`;
@@ -332,7 +396,7 @@ export function buildSatellite(sat, ctx) {
   const files = {};
   const withAdapters = sat.type !== 'generic' || adapters.length > 0;
 
-  if (sat.type === 'generic' && sat.kind !== 'soap') {
+  if (sat.type === 'generic' && !DEMOS[sat.kind]) {
     throw new Error(`${sat.repo}: no demo is implemented yet for generic kind "${sat.kind}"`);
   }
 
@@ -342,17 +406,10 @@ export function buildSatellite(sat, ctx) {
     owner: sat.owner,
     mainRepo: config.mainRepo,
     adapters: entries.map((e) => ({ slug: e.adapter.slug, region: e.region, requiredEnvVars: e.adapter.requiredEnvVars ?? [] })),
-    setup:
-      sat.kind === 'soap'
-        ? { type: 'soap', name: 'Inventory (demo SOAP service)', baseUrl: 'http://soap-demo:8080/inventory', wsdl: 'http://soap-demo:8080/inventory?wsdl' }
-        : { type: 'adapter' },
-    smokeCall: smokeCall(sat, adapters),
+    setup: DEMOS[sat.kind]?.setup ?? { type: 'adapter' },
+    smokeCall: DEMOS[sat.kind]?.smokeCall ?? smokeCall(sat, adapters),
   };
-  if (sat.kind === 'soap') {
-    // AnythingMCP names WSDL tools <service>_<operation>, lower-cased.
-    manifest.expectedTools = ['inventoryservice_getitem', 'inventoryservice_listlowstock', 'inventoryservice_getorderstatus'];
-    manifest.smokeCall = { tool: 'inventoryservice_getitem', args: { sku: 'DR-1001' } };
-  }
+  if (DEMOS[sat.kind]) manifest.expectedTools = DEMOS[sat.kind].expectedTools(adapters);
   files['satellite.json'] = pretty(manifest);
 
   for (const lang of sat.languages ?? ['en']) {
@@ -365,7 +422,7 @@ export function buildSatellite(sat, ctx) {
 
   for (const e of entries) files[`adapter/${e.adapter.slug}.json`] = pretty(e.adapter);
   files['docker-compose.yml'] = buildCompose(readFileSync(join(root, 'docker-compose.quickstart.yml'), 'utf8'), sat);
-  files['.env.example'] = envExample(adapters);
+  files['.env.example'] = envExample(adapters, DEMOS[sat.kind]?.envDefaults);
   files['.gitignore'] = '.env\nnode_modules/\n';
   files['package.json'] = pretty({
     name: sat.repo,
@@ -391,10 +448,7 @@ export function buildSatellite(sat, ctx) {
         : '',
     );
   }
-  if (sat.kind === 'soap') {
-    files['examples/soap-demo/server.mjs'] = tpl('soap-demo/server.mjs');
-    files['examples/soap-demo/inventory.wsdl'] = tpl('soap-demo/inventory.wsdl');
-  }
+  for (const [dest, src] of Object.entries(DEMOS[sat.kind]?.files ?? {})) files[dest] = tpl(src);
   files['CITATION.cff'] = citation(sat, config);
   if (config.license === 'MIT') {
     const holder = sat.owner === 'kochfreiburg' ? 'KOCH Freiburg GmbH' : sat.owner === 'HelpCode-ai' ? 'helpcode.ai GmbH' : sat.owner;

@@ -38,11 +38,12 @@ const READ_NAME = /(^|_)(list|get|search|find|read|count|describe|fields|schema|
 const WRITE_NAME = /(^|_)(create|update|delete|write|cancel|submit|set|batch|call|send|upload|approve|workflow|remove|add)(_|$)/;
 
 /**
- * 'read', 'write' or 'depends' for one tool. An explicit readOnlyHint wins.
+ * 'read' or 'write' for one tool. An explicit readOnlyHint wins.
  * Otherwise the protocol decides where it can (HTTP GET, GraphQL query, static
  * payload); a POST-based read API such as Odoo's JSON-2 or Shopware's Store
  * API falls back to the tool name. A database tool that runs SQL written by
- * the model is 'depends': only the database user's grants make it read-only.
+ * the model is 'read': the engine only runs a single SELECT unless the
+ * connector is switched to read-write.
  */
 export function access(tool, connectorType = 'REST') {
   const hint = tool.annotations?.readOnlyHint;
@@ -52,10 +53,11 @@ export function access(tool, connectorType = 'REST') {
   const method = raw.toUpperCase();
   if (raw === 'static') return 'read';
   if (type === 'DATABASE') {
-    // Same rule as the backend's tool-annotations.ts: a fixed SELECT reads,
-    // SQL supplied at call time is only as safe as the database grants.
+    // Database connectors are read-only unless switched off per connector:
+    // the engine runs a single SELECT and blocks writes, so SQL supplied at
+    // call time reads too. A fixed statement that writes is a write tool.
     const sql = String(tool.endpointMapping?.path ?? '').replace(/--[^\n]*/g, ' ');
-    if (/^\s*\$\{\w+\}\s*$/.test(sql)) return 'depends';
+    if (/^\s*\$\{\w+\}\s*$/.test(sql)) return 'read';
     if (/\b(insert|update|delete|drop|truncate|alter|create|merge|grant|revoke)\b/i.test(sql)) return 'write';
     return 'read';
   }

@@ -76,7 +76,7 @@ test('every configured satellite passes the static checks', () => {
 test('the pilot READMEs open with a 40–60 word direct answer', () => {
   for (const repo of PILOTS) {
     const sat = config.satellites.find((s) => s.repo === repo);
-    const files = buildSatellite(sat, { config, catalog: fixtureCatalog(), date: '2026-09-26', root: FIXTURES });
+    const files = buildSatellite(sat, { config: { ...config, license: null }, catalog: fixtureCatalog(), date: '2026-09-26', root: FIXTURES });
     const n = introWordCount(files['README.md']);
     assert.ok(n >= 40 && n <= 60, `${repo}: ${n} words`);
   }
@@ -101,21 +101,40 @@ test('an About may name an API ("Selling Partner API") without promising partner
   assert.deepEqual(uncoveredObjects('Orders, partners and inventory.', [amazon]), ['partners']);
 });
 
-test('unverified adapters and an undecided licence block publishing, not generation', () => {
-  const sat = config.satellites.find((s) => s.repo === 'odoo-mcp-server');
-  const { errors, blockers } = checkSatellite(sat, { config, catalog: fixtureCatalog(), topicCounts, content: loadContent(sat.repo) });
+test('unverified adapters, missing verification and an undecided licence block publishing, not generation', () => {
+  const sat = { ...config.satellites.find((s) => s.repo === 'odoo-mcp-server'), lastVerified: null };
+  const unverified = { adapter: { ...fixtureCatalog().get('odoo').adapter, instructions: '**Unverified.** built from docs' }, region: 'intl' };
+  const catalog = new Map([['odoo', unverified]]);
+  const { errors, blockers } = checkSatellite(sat, { config: { ...config, license: null }, catalog, topicCounts, content: loadContent(sat.repo) });
   assert.deepEqual(errors, []);
   assert.ok(blockers.some((b) => /lastVerified/.test(b)));
   assert.ok(blockers.some((b) => /licence/.test(b)));
+  assert.ok(blockers.some((b) => /declares itself unverified/.test(b)));
 });
 
-test('access(): protocol first, then tool names, and model-written SQL is never "read"', () => {
+test('an umbrella lists unverified adapters as a warning, not a blocker', () => {
+  const sat = { ...config.satellites.find((s) => s.repo === 'erp-mcp-server'), adapters: ['odoo'] };
+  const unverified = { adapter: { ...fixtureCatalog().get('odoo').adapter, instructions: '**Unverified.**' }, region: 'intl' };
+  const { blockers, warnings } = checkSatellite(sat, { config, catalog: new Map([['odoo', unverified]]), topicCounts, content: loadContent(sat.repo) });
+  assert.ok(!blockers.some((b) => /unverified/.test(b)));
+  assert.ok(warnings.some((w) => /unverified/.test(w)));
+});
+
+test('links to unpublished siblings are dropped when publishing', () => {
+  const sat = config.satellites.find((s) => s.repo === 'weclapp-mcp-server');
+  const available = new Set(['kochfreiburg/weclapp-mcp-server', 'HelpCode-ai/erp-mcp-server']);
+  const files = buildSatellite(sat, { config: { ...config, license: null, available }, catalog: fixtureCatalog(), date: '2026-09-26', root: FIXTURES });
+  assert.match(files['README.md'], /github\.com\/HelpCode-ai\/erp-mcp-server/);
+  assert.doesNotMatch(files['README.md'], /github\.com\/kochfreiburg\/xentral-mcp-server/);
+});
+
+test('access(): protocol first, then tool names; model-written SQL reads (engine guard)', () => {
   assert.equal(access({ name: 'x_list', endpointMapping: { method: 'GET' } }), 'read');
   assert.equal(access({ name: 'odoo_search_read', endpointMapping: { method: 'POST' } }), 'read');
   assert.equal(access({ name: 'odoo_write', endpointMapping: { method: 'POST' } }), 'write');
   assert.equal(access({ name: 'x_update', endpointMapping: { method: 'PATCH' } }), 'write');
   assert.equal(access({ name: 'x', endpointMapping: { method: 'GET' }, annotations: { readOnlyHint: false } }), 'write');
-  assert.equal(access({ name: 'db_query', endpointMapping: { method: 'query', path: '${query}' } }, 'DATABASE'), 'depends');
+  assert.equal(access({ name: 'db_query', endpointMapping: { method: 'query', path: '${query}' } }, 'DATABASE'), 'read');
   assert.equal(access({ name: 'db_tables', endpointMapping: { method: 'query', path: 'SELECT 1' } }, 'DATABASE'), 'read');
   assert.equal(access({ name: 'gql', endpointMapping: { method: 'mutation' } }, 'GRAPHQL'), 'write');
 });

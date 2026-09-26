@@ -10,7 +10,7 @@
  * environment or from .env, where scripts/install.sh writes them.
  * SMOKE_TOOL / SMOKE_ARGS override the read-only call from satellite.json.
  */
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -37,12 +37,16 @@ if (!env.MCP_API_KEY) {
   process.exit(2);
 }
 
+// A demo satellite lists what its install creates; otherwise
+// every adapter in adapter/ must be there.
+// every tool of every adapter whose credentials are in .env (install.sh skips
+// the others) must be there.
+const configured = (m) => (m.requiredEnvVars ?? []).every((v) => env[v]);
 const expected = new Set(
-  existsSync(join(root, 'adapter'))
-    ? readdirSync(join(root, 'adapter'))
-        .filter((f) => f.endsWith('.json'))
-        .flatMap((f) => JSON.parse(readFileSync(join(root, 'adapter', f), 'utf8')).tools.map((t) => t.name))
-    : (manifest.expectedTools ?? []),
+  manifest.expectedTools ??
+    manifest.adapters
+      .filter(configured)
+      .flatMap((a) => JSON.parse(readFileSync(join(root, 'adapter', `${a.slug}.json`), 'utf8')).tools.map((t) => t.name)),
 );
 
 const client = new Client({ name: `${manifest.repo}-smoke`, version: '1.0.0' });

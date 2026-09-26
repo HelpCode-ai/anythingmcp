@@ -1,0 +1,15 @@
+- Which orders came in yesterday on amazon.de, and which of them are not shipped yet?
+- Show the items of order 302-1234567-1234567.
+- How much FBA stock do I have for SKU A-1043, and how much is inbound?
+- Who holds the buy box for ASIN B0C1234567, and at what price?
+- What would Amazon charge in fees if I sell ASIN B0C1234567 at 24.90 EUR with FBA?
+- Which of my listings have quality or compliance issues?
+- Summarise last week's refunds and fees from the financial events.
+- Request the open-listings report and tell me when it is ready.
+- Search the catalog for "stainless door hinge" and compare the top results.
+- Which marketplaces is my seller account active in?
+- List the orders that were updated since this morning.
+- Which SKUs have unfulfillable FBA inventory?
+- Estimate my margin on SKU A-1043 at 29.90 EUR after Amazon fees.
+- Compare my price for ASIN B0C1234567 with the lowest FBA offer.
+- Which orders from last month contain more than three units?

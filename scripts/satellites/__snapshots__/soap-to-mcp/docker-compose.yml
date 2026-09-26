@@ -34,7 +34,7 @@ services:
       - MCP_ALLOW_ANONYMOUS=false
       # Invite-only after the first admin registers.
       - ALLOW_OPEN_REGISTRATION=false
-      # The demo service is a private Docker hostname; the SSRF guard blocks
+      # The demo services are private Docker hostnames; the SSRF guard blocks
       # those unless they are listed here.
       - SSRF_ALLOWED_HOSTS=soap-demo
     depends_on:
@@ -61,7 +61,7 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 3s
       timeout: 3s
-      retries: 10
+      retries: 30
     restart: unless-stopped
 
   postgres:

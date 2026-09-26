@@ -71,6 +71,21 @@ if [ "$SETUP_TYPE" = "soap" ]; then
   else
     echo "SOAP connector '$NAME' already exists."
   fi
+elif [ "$SETUP_TYPE" = "openapi" ]; then
+  NAME=$(manifest 'm.setup.name'); SPEC=$(manifest 'm.setup.spec')
+  EXISTING=$(curl -s "${AUTH[@]}" "$API/api/connectors" | json "(Array.isArray(j)?j:j.items||j.data||[]).find(c=>c.name==='$NAME')?.id")
+  if [ -z "$EXISTING" ]; then
+    CREATE=$(node -e 'const m=require("./satellite.json").setup;console.log(JSON.stringify({name:m.name,type:"REST",baseUrl:m.baseUrl,authType:m.authType,authConfig:m.authConfig}))')
+    ID=$(curl -s "${AUTH[@]}" -d "$CREATE" "$API/api/connectors" | json 'j.id')
+    [ -n "$ID" ] || { echo "Could not create the REST connector."; exit 1; }
+    IMPORT=$(node -e 'console.log(JSON.stringify({source:"openapi",url:process.argv[1]}))' "$SPEC")
+    RES=$(curl -s "${AUTH[@]}" -d "$IMPORT" "$API/api/connectors/$ID/import")
+    ERR=$(printf '%s' "$RES" | json 'j.error')
+    [ -z "$ERR" ] || { echo "OpenAPI import failed: $ERR"; exit 1; }
+    echo "REST connector created: $(printf '%s' "$RES" | json '(j.created ?? (j.tools||[]).length)') tools imported from $SPEC"
+  else
+    echo "REST connector '$NAME' already exists."
+  fi
 else
   INSTALLED=$(curl -s "${AUTH[@]}" "$API/api/connectors" | json '(Array.isArray(j)?j:j.items||[]).map(c=>c.config&&c.config.adapterSlug).filter(Boolean).join(" ")')
   for SLUG in $(manifest "m.adapters.map(a=>a.slug).join(' ')"); do

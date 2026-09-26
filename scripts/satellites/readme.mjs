@@ -10,6 +10,7 @@
 import { renderToolsTable, access } from './templates/render-tools.mjs';
 
 const MAIN = 'https://github.com/HelpCode-ai/anythingmcp';
+const AUTH = { API_KEY: 'API key', BEARER_TOKEN: 'API token', BASIC_AUTH: 'User + password', OAUTH2: 'OAuth 2.0', OAUTH1: 'OAuth 1.0a', LOGIN_TOKEN: 'Login session', HMAC: 'Signed API key', CONNECTION_STRING: 'DB user', NONE: 'None' };
 const CLOUD = 'https://cloud.anythingmcp.com';
 
 const T = {
@@ -132,21 +133,30 @@ const T = {
   },
 };
 
+/**
+ * A markdown link to a sibling satellite, or null when it is not published
+ * yet. `config.available` (a Set of "owner/repo") is only set when
+ * publishing; local previews and tests link everything.
+ */
 function repoLink(config, repo) {
   const s = config.satellites.find((x) => x.repo === repo);
+  if (!s) return null;
+  if (config.available && !config.available.has(`${s.owner}/${s.repo}`)) return null;
   return `[${repo}](https://github.com/${s.owner}/${s.repo})`;
+}
+
+/** Bare repo names in `text` become links where the repo exists, plain text otherwise. */
+function linkOrName(config, repo) {
+  return repoLink(config, repo) ?? `\`${repo}\` (coming soon)`;
 }
 
 function relatedList(sat, config, t) {
   const items = [];
-  if (sat.umbrella) {
-    const u = config.satellites.find((x) => x.repo === sat.umbrella);
-    items.push(`${repoLink(config, u.repo)}: ${u.about}`);
-  }
-  for (const r of sat.related ?? []) {
-    if (r === sat.umbrella) continue;
+  const names = [...(sat.umbrella ? [sat.umbrella] : []), ...(sat.related ?? []).filter((r) => r !== sat.umbrella)];
+  for (const r of names) {
+    const link = repoLink(config, r);
     const s = config.satellites.find((x) => x.repo === r);
-    items.push(`${repoLink(config, s.repo)}: ${s.about}`);
+    if (link) items.push(`${link}: ${s.about}`);
   }
   items.push(`[AnythingMCP](${MAIN}): ${t.relatedMain}.`);
   return items.map((i) => `- ${i}`).join('\n');
@@ -281,7 +291,8 @@ function umbrellaReadme(sat, ctx) {
     const d = dedicated(a.slug);
     const flag = /\*\*Unverified/.test(a.instructions ?? '') ? ' †' : '';
     const region = (catalog.get(a.slug)?.region ?? '').toUpperCase().replace('INTL', 'Global');
-    return `| ${a.name}${flag} | ${region} | ${a.tools.length} | ${a.connector?.authType ?? ''} | [install](${CLOUD}/connectors/store?install=${a.slug}) | ${d ? repoLink(config, d.repo) : '–'} |`;
+    const verified = d?.lastVerified ? `yes, ${d.lastVerified.date}` : flag ? 'no †' : 'not yet';
+    return `| ${a.name}${flag} | ${region} | ${a.tools.length} | ${AUTH[a.connector?.authType] ?? a.connector?.authType ?? ''} | ${verified} | [install](${CLOUD}/connectors/store?install=${a.slug}) | ${(d && repoLink(config, d.repo)) || '–'} |`;
   });
   const bridge =
     sat.system === 'E-commerce'
@@ -289,16 +300,19 @@ function umbrellaReadme(sat, ctx) {
       : [
           `## Your ${sat.system === 'SAP' ? 'SAP system' : 'ERP'} isn't listed?`,
           '',
-          `Connect it through what it already exposes: its REST/OData API (${repoLink(config, 'openapi-to-mcp')}), its SOAP services (${repoLink(config, 'soap-to-mcp')}) or its SQL database, read-only (${repoLink(config, 'sql-to-mcp')}). That covers custom and on-premises builds that no catalog adapter will ever know.`,
+          `Connect it through what it already exposes: its REST/OData API (${linkOrName(config, 'openapi-to-mcp')}), its SOAP services (${linkOrName(config, 'soap-to-mcp')}) or its SQL database, read-only (${linkOrName(config, 'sql-to-mcp')}). That covers custom and on-premises builds that no catalog adapter will ever know.`,
+
           '',
         ].join('\n');
   return [
     header(sat, { ...ctx, introText }, t, title, `Connect ${adapters.length} ${sat.system === 'E-commerce' ? 'shops and marketplaces' : sat.system === 'SAP' ? 'SAP products' : 'ERPs'} to Claude, ChatGPT and Copilot through one MCP server.`),
     '## Systems',
     '',
-    '| System | Region | Tools | Auth | Cloud | Dedicated repo |',
-    '|---|---|---|---|---|---|',
+    '| System | Region | Tools | Auth | Verified live | Cloud | Dedicated repo |',
+    '|---|---|---|---|---|---|---|',
     ...rows,
+    '',
+    '"Verified live" means someone ran the connector against a real system; its own repository says how and when. "Not yet" means it follows the vendor\'s API documentation and has not been confirmed there; reports are welcome.',
     '',
     adapters.some((a) => /\*\*Unverified/.test(a.instructions ?? ''))
       ? "† Built from the vendor's published API documentation and not yet exercised against a live system. Reports and fixes are welcome.\n"
@@ -424,6 +438,172 @@ function soapReadme(sat, ctx) {
   ].join('\n');
 }
 
+
+function genericTail(sat, ctx, t, security, troubleRows) {
+  const { content, config } = ctx;
+  const c = content.en ?? {};
+  const prompts = (c.prompts ?? '').split('\n').filter((l) => l.startsWith('- ')).slice(0, 6).join('\n');
+  return [
+    `## ${t.connect}`,
+    '',
+    t.connectItems(sat.repo).map((s) => `- ${s}`).join('\n'),
+    '',
+    `## ${t.prompts}`,
+    '',
+    prompts,
+    '',
+    t.morePrompts,
+    '',
+    '## Security',
+    '',
+    security.map((s) => `- ${s}`).join('\n'),
+    '',
+    '## FAQ',
+    '',
+    c.faq ?? '',
+    '',
+    '## Troubleshooting',
+    '',
+    '| Problem | Fix |',
+    '|---|---|',
+    ...troubleRows.map(([a, b]) => `| ${a} | ${b} |`),
+    '',
+    '## Related',
+    '',
+    relatedList(sat, config, t),
+    '',
+    '## License',
+    '',
+    t.licenseText(config.license),
+    '',
+  ].join('\n');
+}
+
+function sqlReadme(sat, ctx) {
+  const { adapters, config } = ctx;
+  const t = T.en;
+  const introText =
+    'SQL to MCP lets Claude, ChatGPT, Copilot and Cursor query PostgreSQL, MySQL, MariaDB, SQL Server, Oracle and MongoDB through MCP, without code. ' +
+    'AnythingMCP turns each database into schema, example and query tools. This repository runs the chain locally against two demo databases, reached as a read-only user.';
+  const rows = adapters.map((a) => `| ${a.name} | ${a.tools.length} | ${a.tools.map((x) => `\`${x.name}\``).join(', ')} |`);
+  return [
+    header(sat, { ...ctx, introText }, t, 'SQL to MCP', 'Connect PostgreSQL, MySQL, SQL Server, Oracle or MongoDB to Claude, ChatGPT and Copilot.'),
+    '## Try it in five minutes',
+    '',
+    'Needs Docker 24+, openssl and Node 18+.',
+    '',
+    '```bash',
+    `git clone https://github.com/${sat.owner}/${sat.repo}.git`,
+    `cd ${sat.repo}`,
+    './scripts/install.sh',
+    'npm install && node scripts/smoke.mjs',
+    '```',
+    '',
+    '`install.sh` starts AnythingMCP with a PostgreSQL and a MySQL database seeded with a small wholesale business ([`examples/sql-demo`](examples/sql-demo): customers, products, orders, order lines), installs both database connectors as the read-only user `amcp_reader`, and creates an MCP API key. `smoke.mjs` lists the tools and asks PostgreSQL for the open orders.',
+    '',
+    '## Supported databases',
+    '',
+    '| Database | Tools | Tool names |',
+    '|---|---|---|',
+    ...rows,
+    '',
+    'MariaDB uses the MySQL connector; SQLite is available as a custom database connector in the UI. `*_query` runs a SELECT the model writes; the other tools read the schema or return fixed example queries.',
+    '',
+    '## Connect your own database',
+    '',
+    '1. Create a user that can only read. PostgreSQL:',
+    '',
+    '   ```sql',
+    "   CREATE ROLE amcp_reader LOGIN PASSWORD 'change-me';",
+    '   GRANT CONNECT ON DATABASE sales TO amcp_reader;',
+    '   GRANT USAGE ON SCHEMA public TO amcp_reader;',
+    '   GRANT SELECT ON ALL TABLES IN SCHEMA public TO amcp_reader;',
+    '   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO amcp_reader;',
+    '   ```',
+    '',
+    '2. Fill the variables for your database in `.env` (see `.env.example`) and re-run `./scripts/install.sh`, or install the connector from the store in the UI.',
+    '3. A database on your internal network needs its hostname in `SSRF_ALLOWED_HOSTS` (the [`docker-compose.yml`](docker-compose.yml) here does that for the demo hosts).',
+    '',
+    '**Read-only by default, twice.** AnythingMCP only runs a single `SELECT` (or `WITH … SELECT`) and blocks writes and stacked statements; the demo also connects as `amcp_reader`, which the database itself limits to SELECT. Keep both: the engine guard can be switched off per connector, grants cannot be talked around.',
+    '',
+    genericTail(sat, ctx, t, [
+      '**Writes are blocked by default:** the query tools accept a single SELECT and nothing else, unless you switch a connector to read-write.',
+      '**The database user is the second line.** Grant SELECT only, on the schemas the AI needs.',
+      '**Fixed queries** for sensitive tables: define the SQL yourself and let the model supply parameters.',
+      '**Response mapping** drops columns such as IBANs or salaries before a result reaches the model.',
+      '**Audit log:** every query with its SQL, result, duration and status, in your own database.',
+      '**Roles** decide which tools each MCP server exposes.',
+    ], [
+      ['"SSRF" or "blocked host" error', 'The database is on a private network. Add its hostname to `SSRF_ALLOWED_HOSTS` on a self-hosted instance.'],
+      ['"Only SELECT queries are allowed"', 'The read-only guard rejected a write or a second statement. That is the intended behaviour; ask for a SELECT.'],
+      ['`permission denied` on a table', "Expected for a read-only user on a table it wasn't granted. Grant SELECT on it, or leave it hidden."],
+      ['Tables created later are invisible', 'PostgreSQL: add `ALTER DEFAULT PRIVILEGES … GRANT SELECT ON TABLES`.'],
+      ['SQL Server named instance or Windows auth', 'See the SQL Server connector notes in the [database connector docs](https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/database.md).'],
+      ['The model writes slow queries', 'Tell it to include a LIMIT (the query tool says so), and give it `*_describe_table` first.'],
+    ]),
+  ].join('\n');
+}
+
+function openapiReadme(sat, ctx) {
+  const t = T.en;
+  const introText =
+    'OpenAPI to MCP turns any REST API with an OpenAPI or Swagger spec into MCP tools that Claude, ChatGPT, Copilot and Cursor can call, without code. ' +
+    'Import the spec and every operation becomes a tool with its parameters and auth. This repository runs the whole chain locally against a demo orders API.';
+  return [
+    header(sat, { ...ctx, introText }, t, 'OpenAPI to MCP', 'Turn any OpenAPI/Swagger or REST API into an MCP server for Claude, ChatGPT and Copilot.'),
+    '## Try it in five minutes',
+    '',
+    'Needs Docker 24+, openssl and Node 18+.',
+    '',
+    '```bash',
+    `git clone https://github.com/${sat.owner}/${sat.repo}.git`,
+    `cd ${sat.repo}`,
+    './scripts/install.sh',
+    'npm install && node scripts/smoke.mjs',
+    '```',
+    '',
+    '`install.sh` starts AnythingMCP and a small REST API ([`examples/api-demo`](examples/api-demo): customers and sales orders, protected by an API key), creates a REST connector with that key, imports `openapi.json` and creates an MCP API key. `smoke.mjs` lists the tools and asks for the open orders.',
+    '',
+    '| OpenAPI operation | MCP tool | Changes data |',
+    '|---|---|---|',
+    '| `GET /customers` (`listCustomers`) | `listcustomers` | no |',
+    '| `GET /customers/{id}` (`getCustomer`) | `getcustomer` | no |',
+    '| `GET /orders` (`listOrders`) | `listorders` | no |',
+    '| `GET /orders/{orderNumber}` (`getOrder`) | `getorder` | no |',
+    '| `POST /orders/{orderNumber}/notes` (`addOrderNote`) | `addordernote` | yes |',
+    '',
+    'Tool names are the `operationId` in lower case (or `<method>_<path>` without one); descriptions come from `summary` and `description`. The API key lives in the connector and never reaches the model.',
+    '',
+    '## Use your own API',
+    '',
+    '1. In the AnythingMCP UI, **Connectors → New connector → REST**: base URL and auth (API key, bearer, Basic, OAuth 2.0, HMAC…).',
+    '2. **Import → OpenAPI** with the spec URL, a Swagger UI page URL, or the spec pasted as JSON or YAML. OpenAPI 3.0, 3.1 and Swagger 2.0 work.',
+    '3. Rename tools with cryptic `operationId`s and rewrite descriptions in the words your users ask with.',
+    '4. Assign the connector to an MCP server whose role whitelists the operations the AI may call.',
+    '',
+    'Through the API:',
+    '',
+    '```bash',
+    'curl -s http://localhost:4000/api/connectors/$ID/import -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \\',
+    `  -d '{"source":"openapi","url":"https://api.example.com/openapi.json"}'`,
+    '```',
+    '',
+    '**Re-importing** updates changed operations, adds new ones and disables the ones that disappeared. Roles, response mappings and tools you disabled survive; names and descriptions are refreshed from the spec, so put wording you want to keep into the spec itself.',
+    '',
+    genericTail(sat, ctx, t, [
+      '**Credentials** stay in the connector, encrypted with AES-256-GCM; the model never sees them.',
+      '**Roles** decide which operations each MCP server exposes. Start with the GET operations.',
+      '**Response mapping** trims large or sensitive responses per tool before they reach the model.',
+      '**Audit log:** every call with input, output, duration and status.',
+    ], [
+      ['The import finds no operations', 'Point it at the JSON/YAML spec, or at the Swagger UI page: AnythingMCP looks for the spec behind it.'],
+      ['Tool names are unreadable', 'The spec has no `operationId`s. Add them to the spec, or rename the tools in the editor.'],
+      ['`401` from the API', 'The connector auth is missing or wrong. Check header name and key on the connector.'],
+      ['"SSRF" or "blocked host" error', 'The API is on a private network. Add its hostname to `SSRF_ALLOWED_HOSTS` on a self-hosted instance.'],
+    ]),
+  ].join('\n');
+}
+
 function parseRows(md) {
   if (!md) return [];
   return md
@@ -447,5 +627,7 @@ export function renderReadme(sat, ctx) {
   if (ctx.lang !== 'en') return null;
   if (sat.type === 'umbrella') return umbrellaReadme(sat, ctx);
   if (sat.kind === 'soap') return soapReadme(sat, ctx);
+  if (sat.kind === 'sql') return sqlReadme(sat, ctx);
+  if (sat.kind === 'openapi') return openapiReadme(sat, ctx);
   return null;
 }

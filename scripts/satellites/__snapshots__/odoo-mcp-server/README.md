@@ -4,7 +4,7 @@
 
 Odoo MCP Server gives Claude, ChatGPT, Copilot and Cursor 11 tools for Odoo: partners, sales orders, invoices, products and any other model. 8 tools read and 3 can change data. It runs on AnythingMCP: one click on AnythingMCP Cloud, or self-hosted with Docker. Credentials are stored encrypted and every call is audited.
 
-**Status:** not yet verified against a live system. The adapter follows the vendor's API documentation; please report what you find.  
+**Last verified:** 2026-09-26 against a production Odoo 19 Online database (read tools called through AnythingMCP: partners, sales orders, invoices, search_count, fields_get).  
 **Adapter synced:** <!-- synced -->2026-09-26
 
 Maintained by [@keysersoft](https://github.com/keysersoft), an AnythingMCP maintainer. Built on [AnythingMCP](https://github.com/HelpCode-ai/anythingmcp) by helpcode.ai.

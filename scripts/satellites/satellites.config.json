@@ -1,6 +1,6 @@
 {
-  "$comment": "Satellite repositories generated from the adapter catalog. About, topics and website follow SEO-GITHUB-PLAN §3.12. `lastVerified: null` means nobody has confirmed the connector against a live system yet; such a satellite is generated but refused by --check-publish. `license: null` means the licence is not decided; no LICENSE file is written.",
-  "license": null,
+  "$comment": "Satellite repositories generated from the adapter catalog. About, topics and website follow SEO-GITHUB-PLAN §3.12. `lastVerified: null` means nobody has confirmed the connector against a live system yet; such a satellite is generated but refused by --check-publish. The licence is AGPL-3.0-only, like the adapter JSON the satellites copy.",
+  "license": "AGPL-3.0-only",
   "mainRepo": "HelpCode-ai/anythingmcp",
   "baseTopics": [
     "mcp",
@@ -94,7 +94,11 @@
         "oracle-mcp-server",
         "soap-to-mcp"
       ],
-      "lastVerified": null
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "the bundled PostgreSQL 17 and MySQL 8.4 demo databases",
+        "how": "docker compose up + scripts/smoke.mjs: tools/list, SELECTs on both, an INSERT rejected by the read-only guard"
+      }
     },
     {
       "repo": "openapi-to-mcp",
@@ -125,7 +129,11 @@
         "graphql-to-mcp",
         "soap-to-mcp"
       ],
-      "lastVerified": null
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "the bundled demo orders API (OpenAPI 3.0.3, API-key auth)",
+        "how": "docker compose up + scripts/smoke.mjs: spec import, tools/list, GET with query and path parameters, POST with a JSON body"
+      }
     },
     {
       "repo": "graphql-to-mcp",
@@ -290,7 +298,11 @@
         "sql-to-mcp",
         "openapi-to-mcp"
       ],
-      "lastVerified": null
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "the systems marked verified in the table",
+        "how": "each one's own verification is linked from its row"
+      }
     },
     {
       "repo": "ecommerce-mcp-server",
@@ -335,7 +347,11 @@
         "erp-mcp-server",
         "openapi-to-mcp"
       ],
-      "lastVerified": null
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "the systems marked verified in the table",
+        "how": "each one's own verification is linked from its row"
+      }
     },
     {
       "repo": "sap-mcp-server",
@@ -369,7 +385,11 @@
         "erp-mcp-server",
         "soap-to-mcp"
       ],
-      "lastVerified": null
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "the systems marked verified in the table",
+        "how": "each one's own verification is linked from its row"
+      }
     },
     {
       "repo": "sap-business-one-mcp-server",
@@ -795,7 +815,11 @@
       "objects": {
         "en": "partners, sales orders, invoices, products and any other model"
       },
-      "lastVerified": null
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "a production Odoo 19 Online database",
+        "how": "read tools called through AnythingMCP: partners, sales orders, invoices, search_count, fields_get"
+      }
     },
     {
       "repo": "exact-online-mcp-server",
@@ -1037,6 +1061,9 @@
         "date": "2026-09-26",
         "against": "the Magento 2 REST API",
         "how": "production traffic on AnythingMCP Cloud: 19 successful tool calls from 3 workspaces in the last 90 days"
+      },
+      "objects": {
+        "en": "products, stock, orders and customers"
       }
     },
     {
@@ -1068,7 +1095,11 @@
         "etsy-mcp-server",
         "kaufland-mcp-server"
       ],
-      "lastVerified": null
+      "lastVerified": {
+        "date": "2026-07-17",
+        "against": "the Selling Partner API sandbox (EU)",
+        "how": "LWA token refresh and getMarketplaceParticipations through the AnythingMCP engine; production calls need your app's production authorization"
+      }
     },
     {
       "repo": "ebay-mcp-server",
