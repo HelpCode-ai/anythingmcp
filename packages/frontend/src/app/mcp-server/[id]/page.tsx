@@ -389,6 +389,25 @@ export default function McpServerDetailPage() {
     </div>
   );
 
+  const assignedConnectors = allConnectors.filter((c) => assignedIds.has(c.id));
+
+  // Says which connectors THIS url serves, next to every place it can be
+  // copied. Servers look alike ("Default", "AutoSkill"…), and a client wired to
+  // the wrong one showed tools the user thought they had removed.
+  const exposesLine = (className = '') => (
+    <p className={cn('text-[11.5px] leading-[1.5] text-[var(--text-3)]', className)}>
+      {assignedConnectors.length === 0 ? (
+        <>This URL exposes <strong className="text-[var(--text-2)]">no connectors yet</strong>. Tick some under Assigned connectors.</>
+      ) : (
+        <>
+          This URL exposes{' '}
+          <strong className="text-[var(--text-2)]">{assignedConnectors.map((c) => c.name).join(', ')}</strong>
+          {' '}and nothing else.
+        </>
+      )}
+    </p>
+  );
+
   const endpointRow = (copyKey: string) => (
     <div>
       <label className="mb-1.5 block text-[11px] text-[var(--text-3)]">MCP Endpoint URL</label>
@@ -401,6 +420,7 @@ export default function McpServerDetailPage() {
           {copied === copyKey ? 'Copied!' : 'Copy'}
         </button>
       </div>
+      {exposesLine('mt-1.5')}
     </div>
   );
 
@@ -573,7 +593,6 @@ export default function McpServerDetailPage() {
   };
 
   // Tools from assigned connectors
-  const assignedConnectors = allConnectors.filter((c) => assignedIds.has(c.id));
   const toolsList = assignedConnectors.flatMap((c) =>
     (c.tools || []).map((t: any) => ({ ...t, connectorName: c.name, connectorType: c.type })),
   );
@@ -633,9 +652,7 @@ export default function McpServerDetailPage() {
               {copied === 'endpoint' ? 'Copied!' : 'Copy'}
             </button>
           </div>
-          <p className="mb-3 text-[11.5px] text-[var(--text-3)]">
-            Each MCP server has its own unique endpoint. Only tools from assigned connectors are exposed.
-          </p>
+          {exposesLine('mb-3')}
 
           <div className="mb-[10px] text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--text-3)]">
             Quick Connect

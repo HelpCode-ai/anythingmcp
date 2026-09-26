@@ -79,6 +79,12 @@ export class McpServersService {
       where: { organizationId },
       include: {
         _count: { select: { connectors: true, apiKeys: true } },
+        // Names only, for "exposes …" on the server cards: servers look alike
+        // and a client wired to the wrong one is otherwise invisible.
+        connectors: {
+          select: { connector: { select: { name: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
       },
       orderBy: { createdAt: 'asc' },
       ...(opts?.limit !== undefined ? { take: opts.limit } : {}),

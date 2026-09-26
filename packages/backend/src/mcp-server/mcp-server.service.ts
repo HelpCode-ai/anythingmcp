@@ -99,6 +99,9 @@ export class McpServerService implements OnModuleInit {
    * 10 Sep. Paging keeps the transient half bounded to one page.
    */
   async loadAllTools(): Promise<void> {
+    // Taken before the first page is read: anything written after this
+    // instant may be missing from what we load. See catchUpRegistry().
+    this.toolsLoadedFrom = new Date();
     let cursor: string | undefined;
 
     for (;;) {
@@ -182,7 +185,126 @@ export class McpServerService implements OnModuleInit {
     }
   }
 
-  async reloadConnectorTools(connectorId: string): Promise<void> {
+  /**
+   * When {@link loadAllTools} last started reading the database. Undefined
+   * until the boot-time load has begun.
+   */
+  private toolsLoadedFrom?: Date;
+
+  /**
+   * Bring this process's in-memory registry up to date with the database,
+   * for changes it did not make itself.
+   *
+   * The registry is loaded once at boot and then kept current by the request
+   * handlers of THIS process, each calling {@link reloadConnectorTools} after
+   * a write. That was complete while there was one backend. A zero-downtime
+   * cloud release (deploy/cloud/release.sh) starts the new backend next to
+   * the old one: the new one loads the registry, then waits — for its health
+   * check, for the site checks, for the switch — while the old one keeps
+   * serving and keeps accepting writes. A connector installed in that window
+   * reaches the database and the old process's registry, never the new one's,
+   * and its tools would be missing from MCP until the next restart. The
+   * release script calls this, through the loopback-only
+   * `POST /internal/registry/catch-up`, once the old backend has stopped.
+   *
+   * Reloads every connector that could differ from what was loaded:
+   *  - its row or any of its tools was written since the load began (with a
+   *    minute of margin: the timestamps come from another process's clock);
+   *  - it is registered here but no longer active, or gone (deleted);
+   *  - its number of enabled tools differs from what is registered (a tool
+   *    deleted, disabled or enabled leaves no timestamp behind).
+   *
+   * Reloading a connector that was already current is harmless, so the
+   * selection errs wide. Also usable by an operator after changing connector
+   * rows by hand, instead of `docker restart` (see scripts/ops).
+   */
+  async catchUpRegistry(): Promise<{
+    since: string | null;
+    reloaded: number;
+    toolCount: number;
+  }> {
+    const startedAt = new Date();
+    const since = this.toolsLoadedFrom
+      ? new Date(this.toolsLoadedFrom.getTime() - 60_000)
+      : new Date(0);
+
+    const [changedConnectors, changedTools, active, enabledCounts] =
+      await Promise.all([
+        this.prisma.connector.findMany({
+          where: { updatedAt: { gte: since } },
+          select: { id: true },
+        }),
+        this.prisma.mcpTool.findMany({
+          where: { updatedAt: { gte: since } },
+          select: { connectorId: true },
+          distinct: ['connectorId'],
+        }),
+        this.prisma.connector.findMany({
+          where: { isActive: true },
+          select: { id: true },
+        }),
+        this.prisma.mcpTool.groupBy({
+          by: ['connectorId'],
+          where: { isEnabled: true, connector: { isActive: true } },
+          _count: { _all: true },
+        }),
+      ]);
+
+    const toReload = new Set<string>();
+    for (const c of changedConnectors) toReload.add(c.id);
+    for (const t of changedTools) toReload.add(t.connectorId);
+
+    const registered = this.toolRegistry.countByConnector();
+    const activeIds = new Set(active.map((c) => c.id));
+    for (const connectorId of registered.keys()) {
+      if (!activeIds.has(connectorId)) toReload.add(connectorId);
+    }
+    for (const row of enabledCounts) {
+      if ((registered.get(row.connectorId) ?? 0) !== row._count._all) {
+        toReload.add(row.connectorId);
+      }
+    }
+
+    // One at a time: each reload rebuilds the registry's name index, and a
+    // release that changed many adapters can select a few hundred here.
+    // Without the knowledge-graph sync: the KG lives in the database and the
+    // process that made the change already synced it. Sessions are told once,
+    // at the end, rather than once per connector.
+    for (const connectorId of toReload) {
+      await this.reloadConnectorTools(connectorId, {
+        syncKg: false,
+        notifySessions: false,
+      });
+    }
+    if (toReload.size > 0) {
+      this.sessionManager
+        .notifyToolsChanged()
+        .catch((e) =>
+          this.logger.warn(`MCP session notify failed: ${e.message}`),
+        );
+    }
+
+    const sinceIso = this.toolsLoadedFrom ? since.toISOString() : null;
+    // The next catch-up need only look at what was written after this one
+    // began reading.
+    this.toolsLoadedFrom = startedAt;
+
+    this.logger.log(
+      `Registry catch-up: reloaded ${toReload.size} connector(s) changed since ` +
+        `${since.toISOString()}. Total tools: ${this.toolRegistry.getToolCount()}`,
+    );
+    return {
+      since: sinceIso,
+      reloaded: toReload.size,
+      toolCount: this.toolRegistry.getToolCount(),
+    };
+  }
+
+  async reloadConnectorTools(
+    connectorId: string,
+    opts: { syncKg?: boolean; notifySessions?: boolean } = {},
+  ): Promise<void> {
+    const { syncKg = true, notifySessions = true } = opts;
     // Remove old tools from both registries
     const oldTools = this.toolRegistry
       .getAllTools()
@@ -213,7 +335,7 @@ export class McpServerService implements OnModuleInit {
 
     // Keep the knowledge-graph static layer in sync with this connector's tool
     // surface. Fire-and-forget: it must never block or fail the tool reload.
-    if (connector?.organizationId) {
+    if (syncKg && connector?.organizationId) {
       this.kgStatic
         .syncConnector(connectorId)
         .catch((e) =>
@@ -223,11 +345,13 @@ export class McpServerService implements OnModuleInit {
 
     // Push tools/list_changed to any live stateful MCP sessions whose surface
     // this affects. Fire-and-forget: must never block or fail a tool reload.
-    this.sessionManager
-      .notifyToolsChanged()
-      .catch((e) =>
-        this.logger.warn(`MCP session notify failed: ${e.message}`),
-      );
+    if (notifySessions) {
+      this.sessionManager
+        .notifyToolsChanged()
+        .catch((e) =>
+          this.logger.warn(`MCP session notify failed: ${e.message}`),
+        );
+    }
   }
 
   /**
