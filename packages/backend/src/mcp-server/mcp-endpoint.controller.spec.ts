@@ -1,4 +1,12 @@
+import { Client } from '@modelcontextprotocol/client';
+import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { McpEndpointController } from './mcp-endpoint.controller';
+import { McpServersService } from '../mcp-servers/mcp-servers.service';
+import {
+  RESOURCE_PLACEHOLDER_TEXT,
+  connectorInstructionsUri,
+  serverInstructionsUri,
+} from './mcp-resources';
 
 /**
  * Regression tests for cross-tenant isolation on the per-server MCP endpoint.
@@ -33,7 +41,9 @@ describe('McpEndpointController — tenant isolation', () => {
     mcpServersService = {
       findById: jest.fn().mockResolvedValue(SERVER),
       getConnectorIds: jest.fn().mockResolvedValue([]),
-      getComposedInstructions: jest.fn().mockResolvedValue(''),
+      getVisibleContent: jest
+        .fn()
+        .mockResolvedValue({ instructions: undefined, connectors: [], resources: [] }),
       isUserInOrganization: jest.fn().mockResolvedValue(false),
     };
     toolRegistry = { getAllTools: jest.fn().mockReturnValue([]) };
@@ -525,5 +535,359 @@ describe('McpEndpointController — tools/list event stream', () => {
     const parsed = JSON.parse(written.replace(/^event: message\ndata: /, '').trim());
     expect(parsed.id).toBe(id);
     expect(parsed.result.tools[0].description).toBe('Get a <customer> & more');
+  });
+});
+
+/**
+ * Resources and initialize instructions must follow the tool path exactly: a
+ * connector contributes text only when at least one of its tools survives both
+ * the server assignment and the caller's role. Driven end to end through the
+ * real McpServersService (over a fake Prisma that honours the where clauses),
+ * the real SDK server and an in-memory MCP client.
+ */
+describe('McpEndpointController — resources and instructions follow the tool path', () => {
+  const ORG_A = 'org-A';
+  const ORG_B = 'org-B';
+
+  const CONNECTORS: Record<string, any> = {
+    'c-crm': { id: 'c-crm', organizationId: ORG_A, name: 'CRM', instructions: 'CRM-GUIDANCE' },
+    'c-fibu': { id: 'c-fibu', organizationId: ORG_A, name: 'Fibu', instructions: 'FIBU-GUIDANCE' },
+    // Another tenant's connector, wrongly assigned to srv-1 (corrupt row).
+    'c-foreign': {
+      id: 'c-foreign',
+      organizationId: ORG_B,
+      name: 'Foreign',
+      instructions: 'FOREIGN-GUIDANCE',
+    },
+    // Same tenant, but assigned to another server.
+    'c-srv2': { id: 'c-srv2', organizationId: ORG_A, name: 'Other', instructions: 'SRV2-GUIDANCE' },
+  };
+  const SERVERS: Record<string, any> = {
+    'srv-1': {
+      id: 'srv-1',
+      name: 'Sales',
+      version: '1.0.0',
+      isActive: true,
+      organizationId: ORG_A,
+      instructions: 'SERVER-GUIDANCE',
+    },
+    'srv-2': {
+      id: 'srv-2',
+      name: 'Ops',
+      version: '1.0.0',
+      isActive: true,
+      organizationId: ORG_A,
+      instructions: null,
+    },
+  };
+  const ASSIGNMENTS = [
+    { mcpServerId: 'srv-1', connectorId: 'c-crm' },
+    { mcpServerId: 'srv-1', connectorId: 'c-fibu' },
+    { mcpServerId: 'srv-1', connectorId: 'c-foreign' },
+    { mcpServerId: 'srv-2', connectorId: 'c-srv2' },
+  ];
+  const tool = (id: string, connectorId: string) => ({
+    id,
+    connectorId,
+    organizationId: CONNECTORS[connectorId].organizationId,
+    name: id,
+    description: `${id} tool`,
+    parameters: { type: 'object', properties: {} },
+    connectorType: 'REST',
+    connectorConfig: { baseUrl: 'https://x', authType: 'NONE', envVars: {} },
+    endpointMapping: { method: 'GET', path: '/x' },
+  });
+  const TOOLS = [
+    tool('crm_get', 'c-crm'),
+    tool('fibu_get', 'c-fibu'),
+    tool('foreign_get', 'c-foreign'),
+    tool('srv2_get', 'c-srv2'),
+  ];
+
+  let resources: any[];
+  let rolesService: any;
+  let kgService: any;
+  let controller: McpEndpointController;
+  let built: McpServer | undefined;
+  const OLD_STATEFUL = process.env.MCP_STATEFUL_SESSIONS;
+
+  function fakePrisma() {
+    const assigned = (serverId: string, connectorId: string) =>
+      ASSIGNMENTS.some((a) => a.mcpServerId === serverId && a.connectorId === connectorId);
+    return {
+      mcpServerConfig: {
+        findUnique: jest.fn(async ({ where }: any) => SERVERS[where.id] ?? null),
+      },
+      mcpServerConnector: {
+        findMany: jest.fn(async ({ where }: any) =>
+          ASSIGNMENTS.filter((a) => a.mcpServerId === where.mcpServerId)
+            .filter((a) => !where.connectorId || where.connectorId.in.includes(a.connectorId))
+            .filter(
+              (a) =>
+                !where.connector ||
+                CONNECTORS[a.connectorId].organizationId === where.connector.organizationId,
+            )
+            .map((a) => ({ connectorId: a.connectorId, connector: CONNECTORS[a.connectorId] })),
+        ),
+      },
+      mcpResource: {
+        findMany: jest.fn(async ({ where }: any) =>
+          resources
+            .filter((r) => where.connectorId.in.includes(r.connectorId))
+            .filter(
+              (r) => CONNECTORS[r.connectorId].organizationId === where.connector.organizationId,
+            )
+            .filter((r) => assigned(where.connector.mcpServers.some.mcpServerId, r.connectorId)),
+        ),
+      },
+    };
+  }
+
+  const row = (connectorId: string, uri: string, fetchConfig: unknown) => ({
+    connectorId,
+    uri,
+    name: uri,
+    description: null,
+    mimeType: 'text/markdown',
+    fetchConfig,
+  });
+
+  beforeEach(() => {
+    delete process.env.MCP_STATEFUL_SESSIONS;
+    resources = [
+      row('c-crm', 'crm://schema', { text: 'CRM-SCHEMA' }),
+      row('c-fibu', 'fibu://ledger', { text: 'FIBU-LEDGER' }),
+      row('c-foreign', 'foreign://doc', { text: 'FOREIGN-DOC' }),
+    ];
+    const kgSkills = {
+      // A connector-scoped skill on the Fibu connector.
+      activeSkillsText: jest.fn(async (_srv: string, ids: string[]) =>
+        ids.includes('c-fibu') ? '## Workspace skills\n- FIBU-SKILL' : null,
+      ),
+    };
+    const sessionManager = { get: jest.fn(), add: jest.fn(), remove: jest.fn() };
+    const service = new McpServersService(
+      fakePrisma() as any,
+      kgSkills as any,
+      sessionManager as any,
+    );
+    rolesService = { getAllowedToolIds: jest.fn() };
+    kgService = {
+      isEnabled: jest.fn().mockResolvedValue(true),
+      captureIntentEnabled: jest.fn().mockResolvedValue(false),
+      lookup: jest.fn(),
+      describeForResource: jest.fn().mockResolvedValue('# Knowledge graph'),
+    };
+    controller = new McpEndpointController(
+      service,
+      { getAllTools: () => TOOLS } as any,
+      { executeTool: jest.fn() } as any,
+      rolesService,
+      kgService,
+      sessionManager as any,
+      { resolve: jest.fn() } as any,
+      { create: jest.fn() } as any,
+    );
+    built = undefined;
+    // Keep the server the request built instead of serving it over HTTP.
+    jest
+      .spyOn(controller as any, 'serveStateless')
+      .mockImplementation(async (...args: any[]) => {
+        built = args[3]();
+      });
+    jest.spyOn((controller as any).logger, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    if (OLD_STATEFUL === undefined) delete process.env.MCP_STATEFUL_SESSIONS;
+    else process.env.MCP_STATEFUL_SESSIONS = OLD_STATEFUL;
+    jest.restoreAllMocks();
+  });
+
+  async function connect(allowedToolIds: string[] | null, serverId = 'srv-1') {
+    rolesService.getAllowedToolIds.mockResolvedValue(allowedToolIds);
+    const req: any = {
+      user: { sub: 'u-1', organizationId: ORG_A, authMethod: 'jwt' },
+      headers: {},
+    };
+    const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await controller.handlePost(serverId, req, res, {});
+    expect(built).toBeDefined();
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    await built!.connect(serverSide);
+    const client = new Client({ name: 'spec', version: '1.0.0' });
+    await client.connect(clientSide);
+    return client;
+  }
+
+  async function readFailure(client: Client, uri: string): Promise<any> {
+    try {
+      await client.readResource({ uri });
+    } catch (err) {
+      return err;
+    }
+    throw new Error(`read of ${uri} unexpectedly succeeded`);
+  }
+
+  /** The error for `uri`, with the URI itself masked, for comparison. */
+  async function notFoundShape(client: Client, uri: string) {
+    const err = await readFailure(client, uri);
+    return { code: err.code, message: String(err.message).split(uri).join('<uri>') };
+  }
+
+  it('a role-denied connector yields no resources, no instructions and not-found reads', async () => {
+    const client = await connect(['crm_get']);
+
+    const uris = (await client.listResources()).resources.map((r) => r.uri);
+    expect(uris).toEqual(
+      expect.arrayContaining([
+        serverInstructionsUri('srv-1'),
+        connectorInstructionsUri('srv-1', 'c-crm'),
+        'crm://schema',
+      ]),
+    );
+    expect(uris).not.toContain(connectorInstructionsUri('srv-1', 'c-fibu'));
+    expect(uris).not.toContain('fibu://ledger');
+
+    // initialize: the denied connector's instructions and its skills are gone.
+    const instructions = client.getInstructions() ?? '';
+    expect(instructions).toContain('SERVER-GUIDANCE');
+    expect(instructions).toContain('CRM-GUIDANCE');
+    expect(instructions).not.toContain('FIBU-GUIDANCE');
+    expect(instructions).not.toContain('FIBU-SKILL');
+
+    // The composed-instructions resource carries the same scoped text.
+    const composed = await client.readResource({ uri: serverInstructionsUri('srv-1') });
+    expect((composed.contents[0] as any).text).toBe(instructions);
+
+    // A denied connector's URIs read exactly like URIs that never existed.
+    const never = await notFoundShape(
+      client,
+      connectorInstructionsUri('srv-1', 'c-does-not-exist'),
+    );
+    expect(await notFoundShape(client, connectorInstructionsUri('srv-1', 'c-fibu'))).toEqual(
+      never,
+    );
+    expect(await notFoundShape(client, 'fibu://ledger')).toEqual(
+      await notFoundShape(client, 'fibu://never-existed'),
+    );
+    expect(never.message).toMatch(/not found/i);
+    expect(never.message).not.toMatch(/forbidden|denied|permission/i);
+
+    await client.close();
+  });
+
+  it('a caller who sees everything keeps the full instructions', async () => {
+    const client = await connect(null);
+    const instructions = client.getInstructions() ?? '';
+    expect(instructions).toContain('SERVER-GUIDANCE');
+    expect(instructions).toContain('CRM-GUIDANCE');
+    expect(instructions).toContain('FIBU-GUIDANCE');
+    expect(instructions).toContain('FIBU-SKILL');
+
+    const uris = (await client.listResources()).resources.map((r) => r.uri);
+    expect(uris).toEqual(
+      expect.arrayContaining([
+        connectorInstructionsUri('srv-1', 'c-crm'),
+        connectorInstructionsUri('srv-1', 'c-fibu'),
+        'crm://schema',
+        'fibu://ledger',
+      ]),
+    );
+    await client.close();
+  });
+
+  it('a connector of another organization or another server is not-found', async () => {
+    const client = await connect(null);
+    const instructions = client.getInstructions() ?? '';
+    expect(instructions).not.toContain('FOREIGN-GUIDANCE');
+    expect(instructions).not.toContain('SRV2-GUIDANCE');
+
+    const uris = (await client.listResources()).resources.map((r) => r.uri);
+    expect(uris).not.toContain(connectorInstructionsUri('srv-1', 'c-foreign'));
+    expect(uris).not.toContain('foreign://doc');
+
+    const never = await notFoundShape(client, connectorInstructionsUri('srv-1', 'c-nope'));
+    for (const uri of [
+      connectorInstructionsUri('srv-1', 'c-foreign'),
+      connectorInstructionsUri('srv-1', 'c-srv2'),
+      connectorInstructionsUri('srv-2', 'c-srv2'),
+      serverInstructionsUri('srv-2'),
+    ]) {
+      expect(await notFoundShape(client, uri)).toEqual(never);
+    }
+    expect(await notFoundShape(client, 'foreign://doc')).toEqual(
+      await notFoundShape(client, 'foreign://never-existed'),
+    );
+    await client.close();
+  });
+
+  it('serves a stored data object or remote URL as the placeholder, without fetching', async () => {
+    resources = [
+      row('c-crm', 'crm://config', { data: { apiKey: 'sk_live_SECRET' } }),
+      row('c-crm', 'crm://remote', { url: 'https://internal.example/secret.json' }),
+    ];
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    const client = await connect(['crm_get']);
+
+    for (const uri of ['crm://config', 'crm://remote']) {
+      const result = await client.readResource({ uri });
+      expect(result.contents).toEqual([
+        { uri, mimeType: 'text/plain', text: RESOURCE_PLACEHOLDER_TEXT },
+      ]);
+      expect(JSON.stringify(result)).not.toMatch(/sk_live_SECRET|internal\.example/);
+    }
+    const listed = JSON.stringify(await client.listResources());
+    expect(listed).not.toMatch(/sk_live_SECRET|internal\.example/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    await client.close();
+  });
+
+  it('withholds a URI that two visible connectors both claim', async () => {
+    resources = [
+      row('c-crm', 'shared://doc', { text: 'FROM-CRM' }),
+      row('c-fibu', 'shared://doc', { text: 'FROM-FIBU' }),
+    ];
+    const client = await connect(null);
+    const uris = (await client.listResources()).resources.map((r) => r.uri);
+    expect(uris).not.toContain('shared://doc');
+    expect(await notFoundShape(client, 'shared://doc')).toEqual(
+      await notFoundShape(client, 'shared://never-existed'),
+    );
+    await client.close();
+  });
+
+  it('a duplicate is only a duplicate among what the caller can see', async () => {
+    resources = [
+      row('c-crm', 'shared://doc', { text: 'FROM-CRM' }),
+      row('c-fibu', 'shared://doc', { text: 'FROM-FIBU' }),
+    ];
+    // Fibu is denied, so its claim never enters the plan and CRM's stands.
+    const client = await connect(['crm_get']);
+    const result = await client.readResource({ uri: 'shared://doc' });
+    expect((result.contents[0] as any).text).toBe('FROM-CRM');
+    await client.close();
+  });
+
+  it('keeps the knowledge-graph resource registered next to the new ones', async () => {
+    const client = await connect(['crm_get']);
+    const uris = (await client.listResources()).resources.map((r) => r.uri);
+    expect(uris).toContain('anythingmcp://server/srv-1/knowledge-graph');
+    const kg = await client.readResource({ uri: 'anythingmcp://server/srv-1/knowledge-graph' });
+    expect((kg.contents[0] as any).text).toBe('# Knowledge graph');
+    expect(kgService.describeForResource).toHaveBeenCalledWith(
+      ORG_A,
+      expect.objectContaining({ connectorIds: ['c-crm'] }),
+    );
+    await client.close();
+  });
+
+  it('a role allowing no tool on the server sees only server-level text', async () => {
+    const client = await connect([]);
+    expect(client.getInstructions()).toBe('SERVER-GUIDANCE');
+    const uris = (await client.listResources()).resources.map((r) => r.uri);
+    expect(uris.filter((u) => u.includes('/connector/'))).toEqual([]);
+    expect(uris).not.toContain('crm://schema');
+    await client.close();
   });
 });
