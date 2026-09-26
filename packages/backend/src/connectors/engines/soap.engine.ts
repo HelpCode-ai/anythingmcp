@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import * as soap from 'soap';
+import * as crypto from 'crypto';
 import { XMLParser } from 'fast-xml-parser';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 
@@ -81,6 +82,8 @@ export class SoapEngine {
       targetNamespace,
       soapParams,
       paramOrder,
+      config.authType,
+      config.authConfig,
     );
 
     // Build headers
@@ -161,6 +164,8 @@ export class SoapEngine {
     targetNamespace: string,
     params: Record<string, unknown>,
     paramOrder: string[] = [],
+    authType?: string,
+    authConfig?: Record<string, unknown>,
   ): string {
     const ns = targetNamespace || 'http://tempuri.org/';
 
@@ -174,15 +179,59 @@ export class SoapEngine {
       .map((key) => `      <tns:${key}>${this.escapeXml(String(params[key]))}</tns:${key}>`)
       .join('\n');
 
+    const headerXml = this.buildHeaderXml(authType, authConfig);
+
     return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="${ns}">
-  <soapenv:Header/>
+  ${headerXml}
   <soapenv:Body>
     <tns:${operationName}>
 ${paramXml}
     </tns:${operationName}>
   </soapenv:Body>
 </soapenv:Envelope>`;
+  }
+
+  private buildHeaderXml(
+    authType?: string,
+    authConfig?: Record<string, unknown>,
+  ): string {
+    if (authType === 'WS_SECURITY' && authConfig) {
+      const username = this.escapeXml(String(authConfig.username ?? ''));
+      const password = String(authConfig.password ?? '');
+      const passwordType = authConfig.passwordType || 'PasswordText';
+
+      let passwordElement = '';
+      let nonceElement = '';
+      let createdElement = '';
+
+      if (passwordType === 'PasswordDigest') {
+        const created = new Date().toISOString();
+        const nonceBytes = crypto.randomBytes(16);
+        const nonceBase64 = nonceBytes.toString('base64');
+        const hash = crypto
+          .createHash('sha1')
+          .update(Buffer.concat([nonceBytes, Buffer.from(created, 'utf8'), Buffer.from(password, 'utf8')]))
+          .digest('base64');
+
+        passwordElement = `        <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">${hash}</wsse:Password>`;
+        nonceElement = `\n        <wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">${nonceBase64}</wsse:Nonce>`;
+        createdElement = `\n        <wsu:Created xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">${created}</wsu:Created>`;
+      } else {
+        passwordElement = `        <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">${this.escapeXml(password)}</wsse:Password>`;
+      }
+
+      return `<soapenv:Header>
+    <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+      <wsse:UsernameToken>
+        <wsse:Username>${username}</wsse:Username>
+${passwordElement}${nonceElement}${createdElement}
+      </wsse:UsernameToken>
+    </wsse:Security>
+  </soapenv:Header>`;
+    }
+
+    return '<soapenv:Header/>';
   }
 
   private escapeXml(str: string): string {
