@@ -346,7 +346,7 @@ function umbrellaReadme(sat, ctx) {
 }
 
 function soapReadme(sat, ctx) {
-  const { content, config, manifest, date } = ctx;
+  const { content, config, manifest } = ctx;
   const t = T.en;
   const c = content.en ?? {};
   const introText =
@@ -480,7 +480,7 @@ function genericTail(sat, ctx, t, security, troubleRows) {
 }
 
 function sqlReadme(sat, ctx) {
-  const { adapters, config } = ctx;
+  const { adapters } = ctx;
   const t = T.en;
   const introText =
     'SQL to MCP lets Claude, ChatGPT, Copilot and Cursor query PostgreSQL, MySQL, MariaDB, SQL Server, Oracle and MongoDB through MCP, without code. ' +

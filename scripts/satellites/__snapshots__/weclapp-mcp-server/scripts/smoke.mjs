@@ -7,8 +7,10 @@
  *   npm install && node scripts/smoke.mjs
  *
  * Reads MCP_URL (default http://localhost:4000/mcp) and MCP_API_KEY from the
- * environment or from .env, where scripts/install.sh writes them.
- * SMOKE_TOOL / SMOKE_ARGS override the read-only call from satellite.json.
+ * environment or from .env, where scripts/install.sh writes them; neither is
+ * ever printed. To try another tool than the one in satellite.json:
+ *
+ *   node scripts/smoke.mjs <tool> '<json arguments>'
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -32,6 +34,7 @@ function readDotEnv(path) {
 }
 
 const url = env.MCP_URL || 'http://localhost:4000/mcp';
+const [cliTool, cliArgs] = process.argv.slice(2);
 if (!env.MCP_API_KEY) {
   console.error('MCP_API_KEY is not set. Run scripts/install.sh first, or export the key from the AnythingMCP UI.');
   process.exit(2);
@@ -59,14 +62,12 @@ await client.connect(
 const { tools } = await client.listTools();
 const names = new Set(tools.map((t) => t.name));
 const missing = [...expected].filter((n) => !names.has(n));
-console.log(`tools/list: ${tools.length} tools on ${url}`);
+console.log(`tools/list: ${tools.length} tools`);
 for (const n of [...expected].sort()) console.log(`  ${names.has(n) ? 'ok     ' : 'MISSING'} ${n}`);
 
 let failed = missing.length > 0;
 let callRefused = false;
-const call = env.SMOKE_TOOL
-  ? { tool: env.SMOKE_TOOL, args: JSON.parse(env.SMOKE_ARGS || '{}') }
-  : manifest.smokeCall;
+const call = cliTool ? { tool: cliTool, args: JSON.parse(cliArgs || '{}') } : manifest.smokeCall;
 if (call && names.has(call.tool)) {
   const res = await client.callTool({ name: call.tool, arguments: call.args ?? {} });
   const text = (res.content ?? []).map((c) => c.text ?? '').join('\n');

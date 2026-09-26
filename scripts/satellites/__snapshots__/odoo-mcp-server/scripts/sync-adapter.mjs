@@ -19,12 +19,25 @@ const manifest = JSON.parse(readFileSync(join(root, 'satellite.json'), 'utf8'));
 const RAW = `https://raw.githubusercontent.com/${manifest.mainRepo}/main/packages/backend/src/adapters`;
 
 let changed = false;
+const current = (path) => {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+};
+
 for (const { slug, region } of manifest.adapters) {
+  if (!/^[a-z0-9-]+$/.test(slug) || !/^[a-z]+$/.test(region)) throw new Error(`bad adapter entry ${slug}/${region}`);
   const res = await fetch(`${RAW}/${region}/${slug}.json`);
   if (!res.ok) throw new Error(`${slug}: HTTP ${res.status}`);
-  const upstream = JSON.stringify(await res.json(), null, 2) + '\n';
+  const adapter = await res.json();
+  // Only an adapter definition for this slug is written; anything else means
+  // the upstream path moved and a human should look.
+  if (adapter?.slug !== slug || !Array.isArray(adapter.tools)) throw new Error(`${slug}: upstream file is not this adapter`);
+  const upstream = JSON.stringify(adapter, null, 2) + '\n';
   const path = join(root, 'adapter', `${slug}.json`);
-  if (!existsSync(path) || readFileSync(path, 'utf8') !== upstream) {
+  if (current(path) !== upstream) {
     writeFileSync(path, upstream);
     console.log(`updated adapter/${slug}.json`);
     changed = true;
