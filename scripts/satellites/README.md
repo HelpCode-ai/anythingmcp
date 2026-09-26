@@ -32,6 +32,8 @@ Three levels of findings:
 for example real production traffic. The sync workflow in each satellite only
 bumps the "Adapter synced" date; it never claims a verification.
 
+`publish.mjs --only <repos>` creates or updates the repositories (see its header). GitHub has no API for social preview images: `social-preview.mjs --only <repos>` renders them to `out/social/`, to upload under Settings → Social preview.
+
 Generation writes `out/apply-metadata.sh` with the `gh repo edit` commands for
 About, website and topics. Nothing here creates or pushes a repository.
 
