@@ -158,7 +158,7 @@ docker compose up -d
 
 † 根据供应商公开的 API 文档构建，尚未在实际运行的租户上测试。如果你正在使用其中某个系统，非常欢迎提交问题反馈或修复。
 
-**代码仓库:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server)
+**代码仓库:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 **你的 ERP 不在列表中，或者是定制开发、本地部署的系统？** 可以通过它的 [REST API](#openapi--rest-api-to-mcp)、[SOAP 服务](#soap--wsdl-to-mcp) 连接，也可以以只读方式直接连接它的 [SQL 数据库](#sql-database-to-mcp)。[KOCH Freiburg](https://www.kochfreiburg.de/) 在生产环境中就是这样接入其 ERP 的。
 
@@ -188,7 +188,7 @@ docker compose up -d
 
 † 根据供应商公开的 API 文档构建，尚未在实际运行的卖家账户上测试。
 
-**代码仓库:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server)
+**代码仓库:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server) · [woocommerce-mcp-server](https://github.com/keysersoft/woocommerce-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
 
 ---
 

@@ -158,7 +158,7 @@ Postman v2.1 のコレクションをインポートすると、フォルダー�
 
 † ベンダーが公開している API ドキュメントを基に作成しており、実際のテナントではまだ検証していません。これらのシステムをお使いの方からの報告や修正を歓迎します。
 
-**リポジトリ:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server)
+**リポジトリ:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 **お使いの ERP が一覧にない場合や、独自開発・オンプレミスの ERP の場合は？** その [REST API](#openapi--rest-api-to-mcp) や [SOAP サービス](#soap--wsdl-to-mcp)を通じて、または [SQL データベース](#sql-database-to-mcp)に直接、読み取り専用で接続できます。[KOCH Freiburg](https://www.kochfreiburg.de/) は、この方法で自社の ERP を本番環境で接続しています。
 
@@ -188,7 +188,7 @@ Amazon や eBay から DACH 地域のマーケットプレイスまで、ショ�
 
 † ベンダーが公開している API ドキュメントを基に作成しており、実際の販売者アカウントではまだ検証していません。
 
-**リポジトリ:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server)
+**リポジトリ:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server) · [woocommerce-mcp-server](https://github.com/keysersoft/woocommerce-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
 
 ---
 

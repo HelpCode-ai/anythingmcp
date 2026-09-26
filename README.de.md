@@ -158,7 +158,7 @@ Fertige Adapter für die ERP-Systeme, in denen die meisten Fragen zu Aufträgen,
 
 † Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Mandanten getestet. Wenn du eines dieser Systeme einsetzt, freuen wir uns sehr über einen Erfahrungsbericht oder einen Fix.
 
-**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server)
+**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 **Dein ERP ist nicht dabei, oder es ist eine Eigenentwicklung bzw. läuft on-premises?** Binde es über seine [REST-API](#openapi--rest-api-to-mcp), seine [SOAP-Dienste](#soap--wsdl-to-mcp) oder direkt über seine [SQL-Datenbank](#sql-database-to-mcp) an, mit reinem Lesezugriff. So betreibt [KOCH Freiburg](https://www.kochfreiburg.de/) sein ERP im Produktivbetrieb.
 
@@ -188,7 +188,7 @@ Shops und Marktplätze, von Amazon und eBay bis zu den Marktplätzen im DACH-Rau
 
 † Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Verkäuferkonto getestet.
 
-**Repositories:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server)
+**Repositories:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server) · [woocommerce-mcp-server](https://github.com/keysersoft/woocommerce-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
 
 ---
 
