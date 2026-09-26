@@ -1,0 +1,119 @@
+---
+title: "Onlineshop mit Claude und ChatGPT verbinden: E-Commerce MCP"
+description: "Amazon Seller, WooCommerce, Shopware, Kaufland, OTTO und 8 weitere Shops und Marktplätze per MCP mit Claude und ChatGPT verbinden. Self-hosted, ohne Code."
+category: "connectors"
+keyword: "E-Commerce MCP, Onlineshop mit Claude verbinden, Marktplatz MCP, E-Commerce KI Assistent, Onlineshop ChatGPT Anbindung, Amazon Seller MCP, ecommerce mcp"
+publishedAt: "2026-09-26"
+lang: "de"
+---
+
+**Kurz gesagt:** AnythingMCP macht Ihren Onlineshop und Ihre Marktplatz-Konten zu MCP-Tools für Claude, ChatGPT und Copilot. Für dreizehn Shops und Marktplätze gibt es einen fertigen Adapter, von Amazon Seller Central und eBay bis Kaufland, OTTO und Zalando. Adapter installieren, autorisieren, und schon fragen Sie in einem einzigen Gespräch kanalübergreifend nach Bestellungen, Beständen und Retouren.
+
+| Auf einen Blick | |
+|---|---|
+| Fertige Shop- und Marktplatz-Adapter | 13, zusammen 160 Tools |
+| Weitere Shopsysteme | Über ihre REST/OpenAPI- oder GraphQL-API, ohne Code |
+| KI-Clients | Claude (Web, Desktop, Code), ChatGPT, GitHub Copilot, Cursor, jeder MCP-Client |
+| Hosting | Self-hosted mit Docker (Open Source, AGPL-3.0) oder AnythingMCP Cloud (Frankfurt) |
+| Governance | Rollen mit reinem Lesezugriff, Response-Mapping pro Tool, Audit-Log |
+| Zuletzt geprüft | 2026-09-26 |
+
+## Welche Shops und Marktplätze unterstützt werden
+
+| System | Markt | Tools | Authentifizierung | AnythingMCP Cloud |
+|---|---|---|---|---|
+| [Amazon Seller Central](https://anythingmcp.com/de/guides/connect-amazon-seller-to-claude) | Weltweit | 15 | OAuth 2.0 | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=amazon-seller) |
+| [WooCommerce](https://anythingmcp.com/de/guides/connect-woocommerce-to-claude) | Weltweit | 49 | Benutzer + Passwort | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=woocommerce) |
+| [Shopware 6 (Store API)](https://anythingmcp.com/de/guides/connect-shopware-6-to-claude) | DACH | 6 | API-Key | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=shopware-6) |
+| [Magento 2 / Adobe Commerce](https://anythingmcp.com/de/guides/connect-magento-to-claude) | Weltweit | 12 | API-Token | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=magento) |
+| [BigCommerce](https://anythingmcp.com/de/guides/connect-bigcommerce-to-claude) | Weltweit | 14 | API-Key | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=bigcommerce) |
+| [eBay Sell](https://anythingmcp.com/de/guides/connect-ebay-sell-to-claude) | Weltweit | 10 | OAuth 2.0 | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=ebay-sell) |
+| [Etsy](https://anythingmcp.com/de/guides/connect-etsy-to-claude) | Weltweit | 9 | OAuth 2.0 | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=etsy) |
+| [Ecwid](https://anythingmcp.com/de/guides/connect-ecwid-to-claude) | Weltweit | 10 | API-Token | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=ecwid) |
+| [Kaufland Marketplace](https://anythingmcp.com/de/guides/connect-kaufland-to-claude) | DE | 8 | HMAC-signierter Key | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=kaufland) |
+| [OTTO Market](https://anythingmcp.com/de/guides/connect-otto-market-to-claude) † | DE | 8 | OAuth 2.0 | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=otto-market) |
+| [Zalando Direct Ship](https://anythingmcp.com/de/guides/connect-zalando-zds-to-claude) † | EU | 7 | OAuth 2.0 | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=zalando-zds) |
+| [Billbee](https://anythingmcp.com/guides/connect-billbee-to-claude) | DACH | 8 | Benutzer + Passwort | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=billbee) |
+| [Mercado Libre](https://anythingmcp.com/de/guides/connect-mercado-libre-to-claude) | LATAM | 4 | OAuth 2.0 | [Installieren](https://cloud.anythingmcp.com/connectors/store?install=mercado-libre) |
+
+† Auf Basis der veröffentlichten API-Dokumentation des Herstellers gebaut und noch nicht gegen ein produktives Verkäuferkonto getestet.
+
+Der Funktionsumfang unterscheidet sich von Adapter zu Adapter; die Einrichtungsanleitungen listen jedes Tool auf. Zwei Punkte vorab: Der Shopware-6-Adapter nutzt die **Store API**. Er liest also den Storefront-Katalog (Produkte, Kategorien, Cross-Selling), aber keine Bestellungen. WooCommerce ist mit 49 Tools der umfassendste Adapter, inklusive Erstattungen, Gutscheinen und Berichten.
+
+## Schritt 1 — AnythingMCP starten
+
+Shop- und Marktplatz-APIs sind aus dem Internet erreichbar, daher ist die [AnythingMCP Cloud](https://cloud.anythingmcp.com) der schnellste Einstieg. Wenn die Zugangsdaten im Haus bleiben sollen, betreiben Sie AnythingMCP self-hosted:
+
+```bash
+mkdir anythingmcp && cd anythingmcp
+curl -fsSLo docker-compose.yml \
+  https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docker-compose.quickstart.yml
+printf 'JWT_SECRET=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
+docker compose up -d   # → http://localhost:3000
+```
+
+## Schritt 2 — Einen Connector pro Vertriebskanal installieren
+
+Klicken Sie in der Tabelle auf **Installieren** (Cloud) oder öffnen Sie **Connectors → Store**. Bei Marktplätzen mit OAuth (Amazon, eBay, Etsy, OTTO, Zalando, Mercado Libre) werden Sie zur Autorisierung an den Anbieter weitergeleitet; die übrigen fragen nach einem API-Key oder nach Benutzer und Passwort. Legen Sie alle Kanäle auf denselben MCP-Server, dann kann die KI sie in einer einzigen Antwort vergleichen.
+
+## Schritt 3 — Schreibzugriffe hinter einer Rolle halten
+
+Die meisten Marktplatz-Adapter lesen nur. Die Shopsysteme können auch Daten ändern: WooCommerce, Magento, BigCommerce und Ecwid können Produkte und Bestellungen anlegen oder ändern, OTTO Market kann Bestände und Preise aktualisieren, eBay den Preis eines Angebots. Geben Sie der KI zunächst eine Rolle mit reinem Lesezugriff und schalten Sie schreibende Tools bewusst dazu.
+
+## Schritt 4 — Claude, ChatGPT oder Copilot verbinden
+
+- **Claude:** *Customize → Connectors → Add custom connector*, dann die URL des MCP-Servers einfügen ([Schritt für Schritt](https://anythingmcp.com/guides/how-to-add-a-custom-connector-to-claude)).
+- **ChatGPT:** Die öffentliche HTTPS-URL in den ChatGPT-Einstellungen als Connector (App) hinzufügen.
+- **Claude Code, Cursor, VS Code / Copilot:** Die URL mit einem `X-API-Key`-Header eintragen.
+
+## Beispiel-Prompts
+
+- „Welche Bestellungen von gestern bei Kaufland und OTTO sind noch nicht versendet?“
+- „Welche Produkte haben in WooCommerce einen niedrigen Bestand, und wie schnell haben sie sich letzten Monat verkauft?“
+- „Fasse die Retouren dieser Woche über alle Kanäle nach Rücksendegrund zusammen.“
+- „Wie hoch sind die Amazon-Gebühren für SKU A-1043 bei 24,90 EUR?“
+- „Welche Etsy-Bewertungen in diesem Monat liegen unter vier Sternen, und was steht darin?“
+- „Erhöhe den Preis von Angebot 1234 bei eBay auf 39 EUR.“ (schreibendes Tool, braucht eine ausdrücklich berechtigte Rolle)
+
+## Sicherheit und Governance
+
+- **Rollen bestimmen die Tools:** Ein MCP-Server bietet nur die Tools an, die seine Rolle freigibt.
+- **Response-Mapping** entfernt Kundenadressen, Telefonnummern oder Zahlungsdaten, bevor sie das Modell erreichen.
+- **Audit-Log:** Jeder Aufruf mit Eingabe, Ausgabe, Dauer und Status.
+- **Zugangsdaten** werden mit AES-256-GCM verschlüsselt; OAuth-Tokens werden automatisch erneuert.
+
+## FAQ
+
+**Wie verbinde ich meinen Onlineshop mit Claude?**
+Installieren Sie den Adapter Ihres Shops in AnythingMCP, autorisieren Sie ihn und fügen Sie die URL Ihres MCP-Servers in Claude als Custom Connector hinzu.
+
+**Kann ich mehrere Marktplätze gleichzeitig abfragen?**
+Ja. Legen Sie alle Kanal-Connectoren auf einen MCP-Server; die KI ruft jeden einzeln auf und führt die Antworten zusammen.
+
+**Funktioniert das auch mit ChatGPT?**
+Ja, als Connector mit der öffentlichen HTTPS-URL Ihres MCP-Servers, zum Beispiel in der AnythingMCP Cloud.
+
+**Kann die KI Preise, Bestände oder Bestellungen ändern?**
+Nur über schreibende Tools, und nur, wenn eine Rolle ihr Zugriff darauf gibt. Die meisten Marktplatz-Adapter lesen nur.
+
+**Mein Shopsystem steht nicht in der Liste. Kann ich es trotzdem anbinden?**
+Wenn es eine REST-API mit OpenAPI-Spezifikation hat, importieren Sie die Spezifikation ([OpenAPI to MCP](https://anythingmcp.com/guides/openapi-to-mcp)); GraphQL-APIs funktionieren genauso ([GraphQL to MCP](https://anythingmcp.com/de/guides/graphql-to-mcp)).
+
+**Gelangen Kundendaten zum KI-Anbieter?**
+Nur die Felder, die ein Tool zurückgibt, und per Response-Mapping entfernen Sie personenbezogene Daten, bevor sie Ihre AnythingMCP-Instanz verlassen.
+
+## AnythingMCP, MCP-Server des Marktplatzes oder individuelle Integration
+
+| | AnythingMCP | MCP-Server eines einzelnen Anbieters | Eine individuelle Integration |
+|---|---|---|---|
+| Kanäle in einem MCP-Server | 13 fertig, weitere über REST oder GraphQL | Einer | Was Sie selbst bauen |
+| ERP und Versand im selben Server | Ja | Nein | Wenn Sie sie bauen |
+| Zu schreibender Code | Keiner | Keiner | Alles |
+| Zugriffskontrolle und Audit | Rollen, Response-Mapping, Audit-Log | Unterschiedlich | Was Sie selbst bauen |
+
+## Weiterführend
+
+- [ERP to MCP](https://anythingmcp.com/de/guides/erp-to-mcp): das ERP hinter Ihren Shops anbinden
+- [Amazon Seller Central mit ChatGPT verbinden](https://anythingmcp.com/de/guides/connect-amazon-seller-to-chatgpt) und [WooCommerce mit Claude verbinden](https://anythingmcp.com/de/guides/connect-woocommerce-to-claude)
+- [Alle E-Commerce-Connectoren](https://anythingmcp.com/de/marketplace/category/ecommerce)
+- [Claude Connectors](https://anythingmcp.com/de/claude-connectors)

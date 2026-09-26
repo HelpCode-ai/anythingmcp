@@ -84,10 +84,10 @@ Paste the spec URL or JSON/YAML content. Tools are auto-generated for each `path
 
 ```bash
 # Import from URL
-curl -s http://localhost:4000/api/connectors/$CONNECTOR_ID/import-spec \
+curl -s http://localhost:4000/api/connectors/$CONNECTOR_ID/import \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"specUrl": "https://petstore.swagger.io/v2/swagger.json"}'
+  -d '{"source": "openapi", "url": "https://petstore.swagger.io/v2/swagger.json"}'
 ```
 
 ### From Postman Collection

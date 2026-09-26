@@ -1,0 +1,101 @@
+---
+title: "How to Add a Custom Connector to Claude (and Fix It)"
+description: "Add a custom connector to Claude in five clicks, then fix the usual problems: greyed-out button, server not reachable, no tools, OAuth errors."
+category: "connectors"
+keyword: "how to add custom connector in claude, claude add custom connector, claude custom connector, add connector to claude, claude custom connector disabled"
+publishedAt: "2026-09-26"
+lang: "en"
+---
+
+**TL;DR:** In Claude, open *Customize → Connectors*, click **+**, choose **Add custom connector**, enter a name and the remote MCP server URL, click **Add**, then **Connect**. The URL must be public HTTPS, because Claude connects from Anthropic's cloud, not from your computer. On Team and Enterprise only an Owner can add it. Below: the steps, where to get a URL for your own systems, and fixes for the problems people hit most.
+
+| Facts | |
+|---|---|
+| Where | Claude on the web and Claude Desktop; the connector then also works in the mobile apps |
+| Who | Any plan; on Team and Enterprise, Owners and Primary Owners add it for the organization |
+| Free plan | One custom connector |
+| URL | A remote MCP server over public HTTPS |
+| Auth | None, or OAuth (Claude opens the server's sign-in page) |
+| Claude Code | `claude mcp add --transport http <name> <url>` |
+| Last verified | 2026-09-26 |
+
+## Step 1 — Get a remote MCP server URL
+
+A custom connector is a remote MCP server. If the service you want already publishes one, use its URL. For your own systems (an ERP, a CRM, a database, an internal REST or SOAP API), AnythingMCP creates the server without code:
+
+- **AnythingMCP Cloud:** sign in at [cloud.anythingmcp.com](https://cloud.anythingmcp.com), install a connector from the store or import your API, and copy the URL from **MCP Servers**. It is public HTTPS already.
+- **Self-hosted:** run AnythingMCP behind your own domain with TLS (`./setup.sh` in the [repository](https://github.com/HelpCode-ai/anythingmcp) sets up Caddy and certificates). A `localhost` URL will not work in Claude.
+
+Each MCP server in AnythingMCP has its own URL and shows only the connectors assigned to it. Give Claude the URL of the server that holds the tools you want.
+
+## Step 2 — Add it in Claude
+
+1. Open **Customize → Connectors**.
+2. Click **+**, then **Add custom connector**.
+3. Enter a name and the remote MCP server URL.
+4. Optional: under **Advanced settings**, enter an OAuth Client ID and Client Secret if the server asks for them. AnythingMCP does not need them; Claude registers itself.
+5. Click **Add**, then **Connect**, and sign in. With AnythingMCP you sign in with your AnythingMCP account and approve Claude's access.
+
+On **Team and Enterprise**, an Owner adds the connector once under **Organization settings → Connectors**; each member then clicks **Connect** and signs in with their own account, so Claude sees only what that person may see.
+
+## Step 3 — Use it in a chat
+
+Start a chat, open the tools menu and make sure the connector is enabled. Claude asks before it calls a tool the first time; you can allow a tool once or always.
+
+## Troubleshooting
+
+| Problem | Cause and fix |
+|---|---|
+| **"Add custom connector" is greyed out or missing** | On Team and Enterprise only Owners can add connectors: ask one to add it under Organization settings. On the Free plan the one custom connector may already be used. |
+| **"Couldn't reach the MCP server"** | Claude connects from Anthropic's cloud. `localhost`, a VPN-only host or an internal IP will not work; the URL must be public HTTPS with a valid certificate (not self-signed). |
+| **It connects, but no tools appear** | The URL points at an MCP server with no connectors assigned, or at a different server than the one you set up. In AnythingMCP, check which connectors the server in **MCP Servers** exposes. |
+| **Wrong or too many tools** | You used a server that holds every connector. Create a dedicated MCP server with only the connectors this use needs and use its URL. |
+| **Sign-in loop or OAuth error** | The server's OAuth setup does not match what Claude expects. With AnythingMCP, make sure you are signed in in the same browser and approve the request; on a self-hosted instance set `MCP_AUTH_MODE` to `oauth2` (the default) or `both`. |
+| **A tool call fails** | The connector's credentials for the underlying system are wrong or expired. The error message comes from that system; fix the credentials on the connector. |
+| **It works on the web but not on mobile** | Add connectors on the web or in Claude Desktop; adding them on mobile is still in beta. Once added, they work in the apps. |
+
+## Claude Code
+
+Claude Code shows the connectors of your Claude account when you log in with it. To add a server from the terminal instead:
+
+```bash
+claude mcp add --transport http my-erp https://cloud.anythingmcp.com/mcp/<server-id>
+# a local AnythingMCP with an API key:
+claude mcp add --transport http my-erp http://localhost:4000/mcp --header "X-API-Key: <key>"
+```
+
+In Claude Code a local URL works, because the connection starts on your machine.
+
+## Security
+
+A custom connector gives Claude whatever the server exposes. Anthropic does not review custom connectors, so connect only servers you trust, and prefer one that lets you:
+
+- expose only the tools a use needs (roles per MCP server),
+- keep writes behind explicit permissions,
+- strip sensitive fields before they reach the model (response mapping),
+- see every call afterwards (audit log).
+
+AnythingMCP does all four, self-hosted or in its EU cloud.
+
+## FAQ
+
+**How do I add a custom connector in Claude?**
+Customize → Connectors → **+** → Add custom connector, enter a name and the remote MCP server URL, click Add, then Connect.
+
+**Why can't I add a custom connector in Claude?**
+On Team and Enterprise only Owners can; on the Free plan the one allowed custom connector may be in use; and the URL must be a public HTTPS MCP server, not `localhost`.
+
+**Does a custom connector work in Claude Desktop and on mobile?**
+Yes. It belongs to your Claude account, so it is available on the web, in Claude Desktop and in the mobile apps.
+
+**Can I create my own connector without writing an MCP server?**
+Yes. Import an OpenAPI spec, a Postman collection, a WSDL or a database into AnythingMCP and use the URL it gives you. See [OpenAPI to MCP](https://anythingmcp.com/guides/openapi-to-mcp), [SOAP to MCP](https://anythingmcp.com/guides/soap-to-mcp) and [ERP to MCP](https://anythingmcp.com/guides/erp-to-mcp).
+
+**Is it the same in ChatGPT?**
+Similar: ChatGPT adds the same public HTTPS URL as a connector (app) in its settings.
+
+## Related
+
+- [Claude connectors: what they are and which to use](https://anythingmcp.com/claude-connectors)
+- [ERP to MCP](https://anythingmcp.com/guides/erp-to-mcp) · [E-commerce to MCP](https://anythingmcp.com/guides/ecommerce-to-mcp)
+- [Claude setup reference](https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md)

@@ -1,0 +1,95 @@
+---
+title: "Postman to MCP: Turn a Postman Collection into MCP Tools"
+description: "Import a Postman v2.1 collection and every request becomes an MCP tool for Claude, ChatGPT and Copilot: folders, auth and variables carried over. No code."
+category: "connectors"
+keyword: "postman to mcp, postman collection to mcp, postman mcp server, convert postman collection to mcp, api to mcp"
+publishedAt: "2026-09-26"
+lang: "en"
+---
+
+**TL;DR:** If your team already tests an API in Postman, the collection is most of an MCP server. Export it, import it into AnythingMCP, and every request becomes a tool that Claude, ChatGPT, Copilot and Cursor can call, with folders, auth and variables carried over. No spec, no code.
+
+| Facts | |
+|---|---|
+| Format | Postman Collection v2.1 (JSON), by URL or pasted |
+| One tool per | Request; folders become a name prefix |
+| Carried over | Nested folders, auth at collection/folder/request level, query parameters, headers, raw JSON / form-data / urlencoded bodies, `{{variables}}` |
+| Not carried over | Pre-request and test scripts (they are noted in the tool description, not run) |
+| Hosting | Self-hosted with Docker (open source) or AnythingMCP Cloud |
+| Last verified | 2026-09-26 |
+
+## Step 1 — Export the collection
+
+In Postman: **⋯ → Export → Collection v2.1**. Or host the exported JSON anywhere AnythingMCP can fetch it and import by URL. Environments are not part of the export; note the variables your requests need.
+
+## Step 2 — Run AnythingMCP
+
+```bash
+mkdir anythingmcp && cd anythingmcp
+curl -fsSLo docker-compose.yml \
+  https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docker-compose.quickstart.yml
+printf 'JWT_SECRET=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
+docker compose up -d   # → http://localhost:3000
+```
+
+Or use [AnythingMCP Cloud](https://cloud.anythingmcp.com) for an API that is reachable from the internet.
+
+## Step 3 — Create a REST connector and import
+
+Create a **REST** connector with the API's base URL, then **Import → Postman** and paste the collection or its URL. Through the API:
+
+```bash
+curl -s http://localhost:4000/api/connectors/$CONNECTOR_ID/import \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"source": "postman", "url": "https://example.com/exports/orders-api.postman_collection.json"}'
+```
+
+## Step 4 — Fill the variables and tidy the tools
+
+- **Variables** defined in the collection are resolved at call time; set their values (tokens, tenant IDs, base paths) as connector variables, where they are stored encrypted and hidden from the model.
+- **Path variables that are not defined** in the collection (`/orders/{{orderId}}`) become tool parameters the model fills in.
+- **Rename and describe** the tools: a request called "Get orders (copy)" is a poor tool name. The model picks tools by name and description.
+- **Pre-request scripts do not run.** If a request depends on one (to sign it or fetch a token), use the connector's auth settings instead: OAuth 2.0, HMAC signing or a login-token flow cover most cases.
+
+## Step 5 — Connect your AI client
+
+Add the MCP server URL to Claude (*Customize → Connectors*, [step by step](https://anythingmcp.com/guides/how-to-add-a-custom-connector-to-claude)), ChatGPT, Cursor or VS Code.
+
+## How requests become tools
+
+| Postman | MCP tool |
+|---|---|
+| Request "List orders" in folder "Sales" | tool `sales_list_orders` |
+| Query parameters and headers | input properties |
+| Raw JSON, form-data, urlencoded body | input properties mapped into the body |
+| Auth on the collection, folder or request | the tool's auth, most specific wins |
+| Request description | tool description |
+
+## Example prompts
+
+- "Which orders came in through the web shop today?"
+- "Look up customer 4711 and show their open tickets."
+- "Create a test user in the staging environment." (a POST, if the role allows it)
+
+## FAQ
+
+**How do I turn a Postman collection into an MCP server?**
+Export it as Collection v2.1, import it into a REST connector in AnythingMCP, and add the MCP server URL to your AI client. Each request becomes a tool.
+
+**Do Postman environments work?**
+The export does not contain them. Set the values your requests need as connector variables; collection variables with the same names are resolved from there.
+
+**What about requests that need a pre-request script?**
+Scripts are not executed. Configure the auth on the connector instead (OAuth 2.0, HMAC, API key, bearer, Basic or a login-token flow).
+
+**Is a Postman collection better than an OpenAPI spec?**
+A spec is more precise about parameters and types, so prefer [OpenAPI to MCP](https://anythingmcp.com/guides/openapi-to-mcp) when you have one. A collection is the fastest route when you do not.
+
+**Can I limit what the AI may call?**
+Yes. Give the MCP server a role that whitelists only the tools you want; the others are invisible to that client.
+
+## Related
+
+- [OpenAPI to MCP](https://anythingmcp.com/guides/openapi-to-mcp) · [REST API to MCP](https://anythingmcp.com/guides/rest-api-to-mcp) · [GraphQL to MCP](https://anythingmcp.com/guides/graphql-to-mcp)
+- [REST connector reference](https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/rest.md#from-postman-collection)
+- [Claude connectors](https://anythingmcp.com/claude-connectors)

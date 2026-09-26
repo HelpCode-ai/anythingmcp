@@ -1,0 +1,136 @@
+---
+title: "ERP to MCP: Connect Your ERP to Claude and ChatGPT"
+description: "Connect SAP Business One, Odoo, weclapp, Xentral and 12 more ERPs to Claude and ChatGPT via MCP, or any ERP through REST, SOAP or SQL. No code."
+category: "connectors"
+keyword: "erp mcp, connect erp to claude, erp mcp server, erp ai assistant, claude erp integration, chatgpt erp"
+publishedAt: "2026-09-26"
+lang: "en"
+---
+
+**TL;DR:** AnythingMCP turns your ERP into MCP tools that Claude, ChatGPT and Copilot can call. Sixteen ERPs have a ready adapter (install it, paste the API credentials, done in about ten minutes); any other ERP connects through its REST API, its SOAP services or read-only through its SQL database. It runs self-hosted or on AnythingMCP Cloud, and every call is audited.
+
+| Facts | |
+|---|---|
+| Ready ERP adapters | 16, with 138 tools in total |
+| Other ERPs | Via REST/OpenAPI, SOAP/WSDL or SQL, no code |
+| AI clients | Claude (web, Desktop, Code), ChatGPT, GitHub Copilot, Cursor, any MCP client |
+| Hosting | Self-hosted with Docker (open source, AGPL-3.0) or AnythingMCP Cloud (Frankfurt) |
+| Governance | Read-only roles, per-tool response mapping, audit log, SSO, SCIM |
+| Last verified | 2026-09-26 |
+
+## Which ERPs are supported
+
+| System | Market | Tools | Auth | AnythingMCP Cloud |
+|---|---|---|---|---|
+| [SAP Business One](https://anythingmcp.com/guides/connect-sap-business-one-to-claude) | Global | 12 | Login session | [Install](https://cloud.anythingmcp.com/connectors/store?install=sap-business-one) |
+| [SAP S/4HANA Cloud](https://anythingmcp.com/guides/connect-sap-s4hana-cloud-to-claude) | Global | 15 | OAuth 2.0 | [Install](https://cloud.anythingmcp.com/connectors/store?install=sap-s4hana-cloud) |
+| [Odoo 19+](https://anythingmcp.com/guides/connect-odoo-to-claude) | Global | 11 | API token | [Install](https://cloud.anythingmcp.com/connectors/store?install=odoo) |
+| [Microsoft Dynamics NAV](https://anythingmcp.com/guides/connect-dynamics-nav-to-claude) | Global | 6 | User + password | [Install](https://cloud.anythingmcp.com/connectors/store?install=dynamics-nav) |
+| [ERPNext](https://anythingmcp.com/guides/connect-erpnext-to-claude) | Global | 11 | API key | [Install](https://cloud.anythingmcp.com/connectors/store?install=erpnext) |
+| [Dolibarr](https://anythingmcp.com/guides/connect-dolibarr-to-claude) | Global | 10 | API key | [Install](https://cloud.anythingmcp.com/connectors/store?install=dolibarr) |
+| [JTL-Wawi](https://anythingmcp.com/guides/connect-jtl-wawi-to-claude) † | DE | 9 | API token | [Install](https://cloud.anythingmcp.com/connectors/store?install=jtl-wawi) |
+| [Xentral](https://anythingmcp.com/guides/connect-xentral-to-claude) | DE | 7 | User + password | [Install](https://cloud.anythingmcp.com/connectors/store?install=xentral) |
+| [weclapp](https://anythingmcp.com/guides/connect-weclapp-to-claude) | DACH | 11 | API key | [Install](https://cloud.anythingmcp.com/connectors/store?install=weclapp) |
+| [Sage 100](https://anythingmcp.com/guides/connect-sage-100-to-claude) † | DE | 6 | User + password | [Install](https://cloud.anythingmcp.com/connectors/store?install=sage-100) |
+| [Haufe X360](https://anythingmcp.com/guides/connect-haufe-x360-to-claude) † | DE | 7 | Login session | [Install](https://cloud.anythingmcp.com/connectors/store?install=haufe-x360) |
+| [ScopeVisio](https://anythingmcp.com/guides/connect-scopevisio-to-claude) | DE | 6 | API token | [Install](https://cloud.anythingmcp.com/connectors/store?install=scopevisio) |
+| [AFAS Profit](https://anythingmcp.com/guides/connect-afas-profit-to-claude) † | NL | 6 | API key | [Install](https://cloud.anythingmcp.com/connectors/store?install=afas-profit) |
+| [Zucchetti](https://anythingmcp.com/guides/connect-zucchetti-to-claude) † | IT | 6 | User + password | [Install](https://cloud.anythingmcp.com/connectors/store?install=zucchetti) |
+| [TeamSystem](https://anythingmcp.com/guides/connect-teamsystem-to-claude) † | IT | 6 | OAuth 2.0 | [Install](https://cloud.anythingmcp.com/connectors/store?install=teamsystem) |
+| [Axonaut](https://anythingmcp.com/guides/connect-axonaut-to-claude) † | FR | 9 | API key | [Install](https://cloud.anythingmcp.com/connectors/store?install=axonaut) |
+
+† Built from the vendor's published API documentation and not yet exercised against a live tenant. If you run one of these, tell us what you find.
+
+Accounting and invoicing tools (Lexware Office, sevDesk, Exact Online, bexio, Fortnox, Moneybird…) are in the [connector catalog](https://anythingmcp.com/marketplace) too.
+
+## Step 1 — Run AnythingMCP
+
+Use [AnythingMCP Cloud](https://cloud.anythingmcp.com) if your ERP is reachable from the internet. If it sits on your own network (SAP Business One on a local server, JTL-Wawi, Sage 100, Dynamics NAV), self-host AnythingMCP next to it:
+
+```bash
+mkdir anythingmcp && cd anythingmcp
+curl -fsSLo docker-compose.yml \
+  https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docker-compose.quickstart.yml
+printf 'JWT_SECRET=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
+docker compose up -d   # → http://localhost:3000
+```
+
+For an internal hostname, add it to `SSRF_ALLOWED_HOSTS`; AnythingMCP refuses private addresses by default.
+
+## Step 2 — Install your ERP's connector
+
+Click **Install** in the table above (Cloud), or open **Connectors → Store** on your own instance and pick your ERP. Enter the API credentials the setup guide lists; the import makes one test call and tells you whether the credentials work.
+
+Create the credentials with an ERP user that sees only what the AI should see. The AI inherits exactly those rights, no more.
+
+## Step 3 — Decide what the AI may do
+
+Most ERP adapters only read. The ones that can write (SAP Business One can create sales orders, Odoo and ERPNext can create and update records, Dynamics NAV can update OData pages) mark those tools as writing. Start with an MCP server whose role whitelists only the read tools; add write tools later, one by one.
+
+## Step 4 — Connect Claude, ChatGPT or Copilot
+
+- **Claude:** *Customize → Connectors → Add custom connector*, paste the MCP server URL. Step by step: [how to add a custom connector to Claude](https://anythingmcp.com/guides/how-to-add-a-custom-connector-to-claude).
+- **ChatGPT:** add the same public HTTPS URL as a connector (app) in ChatGPT's settings.
+- **Claude Code, Cursor, VS Code / Copilot:** add the URL with an `X-API-Key` header.
+
+## Your ERP isn't listed?
+
+That is the normal case for custom, older or on-premises ERPs, and it is what AnythingMCP was built for at [KOCH Freiburg](https://www.kochfreiburg.de/), where it connects an on-premises ERP, a CRM, SOAP services and databases to AI assistants:
+
+- **The ERP has a REST or OData API:** import its OpenAPI spec and every endpoint becomes a tool. See [OpenAPI to MCP](https://anythingmcp.com/guides/openapi-to-mcp).
+- **It exposes SOAP web services** (common for older .NET and Java ERPs): import the WSDL. See [SOAP to MCP](https://anythingmcp.com/guides/soap-to-mcp).
+- **Only the database is reachable:** connect SQL Server, Oracle, PostgreSQL or MySQL with a read-only database user. See [database to MCP](https://anythingmcp.com/guides/database-to-mcp) and [SQL Server to Claude](https://anythingmcp.com/guides/connect-mssql-to-claude).
+
+## Example prompts
+
+- "Which customer orders over 10,000 EUR are still open, and since when?"
+- "Which items are below their reorder level in the main warehouse?"
+- "List the invoices that are more than 30 days overdue, grouped by customer."
+- "Which quotations did we send last month that the customer has not accepted?"
+- "Compare this quarter's revenue with the same quarter last year."
+- "Draft a sales order for customer 10023: 20 units of item A-4711." (write tool, needs an explicit role)
+
+## Security and governance
+
+- **Read-only first:** roles decide which tools each MCP server exposes; clients never see the others.
+- **Least privilege at the source:** the ERP user behind the credentials limits what any tool can reach.
+- **Response mapping** strips fields such as bank details or salaries before they reach the model.
+- **Audit log:** every call with input, output, duration and status, in your own database when self-hosted.
+- **SSO and SCIM** (Entra ID, Okta, Google, Auth0) come with the self-hosted build.
+
+## FAQ
+
+**How do I connect my ERP to Claude?**
+Install the ERP's adapter in AnythingMCP, enter the API credentials, and add your MCP server URL to Claude as a custom connector. If there is no adapter, connect the ERP's REST API, SOAP services or database directly.
+
+**Can ChatGPT read my ERP data too?**
+Yes. The same MCP server works in ChatGPT as a connector. ChatGPT connects from the internet, so the URL must be public HTTPS, for example on AnythingMCP Cloud.
+
+**Can the AI change data in my ERP?**
+Only through tools that write, and only if you give a role access to them. Most ERP adapters only read.
+
+**Does my ERP data leave my network?**
+Self-hosted, the credentials and the audit log stay on your server. Only the fields a tool returns go to the AI model you use, and response mapping lets you remove fields before they do.
+
+**What does it cost?**
+Self-hosting is free and open source (AGPL-3.0, commercial use inside your company included). AnythingMCP Cloud starts with a 7-day free trial.
+
+**What if we need help connecting an ERP that is not in the list?**
+Open an [adapter request](https://github.com/HelpCode-ai/anythingmcp/issues/new?template=adapter_request.yml) on GitHub, or contact [helpcode.ai](https://helpcode.ai), the team behind AnythingMCP.
+
+## AnythingMCP vs a dedicated ERP MCP server vs a custom integration
+
+| | AnythingMCP | A dedicated MCP server for one ERP | A custom integration |
+|---|---|---|---|
+| ERPs covered | 16 ready, others via REST, SOAP or SQL | One | One per project |
+| Code to write | None | None for that ERP | All of it |
+| Access control and audit | Roles, response mapping, audit log | Varies | Whatever you build |
+| Other systems in the same MCP server | Yes: CRM, shop, shipping, databases | No | If you build them |
+| Best when | Several systems, or an ERP without a public MCP server | You only ever need that one ERP | You have unusual requirements and a team to maintain it |
+
+## Related
+
+- [E-commerce to MCP](https://anythingmcp.com/guides/ecommerce-to-mcp): the shops and marketplaces that feed your ERP
+- [SAP to Claude](https://anythingmcp.com/guides/connect-sap-to-claude) and [weclapp to MCP](https://anythingmcp.com/guides/weclapp-to-mcp)
+- [AnythingMCP on GitHub](https://github.com/HelpCode-ai/anythingmcp): the open-source code
+- [Claude connectors](https://anythingmcp.com/claude-connectors)
