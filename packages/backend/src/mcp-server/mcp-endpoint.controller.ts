@@ -56,6 +56,11 @@ import {
   annotationsSignature,
   deriveToolAnnotations,
 } from './tool-annotations';
+import {
+  ResourcePlan,
+  callerConnectorIds,
+  planServerResources,
+} from './mcp-resources';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -681,26 +686,35 @@ export class McpEndpointController {
       }
     }
 
-    // 2. Get connector IDs and composed instructions for this server
-    const [connectorIds, instructions] = await Promise.all([
+    // 2. Get the connectors assigned to this server and, if the user is
+    // identified, the tools their role allows. The role is scoped to THIS
+    // server's organization so it is read from their membership of it, not
+    // from the cached active-org role.
+    const [connectorIds, allowedToolIds] = await Promise.all([
       this.mcpServersService.getConnectorIds(serverId),
-      this.mcpServersService.getComposedInstructions(serverId),
+      user?.sub
+        ? this.rolesService.getAllowedToolIds(user.sub, mcpServerConfig.organizationId)
+        : Promise.resolve(null as string[] | null),
     ]);
 
-    // 3. Filter tools to only those from assigned connectors
+    // 3. Filter tools to only those from assigned connectors (planToolSet
+    // then applies the role filter).
     const allTools = this.toolRegistry.getAllTools();
     const serverTools = allTools.filter((t) => connectorIds.includes(t.connectorId));
 
-    // 4. Further filter by role-based access if user is identified. Scope to
-    // THIS server's organization so the caller's role is read from their
-    // membership of it, not from the cached active-org role.
-    let allowedToolIds: string[] | null = null;
-    if (user?.sub) {
-      allowedToolIds = await this.rolesService.getAllowedToolIds(
-        user.sub,
-        mcpServerConfig.organizationId,
-      );
-    }
+    // 4. The connectors this caller can use: the owners of the tools that
+    // survive both filters. Instructions and resources are scoped to exactly
+    // this set, so neither can describe a connector the tool list hides.
+    const visibleConnectorIds = callerConnectorIds(
+      serverTools,
+      allowedToolIds,
+      connectorIds,
+    );
+    const content = await this.mcpServersService.getVisibleContent(
+      serverId,
+      visibleConnectorIds,
+    );
+    const instructions = content.instructions;
 
     // 5. Create a per-request MCP server with only the assigned tools
     const mcpServer = new McpServer(
@@ -748,6 +762,17 @@ export class McpEndpointController {
     const handles = this.registerAll(mcpServer, entries, serverId);
     const signature = this.aggregateSig(entries);
     this.registerKgResource(mcpServer, params);
+    this.registerServerResources(
+      mcpServer,
+      planServerResources({
+        serverId: mcpServerConfig.id,
+        serverName: mcpServerConfig.name,
+        instructions,
+        connectors: content.connectors,
+        resources: content.resources,
+      }),
+      serverId,
+    );
 
     // 6. Create transport and handle the request — stateless by default, or a
     // long-lived session when MCP_STATEFUL_SESSIONS is enabled. Stateful keeps
@@ -1034,6 +1059,8 @@ export class McpEndpointController {
    *
    * Note: principal, org, intent/KG switches are fixed at session creation;
    * toggling those org settings mid-session only takes effect on reconnect.
+   * The same holds for the initialize instructions and the MCP resources:
+   * both are a snapshot taken when the session was created.
    */
   private makeRebuild(
     sessionId: string,
@@ -1382,11 +1409,60 @@ export class McpEndpointController {
    */
   private kgScopeConnectorIds(params: ToolSetParams): string[] {
     const { serverTools, allowedToolIds, invocationContext } = params;
-    if (allowedToolIds === null) return invocationContext.connectorIds;
-    const allowed = new Set(allowedToolIds);
-    return [
-      ...new Set(serverTools.filter((t) => allowed.has(t.id)).map((t) => t.connectorId)),
-    ];
+    return callerConnectorIds(
+      serverTools,
+      allowedToolIds,
+      invocationContext.connectorIds,
+    );
+  }
+
+  /**
+   * Registers the caller's instructions and stored resources (see
+   * mcp-resources.ts). The plan is built from content already narrowed to the
+   * connectors this caller can use, so a resource that is not registered here
+   * is simply absent: `resources/read` of its URI answers "not found", the
+   * same as for a URI that never existed, and says nothing about whether
+   * another tenant or a denied connector owns it.
+   *
+   * Content is resolved when the server is built, like the tool list. A live
+   * stateful session therefore keeps this snapshot until the client
+   * re-initializes; rebuild() reconciles tools only.
+   */
+  private registerServerResources(
+    mcpServer: McpServer,
+    plan: ResourcePlan,
+    serverId: string,
+  ): void {
+    for (const uri of plan.ambiguous) {
+      this.logger.warn(
+        `MCP resource URI ${uri} is claimed more than once on server ${serverId}; serving none of them.`,
+      );
+    }
+    for (const uri of plan.rejected) {
+      this.logger.warn(
+        `Stored MCP resource with invalid or reserved URI "${uri}" on server ${serverId}; skipped.`,
+      );
+    }
+    for (const r of plan.resources) {
+      try {
+        mcpServer.registerResource(
+          r.name,
+          r.uri,
+          {
+            title: r.title,
+            ...(r.description ? { description: r.description } : {}),
+            mimeType: r.mimeType,
+          },
+          async () => ({
+            contents: [{ uri: r.uri, mimeType: r.mimeType, text: r.text }],
+          }),
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Failed to register resource ${r.uri} on server ${serverId}: ${err.message}`,
+        );
+      }
+    }
   }
 
   /**

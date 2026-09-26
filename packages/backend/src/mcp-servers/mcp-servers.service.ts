@@ -3,6 +3,23 @@ import { PrismaService } from '../common/prisma.service';
 import { KgSkillService } from '../knowledge-graph/kg-skill.service';
 import { McpSessionManager } from './mcp-session.manager';
 
+/** What the per-server endpoint may serve as text to one caller. */
+export interface VisibleServerContent {
+  /** Composed instructions, exactly as served on initialize. */
+  instructions: string | undefined;
+  /** Visible connectors that have instructions of their own. */
+  connectors: Array<{ id: string; name: string; instructions: string }>;
+  /** Stored resource rows of visible connectors. */
+  resources: Array<{
+    connectorId: string;
+    uri: string;
+    name: string;
+    description: string | null;
+    mimeType: string;
+    fetchConfig: unknown;
+  }>;
+}
+
 @Injectable()
 export class McpServersService {
   private readonly logger = new Logger(McpServersService.name);
@@ -275,24 +292,128 @@ export class McpServersService {
   }
 
   /**
-   * Compose MCP server instructions from the server's own instructions
-   * plus all assigned connectors' instructions.
+   * Compose MCP server instructions from the server's own instructions plus
+   * the instructions of the connectors ONE CALLER may see.
+   *
+   * `visibleConnectorIds` is that caller's connector set as computed from the
+   * tool path (see `callerConnectorIds`). It used to be every assigned
+   * connector, so initialize handed a role-restricted caller the instructions
+   * (and connector-scoped skills) of connectors their role denies. For a
+   * caller who sees every assigned connector the result is unchanged.
    */
-  async getComposedInstructions(serverId: string): Promise<string | undefined> {
+  async getComposedInstructions(
+    serverId: string,
+    visibleConnectorIds: string[],
+  ): Promise<string | undefined> {
+    const { server, serverConnectors } = await this.loadVisibleConnectors(
+      serverId,
+      visibleConnectorIds,
+    );
+    return this.composeInstructions(serverId, server, serverConnectors);
+  }
+
+  /**
+   * Everything the per-server endpoint serves as text to one caller: the
+   * composed instructions (as on initialize) and the sources of its MCP
+   * resources, all narrowed to `visibleConnectorIds` AND to the server's own
+   * organization. Fails closed: an unknown server yields nothing.
+   */
+  async getVisibleContent(
+    serverId: string,
+    visibleConnectorIds: string[],
+  ): Promise<VisibleServerContent> {
+    const { server, serverConnectors } = await this.loadVisibleConnectors(
+      serverId,
+      visibleConnectorIds,
+    );
+    const instructions = await this.composeInstructions(
+      serverId,
+      server,
+      serverConnectors,
+    );
+    if (!server) return { instructions, connectors: [], resources: [] };
+
+    const connectors = serverConnectors
+      .filter((sc) => !!sc.connector.instructions)
+      .map((sc) => ({
+        id: sc.connector.id,
+        name: sc.connector.name,
+        instructions: sc.connector.instructions as string,
+      }));
+
+    // Stored resources of the same connectors. The organization and the
+    // assignment are re-stated in the query rather than trusted from the ids,
+    // so a stray id can never pull in another tenant's rows.
+    const connectorIds = serverConnectors.map((sc) => sc.connectorId);
+    const resources = connectorIds.length
+      ? await this.prisma.mcpResource.findMany({
+          where: {
+            connectorId: { in: connectorIds },
+            connector: {
+              organizationId: server.organizationId,
+              mcpServers: { some: { mcpServerId: serverId } },
+            },
+          },
+          select: {
+            connectorId: true,
+            uri: true,
+            name: true,
+            description: true,
+            mimeType: true,
+            fetchConfig: true,
+          },
+          orderBy: [{ connectorId: 'asc' }, { uri: 'asc' }],
+        })
+      : [];
+
+    return { instructions, connectors, resources };
+  }
+
+  /**
+   * The server and those of its connector assignments that are in
+   * `visibleConnectorIds` and belong to the server's organization. An empty
+   * visible set short-circuits: no query, no connectors.
+   */
+  private async loadVisibleConnectors(
+    serverId: string,
+    visibleConnectorIds: string[],
+  ): Promise<{
+    server: { instructions: string | null; organizationId: string } | null;
+    serverConnectors: Array<{
+      connectorId: string;
+      connector: { id: string; name: string; instructions: string | null };
+    }>;
+  }> {
     const server = await this.prisma.mcpServerConfig.findUnique({
       where: { id: serverId },
-      select: { instructions: true },
+      select: { instructions: true, organizationId: true },
     });
+    const visible = [...new Set(visibleConnectorIds)];
+    if (!server || visible.length === 0) return { server, serverConnectors: [] };
 
     const serverConnectors = await this.prisma.mcpServerConnector.findMany({
-      where: { mcpServerId: serverId },
+      where: {
+        mcpServerId: serverId,
+        connectorId: { in: visible },
+        connector: { organizationId: server.organizationId },
+      },
       include: {
         connector: {
-          select: { name: true, instructions: true },
+          select: { id: true, name: true, instructions: true },
         },
       },
     });
+    return { server, serverConnectors };
+  }
 
+  private async composeInstructions(
+    serverId: string,
+    server: { instructions: string | null } | null,
+    serverConnectors: Array<{
+      connectorId: string;
+      connector: { name: string; instructions: string | null };
+    }>,
+  ): Promise<string | undefined> {
     const parts: string[] = [];
 
     if (server?.instructions) {
@@ -305,8 +426,9 @@ export class McpServersService {
       }
     }
 
-    // Compose applied skills (server-scoped + this server's connector-scoped)
-    // dynamically, so editing/deleting a skill takes effect immediately.
+    // Compose applied skills (server-scoped + the visible connectors'
+    // connector-scoped ones) dynamically, so editing/deleting a skill takes
+    // effect immediately.
     const skillsText = await this.kgSkills.activeSkillsText(
       serverId,
       serverConnectors.map((sc) => sc.connectorId),

@@ -39,6 +39,7 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 | [API reference](api-reference.md) | Full REST API for connectors, tools, auth, audit |
 | [Tool definition format](tool-definition.md) | Parameters, endpoint mapping, response mapping |
 | [Knowledge Graph &amp; AI skills](knowledge-graph.md) | Per-workspace data-relationship map served over MCP, plus AI skills composed into server instructions |
+| [MCP resources](mcp-resources.md) | Read-only resources on per-server endpoints: URIs, role visibility, fail-closed rules |
 | [Deployment guide](deployment.md) | Docker, production setup, reverse proxy, env vars |
 | [Authentication](deployment.md#authentication) | OAuth2, JWT, API keys, MCP auth modes |
 | [Single sign-on](sso.md) | Entra ID, Google, Okta &amp; OIDC; role sync from directory groups; recovery codes — **self-hosted only** |
