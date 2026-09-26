@@ -105,7 +105,7 @@ Point AnythingMCP at a WSDL and each SOAP operation becomes a tool: envelopes, p
 
 ### SQL database to MCP
 
-PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite and MongoDB. The connector generates schema, example and query tools; you decide whether the model writes SQL or only fills in the parameters of queries you wrote. Give it a read-only database user and a role that sees only the tools it needs. [Database connector docs](docs/connectors/database.md) · [guide](https://anythingmcp.com/guides/database-to-mcp)
+PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite and MongoDB. The connector generates schema, example and query tools; you decide whether the model writes SQL or only fills in the parameters of queries you wrote. Query tools are read-only by default: AnythingMCP runs a single SELECT and blocks writes and stacked statements. Add a read-only database user and a role that sees only the tools it needs. [Database connector docs](docs/connectors/database.md) · [guide](https://anythingmcp.com/guides/database-to-mcp)
 
 ### GraphQL to MCP
 
@@ -380,7 +380,7 @@ Create a REST connector and import the spec by URL or by pasting it; every opera
 Yes. AnythingMCP parses the WSDL, turns each operation into a tool and builds the SOAP envelope on every call, WCF services included. It authenticates with HTTP Basic, Bearer or an API-key header; WS-Security headers are not implemented yet. [SOAP connector docs](docs/connectors/soap.md).
 
 **Can Claude query my SQL Server, Oracle or PostgreSQL database safely?**
-Use a database user with SELECT rights only, prefer static queries where the model supplies just the parameters, and whitelist the tools per role. Response mapping drops the columns that must not reach the model, and every query lands in the audit log in your own database.
+Database connectors are read-only by default: AnythingMCP only runs a single SELECT (or `WITH … SELECT`) and blocks writes and stacked statements. On top of that, use a database user with SELECT rights only, prefer static queries where the model supplies just the parameters, and whitelist the tools per role. Response mapping drops the columns that must not reach the model, and every query lands in the audit log in your own database.
 
 **How do I connect Shopware, WooCommerce or Amazon Seller Central to Claude?**
 Install the [e-commerce adapter](#e-commerce--marketplace-connectors) for your shop or marketplace and authorise it. WooCommerce comes with 49 tools, Amazon Seller Central uses the official Selling Partner API, and the Shopware 6 adapter reads the storefront catalog through the Store API.

@@ -115,7 +115,7 @@ Gib AnythingMCP eine WSDL, und jede SOAP-Operation wird zu einem Tool: Envelopes
 
 ### SQL-Datenbank zu MCP
 
-PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite und MongoDB. Der Connector erzeugt Tools für Schema, Beispiele und Abfragen; du entscheidest, ob das Modell selbst SQL schreibt oder nur die Parameter von Abfragen ausfüllt, die du vorgegeben hast. Gib ihm einen Datenbankbenutzer mit reinem Lesezugriff und eine Rolle, die nur die Tools sieht, die sie wirklich braucht. [Dokumentation zum Datenbank-Connector](docs/connectors/database.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp)
+PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite und MongoDB. Der Connector erzeugt Tools für Schema, Beispiele und Abfragen; du entscheidest, ob das Modell selbst SQL schreibt oder nur die Parameter von Abfragen ausfüllt, die du vorgegeben hast. Die Abfrage-Tools sind standardmäßig schreibgeschützt: AnythingMCP führt ein einzelnes SELECT aus und blockiert Schreibzugriffe und verkettete Statements. Gib ihm zusätzlich einen Datenbankbenutzer mit reinem Lesezugriff und eine Rolle, die nur die Tools sieht, die sie wirklich braucht. [Dokumentation zum Datenbank-Connector](docs/connectors/database.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -368,7 +368,7 @@ Lege einen REST-Connector an und importiere die Spezifikation per URL oder durch
 Ja. AnythingMCP liest die WSDL ein, macht aus jeder Operation ein Tool und baut bei jedem Aufruf den SOAP-Envelope, auch für WCF-Dienste. Authentifiziert wird per HTTP Basic, Bearer oder API-Key-Header; WS-Security-Header sind noch nicht implementiert. [Dokumentation zum SOAP-Connector](docs/connectors/soap.md).
 
 **Kann Claude meine SQL-Server-, Oracle- oder PostgreSQL-Datenbank sicher abfragen?**
-Verwende einen Datenbankbenutzer, der ausschließlich SELECT-Rechte hat, setze nach Möglichkeit auf statische Abfragen, bei denen das Modell nur die Parameter liefert, und gib die Tools pro Rolle gezielt frei. Das Response-Mapping entfernt die Spalten, die das Modell nicht erreichen dürfen, und jede Abfrage landet im Audit-Log in deiner eigenen Datenbank.
+Datenbank-Connectors sind standardmäßig schreibgeschützt: AnythingMCP führt nur ein einzelnes SELECT (oder `WITH … SELECT`) aus und blockiert Schreibzugriffe und verkettete Statements. Zusätzlich: Verwende einen Datenbankbenutzer, der ausschließlich SELECT-Rechte hat, setze nach Möglichkeit auf statische Abfragen, bei denen das Modell nur die Parameter liefert, und gib die Tools pro Rolle gezielt frei. Das Response-Mapping entfernt die Spalten, die das Modell nicht erreichen dürfen, und jede Abfrage landet im Audit-Log in deiner eigenen Datenbank.
 
 **Wie verbinde ich Shopware, WooCommerce oder Amazon Seller Central mit Claude?**
 Installiere den [E-Commerce-Adapter](#e-commerce--marketplace-connectors) für deinen Shop oder Marktplatz und autorisiere ihn. WooCommerce bringt 49 Tools mit, Amazon Seller Central nutzt die offizielle Selling Partner API, und der Shopware-6-Adapter liest den Storefront-Katalog über die Store API.

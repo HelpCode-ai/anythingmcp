@@ -115,7 +115,7 @@ docker compose up -d
 
 ### SQL 数据库转 MCP
 
-支持 PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite 和 MongoDB。连接器会生成查看 schema、示例和查询的工具；由你决定模型是自己编写 SQL，还是只为你预先写好的查询填写参数。请为它配置一个只读数据库用户，并分配一个只能看到所需工具的角色。[数据库连接器文档](docs/connectors/database.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp)
+支持 PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite 和 MongoDB。连接器会生成查看 schema、示例和查询的工具；由你决定模型是自己编写 SQL，还是只为你预先写好的查询填写参数。查询工具默认只读，写操作会被拦截。此外，请为它配置一个只读数据库用户，并分配一个只能看到所需工具的角色。[数据库连接器文档](docs/connectors/database.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -368,7 +368,7 @@ AI 客户端使用 MCP，而你的系统使用 REST、SOAP、GraphQL 和 SQL。�
 可以。AnythingMCP 会解析 WSDL，将每个操作转化为工具，并在每次调用时构建 SOAP 信封，也支持 WCF 服务。认证方式为 HTTP Basic、Bearer 或 API 密钥请求头；WS-Security 请求头尚未实现。[SOAP 连接器文档](docs/connectors/soap.md)。
 
 **Claude 能安全地查询我的 SQL Server、Oracle 或 PostgreSQL 数据库吗？**
-请使用只有 SELECT 权限的数据库用户，尽量采用由模型只提供参数的静态查询，并按角色设置工具白名单。响应映射会删除不能到达模型的列，每次查询都会记录在你自己数据库中的审计日志里。
+数据库连接器默认只读：AnythingMCP 只执行单条 SELECT（或 `WITH … SELECT`）语句，并拦截写操作和多条语句。在此基础上，请使用只有 SELECT 权限的数据库用户，尽量采用由模型只提供参数的静态查询，并按角色设置工具白名单。响应映射会删除不能到达模型的列，每次查询都会记录在你自己数据库中的审计日志里。
 
 **如何将 Shopware、WooCommerce 或 Amazon Seller Central 连接到 Claude？**
 为你的网店或电商平台安装对应的[电子商务适配器](#e-commerce--marketplace-connectors)并完成授权。WooCommerce 提供 49 个工具，Amazon Seller Central 使用官方的 Selling Partner API，Shopware 6 适配器则通过 Store API 读取店面商品目录。

@@ -115,7 +115,7 @@ WSDL を指定すると、SOAP の各オペレーションがツールになり�
 
 ### SQL データベースを MCP に
 
-PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite、MongoDB に対応しています。コネクターはスキーマ、クエリー例、クエリー実行のツールを生成します。モデルに SQL を書かせるか、自分で書いたクエリーのパラメーターだけを埋めさせるかを選べます。読み取り専用のデータベースユーザーと、必要なツールだけが見えるロールを割り当ててください。[データベースコネクターのドキュメント](docs/connectors/database.md) · [ガイド](https://anythingmcp.com/ja/guides/database-to-mcp)
+PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite、MongoDB に対応しています。コネクターはスキーマ、クエリー例、クエリー実行のツールを生成します。モデルに SQL を書かせるか、自分で書いたクエリーのパラメーターだけを埋めさせるかを選べます。クエリーツールは初期設定で読み取り専用で、書き込みはブロックされます。さらに読み取り専用のデータベースユーザーと、必要なツールだけが見えるロールを割り当ててください。[データベースコネクターのドキュメント](docs/connectors/database.md) · [ガイド](https://anythingmcp.com/ja/guides/database-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -370,7 +370,7 @@ REST コネクターを作成し、仕様を URL か貼り付けでインポー�
 はい。AnythingMCP が WSDL を解析して各オペレーションをツールに変換し、呼び出しのたびに SOAP エンベロープを組み立てます。WCF サービスにも対応しています。認証は HTTP Basic、Bearer、API キーヘッダーで行います。WS-Security ヘッダーはまだ実装されていません。[SOAP コネクターのドキュメント](docs/connectors/soap.md)
 
 **Claude から SQL Server、Oracle、PostgreSQL のデータベースを安全に照会できますか？**
-SELECT 権限だけを持つデータベースユーザーを使い、モデルがパラメーターだけを指定する静的クエリーを優先し、ロールごとにツールを許可リストで絞り込んでください。レスポンスマッピングでモデルに渡してはいけない列を削除でき、すべてのクエリーは自社データベース内の監査ログに記録されます。
+データベースコネクターは初期設定で読み取り専用です。AnythingMCP は単一の SELECT（または `WITH … SELECT`）だけを実行し、書き込みや複数ステートメントをブロックします。そのうえで、SELECT 権限だけを持つデータベースユーザーを使い、モデルがパラメーターだけを指定する静的クエリーを優先し、ロールごとにツールを許可リストで絞り込んでください。レスポンスマッピングでモデルに渡してはいけない列を削除でき、すべてのクエリーは自社データベース内の監査ログに記録されます。
 
 **Shopware、WooCommerce、Amazon Seller Central を Claude に接続するには？**
 ショップやマーケットプレイスに対応する [E コマースアダプター](#e-commerce--marketplace-connectors)をインストールし、認可します。WooCommerce には 49 のツールがあり、Amazon Seller Central は公式の Selling Partner API を使います。Shopware 6 アダプターは Store API を通じてストアフロントのカタログを読み取ります。
