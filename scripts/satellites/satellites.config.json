@@ -287,7 +287,7 @@
         "order-management",
         "self-hosted"
       ],
-      "website": "https://anythingmcp.com/guides/erp-to-mcp",
+      "website": "https://anythingmcp.com/marketplace/category/erp",
       "languages": [
         "en"
       ],
@@ -302,7 +302,8 @@
         "date": "2026-09-26",
         "against": "the systems marked verified in the table",
         "how": "each one's own verification is linked from its row"
-      }
+      },
+      "websiteLater": "https://anythingmcp.com/guides/erp-to-mcp"
     },
     {
       "repo": "ecommerce-mcp-server",
@@ -339,7 +340,7 @@
         "inventory-management",
         "self-hosted"
       ],
-      "website": "https://anythingmcp.com/guides/ecommerce-to-mcp",
+      "website": "https://anythingmcp.com/marketplace/category/ecommerce",
       "languages": [
         "en"
       ],
@@ -351,7 +352,8 @@
         "date": "2026-09-26",
         "against": "the systems marked verified in the table",
         "how": "each one's own verification is linked from its row"
-      }
+      },
+      "websiteLater": "https://anythingmcp.com/guides/ecommerce-to-mcp"
     },
     {
       "repo": "sap-mcp-server",

@@ -97,15 +97,15 @@ Most companies have no MCP servers yet. They have a REST API, an ERP, a SOAP ser
 
 ### OpenAPI / REST API to MCP
 
-Import an OpenAPI 3.x or Swagger 2.0 spec, by URL or by pasting it, and every operation becomes an MCP tool with its parameters, auth and endpoint mapping filled in. Rename and describe the tools in the visual editor so the model picks the right one. [REST connector docs](docs/connectors/rest.md) · [guide](https://anythingmcp.com/guides/rest-api-to-mcp)
+Import an OpenAPI 3.x or Swagger 2.0 spec, by URL or by pasting it, and every operation becomes an MCP tool with its parameters, auth and endpoint mapping filled in. Rename and describe the tools in the visual editor so the model picks the right one. [REST connector docs](docs/connectors/rest.md) · [guide](https://anythingmcp.com/guides/rest-api-to-mcp) · [5-minute demo: openapi-to-mcp](https://github.com/HelpCode-ai/openapi-to-mcp)
 
 ### SOAP / WSDL to MCP
 
-Point AnythingMCP at a WSDL and each SOAP operation becomes a tool: envelopes, parameter order and WCF services are handled for you, with Basic, Bearer or API-key auth. That is how a SOAP service from 2009 ends up in front of a 2026 model, in minutes rather than weeks. [SOAP connector docs](docs/connectors/soap.md) · [guide](https://anythingmcp.com/guides/soap-to-mcp)
+Point AnythingMCP at a WSDL and each SOAP operation becomes a tool: envelopes, parameter order and WCF services are handled for you, with Basic, Bearer or API-key auth. That is how a SOAP service from 2009 ends up in front of a 2026 model, in minutes rather than weeks. [SOAP connector docs](docs/connectors/soap.md) · [guide](https://anythingmcp.com/guides/soap-to-mcp) · [5-minute demo: soap-to-mcp](https://github.com/HelpCode-ai/soap-to-mcp)
 
 ### SQL database to MCP
 
-PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite and MongoDB. The connector generates schema, example and query tools; you decide whether the model writes SQL or only fills in the parameters of queries you wrote. Query tools are read-only by default: AnythingMCP runs a single SELECT and blocks writes and stacked statements. Add a read-only database user and a role that sees only the tools it needs. [Database connector docs](docs/connectors/database.md) · [guide](https://anythingmcp.com/guides/database-to-mcp)
+PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite and MongoDB. The connector generates schema, example and query tools; you decide whether the model writes SQL or only fills in the parameters of queries you wrote. Query tools are read-only by default: AnythingMCP runs a single SELECT and blocks writes and stacked statements. Add a read-only database user and a role that sees only the tools it needs. [Database connector docs](docs/connectors/database.md) · [guide](https://anythingmcp.com/guides/database-to-mcp) · [5-minute demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
 
 ### GraphQL to MCP
 
@@ -142,6 +142,8 @@ Ready adapters for the ERPs behind most order, stock and invoice questions. Inst
 
 † Built from the vendor's published API documentation and not yet exercised against a live tenant. If you run one of these, a report or a fix is very welcome.
 
+**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server)
+
 **Your ERP isn't listed, or it's a custom or on-prem build?** Connect it through its [REST API](#openapi--rest-api-to-mcp), [SOAP services](#soap--wsdl-to-mcp) or straight to its [SQL database](#sql-database-to-mcp), read-only. That is how [KOCH Freiburg](https://www.kochfreiburg.de/) runs its ERP in production.
 
 ---
@@ -167,6 +169,8 @@ Shops and marketplaces, from Amazon and eBay to the DACH marketplaces. Each name
 | [Mercado Libre](https://anythingmcp.com/guides/connect-mercado-libre-to-claude) | LATAM | 4 | Item search, seller orders |
 
 † Built from the vendor's published API documentation and not yet exercised against a live seller account.
+
+**Repositories:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server)
 
 ---
 

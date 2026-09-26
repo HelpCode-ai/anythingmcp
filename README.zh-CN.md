@@ -103,19 +103,19 @@ docker compose up -d
 
 ### OpenAPI / REST API 转 MCP
 
-通过 URL 或直接粘贴导入 OpenAPI 3.x 或 Swagger 2.0 规范，每个操作都会成为一个 MCP 工具，参数、认证和端点映射均已自动填好。你可以在可视化编辑器中为工具重命名并添加描述，帮助模型选对工具。[REST 连接器文档](docs/connectors/rest.md) · [指南](https://anythingmcp.com/zh/guides/rest-api-to-mcp)
+通过 URL 或直接粘贴导入 OpenAPI 3.x 或 Swagger 2.0 规范，每个操作都会成为一个 MCP 工具，参数、认证和端点映射均已自动填好。你可以在可视化编辑器中为工具重命名并添加描述，帮助模型选对工具。[REST 连接器文档](docs/connectors/rest.md) · [指南](https://anythingmcp.com/zh/guides/rest-api-to-mcp) · [5 分钟演示: openapi-to-mcp](https://github.com/HelpCode-ai/openapi-to-mcp)
 
 <a id="soap--wsdl-to-mcp"></a>
 
 ### SOAP / WSDL 转 MCP
 
-将 AnythingMCP 指向一个 WSDL，每个 SOAP 操作都会成为一个工具：SOAP 信封、参数顺序和 WCF 服务都会自动处理，认证支持 Basic、Bearer 和 API 密钥。这样，2009 年的 SOAP 服务只需几分钟而不是几周，就能交给 2026 年的模型使用。[SOAP 连接器文档](docs/connectors/soap.md) · [指南](https://anythingmcp.com/zh/guides/soap-to-mcp)
+将 AnythingMCP 指向一个 WSDL，每个 SOAP 操作都会成为一个工具：SOAP 信封、参数顺序和 WCF 服务都会自动处理，认证支持 Basic、Bearer 和 API 密钥。这样，2009 年的 SOAP 服务只需几分钟而不是几周，就能交给 2026 年的模型使用。[SOAP 连接器文档](docs/connectors/soap.md) · [指南](https://anythingmcp.com/zh/guides/soap-to-mcp) · [5 分钟演示: soap-to-mcp](https://github.com/HelpCode-ai/soap-to-mcp)
 
 <a id="sql-database-to-mcp"></a>
 
 ### SQL 数据库转 MCP
 
-支持 PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite 和 MongoDB。连接器会生成查看 schema、示例和查询的工具；由你决定模型是自己编写 SQL，还是只为你预先写好的查询填写参数。查询工具默认只读，写操作会被拦截。此外，请为它配置一个只读数据库用户，并分配一个只能看到所需工具的角色。[数据库连接器文档](docs/connectors/database.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp)
+支持 PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite 和 MongoDB。连接器会生成查看 schema、示例和查询的工具；由你决定模型是自己编写 SQL，还是只为你预先写好的查询填写参数。查询工具默认只读，写操作会被拦截。此外，请为它配置一个只读数据库用户，并分配一个只能看到所需工具的角色。[数据库连接器文档](docs/connectors/database.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp) · [5 分钟演示: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -158,6 +158,8 @@ docker compose up -d
 
 † 根据供应商公开的 API 文档构建，尚未在实际运行的租户上测试。如果你正在使用其中某个系统，非常欢迎提交问题反馈或修复。
 
+**代码仓库:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server)
+
 **你的 ERP 不在列表中，或者是定制开发、本地部署的系统？** 可以通过它的 [REST API](#openapi--rest-api-to-mcp)、[SOAP 服务](#soap--wsdl-to-mcp) 连接，也可以以只读方式直接连接它的 [SQL 数据库](#sql-database-to-mcp)。[KOCH Freiburg](https://www.kochfreiburg.de/) 在生产环境中就是这样接入其 ERP 的。
 
 ---
@@ -185,6 +187,8 @@ docker compose up -d
 | [Mercado Libre](https://anythingmcp.com/zh/guides/connect-mercado-libre-to-claude) | LATAM | 4 | 商品搜索、卖家订单 |
 
 † 根据供应商公开的 API 文档构建，尚未在实际运行的卖家账户上测试。
+
+**代码仓库:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server)
 
 ---
 

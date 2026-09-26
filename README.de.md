@@ -103,19 +103,19 @@ Die meisten Unternehmen haben noch keine MCP-Server. Sie haben eine REST-API, ei
 
 ### OpenAPI / REST-API zu MCP
 
-Importiere eine OpenAPI-3.x- oder Swagger-2.0-Spezifikation per URL oder durch Einfügen, und jede Operation wird zu einem MCP-Tool, bei dem Parameter, Authentifizierung und Endpunkt-Zuordnung bereits ausgefüllt sind. Im visuellen Editor gibst du den Tools passende Namen und Beschreibungen, damit das Modell das richtige auswählt. [Dokumentation zum REST-Connector](docs/connectors/rest.md) · [Anleitung](https://anythingmcp.com/de/guides/rest-api-to-mcp)
+Importiere eine OpenAPI-3.x- oder Swagger-2.0-Spezifikation per URL oder durch Einfügen, und jede Operation wird zu einem MCP-Tool, bei dem Parameter, Authentifizierung und Endpunkt-Zuordnung bereits ausgefüllt sind. Im visuellen Editor gibst du den Tools passende Namen und Beschreibungen, damit das Modell das richtige auswählt. [Dokumentation zum REST-Connector](docs/connectors/rest.md) · [Anleitung](https://anythingmcp.com/de/guides/rest-api-to-mcp) · [5-Minuten-Demo: openapi-to-mcp](https://github.com/HelpCode-ai/openapi-to-mcp)
 
 <a id="soap--wsdl-to-mcp"></a>
 
 ### SOAP / WSDL zu MCP
 
-Gib AnythingMCP eine WSDL, und jede SOAP-Operation wird zu einem Tool: Envelopes, Parameterreihenfolge und WCF-Dienste übernimmt AnythingMCP für dich, mit Basic-, Bearer- oder API-Key-Authentifizierung. So bringst du einen SOAP-Dienst aus dem Jahr 2009 in Minuten statt Wochen vor ein Modell von 2026. [Dokumentation zum SOAP-Connector](docs/connectors/soap.md) · [Anleitung](https://anythingmcp.com/de/guides/soap-to-mcp)
+Gib AnythingMCP eine WSDL, und jede SOAP-Operation wird zu einem Tool: Envelopes, Parameterreihenfolge und WCF-Dienste übernimmt AnythingMCP für dich, mit Basic-, Bearer- oder API-Key-Authentifizierung. So bringst du einen SOAP-Dienst aus dem Jahr 2009 in Minuten statt Wochen vor ein Modell von 2026. [Dokumentation zum SOAP-Connector](docs/connectors/soap.md) · [Anleitung](https://anythingmcp.com/de/guides/soap-to-mcp) · [5-Minuten-Demo: soap-to-mcp](https://github.com/HelpCode-ai/soap-to-mcp)
 
 <a id="sql-database-to-mcp"></a>
 
 ### SQL-Datenbank zu MCP
 
-PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite und MongoDB. Der Connector erzeugt Tools für Schema, Beispiele und Abfragen; du entscheidest, ob das Modell selbst SQL schreibt oder nur die Parameter von Abfragen ausfüllt, die du vorgegeben hast. Die Abfrage-Tools sind standardmäßig schreibgeschützt: AnythingMCP führt ein einzelnes SELECT aus und blockiert Schreibzugriffe und verkettete Statements. Gib ihm zusätzlich einen Datenbankbenutzer mit reinem Lesezugriff und eine Rolle, die nur die Tools sieht, die sie wirklich braucht. [Dokumentation zum Datenbank-Connector](docs/connectors/database.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp)
+PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite und MongoDB. Der Connector erzeugt Tools für Schema, Beispiele und Abfragen; du entscheidest, ob das Modell selbst SQL schreibt oder nur die Parameter von Abfragen ausfüllt, die du vorgegeben hast. Die Abfrage-Tools sind standardmäßig schreibgeschützt: AnythingMCP führt ein einzelnes SELECT aus und blockiert Schreibzugriffe und verkettete Statements. Gib ihm zusätzlich einen Datenbankbenutzer mit reinem Lesezugriff und eine Rolle, die nur die Tools sieht, die sie wirklich braucht. [Dokumentation zum Datenbank-Connector](docs/connectors/database.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp) · [5-Minuten-Demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -158,6 +158,8 @@ Fertige Adapter für die ERP-Systeme, in denen die meisten Fragen zu Aufträgen,
 
 † Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Mandanten getestet. Wenn du eines dieser Systeme einsetzt, freuen wir uns sehr über einen Erfahrungsbericht oder einen Fix.
 
+**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server)
+
 **Dein ERP ist nicht dabei, oder es ist eine Eigenentwicklung bzw. läuft on-premises?** Binde es über seine [REST-API](#openapi--rest-api-to-mcp), seine [SOAP-Dienste](#soap--wsdl-to-mcp) oder direkt über seine [SQL-Datenbank](#sql-database-to-mcp) an, mit reinem Lesezugriff. So betreibt [KOCH Freiburg](https://www.kochfreiburg.de/) sein ERP im Produktivbetrieb.
 
 ---
@@ -185,6 +187,8 @@ Shops und Marktplätze, von Amazon und eBay bis zu den Marktplätzen im DACH-Rau
 | [Mercado Libre](https://anythingmcp.com/de/guides/connect-mercado-libre-to-claude) | LATAM | 4 | Artikelsuche, Verkäuferbestellungen |
 
 † Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Verkäuferkonto getestet.
+
+**Repositories:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server)
 
 ---
 

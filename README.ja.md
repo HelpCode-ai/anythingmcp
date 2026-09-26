@@ -103,19 +103,19 @@ docker compose up -d
 
 ### OpenAPI / REST API を MCP に
 
-OpenAPI 3.x または Swagger 2.0 の仕様を URL か貼り付けでインポートすると、各オペレーションが MCP ツールになり、パラメーター、認証、エンドポイントの対応付けも設定済みの状態になります。モデルが適切なツールを選べるよう、ビジュアルエディターでツールの名前と説明を調整できます。[REST コネクターのドキュメント](docs/connectors/rest.md) · [ガイド](https://anythingmcp.com/ja/guides/rest-api-to-mcp)
+OpenAPI 3.x または Swagger 2.0 の仕様を URL か貼り付けでインポートすると、各オペレーションが MCP ツールになり、パラメーター、認証、エンドポイントの対応付けも設定済みの状態になります。モデルが適切なツールを選べるよう、ビジュアルエディターでツールの名前と説明を調整できます。[REST コネクターのドキュメント](docs/connectors/rest.md) · [ガイド](https://anythingmcp.com/ja/guides/rest-api-to-mcp) · [5 分デモ: openapi-to-mcp](https://github.com/HelpCode-ai/openapi-to-mcp)
 
 <a id="soap--wsdl-to-mcp"></a>
 
 ### SOAP / WSDL を MCP に
 
-WSDL を指定すると、SOAP の各オペレーションがツールになります。エンベロープ、パラメーターの順序、WCF サービスは AnythingMCP が処理し、認証には Basic、Bearer、API キーを使えます。2009 年の SOAP サービスを、2026 年のモデルからすぐに使えるようにできます。[SOAP コネクターのドキュメント](docs/connectors/soap.md) · [ガイド](https://anythingmcp.com/ja/guides/soap-to-mcp)
+WSDL を指定すると、SOAP の各オペレーションがツールになります。エンベロープ、パラメーターの順序、WCF サービスは AnythingMCP が処理し、認証には Basic、Bearer、API キーを使えます。2009 年の SOAP サービスを、2026 年のモデルからすぐに使えるようにできます。[SOAP コネクターのドキュメント](docs/connectors/soap.md) · [ガイド](https://anythingmcp.com/ja/guides/soap-to-mcp) · [5 分デモ: soap-to-mcp](https://github.com/HelpCode-ai/soap-to-mcp)
 
 <a id="sql-database-to-mcp"></a>
 
 ### SQL データベースを MCP に
 
-PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite、MongoDB に対応しています。コネクターはスキーマ、クエリー例、クエリー実行のツールを生成します。モデルに SQL を書かせるか、自分で書いたクエリーのパラメーターだけを埋めさせるかを選べます。クエリーツールは初期設定で読み取り専用で、書き込みはブロックされます。さらに読み取り専用のデータベースユーザーと、必要なツールだけが見えるロールを割り当ててください。[データベースコネクターのドキュメント](docs/connectors/database.md) · [ガイド](https://anythingmcp.com/ja/guides/database-to-mcp)
+PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite、MongoDB に対応しています。コネクターはスキーマ、クエリー例、クエリー実行のツールを生成します。モデルに SQL を書かせるか、自分で書いたクエリーのパラメーターだけを埋めさせるかを選べます。クエリーツールは初期設定で読み取り専用で、書き込みはブロックされます。さらに読み取り専用のデータベースユーザーと、必要なツールだけが見えるロールを割り当ててください。[データベースコネクターのドキュメント](docs/connectors/database.md) · [ガイド](https://anythingmcp.com/ja/guides/database-to-mcp) · [5 分デモ: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -158,6 +158,8 @@ Postman v2.1 のコレクションをインポートすると、フォルダー�
 
 † ベンダーが公開している API ドキュメントを基に作成しており、実際のテナントではまだ検証していません。これらのシステムをお使いの方からの報告や修正を歓迎します。
 
+**リポジトリ:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server)
+
 **お使いの ERP が一覧にない場合や、独自開発・オンプレミスの ERP の場合は？** その [REST API](#openapi--rest-api-to-mcp) や [SOAP サービス](#soap--wsdl-to-mcp)を通じて、または [SQL データベース](#sql-database-to-mcp)に直接、読み取り専用で接続できます。[KOCH Freiburg](https://www.kochfreiburg.de/) は、この方法で自社の ERP を本番環境で接続しています。
 
 ---
@@ -185,6 +187,8 @@ Amazon や eBay から DACH 地域のマーケットプレイスまで、ショ�
 | [Mercado Libre](https://anythingmcp.com/ja/guides/connect-mercado-libre-to-claude) | 中南米 | 4 | 商品検索、販売者の注文 |
 
 † ベンダーが公開している API ドキュメントを基に作成しており、実際の販売者アカウントではまだ検証していません。
+
+**リポジトリ:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server)
 
 ---
 
