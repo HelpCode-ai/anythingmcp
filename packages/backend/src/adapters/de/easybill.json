@@ -1,187 +1,64 @@
 {
-  "slug": "easybill",
-  "name": "easybill Invoicing",
-  "description": "Manage customers, invoices, offers, credit notes and products in easybill. Popular 100% Made-in-Germany invoicing and e-commerce accounting SaaS used by 20,000+ businesses.",
+  "slug": "getmyinvoices",
+  "name": "GetMyInvoices",
+  "description": "Automatically fetch, organize and manage incoming invoices, receipts and documents from thousands of portals, mailboxes and scans in GetMyInvoices.",
   "region": "de",
   "category": "finance",
-  "icon": "easybill",
-  "docsUrl": "https://www.easybill.de/api/",
+  "icon": "getmyinvoices",
+  "docsUrl": "https://api.getmyinvoices.com/accounts/v3/doc/",
   "requiredEnvVars": [
-    "EASYBILL_API_KEY"
+    "GETMYINVOICES_API_KEY"
   ],
   "connector": {
-    "name": "easybill REST API",
+    "name": "GetMyInvoices REST API",
     "type": "REST",
-    "baseUrl": "https://api.easybill.de/rest/v1",
-    "authType": "BEARER_TOKEN",
+    "baseUrl": "https://api.getmyinvoices.com/accounts/v3",
+    "authType": "API_KEY",
     "authConfig": {
-      "token": "{{EASYBILL_API_KEY}}"
+      "headerName": "ApiKey",
+      "apiKey": "{{GETMYINVOICES_API_KEY}}",
+      "token": "{{GETMYINVOICES_API_KEY}}"
     },
     "headers": {
-      "Accept": "application/json"
+      "Accept": "application/json",
+      "ApiKey": "{{GETMYINVOICES_API_KEY}}"
     }
   },
-  "instructions": "easybill is a German cloud invoicing / accounting tool (100% Made in Germany, 20,000+ customers) with a clean REST API at https://api.easybill.de/rest/v1.\n\n## Authentication\nGenerate an API key in easybill under Settings → App-Center / API (if you can't find it, contact easybill support to enable API access). Set it as `EASYBILL_API_KEY`. The connector sends it as `Authorization: Bearer <key>`. (easybill also accepts HTTP Basic Auth with email:apikey, but Bearer is simpler and is what this connector uses.)\n\n## Core concepts\n- **Customers** (`/customers`) — your clients. Identified by numeric `id` and a human `number`.\n- **Documents** (`/documents`) — the single resource for every document kind, discriminated by `type`: `INVOICE`, `CREDIT`, `OFFER`, `REMINDER`, `DELIVERY`, etc. Filter a list with `type=INVOICE` (comma-separated for several types). Each document carries an `items` array of line items.\n- **Positions** (`/positions`) — your reusable product/article catalog (article number, description, unit price, VAT).\n\n## Pagination\nList endpoints are page-based: `page` (default 1) and `limit` (default 100, max 1000). List responses wrap the rows in a `documents`/`page`/`pages`/`total` envelope.\n\n## Dates & filters\nDate filters accept a single `YYYY-MM-DD` or a `from,to` range (e.g. `document_date=2026-01-01,2026-03-31`). `paid_at=null` returns unpaid invoices. Most ID filters accept comma-separated lists.\n\n## Tips\n- To list only open invoices: `easybill_list_documents` with `type=INVOICE` and `paid_at=null`.\n- Fetch a finished invoice as a PDF with `easybill_get_document_pdf` (returns the PDF base64-encoded in the `pdf` field).\n- Amounts are in the document currency; VAT is per line item (`vat_percent`).",
+  "instructions": "GetMyInvoices is a German SaaS platform (developed by fino data services) that automatically retrieves and centralizes incoming invoices, receipts and statements from thousands of online portals, email inboxes and scans. The REST API v3 is documented at https://api.getmyinvoices.com/accounts/v3/doc/.\n\n## Authentication\nGenerate an API key in GetMyInvoices under Settings → API / Integrations. Set it as `GETMYINVOICES_API_KEY`. The connector sends it in the `ApiKey` header.\n\n## Core concepts\n- **Documents** (`/documents`) — invoices, receipts and credit notes fetched from portals or uploaded. Identified by numeric `id`. Records include invoice number, date, due date, net/gross amounts, currency, VAT details, line items, payment status and assigned company/vendor.\n- **Companies** (`/companies`) — suppliers, portals and vendors associated with retrieved invoices.\n\n## Pagination\nList endpoints use offset-based pagination: `offset` (0-based, default 0) and `limit` (default 50, max 100).\n\n## Dates & filters\nFilter documents by date range using `startDate` and `endDate` (`YYYY-MM-DD`). Filter by document direction/kind using `type` (`INCOMING`, `OUTGOING`), by workflow state using `status` (e.g. `NEW`, `ACCEPTED`, `ARCHIVED`), or by specific vendor using `companyId`.\n\n## Tips\n- Use `getmyinvoices_list_documents` with `type=INCOMING` to search for incoming portal invoices.\n- Fetch full metadata, amounts and line items using `getmyinvoices_get_document`.\n- Fetch the original invoice file (PDF/scan) using `getmyinvoices_get_document_file`.",
   "tools": [
     {
-      "name": "easybill_list_customers",
-      "description": "List customers (clients) from easybill with optional search and pagination. Returns id, customer number, name/company, address, emails and VAT id.",
+      "name": "getmyinvoices_list_documents",
+      "description": "List documents (invoices, receipts) from GetMyInvoices with optional filtering by date range, status, type and company. Returns document numbers, dates, amounts, status and metadata.",
       "parameters": {
         "type": "object",
         "properties": {
-          "page": {
+          "offset": {
             "type": "number",
-            "description": "Page number, 1-based (default 1)"
+            "description": "Number of records to skip for pagination, 0-based (default 0)"
           },
           "limit": {
             "type": "number",
-            "description": "Results per page (default 100, max 1000)"
+            "description": "Number of records to return (default 50, max 100)"
           },
-          "company_name": {
+          "startDate": {
             "type": "string",
-            "description": "Filter by company name (comma-separated for several values)"
+            "description": "Filter documents on or after this date (YYYY-MM-DD)"
           },
-          "last_name": {
+          "endDate": {
             "type": "string",
-            "description": "Filter by contact last name"
-          },
-          "emails": {
-            "type": "string",
-            "description": "Filter by email address"
-          },
-          "number": {
-            "type": "string",
-            "description": "Filter by easybill customer number"
-          },
-          "country": {
-            "type": "string",
-            "description": "Filter by ISO country code, e.g. DE"
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/customers",
-        "queryParams": {
-          "page": "$page",
-          "limit": "$limit",
-          "company_name": "$company_name",
-          "last_name": "$last_name",
-          "emails": "$emails",
-          "number": "$number",
-          "country": "$country"
-        }
-      }
-    },
-    {
-      "name": "easybill_get_customer",
-      "description": "Get a single easybill customer by its numeric id, returning the full record (addresses, contact details, payment terms, VAT id).",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "The easybill customer id"
-          }
-        },
-        "required": [
-          "id"
-        ]
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/customers/{id}"
-      }
-    },
-    {
-      "name": "easybill_create_customer",
-      "description": "Create a new customer (client) in easybill. Provide at least a company name or a last name plus any address and contact fields.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "company_name": {
-            "type": "string",
-            "description": "Company name (use this or last_name)"
-          },
-          "first_name": {
-            "type": "string",
-            "description": "Contact first name"
-          },
-          "last_name": {
-            "type": "string",
-            "description": "Contact last name (use this or company_name)"
-          },
-          "street": {
-            "type": "string",
-            "description": "Street and house number"
-          },
-          "zip_code": {
-            "type": "string",
-            "description": "Postal code"
-          },
-          "city": {
-            "type": "string",
-            "description": "City"
-          },
-          "country": {
-            "type": "string",
-            "description": "ISO country code, e.g. DE"
-          },
-          "emails": {
-            "type": "string",
-            "description": "Primary email address"
-          },
-          "vat_identifier": {
-            "type": "string",
-            "description": "VAT identification number (USt-IdNr.)"
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/customers",
-        "bodyMapping": {
-          "company_name": "$company_name",
-          "first_name": "$first_name",
-          "last_name": "$last_name",
-          "street": "$street",
-          "zip_code": "$zip_code",
-          "city": "$city",
-          "country": "$country",
-          "emails": "$emails",
-          "vat_identifier": "$vat_identifier"
-        }
-      }
-    },
-    {
-      "name": "easybill_list_documents",
-      "description": "List documents (invoices, credits, offers, reminders, etc.) from easybill. Filter by type, customer, date range and payment status. Returns numbers, dates, amounts and status.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "page": {
-            "type": "number",
-            "description": "Page number, 1-based (default 1)"
-          },
-          "limit": {
-            "type": "number",
-            "description": "Results per page (default 100, max 1000)"
+            "description": "Filter documents on or before this date (YYYY-MM-DD)"
           },
           "type": {
             "type": "string",
-            "description": "Document type filter, comma-separated. One or more of INVOICE, CREDIT, OFFER, REMINDER, DELIVERY"
+            "description": "Filter by document type, e.g. INCOMING or OUTGOING"
           },
-          "customer_id": {
+          "status": {
             "type": "string",
-            "description": "Filter by customer id (comma-separated for several)"
+            "description": "Filter by document status, e.g. NEW, ACCEPTED, ARCHIVED"
           },
-          "document_date": {
-            "type": "string",
-            "description": "Document date filter: a single YYYY-MM-DD or a 'from,to' range e.g. 2026-01-01,2026-03-31"
-          },
-          "paid_at": {
-            "type": "string",
-            "description": "Payment filter: a date/range, or the literal 'null' to return only unpaid documents"
+          "companyId": {
+            "type": "number",
+            "description": "Filter by company/vendor numeric ID"
           }
         }
       },
@@ -189,24 +66,25 @@
         "method": "GET",
         "path": "/documents",
         "queryParams": {
-          "page": "$page",
+          "offset": "$offset",
           "limit": "$limit",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
           "type": "$type",
-          "customer_id": "$customer_id",
-          "document_date": "$document_date",
-          "paid_at": "$paid_at"
+          "status": "$status",
+          "companyId": "$companyId"
         }
       }
     },
     {
-      "name": "easybill_get_document",
-      "description": "Get a single easybill document (invoice/offer/credit) by id with full details including line items, taxes, totals and payment status.",
+      "name": "getmyinvoices_get_document",
+      "description": "Get complete metadata for a single GetMyInvoices document by numeric ID, including line items, VAT rates, totals, company info and payment status.",
       "parameters": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "The easybill document id"
+            "description": "The unique GetMyInvoices document ID"
           }
         },
         "required": [
@@ -219,14 +97,14 @@
       }
     },
     {
-      "name": "easybill_get_document_pdf",
-      "description": "Fetch the rendered PDF of an easybill document by id. The PDF is returned base64-encoded in the response 'pdf' field, ready to save or forward.",
+      "name": "getmyinvoices_get_document_file",
+      "description": "Fetch the original document file (PDF or scan) from GetMyInvoices by document ID.",
       "parameters": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "The easybill document id"
+            "description": "The unique GetMyInvoices document ID"
           }
         },
         "required": [
@@ -235,37 +113,52 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/documents/{id}/pdf"
+        "path": "/documents/{id}/file"
       }
     },
     {
-      "name": "easybill_list_positions",
-      "description": "List products/articles (positions) from the easybill catalog with pagination. Returns article number, description, unit price and VAT percentage.",
+      "name": "getmyinvoices_list_companies",
+      "description": "List companies (suppliers, portals and vendors) stored in GetMyInvoices with pagination.",
       "parameters": {
         "type": "object",
         "properties": {
-          "page": {
+          "offset": {
             "type": "number",
-            "description": "Page number, 1-based (default 1)"
+            "description": "Number of records to skip for pagination, 0-based (default 0)"
           },
           "limit": {
             "type": "number",
-            "description": "Results per page (default 100, max 1000)"
-          },
-          "number": {
-            "type": "string",
-            "description": "Filter by article number"
+            "description": "Number of records to return (default 50, max 100)"
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/positions",
+        "path": "/companies",
         "queryParams": {
-          "page": "$page",
-          "limit": "$limit",
-          "number": "$number"
+          "offset": "$offset",
+          "limit": "$limit"
         }
+      }
+    },
+    {
+      "name": "getmyinvoices_get_company",
+      "description": "Get detailed information about a single company (supplier/vendor) by ID from GetMyInvoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The unique GetMyInvoices company ID"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{id}"
       }
     }
   ]
