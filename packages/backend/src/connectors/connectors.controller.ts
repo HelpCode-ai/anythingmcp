@@ -440,6 +440,28 @@ class ImportConnectorDto {
   @ValidateNested({ each: true })
   @Type(() => ImportToolDto)
   tools?: ImportToolDto[];
+
+  // Written by export-all for non-admins: the names of the secrets it left
+  // empty. Accepted so that such a backup can be restored as downloaded;
+  // nothing is read from them, the empty values in envVars/headers are what
+  // gets stored.
+  @ApiPropertyOptional({
+    description: 'Env vars whose values the export withheld. Ignored on import.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  maskedEnvVars?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Headers whose values the export withheld. Ignored on import.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  maskedHeaders?: string[];
 }
 
 class ImportAllDto {
@@ -452,6 +474,26 @@ class ImportAllDto {
   @ValidateNested({ each: true })
   @Type(() => ImportConnectorDto)
   connectors: ImportConnectorDto[];
+
+  // The envelope export-all wraps around `connectors`. The global
+  // ValidationPipe forbids unknown properties, so without these a backup file
+  // was rejected as downloaded. Informational only.
+  @ApiPropertyOptional({ description: 'Backup format version, as written by export-all.' })
+  @IsOptional()
+  @IsString()
+  version?: string;
+
+  @ApiPropertyOptional({ description: 'When the backup was exported.' })
+  @IsOptional()
+  @IsString()
+  exportedAt?: string;
+
+  @ApiPropertyOptional({
+    description: 'Whether the export carried secret values. Ignored on import.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  secretsIncluded?: boolean;
 }
 
 class UpdateEnvVarsDto {
@@ -1176,6 +1218,27 @@ export class ConnectorsController {
     const results = { created: 0, skipped: 0, tools: 0, errors: [] as string[] };
 
     for (const c of body.connectors) {
+      // Connector names are not unique in the schema, so the P2002 branch
+      // below never fired and restoring a backup twice doubled every
+      // connector. Match by name within the caller's organization instead.
+      const existing = await this.prisma.connector.findFirst({
+        where: { organizationId: req.user.organizationId, name: c.name },
+        select: { id: true },
+      });
+      if (existing) {
+        results.skipped++;
+        continue;
+      }
+
+      // Same licence and trial-limit check as POST /api/connectors, run per
+      // connector because each one counts towards the limit.
+      try {
+        await this.licenseGuard.checkCanCreateConnector(req.user.sub, req.user.organizationId);
+      } catch (err: any) {
+        results.errors.push(`Connector ${c.name}: ${err.message}`);
+        break;
+      }
+
       try {
         const connector = await this.prisma.connector.create({
           data: {

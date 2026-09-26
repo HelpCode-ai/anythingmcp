@@ -398,7 +398,7 @@ export const connectors = {
   exportAll: (token: string) =>
     request<{ version: string; exportedAt: string; secretsIncluded?: boolean; connectors: any[] }>('/api/connectors/export-all', { token }),
   importAll: (data: { connectors: any[] }, token: string) =>
-    request<{ message: string; created: number; skipped: number; tools: number }>('/api/connectors/import-all', { method: 'POST', body: data, token }),
+    request<{ message: string; created: number; skipped: number; tools: number; errors?: string[] }>('/api/connectors/import-all', { method: 'POST', body: data, token }),
   healthCheck: (token: string) =>
     request<{ total: number; healthy: number; unhealthy: number; connectors: any[] }>('/api/connectors/health-check', { token }),
   oauthAuthorize: (id: string, token: string) =>

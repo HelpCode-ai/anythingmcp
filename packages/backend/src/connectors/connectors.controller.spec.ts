@@ -19,7 +19,10 @@ function buildController(overrides: {
     create: jest.fn().mockResolvedValue({ id: 'c1', type: 'REST' }),
   };
   const prisma = overrides.prisma ?? {
-    connector: { create: jest.fn().mockResolvedValue({ id: 'c1' }) },
+    connector: {
+      create: jest.fn().mockResolvedValue({ id: 'c1' }),
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     mcpTool: { create: jest.fn() },
   };
   const mcpServer = overrides.mcpServer ?? {
