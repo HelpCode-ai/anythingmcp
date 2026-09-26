@@ -1,6 +1,6 @@
-# SOAP Connector — SOAP API to MCP
+# SOAP / WSDL to MCP
 
-> Bridge legacy SOAP/WSDL web services to MCP. Let AI agents call enterprise SOAP APIs without writing integration code.
+AnythingMCP turns a SOAP web service into MCP tools for Claude, ChatGPT and Copilot without code. Give it the WSDL and each operation becomes a tool; AnythingMCP builds the SOAP envelope, keeps the WSDL parameter order that WCF services need and handles WS-Security, so AI agents can call legacy enterprise SOAP APIs.
 
 [Back to README](../../README.md)
 

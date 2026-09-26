@@ -1,6 +1,6 @@
-# Database Connector — Database to MCP
+# SQL database to MCP
 
-> Let AI agents query PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, and SQLite through MCP. Auto-generated schema tools + dynamic query execution.
+AnythingMCP lets Claude, ChatGPT and Copilot query PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, Oracle, SQLite and MongoDB through MCP, without code. The connector generates schema, example and query tools; you choose whether the model writes the query or only fills in the parameters of queries you defined. Pair it with a read-only database user.
 
 [Back to README](../../README.md)
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP — 258 connectors, 21 of them with no API key. Your REST, SOAP/WSDL, GraphQL, SQL and MCP systems become tools for Claude, ChatGPT, Copilot and Gemini." width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 258 connectors, 21 of them with no API key." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <strong>Give Claude, ChatGPT and Copilot safe access to the software your company already runs.</strong><br/>
-  258 ready adapters, any REST/SOAP/GraphQL/SQL system without code, on your own infrastructure — and it learns how your systems connect.
+  <strong>Turn any REST/OpenAPI, SOAP, GraphQL or SQL API into MCP tools for Claude, ChatGPT and Copilot.</strong><br/>
+  A self-hosted MCP server and gateway, no code, 258 ready connectors including ERP and e-commerce: SAP Business One, Odoo, Xentral, weclapp, Shopware, WooCommerce, Amazon Seller, Kaufland and more.
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 **Claude answering a question no chatbot could answer**, because the data lives in a field-service system that speaks REST, not MCP:
 
 <p align="center">
-  <img src="docs/assets/demo-claude.gif" alt="Claude asked which companies a technician visited last week, calling tools served by AnythingMCP against a live field-service system" width="100%" />
+  <img src="docs/assets/demo-claude.gif" alt="AnythingMCP in Claude: asked which companies a technician visited last week, Claude calls MCP tools that AnythingMCP generated from a field-service REST API" width="100%" />
 </p>
 
 **Run it yourself** — three lines, no clone, [details below](#run-it-yourself):
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 Three words appear throughout and mean three different things:
 
-- an **adapter** is one of the 255 JSON definitions that ship in this repo — DATEV, weclapp, DHL, Deutsche Bahn, Shopware, Personio, Handelsregister and the rest. 21 of them need no API key at all; the others ask for your credentials at import.
+- an **adapter** is one of the 258 JSON definitions that ship in this repo — SAP Business One, Odoo, weclapp, Xentral, Shopware, WooCommerce, Amazon Seller, DHL and the rest. 21 of them need no API key at all; the others ask for your credentials at import.
 - a **connector** is an adapter, or your own OpenAPI spec / Postman collection / WSDL / GraphQL endpoint / database, once you have configured it in your workspace. Anything you can point at, in minutes, without writing an MCP server.
 - an **MCP server** is the URL you hand to Claude. It exposes the connectors you assign to it, and nothing else.
 
@@ -88,6 +88,85 @@ The quickstart binds to `127.0.0.1` on purpose: nothing in front of it terminate
 [![Install on DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://marketplace.digitalocean.com/apps/anythingmcp)
 
 </details>
+
+---
+
+## Connect any system
+
+Most companies have no MCP servers yet. They have a REST API, an ERP, a SOAP service and a database. Each of them becomes a set of MCP tools, and one MCP server URL hands them to Claude, ChatGPT or Copilot.
+
+### OpenAPI / REST API to MCP
+
+Import an OpenAPI 3.x or Swagger 2.0 spec, by URL or by pasting it, and every operation becomes an MCP tool with its parameters, auth and endpoint mapping filled in. Rename and describe the tools in the visual editor so the model picks the right one. [REST connector docs](docs/connectors/rest.md) · [guide](https://anythingmcp.com/guides/rest-api-to-mcp)
+
+### SOAP / WSDL to MCP
+
+Point AnythingMCP at a WSDL and each SOAP operation becomes a tool: envelopes, parameter order, WS-Security and WCF services are handled for you. That is how a SOAP service from 2009 ends up in front of a 2026 model, in minutes rather than weeks. [SOAP connector docs](docs/connectors/soap.md) · [guide](https://anythingmcp.com/guides/soap-to-mcp)
+
+### SQL database to MCP
+
+PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite and MongoDB. The connector generates schema, example and query tools; you decide whether the model writes SQL or only fills in the parameters of queries you wrote. Give it a read-only database user and a role that sees only the tools it needs. [Database connector docs](docs/connectors/database.md) · [guide](https://anythingmcp.com/guides/database-to-mcp)
+
+### GraphQL to MCP
+
+Introspection turns the queries and mutations of a GraphQL endpoint into MCP tools, or you define the operations yourself. [GraphQL connector docs](docs/connectors/graphql.md) · [guide](https://anythingmcp.com/guides/graphql-to-mcp)
+
+### Postman collection to MCP
+
+Import a Postman v2.1 collection: folders, auth, body modes and `{{variables}}` carry over, and every request becomes a tool. cURL commands work the same way. [Postman import docs](docs/connectors/rest.md#from-postman-collection)
+
+---
+
+## ERP connectors
+
+Ready adapters for the ERPs behind most order, stock and invoice questions. Install one, add your credentials, and the tools are live on your MCP server. Each name links to its setup guide.
+
+| System | Market | Tools | What the AI can do |
+|---|---|---|---|
+| [SAP Business One](https://anythingmcp.com/guides/connect-sap-business-one-to-claude) | Global | 12 | Business partners, items, orders, invoices, quotations, deliveries; create sales orders |
+| [SAP S/4HANA Cloud](https://anythingmcp.com/guides/connect-sap-s4hana-cloud-to-claude) | Global | 15 | Business partners, sales and purchase orders, billing documents, deliveries, journal entries |
+| [Odoo](https://anythingmcp.com/guides/connect-odoo-to-claude) | Global | 11 | Any model: partners, sales orders, invoices, products; create and update |
+| [Microsoft Dynamics NAV](https://anythingmcp.com/guides/connect-dynamics-nav-to-claude) | Global | 6 | Any published OData page: customers, items, sales orders; create and update |
+| [ERPNext](https://anythingmcp.com/guides/connect-erpnext-to-claude) | Global | 11 | Any DocType: customers, sales orders, invoices, items, stock |
+| [Dolibarr](https://anythingmcp.com/guides/connect-dolibarr-to-claude) | Global | 10 | Third parties, invoices, orders, proposals, products, stock |
+| [JTL-Wawi](https://anythingmcp.com/guides/connect-jtl-wawi-to-claude) † | DE | 9 | Items, stock per warehouse, customers, sales orders, shipments |
+| [Xentral](https://anythingmcp.com/guides/connect-xentral-to-claude) | DE | 7 | Articles, customers, sales orders, invoices, stock |
+| [weclapp](https://anythingmcp.com/guides/connect-weclapp-to-claude) | DACH | 11 | Customers, sales orders, invoices, articles, quotations, opportunities |
+| [Sage 100](https://anythingmcp.com/guides/connect-sage-100-to-claude) † | DE | 6 | Addresses, items, sales documents, any Web API entity |
+| [Haufe X360](https://anythingmcp.com/guides/connect-haufe-x360-to-claude) † | DE | 7 | Customers, stock items, sales orders, invoices, shipments |
+| [ScopeVisio](https://anythingmcp.com/guides/connect-scopevisio-to-claude) | DE | 6 | Contacts, invoices, projects, tasks |
+| [AFAS Profit](https://anythingmcp.com/guides/connect-afas-profit-to-claude) † | NL | 6 | Any GetConnector: debtors, invoices, employees |
+| [Zucchetti](https://anythingmcp.com/guides/connect-zucchetti-to-claude) † | IT | 6 | Anagrafiche, documents, items |
+| [TeamSystem](https://anythingmcp.com/guides/connect-teamsystem-to-claude) † | IT | 6 | Customers, suppliers, invoices, items |
+| [Axonaut](https://anythingmcp.com/guides/connect-axonaut-to-claude) † | FR | 9 | Companies, invoices, quotations, expenses, products, projects |
+
+† Built from the vendor's published API documentation and not yet exercised against a live tenant. If you run one of these, a report or a fix is very welcome.
+
+**Your ERP isn't listed, or it's a custom or on-prem build?** Connect it through its [REST API](#openapi--rest-api-to-mcp), [SOAP services](#soap--wsdl-to-mcp) or straight to its [SQL database](#sql-database-to-mcp), read-only. That is how [KOCH Freiburg](https://www.kochfreiburg.de/) runs its ERP in production.
+
+---
+
+## E-commerce &amp; marketplace connectors
+
+Shops and marketplaces, from Amazon and eBay to the DACH marketplaces. Each name links to its setup guide.
+
+| System | Market | Tools | What the AI can do |
+|---|---|---|---|
+| [Amazon Seller Central](https://anythingmcp.com/guides/connect-amazon-seller-to-claude) | Global | 15 | Orders, catalog, FBA inventory, offers, fees, financial events, reports |
+| [WooCommerce](https://anythingmcp.com/guides/connect-woocommerce-to-claude) | Global | 49 | Products, variations, stock, orders, refunds, customers, reports |
+| [Shopware 6](https://anythingmcp.com/guides/connect-shopware-6-to-claude) | DACH | 6 | Storefront catalog via the Store API: products, categories, cross-sells |
+| [Magento 2 / Adobe Commerce](https://anythingmcp.com/guides/connect-magento-to-claude) | Global | 12 | Products, stock, orders, customers |
+| [BigCommerce](https://anythingmcp.com/guides/connect-bigcommerce-to-claude) | Global | 14 | Products, variants, inventory, orders, customers |
+| [eBay Sell](https://anythingmcp.com/guides/connect-ebay-sell-to-claude) | Global | 10 | Inventory, offers, orders, disputes, price updates |
+| [Etsy](https://anythingmcp.com/guides/connect-etsy-to-claude) | Global | 9 | Listings, receipts (orders), reviews |
+| [Ecwid](https://anythingmcp.com/guides/connect-ecwid-to-claude) | Global | 10 | Products, categories, orders, customers |
+| [Kaufland Marketplace](https://anythingmcp.com/guides/connect-kaufland-to-claude) | DE | 8 | Orders and units, shipments, tickets, storefronts |
+| [OTTO Market](https://anythingmcp.com/guides/connect-otto-market-to-claude) † | DE | 8 | Orders, products, returns, stock and price updates |
+| [Zalando Direct Ship](https://anythingmcp.com/guides/connect-zalando-zds-to-claude) † | EU | 7 | Orders, shipments, returns, stock, prices |
+| [Billbee](https://anythingmcp.com/guides/connect-billbee-to-claude) | DACH | 8 | Orders, products, customers, shipping providers |
+| [Mercado Libre](https://anythingmcp.com/guides/connect-mercado-libre-to-claude) | LATAM | 4 | Item search, seller orders |
+
+† Built from the vendor's published API documentation and not yet exercised against a live seller account.
 
 ---
 
@@ -227,7 +306,7 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 | You have legacy SOAP/WSDL services | **SOAP → MCP** bridge with automatic WSDL parsing |
 | You need to query databases from AI agents | **DB → MCP** with auto-generated query tools (7 engines) |
 | You want one endpoint for all your APIs | **MCP middleware** that aggregates multiple connectors |
-| You need an MCP server for Deutsche Bahn / DHL / weclapp / … | **The adapter catalog** — install and credential it in a minute |
+| You need an MCP server for SAP Business One / Odoo / Shopware / … | **The adapter catalog** — install and credential it in a minute |
 | You can't ship credentials to a third party | **Runs on your infrastructure** — credentials AES-256-GCM at rest |
 | You need auth, audit logs and RBAC | Built-in **OAuth2, audit log and role-based access** — no DIY |
 | A third-party model would see every field your API returns | **[Per-tool response mapping](#control-what-the-model-sees)** — drop or reshape fields before they leave your network |
@@ -237,24 +316,25 @@ AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writin
 
 | | Guides |
 |---|---|
-| Ask about trains, live delays and routes | [Deutsche Bahn](https://anythingmcp.com/guides/deutsche-bahn-to-mcp) |
-| Talk to the ERP from Claude | [weclapp](https://anythingmcp.com/guides/weclapp-to-mcp) · [Xentral](https://anythingmcp.com/guides/xentral-to-mcp) |
+| Talk to the ERP from Claude | [SAP Business One](https://anythingmcp.com/guides/connect-sap-business-one-to-claude) · [Odoo](https://anythingmcp.com/guides/connect-odoo-to-claude) · [weclapp](https://anythingmcp.com/guides/weclapp-to-mcp) · [Xentral](https://anythingmcp.com/guides/xentral-to-mcp) |
+| Check orders, stock and fees across shops and marketplaces | [Amazon Seller](https://anythingmcp.com/guides/connect-amazon-seller-to-claude) · [WooCommerce](https://anythingmcp.com/guides/connect-woocommerce-to-claude) · [Kaufland](https://anythingmcp.com/guides/connect-kaufland-to-claude) |
 | Track parcels | [DHL](https://anythingmcp.com/guides/dhl-tracking-to-mcp) · [GLS](https://anythingmcp.com/guides/gls-tracking-to-mcp) |
 | Validate an invoice before paying it | [VIES VAT](https://anythingmcp.com/guides/vies-vat-to-mcp) · [Handelsregister](https://anythingmcp.com/guides/handelsregister-to-mcp) |
 | Let agents read a production database, read-only | [Database connectors](docs/connectors/database.md) |
 | Bridge a SOAP service from 2009 to a 2026 model | [SOAP → MCP](https://anythingmcp.com/guides/soap-to-mcp) |
+| Ask about trains, live delays and routes | [Deutsche Bahn](https://anythingmcp.com/guides/deutsche-bahn-to-mcp) |
 
 ---
 
 ## The adapter catalog
 
-258 adapters, exposing 1,800+ tools. **21 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+258 adapters, exposing 2,400+ tools. **21 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Examples |
 |---|---|
 | 📦 Logistics &amp; shipping | Deutsche Bahn, DHL, DPD, GLS, Shipcloud, Sendcloud |
-| 💼 ERP, accounting &amp; invoicing | weclapp, Xentral, DATEV, Scopevisio, Billomat, FastBill |
-| 🛍️ E-commerce | Amazon Seller, Etsy, Shopware 6, WooCommerce, Mercado Libre 🌎, Oxomi |
+| 💼 ERP, accounting &amp; invoicing | [SAP Business One, Odoo, weclapp, Xentral and 12 more ERPs](#erp-connectors), Lexware Office, sevDesk, Exact Online, bexio |
+| 🛍️ E-commerce | [Amazon Seller, WooCommerce, Shopware 6, Kaufland, OTTO and 8 more](#e-commerce--marketplace-connectors), Oxomi |
 | 👥 HR &amp; field service | Personio, HRWorks, Kenjo, MFR Mobile Field Report |
 | 🏛️ Government &amp; public data | VIES VAT, Handelsregister, UK Companies House 🇬🇧, DESTATIS, Bundesbank, OpenPLZ, NINA |
 | 🏦 Banking &amp; payments | Revolut Business, Wise 🇬🇧, PAYONE, Razorpay 🇮🇳, Paystack 🇳🇬 |
@@ -276,7 +356,7 @@ Looking for a specific service? Every adapter has a step-by-step guide at **[any
 
 ## How AnythingMCP compares
 
-The projects it gets compared with are mostly MCP gateways: they federate, scope and secure MCP servers you already have. AnythingMCP starts one step earlier, because most companies have no MCP servers at all — they have a REST API, a SOAP service from 2009 and a database nobody wants to expose. Every project below solves a real problem; they just don't solve the same one.
+AnythingMCP is an MCP gateway that starts one step earlier: it creates the MCP servers from the APIs, ERPs and databases you already run, then serves, scopes and audits them behind one endpoint. The other MCP gateways federate and secure MCP servers you already have, but most companies have none yet — they have a REST API, a SOAP service from 2009 and a database nobody wants to expose. Every project below solves a real problem; they just don't solve the same one.
 
 | | What it is | Choose it instead if… |
 |---|---|---|
@@ -287,6 +367,31 @@ The projects it gets compared with are mostly MCP gateways: they federate, scope
 | **AnythingMCP** | Turns the APIs, SOAP services and databases you already run into MCP tools | Your systems are **not** MCP servers yet, and you want the choice of holding the credentials yourself |
 
 Side-by-side pages with the full feature tables: [anythingmcp.com/vs](https://anythingmcp.com/vs).
+
+## FAQ
+
+**How do I connect my ERP (SAP Business One, Odoo, Xentral…) to Claude or ChatGPT?**
+Install the ERP's adapter from the [catalog](#erp-connectors), enter the API credentials, and add your MCP server URL to Claude as a custom connector or to ChatGPT as an app. If your ERP has no adapter, connect its REST or SOAP API or its SQL database directly. Start with a role that can only read.
+
+**How do I turn an OpenAPI spec into an MCP server?**
+Create a REST connector and import the spec by URL or by pasting it; every operation becomes an MCP tool on your server's `/mcp` endpoint, with no code. [How it works](docs/connectors/rest.md#from-openapi--swagger).
+
+**Can I connect a SOAP/WSDL service to Claude?**
+Yes. AnythingMCP parses the WSDL, turns each operation into a tool and builds the SOAP envelope on every call, including WS-Security and WCF services. [SOAP connector docs](docs/connectors/soap.md).
+
+**Can Claude query my SQL Server, Oracle or PostgreSQL database safely?**
+Use a database user with SELECT rights only, prefer static queries where the model supplies just the parameters, and whitelist the tools per role. Response mapping drops the columns that must not reach the model, and every query lands in the audit log in your own database.
+
+**How do I connect Shopware, WooCommerce or Amazon Seller Central to Claude?**
+Install the [e-commerce adapter](#e-commerce--marketplace-connectors) for your shop or marketplace and authorise it. WooCommerce comes with 49 tools, Amazon Seller Central uses the official Selling Partner API, and the Shopware 6 adapter reads the storefront catalog through the Store API.
+
+**Is AnythingMCP an MCP gateway? Is it self-hosted and free?**
+Yes on all three: one MCP endpoint in front of every connector, with OAuth2, RBAC, SSO and audit. It runs on your own servers under AGPL-3.0, commercial use included; [AnythingMCP Cloud](https://cloud.anythingmcp.com) is the optional hosted version.
+
+**How is it different from Composio?**
+Composio is a hosted catalog of managed integrations. AnythingMCP also turns your own in-house APIs, SOAP services and databases into tools, and can keep every credential on your infrastructure. [Full comparison](https://anythingmcp.com/vs/alternatives-to-composio).
+
+---
 
 ## Community &amp; support
 
