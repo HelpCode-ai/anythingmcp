@@ -14,7 +14,7 @@ export class WsdlParser {
     const wsdl = client.wsdl;
     const tools: ParsedTool[] = [];
 
-    // Extract target namespace from WSDL
+    // Extract targetNamespace from WSDL
     const targetNamespace =
       (wsdl.definitions as any)?.$?.targetNamespace ||
       (wsdl as any).xml?.match(/targetNamespace="([^"]+)"/)?.[1];
@@ -36,13 +36,27 @@ export class WsdlParser {
     }
 
     // Map bindingName → { operationName → soapAction }
+    // and bindingName → { operationName → inputElementName }
     const bindingSoapActions: Record<string, Record<string, string>> = {};
+    const bindingInputElements: Record<string, Record<string, string>> = {};
     for (const [bindingName, binding] of Object.entries(bindings) as any[]) {
       const methods = binding.methods || {};
       bindingSoapActions[bindingName] = {};
+      bindingInputElements[bindingName] = {};
       for (const [opName, opDef] of Object.entries(methods) as any[]) {
         if (opDef.soapAction) {
           bindingSoapActions[bindingName][opName] = opDef.soapAction;
+        }
+        const inputName =
+          opDef.input?.$name ||
+          opDef.input?.name ||
+          opDef.input?.parts?.[Object.keys(opDef.input?.parts || {})[0]]?.element?.$name ||
+          opDef.input?.parts?.[Object.keys(opDef.input?.parts || {})[0]]?.$element;
+        if (inputName) {
+          const stripped = inputName.includes(':') ? inputName.split(':').pop() : inputName;
+          if (stripped) {
+            bindingInputElements[bindingName][opName] = stripped;
+          }
         }
       }
     }
@@ -53,6 +67,8 @@ export class WsdlParser {
           const soapAction =
             bindingSoapActions[portName]?.[operationName] || '';
           const endpoint = portEndpoints[portName] || '';
+          const inputElement =
+            bindingInputElements[portName]?.[operationName];
 
           const tool = this.operationToTool(
             serviceName,
@@ -62,6 +78,7 @@ export class WsdlParser {
             soapAction,
             endpoint,
             targetNamespace,
+            inputElement,
           );
           tools.push(tool);
         }
@@ -80,6 +97,7 @@ export class WsdlParser {
     soapAction: string,
     endpoint: string,
     targetNamespace?: string,
+    inputElement?: string,
   ): ParsedTool {
     const properties: Record<string, any> = {};
     const required: string[] = [];
@@ -120,6 +138,7 @@ export class WsdlParser {
         ...(soapAction ? { soapAction } : {}),
         ...(endpoint ? { endpoint } : {}),
         ...(targetNamespace ? { targetNamespace } : {}),
+        ...(inputElement ? { inputElement } : {}),
       },
     };
 
