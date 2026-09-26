@@ -16,8 +16,9 @@
  *   node scripts/adapter-count.mjs            # prints JSON {adapters, keyless}
  *   node scripts/adapter-count.mjs --check    # verifies the quoted numbers
  *   node scripts/adapter-count.mjs --json > packages/frontend/public/catalog-stats.json
+ *   node scripts/adapter-count.mjs --badges <dir>   # shields.io endpoint JSON, one file per number
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,8 +44,35 @@ const stats = {
 };
 
 const args = process.argv.slice(2);
-if (args.includes('--json') || !args.includes('--check')) {
+const badgesAt = args.indexOf('--badges');
+if (args.includes('--json') || (!args.includes('--check') && badgesAt === -1)) {
   console.log(JSON.stringify(stats));
+}
+
+// The README renders these through shields.io's endpoint badge, so the numbers
+// on it come from the catalog rather than from text someone has to bump. The
+// catalog-badges workflow publishes the files to the `badges` branch.
+if (badgesAt !== -1) {
+  const dir = args[badgesAt + 1];
+  if (!dir || dir.startsWith('--')) {
+    console.error('--badges needs a directory to write into');
+    process.exit(1);
+  }
+  mkdirSync(dir, { recursive: true });
+  const badge = (label, n) => ({
+    schemaVersion: 1,
+    label,
+    message: n.toLocaleString('en-US'),
+    color: '2563eb',
+    labelColor: '0b1220',
+  });
+  for (const [file, label, n] of [
+    ['adapters.json', 'adapters', stats.adapters],
+    ['tools.json', 'tools', stats.tools],
+    ['keyless.json', 'no API key', stats.keyless],
+  ]) {
+    writeFileSync(join(dir, file), `${JSON.stringify(badge(label, n))}\n`);
+  }
 }
 
 if (args.includes('--check')) {

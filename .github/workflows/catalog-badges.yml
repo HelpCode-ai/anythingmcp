@@ -1,0 +1,63 @@
+name: Catalog badges
+
+# Publishes the adapter, tool and keyless counts as shields.io endpoint JSON on
+# the `badges` branch, which the README badges read. The numbers come from
+# scripts/adapter-count.mjs at runtime, so nothing here quotes them and an
+# adapter PR never has a reason to touch this file.
+#
+# Runs on main only: a fork PR never gets to write to the branch.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/backend/src/adapters/**"
+      - "scripts/adapter-count.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog-badges
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish catalog badges
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Write the badge files
+        run: node scripts/adapter-count.mjs --badges "$RUNNER_TEMP/badges"
+
+      - name: Commit them to the badges branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin badges > /dev/null; then
+            git worktree add "$RUNNER_TEMP/branch" origin/badges
+            git -C "$RUNNER_TEMP/branch" checkout -B badges
+          else
+            git worktree add --detach "$RUNNER_TEMP/branch"
+            git -C "$RUNNER_TEMP/branch" checkout --orphan badges
+            git -C "$RUNNER_TEMP/branch" rm -rfq .
+          fi
+          cp "$RUNNER_TEMP"/badges/*.json "$RUNNER_TEMP/branch/"
+          cd "$RUNNER_TEMP/branch"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Badges already up to date."
+            exit 0
+          fi
+          git commit -m "Update catalog badges from ${GITHUB_SHA::7}"
+          git push origin badges
