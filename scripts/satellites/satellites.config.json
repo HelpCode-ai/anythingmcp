@@ -424,7 +424,8 @@
       "objects": {
         "en": "business partners, items, sales orders, invoices, quotations and deliveries",
         "de": "Geschäftspartner, Artikel, Aufträge, Rechnungen, Angebote und Lieferungen"
-      }
+      },
+      "publishUnverified": "Approved on 2026-09-26 by Matteo Morelli without a live test; the README states it is not verified yet."
     },
     {
       "repo": "jtl-wawi-mcp-server",
@@ -489,7 +490,8 @@
         "jtl-wawi-mcp-server",
         "billbee-mcp-server"
       ],
-      "lastVerified": null
+      "lastVerified": null,
+      "publishUnverified": "Approved on 2026-09-26 by Matteo Morelli without a live test; the README states it is not verified yet."
     },
     {
       "repo": "weclapp-mcp-server",
@@ -655,7 +657,13 @@
         "woocommerce-mcp-server",
         "magento-mcp-server"
       ],
-      "lastVerified": null
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "a Shopware 6.7.2.2 demo shop (Store API)",
+        "how": "all 6 tools called through MCP",
+        "againstDe": "einen Shopware-6.7.2.2-Demoshop (Store API)",
+        "howDe": "alle 6 Tools über MCP aufgerufen"
+      }
     },
     {
       "repo": "kaufland-mcp-server",
@@ -685,7 +693,8 @@
         "billbee-mcp-server",
         "jtl-wawi-mcp-server"
       ],
-      "lastVerified": null
+      "lastVerified": null,
+      "publishUnverified": "Approved on 2026-09-26 by Matteo Morelli without a live test; the README states it is not verified yet."
     },
     {
       "repo": "otto-market-mcp-server",
@@ -716,7 +725,8 @@
         "billbee-mcp-server",
         "jtl-wawi-mcp-server"
       ],
-      "lastVerified": null
+      "lastVerified": null,
+      "publishUnverified": "Approved on 2026-09-26 by Matteo Morelli without a live test; the README states it is not verified yet."
     },
     {
       "repo": "billbee-mcp-server",
@@ -1028,7 +1038,11 @@
         "magento-mcp-server",
         "bigcommerce-mcp-server"
       ],
-      "lastVerified": null
+      "lastVerified": {
+        "date": "2026-09-26",
+        "against": "WooCommerce 11.1.2 on WordPress 7.1.2 (a local test shop)",
+        "how": "38 of the 40 API tools called through MCP, reads and writes, no errors"
+      }
     },
     {
       "repo": "magento-mcp-server",

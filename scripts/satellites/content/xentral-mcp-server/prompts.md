@@ -1,0 +1,10 @@
+- Which sales orders from this week are still open?
+- How much stock of article 100245 do we have in each warehouse, and how much is reserved?
+- Which invoices are still open, and for how much?
+- Show customer 10023 with their contact persons and payment terms.
+- What was our invoiced total last month?
+- Find the customer "Bauer Holzbau" and list their last five orders.
+- Which invoices are partly paid?
+- What does article 100245 cost us, and what do we sell it for?
+- Which orders were created today, and for which customers?
+- Which customers have an open amount above their credit limit?

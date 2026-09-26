@@ -112,6 +112,15 @@ test('unverified adapters, missing verification and an undecided licence block p
   assert.ok(blockers.some((b) => /declares itself unverified/.test(b)));
 });
 
+test('publishUnverified turns the verification blockers into warnings, nothing else', () => {
+  const sat = { ...config.satellites.find((s) => s.repo === 'odoo-mcp-server'), lastVerified: null, publishUnverified: 'approved in a test' };
+  const unverified = { adapter: { ...fixtureCatalog().get('odoo').adapter, instructions: '**Unverified.**' }, region: 'intl' };
+  const { blockers, warnings } = checkSatellite(sat, { config: { ...config, license: null }, catalog: new Map([['odoo', unverified]]), topicCounts, content: loadContent(sat.repo) });
+  assert.ok(!blockers.some((b) => /lastVerified|unverified/.test(b)));
+  assert.ok(blockers.some((b) => /licence/.test(b)));
+  assert.ok(warnings.some((w) => /lastVerified/.test(w)));
+});
+
 test('an umbrella lists unverified adapters as a warning, not a blocker', () => {
   const sat = { ...config.satellites.find((s) => s.repo === 'erp-mcp-server'), adapters: ['odoo'] };
   const unverified = { adapter: { ...fixtureCatalog().get('odoo').adapter, instructions: '**Unverified.**' }, region: 'intl' };

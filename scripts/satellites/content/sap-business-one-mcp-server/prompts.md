@@ -1,0 +1,12 @@
+- Which sales orders from this week are still open, and for which customers?
+- Show business partner C20000 with their balance and contact details.
+- What is the stock of item A00001 in each warehouse?
+- Which A/R invoices are overdue by more than 30 days?
+- Which quotations did we send last month that have not turned into orders?
+- What did we deliver to customer C20000 this month?
+- Create a sales order for C20000: 10 units of A00001, delivery next Friday. (write)
+- Which customers bought item A00001 this year?
+- Compare this month's invoiced total with last month's.
+- Which items have no sales in the last 90 days?
+- Show order 245 with all its lines.
+- Is the connection working, and which company database is this?

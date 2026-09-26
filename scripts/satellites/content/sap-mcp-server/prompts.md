@@ -1,0 +1,10 @@
+- Which sales orders are still open in SAP Business One, and for which customers?
+- Show business partner 10100001 in S/4HANA Cloud with its sales orders.
+- Which billing documents did S/4HANA create last week?
+- Which purchase orders were created in S/4HANA this month, and for which suppliers?
+- Which expense reports in Concur are waiting for my approval?
+- Show the journal entries posted to account 400000 this month.
+- Which outbound deliveries leave the warehouse today?
+- Which purchase requisitions are still open?
+- Compare open orders in SAP B1 and S/4HANA for the same customer.
+- Which Concur expense reports have entries without a receipt?

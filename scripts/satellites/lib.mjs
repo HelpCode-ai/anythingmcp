@@ -175,7 +175,10 @@ export function checkSatellite(sat, { config, catalog, topicCounts, content = {}
     if (/\*\*Unverified/.test(a.instructions ?? '')) {
       // An umbrella lists every system and marks the unverified ones; a
       // single-system satellite would be promoting one.
-      (sat.type === 'umbrella' ? warnings : blockers).push(`adapter ${a.slug} declares itself unverified against a live tenant`);
+      // An umbrella lists every system and marks the unverified ones; a
+      // single-system satellite only ships unverified with an explicit,
+      // recorded approval (publishUnverified), and its README says so.
+      (sat.type === 'umbrella' || sat.publishUnverified ? warnings : blockers).push(`adapter ${a.slug} declares itself unverified against a live tenant`);
     }
   }
 
@@ -206,7 +209,9 @@ export function checkSatellite(sat, { config, catalog, topicCounts, content = {}
   }
 
   // Publishing
-  if (!sat.lastVerified) blockers.push('lastVerified is null: nobody has confirmed it against a live system');
+  if (!sat.lastVerified) {
+    (sat.publishUnverified ? warnings : blockers).push('lastVerified is null: nobody has confirmed it against a live system');
+  }
   if (!config.license) blockers.push('licence not decided (config.license is null)');
   if (sat.blockedBy) blockers.push(sat.blockedBy);
 

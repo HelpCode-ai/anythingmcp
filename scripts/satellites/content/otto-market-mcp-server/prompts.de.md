@@ -1,0 +1,6 @@
+- Welche OTTO-Bestellungen seit Montag sind noch nicht versendet?
+- Welche Retouren kamen diese Woche, und mit welchen Gründen?
+- Welchen Bestand zeigt OTTO für SKU DR-1001, und passt er zu unserem ERP?
+- Welche meiner Produkte sind auf otto.de nicht online, und warum?
+- Setze den Bestand von SKU LK-2040 bei OTTO auf 50. (schreibend)
+- Ändere den Preis von SKU DR-1002 auf 229,90 EUR. (schreibend)
