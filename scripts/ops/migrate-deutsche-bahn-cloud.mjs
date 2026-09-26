@@ -97,9 +97,14 @@ out.push(`  base_url = ${lit(motisUrl)},`);
 out.push(`  headers = ${json(adapter.connector.headers)},`);
 out.push(`  healthcheck_path = ${lit(adapter.connector.healthcheckPath)},`);
 out.push(`  instructions = ${lit(adapter.instructions)},`);
-out.push(`  env_vars = COALESCE(env_vars, '{}'::jsonb) || ${json({ MOTIS_URL: motisUrl })},`);
+// Merge onto an OBJECT only. COALESCE catches SQL NULL but not a JSON `null`,
+// and `'null'::jsonb || '{…}'` is the array `[null, {…}]`: the first cloud run
+// left 82 connectors with array env vars (one more element per re-run), which
+// made their backups unrestorable. Repaired in place on 2026-09-26.
+const asObject = (col) => `CASE WHEN jsonb_typeof(${col}) = 'object' THEN ${col} ELSE '{}'::jsonb END`;
+out.push(`  env_vars = ${asObject('env_vars')} || ${json({ MOTIS_URL: motisUrl })},`);
 out.push(
-  `  config = COALESCE(config, '{}'::jsonb) || ${json({
+  `  config = ${asObject('config')} || ${json({
     adapterSlug: 'deutsche-bahn',
     adapterVersion,
     instructionsBaseline,
