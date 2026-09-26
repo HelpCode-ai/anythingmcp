@@ -1,0 +1,12 @@
+- Which customer orders over 10,000 EUR are still open, and since when?
+- Which items are below their reorder level in the main warehouse?
+- List the invoices that are more than 30 days overdue, grouped by customer.
+- Which quotations did we send last month that the customer has not accepted?
+- Compare this quarter's revenue with the same quarter last year.
+- Find customer "Müller GmbH" and show their last five orders and open invoices.
+- Which suppliers have purchase orders due this week?
+- Which sales opportunities are expected to close this month?
+- What is the stock of item 10045 in each warehouse?
+- Which customers ordered in the last 90 days but have no open quotation?
+- Draft a sales order for customer 10023: 20 units of item A-4711. (needs an ERP with a write tool and a role that allows it)
+- Which recurring invoices run next month?

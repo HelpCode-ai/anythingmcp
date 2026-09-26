@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+title: "weclapp-mcp-server: weclapp MCP server: connect weclapp Cloud ERP to Claude & ChatGPT. Customers, orders, invoices, quotes and opportunities."
+message: "If you use this software, please cite AnythingMCP, which it is built on."
+type: software
+authors:
+  - name: "KOCH Freiburg GmbH"
+repository-code: "https://github.com/kochfreiburg/weclapp-mcp-server"
+url: "https://anythingmcp.com/guides/connect-weclapp-to-claude"
+references:
+  - type: software
+    title: "AnythingMCP"
+    authors:
+      - name: "helpcode.ai GmbH"
+    repository-code: "https://github.com/HelpCode-ai/anythingmcp"

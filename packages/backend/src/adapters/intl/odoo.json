@@ -320,7 +320,7 @@
     },
     {
       "name": "odoo_list_products",
-      "description": "List products with their internal reference, sale price, cost, on-hand quantity and product type. Convenience wrapper over product.product.",
+      "description": "List products with their internal reference, sale price, cost, product type and unit of measure. Convenience wrapper over product.product. Stock on hand (`qty_available`) only exists when the Inventory app is installed, so it is not requested here: ask for it with odoo_search_read on product.product when the database has Inventory.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -352,7 +352,6 @@
             "default_code",
             "list_price",
             "standard_price",
-            "qty_available",
             "type",
             "uom_id"
           ],

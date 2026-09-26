@@ -51,6 +51,9 @@ jobs:
       - name: Test adapter validator diagnostics
         run: node --test scripts/validate-adapters.test.mjs scripts/adapter-new.test.mjs
 
+      - name: Test the satellite generator
+        run: node --test scripts/satellites/satellites.test.mjs
+
       - name: Verify the quoted adapter count and license wording
         run: node scripts/adapter-count.mjs --check
 
