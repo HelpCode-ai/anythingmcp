@@ -131,6 +131,18 @@ jobs:
       - name: Exercise release.sh against a throwaway stack
         run: bash deploy/cloud/release.test.sh
 
+  stuck-users-report:
+    name: Cloud stuck-users report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # deploy/cloud/stuck-users-report.sh runs once a week on the droplet with
+      # SQL written against the production schema. Run it against every
+      # migration and fake data on each PR, so a schema change that breaks it
+      # fails here instead of as a Monday without a report.
+      - name: Exercise the weekly report against a throwaway database and SMTP
+        run: bash deploy/cloud/stuck-users-report.test.sh
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest

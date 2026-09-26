@@ -32,7 +32,7 @@ jobs:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/cloud/stuck-users-report.sh,deploy/cloud/systemd/anythingmcp-stuck-report.service,deploy/cloud/systemd/anythingmcp-stuck-report.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
           target: /tmp/anythingmcp-deploy
           overwrite: true
 
@@ -83,6 +83,20 @@ jobs:
             systemctl daemon-reload
             systemctl enable --now anythingmcp-probe.timer
             systemctl is-active anythingmcp-probe.timer
+
+            # Weekly stuck-users report, Monday 07:00 Europe/Berlin: orgs whose
+            # tool calls have never succeeded, connectors failing for everyone,
+            # signups that never got going. Read-only on the database. Mails
+            # REPORT_TO (else UPTIME_ALERT_TO) through this directory's SMTP_*;
+            # with neither set it writes to the journal. The timer does not fire
+            # on install, only on the next Monday.
+            install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/stuck-users-report.sh ./stuck-users-report.sh
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-stuck-report.service /etc/systemd/system/
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-stuck-report.timer /etc/systemd/system/
+            systemctl daemon-reload
+            systemctl enable --now anythingmcp-stuck-report.timer
+            systemctl is-active anythingmcp-stuck-report.timer
+
             mkdir -p ./deploy/motis
             cp /tmp/anythingmcp-deploy/deploy/motis/* ./deploy/motis/
             rm -rf ./deploy/cloud/db-rest

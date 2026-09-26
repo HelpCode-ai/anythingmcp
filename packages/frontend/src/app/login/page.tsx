@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
-type SetupStep = 'auth' | 'verify-email' | 'license-choice' | 'license-email-sent' | 'license-key' | 'trial-activated';
+type SetupStep = 'auth' | 'verify-email' | 'check-inbox' | 'license-choice' | 'license-email-sent' | 'license-key' | 'trial-activated';
 
 /** Small AnythingMCP brand mark for the top of pre-auth cards. */
 function BrandMark() {
@@ -133,7 +133,7 @@ function LoginForm() {
 
     try {
       let needsLicenseSetup = false;
-      let result;
+      let result: { accessToken: string; user: any };
       if (isRegister) {
         // Validate password strength
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/;
@@ -154,8 +154,23 @@ function LoginForm() {
           return;
         }
         const regResult = await auth.register(email, password, name, acceptTerms);
-        result = regResult;
-        needsLicenseSetup = !!regResult.isFirstUser;
+        if (regResult.accessToken) {
+          result = { accessToken: regResult.accessToken, user: regResult.user };
+          needsLicenseSetup = !!regResult.isFirstUser;
+        } else {
+          // Cloud answers the same whether or not the address already has an
+          // account. Signing in with what was just entered works only for the
+          // account just created; otherwise the email says what to do.
+          try {
+            const loginResult = await auth.login(email, password);
+            result = loginResult;
+            needsLicenseSetup = !!loginResult.needsLicenseSetup;
+          } catch {
+            setUserEmail(email);
+            setSetupStep('check-inbox');
+            return;
+          }
+        }
       } else if (recoveryMode) {
         result = await recoveryApi.login(email, recoveryCode);
       } else {
@@ -352,6 +367,47 @@ function LoginForm() {
               </button>
             </div>
           )}
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Check Inbox Step (Cloud sign-up for an address we cannot sign in to) ──
+
+  if (setupStep === 'check-inbox') {
+    return (
+      <div className="w-full max-w-sm">
+        <Card className="p-6">
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <BrandMark />
+            </div>
+            <h1 className="text-xl font-semibold text-[var(--text)]">Check your inbox</h1>
+            <p className="text-[var(--text-2)] mt-1 text-sm">
+              We sent an email to <strong className="text-[var(--text)]">{userEmail}</strong>.
+            </p>
+          </div>
+          <p className="text-sm text-[var(--text-2)] mb-4">
+            If this address already has an AnythingMCP account, the email has a link to sign in
+            or reset your password. Otherwise, follow the link in it to verify the address.
+          </p>
+          <Button
+            onClick={() => {
+              setSetupStep('auth');
+              setIsRegister(false);
+              setPassword('');
+              setConfirmPassword('');
+            }}
+            className="w-full"
+            size="lg"
+          >
+            Back to sign in
+          </Button>
+          <p className="text-center text-sm text-[var(--text-2)] mt-4">
+            <Link href="/forgot-password" className="text-[var(--brand)] hover:underline font-medium">
+              Forgot your password?
+            </Link>
+          </p>
         </Card>
       </div>
     );

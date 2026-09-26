@@ -261,26 +261,25 @@ export function maskHeaders(
 /**
  * The connector as the browser may see it: stored secrets in env vars and
  * headers come back empty and are named in `maskedEnvVars` / `maskedHeaders`.
- * authConfig only ever leaves as the stored ciphertext; anything else (a
- * decrypted object handed in by mistake) is dropped.
+ * authConfig is never included, in any form: the UI does not need it, and the
+ * non-secret OAuth settings have their own endpoint (`GET :id/oauth-config`).
  */
 export function toPublicConnector<
   T extends ConnectorLike & { envVars?: unknown; authConfig?: unknown },
->(connector: T): T & { maskedEnvVars: string[]; maskedHeaders: string[] } {
+>(
+  connector: T,
+): Omit<T, 'authConfig'> & { maskedEnvVars: string[]; maskedHeaders: string[] } {
   const ctx = secretContext(connector);
   const env = maskEnvVars(connector.envVars, ctx);
   const hdr = maskHeaders(connector.headers, ctx);
-  const out = {
-    ...connector,
+  const { authConfig: _authConfig, ...rest } = connector;
+  return {
+    ...rest,
     envVars: env.envVars,
     headers: hdr.headers,
     maskedEnvVars: env.maskedEnvVars,
     maskedHeaders: hdr.maskedHeaders,
   };
-  if (out.authConfig !== undefined && out.authConfig !== null && typeof out.authConfig !== 'string') {
-    delete out.authConfig;
-  }
-  return out;
 }
 
 /**

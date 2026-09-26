@@ -75,6 +75,35 @@ Suggested collectors:
 
 Sentry's tracing pipeline is independent. Both can run side by side — Sentry for error correlation, OTLP for an in-house collector — and that's intentional.
 
+## 4. Host jobs (AnythingMCP Cloud droplet only)
+
+Two systemd timers run on the managed cloud host, installed by `.github/workflows/deploy-cloud.yml`. Both read their settings from `/opt/anythingmcp-cloud/.env` and mail through the same `SMTP_*` the backend uses. Self-hosted installs have neither.
+
+| Timer | Script | When | Mails |
+|---|---|---|---|
+| `anythingmcp-probe.timer` | `deploy/cloud/uptime-probe.sh` | every minute | `UPTIME_ALERT_TO`, on a change of state only (down, recovered) |
+| `anythingmcp-stuck-report.timer` | `deploy/cloud/stuck-users-report.sh` | Monday 07:00 Europe/Berlin | `REPORT_TO`, falling back to `UPTIME_ALERT_TO` |
+
+The weekly report lists, for the last 7 days with 30-day context: organizations whose tool calls have never succeeded (marked NEW or STILL STUCK against the previous report, whose list is kept in `/var/lib/anythingmcp-report/stuck-orgs`); catalog connectors at 0 % success, or under 20 % with at least 5 calls, across all organizations; and signups that never created a connector or never made a call. It only reads the database, never selects tool inputs, outputs or credentials, and scrubs error texts (one line, no URL query strings, e-mail addresses or long tokens, 150 characters). It does contain customer e-mail addresses, so send it to the team only.
+
+| Env (in the host `.env`) | Default | |
+|---|---|---|
+| `REPORT_TO` | `UPTIME_ALERT_TO` | Recipients, comma-separated. With neither set the report goes to the journal only. |
+| `REPORT_WINDOW_DAYS` | `7` | Length of the reporting window. |
+| `REPORT_TZ` | `Europe/Berlin` | Time zone for the times in the report. |
+| `REPORT_CONNECTOR_MIN_CALLS` / `REPORT_CONNECTOR_MAX_RATE` | `5` / `20` | A connector is listed at 0 % success, or under `MAX_RATE` % with at least `MIN_CALLS` calls. |
+| `REPORT_LIST_MAX` | `30` | Longest list of signup e-mails printed per group; above it, only the count. |
+
+```bash
+# on the droplet
+/opt/anythingmcp-cloud/stuck-users-report.sh --dry-run   # print this week's report, send nothing
+systemctl start anythingmcp-stuck-report                  # send it now (and remember who was listed)
+systemctl list-timers 'anythingmcp-*'
+journalctl -u anythingmcp-stuck-report -n 50
+```
+
+`bash deploy/cloud/stuck-users-report.test.sh` runs the report against a throwaway database with every migration applied and a throwaway SMTP server; CI runs it on each PR.
+
 ## Correlating across pipelines
 
 The same `req.id` UUID appears in:

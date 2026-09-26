@@ -44,6 +44,8 @@ curl -s http://localhost:4000/api/auth/register \
   -d '{"email":"admin@example.com","password":"your-password","name":"Admin User"}'
 ```
 
+A self-hosted instance answers with an `accessToken` for the new account. AnythingMCP Cloud answers `{ "verificationRequired": true, "message": "…" }` whether or not the address already has an account and sends the details by email; sign in with the same credentials to continue.
+
 ### Login
 
 ```bash

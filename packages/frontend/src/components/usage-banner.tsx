@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { buildManagePlanUrl } from '@/lib/marketing';
+import { useManagePlan } from '@/lib/use-manage-plan';
 
 type Usage = Awaited<ReturnType<typeof license.getUsage>>;
 
@@ -20,9 +20,14 @@ const NEXT_TIER: Record<string, string> = {
  * advisory by product decision (May 2026).
  */
 export function UsageBanner() {
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const [usage, setUsage] = useState<Usage | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const managePlan = useManagePlan({
+    utm_source: 'soft-warn',
+    utm_medium: 'banner',
+    utm_campaign: 'usage-cap',
+  });
 
   useEffect(() => {
     if (!token) return;
@@ -59,11 +64,8 @@ export function UsageBanner() {
       <a
         // Only Starter and Team see this banner, so everyone who clicks it
         // already has a subscription: change it, do not buy a second one.
-        href={buildManagePlanUrl(user?.email, {
-          utm_source: 'soft-warn',
-          utm_medium: 'banner',
-          utm_campaign: 'usage-cap',
-        })}
+        href={managePlan.href}
+        onClick={managePlan.onClick}
         target="_blank"
         rel="noopener noreferrer"
         className="underline font-medium hover:no-underline"

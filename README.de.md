@@ -183,7 +183,7 @@ Das bringt zwei Vorteile zugleich: Sensible Felder gelangen nicht zum Modell, un
 
 ## Eigene Claude-Connectors erstellen — ohne Code
 
-Claude unterstützt **benutzerdefinierte Connectors**: entfernte MCP-Server, die du einmal unter *Settings → Connectors* hinzufügst und anschließend in Claude.ai, Claude Desktop und Claude Code nutzen kannst. AnythingMCP erzeugt einen solchen Connector **aus jeder bereits vorhandenen API** — ohne dass du einen MCP-Server programmieren musst:
+Claude unterstützt **benutzerdefinierte Connectors**: entfernte MCP-Server, die du einmal unter *Customize → Connectors* hinzufügst und anschließend in Claude.ai, Claude Desktop und Claude Code nutzen kannst. AnythingMCP erzeugt einen solchen Connector **aus jeder bereits vorhandenen API** — ohne dass du einen MCP-Server programmieren musst:
 
 1. Importiere deine API-Spezifikation oder wähle einen fertigen Adapter.
 2. Passe Tool-Namen, Beschreibungen und Parameter im **visuellen Editor** an — du bestimmst, was die KI sieht.

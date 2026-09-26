@@ -154,6 +154,22 @@ describe('masking', () => {
     });
     expect(JSON.stringify(pub)).not.toContain('test-key-123');
   });
+
+  it.each([
+    ['the stored ciphertext', 'v1:iv:tag:ciphertext'],
+    ['a decrypted object', { token: 'test-token-456' }],
+    ['null', null],
+  ])('toPublicConnector drops authConfig when it is %s', (_label, authConfig) => {
+    const pub = toPublicConnector({
+      id: 'c1',
+      config: null,
+      headers: null,
+      envVars: null,
+      authConfig,
+    });
+    expect(pub).not.toHaveProperty('authConfig');
+    expect(pub).toMatchObject({ id: 'c1', maskedEnvVars: [], maskedHeaders: [] });
+  });
 });
 
 describe('merging an edit made against the masked view', () => {
