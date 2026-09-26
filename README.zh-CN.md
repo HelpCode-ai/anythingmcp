@@ -109,7 +109,7 @@ docker compose up -d
 
 ### SOAP / WSDL 转 MCP
 
-将 AnythingMCP 指向一个 WSDL，每个 SOAP 操作都会成为一个工具：SOAP 信封、参数顺序、WS-Security 和 WCF 服务都会自动处理。这样，2009 年的 SOAP 服务只需几分钟而不是几周，就能交给 2026 年的模型使用。[SOAP 连接器文档](docs/connectors/soap.md) · [指南](https://anythingmcp.com/zh/guides/soap-to-mcp)
+将 AnythingMCP 指向一个 WSDL，每个 SOAP 操作都会成为一个工具：SOAP 信封、参数顺序和 WCF 服务都会自动处理，认证支持 Basic、Bearer 和 API 密钥。这样，2009 年的 SOAP 服务只需几分钟而不是几周，就能交给 2026 年的模型使用。[SOAP 连接器文档](docs/connectors/soap.md) · [指南](https://anythingmcp.com/zh/guides/soap-to-mcp)
 
 <a id="sql-database-to-mcp"></a>
 
@@ -202,7 +202,7 @@ docker compose up -d
 
 - **[响应塑形](#control-what-the-model-sees)** — 精确定义每个工具可以向模型提供哪些字段，并实时预览处理前后的结果。
 - **在需要的地方只允许读取。** 每个工具都带有 MCP 注解（`readOnlyHint`、`destructiveHint`），根据操作类型生成，也可以按工具覆盖。因此，客户端能够区分读取发票和开具贷项通知单。基于角色的工具白名单可以让你发布一个只读 MCP 服务器，这也是大多数人在接入 ERP 时应采用的起点。
-- **覆盖常见认证方式** — OAuth2（PKCE 和 Client Credentials）、Bearer、API Key、Basic、WS-Security、客户端证书、[LOGIN_TOKEN](docs/connectors/login-token-auth.md) 和 OAuth 1.0a。
+- **覆盖常见认证方式** — OAuth2（PKCE 和 Client Credentials）、Bearer、API Key、Basic、HMAC 签名、[LOGIN_TOKEN](docs/connectors/login-token-auth.md) 和 OAuth 1.0a。
 - **审计日志** — 每次工具调用的输入、输出、耗时和状态都会记录在你自己的数据库中。
 - **[SSO](docs/sso.md) 和 [SCIM](docs/scim-entra-setup.md)** — 支持 Entra ID、Google、Okta、Auth0 及通用 OIDC。每次登录都会从目录服务的用户组同步角色。在目录中停用用户，其工作区访问权限和 MCP API 密钥也会随之失效（仅适用于自行托管版本）。
 
@@ -365,7 +365,7 @@ AI 客户端使用 MCP，而你的系统使用 REST、SOAP、GraphQL 和 SQL。�
 创建一个 REST 连接器，通过 URL 或直接粘贴导入规范；每个操作都会成为服务器 `/mcp` 端点上的一个 MCP 工具，无需编写代码。[工作原理](docs/connectors/rest.md#from-openapi--swagger)。
 
 **可以将 SOAP/WSDL 服务连接到 Claude 吗？**
-可以。AnythingMCP 会解析 WSDL，将每个操作转化为工具，并在每次调用时构建 SOAP 信封，也支持 WS-Security 和 WCF 服务。[SOAP 连接器文档](docs/connectors/soap.md)。
+可以。AnythingMCP 会解析 WSDL，将每个操作转化为工具，并在每次调用时构建 SOAP 信封，也支持 WCF 服务。认证方式为 HTTP Basic、Bearer 或 API 密钥请求头；WS-Security 请求头尚未实现。[SOAP 连接器文档](docs/connectors/soap.md)。
 
 **Claude 能安全地查询我的 SQL Server、Oracle 或 PostgreSQL 数据库吗？**
 请使用只有 SELECT 权限的数据库用户，尽量采用由模型只提供参数的静态查询，并按角色设置工具白名单。响应映射会删除不能到达模型的列，每次查询都会记录在你自己数据库中的审计日志里。

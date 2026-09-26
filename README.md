@@ -101,7 +101,7 @@ Import an OpenAPI 3.x or Swagger 2.0 spec, by URL or by pasting it, and every op
 
 ### SOAP / WSDL to MCP
 
-Point AnythingMCP at a WSDL and each SOAP operation becomes a tool: envelopes, parameter order, WS-Security and WCF services are handled for you. That is how a SOAP service from 2009 ends up in front of a 2026 model, in minutes rather than weeks. [SOAP connector docs](docs/connectors/soap.md) · [guide](https://anythingmcp.com/guides/soap-to-mcp)
+Point AnythingMCP at a WSDL and each SOAP operation becomes a tool: envelopes, parameter order and WCF services are handled for you, with Basic, Bearer or API-key auth. That is how a SOAP service from 2009 ends up in front of a 2026 model, in minutes rather than weeks. [SOAP connector docs](docs/connectors/soap.md) · [guide](https://anythingmcp.com/guides/soap-to-mcp)
 
 ### SQL database to MCP
 
@@ -184,7 +184,7 @@ Shops and marketplaces, from Amazon and eBay to the DACH marketplaces. Each name
 
 - **[Response shaping](#control-what-the-model-sees)** — declare per tool exactly which fields reach the model, with a live before/after preview.
 - **Read-only where it matters.** Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`), derived from the operation and overridable per tool, so a client can show the difference between reading an invoice and issuing a credit note. Role-based tool whitelisting lets you publish an MCP server that can only read — which is how most people should start with an ERP.
-- **Every auth scheme you will meet** — OAuth2 (PKCE and Client Credentials), Bearer, API Key, Basic, WS-Security, client certificates, [LOGIN_TOKEN](docs/connectors/login-token-auth.md) and OAuth 1.0a.
+- **Every auth scheme you will meet** — OAuth2 (PKCE and Client Credentials), Bearer, API Key, Basic, HMAC request signing, [LOGIN_TOKEN](docs/connectors/login-token-auth.md) and OAuth 1.0a.
 - **Audit logging** — every tool call recorded with input, output, duration and status, in your own database.
 - **[SSO](docs/sso.md) and [SCIM](docs/scim-entra-setup.md)** — Entra ID, Google, Okta, Auth0, generic OIDC. Roles sync from your directory groups on every sign-in; disable someone in the directory and their workspace access and MCP API keys die with it (self-hosted only).
 
@@ -377,7 +377,7 @@ Install the ERP's adapter from the [catalog](#erp-connectors), enter the API cre
 Create a REST connector and import the spec by URL or by pasting it; every operation becomes an MCP tool on your server's `/mcp` endpoint, with no code. [How it works](docs/connectors/rest.md#from-openapi--swagger).
 
 **Can I connect a SOAP/WSDL service to Claude?**
-Yes. AnythingMCP parses the WSDL, turns each operation into a tool and builds the SOAP envelope on every call, including WS-Security and WCF services. [SOAP connector docs](docs/connectors/soap.md).
+Yes. AnythingMCP parses the WSDL, turns each operation into a tool and builds the SOAP envelope on every call, WCF services included. It authenticates with HTTP Basic, Bearer or an API-key header; WS-Security headers are not implemented yet. [SOAP connector docs](docs/connectors/soap.md).
 
 **Can Claude query my SQL Server, Oracle or PostgreSQL database safely?**
 Use a database user with SELECT rights only, prefer static queries where the model supplies just the parameters, and whitelist the tools per role. Response mapping drops the columns that must not reach the model, and every query lands in the audit log in your own database.

@@ -109,7 +109,7 @@ OpenAPI 3.x または Swagger 2.0 の仕様を URL か貼り付けでインポ�
 
 ### SOAP / WSDL を MCP に
 
-WSDL を指定すると、SOAP の各オペレーションがツールになります。エンベロープ、パラメーターの順序、WS-Security、WCF サービスは AnythingMCP が処理します。2009 年の SOAP サービスを、2026 年のモデルからすぐに使えるようにできます。[SOAP コネクターのドキュメント](docs/connectors/soap.md) · [ガイド](https://anythingmcp.com/ja/guides/soap-to-mcp)
+WSDL を指定すると、SOAP の各オペレーションがツールになります。エンベロープ、パラメーターの順序、WCF サービスは AnythingMCP が処理し、認証には Basic、Bearer、API キーを使えます。2009 年の SOAP サービスを、2026 年のモデルからすぐに使えるようにできます。[SOAP コネクターのドキュメント](docs/connectors/soap.md) · [ガイド](https://anythingmcp.com/ja/guides/soap-to-mcp)
 
 <a id="sql-database-to-mcp"></a>
 
@@ -202,7 +202,7 @@ Amazon や eBay から DACH 地域のマーケットプレイスまで、ショ�
 
 - **[レスポンスの整形](#control-what-the-model-sees)** — モデルへ渡すフィールドをツールごとに正確に指定し、変更前後の内容をリアルタイムで確認できます。
 - **必要な箇所を読み取り専用に。** 各ツールには、操作から導出される MCP アノテーション（`readOnlyHint`、`destructiveHint`）が付き、ツール単位で上書きできます。クライアントは、請求書の読み取りとクレジットノートの発行を区別して表示できます。ロールに基づくツールの許可リストを使えば、読み取りしかできない MCP サーバーを公開できます。ERP の導入では、多くの場合ここから始めるのが適切です。
-- **幅広い認証方式** — OAuth2（PKCE と Client Credentials）、Bearer、API Key、Basic、WS-Security、クライアント証明書、[LOGIN_TOKEN](docs/connectors/login-token-auth.md)、OAuth 1.0a に対応しています。
+- **幅広い認証方式** — OAuth2（PKCE と Client Credentials）、Bearer、API Key、Basic、HMAC 署名、[LOGIN_TOKEN](docs/connectors/login-token-auth.md)、OAuth 1.0a に対応しています。
 - **監査ログ** — すべてのツール呼び出しについて、入力、出力、所要時間、ステータスを自社のデータベースに記録します。
 - **[SSO](docs/sso.md) と [SCIM](docs/scim-entra-setup.md)** — Entra ID、Google、Okta、Auth0、汎用 OIDC に対応しています。サインインのたびにディレクトリのグループからロールを同期します。ディレクトリでユーザーを無効にすると、そのユーザーのワークスペースへのアクセスと MCP API キーも無効になります（セルフホスト版のみ）。
 
@@ -367,7 +367,7 @@ AI クライアントは MCP を使いますが、業務システムは REST、S
 REST コネクターを作成し、仕様を URL か貼り付けでインポートします。各オペレーションが、サーバーの `/mcp` エンドポイント上の MCP ツールになります。コードは不要です。[仕組みはこちら](docs/connectors/rest.md#from-openapi--swagger)
 
 **SOAP/WSDL サービスを Claude に接続できますか？**
-はい。AnythingMCP が WSDL を解析して各オペレーションをツールに変換し、呼び出しのたびに SOAP エンベロープを組み立てます。WS-Security や WCF サービスにも対応しています。[SOAP コネクターのドキュメント](docs/connectors/soap.md)
+はい。AnythingMCP が WSDL を解析して各オペレーションをツールに変換し、呼び出しのたびに SOAP エンベロープを組み立てます。WCF サービスにも対応しています。認証は HTTP Basic、Bearer、API キーヘッダーで行います。WS-Security ヘッダーはまだ実装されていません。[SOAP コネクターのドキュメント](docs/connectors/soap.md)
 
 **Claude から SQL Server、Oracle、PostgreSQL のデータベースを安全に照会できますか？**
 SELECT 権限だけを持つデータベースユーザーを使い、モデルがパラメーターだけを指定する静的クエリーを優先し、ロールごとにツールを許可リストで絞り込んでください。レスポンスマッピングでモデルに渡してはいけない列を削除でき、すべてのクエリーは自社データベース内の監査ログに記録されます。

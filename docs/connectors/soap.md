@@ -1,6 +1,6 @@
 # SOAP / WSDL to MCP
 
-AnythingMCP turns a SOAP web service into MCP tools for Claude, ChatGPT and Copilot without code. Give it the WSDL and each operation becomes a tool; AnythingMCP builds the SOAP envelope, keeps the WSDL parameter order that WCF services need and handles WS-Security, so AI agents can call legacy enterprise SOAP APIs.
+AnythingMCP turns a SOAP web service into MCP tools for Claude, ChatGPT and Copilot without code. Give it the WSDL and each operation becomes a tool; AnythingMCP builds the SOAP envelope, keeps the WSDL parameter order that WCF services need and authenticates with HTTP Basic, a bearer token or an API-key header, so AI agents can call legacy enterprise SOAP APIs.
 
 [Back to README](../../README.md)
 
@@ -8,7 +8,7 @@ AnythingMCP turns a SOAP web service into MCP tools for Claude, ChatGPT and Copi
 
 ## Overview
 
-The SOAP connector lets you expose SOAP web services as MCP tools. It parses WSDL definitions, auto-generates tools for each operation, and handles SOAP envelope construction, WS-Security, and parameter ordering.
+The SOAP connector lets you expose SOAP web services as MCP tools. It parses WSDL definitions, auto-generates tools for each operation, and handles SOAP envelope construction and parameter ordering.
 
 **Keywords:** SOAP to MCP, WSDL to MCP, SOAP MCP bridge, enterprise API to MCP, WCF to MCP, legacy API integration MCP
 
@@ -101,13 +101,14 @@ AnythingMCP handles WCF-specific requirements:
 |-----------|-------------|
 | **None** | No authentication |
 | **Basic Auth** | HTTP Basic (username/password in header) |
-| **WS-Security** | SOAP-level security headers |
-| **Certificate** | Client certificate authentication |
 | **Bearer Token** | Token in HTTP header |
+| **API Key** | Key in a header you name (`headerName`, default `X-API-Key`) |
+
+> **Not implemented yet:** WS-Security (UsernameToken or signed SOAP headers) and TLS client certificates. The `WS_SECURITY` and `CERTIFICATE` auth types exist in the data model, but the SOAP engine sends an empty `<soapenv:Header/>` and no client certificate, so a service that requires either will reject the call.
 
 ```json
 {
-  "authType": "WS_SECURITY",
+  "authType": "BASIC_AUTH",
   "authConfig": {
     "username": "ws-user",
     "password": "ws-pass"
@@ -154,7 +155,7 @@ After import, your AI client can call tools like `GetCustomer`, `SearchCustomers
 | WSDL fetch fails | Ensure the WSDL URL is reachable from the AnythingMCP backend container |
 | Parameter order errors | AnythingMCP respects WSDL parameter ordering; verify the WSDL definition matches service expectations |
 | WCF endpoint mismatch | Set `baseUrl` to the actual service URL; AnythingMCP overrides WSDL endpoint with this value |
-| Authentication failures | For WS-Security, ensure credentials are correct and the security policy matches |
+| Authentication failures | Check the credentials and the auth type. A service that requires WS-Security headers or a client certificate cannot be called yet (see Authentication) |
 
 ---
 
