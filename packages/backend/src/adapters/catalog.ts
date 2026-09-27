@@ -120,6 +120,7 @@ import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
 import * as glpi from './intl/glpi.json';
 import * as gocardless from './intl/gocardless.json';
+import * as googleAds from './intl/google-ads.json';
 import * as googleAnalytics4 from './intl/google-analytics-4.json';
 import * as googleSearchConsole from './intl/google-search-console.json';
 import * as gorgias from './intl/gorgias.json';
@@ -505,6 +506,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   gitbook as unknown as AdapterDefinition,
   glpi as unknown as AdapterDefinition,
   gocardless as unknown as AdapterDefinition,
+  googleAds as unknown as AdapterDefinition,
   googleAnalytics4 as unknown as AdapterDefinition,
   googleSearchConsole as unknown as AdapterDefinition,
   gorgias as unknown as AdapterDefinition,

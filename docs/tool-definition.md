@@ -216,6 +216,20 @@ Connector variables are available the same way, so an optional key is written as
 `"headers": { "Authorization": "Bearer ${MY_API_KEY}" }`: sent when the variable is set, omitted
 when it is empty, rather than going out as `Authorization: Bearer ` with nothing after it.
 
+The same rule drops a whole string when one of its `${…}` placeholders has no value. That matters
+for APIs that take a query language in one field (Google Ads GAQL, SOQL, JQL): a missing optional
+filter would drop the entire query. Give such parameters a JSON-Schema `default` that matches
+everything, and the tool call fills it in before the string is built:
+
+```json
+"parameters": { "properties": {
+  "campaign_name": { "type": "string", "default": "%" },
+  "limit": { "type": "integer", "default": 200 }
+} },
+"endpointMapping": { "method": "POST", "path": "/customers/{customer_id}/googleAds:search",
+  "bodyMapping": { "query": "SELECT campaign.name FROM campaign WHERE campaign.name LIKE '${campaign_name}' LIMIT ${limit}" } }
+```
+
 A `{param}` value is inserted verbatim, slashes included, so a file path can span several segments. When
 the identifier is itself a URL (a Search Console property such as `https://www.example.com/`, a sitemap
 URL), set `"encodePathParams": true` on the mapping and every substituted value is percent-encoded
