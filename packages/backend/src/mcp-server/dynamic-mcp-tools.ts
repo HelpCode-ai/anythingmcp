@@ -32,6 +32,7 @@ import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
 import { processGauges } from '../common/process-vitals';
+import { applySchemaDefaults } from '../common/schema-defaults.util';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -600,17 +601,9 @@ export class DynamicMcpTools {
     schema: Record<string, unknown>,
     params: Record<string, unknown>,
   ): Record<string, unknown> {
-    const properties = (schema as any)?.properties;
-    if (!properties || typeof properties !== 'object') return params;
-
-    const result = { ...params };
-    for (const [key, prop] of Object.entries(properties)) {
-      if (result[key] === undefined && (prop as any)?.default !== undefined) {
-        result[key] = (prop as any).default;
-      }
-    }
-    return result;
+    return applySchemaDefaults(schema, params);
   }
+
 
   /**
    * Build the string persisted in the tool_invocations.error column. Beyond the

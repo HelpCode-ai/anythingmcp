@@ -315,6 +315,7 @@ export class AdaptersService {
         tool.endpointMapping as any,
         call.params,
         call.toolName,
+        tool.parameters,
       );
       const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
       return {

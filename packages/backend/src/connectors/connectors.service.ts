@@ -20,6 +20,7 @@ import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
+import { applySchemaDefaults } from '../common/schema-defaults.util';
 
 @Injectable()
 export class ConnectorsService {
@@ -411,14 +412,20 @@ export class ConnectorsService {
     params: Record<string, unknown>,
     /** Names the tool in the missing-variable error, as the MCP path does. */
     toolName?: string,
+    /**
+     * The tool's JSON-Schema parameters. Their defaults are filled in after
+     * the env vars, in the same order as a real MCP call.
+     */
+    parameters?: unknown,
   ): Promise<unknown> {
     // Inject env vars as parameter defaults
     const envVars = connector.envVars as Record<string, string> | undefined;
-    const mergedParams = envVars
+    const withEnv = envVars
       ? { ...params, ...Object.fromEntries(
           Object.entries(envVars).filter(([k]) => params[k] === undefined),
         ) }
       : params;
+    const mergedParams = applySchemaDefaults(parameters, withEnv);
 
     // Static response tools — return text immediately without engine dispatch.
     //
