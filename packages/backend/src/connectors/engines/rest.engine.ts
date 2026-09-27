@@ -84,11 +84,14 @@ export class RestEngine {
       // Response headers to hand back alongside the body, e.g. ["link"] for
       // cursor pagination. Opt-in per tool; see response-headers.util.ts.
       exposeHeaders?: string[];
+      // Hand back an XML body as the text it arrived as instead of parsing
+      // it into an object. The OData engine needs `$metadata` verbatim.
+      rawBody?: boolean;
     },
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
     const withMeta = (response: AxiosResponse) => ({
-      body: parseXmlBody(response),
+      body: endpointMapping.rawBody ? response.data : parseXmlBody(response),
       headers: pickExposedHeaders(
         response.headers as Record<string, unknown>,
         endpointMapping.exposeHeaders,
@@ -353,8 +356,12 @@ export class RestEngine {
   /**
    * Whether an error is a transient failure worth retrying. We only retry on
    * signals that strongly imply the origin did NOT process the request:
-   * 421/429/502/503/504 responses, or connection-level failures with no
+   * 421/429/502/503/504/529 responses, or connection-level failures with no
    * response. This keeps non-idempotent writes safe (a 500 is never retried).
+   *
+   * 529 is not in the HTTP registry, but TypeSafe (and Anthropic) answer it
+   * when they are overloaded and turned the request away, and document it as
+   * "retry after a short delay".
    *
    * 421 (Misdirected Request) means the request reached a server that could not
    * produce a response for the target — RFC 9110 explicitly allows retrying it
@@ -369,7 +376,7 @@ export class RestEngine {
   private isTransientError(error: unknown): boolean {
     if (!(error instanceof AxiosError)) return false;
     const status = error.response?.status;
-    if (status) return [421, 429, 502, 503, 504].includes(status);
+    if (status) return [421, 429, 502, 503, 504, 529].includes(status);
     return [
       'ECONNRESET',
       'ETIMEDOUT',

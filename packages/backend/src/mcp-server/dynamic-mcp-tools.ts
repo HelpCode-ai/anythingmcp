@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { AxiosError } from 'axios';
 import { ToolRegistry } from './tool-registry';
@@ -32,6 +32,9 @@ import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
 import { processGauges } from '../common/process-vitals';
+import { applySchemaDefaults } from '../common/schema-defaults.util';
+import { renderStaticResponse } from '../connectors/static-response.util';
+import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -56,6 +59,7 @@ export class DynamicMcpTools {
     private readonly mcpClientEngine: McpClientEngine,
     private readonly databaseEngine: DatabaseEngine,
     private readonly kgService: KgService,
+    @Optional() private readonly odataEngine?: ODataEngine,
   ) {}
 
   /**
@@ -376,7 +380,14 @@ export class DynamicMcpTools {
           engineConfig,
           interpolatedMapping,
           mergedParams,
-          { connectorConfig: tool.connectorConfig.config },
+          {
+            connectorConfig: tool.connectorConfig.config,
+            // OData settings may carry {{VAR}} (an adapter's SAP client).
+            odataSettings: interpolateDeep(
+              (tool.connectorConfig.config as { odata?: unknown } | undefined)?.odata,
+              envVars,
+            ),
+          },
         );
       } finally {
         processGauges.dec('toolCallsInFlight');
@@ -600,17 +611,9 @@ export class DynamicMcpTools {
     schema: Record<string, unknown>,
     params: Record<string, unknown>,
   ): Record<string, unknown> {
-    const properties = (schema as any)?.properties;
-    if (!properties || typeof properties !== 'object') return params;
-
-    const result = { ...params };
-    for (const [key, prop] of Object.entries(properties)) {
-      if (result[key] === undefined && (prop as any)?.default !== undefined) {
-        result[key] = (prop as any).default;
-      }
-    }
-    return result;
+    return applySchemaDefaults(schema, params);
   }
+
 
   /**
    * Build the string persisted in the tool_invocations.error column. Beyond the
@@ -707,7 +710,7 @@ export class DynamicMcpTools {
     config: any,
     endpointMapping: any,
     params: Record<string, unknown>,
-    extra?: { connectorConfig?: Record<string, unknown> },
+    extra?: { connectorConfig?: Record<string, unknown>; odataSettings?: unknown },
   ): Promise<{ body: unknown; meta?: ResponseMeta }> {
     // Static response tools — return text immediately without engine dispatch.
     //
@@ -718,14 +721,25 @@ export class DynamicMcpTools {
     // 'replace')" — a message naming neither the tool nor the real problem.
     // api-football's af_analysis_playbook spent six weeks failing that way.
     if (endpointMapping.method === 'static') {
-      if (!endpointMapping.staticResponse) {
-        throw new Error(
-          'This tool is configured to return a fixed text response, but that ' +
-            'response is empty. Set it under the tool\'s endpoint mapping, or ' +
-            'change the method to a real HTTP verb.',
-        );
-      }
-      return { body: { text: endpointMapping.staticResponse } };
+      return { body: { text: renderStaticResponse(endpointMapping, params) } };
+    }
+
+    // OData built-ins (`odata_*`) run on ODATA connectors and on REST
+    // connectors that carry `config.odata`; the ODATA type sends its plain
+    // HTTP tools through the same engine for sap-client and V2 unwrapping.
+    if (
+      connectorType === 'ODATA' ||
+      (connectorType === 'REST' && isODataBuiltinMethod(endpointMapping.method))
+    ) {
+      if (!this.odataEngine) throw new Error('The OData engine is not available.');
+      return {
+        body: await this.odataEngine.execute(
+          config,
+          endpointMapping,
+          params,
+          extra?.odataSettings ?? (extra?.connectorConfig as any)?.odata,
+        ),
+      };
     }
 
     switch (connectorType) {
@@ -758,10 +772,12 @@ export class DynamicMcpTools {
           body: await this.mcpClientEngine.execute(config, endpointMapping, params),
         };
       case 'DATABASE': {
-        const readOnly = (extra?.connectorConfig as any)?.readOnly !== false;
+        const connectorConfig = extra?.connectorConfig as any;
+        const readOnly = connectorConfig?.readOnly !== false;
         return {
           body: await this.databaseEngine.execute(config, endpointMapping, params, {
             readOnly,
+            deniedTables: connectorConfig?.deniedTables,
           }),
         };
       }

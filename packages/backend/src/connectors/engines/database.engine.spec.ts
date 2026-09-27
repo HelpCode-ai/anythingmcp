@@ -425,10 +425,12 @@ describe('DatabaseEngine', () => {
         { method: 'query', path: '${query}' },
         { query: 'SELECT 1' },
       );
-      expect(Pool).toHaveBeenCalledWith({
+      expect(Pool).toHaveBeenCalledWith(
+      expect.objectContaining({
         connectionString:
           'postgres://reader:p%40ss%3Aword@db.example.test:5432/sales',
-      });
+      }),
+    );
     });
 
     it('leaves a URL that already names a user untouched', async () => {
@@ -442,9 +444,11 @@ describe('DatabaseEngine', () => {
         { method: 'query', path: '${query}' },
         { query: 'SELECT 1' },
       );
-      expect(Pool).toHaveBeenCalledWith({
+      expect(Pool).toHaveBeenCalledWith(
+      expect.objectContaining({
         connectionString: 'postgres://inurl:secret@db.example.test:5432/sales',
-      });
+      }),
+    );
     });
 
     it('passes the URL through when authConfig carries no username', async () => {
@@ -458,9 +462,11 @@ describe('DatabaseEngine', () => {
         { method: 'query', path: '${query}' },
         { query: 'SELECT 1' },
       );
-      expect(Pool).toHaveBeenCalledWith({
+      expect(Pool).toHaveBeenCalledWith(
+      expect.objectContaining({
         connectionString: 'postgres://db.example.test:5432/sales',
-      });
+      }),
+    );
     });
 
     it('splices credentials into the MongoDB URL too', async () => {

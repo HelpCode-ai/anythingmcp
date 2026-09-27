@@ -664,6 +664,22 @@ describe('RestEngine', () => {
       expect(mockedAxios).toHaveBeenCalledTimes(2);
     });
 
+    // TypeSafe answers 529 when it is overloaded and did not run the request.
+    it('retries on 529 (overloaded)', async () => {
+      mockedAxios
+        .mockRejectedValueOnce(err(529))
+        .mockResolvedValueOnce({ data: { ok: true } });
+
+      const result = await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        { method: 'POST', path: '/' },
+        {},
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(mockedAxios).toHaveBeenCalledTimes(2);
+    });
+
     // TLS alert while writing — the request never reached the application.
     it('retries on a TLS-level error (EPROTO)', async () => {
       mockedAxios

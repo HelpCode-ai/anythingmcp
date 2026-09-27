@@ -216,6 +216,20 @@ Connector variables are available the same way, so an optional key is written as
 `"headers": { "Authorization": "Bearer ${MY_API_KEY}" }`: sent when the variable is set, omitted
 when it is empty, rather than going out as `Authorization: Bearer ` with nothing after it.
 
+The same rule drops a whole string when one of its `${…}` placeholders has no value. That matters
+for APIs that take a query language in one field (Google Ads GAQL, SOQL, JQL): a missing optional
+filter would drop the entire query. Give such parameters a JSON-Schema `default` that matches
+everything, and the tool call fills it in before the string is built:
+
+```json
+"parameters": { "properties": {
+  "campaign_name": { "type": "string", "default": "%" },
+  "limit": { "type": "integer", "default": 200 }
+} },
+"endpointMapping": { "method": "POST", "path": "/customers/{customer_id}/googleAds:search",
+  "bodyMapping": { "query": "SELECT campaign.name FROM campaign WHERE campaign.name LIKE '${campaign_name}' LIMIT ${limit}" } }
+```
+
 A `{param}` value is inserted verbatim, slashes included, so a file path can span several segments. When
 the identifier is itself a URL (a Search Console property such as `https://www.example.com/`, a sitemap
 URL), set `"encodePathParams": true` on the mapping and every substituted value is percent-encoded
@@ -263,10 +277,28 @@ The selected headers are added to the tool result next to the body, and a
 | Connector | method | path | queryParams | bodyMapping | headers |
 |-----------|--------|------|-------------|-------------|---------|
 | **REST** | HTTP method (`GET`, `POST`, etc.) | URL path with `{param}` | Query string params | JSON body fields | HTTP headers |
+| **OData** | HTTP method, or a built-in `odata_list_services` / `odata_describe_service` / `odata_describe_entity` / `odata_query` / `odata_get` (see [OData](connectors/odata.md)) | Service path + entity set, with `{param}` | OData options (`$filter`, `$select`…) | JSON body fields | HTTP headers |
 | **GraphQL** | `query` or `mutation` | The GraphQL query string | GraphQL variables (see [GraphQL variables](#graphql-variables)) | — (ignored) | HTTP headers |
 | **SOAP** | SOAP operation name | Port/binding path | — | SOAP parameters | HTTP headers |
 | **Database** | `query` or `static` | SQL/MongoDB query with `$param` | — | — | — |
 | **MCP** | Remote tool name | — | — | Passed through | — |
+
+### Static tools
+
+`"method": "static"` returns text stored on the tool, with no call to the upstream system: playbooks, example queries, domain guides. `staticResponse` is returned whatever the arguments. `staticResponses` holds several texts keyed by topic, chosen by the `topic` argument (or the argument named by `topicParam`); without a topic, or with an unknown one, the tool answers with `staticResponse` followed by the list of topics:
+
+```json
+{
+  "name": "sap_guide",
+  "parameters": { "type": "object", "properties": { "topic": { "type": "string", "enum": ["basics", "finance"] } } },
+  "endpointMapping": {
+    "method": "static",
+    "path": "",
+    "staticResponse": "How to read the SAP data model…",
+    "staticResponses": { "basics": "Client, dates, currencies…", "finance": "The Universal Journal ACDOCA…" }
+  }
+}
+```
 
 ### GraphQL Example
 
@@ -477,6 +509,7 @@ You normally do not set these. AnythingMCP derives them from what the connector 
 | GraphQL | `query` / `mutation` | read-only / write |
 | Database | connector `readOnly` flag, or `SELECT` vs `INSERT`/`UPDATE`/`DELETE` in the statement | read-only / write; always `openWorldHint: false` |
 | Any | `static` method (fixed text, no call) | read-only |
+| OData / REST | `odata_*` built-in methods | read-only |
 | SOAP | operation name only | never asserts read-only; flags a clearly-named destructive op |
 | MCP bridge | the upstream server's own annotations | passed through verbatim |
 

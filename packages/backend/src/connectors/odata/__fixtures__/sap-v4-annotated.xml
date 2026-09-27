@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="../../../../default/iwbep/common/0001/$metadata">
+    <edmx:Include Namespace="com.sap.vocabularies.Common.v1" Alias="SAP__common"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="com.sap.gateway.srvd_a2x.api_salesorder.v0001" Alias="SAP__self" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="SalesOrderType">
+        <Key>
+          <PropertyRef Name="SalesOrder"/>
+        </Key>
+        <Property Name="SalesOrder" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="SoldToParty" Type="Edm.String" MaxLength="10"/>
+        <Property Name="TotalNetAmount" Type="Edm.Decimal" Precision="16" Scale="variable"/>
+        <Property Name="TransactionCurrency" Type="Edm.String" MaxLength="3"/>
+        <NavigationProperty Name="_Item" Type="Collection(SAP__self.SalesOrderItemType)"/>
+      </EntityType>
+      <EntityType Name="SalesOrderItemType">
+        <Key>
+          <PropertyRef Name="SalesOrder"/>
+          <PropertyRef Name="SalesOrderItem"/>
+        </Key>
+        <Property Name="SalesOrder" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="SalesOrderItem" Type="Edm.String" Nullable="false" MaxLength="6"/>
+        <Property Name="Material" Type="Edm.String" MaxLength="40">
+          <Annotation Term="SAP__common.Label" String="Product"/>
+        </Property>
+      </EntityType>
+      <EntityContainer Name="Container">
+        <EntitySet Name="SalesOrder" EntityType="SAP__self.SalesOrderType">
+          <NavigationPropertyBinding Path="_Item" Target="SalesOrderItem"/>
+        </EntitySet>
+        <EntitySet Name="SalesOrderItem" EntityType="SAP__self.SalesOrderItemType"/>
+      </EntityContainer>
+      <Annotations Target="SAP__self.SalesOrderType/SoldToParty">
+        <Annotation Term="SAP__common.Label" String="Sold-To Party"/>
+      </Annotations>
+      <Annotations Target="SAP__self.SalesOrderType/TotalNetAmount">
+        <Annotation Term="SAP__common.Label" String="Net Value"/>
+        <Annotation Term="SAP__measures.ISOCurrency" Path="TransactionCurrency"/>
+      </Annotations>
+      <Annotations Target="SAP__self.SalesOrderType">
+        <Annotation Term="SAP__common.Label" String="Sales Order"/>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

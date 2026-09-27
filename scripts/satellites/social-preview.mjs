@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HERE, ROOT, loadConfig, loadCatalog } from './lib.mjs';
+import { allTools } from './templates/render-tools.mjs';
 
 const args = process.argv.slice(2);
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1].split(',') : null;
@@ -31,17 +32,19 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const MAINTAINER = { 'HelpCode-ai': 'helpcode.ai', kochfreiburg: 'KOCH Freiburg GmbH', keysersoft: '@keysersoft' };
 const GENERIC_SUB = {
   soap: 'Any SOAP/WSDL service as MCP tools. No code.',
-  sql: 'PostgreSQL, MySQL, SQL Server, Oracle, MongoDB. Read-only by default.',
+  sql: 'PostgreSQL, MySQL, SQL Server, Oracle, SAP HANA, MongoDB. Read-only by default.',
   openapi: 'Every OpenAPI operation becomes an MCP tool. No code.',
   graphql: 'GraphQL queries and mutations as MCP tools. No code.',
   postman: 'Every request in a collection becomes an MCP tool.',
+  odata: 'Any OData V2/V4 service, SAP Gateway included, as MCP tools.',
 };
 
 function content(sat) {
   const adapters = (sat.adapters ?? []).map((s) => catalog.get(s)?.adapter).filter(Boolean);
-  const tools = adapters.reduce((n, a) => n + a.tools.length, 0);
+  const tools = adapters.reduce((n, a) => n + allTools(a).length, 0);
+  const systems = new Set(adapters.map((a) => a.name.replace(/\s*\([^)]*\)$/, ''))).size;
   if (sat.type === 'generic') return { title: `<em>${esc(sat.system)}</em> to MCP`, sub: GENERIC_SUB[sat.kind] ?? '' };
-  if (sat.type === 'umbrella') return { title: `<em>${esc(sat.system)}</em> MCP Server`, sub: `${adapters.length} systems, ${tools} tools, one MCP endpoint.` };
+  if (sat.type === 'umbrella') return { title: `<em>${esc(sat.system)}</em> MCP Server`, sub: `${systems} systems, ${tools} tools, one MCP endpoint.` };
   return { title: `<em>${esc(sat.system)}</em> MCP Server`, sub: `${tools} tools for Claude, ChatGPT, Copilot and Cursor.` };
 }
 

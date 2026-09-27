@@ -1,0 +1,268 @@
+{
+  "slug": "sap-s4hana-hana",
+  "name": "SAP S/4HANA (HANA SQL)",
+  "description": "Read SAP S/4HANA straight from its HANA database with SQL, with SAP's own data dictionary turned into tools: table and field labels, code values, join paths, released CDS views and a guide to the finance, sales and inventory data model. Read-only.",
+  "region": "intl",
+  "category": "erp",
+  "icon": "sap-hana",
+  "docsUrl": "https://help.sap.com/docs/SAP_HANA_PLATFORM",
+  "instructions": "**What this connects to**: the HANA database under an SAP S/4HANA system (on-premise, Private Cloud / RISE, or HANA Enterprise Cloud), read directly with SQL. SAP's table and column names are abbreviations (BUKRS, HSL, VBELN); the tools below read SAP's own dictionary so the model sees what each table and field means before it queries.\n\n**Start with `sap_guide`**: it costs nothing and explains the SAP data model (client, dates, currencies, finance, sales, inventory) and the order in which to use the other tools.\n\n**Setup (SAP Basis, one-off)**\n1. Create a technical database user in the tenant that holds the ABAP schema (usually `SAPHANADB` or `SAPABAP1`), with a password that does not expire:\n   ```sql\n   CREATE USER AMCP_READER PASSWORD \"<strong password>\" NO FORCE_FIRST_PASSWORD_CHANGE;\n   ALTER USER AMCP_READER DISABLE PASSWORD LIFETIME;\n   ```\n2. Grant `SELECT` on what the agent may read. The dictionary tools need `DD02L DD02T DD03L DD03T DD03ND DD04T DD07T DD08L DD05S DDHEADANNO DDFIELDANNO ARS_W_API_STATE` and `sap_org_structure` needs `T001 T001K T001W TKA01 TVKO TVKOT T024E`. Add the business tables and CDS views for your use cases, or `GRANT SELECT ON SCHEMA SAPHANADB` for broad analytics. Never grant HR tables you do not want read.\n3. Recommended: cap the user's statements on the server side with a workload class (`STATEMENT TIMEOUT`, `STATEMENT MEMORY LIMIT`) mapped to the user.\n4. Fill in the variables: `SAP_HANA_HOST`; `SAP_HANA_PORT`, the tenant's SQL port (3<instance>15 for the first tenant, 3<instance>41 and up for others; the system database port 3<instance>13 also works together with the tenant name); `SAP_HANA_TENANT`, the tenant database name; `SAP_HANA_SCHEMA` (e.g. `SAPHANADB`); `SAP_CLIENT`, the three-digit SAP client (e.g. `100`); `SAP_LANGUAGE`, the one-letter SAP language for texts (`E` English, `D` German); `SAP_HANA_TLS`, `verify`, `no-verify` (self-signed certificate) or `off`; `SAP_HANA_USER` and `SAP_HANA_PASSWORD`.\n\n**Network**: the HANA SQL port is normally reachable only inside the company network. Self-host AnythingMCP there (or connect it through a VPN) and add the host to `SSRF_ALLOWED_HOSTS`.\n\n**Read-only by design**: the session runs `SET TRANSACTION READ ONLY`, writes and locking reads are refused, results are capped at 1000 rows and each statement times out after 60 seconds. SQL bypasses SAP's application authorizations, so the database grants are the real boundary. HR and user/password tables are on the connector's denied-tables list by default (edit it in the connector settings).\n\n**Licensing**: direct SQL access to the ABAP schema by a third-party application is governed by your SAP HANA licence. A runtime licence bundled with S/4HANA usually does not cover it; a full-use licence does. Check your contract before connecting production.\n\n**Driver**: the bundled `hdb` driver needs nothing installed. To use SAP's native `@sap/hana-client` instead, see the SAP HANA page of the AnythingMCP docs.",
+  "requiredEnvVars": [
+    "SAP_HANA_HOST",
+    "SAP_HANA_PORT",
+    "SAP_HANA_TENANT",
+    "SAP_HANA_SCHEMA",
+    "SAP_CLIENT",
+    "SAP_LANGUAGE",
+    "SAP_HANA_TLS",
+    "SAP_HANA_USER",
+    "SAP_HANA_PASSWORD"
+  ],
+  "connector": {
+    "name": "SAP S/4HANA (HANA SQL)",
+    "type": "DATABASE",
+    "baseUrl": "hana://{{SAP_HANA_HOST}}:{{SAP_HANA_PORT}}/?databaseName={{SAP_HANA_TENANT}}&currentSchema={{SAP_HANA_SCHEMA}}&sapClient={{SAP_CLIENT}}&tls={{SAP_HANA_TLS}}",
+    "authType": "CONNECTION_STRING",
+    "authConfig": {
+      "username": "{{SAP_HANA_USER}}",
+      "password": "{{SAP_HANA_PASSWORD}}"
+    },
+    "config": {
+      "deniedTables": [
+        "PA####",
+        "PB####",
+        "PCL#",
+        "HRP####",
+        "USR##",
+        "USH##",
+        "RFCDES",
+        "SSF_PSE_D"
+      ]
+    }
+  },
+  "probe": {
+    "tool": "sap_org_structure"
+  },
+  "tools": [
+    {
+      "name": "sap_guide",
+      "description": "The SAP data model explained for SQL: how to work (overview), client and data types (basics), finance, sales, inventory, procurement, operations, pitfalls and ready query recipes. Call it first; it costs nothing and touches no data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "enum": [
+              "basics",
+              "finance",
+              "sales",
+              "inventory",
+              "procurement",
+              "operations",
+              "pitfalls",
+              "recipes"
+            ],
+            "description": "Chapter to read. Omit for the overview and the list of chapters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "SAP S/4HANA on HANA: how to read it with SQL.\n\nWork in this order:\n1. sap_org_structure: company codes, plants, sales and purchasing organizations, their currencies and fiscal year variants. Almost every business question is scoped by one of these.\n2. sap_search_cds_views: SAP's own semantic layer. Released views (RELEASED_C1 set) with VDM_TYPE COMPOSITE/CONSUMPTION and ANALYTICS #CUBE are the most reliable basis for figures: joins, currency and sign handling are already done.\n3. sap_search_tables / sap_find_fields: when no view fits, find the physical table or the table that holds a business field.\n4. sap_describe_table / sap_describe_cds_view: labels, keys, the currency or unit field of each amount, check tables.\n5. sap_field_values / sap_table_relations: what a code means, how to join, where the texts are.\n6. sap_query: always filtered by client, organization unit and period; aggregate in SQL.\n\nBusiness figures must come with their currency and the period they cover. When a KPI definition is company-specific (which accounts count as revenue, which order types count as sales), say what you assumed.",
+        "staticResponses": {
+          "basics": "Basics of the SAP data model in SQL\n\nClient (MANDT)\n- Nearly every business table starts with a client column, usually MANDT (ACDOCA calls it RCLNT). The database holds every client of the system, so filter it every time: WHERE MANDT = '<client>'. The client of this connector is in the connection settings (SAP_CLIENT).\n- CDS views filter the client themselves (this connector sets the CDS_CLIENT session variable), so no MANDT filter is needed on them.\n- Dictionary tables (DD02L, DD03L, ...) are client-independent.\n\nLanguage\n- Texts live in separate text tables keyed by a one-letter language code: E English, D German, F French, I Italian, S Spanish, A Arabic. Column SPRAS (DDLANGUAGE in the dictionary).\n- Pattern: a master table and its text table, e.g. T001W plants, TVKO/TVKOT sales organizations, MARA/MAKT materials, SKA1/SKAT G/L accounts. sap_table_relations lists the text table of a table.\n\nDates, times, numbers\n- Dates (type DATS) are strings 'YYYYMMDD'; an empty date is '00000000'. Compare as strings: BUDAT BETWEEN '20260101' AND '20260331'. For date arithmetic: TO_DATE(NULLIF(BUDAT, '00000000'), 'YYYYMMDD').\n- Times (TIMS) are 'HHMMSS'. Timestamps are often DEC(15) in UTC, YYYYMMDDhhmmss.\n- Fiscal year GJAHR and posting period POPER are strings too: GJAHR = '2026', POPER = '001'. Periods 013 to 016 are special closing periods.\n- The fiscal year is not necessarily the calendar year: check the fiscal year variant (T001.PERIV, table T009B) before mapping periods to months.\n\nLeading zeros\n- Numeric keys are stored left-padded with zeros: customer 12345 is KUNNR '0000012345' (10 characters), document 4711 is BELNR '0000004711'. Pad input: LPAD('12345', 10, '0'). Material numbers are 40 characters in S/4HANA and are padded only when purely numeric.\n\nAmounts and quantities\n- Every amount (type CURR) has a currency field, every quantity (QUAN) a unit field; sap_describe_table shows it as CURRENCY_OR_UNIT_FIELD. Never add amounts in different currencies; group by the currency.\n- SAP stores amounts with two decimals regardless of the currency. For currencies with a different number of decimals (table TCURX: JPY 0, KWD/BHD/OMR 3) the stored number is shifted: stored = real * 10^(2 - decimals). A JPY 1,000 amount is stored as 10.00.\n- Decimals come back as strings: keep them exact, do not round.\n\nSQL dialect (SAP HANA)\n- TOP n or LIMIT n; FROM DUMMY for expressions; string concatenation with ||.\n- Names are upper case; namespaced objects must be quoted: SELECT * FROM \"/SCWM/ORDIM_C\".\n- Only single SELECT statements are allowed through this connector.\n- CDS views with parameters: SELECT * FROM \"C_SOMEVIEW\"(P_KEYDATE => '20260930'). If you omit a parameter, the error names it.\n\nCustom objects\n- Tables and fields starting with Z, Y or a /NAMESPACE/ are customer-specific. Their meaning is company knowledge: describe them, and say so when you rely on a guess.",
+          "finance": "Finance and controlling (FI/CO)\n\nThe Universal Journal ACDOCA is the single source of FI and CO actuals in S/4HANA.\n- Keys: RCLNT (client), RLDNR (ledger; '0L' is the leading ledger, use it unless asked otherwise), RBUKRS (company code), GJAHR (fiscal year), BELNR (document), DOCLN (line).\n- Time: POPER (posting period), BUDAT (posting date), BLDAT (document date).\n- Accounts and objects: RACCT (G/L account), KOART (account type: S G/L, D customer, K vendor, A asset, M material), KUNNR, LIFNR, RCNTR (cost center), PRCTR (profit center), SEGMENT, RFAREA (functional area), AUFNR (order), MATNR, WERKS, BLART (document type).\n- Amounts: HSL in company code currency (RHCUR), KSL in group currency (RKCUR), TSL in transaction currency (RTCUR), WSL; quantity MSL in RUNIT.\n- Signs: debits are positive, credits negative. Revenue and liabilities are therefore negative: report revenue as -SUM(HSL).\n- GLACCOUNT_TYPE tells P&L accounts ('P') from balance sheet accounts ('X'); 'N' is non-operating expense or income.\n- Balance carryforward: each fiscal year starts with carried-forward balances posted in period 000. A balance sheet balance at a date is therefore the year's rows only: GJAHR = <year> AND POPER <= <period>. Summing several years double counts. Exclude POPER '000' when you work with individual items (open items, aging).\n- Customer and vendor sit on the receivable or payable line (KOART 'D' / 'K'), not on the revenue line: rank customers by revenue from billing documents (VBRK / VBRP), not from ACDOCA revenue accounts.\n- Receivables include VAT, revenue does not: a DSO that divides one by the other overstates the days by the VAT rate unless you correct for it.\n- Reversals: the original and the reversal both stay in the journal and cancel out when summed. Only filter them (XREVERSING / XREVERSED) when counting documents.\n- Clearing: AUGBL (clearing document) and AUGDT (clearing date). An open customer item: KOART = 'D' and AUGBL = ''. Open at a key date: POPER <> '000' AND BUDAT <= key date AND (AUGDT = '00000000' OR AUGDT > key date). NETDT is the net due date, for aging.\n- BKPF (header) and BSEG (items) still exist for document detail; sums come from ACDOCA. BSID, BSAD, BSIK, BSAK, BSIS, BSAS, FAGLFLEXT, GLT0, COEP, COSP and COSS are compatibility views in S/4HANA: read ACDOCA instead.\n\nWhich accounts are revenue, cost of sales or operating expense is company-specific (chart of accounts T001.KTOPL, financial statement version). G/L account texts: SKAT (SPRAS, KTOPL, SAKNR, TXT50); SKA1.XBILK = 'X' marks balance sheet accounts, the others are P&L accounts. Confirm account ranges with the user or their existing report before presenting a figure as revenue or margin.\n\nPlan data is in ACDOCP. Fixed assets: ANLA (master), ANLZ (time-dependent data), postings in ACDOCA with ANLN1/ANLN2.\n\nReleased CDS views worth searching first: I_JournalEntryItem, I_JournalEntryItemCube, I_GLAccountLineItem, I_OperationalAcctgDocItem (open items), C_TrialBalance, I_GLAccountInChartOfAccounts, I_CompanyCode.",
+          "sales": "Sales and distribution (SD)\n\n- Sales documents: VBAK header (VBELN, AUART document type, AUDAT document date, ERDAT created on, VKORG, VTWEG, SPART, KUNNR sold-to party, NETWR net value in WAERK), VBAP items (POSNR, MATNR, KWMENG quantity in VRKME, NETWR, WERKS, ABGRU rejection reason: exclude rejected items with ABGRU <> '').\n- In S/4HANA the status fields moved into VBAK and VBAP (VBUK and VBUP are gone). Check sap_field_values for the status fields (e.g. VBAK.GBSTK overall status).\n- Deliveries: LIKP / LIPS. Document flow between order, delivery and invoice: VBFA.\n- Billing documents: VBRK header (VBELN, FKART billing type, FKDAT billing date, VKORG, KUNAG sold-to, KUNRG payer, NETWR net value, MWSBK tax, WAERK currency, VBTYP document category, FKSTO cancelled flag, SFAKN cancelled document, RFBSK accounting status), VBRP items (POSNR, MATNR, FKIMG quantity, NETWR, WERKS, AUBEL sales order).\n- Net sales from billing: exclude cancelled invoices (FKSTO = 'X') and the cancellation documents themselves, subtract credit memos. The document category VBRK.VBTYP tells invoice, credit memo, debit memo and cancellations apart: read its values with sap_field_values('VBRK', 'VBTYP') before writing the CASE.\n- Pricing conditions: PRCD_ELEMENTS (replaces KONV).\n- Customers: business partner BUT000 (PARTNER, NAME_ORG1, BU_GROUP); customer master KNA1 (KUNNR, NAME1, LAND1, ORT01), sales area data KNVV, company code data KNB1; BP-to-customer link CVI_CUST_LINK.\n\nReleased CDS views worth searching first: I_SalesDocument, I_SalesDocumentItem, I_BillingDocument, I_BillingDocumentItem, I_BillingDocumentItemCube, I_Customer, I_BusinessPartner.",
+          "inventory": "Materials and inventory (MM-IM)\n\n- Material master: MARA (MATNR, MTART material type, MATKL material group, MEINS base unit), MAKT (MAKTX description, SPRAS), MARC (plant data), MBEW (valuation: VPRSV price control, VERPR moving average price, STPRS standard price, PEINH price unit).\n- Material documents: MATDOC is the single table for goods movements in S/4HANA (MKPF and MSEG are compatibility views over it). Key fields: MBLNR, MJAHR, ZEILE, BUDAT, BWART movement type, MATNR, WERKS, LGORT, CHARG, MENGE with MEINS, SHKZG (S receipt, H issue), DMBTR amount in local currency.\n- Stock quantities are not stored in MARD, MARC, MCHB and similar tables any more: those fields are computed by SAP replacement views, and reading the tables with SQL returns zeros or stale values (sap_search_tables shows REPLACED_BY). Take stock from the released CDS views (search \"material stock\", e.g. I_MaterialStock) or aggregate MATDOC: receipts minus issues per material, plant and storage location.\n- Stock value: quantity times the price from MBEW (moving average or standard, per VPRSV) divided by PEINH; the material ledger (CKMLCR) holds actual costs when it is active.\n\nReleased CDS views worth searching first: I_MaterialStock, I_MaterialDocumentItem, I_Product, I_ProductPlant, I_ProductValuation.",
+          "procurement": "Procurement (MM-PUR)\n\n- Purchase orders: EKKO header (EBELN, BSART document type, LIFNR supplier, EKORG, BUKRS, BEDAT order date, WAERS), EKPO items (EBELP, MATNR, TXZ01 short text, MENGE, MEINS, NETPR, PEINH, NETWR, WERKS, LOEKZ deletion flag: exclude deleted items), EKET schedule lines (EINDT delivery date).\n- PO history (goods receipts, invoices): EKBE (VGABE 1 goods receipt, 2 invoice receipt).\n- Purchase requisitions: EBAN.\n- Supplier invoices (logistics invoice verification): RBKP header, RSEG items.\n- Suppliers: business partner BUT000; supplier master LFA1 (LIFNR, NAME1, LAND1), purchasing data LFM1, company code data LFB1; link CVI_VEND_LINK.\n\nReleased CDS views worth searching first: I_PurchaseOrder, I_PurchaseOrderItem, I_PurchaseOrderItemAPI01, I_Supplier, I_SupplierInvoice.",
+          "operations": "Production, maintenance and quality (PP, PM, QM)\n\n- Orders: AUFK master (AUFNR, AUTYP order category: 10 production, 30 maintenance, 40 process order; WERKS, OBJNR), AFKO header (GSTRP / GLTRP basic start / finish, GAMNG total quantity), AFPO items (MATNR, PSMNG order quantity, WEMNG delivered quantity), AFRU confirmations, AFVC / AFVV operations.\n- Object status of orders, notifications and equipment: JEST (OBJNR, STAT, INACT = '' for active), texts in TJ02T (system status) and TJ30T (user status).\n- Maintenance: EQUI / EQKT equipment, IFLOT / IFLOTX functional locations, QMEL notifications, AFIH maintenance order header.\n- Quality: QALS inspection lots, QAVE usage decisions, QMEL quality notifications.\n\nReleased CDS views worth searching first: I_ProductionOrder, I_MaintenanceOrder, I_MaintenanceNotification, I_Equipment, I_InspectionLot.",
+          "pitfalls": "Pitfalls\n\n- Missing client filter: results mix every client of the system (including SAP's demo data). Filter MANDT / RCLNT.\n- Replaced tables: in S/4HANA many classic tables are served by compatibility views (sap_search_tables column REPLACED_BY). Plain SQL reads the physical table and gets zeros, nothing or stale data. Typical: MSEG, MKPF, MARD, MARC and MCHB stock fields, MBEW quantities, BSID, BSAD, BSIK, BSAK, BSIS, BSAS, FAGLFLEXT, GLT0, COEP, COSP, COSS. VBUK and VBUP no longer exist.\n- Currencies: never sum across currencies; mind the TCURX decimal shift.\n- Signs in ACDOCA: credits are negative; revenue is -SUM(HSL).\n- Balance carryforward in period 000: balance sheet figures at a date come from one fiscal year (GJAHR = year, POPER <= period); adding up several years counts the opening balances again.\n- Group companies are often not flagged in the customer master (no trading partner): ask which payers are intercompany before presenting a top-customer list or group revenue.\n- Large tables (ACDOCA, MATDOC, BSEG, VBAP, VBRP, CDPOS, BALDAT) hold hundreds of millions of rows: always filter by organization unit (company code, plant, sales organization) and by fiscal year, period or date, and aggregate in SQL. Results are capped at 1000 rows and queries time out.\n- Periods versus months: map POPER to calendar months only after checking the fiscal year variant.\n- Special periods 013 to 016 carry year-end closing postings: include them for yearly totals, exclude them for monthly trends.\n- Personal and security data (HR tables PA*, PB*, PCL*, HRP*; user and password tables) are blocked on this connector.\n- A figure that will be compared with an existing report must use the same definition: ask for it when in doubt, and state the definition you used.",
+          "recipes": "Query recipes (replace the example client '100', company code '1000', dates and account ranges)\n\nRevenue per posting period from the Universal Journal\nSELECT POPER, RHCUR AS CURRENCY, -SUM(HSL) AS REVENUE\nFROM ACDOCA\nWHERE RCLNT = '100' AND RLDNR = '0L' AND RBUKRS = '1000' AND GJAHR = '2026'\n  AND RACCT BETWEEN '0040000000' AND '0049999999'  -- revenue accounts: confirm the range\nGROUP BY POPER, RHCUR ORDER BY POPER;\n\nNet sales per month from billing documents (check VBTYP values first)\nSELECT LEFT(k.FKDAT, 6) AS MONTH, k.WAERK AS CURRENCY,\n       SUM(CASE WHEN k.VBTYP = 'O' THEN -p.NETWR ELSE p.NETWR END) AS NET_SALES\nFROM VBRK k JOIN VBRP p ON p.MANDT = k.MANDT AND p.VBELN = k.VBELN\nWHERE k.MANDT = '100' AND k.VKORG = '1000' AND k.FKDAT BETWEEN '20260101' AND '20261231'\n  AND k.FKSTO = '' AND k.VBTYP IN ('M', 'O', 'P')\nGROUP BY LEFT(k.FKDAT, 6), k.WAERK ORDER BY 1;\n\nTop customers by revenue (billing)\nSELECT k.KUNAG, c.NAME1, k.WAERK, SUM(p.NETWR) AS NET_SALES\nFROM VBRK k JOIN VBRP p ON p.MANDT = k.MANDT AND p.VBELN = k.VBELN\nLEFT JOIN KNA1 c ON c.MANDT = k.MANDT AND c.KUNNR = k.KUNAG\nWHERE k.MANDT = '100' AND k.FKDAT BETWEEN '20260101' AND '20260930' AND k.FKSTO = '' AND k.VBTYP = 'M'\nGROUP BY k.KUNAG, c.NAME1, k.WAERK ORDER BY NET_SALES DESC LIMIT 10;\n\nOpen receivables at a key date, with aging by net due date\nSELECT KUNNR, RHCUR AS CURRENCY,\n       SUM(HSL) AS OPEN_AMOUNT,\n       SUM(CASE WHEN NETDT >= '20260930' THEN HSL ELSE 0 END) AS NOT_DUE,\n       SUM(CASE WHEN NETDT < '20260930' AND NETDT >= '20260831' THEN HSL ELSE 0 END) AS OVERDUE_1_30,\n       SUM(CASE WHEN NETDT < '20260831' THEN HSL ELSE 0 END) AS OVERDUE_OVER_30\nFROM ACDOCA\nWHERE RCLNT = '100' AND RLDNR = '0L' AND RBUKRS = '1000' AND KOART = 'D' AND POPER <> '000'\n  AND BUDAT <= '20260930' AND (AUGDT = '00000000' OR AUGDT > '20260930')\nGROUP BY KUNNR, RHCUR ORDER BY OPEN_AMOUNT DESC LIMIT 50;\n\nDSO (days sales outstanding), simple version\nDSO = open receivables at period end / revenue of the last N days * N.\nTake open receivables from the query above (without GROUP BY KUNNR) and revenue from the first recipe over the same N days; state N and the currency. Receivables include VAT and revenue does not: divide revenue * (1 + VAT rate) for a like-for-like figure.\n\nBalance of balance sheet accounts at the end of a period (e.g. inventory accounts)\nSELECT RACCT, RHCUR AS CURRENCY, SUM(HSL) AS BALANCE\nFROM ACDOCA\nWHERE RCLNT = '100' AND RLDNR = '0L' AND RBUKRS = '1000'\n  AND GJAHR = '2026' AND POPER <= '009'      -- one fiscal year: its period 000 holds the opening balance\n  AND RACCT BETWEEN '0013000000' AND '0013999999'  -- inventory accounts: confirm the range\nGROUP BY RACCT, RHCUR ORDER BY BALANCE DESC;\n\nGoods movements per movement type in a month\nSELECT BWART, SHKZG, MEINS, SUM(MENGE) AS QUANTITY, SUM(DMBTR) AS VALUE\nFROM MATDOC\nWHERE MANDT = '100' AND WERKS = '1000' AND BUDAT BETWEEN '20260901' AND '20260930'\nGROUP BY BWART, SHKZG, MEINS ORDER BY BWART;\n\nReleased analytical views for a topic\nCall sap_search_cds_views with a business term (e.g. \"journal entry\", \"billing\", \"stock\"), prefer rows with RELEASED_C1 and ANALYTICS #CUBE, then sap_describe_cds_view for its measures (AGGREGATION SUM) and dimensions."
+        }
+      }
+    },
+    {
+      "name": "sap_org_structure",
+      "description": "Company codes (with currency, chart of accounts and fiscal year variant), controlling areas, plants, sales organizations and purchasing organizations of this SAP client, with the company code each belongs to. Nearly every SAP query is scoped by one of these.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT 'company code' AS KIND, t.BUKRS AS ID, t.BUTXT AS NAME, t.WAERS AS CURRENCY, t.LAND1 AS COUNTRY, t.KTOPL AS CHART_OF_ACCOUNTS, t.PERIV AS FISCAL_YEAR_VARIANT, '' AS BELONGS_TO FROM T001 t WHERE t.MANDT = ${SAP_CLIENT} UNION ALL SELECT 'controlling area', a.KOKRS, a.BEZEI, a.WAERS, '', a.KTOPL, a.LMONA, '' FROM TKA01 a WHERE a.MANDT = ${SAP_CLIENT} UNION ALL SELECT 'plant', w.WERKS, w.NAME1, '', w.LAND1, '', '', COALESCE(k.BUKRS, '') FROM T001W w LEFT JOIN T001K k ON k.MANDT = w.MANDT AND k.BWKEY = w.BWKEY WHERE w.MANDT = ${SAP_CLIENT} UNION ALL SELECT 'sales organization', o.VKORG, COALESCE(ot.VTEXT, ''), o.WAERS, '', '', '', o.BUKRS FROM TVKO o LEFT JOIN TVKOT ot ON ot.MANDT = o.MANDT AND ot.VKORG = o.VKORG AND ot.SPRAS = ${SAP_LANGUAGE} WHERE o.MANDT = ${SAP_CLIENT} UNION ALL SELECT 'purchasing organization', e.EKORG, e.EKOTX, '', '', '', '', e.BUKRS FROM T024E e WHERE e.MANDT = ${SAP_CLIENT}"
+      }
+    },
+    {
+      "name": "sap_search_tables",
+      "description": "Find SAP tables and database views by name pattern or by words in their description (e.g. \"billing document\", \"VBRK\", \"ZSD%\"). Returns the description, whether the table is client-dependent and REPLACED_BY when S/4HANA serves it through a compatibility view (then read the replacement instead). Top 50.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A word from the description or a table name; SQL LIKE wildcards % and _ work on the name."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT TOP 50 * FROM ( SELECT t.TABNAME AS TABLE_NAME, tt.DDTEXT AS DESCRIPTION, t.TABCLASS AS KIND, CASE WHEN t.CLIDEP = 'X' THEN 'yes' ELSE 'no' END AS CLIENT_DEPENDENT, t.CONTFLAG AS DELIVERY_CLASS, NULLIF(t.VIEWREF, '') AS REPLACED_BY, m.RECORD_COUNT AS ROWS_ALL_CLIENTS, CASE WHEN t.TABNAME = UPPER(${query}) THEN 0 WHEN COALESCE(m.RECORD_COUNT, 0) > 0 THEN 1 WHEN t.TABNAME LIKE 'Z%' OR t.TABNAME LIKE 'Y%' THEN 3 ELSE 2 END AS RANK_GROUP FROM DD02L t LEFT JOIN DD02T tt ON tt.TABNAME = t.TABNAME AND tt.DDLANGUAGE = ${SAP_LANGUAGE} AND tt.AS4LOCAL = 'A' AND tt.AS4VERS = '0000' LEFT JOIN SYS.M_TABLES m ON m.SCHEMA_NAME = CURRENT_SCHEMA AND m.TABLE_NAME = t.TABNAME WHERE t.AS4LOCAL = 'A' AND t.AS4VERS = '0000' AND t.TABCLASS IN ('TRANSP', 'VIEW', 'CLUSTER', 'POOL') AND (t.TABNAME LIKE UPPER(${query}) OR UPPER(tt.DDTEXT) LIKE '%' || UPPER(${query}) || '%') ) x ORDER BY RANK_GROUP, COALESCE(ROWS_ALL_CLIENTS, 0) DESC, LENGTH(TABLE_NAME), TABLE_NAME"
+      }
+    },
+    {
+      "name": "sap_describe_table",
+      "description": "Every field of an SAP table with its business label, key flag, type, the currency or unit field that goes with each amount or quantity, and the check table that holds its valid values. Read it before querying a table you have not seen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table name, e.g. ACDOCA, VBRK, MARA."
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT f.POSITION, f.FIELDNAME AS FIELD, CASE WHEN f.KEYFLAG = 'X' THEN 'yes' ELSE '' END AS IS_KEY, COALESCE(NULLIF(d.SCRTEXT_L, ''), d.DDTEXT, ft.DDTEXT) AS LABEL, d.DDTEXT AS DESCRIPTION, f.DATATYPE AS TYPE, f.LENG AS LENGTH, f.DECIMALS, NULLIF(f.REFTABLE || '.' || f.REFFIELD, '.') AS CURRENCY_OR_UNIT_FIELD, NULLIF(f.CHECKTABLE, '') AS CHECK_TABLE, f.ROLLNAME AS DATA_ELEMENT, f.DOMNAME AS DOMAIN FROM DD03L f LEFT JOIN DD04T d ON d.ROLLNAME = f.ROLLNAME AND d.DDLANGUAGE = ${SAP_LANGUAGE} AND d.AS4LOCAL = 'A' AND d.AS4VERS = '0000' LEFT JOIN DD03T ft ON ft.TABNAME = f.TABNAME AND ft.FIELDNAME = f.FIELDNAME AND ft.DDLANGUAGE = ${SAP_LANGUAGE} AND ft.AS4LOCAL = 'A' WHERE f.TABNAME = UPPER(${table}) AND f.AS4LOCAL = 'A' AND f.AS4VERS = '0000' AND f.FIELDNAME NOT LIKE '.%' ORDER BY f.POSITION"
+      }
+    },
+    {
+      "name": "sap_find_fields",
+      "description": "Find which tables hold a business field, by words in its label (e.g. \"payment terms\", \"net due date\") or by data element name. Standard application tables rank first. Top 100.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words from the field label, or a data element name."
+          },
+          "table_pattern": {
+            "type": "string",
+            "default": "%",
+            "description": "Optional SQL LIKE pattern to restrict the tables, e.g. VB% for sales documents."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT TOP 100 * FROM ( SELECT f.TABNAME AS TABLE_NAME, f.FIELDNAME AS FIELD, COALESCE(NULLIF(d.SCRTEXT_L, ''), d.DDTEXT) AS LABEL, tt.DDTEXT AS TABLE_DESCRIPTION, f.ROLLNAME AS DATA_ELEMENT, CASE WHEN f.KEYFLAG = 'X' THEN 'yes' ELSE '' END AS IS_KEY, NULLIF(t.VIEWREF, '') AS TABLE_REPLACED_BY, m.RECORD_COUNT AS ROWS_ALL_CLIENTS, CASE WHEN COALESCE(m.RECORD_COUNT, 0) = 0 THEN 2 WHEN t.TABNAME LIKE 'Z%' OR t.TABNAME LIKE 'Y%' OR t.TABNAME LIKE '/%' THEN 1 ELSE 0 END AS RANK_GROUP FROM DD04T d JOIN DD03L f ON f.ROLLNAME = d.ROLLNAME AND f.AS4LOCAL = 'A' AND f.AS4VERS = '0000' JOIN DD02L t ON t.TABNAME = f.TABNAME AND t.AS4LOCAL = 'A' AND t.AS4VERS = '0000' AND t.TABCLASS = 'TRANSP' LEFT JOIN DD02T tt ON tt.TABNAME = t.TABNAME AND tt.DDLANGUAGE = ${SAP_LANGUAGE} AND tt.AS4LOCAL = 'A' AND tt.AS4VERS = '0000' LEFT JOIN SYS.M_TABLES m ON m.SCHEMA_NAME = CURRENT_SCHEMA AND m.TABLE_NAME = t.TABNAME WHERE d.DDLANGUAGE = ${SAP_LANGUAGE} AND d.AS4LOCAL = 'A' AND d.AS4VERS = '0000' AND f.TABNAME LIKE UPPER(${table_pattern}) AND (UPPER(d.DDTEXT) LIKE '%' || UPPER(${query}) || '%' OR UPPER(d.SCRTEXT_L) LIKE '%' || UPPER(${query}) || '%' OR d.ROLLNAME = UPPER(${query})) ) x ORDER BY RANK_GROUP, COALESCE(ROWS_ALL_CLIENTS, 0) DESC, TABLE_NAME, FIELD"
+      }
+    },
+    {
+      "name": "sap_field_values",
+      "description": "What the codes in a field mean: the fixed values of its domain with their descriptions (e.g. VBRK VBTYP, ACDOCA KOART). When the field takes its values from a check table instead, says which one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table name."
+          },
+          "field": {
+            "type": "string",
+            "description": "Field name."
+          }
+        },
+        "required": [
+          "table",
+          "field"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT v.DOMVALUE_L AS VALUE, v.DDTEXT AS MEANING, f.DOMNAME AS DOMAIN, NULLIF(f.CHECKTABLE, '') AS CHECK_TABLE FROM DD03L f JOIN DD07T v ON v.DOMNAME = f.DOMNAME AND v.DDLANGUAGE = ${SAP_LANGUAGE} AND v.AS4LOCAL = 'A' AND v.AS4VERS = '0000' WHERE f.TABNAME = UPPER(${table}) AND f.FIELDNAME = UPPER(${field}) AND f.AS4LOCAL = 'A' AND f.AS4VERS = '0000' UNION ALL SELECT NULL, 'No fixed values in the dictionary. Valid values are the keys of the check table ' || f.CHECKTABLE || '; its descriptions are in the text table listed by sap_table_relations.', f.DOMNAME, f.CHECKTABLE FROM DD03L f WHERE f.TABNAME = UPPER(${table}) AND f.FIELDNAME = UPPER(${field}) AND f.AS4LOCAL = 'A' AND f.AS4VERS = '0000' AND f.CHECKTABLE <> '' AND f.CHECKTABLE <> '*' AND NOT EXISTS (SELECT 1 FROM DD07T x WHERE x.DOMNAME = f.DOMNAME AND x.DDLANGUAGE = ${SAP_LANGUAGE} AND x.AS4LOCAL = 'A')"
+      }
+    },
+    {
+      "name": "sap_table_relations",
+      "description": "How a table joins to others: its foreign keys with the check table and the join condition, and the text table that holds its descriptions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table name."
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "WITH ck AS ( SELECT k.TABNAME, k.FIELDNAME, ROW_NUMBER() OVER (PARTITION BY k.TABNAME ORDER BY k.POSITION) AS PRIMPOS FROM DD03L k WHERE k.KEYFLAG = 'X' AND k.AS4LOCAL = 'A' AND k.AS4VERS = '0000' AND k.FIELDNAME NOT LIKE '.%' AND k.TABNAME IN (SELECT CHECKTABLE FROM DD08L WHERE TABNAME = UPPER(${table}) AND AS4LOCAL = 'A') ), jc AS ( SELECT s.FIELDNAME, STRING_AGG(r.CHECKTABLE || '.' || c.FIELDNAME || ' = ' || CASE WHEN s.FORTABLE = '*' THEN s.FORKEY ELSE s.FORTABLE || '.' || s.FORKEY END, ' AND ') AS JOIN_CONDITION FROM DD05S s JOIN DD08L r ON r.TABNAME = s.TABNAME AND r.FIELDNAME = s.FIELDNAME AND r.AS4LOCAL = 'A' AND r.AS4VERS = '0000' JOIN ck c ON c.TABNAME = r.CHECKTABLE AND c.PRIMPOS = CAST(s.PRIMPOS AS INTEGER) WHERE s.TABNAME = UPPER(${table}) AND s.AS4LOCAL = 'A' AND s.AS4VERS = '0000' GROUP BY s.FIELDNAME ) SELECT 'foreign key' AS RELATION, r.FIELDNAME AS FIELD, r.CHECKTABLE AS OTHER_TABLE, ot.DDTEXT AS OTHER_TABLE_DESCRIPTION, NULLIF(r.FRKART, '') AS KIND, jc.JOIN_CONDITION FROM DD08L r LEFT JOIN jc ON jc.FIELDNAME = r.FIELDNAME LEFT JOIN DD02T ot ON ot.TABNAME = r.CHECKTABLE AND ot.DDLANGUAGE = ${SAP_LANGUAGE} AND ot.AS4LOCAL = 'A' AND ot.AS4VERS = '0000' WHERE r.TABNAME = UPPER(${table}) AND r.AS4LOCAL = 'A' AND r.AS4VERS = '0000' AND r.CHECKTABLE <> '*' AND r.CHECKTABLE <> '' UNION ALL SELECT 'text table', r.FIELDNAME, r.TABNAME, ot.DDTEXT, 'TEXT', NULL FROM DD08L r LEFT JOIN DD02T ot ON ot.TABNAME = r.TABNAME AND ot.DDLANGUAGE = ${SAP_LANGUAGE} AND ot.AS4LOCAL = 'A' AND ot.AS4VERS = '0000' WHERE r.CHECKTABLE = UPPER(${table}) AND r.FRKART = 'TEXT' AND r.AS4LOCAL = 'A' AND r.AS4VERS = '0000'"
+      }
+    },
+    {
+      "name": "sap_search_cds_views",
+      "description": "Search SAP's CDS views (the S/4HANA virtual data model) by name or label, e.g. \"journal entry\", \"billing\", \"stock\". RELEASED_C1 marks views SAP releases as stable APIs; ANALYTICS #CUBE and #QUERY mark analytical views whose measures are ready to aggregate. SQL_NAME is the name to query. Top 50.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words from the label, or a view name pattern such as I_JOURNALENTRY%."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT TOP 50 CDS_VIEW, LABEL, VDM_TYPE, ANALYTICS, RELEASED_C1, SQL_NAME FROM ( SELECT h.STRUCOBJN AS CDS_VIEW, REPLACE(h.VALUE, '''', '') AS LABEL, (SELECT MAX(REPLACE(a.VALUE, '''', '')) FROM DDHEADANNO a WHERE a.STRUCOBJN = h.STRUCOBJN AND a.NAME = 'VDM.VIEWTYPE') AS VDM_TYPE, COALESCE((SELECT MAX(REPLACE(a.VALUE, '''', '')) FROM DDHEADANNO a WHERE a.STRUCOBJN = h.STRUCOBJN AND a.NAME = 'ANALYTICS.DATACATEGORY'), CASE WHEN (SELECT MAX(REPLACE(a.VALUE, '''', '')) FROM DDHEADANNO a WHERE a.STRUCOBJN = h.STRUCOBJN AND a.NAME = 'ANALYTICS.QUERY') = 'true' THEN '#QUERY' END) AS ANALYTICS, (SELECT MAX(s.RELEASE_STATE) FROM ARS_W_API_STATE s WHERE s.OBJECT_ID = h.STRUCOBJN AND s.OBJECT_TYPE = 'DDLS' AND s.COMPATIBILITY_CONTRACT = 'C1') AS RELEASED_C1, COALESCE((SELECT MAX(REPLACE(a.VALUE, '''', '')) FROM DDHEADANNO a WHERE a.STRUCOBJN = h.STRUCOBJN AND a.NAME = 'ABAPCATALOG.SQLVIEWNAME'), h.STRUCOBJN) AS SQL_NAME FROM DDHEADANNO h WHERE h.NAME = 'ENDUSERTEXT.LABEL' AND (h.STRUCOBJN LIKE UPPER(${query}) OR UPPER(h.VALUE) LIKE '%' || UPPER(${query}) || '%') ) x ORDER BY CASE WHEN RELEASED_C1 IS NOT NULL THEN 0 ELSE 1 END, CASE WHEN CDS_VIEW LIKE 'I!_%' ESCAPE '!' OR CDS_VIEW LIKE 'C!_%' ESCAPE '!' THEN 0 ELSE 1 END, LENGTH(CDS_VIEW), CDS_VIEW"
+      }
+    },
+    {
+      "name": "sap_describe_cds_view",
+      "description": "Columns of a CDS view with their labels, default aggregation (SUM marks a measure), currency and unit fields, text fields and foreign-key associations. QUERY_AS is the database name to use in sap_query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "string",
+            "description": "CDS view name, e.g. I_JournalEntryItemCube."
+          }
+        },
+        "required": [
+          "view"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "WITH n AS ( SELECT COALESCE((SELECT MAX(REPLACE(a.VALUE, '''', '')) FROM DDHEADANNO a WHERE a.STRUCOBJN = UPPER(${view}) AND a.NAME = 'ABAPCATALOG.SQLVIEWNAME'), UPPER(${view})) AS SQL_NAME, UPPER(${view}) AS ENTITY FROM DUMMY ), fa AS ( SELECT x.LFIELDNAME, MAX(CASE WHEN x.NAME = 'ENDUSERTEXT.LABEL' THEN REPLACE(REPLACE(x.VALUE, '''', ''), '#', '') END) AS LABEL, MAX(CASE WHEN x.NAME = 'SEMANTICS.AMOUNT.CURRENCYCODE' THEN REPLACE(REPLACE(x.VALUE, '''', ''), '#', '') END) AS CURRENCY_FIELD, MAX(CASE WHEN x.NAME = 'SEMANTICS.QUANTITY.UNITOFMEASURE' THEN REPLACE(REPLACE(x.VALUE, '''', ''), '#', '') END) AS UNIT_FIELD, MAX(CASE WHEN x.NAME IN ('DEFAULTAGGREGATION', 'AGGREGATION.DEFAULT') THEN REPLACE(REPLACE(x.VALUE, '''', ''), '#', '') END) AS AGGREGATION, MAX(CASE WHEN x.NAME = 'OBJECTMODEL.TEXT.ELEMENT' THEN REPLACE(REPLACE(x.VALUE, '''', ''), '#', '') END) AS TEXT_FIELD, MAX(CASE WHEN x.NAME = 'OBJECTMODEL.FOREIGNKEY.ASSOCIATION' THEN REPLACE(REPLACE(x.VALUE, '''', ''), '#', '') END) AS FOREIGN_KEY_ASSOCIATION FROM DDFIELDANNO x, n WHERE x.STRUCOBJN = n.ENTITY GROUP BY x.LFIELDNAME ) SELECT c.POSITION, c.COLUMN_NAME AS FIELD, COALESCE(fa.LABEL, NULLIF(d.SCRTEXT_L, ''), d.DDTEXT) AS LABEL, c.DATA_TYPE_NAME AS TYPE, c.LENGTH, c.SCALE, fa.AGGREGATION, fa.CURRENCY_FIELD, fa.UNIT_FIELD, fa.TEXT_FIELD, fa.FOREIGN_KEY_ASSOCIATION, n.SQL_NAME AS QUERY_AS FROM n JOIN SYS.VIEW_COLUMNS c ON c.SCHEMA_NAME = CURRENT_SCHEMA AND c.VIEW_NAME = n.SQL_NAME LEFT JOIN fa ON UPPER(fa.LFIELDNAME) = c.COLUMN_NAME LEFT JOIN DD03ND nd ON nd.STRUCOBJN = n.ENTITY AND UPPER(nd.LFIELDNAME) = c.COLUMN_NAME AND nd.AS4LOCAL = 'A' LEFT JOIN DD04T d ON d.ROLLNAME = nd.ROLLNAME AND d.DDLANGUAGE = ${SAP_LANGUAGE} AND d.AS4LOCAL = 'A' AND d.AS4VERS = '0000' ORDER BY c.POSITION"
+      }
+    },
+    {
+      "name": "sap_query",
+      "description": "Run one read-only SQL SELECT against the SAP HANA database and return up to 1000 rows. Filter the client (MANDT / RCLNT) on tables, scope by organization unit and period, and aggregate in SQL. Read sap_guide and the describe tools first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A single SELECT (or WITH ... SELECT) in SAP HANA SQL."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "${query}"
+      }
+    }
+  ]
+}

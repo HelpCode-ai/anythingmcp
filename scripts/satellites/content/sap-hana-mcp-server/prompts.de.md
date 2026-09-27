@@ -1,0 +1,8 @@
+- Welche Buchungskreise, Werke und Verkaufsorganisationen hat dieses SAP-System, in welchen Währungen?
+- Wie hoch war der Umsatz je Buchungskreis im laufenden Geschäftsjahr laut Universal Journal, mit Währung?
+- Welche Kunden hatten im letzten Quartal den höchsten fakturierten Nettowert, je Verkaufsorganisation?
+- In welchen Tabellen steht die Nettofälligkeit eines offenen Postens, und wie hängen sie am Kundenstamm?
+- Gibt es einen freigegebenen CDS-View für Fakturen? Zeig mir seine Kennzahlen und Merkmale.
+- Was bedeuten die Werte des Felds KOART in ACDOCA?
+- Welche Bestellungen älter als 30 Tage sind noch offen, je Lieferant?
+- Welche Materialien haben Bestand, aber seit 180 Tagen keine Warenbewegung, je Werk?

@@ -3,7 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 // Connector types whose baseUrl is an http(s) endpoint. DATABASE connectors
 // carry their own scheme (mysql://, mongodb://, sqlite:, …) and must not be
 // rewritten to https.
-export const HTTP_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP']);
+export const HTTP_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'ODATA']);
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 

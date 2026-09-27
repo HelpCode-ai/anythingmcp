@@ -1,0 +1,326 @@
+{
+  "slug": "sap-s4hana-odata",
+  "name": "SAP S/4HANA (OData)",
+  "description": "Read SAP S/4HANA on-premise and Private Cloud through its OData services: find services in SAP's catalog, read their fields with SAP's labels, query released APIs and analytical views for finance, sales and inventory figures. Basic auth or OAuth, SAP client aware.",
+  "region": "intl",
+  "category": "erp",
+  "icon": "sap-s4hana-odata",
+  "docsUrl": "https://api.sap.com/products/SAPS4HANA/apis/ODATA",
+  "instructions": "**What this connects to**: SAP S/4HANA on-premise or Private Cloud (also ECC and BW with SAP Gateway) through its OData services, the interface SAP publishes for integrations. SAP checks the technical user's authorizations on every call.\n\n**Start with `s4_guide`**, then `s4_list_services` to find a service, `s4_describe_service` / `s4_describe_entity` to read its fields with their SAP labels, and `s4_query` to read rows. The ready tools cover the most common released APIs.\n\n**Setup (SAP Basis, one-off)**\n1. Create a technical user of type *System* (not *Dialog*) in the client you want to read, with a productive password.\n2. Give it a role with `S_SERVICE` for the OData services the agent may use and read-only business authorizations (display only, activity 03). To let the agent browse the catalog, also allow `/IWFND/CATALOGSERVICE` (V2) and the V4 service catalog.\n3. Make sure the services are active (`/IWFND/MAINT_SERVICE` for V2, `/IWFND/V4_ADMIN` for V4).\n4. Fill in: `SAP_ODATA_BASE_URL`, the Gateway host with the HTTPS port, e.g. `https://s4.example.com:44300` (no path); `SAP_CLIENT`, the three-digit client; `SAP_LANGUAGE`, e.g. `EN`; `SAP_ODATA_USER` and `SAP_ODATA_PASSWORD`.\n\n**Network**: the Gateway port is usually internal. Self-host AnythingMCP inside the network (or connect it through a VPN) and add the host to `SSRF_ALLOWED_HOSTS`.\n\n**Restrict services**: list the service paths the agent may call under the connector's OData settings (Allowed services, `*` as wildcard). The authorizations of the SAP user remain the real boundary.\n\n**SAP API policy**: SAP's API policy expects third-party integrations to use published APIs (the API_* services) or services you built yourself; prefer those over internal UI services.",
+  "requiredEnvVars": [
+    "SAP_ODATA_BASE_URL",
+    "SAP_CLIENT",
+    "SAP_LANGUAGE",
+    "SAP_ODATA_USER",
+    "SAP_ODATA_PASSWORD"
+  ],
+  "connector": {
+    "name": "SAP S/4HANA (OData)",
+    "type": "ODATA",
+    "baseUrl": "{{SAP_ODATA_BASE_URL}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{SAP_ODATA_USER}}",
+      "password": "{{SAP_ODATA_PASSWORD}}"
+    },
+    "config": {
+      "odata": {
+        "sap": true,
+        "sapClient": "{{SAP_CLIENT}}",
+        "sapLanguage": "{{SAP_LANGUAGE}}",
+        "toolPrefix": "s4"
+      }
+    }
+  },
+  "probe": {
+    "tool": "s4_list_services"
+  },
+  "tools": [
+    {
+      "name": "s4_guide",
+      "description": "How to read SAP S/4HANA through OData: the workflow (overview), filter syntax, analytical services and KPIs, finance, sales, inventory and pitfalls. Costs nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "enum": [
+              "filters",
+              "analytics",
+              "finance",
+              "sales",
+              "inventory",
+              "pitfalls"
+            ],
+            "description": "Chapter to read. Omit for the overview."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "SAP S/4HANA through OData: how to work.\n\n1. s4_list_services with a business term (\"journal entry\", \"billing\", \"sales order\", \"stock\"). The catalog lists every service the technical user can see; API_* services are SAP's released APIs, C_*_CDS services are Fiori analytical and consumption views.\n2. s4_describe_service for its entity sets. Sets marked analytical aggregate on the server; sets with parameters are parameterised views.\n3. s4_describe_entity for fields, labels, the currency or unit field of each amount, and required filters.\n4. s4_query with filter, select and top. Always select the currency or unit field with an amount, and filter by company code, sales organization or plant and by a date or fiscal period.\n\nThe ready tools (s4_journal_entry_items, s4_billing_documents, s4_sales_orders, s4_business_partners, s4_material_stock, s4_products) cover the most common released APIs directly.\n\nFigures must come with their currency and period. When a KPI is company-specific (which G/L accounts are revenue, which document types count), say what you assumed.",
+        "staticResponses": {
+          "filters": "OData filter syntax (V2, which most SAP S/4HANA APIs use)\n\n- Comparison: eq, ne, gt, ge, lt, le. Logic: and, or, not. Grouping with parentheses.\n- Strings in single quotes: CompanyCode eq '1000'. A quote inside a value is doubled: Name eq 'O''Brien'.\n- Dates: PostingDate ge datetime'2026-01-01T00:00:00' and PostingDate le datetime'2026-03-31T00:00:00'. V4 services take plain dates: PostingDate ge 2026-01-01.\n- Text search: substringof('Paper', CustomerName) eq true (V2), contains(CustomerName,'Paper') (V4), startswith(Material,'FG').\n- Keys keep SAP's leading zeros: Customer eq '0000012345', unless the service converts them (check a sample row).\n- Fiscal year and period are strings: FiscalYear eq '2026' and FiscalPeriod eq '003'.\n- Several values: (CompanyCode eq '1000' or CompanyCode eq '2000').\n- Order: orderby \"PostingDate desc\". Paging: top and skip (use nextSkip from the previous answer).",
+          "analytics": "Analytical services and KPIs\n\n- Many Fiori analytical apps are backed by C_*_CDS services whose result sets are analytical (describe_service shows analytical: true). There, select only the dimensions to group by plus the measures: select \"CompanyCode,FiscalPeriod,AmountInCompanyCodeCurrency,CompanyCodeCurrency\" returns one aggregated row per company code and period. Adding a dimension adds a grouping level; leaving one out sums over it.\n- Parameterised views: the set holds the parameters (describe_entity lists them) and rows are read through a navigation property. Pass them with parameters, e.g. {\"P_ExchangeRateType\": \"M\", \"P_DisplayCurrency\": \"EUR\"}.\n- Some sets require filters on certain fields (requiredInFilter): the server rejects a query without them.\n- Measures come in a currency or unit; never add rows with different currencies.\n- For finance KPIs, search the catalog for \"trial balance\", \"revenue\", \"days sales outstanding\", \"journal entry\"; for sales, \"sales volume\", \"billing\", \"incoming sales orders\"; for inventory, \"stock\", \"inventory\".",
+          "finance": "Finance (FI/CO) through OData\n\n- Journal entry items (API_JOURNALENTRYITEMBASIC_SRV, A_JournalEntryItemBasic): CompanyCode, FiscalYear, AccountingDocument, LedgerGLLineItem, GLAccount, PostingDate, AmountInCompanyCodeCurrency with CompanyCodeCurrency, DebitCreditCode (S debit, H credit), Customer, Supplier, CostCenter, ProfitCenter. Amounts are signed like the ledger: credits negative, so revenue sums negative.\n- Filter by CompanyCode and a PostingDate range or FiscalYear/FiscalPeriod, and by Ledger '0L' where the service offers it.\n- Open items and days sales outstanding: search the catalog for \"operational journal entry item\", \"overdue\", \"days sales outstanding\".\n- Trial balance and P&L style figures: search for \"trial balance\" and \"revenue and expenses\"; these are usually analytical and parameterised.\n- Which G/L accounts count as revenue or cost of sales is company-specific: confirm the ranges before presenting a margin.",
+          "sales": "Sales through OData\n\n- Sales orders (API_SALES_ORDER_SRV): A_SalesOrder (SalesOrder, SalesOrderType, SalesOrganization, SoldToParty, CreationDate, TotalNetAmount with TransactionCurrency, OverallSDProcessStatus), items in A_SalesOrderItem.\n- Billing documents (API_BILLING_DOCUMENT_SRV): A_BillingDocument (BillingDocument, BillingDocumentType, BillingDocumentDate, SalesOrganization, SoldToParty, TotalNetAmount, TransactionCurrency, BillingDocumentIsCancelled), items in A_BillingDocumentItem. For net sales exclude cancelled documents and treat credit memos as negative (check BillingDocumentCategory / type values on a sample).\n- Customers and suppliers: API_BUSINESS_PARTNER (A_BusinessPartner, A_Customer, A_Supplier).\n- Analytical views: search the catalog for \"sales volume\", \"incoming sales orders\", \"billing\".",
+          "inventory": "Inventory and products through OData\n\n- Stock: API_MATERIAL_STOCK_SRV, A_MatlStkInAcctMod: Material, Plant, StorageLocation, Batch, InventoryStockType, MatlWrhsStkQtyInMatlBaseUnit with MaterialBaseUnit. Filter by Plant (and Material); sum the quantity per material and plant.\n- Products: API_PRODUCT_SRV, A_Product (Product, ProductType, ProductGroup, BaseUnit) with descriptions in A_ProductDescription and plant data in A_ProductPlant.\n- Goods movements and inventory value: search the catalog for \"material document\", \"inventory\", \"stock value\".",
+          "pitfalls": "Pitfalls\n\n- 403 Forbidden on a service: the technical user lacks the authorization for it (S_SERVICE or the business role). 404: the service is not active in this system. Say so rather than guessing data.\n- The SAP client and language are sent with every call; if rows look like demo data, the client is wrong.\n- Keep amounts with their currency and quantities with their unit.\n- Results are capped at 1000 rows per query: aggregate on analytical sets or filter narrower instead of paging through everything.\n- Dates come back as ISO strings in UTC; a posting date is a day, ignore the time part.\n- Decimals come back as strings to keep them exact."
+        }
+      }
+    },
+    {
+      "name": "s4_journal_entry_items",
+      "description": "Journal entry line items from the general ledger (API_JOURNALENTRYITEMBASIC_SRV / A_JournalEntryItemBasic): company code, fiscal year, G/L account, posting date, amount in company code currency, debit/credit, customer, supplier, cost and profit center. Filter by CompanyCode and a PostingDate range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. CompanyCode eq '1000' and PostingDate ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. PostingDate desc."
+          },
+          "top": {
+            "type": "number",
+            "default": 100,
+            "description": "Rows to return (default 100)."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/opu/odata/sap/API_JOURNALENTRYITEMBASIC_SRV/A_JournalEntryItemBasic",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "s4_billing_documents",
+      "description": "Billing documents (API_BILLING_DOCUMENT_SRV / A_BillingDocument): invoices, credit memos and cancellations with date, sales organization, sold-to party, net amount and currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. CompanyCode eq '1000' and PostingDate ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. PostingDate desc."
+          },
+          "top": {
+            "type": "number",
+            "default": 100,
+            "description": "Rows to return (default 100)."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/opu/odata/sap/API_BILLING_DOCUMENT_SRV/A_BillingDocument",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "s4_sales_orders",
+      "description": "Sales orders (API_SALES_ORDER_SRV / A_SalesOrder) with type, sales organization, sold-to party, creation date, net amount, currency and processing status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. CompanyCode eq '1000' and PostingDate ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. PostingDate desc."
+          },
+          "top": {
+            "type": "number",
+            "default": 100,
+            "description": "Rows to return (default 100)."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/opu/odata/sap/API_SALES_ORDER_SRV/A_SalesOrder",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "s4_business_partners",
+      "description": "Business partners (API_BUSINESS_PARTNER / A_BusinessPartner): customers, suppliers and contacts with name, category and grouping.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. CompanyCode eq '1000' and PostingDate ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. PostingDate desc."
+          },
+          "top": {
+            "type": "number",
+            "default": 100,
+            "description": "Rows to return (default 100)."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/opu/odata/sap/API_BUSINESS_PARTNER/A_BusinessPartner",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "s4_material_stock",
+      "description": "Material stock (API_MATERIAL_STOCK_SRV / A_MatlStkInAcctMod) per material, plant, storage location, batch and stock type, in the material's base unit. Filter by Plant.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. CompanyCode eq '1000' and PostingDate ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. PostingDate desc."
+          },
+          "top": {
+            "type": "number",
+            "default": 100,
+            "description": "Rows to return (default 100)."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/opu/odata/sap/API_MATERIAL_STOCK_SRV/A_MatlStkInAcctMod",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    },
+    {
+      "name": "s4_products",
+      "description": "Products (API_PRODUCT_SRV / A_Product) with type, group and base unit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter, e.g. CompanyCode eq '1000' and PostingDate ge datetime'2026-01-01T00:00:00'."
+          },
+          "select": {
+            "type": "string",
+            "description": "Comma-separated fields to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby, e.g. PostingDate desc."
+          },
+          "top": {
+            "type": "number",
+            "default": 100,
+            "description": "Rows to return (default 100)."
+          },
+          "skip": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sap/opu/odata/sap/API_PRODUCT_SRV/A_Product",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "$inlinecount": "allpages"
+        }
+      }
+    }
+  ]
+}

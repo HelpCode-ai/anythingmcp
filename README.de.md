@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 259 Connectors, 21 davon ohne API-Schlüssel." width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 263 Connectors, 21 davon ohne API-Schlüssel." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Mach aus jeder REST-/OpenAPI-, SOAP-, GraphQL- oder SQL-API MCP-Tools für Claude, ChatGPT und Copilot.</strong><br/>
-  Selbst gehosteter MCP-Server und MCP-Gateway, ohne Code. 259 fertige Adapter, auch für ERP und E-Commerce: SAP Business One, Xentral, weclapp, Shopware, WooCommerce, Amazon Seller, Kaufland und viele mehr.
+  Selbst gehosteter MCP-Server und MCP-Gateway, ohne Code. 263 fertige Adapter, auch für ERP und E-Commerce: SAP Business One, Xentral, weclapp, Shopware, WooCommerce, Amazon Seller, Kaufland und viele mehr.
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 Drei Begriffe tauchen immer wieder auf und bezeichnen unterschiedliche Dinge:
 
-- Ein **Adapter** ist eine der 259 JSON-Definitionen in diesem Repository — SAP Business One, Odoo, weclapp, Xentral, Shopware, WooCommerce, Amazon Seller, DHL und viele weitere. 21 davon benötigen überhaupt keinen API-Schlüssel; bei den anderen gibst du deine Zugangsdaten beim Import an.
+- Ein **Adapter** ist eine der 263 JSON-Definitionen in diesem Repository — SAP Business One, Odoo, weclapp, Xentral, Shopware, WooCommerce, Amazon Seller, DHL und viele weitere. 21 davon benötigen überhaupt keinen API-Schlüssel; bei den anderen gibst du deine Zugangsdaten beim Import an.
 - Ein **Connector** entsteht, wenn du einen Adapter oder deine eigene OpenAPI-Spezifikation, Postman-Collection, WSDL, einen GraphQL-Endpunkt oder eine Datenbank in deinem Workspace konfigurierst. In wenigen Minuten lässt sich so eine Verbindung einrichten, ohne einen MCP-Server zu programmieren.
 - Ein **MCP-Server** ist die URL, die du Claude übergibst. Er stellt ausschließlich die Connectors bereit, die du ihm zuweist.
 
@@ -115,7 +115,7 @@ Gib AnythingMCP eine WSDL, und jede SOAP-Operation wird zu einem Tool: Envelopes
 
 ### SQL-Datenbank zu MCP
 
-PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite und MongoDB. Der Connector erzeugt Tools für Schema, Beispiele und Abfragen; du entscheidest, ob das Modell selbst SQL schreibt oder nur die Parameter von Abfragen ausfüllt, die du vorgegeben hast. Die Abfrage-Tools sind standardmäßig schreibgeschützt: AnythingMCP führt ein einzelnes SELECT aus und blockiert Schreibzugriffe und verkettete Statements. Gib ihm zusätzlich einen Datenbankbenutzer mit reinem Lesezugriff und eine Rolle, die nur die Tools sieht, die sie wirklich braucht. [Dokumentation zum Datenbank-Connector](docs/connectors/database.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp) · [5-Minuten-Demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
+PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SAP HANA, SQLite und MongoDB. Der Connector erzeugt Tools für Schema, Beispiele und Abfragen; du entscheidest, ob das Modell selbst SQL schreibt oder nur die Parameter von Abfragen ausfüllt, die du vorgegeben hast. Die Abfrage-Tools sind standardmäßig schreibgeschützt: AnythingMCP führt ein einzelnes SELECT aus und blockiert Schreibzugriffe und verkettete Statements. Gib ihm zusätzlich einen Datenbankbenutzer mit reinem Lesezugriff und eine Rolle, die nur die Tools sieht, die sie wirklich braucht. [Dokumentation zum Datenbank-Connector](docs/connectors/database.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp) · [5-Minuten-Demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -196,7 +196,7 @@ Shops und Marktplätze, von Amazon und eBay bis zu den Marktplätzen im DACH-Rau
 
 ### Verbinden
 
-- **5 Connector-Typen** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Datenbank](docs/connectors/database.md), [MCP-zu-MCP-Brücke](docs/connectors/mcp-bridge.md). Sieben Datenbank-Engines: PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite.
+- **6 Connector-Typen** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [OData](docs/connectors/odata.md) (inklusive SAP Gateway), [Datenbank](docs/connectors/database.md), [MCP-zu-MCP-Brücke](docs/connectors/mcp-bridge.md). Acht Datenbank-Engines: PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, SQLite.
 - **Vorhandenes importieren** — OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL-Introspection oder die Tool-Erkennung direkt an einem laufenden MCP-Server.
 - **Der Adapterkatalog** — [was bereits enthalten ist](#the-adapter-catalog).
 - **Visueller Tool-Editor** — ordne Parameter dem Pfad, Query-Parametern, Request-Body und Headern zu. Benenne und beschreibe Tools so, dass die KI sie wie beabsichtigt versteht.
@@ -334,7 +334,7 @@ KI-Clients sprechen MCP, deine Systeme dagegen REST, SOAP, GraphQL und SQL. Eine
 
 ## Der Adapterkatalog
 
-259 Adapter mit mehr als 2.400 Tools. **21 benötigen keinen API-Schlüssel**. Bei den übrigen gibst du deine Zugangsdaten beim Import an; danach stehen die Tools sofort bereit. Für jeden Adapter gibt es auf [anythingmcp.com/guides](https://anythingmcp.com/guides) eine Einrichtungsanleitung in sieben Sprachen.
+263 Adapter mit mehr als 2.400 Tools. **21 benötigen keinen API-Schlüssel**. Bei den übrigen gibst du deine Zugangsdaten beim Import an; danach stehen die Tools sofort bereit. Für jeden Adapter gibt es auf [anythingmcp.com/guides](https://anythingmcp.com/guides) eine Einrichtungsanleitung in sieben Sprachen.
 
 | Kategorie | Beispiele |
 |---|---|
@@ -347,6 +347,8 @@ KI-Clients sprechen MCP, deine Systeme dagegen REST, SOAP, GraphQL und SQL. Eine
 | 💬 Messaging &amp; Kommunikation | WhatsApp, LINE 🇯🇵, TeamViewer |
 | 🎾 Sport &amp; Web3 | Playtomic, Sorare |
 | 🏗️ Bauwesen &amp; Karten | PlanRadar, HERE Geocoding |
+| 📈 Werbung &amp; Analytics | Google Ads, Google Analytics 4, Google Search Console, Matomo |
+| 🧠 KI-Entscheidungsmodelle | Jev von TypeSafe: Ja/Nein, Klassifizierung und Bewertung mit Wahrscheinlichkeiten, in rund 300 ms |
 
 **Ein Adapter besteht aus einer einzigen JSON-Datei.** Deshalb konnte der Katalog so groß werden, und deshalb eignet sich ein neuer Adapter gut als erster Beitrag. Fehlt deiner? [Schlage ihn vor](https://github.com/HelpCode-ai/anythingmcp/issues/new?template=adapter_request.yml) — wir priorisieren nach 👍 — oder [erstelle ihn selbst](CONTRIBUTING.md).
 

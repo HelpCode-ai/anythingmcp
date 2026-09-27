@@ -1,0 +1,722 @@
+{
+  "slug": "google-ads",
+  "name": "Google Ads",
+  "description": "Google Ads for AI agents: campaign, ad group, ad and keyword performance, search terms, Quality Score, budget pacing and impression share, conversion actions, change history, recommendations, manager (MCC) accounts and any GAQL query. 17 read-only tools, OAuth2.",
+  "instructions": "This connector reads the **Google Ads API** (`googleads.googleapis.com`, v25) with Google Ads Query Language (GAQL): accounts and manager (MCC) hierarchies, campaigns, ad groups, ads, keywords, search terms, budgets and impression share, conversion actions, change history and recommendations. 17 tools, all read-only.\n\n**Start with `gads_playbook`.** It costs no API call and maps common questions (account health, wasted spend, negative keywords, Quality Score, budget pacing, period comparison, tracking audit, Performance Max, MCC roll-ups) to the right tools and tested GAQL queries.\n\n**Setup (one-time, about 15 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Ads API**.\n2. Open the **Google Ads API** page of that project and check its **access level**. Since 9 September 2026 access is granted to the Cloud project: no developer token and no manager account are needed. A new project starts at **Test** access, which only reaches test accounts (production accounts answer `CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION`). Request **Explorer** access (production accounts, 2,880 operations a day, often approved automatically) or **Basic** access (15,000 a day, needs brand verification of the project).\n3. **APIs & Services → OAuth consent screen**: **Internal** on Google Workspace, otherwise **External** with publishing status **In production**. While an app is in *Testing*, Google revokes its refresh tokens after 7 days.\n4. **Credentials → Create credentials → OAuth client ID** → **Web application** → authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n5. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. If you reach client accounts **through a manager account**, also set `GOOGLE_ADS_LOGIN_CUSTOMER_ID` to the manager's 10-digit id; leave it empty for accounts you were invited to directly.\n6. On the connector page click **Authorize with Provider** and sign in with a Google user that has access to the Google Ads accounts. The refresh token is stored encrypted.\n\n**Permissions**: Google Ads has a single OAuth scope (`adwords`) and it is not read-only, but this connector only exposes read tools. What the agent can see is what the signing-in user can see; a Google Ads user with the *Read only* role is the safest choice.\n\n**Accounts (`customer_id`)**\n- Always 10 digits without dashes. `gads_list_accessible_customers` lists accounts the user can open directly; `gads_list_client_accounts` on a manager id lists the accounts below it.\n- A manager account holds no campaigns: querying campaigns on a manager id returns nothing or an error. Query its client accounts.\n- `USER_PERMISSION_DENIED` on a client account usually means `GOOGLE_ADS_LOGIN_CUSTOMER_ID` is missing or is not a manager above that account.\n\n**Reading the numbers**\n- Money is in **micros** of the account currency: `cost_micros` 12500000 = 12.50. Divide by 1,000,000 and name the currency from `gads_get_customer`. `average_cpc` and `cost_per_conversion` are micros too.\n- 64-bit numbers (ids, `impressions`, `clicks`, `cost_micros`) arrive as JSON strings. `ctr` and impression shares are fractions (0.034 = 3.4%).\n- Dates are `YYYY-MM-DD` in the **account's time zone**. Report tools need `start_date` and `end_date`; compute them from today. Today's data is partial and conversions keep arriving for days after a click, so the last 2-3 days understate conversions.\n- Report tools can return campaigns, ad groups or ads with zero metrics (paused, or idle in the range); they sort last, so skip them when summarising. Keyword and search-term reports only return rows with impressions. Results are capped by `limit`; if you get exactly `limit` rows, there are probably more.\n\n**GAQL (`gads_run_gaql`)**: `SELECT fields FROM resource WHERE … ORDER BY … LIMIT n`. Conditions combine with `AND` only (no `OR`; use `IN`). `LIKE` is case-sensitive; `REGEXP_MATCH` takes RE2 (`'(?i)brand'`). Relative ranges: `segments.date DURING LAST_30_DAYS` (also `LAST_7_DAYS`, `LAST_14_DAYS`, `LAST_MONTH`, `THIS_MONTH`, `YESTERDAY`, `TODAY`). A field used in `WHERE` on `segments.*` other than date must also be selected. Not every field combines with every resource: when the API says a field is incompatible, check it with `gads_query_field_catalog`.\n\n**Errors**: `CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION` = the Cloud project still has Test access (step 2). `RESOURCE_EXHAUSTED` = daily or per-minute quota of the Cloud project, which every connector sharing that project draws from. `UNRECOGNIZED_FIELD` / `PROHIBITED_*` = a GAQL field name or combination problem. `CUSTOMER_NOT_ENABLED` = the account is cancelled or not yet set up. 401 = authorize again from the connector page.",
+  "region": "intl",
+  "category": "advertising",
+  "icon": "google-ads",
+  "docsUrl": "https://developers.google.com/google-ads/api/docs/start",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "GOOGLE_ADS_LOGIN_CUSTOMER_ID"
+  ],
+  "connector": {
+    "name": "Google Ads",
+    "type": "REST",
+    "baseUrl": "https://googleads.googleapis.com/v25",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/adwords"
+    },
+    "healthcheckPath": "/customers:listAccessibleCustomers"
+  },
+  "tools": [
+    {
+      "name": "gads_playbook",
+      "description": "START HERE for any Google Ads question: returns, with NO API call, a router from common questions (account health, wasted spend, search-term mining, Quality Score, budget pacing, period comparison, conversion tracking audit, change history, Performance Max, MCC roll-ups) to the tools and ready-to-run GAQL queries to use.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "/",
+        "staticResponse": "GOOGLE ADS PLAYBOOK. Find the request in the ROUTER, then run the steps in order.\nGround rules: (1) gads_list_accessible_customers first; on a manager account, gads_list_client_accounts. customer_id is 10 digits, no dashes. (2) gads_get_customer once per account for currency and time zone. (3) Money is micros: divide by 1,000,000. (4) Default window = last 30 full days ending yesterday; say which dates you used. The last 2-3 days understate conversions. (5) Every number you report must come from a tool response. (6) Each call costs quota of the Cloud project: prefer one aimed query over many.\n\nROUTER\n- How is the account doing / overview -> [OVERVIEW]\n- Compare periods, month over month, year over year -> [COMPARE]\n- Why did performance drop / what changed -> [DROP]\n- Wasted spend, what is not converting -> [WASTE]\n- Negative keyword ideas, search term mining -> [NEGATIVES]\n- New keyword ideas from real searches -> [NEW-KEYWORDS]\n- Quality Score problems -> [QS]\n- Are we limited by budget? pacing -> [BUDGET]\n- Ads, creatives, disapprovals, ad strength -> [ADS]\n- Is conversion tracking working? -> [TRACKING]\n- Device, location, hour of day, day of week -> [SEGMENTS]\n- Landing pages -> [LANDING]\n- Performance Max -> [PMAX]\n- Sitelinks, callouts and other assets -> [ASSETS]\n- Remarketing / audience lists -> [AUDIENCES]\n- Several accounts under a manager (MCC) -> [MCC]\n- Account budget, billing -> [BILLING]\n- Anything else -> gads_query_field_catalog to find fields, then gads_run_gaql\n\n[OVERVIEW] 1) gads_get_customer. 2) gads_account_daily_metrics for the window: totals and trend. 3) gads_campaign_performance: top campaigns by cost with CPA (cost/conversions) and ROAS (conversions_value/cost). 4) gads_budget_pacing for campaigns limited by budget or rank. 5) gads_list_campaigns and look at primary_status_reasons of anything not ELIGIBLE. Summarise spend, conversions, CPA/ROAS, trend, top 3 issues.\n\n[COMPARE] Run the SAME tool with the same filters for period A and period B of equal length (year over year: shift by 364 days so weekdays line up). Join rows by id yourself; report absolute and % change of cost, clicks, conversions, CPA, ROAS. Flag rows present in only one period.\n\n[DROP] 1) gads_account_daily_metrics over both periods to find the day it started. 2) gads_change_history around that day (last 30 days only): budget, bid strategy, status, keyword or ad changes. 3) [COMPARE] with gads_campaign_performance to find the campaigns that moved. 4) For those, gads_budget_pacing: lost IS (budget) up = budget cap; lost IS (rank) up = bids or Quality Score or competition. 5) [SEGMENTS] by device to see if one segment explains it. 6) [TRACKING] if clicks held but conversions fell.\n\n[WASTE] 1) gads_search_terms (limit 1000+): terms with cost and conversions = 0, sorted by cost. 2) gads_keyword_performance: keywords with cost above 2-3x the account CPA and no conversions. 3) gads_ad_group_performance: ad groups with spend and no conversions. Total the wasted cost; propose negatives [NEGATIVES], pausing or bid cuts. Do not claim anything was changed: this connector is read-only.\n\n[NEGATIVES] 1) gads_search_terms, last 30-90 days, limit 2000. 2) Candidates: status NONE (not added, not excluded), clicks >= 3 or cost >= the account's average CPC x 5, conversions = 0, and clearly irrelevant intent (free, jobs, DIY, competitor, wrong product). Group by recurring words (n-grams), not only full terms. 3) Existing negatives, to avoid duplicates: gads_run_gaql \"SELECT campaign.name, campaign_criterion.keyword.text, campaign_criterion.keyword.match_type FROM campaign_criterion WHERE campaign_criterion.negative = TRUE AND campaign_criterion.type = 'KEYWORD' LIMIT 5000\" and \"SELECT shared_set.name, shared_criterion.keyword.text, shared_criterion.keyword.match_type FROM shared_criterion WHERE shared_set.type = 'NEGATIVE_KEYWORDS' LIMIT 5000\". Suggest match type (phrase for word stems, exact for single terms) and level (ad group, campaign or shared list).\n\n[NEW-KEYWORDS] gads_search_terms: status NONE with conversions > 0, or CTR well above the ad group's. Check they are not already keywords (gads_keyword_performance). Suggest the ad group and match type.\n\n[QS] gads_keyword_performance (limit 1000). Keywords with quality_score <= 5 and meaningful cost first. The three components: search_predicted_ctr (expected CTR -> ad copy, keyword too broad), creative_quality_score (ad relevance -> keyword not in the ads, ad group too wide), post_click_quality_score (landing page experience -> [LANDING]). BELOW_AVERAGE is the one to fix. Quality score is empty for keywords with too little traffic.\n\n[BUDGET] gads_budget_pacing for the window. search_budget_lost_impression_share > 0.1 on a campaign with good CPA/ROAS = raise the budget; > 0.1 on a poor one = tighten targeting instead. search_rank_lost_impression_share high = bids, Quality Score or ad rank. Daily budget x days in the window vs cost shows under- or over-delivery (Google may spend up to 2x the daily budget on a day, not over a month). Shared budgets (explicitly_shared) cover several campaigns.\n\n[ADS] gads_ad_performance: approval_status DISAPPROVED or APPROVED_LIMITED first; ad_strength POOR or AVERAGE; ad groups with only one enabled ad. Compare CTR and conversion rate of ads within the same ad group only. Headlines and descriptions are in responsive_search_ad.\n\n[TRACKING] 1) gads_conversion_actions: which actions are primary_for_goal (these feed the conversions column and bidding), counting_type (ONE_PER_CLICK for leads, MANY_PER_CLICK for sales), status. 2) Volume per action: gads_run_gaql \"SELECT segments.conversion_action_name, metrics.all_conversions, metrics.all_conversions_value FROM customer WHERE segments.date DURING LAST_30_DAYS\". A primary action with 0 in 30 days, or several primary actions counting the same thing (double counting) are the usual problems. 3) gads_get_customer: auto_tagging_enabled should be true when GA4 is linked. 4) Sudden drop of conversions with stable clicks = tag broken; check gads_change_history and the website.\n\n[SEGMENTS] gads_run_gaql, one segment at a time:\n- Device: \"SELECT segments.device, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date DURING LAST_30_DAYS\"\n- Hour and weekday: \"SELECT segments.day_of_week, segments.hour, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS\"\n- Location: \"SELECT geographic_view.country_criterion_id, geographic_view.location_type, metrics.clicks, metrics.cost_micros, metrics.conversions FROM geographic_view WHERE segments.date DURING LAST_30_DAYS ORDER BY metrics.cost_micros DESC LIMIT 50\", then names: \"SELECT geo_target_constant.id, geo_target_constant.canonical_name FROM geo_target_constant WHERE geo_target_constant.id IN (2380, 2276)\". location_type tells physical presence from area of interest. Spend in countries the campaign does not target usually means the location option is \"presence or interest\": check campaign.geo_target_type_setting.positive_geo_target_type.\nSum by segment yourself (rows are per campaign).\n\n[LANDING] gads_run_gaql \"SELECT landing_page_view.unexpanded_final_url, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.mobile_friendly_clicks_percentage, metrics.speed_score FROM landing_page_view WHERE segments.date DURING LAST_30_DAYS ORDER BY metrics.clicks DESC LIMIT 50\". Low conversion rate or speed_score on high-click pages = landing page work.\n\n[PMAX] 1) gads_campaign_performance with campaign_name matching the Performance Max campaigns (advertising_channel_type PERFORMANCE_MAX). 2) Asset groups: gads_run_gaql \"SELECT campaign.name, asset_group.id, asset_group.name, asset_group.status, asset_group.ad_strength, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM asset_group WHERE segments.date DURING LAST_30_DAYS ORDER BY metrics.cost_micros DESC\". 3) Search categories of one campaign: \"SELECT campaign_search_term_insight.category_label, metrics.impressions, metrics.clicks, metrics.conversions FROM campaign_search_term_insight WHERE segments.date DURING LAST_30_DAYS AND campaign_search_term_insight.campaign_id = '<campaign id>' ORDER BY metrics.impressions DESC LIMIT 100\". An empty category_label is traffic Google did not categorise. Performance Max hides most placement and search term detail by design; say so.\n\n[ASSETS] gads_run_gaql \"SELECT campaign.name, campaign_asset.field_type, campaign_asset.status, asset.id, asset.type, asset.name, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.final_urls FROM campaign_asset WHERE campaign_asset.status != 'REMOVED' LIMIT 1000\". Account-level assets: same fields FROM customer_asset. Search campaigns without sitelinks or callouts are a quick win.\n\n[AUDIENCES] Lists: gads_run_gaql \"SELECT user_list.id, user_list.name, user_list.type, user_list.membership_status, user_list.size_for_search, user_list.size_for_display FROM user_list LIMIT 500\" (lists under 1,000 users do not serve on Search). Performance by audience: \"SELECT campaign.name, ad_group_criterion.display_name, ad_group_criterion.bid_modifier, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM ad_group_audience_view WHERE segments.date DURING LAST_30_DAYS ORDER BY metrics.cost_micros DESC LIMIT 200\".\n\n[MCC] 1) gads_list_client_accounts with the manager id (GOOGLE_ADS_LOGIN_CUSTOMER_ID should be that manager). 2) Skip managers (manager = true) and non-ENABLED accounts. 3) For each client, gads_campaign_performance or gads_account_daily_metrics; convert currencies before adding them up, and name the currency of every figure. Mind the quota: one call per account per report.\n\n[BILLING] gads_run_gaql \"SELECT account_budget.name, account_budget.status, account_budget.approved_spending_limit_micros, account_budget.approved_end_date_time, account_budget.amount_served_micros FROM account_budget\" and \"SELECT billing_setup.id, billing_setup.status, billing_setup.payments_account_info.payments_account_name FROM billing_setup\". Invoices are not in the API for most accounts."
+      }
+    },
+    {
+      "name": "gads_list_accessible_customers",
+      "description": "List the Google Ads accounts the authorised Google user can access directly, as resource names ('customers/1234567890'). Call this first. Accounts reachable only through a manager (MCC) account are not listed here: use gads_list_client_accounts on the manager.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers:listAccessibleCustomers"
+      }
+    },
+    {
+      "name": "gads_get_customer",
+      "description": "Read one Google Ads account's settings: name, currency, time zone (all dates in reports are in this zone), whether it is a manager (MCC) or test account, auto-tagging, status and optimization score. Cheap; use it to learn the currency before reporting money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone, customer.manager, customer.test_account, customer.auto_tagging_enabled, customer.status, customer.optimization_score FROM customer"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_list_client_accounts",
+      "description": "List the accounts under a manager (MCC) account: id, name, depth in the hierarchy, whether each is itself a manager, currency, time zone and status. Pass the MANAGER's id as customer_id. Level 0 is the manager itself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "max_level": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 1,
+            "description": "How deep to go: 1 = direct children (default), higher values include sub-managers' clients."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 1000,
+            "description": "Maximum rows, 1-10000. Default 1000."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT customer_client.id, customer_client.descriptive_name, customer_client.level, customer_client.manager, customer_client.currency_code, customer_client.time_zone, customer_client.status, customer_client.test_account, customer_client.hidden FROM customer_client WHERE customer_client.level <= ${max_level} ORDER BY customer_client.level, customer_client.descriptive_name LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_run_gaql",
+      "description": "Run any read-only Google Ads Query Language (GAQL) query against one account: every resource, attribute, segment and metric of the Google Ads API. Use it when no dedicated tool fits, or to filter, segment or sort differently. Returns up to 10,000 rows per page; if nextPageToken is present, call again with page_token to get the next page. See gads_playbook for tested queries and gads_query_field_catalog to look up field names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "query": {
+            "type": "string",
+            "description": "A GAQL query, e.g. \"SELECT campaign.name, metrics.clicks FROM campaign WHERE segments.date DURING LAST_30_DAYS ORDER BY metrics.clicks DESC LIMIT 20\". No FROM-less queries, no OR (use IN), no joins; money fields are in micros."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page of the same query."
+          }
+        },
+        "required": [
+          "customer_id",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "$query",
+          "pageToken": "$page_token"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_query_field_catalog",
+      "description": "Look up Google Ads API field metadata (names, category RESOURCE/ATTRIBUTE/SEGMENT/METRIC, data type, enum values, whether selectable, filterable, sortable). Use it before writing GAQL for an unfamiliar report, or to find valid enum values. No account needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A field-catalog query (no FROM clause). Examples: \"SELECT name, category, data_type, enum_values WHERE name LIKE 'campaign.%'\"; \"SELECT name, selectable_with WHERE name = 'search_term_view'\" (which fields combine with a resource); \"SELECT name WHERE category = 'METRIC' AND name LIKE 'metrics.search%'\"."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/googleAdsFields:search",
+        "bodyMapping": {
+          "query": "$query"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_account_daily_metrics",
+      "description": "Account-level totals per day for a date range: impressions, clicks, cost, conversions, conversion value. Use it for trends, period comparisons and spotting the day something changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD, in the account's time zone (see gads_get_customer)."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD, inclusive, in the account's time zone."
+          }
+        },
+        "required": [
+          "customer_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM customer WHERE segments.date BETWEEN '${start_date}' AND '${end_date}' ORDER BY segments.date"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_list_campaigns",
+      "description": "List the account's campaigns (removed ones excluded) with status, serving status, primary status and its reasons (why a campaign is limited or not serving), channel, bidding strategy and daily budget. Structure only, no metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "campaign_name": {
+            "type": "string",
+            "default": "%",
+            "description": "Only campaigns whose name matches this GAQL LIKE pattern (case-sensitive, % = any characters, _ = one character). Default '%' = every campaign. Examples: 'Brand%', '%Search%'. Replace an apostrophe in a name with _ ('Men_s%'). For case-insensitive or regex matching use gads_run_gaql with REGEXP_MATCH."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Maximum rows, 1-10000. Default 500."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT campaign.id, campaign.name, campaign.status, campaign.serving_status, campaign.primary_status, campaign.primary_status_reasons, campaign.advertising_channel_type, campaign.advertising_channel_sub_type, campaign.bidding_strategy_type, campaign_budget.amount_micros FROM campaign WHERE campaign.status != 'REMOVED' AND campaign.name LIKE '${campaign_name}' ORDER BY campaign.name LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_campaign_performance",
+      "description": "Campaign performance totals for a date range, one row per campaign, sorted by cost: impressions, clicks, CTR, average CPC, cost, conversions, conversion value, cost per conversion. Paused or idle campaigns can appear with zero metrics; they sort last.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD, in the account's time zone (see gads_get_customer)."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD, inclusive, in the account's time zone."
+          },
+          "campaign_name": {
+            "type": "string",
+            "default": "%",
+            "description": "Only campaigns whose name matches this GAQL LIKE pattern (case-sensitive, % = any characters, _ = one character). Default '%' = every campaign. Examples: 'Brand%', '%Search%'. Replace an apostrophe in a name with _ ('Men_s%'). For case-insensitive or regex matching use gads_run_gaql with REGEXP_MATCH."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 200,
+            "description": "Maximum rows, 1-10000. Default 200."
+          }
+        },
+        "required": [
+          "customer_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.bidding_strategy_type, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.cost_per_conversion FROM campaign WHERE segments.date BETWEEN '${start_date}' AND '${end_date}' AND campaign.name LIKE '${campaign_name}' ORDER BY metrics.cost_micros DESC LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_ad_group_performance",
+      "description": "Ad group performance totals for a date range, one row per ad group with its campaign, sorted by cost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD, in the account's time zone (see gads_get_customer)."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD, inclusive, in the account's time zone."
+          },
+          "campaign_name": {
+            "type": "string",
+            "default": "%",
+            "description": "Only campaigns whose name matches this GAQL LIKE pattern (case-sensitive, % = any characters, _ = one character). Default '%' = every campaign. Examples: 'Brand%', '%Search%'. Replace an apostrophe in a name with _ ('Men_s%'). For case-insensitive or regex matching use gads_run_gaql with REGEXP_MATCH."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 200,
+            "description": "Maximum rows, 1-10000. Default 200."
+          }
+        },
+        "required": [
+          "customer_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT campaign.name, ad_group.id, ad_group.name, ad_group.status, ad_group.type, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.cost_per_conversion FROM ad_group WHERE segments.date BETWEEN '${start_date}' AND '${end_date}' AND campaign.name LIKE '${campaign_name}' ORDER BY metrics.cost_micros DESC LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_ad_performance",
+      "description": "Ad performance for a date range with the ad itself: type, final URLs, responsive search ad headlines and descriptions, ad strength and policy approval status. Sorted by cost. Use it for creative reviews and disapproval checks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD, in the account's time zone (see gads_get_customer)."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD, inclusive, in the account's time zone."
+          },
+          "campaign_name": {
+            "type": "string",
+            "default": "%",
+            "description": "Only campaigns whose name matches this GAQL LIKE pattern (case-sensitive, % = any characters, _ = one character). Default '%' = every campaign. Examples: 'Brand%', '%Search%'. Replace an apostrophe in a name with _ ('Men_s%'). For case-insensitive or regex matching use gads_run_gaql with REGEXP_MATCH."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 100,
+            "description": "Maximum rows, 1-10000. Default 100."
+          }
+        },
+        "required": [
+          "customer_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT campaign.name, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad.type, ad_group_ad.ad.final_urls, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.status, ad_group_ad.ad_strength, ad_group_ad.policy_summary.approval_status, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.cost_per_conversion FROM ad_group_ad WHERE segments.date BETWEEN '${start_date}' AND '${end_date}' AND campaign.name LIKE '${campaign_name}' AND ad_group_ad.status != 'REMOVED' ORDER BY metrics.cost_micros DESC LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_keyword_performance",
+      "description": "Keyword performance for a date range with match type, status and Quality Score components (quality score 1-10, expected CTR, ad relevance, landing page experience). Positive keywords only, sorted by cost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD, in the account's time zone (see gads_get_customer)."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD, inclusive, in the account's time zone."
+          },
+          "campaign_name": {
+            "type": "string",
+            "default": "%",
+            "description": "Only campaigns whose name matches this GAQL LIKE pattern (case-sensitive, % = any characters, _ = one character). Default '%' = every campaign. Examples: 'Brand%', '%Search%'. Replace an apostrophe in a name with _ ('Men_s%'). For case-insensitive or regex matching use gads_run_gaql with REGEXP_MATCH."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 200,
+            "description": "Maximum rows, 1-10000. Default 200."
+          }
+        },
+        "required": [
+          "customer_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT campaign.name, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.status, ad_group_criterion.quality_info.quality_score, ad_group_criterion.quality_info.search_predicted_ctr, ad_group_criterion.quality_info.creative_quality_score, ad_group_criterion.quality_info.post_click_quality_score, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.cost_per_conversion FROM keyword_view WHERE segments.date BETWEEN '${start_date}' AND '${end_date}' AND campaign.name LIKE '${campaign_name}' AND ad_group_criterion.negative = FALSE AND metrics.impressions > 0 ORDER BY metrics.cost_micros DESC LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_search_terms",
+      "description": "The search terms report: what people actually typed before your Search ads showed, with campaign, ad group, whether the term is already added or excluded, and its metrics. Sorted by cost. The main source for new keywords and negative keywords.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD, in the account's time zone (see gads_get_customer)."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD, inclusive, in the account's time zone."
+          },
+          "campaign_name": {
+            "type": "string",
+            "default": "%",
+            "description": "Only campaigns whose name matches this GAQL LIKE pattern (case-sensitive, % = any characters, _ = one character). Default '%' = every campaign. Examples: 'Brand%', '%Search%'. Replace an apostrophe in a name with _ ('Men_s%'). For case-insensitive or regex matching use gads_run_gaql with REGEXP_MATCH."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 500,
+            "description": "Maximum rows, 1-10000. Default 500."
+          }
+        },
+        "required": [
+          "customer_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT campaign.name, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.impressions, metrics.clicks, metrics.ctr, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM search_term_view WHERE segments.date BETWEEN '${start_date}' AND '${end_date}' AND campaign.name LIKE '${campaign_name}' ORDER BY metrics.cost_micros DESC LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_budget_pacing",
+      "description": "Enabled campaigns with their daily budget, spend in the date range and Search impression share lost to budget and to rank. Tells you whether a campaign is limited by budget (raise it or tighten targeting) or by rank (bids, Quality Score). Impression share fields are empty for non-Search campaigns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day, YYYY-MM-DD, in the account's time zone (see gads_get_customer)."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day, YYYY-MM-DD, inclusive, in the account's time zone."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 200,
+            "description": "Maximum rows, 1-10000. Default 200."
+          }
+        },
+        "required": [
+          "customer_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT campaign.id, campaign.name, campaign.advertising_channel_type, campaign.bidding_strategy_type, campaign_budget.amount_micros, campaign_budget.explicitly_shared, metrics.cost_micros, metrics.impressions, metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share FROM campaign WHERE segments.date BETWEEN '${start_date}' AND '${end_date}' AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_conversion_actions",
+      "description": "List the account's conversion actions (removed ones excluded): name, type, source, category, status, whether each is a primary goal, counting (one vs every), click-through lookback window and default value. Use it to audit conversion tracking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 200,
+            "description": "Maximum rows, 1-10000. Default 200."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT conversion_action.id, conversion_action.name, conversion_action.type, conversion_action.origin, conversion_action.category, conversion_action.status, conversion_action.primary_for_goal, conversion_action.counting_type, conversion_action.click_through_lookback_window_days, conversion_action.value_settings.default_value FROM conversion_action WHERE conversion_action.status != 'REMOVED' ORDER BY conversion_action.name LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_change_history",
+      "description": "Who changed what in the account and when: timestamp, user email, tool used (web UI, API, scripts, Editor), resource type and name, operation and the changed fields. Only the last 30 days are available. Newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start, 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS', account time zone, at most 30 days ago."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End, 'YYYY-MM-DD HH:MM:SS' (a bare date means midnight at the START of that day, so pass tomorrow's date or '… 23:59:59' to include today)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 200,
+            "description": "Maximum rows, 1-10000. Default 200."
+          }
+        },
+        "required": [
+          "customer_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT change_event.change_date_time, change_event.user_email, change_event.client_type, change_event.change_resource_type, change_event.change_resource_name, change_event.resource_change_operation, change_event.changed_fields, change_event.campaign, change_event.ad_group FROM change_event WHERE change_event.change_date_time >= '${start_date}' AND change_event.change_date_time <= '${end_date}' ORDER BY change_event.change_date_time DESC LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gads_recommendations",
+      "description": "Google's current optimisation recommendations for the account (budget, bidding, keywords, ads, assets...) with the campaign they apply to and the estimated impact (base vs potential metrics). Read-only: nothing is applied.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "The Google Ads account to read: 10 digits, no dashes ('123-456-7890' becomes '1234567890'). Get it from gads_list_accessible_customers or gads_list_client_accounts."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 100,
+            "description": "Maximum rows, 1-10000. Default 100."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/googleAds:search",
+        "bodyMapping": {
+          "query": "SELECT recommendation.resource_name, recommendation.type, recommendation.campaign, recommendation.impact FROM recommendation LIMIT ${limit}"
+        },
+        "headers": {
+          "login-customer-id": "${GOOGLE_ADS_LOGIN_CUSTOMER_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

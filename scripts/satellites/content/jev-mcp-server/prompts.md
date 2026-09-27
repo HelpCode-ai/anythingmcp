@@ -1,0 +1,10 @@
+- Use Jev to decide which of these support tickets are urgent, and show the probability for each.
+- Classify each ticket below into billing, technical, sales or none with Jev, and list the ones where confidence is below 0.6.
+- Rate these five leads from 0 (no fit) to 3 (ideal customer) with Jev against the profile below.
+- Ask Jev whether this reply answers every question in the customer's email before I send it.
+- Ask Jev whether these two supplier records describe the same company.
+- Which of these 20 emails ask for a refund? Use Jev and give me only the ones above 0.8.
+- Use Jev to rate how frustrated each customer is, from calm to furious, and summarise the angry ones.
+- With one Jev call, ask whether this contract clause mentions a termination right, a penalty and an automatic renewal.
+- Rate how well each product description below matches the search "waterproof hiking boots for kids" with Jev, and show the top three.
+- Which Jev models can my key use?

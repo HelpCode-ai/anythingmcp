@@ -72,7 +72,7 @@
         "mongodb"
       ],
       "wave": 1,
-      "about": "SQL to MCP: connect PostgreSQL, MySQL, SQL Server, Oracle or MongoDB to Claude & ChatGPT. Read-only, audited, no code.",
+      "about": "SQL to MCP: connect PostgreSQL, MySQL, SQL Server, Oracle, SAP HANA or MongoDB to Claude & ChatGPT. Read-only, audited, no code.",
       "topics": [
         "sql",
         "sql-to-mcp",
@@ -82,6 +82,7 @@
         "mysql",
         "sql-server",
         "oracle-database",
+        "sap-hana",
         "mongodb",
         "self-hosted"
       ],
@@ -92,6 +93,7 @@
       "related": [
         "mssql-mcp-server",
         "oracle-mcp-server",
+        "sap-hana-mcp-server",
         "soap-to-mcp"
       ],
       "lastVerified": {
@@ -127,12 +129,49 @@
       "related": [
         "postman-to-mcp",
         "graphql-to-mcp",
+        "odata-to-mcp",
         "soap-to-mcp"
       ],
       "lastVerified": {
         "date": "2026-09-26",
         "against": "the bundled demo orders API (OpenAPI 3.0.3, API-key auth)",
         "how": "docker compose up + scripts/smoke.mjs: spec import, tools/list, GET with query and path parameters, POST with a JSON body"
+      }
+    },
+    {
+      "repo": "odata-to-mcp",
+      "owner": "HelpCode-ai",
+      "type": "generic",
+      "kind": "odata",
+      "system": "OData",
+      "adapters": [],
+      "wave": 1,
+      "about": "OData to MCP: turn any OData V2 or V4 service, SAP Gateway included, into MCP tools for Claude & ChatGPT. Reads $metadata, no code.",
+      "topics": [
+        "odata",
+        "odata-to-mcp",
+        "odata-v4",
+        "sap-gateway",
+        "s4hana",
+        "rest-api",
+        "api-to-mcp",
+        "api-integration",
+        "no-code",
+        "self-hosted"
+      ],
+      "website": "https://anythingmcp.com/guides/odata-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "openapi-to-mcp",
+        "sap-mcp-server",
+        "soap-to-mcp"
+      ],
+      "lastVerified": {
+        "date": "2026-09-27",
+        "against": "public OData services: Northwind V2 and V4 and TripPin V4 on services.odata.org",
+        "how": "the OData engine's live test suite on all three, and this repository's install.sh + scripts/smoke.mjs against Northwind V4 on an image built from the release branch"
       }
     },
     {
@@ -258,6 +297,8 @@
       "adapters": [
         "sap-business-one",
         "sap-s4hana-cloud",
+        "sap-s4hana-odata",
+        "sap-s4hana-hana",
         "odoo",
         "dynamics-nav",
         "erpnext",
@@ -274,7 +315,7 @@
         "axonaut"
       ],
       "wave": 1,
-      "about": "ERP MCP server: connect 16 ERPs (SAP, Odoo, JTL-Wawi, Xentral, weclapp, ERPNext…) to Claude & ChatGPT. Self-hosted or cloud.",
+      "about": "ERP MCP server: connect 17 ERPs (SAP, Odoo, JTL-Wawi, Xentral, weclapp, ERPNext…) to Claude & ChatGPT. Self-hosted or cloud.",
       "topics": [
         "erp",
         "erp-integration",
@@ -294,12 +335,13 @@
       "related": [
         "sap-mcp-server",
         "ecommerce-mcp-server",
+        "odata-to-mcp",
         "soap-to-mcp",
         "sql-to-mcp",
         "openapi-to-mcp"
       ],
       "lastVerified": {
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "against": "the systems marked verified in the table",
         "how": "each one's own verification is linked from its row"
       }
@@ -361,19 +403,24 @@
       "adapters": [
         "sap-business-one",
         "sap-s4hana-cloud",
+        "sap-s4hana-odata",
+        "sap-s4hana-hana",
         "sap-concur"
       ],
       "wave": 1,
-      "about": "SAP MCP server: connect SAP Business One, S/4HANA Cloud and Concur to Claude & ChatGPT. Orders, partners, invoices as AI tools.",
+      "about": "SAP MCP server: connect SAP Business One, S/4HANA (Cloud, on-premise via OData or HANA SQL) and Concur to Claude & ChatGPT.",
       "topics": [
         "sap",
         "sap-business-one",
         "s4hana",
         "sap-s4hana",
+        "sap-hana",
         "sap-concur",
+        "odata",
         "erp",
         "erp-integration",
-        "enterprise"
+        "enterprise",
+        "on-premise"
       ],
       "website": "https://anythingmcp.com/guides/connect-sap-to-claude",
       "languages": [
@@ -382,11 +429,13 @@
       ],
       "related": [
         "sap-business-one-mcp-server",
+        "sap-hana-mcp-server",
+        "odata-to-mcp",
         "erp-mcp-server",
         "soap-to-mcp"
       ],
       "lastVerified": {
-        "date": "2026-09-26",
+        "date": "2026-09-27",
         "against": "the systems marked verified in the table",
         "how": "each one's own verification is linked from its row"
       }
@@ -426,6 +475,51 @@
         "de": "Geschäftspartner, Artikel, Aufträge, Rechnungen, Angebote und Lieferungen"
       },
       "publishUnverified": "Approved on 2026-09-26 by Matteo Morelli without a live test; the README states it is not verified yet."
+    },
+    {
+      "repo": "sap-hana-mcp-server",
+      "owner": "HelpCode-ai",
+      "type": "connector",
+      "system": "SAP HANA",
+      "adapters": [
+        "sap-s4hana-hana"
+      ],
+      "wave": 1,
+      "about": "SAP HANA MCP server: Claude & ChatGPT read SAP S/4HANA with SQL, guided by SAP's own data dictionary and CDS views. Read-only.",
+      "topics": [
+        "sap-hana",
+        "hana",
+        "sap",
+        "s4hana",
+        "sap-s4hana",
+        "database-mcp",
+        "text-to-sql",
+        "sql",
+        "erp",
+        "on-premise"
+      ],
+      "website": "https://anythingmcp.com/guides/connect-sap-hana-to-claude",
+      "languages": [
+        "en",
+        "de"
+      ],
+      "umbrella": "sap-mcp-server",
+      "related": [
+        "sap-mcp-server",
+        "sql-to-mcp",
+        "odata-to-mcp"
+      ],
+      "objects": {
+        "en": "SAP's data dictionary (table and field labels, code values, join paths, CDS views), the organization structure and read-only SQL",
+        "de": "das SAP Data Dictionary (Tabellen- und Feldtexte, Festwerte, Join-Pfade, CDS-Views), die Organisationsstruktur und lesendes SQL"
+      },
+      "lastVerified": {
+        "date": "2026-09-27",
+        "against": "an SAP S/4HANA 2025 Private Cloud system, a QAS copy of production",
+        "how": "every tool run live through the adapter's live test suite",
+        "againstDe": "ein SAP S/4HANA 2025 Private Cloud-System, eine QAS-Kopie der Produktion",
+        "howDe": "jedes Tool live über die Live-Testsuite des Adapters ausgeführt"
+      }
     },
     {
       "repo": "jtl-wawi-mcp-server",
@@ -1256,6 +1350,78 @@
         "ebay-mcp-server"
       ],
       "lastVerified": null
+    },
+    {
+      "repo": "jev-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Jev",
+      "adapters": [
+        "jev"
+      ],
+      "wave": 1,
+      "about": "Jev MCP server: use TypeSafe Jev in Claude & ChatGPT. Yes/no, classification and scoring with probabilities, hosted or self-hosted.",
+      "topics": [
+        "typesafe-jev",
+        "jev",
+        "typesafe-ai",
+        "system-one",
+        "text-classification",
+        "ticket-triage",
+        "llm-tools"
+      ],
+      "website": "https://anythingmcp.com/guides/jev-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "openapi-to-mcp",
+        "erp-mcp-server"
+      ],
+      "objects": {
+        "en": "yes/no checks, classifications and scores, with the probability behind every answer"
+      },
+      "lastVerified": {
+        "date": "2026-09-27",
+        "against": "the live TypeSafe API (jev-1.13.0)",
+        "how": "every tool called through a local AnythingMCP over MCP, 27 direct API cases incl. error paths, and Claude Code triaging English and German tickets through the connector"
+      }
+    },
+    {
+      "repo": "google-ads-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Google Ads",
+      "adapters": [
+        "google-ads"
+      ],
+      "wave": 1,
+      "about": "Google Ads MCP server: ask Claude & ChatGPT about campaigns, search terms, Quality Score and budgets. Read-only, no developer token.",
+      "topics": [
+        "google-ads",
+        "google-ads-api",
+        "gaql",
+        "ppc",
+        "adwords",
+        "performance-max",
+        "marketing-analytics"
+      ],
+      "website": "https://anythingmcp.com/guides/google-ads-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "openapi-to-mcp",
+        "jev-mcp-server"
+      ],
+      "objects": {
+        "en": "campaigns, ad groups, ads, keywords, search terms, budgets, conversion actions and change history"
+      },
+      "lastVerified": {
+        "date": "2026-09-27",
+        "against": "two production Google Ads accounts (API v25, Explorer access)",
+        "how": "all 17 tools and the 15 playbook queries called live, the connector authorized on AnythingMCP Cloud, and an account review run from claude.ai"
+      }
     }
   ]
 }

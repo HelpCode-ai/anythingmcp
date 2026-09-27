@@ -64,6 +64,13 @@ import {
   describeMissing,
   rebuildCatalogCredentials,
 } from './catalog-env-rebuild.util';
+import {
+  buildODataBuiltinTools,
+  odataToolPrefix,
+  wantsODataBuiltins,
+} from './odata/odata-builtins';
+import { parseODataTools } from './parsers/odata.parser';
+import { normalizeSettings } from './engines/odata.engine';
 
 class CreateConnectorDto {
   @ApiProperty({
@@ -314,12 +321,12 @@ class UpdateOAuth1ConfigDto {
 
 class ImportToolsDto {
   @ApiProperty({
-    enum: ['openapi', 'wsdl', 'graphql', 'postman', 'curl', 'json', 'mcp'],
+    enum: ['openapi', 'wsdl', 'graphql', 'postman', 'curl', 'json', 'mcp', 'odata'],
     description: 'Which parser to run on the supplied content/url.',
     example: 'openapi',
   })
   @IsString()
-  source: 'openapi' | 'wsdl' | 'graphql' | 'postman' | 'curl' | 'json' | 'mcp';
+  source: 'openapi' | 'wsdl' | 'graphql' | 'postman' | 'curl' | 'json' | 'mcp' | 'odata';
 
   @ApiPropertyOptional({
     description: 'Inline spec content (JSON or YAML). Mutually exclusive with `url`.',
@@ -335,6 +342,24 @@ class ImportToolsDto {
   @IsOptional()
   @IsString()
   url?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'OData import: the service path on the connector host (e.g. /sap/opu/odata/sap/API_BUSINESS_PARTNER). ' +
+      'Its $metadata is fetched with the connector credentials unless `content` carries the document.',
+  })
+  @IsOptional()
+  @IsString()
+  service?: string;
+
+  @ApiPropertyOptional({
+    description: 'OData import: only these entity sets (default: all).',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  entitySets?: string[];
 }
 
 // ── DTOs for importAll / updateEnvVars ─────────────────────────────────────
@@ -640,6 +665,38 @@ export class ConnectorsController {
       );
     }
 
+    // OData built-ins (list services, describe, query, get) for ODATA
+    // connectors and REST connectors that carry config.odata, so an OData
+    // service is usable before anyone imports or writes a single tool.
+    if (wantsODataBuiltins(dto.type, dto.config)) {
+      const settings = normalizeSettings((dto.config as { odata?: unknown } | undefined)?.odata);
+      const builtinTools = buildODataBuiltinTools({
+        prefix: odataToolPrefix({ toolPrefix: settings.toolPrefix, name: dto.name }),
+        displayName: dto.name,
+        sap: !!settings.sap,
+        listed: !!settings.services?.length,
+      });
+      for (const tool of builtinTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: connector.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // skip duplicates
+        }
+      }
+      await this.mcpServer.reloadConnectorTools(connector.id);
+      this.logger.log(
+        `Auto-created ${builtinTools.length} OData helper tools for connector ${connector.id}`,
+      );
+    }
+
     // Put the connector on a server straight away. Assigning it was a separate
     // page most people never found: of the 84 workspaces that imported a
     // working connector in the last fortnight, 49 never attached it to
@@ -822,6 +879,27 @@ export class ConnectorsController {
     }
     if (dto.headers) {
       data.headers = mergeMaskedHeaders(dto.headers, connector.headers, ctx);
+    }
+    // `config` also carries keys no form edits: the catalog adapter's slug,
+    // version and baselines (logo, re-sync), a database adapter's
+    // deniedTables. The database settings form sends only { readOnly }, and
+    // writing that as the whole object silently dropped the rest. Merge, so a
+    // form changes what it shows and nothing else; a key is cleared by
+    // sending it as null.
+    if (dto.config && typeof dto.config === 'object' && !Array.isArray(dto.config)) {
+      const existing =
+        connector.config && typeof connector.config === 'object' && !Array.isArray(connector.config)
+          ? (connector.config as Record<string, unknown>)
+          : {};
+      // Built key by key: the keys come from the request body, so the
+      // prototype-polluting names are dropped rather than spread in.
+      const merged = new Map<string, unknown>(Object.entries(existing));
+      for (const [k, v] of Object.entries(dto.config as Record<string, unknown>)) {
+        if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+        if (v === null) merged.delete(k);
+        else merged.set(k, v);
+      }
+      data.config = Object.fromEntries(merged);
     }
     const updated = await this.connectorsService.update(id, data);
     // The registry keeps its own copy of the connector — base URL, headers,
@@ -1367,6 +1445,9 @@ export class ConnectorsController {
     this.assertCanWrite(connector, req);
 
     let parsedTools: any[] = [];
+    // An OData import covers one service: only that service's tools may be
+    // retired by it, never another service's or the built-ins.
+    let odataScope: string | undefined;
 
     let detectedHealthcheckPath: string | undefined;
 
@@ -1475,6 +1556,27 @@ export class ConnectorsController {
           }
           break;
         }
+        case 'odata': {
+          if (!wantsODataBuiltins(connector.type, connector.config)) {
+            return {
+              error: 'OData import needs an OData connector (or a REST connector with OData settings).',
+            };
+          }
+          let xml = dto.content;
+          let service = dto.service ?? '';
+          if (!xml) {
+            const fetched = (await this.connectorsService.executeConnectorCall(
+              connector,
+              { method: 'odata_metadata_xml', path: '' },
+              { service },
+            )) as { service: string; xml: string };
+            xml = fetched.xml;
+            service = fetched.service;
+          }
+          parsedTools = parseODataTools(xml, { service, entitySets: dto.entitySets }).tools;
+          odataScope = service;
+          break;
+        }
         default:
           return { error: `Unknown import source: ${dto.source}` };
       }
@@ -1492,7 +1594,24 @@ export class ConnectorsController {
       });
     }
 
-    return this.createToolsFromParsed(connector.id, parsedTools);
+    // JSON definitions and cURL commands describe a few tools, not a whole
+    // API: importing them adds or updates those tools and retires nothing.
+    // Retiring everything else is what a full spec import (OpenAPI, WSDL…)
+    // means; for a handful of hand-written tools it disabled every other tool
+    // of the connector, catalog tools included.
+    const additive = dto.source === 'json' || dto.source === 'curl';
+    return this.createToolsFromParsed(
+      connector.id,
+      parsedTools,
+      additive
+        ? () => false
+        : odataScope !== undefined
+          ? (t) => {
+              const em = t.endpointMapping as { method?: string; path?: string } | null;
+              return String(em?.path ?? '').startsWith(`${odataScope}/`);
+            }
+          : undefined,
+    );
   }
 
   @Put(':id/env-vars')
@@ -1660,14 +1779,21 @@ export class ConnectorsController {
    * role-based access, manual disables) across re-imports without losing
    * the visibility of "this endpoint no longer exists upstream".
    */
-  private async createToolsFromParsed(connectorId: string, parsedTools: any[]) {
+  private async createToolsFromParsed(
+    connectorId: string,
+    parsedTools: any[],
+    /** Which unmatched existing tools this import may retire (default: all but built-ins). */
+    inScope?: (tool: { endpointMapping: unknown }) => boolean,
+  ) {
     const existing = await this.prisma.mcpTool.findMany({
       where: { connectorId },
     });
     const byOperationId = new Map<string, typeof existing[number]>();
     const byEndpoint = new Map<string, typeof existing[number]>();
+    const byName = new Map<string, typeof existing[number]>();
     for (const t of existing) {
       if (t.operationId) byOperationId.set(t.operationId, t);
+      byName.set(t.name, t);
       const em = t.endpointMapping as any;
       if (em?.method && em?.path) {
         byEndpoint.set(`${String(em.method).toUpperCase()} ${em.path}`, t);
@@ -1685,9 +1811,13 @@ export class ConnectorsController {
         em?.method && em?.path
           ? `${String(em.method).toUpperCase()} ${em.path}`
           : null;
+      // By name last: a static tool has no path to match on, and without this
+      // a re-import tried to create it again, hit the unique name and left the
+      // old (possibly retired) copy as it was.
       const match =
         (tool.operationId && byOperationId.get(tool.operationId)) ||
         (endpointKey && byEndpoint.get(endpointKey)) ||
+        byName.get(tool.name) ||
         null;
 
       if (match) {
@@ -1761,6 +1891,10 @@ export class ConnectorsController {
     for (const t of existing) {
       if (matchedIds.has(t.id)) continue;
       if (t.deprecatedAt) continue; // already deprecated
+      // Built-in OData helpers are not part of any spec; an import must not
+      // retire them.
+      if (String((t.endpointMapping as { method?: unknown } | null)?.method ?? '').startsWith('odata_')) continue;
+      if (inScope && !inScope(t)) continue;
       await this.prisma.mcpTool.update({
         where: { id: t.id },
         data: { deprecatedAt: now, isEnabled: false },

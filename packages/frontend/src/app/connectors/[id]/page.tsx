@@ -27,7 +27,13 @@ const IMPORT_SOURCES = [
   { id: 'wsdl', label: 'WSDL', placeholder: 'Enter WSDL URL...' },
   { id: 'json', label: 'JSON Definition', placeholder: '[\n  {\n    "name": "get_users",\n    "description": "Fetch users",\n    "parameters": { "type": "object", "properties": { "limit": { "type": "number" } } },\n    "endpointMapping": { "method": "GET", "path": "/users", "queryParams": { "limit": "$limit" } }\n  }\n]' },
   { id: 'mcp', label: 'MCP Discovery', placeholder: "Optional — leave empty to use the connector's Base URL" },
+  { id: 'odata', label: 'OData $metadata', placeholder: 'Optional — paste a $metadata document instead of fetching it' },
 ];
+
+/** OData settings live under config.odata on ODATA connectors and OData-enabled REST connectors. */
+function hasOData(connector: any): boolean {
+  return connector?.type === 'ODATA' || (connector?.type === 'REST' && !!connector?.config?.odata);
+}
 
 const EDIT_DEFAULT_LOGIN_BODY = '{\n  "username": "${username}",\n  "password": "${password}"\n}';
 
@@ -93,6 +99,12 @@ export default function ConnectorDetailPage() {
   const [editLtRefreshOn401, setEditLtRefreshOn401] = useState(true);
   const [editHeaderRows, setEditHeaderRows] = useState<HeaderRow[]>([]);
   const [editDbReadOnly, setEditDbReadOnly] = useState(true);
+  const [editDbDeniedTables, setEditDbDeniedTables] = useState('');
+  const [editOdataSap, setEditOdataSap] = useState(false);
+  const [editOdataSapClient, setEditOdataSapClient] = useState('');
+  const [editOdataSapLanguage, setEditOdataSapLanguage] = useState('');
+  const [editOdataServices, setEditOdataServices] = useState('');
+  const [importEntitySets, setImportEntitySets] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
   const [testResult, setTestResult] = useState<{
@@ -188,6 +200,15 @@ export default function ConnectorDetailPage() {
       setEditLtPassword('');
       setEditHeaderRows(objectToHeaderRows(c.headers as Record<string, string> | null));
       setEditDbReadOnly((c.config as any)?.readOnly !== false);
+      {
+        const denied = (c.config as any)?.deniedTables;
+        setEditDbDeniedTables(Array.isArray(denied) ? denied.join(', ') : '');
+        const odata = (c.config as any)?.odata ?? {};
+        setEditOdataSap(odata.sap === true || !!odata.sapClient);
+        setEditOdataSapClient(odata.sapClient ?? '');
+        setEditOdataSapLanguage(odata.sapLanguage ?? '');
+        setEditOdataServices(Array.isArray(odata.services) ? odata.services.join('\n') : '');
+      }
       setToolList(c.tools || []);
       // Load env vars
       const ev = c.envVars as Record<string, string> | null;
@@ -330,8 +351,32 @@ export default function ConnectorDetailPage() {
         // untouched headers and applies any edits/removals the user made.
         data.headers = headerRowsToObject(editHeaderRows);
       }
+      if (hasOData(connector)) {
+        const existing = (connector.config as any)?.odata ?? {};
+        const services = editOdataServices
+          .split(/[\s,]+/)
+          .map((t) => t.trim())
+          .filter(Boolean);
+        data.config = {
+          odata: {
+            ...existing,
+            sap: editOdataSap,
+            sapClient: editOdataSap && editOdataSapClient.trim() ? editOdataSapClient.trim() : undefined,
+            sapLanguage: editOdataSap && editOdataSapLanguage.trim() ? editOdataSapLanguage.trim() : undefined,
+            services: services.length > 0 ? services : undefined,
+          },
+        };
+      }
       if (connector.type === 'DATABASE') {
-        data.config = { readOnly: editDbReadOnly };
+        const deniedTables = editDbDeniedTables
+          .split(/[\s,]+/)
+          .map((t) => t.trim())
+          .filter(Boolean);
+        // The server merges config, so a cleared list must be sent as null.
+        data.config = {
+          readOnly: editDbReadOnly,
+          deniedTables: deniedTables.length > 0 ? deniedTables : null,
+        };
       }
       await connectors.update(id, data, token);
 
@@ -406,8 +451,15 @@ export default function ConnectorDetailPage() {
     if (!token) return;
     setImporting(true);
     try {
-      const data: { source: string; content?: string; url?: string } = { source: importSource };
-      if (importSource === 'curl' || importSource === 'json') {
+      const data: { source: string; content?: string; url?: string; service?: string; entitySets?: string[] } = {
+        source: importSource,
+      };
+      if (importSource === 'odata') {
+        if (importUrl.trim()) data.service = importUrl.trim();
+        if (importContent.trim()) data.content = importContent;
+        const sets = importEntitySets.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
+        if (sets.length) data.entitySets = sets;
+      } else if (importSource === 'curl' || importSource === 'json') {
         data.content = importContent;
       } else if (importUrl) {
         data.url = importUrl;
@@ -976,6 +1028,82 @@ export default function ConnectorDetailPage() {
                       ? 'Only SELECT queries are allowed. Safe for analytics and reporting.'
                       : 'All SQL operations (SELECT, INSERT, UPDATE, DELETE) are allowed. Use with caution.'}
                   </p>
+                  <label htmlFor="deniedTables" className="block text-sm font-medium mt-4 mb-1">
+                    Denied tables
+                  </label>
+                  <input
+                    id="deniedTables"
+                    type="text"
+                    value={editDbDeniedTables}
+                    onChange={(e) => setEditDbDeniedTables(e.target.value)}
+                    placeholder="e.g. salaries, audit_*, PA####"
+                    className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                  />
+                  <p className="text-xs text-[var(--text-3)] mt-1.5">
+                    Queries that name one of these tables are refused. Comma-separated;{' '}
+                    <code>*</code> matches any text, <code>?</code> one character, <code>#</code> one digit.
+                    The database user&apos;s own permissions remain the real boundary.
+                  </p>
+                </div>
+              )}
+              {hasOData(connector) && (
+                <div className="space-y-3">
+                  <label className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={editOdataSap}
+                      onChange={(e) => setEditOdataSap(e.target.checked)}
+                    />
+                    <span>
+                      SAP Gateway
+                      <span className="block text-xs text-[var(--text-3)]">
+                        Services come from SAP&apos;s service catalog; sap-client and sap-language are sent with every request.
+                      </span>
+                    </span>
+                  </label>
+                  {editOdataSap && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">SAP client</label>
+                        <input
+                          type="text"
+                          value={editOdataSapClient}
+                          onChange={(e) => setEditOdataSapClient(e.target.value)}
+                          maxLength={3}
+                          placeholder="100"
+                          className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">SAP language</label>
+                        <input
+                          type="text"
+                          value={editOdataSapLanguage}
+                          onChange={(e) => setEditOdataSapLanguage(e.target.value)}
+                          maxLength={2}
+                          placeholder="EN"
+                          className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <label htmlFor="odataServices" className="block text-sm font-medium mb-1">
+                      Allowed services
+                    </label>
+                    <textarea
+                      id="odataServices"
+                      rows={3}
+                      value={editOdataServices}
+                      onChange={(e) => setEditOdataServices(e.target.value)}
+                      placeholder={'/sap/opu/odata/sap/API_*\n/sap/opu/odata/sap/C_TRIALBALANCE_CDS'}
+                      className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                    />
+                    <p className="text-xs text-[var(--text-3)] mt-1.5">
+                      One service path per line, <code>*</code> as wildcard. Empty allows every service the technical user can call.
+                    </p>
+                  </div>
                 </div>
               )}
               <div>
@@ -991,7 +1119,7 @@ export default function ConnectorDetailPage() {
                     { value: 'BASIC_AUTH', label: 'Basic Auth' },
                     { value: 'OAUTH2', label: 'OAuth 2.0' },
                     // Signing is implemented by the REST engine only.
-                    ...(connector.type === 'REST' || connector.authType === 'OAUTH1'
+                    ...(connector.type === 'REST' || connector.type === 'ODATA' || connector.authType === 'OAUTH1'
                       ? [{ value: 'OAUTH1', label: 'OAuth 1.0a' }]
                       : []),
                     { value: 'LOGIN_TOKEN', label: 'Login → Token (auto-refresh)' },
@@ -1372,7 +1500,7 @@ export default function ConnectorDetailPage() {
             <div className="border border-[var(--border)] rounded-[14px] bg-[var(--surface-2)] p-4 mb-4 space-y-3">
               <h4 className="text-sm font-semibold">Import Tools From</h4>
               <div className="flex gap-2 flex-wrap">
-                {IMPORT_SOURCES.map((src) => (
+                {IMPORT_SOURCES.filter((src) => src.id !== 'odata' || hasOData(connector)).map((src) => (
                   <button
                     key={src.id}
                     onClick={() => { setImportSource(src.id); setImportContent(''); setImportUrl(''); }}
@@ -1387,7 +1515,39 @@ export default function ConnectorDetailPage() {
                 ))}
               </div>
 
-              {importSource !== 'curl' && importSource !== 'json' && (
+              {importSource === 'odata' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Service path</label>
+                    <input
+                      type="text"
+                      value={importUrl}
+                      onChange={(e) => setImportUrl(e.target.value)}
+                      placeholder={
+                        (connector.config as any)?.odata?.sap || (connector.config as any)?.odata?.sapClient
+                          ? '/sap/opu/odata/sap/API_BUSINESS_PARTNER'
+                          : 'Leave empty: the base URL is the service'
+                      }
+                      className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                    />
+                    <p className="text-[11.5px] text-[var(--text-3)] mt-1">
+                      Its $metadata is read with this connector&apos;s credentials. Each entity set becomes a list tool and a get tool.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Entity sets (optional)</label>
+                    <input
+                      type="text"
+                      value={importEntitySets}
+                      onChange={(e) => setImportEntitySets(e.target.value)}
+                      placeholder="A_BusinessPartner, A_Customer — empty for all"
+                      className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {importSource !== 'curl' && importSource !== 'json' && importSource !== 'odata' && (
                 <div>
                   <label className="block text-xs font-medium mb-1">URL (fetch spec from URL)</label>
                   <input
@@ -1417,7 +1577,7 @@ export default function ConnectorDetailPage() {
                 variant="primary"
                 size="lg"
                 onClick={handleImportTools}
-                disabled={importing || (!importContent && !importUrl)}
+                disabled={importing || (importSource !== 'odata' && !importContent && !importUrl)}
               >
                 {importing ? 'Importing...' : 'Import'}
               </Button>

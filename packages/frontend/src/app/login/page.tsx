@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { auth, license, server, sso, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
+import { ApiError, auth, license, server, sso, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { buildPricingUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/logo-icon';
@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { safeRedirect } from '@/lib/safe-redirect';
+import { captureSignupAttribution, clearSignupAttribution, getSignupAttribution } from '@/lib/attribution';
+import { pushSignUpVerified } from '@/lib/conversion';
 
 type SetupStep = 'auth' | 'verify-email' | 'check-inbox' | 'license-choice' | 'license-email-sent' | 'license-key' | 'trial-activated';
 
@@ -90,6 +92,12 @@ function LoginForm() {
     }).catch(() => {});
   }, [modeParam]);
 
+  // Cloud only: note where this visitor came from, for the sign-up to carry.
+  // Self-hosted instances record nothing.
+  useEffect(() => {
+    if (isCloudMode) captureSignupAttribution();
+  }, [isCloudMode]);
+
   // Surface a failure the SSO callback redirected back with.
   useEffect(() => {
     if (errorParam) setError(errorParam);
@@ -154,7 +162,21 @@ function LoginForm() {
           setLoading(false);
           return;
         }
-        const regResult = await auth.register(email, password, name, acceptTerms);
+        // Captured on mount too; again here in case the form beat that.
+        if (isCloudMode) captureSignupAttribution();
+        const attribution = isCloudMode ? getSignupAttribution() : undefined;
+        let regResult: Awaited<ReturnType<typeof auth.register>>;
+        try {
+          regResult = await auth.register(email, password, name, acceptTerms, attribution);
+        } catch (err) {
+          // Attribution must never cost a sign-up: should the backend refuse
+          // it (a key it does not know yet), sign up without it.
+          if (!attribution || !(err instanceof ApiError) || err.status !== 400 || !JSON.stringify(err.body).includes('attribution')) {
+            throw err;
+          }
+          regResult = await auth.register(email, password, name, acceptTerms);
+        }
+        clearSignupAttribution();
         if (regResult.accessToken) {
           result = { accessToken: regResult.accessToken, user: regResult.user };
           needsLicenseSetup = !!regResult.isFirstUser;
@@ -220,6 +242,8 @@ function LoginForm() {
     setLoading(true);
     try {
       await auth.verifyEmail(verificationCode, authToken);
+      // The Google Ads conversion (cloud only; a no-op without GTM).
+      pushSignUpVerified(String(storedUser?.id ?? 'code'), 'code');
       // Email verified — now log in and proceed
       const verifiedUser = { ...storedUser, emailVerified: true };
       login(authToken, verifiedUser);

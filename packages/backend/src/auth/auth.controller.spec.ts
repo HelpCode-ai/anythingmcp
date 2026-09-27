@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AuthController, NEUTRAL_PASSWORD_RESET, NEUTRAL_REGISTRATION } from './auth.controller';
+import { ProductEventService } from '../audit/product-event.service';
 
 /**
  * Sign-up, password reset and login must not say — by their answer or by how
@@ -30,6 +31,7 @@ function makeController({
   const users = [...accounts];
   const sent: string[] = [];
   const tokens: { userId: string; createdAt: Date; usedAt: Date | null }[] = [];
+  const events: any[] = [];
 
   const authService = {
     hashPassword: jest.fn(async (p: string) => `hash:${p}`),
@@ -70,6 +72,12 @@ function makeController({
       ),
     },
     passwordResetToken: { create: jest.fn(async ({ data }: any) => data) },
+    productEvent: {
+      create: jest.fn(async ({ data }: any) => {
+        events.push(data);
+        return data;
+      }),
+    },
   };
   const emailService = {
     sendVerificationEmail: jest.fn(async (to: string) => {
@@ -115,8 +123,10 @@ function makeController({
     {} as any, // rolesService
     {} as any, // recoveryCodes
     ssoEnforcement as any,
+    // The real service, so the test sees what would actually be stored.
+    new ProductEventService(prisma as any),
   );
-  return { controller, users, sent, authService, usersService, emailService, prisma };
+  return { controller, users, sent, events, authService, usersService, emailService, prisma };
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));

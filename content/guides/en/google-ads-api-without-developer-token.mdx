@@ -1,0 +1,87 @@
+---
+title: "Google Ads API Without a Developer Token: What Changed in September 2026"
+description: "Google retired Google Ads API developer tokens on 9 September 2026. Access now belongs to your Google Cloud project: Test, Explorer, Basic and Standard, and how to get each."
+category: "connectors"
+keyword: "google ads api developer token, google ads api access, google ads api without developer token, google ads api explorer access, CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION, google ads api 2026"
+publishedAt: "2026-09-27"
+adapterSlug: "google-ads"
+---
+
+## Developer tokens are gone
+
+**Short answer:** since **9 September 2026** the Google Ads API no longer needs a developer token. Access is granted to your **Google Cloud project**, at one of four access levels (Test, Explorer, Basic, Standard), and you request it on the project's Google Ads API page in the Cloud console. You no longer need a Google Ads manager (MCC) account to use the API. You can still send the `developer-token` header; Google ignores it.
+
+Google's [developer token page](https://developers.google.com/google-ads/api/docs/api-policy/developer-token) says it directly: developer tokens were sunset on 9 September 2026, and existing access levels were transferred to Cloud projects based on recent API activity. Applications made through the API Center of a manager account are no longer processed.
+
+## Before and after
+
+| | Until September 2026 | Since 9 September 2026 |
+|---|---|---|
+| What identifies your app | developer token from a manager account's API Center | your Google Cloud project |
+| Manager (MCC) account | required to get a token | only to manage several accounts |
+| Where you apply | API Center in Google Ads | Google Ads API page in the Cloud console |
+| `developer-token` header | required on every call | optional, ignored |
+| Quota | per developer token | per Cloud project |
+| OAuth | user credentials | unchanged: user credentials, scope `adwords` |
+
+## The access levels
+
+| Level | Accounts | Operations per day | How you get it |
+|---|---|---|---|
+| Test | test accounts only | 15,000 | default for a new project |
+| Explorer | test and production | 2,880 on production, 15,000 on test | apply in the Cloud console; often granted automatically, no brand verification |
+| Basic | test and production | 15,000 | apply after brand verification of the project; reviewed in minutes |
+| Standard | test and production | unlimited (per-service rate limits apply) | apply; manual review of about 10 business days |
+
+With **Test** access, a call to a real account fails with `CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION`. That is the error most people hit first after the change: the project works, the OAuth works, but the level is still Test.
+
+**Explorer** is enough to read your own accounts or a handful of client accounts. A report such as "campaign performance last month" is one operation; an AI agent answering a question usually makes two to eight.
+
+## How to get access now
+
+1. Open [console.cloud.google.com](https://console.cloud.google.com), pick or create a project, then **APIs & Services → Library** and enable **Google Ads API**.
+2. Open the **Google Ads API** page of the project. It shows the current access level; expand **Upgrade access level** and apply for Explorer (or Basic, after brand verification).
+3. Create an **OAuth client ID** under **APIs & Services → Credentials**, and set the **OAuth consent screen** to In production (in Testing mode refresh tokens expire after 7 days).
+4. Authorize with a Google user that has access to the ad accounts. The `adwords` scope is the only one; it is not read-only, so give that user the role it needs and no more.
+
+## What this means for existing tools
+
+Scripts, CLIs and MCP servers written before September 2026 usually ask for a developer token and a manager account. They keep working if they also send OAuth credentials from a project that has access, because the token header is ignored. But their setup instructions now send people through steps that no longer exist, and a new user who creates a token in the API Center gets nothing out of it.
+
+Things to update in your own setup:
+
+- Stop asking for `GOOGLE_ADS_DEVELOPER_TOKEN`; keep the OAuth client ID, secret and refresh token.
+- Make sure the OAuth client belongs to a Cloud project with Explorer access or higher.
+- Keep `login-customer-id` only for access through a manager account.
+- Remember that the quota now belongs to the Cloud project. Several tools sharing one OAuth client share the quota.
+
+## Use it from Claude or ChatGPT
+
+The [Google Ads connector on AnythingMCP](https://anythingmcp.com/guides/google-ads-to-mcp) was built for the new model: it asks only for an OAuth client ID and secret (and optionally a manager id), you authorize it once in the browser, and Claude, ChatGPT, Cursor or Gemini can read your campaigns, search terms, Quality Score, budgets and conversions. It is read-only and needs no developer token.
+
+- [Connect Google Ads to Claude](https://anythingmcp.com/guides/connect-google-ads-to-claude)
+- [Connect Google Ads to ChatGPT](https://anythingmcp.com/guides/connect-google-ads-to-chatgpt)
+
+## FAQ
+
+**My tool still asks for a developer token. What do I enter?**
+Anything, or leave it empty if the tool allows it: Google ignores the header. What matters is that the OAuth client comes from a Cloud project with access.
+
+**Do I still need a manager (MCC) account?**
+Only to manage several accounts through one login. For your own account you can call the API directly.
+
+**Which access level do I need to read my own account?**
+Explorer. Test access only reaches test accounts.
+
+**Is the quota per user or per project?**
+Per Google Cloud project, over a sliding 24-hour window.
+
+**Where is this documented?**
+On Google's [developer token](https://developers.google.com/google-ads/api/docs/api-policy/developer-token) and [access levels](https://developers.google.com/google-ads/api/docs/api-policy/access-levels) pages.
+
+## Related
+
+- [Google Ads MCP server: the overview](https://anythingmcp.com/guides/google-ads-to-mcp)
+- [Connect Google Ads to Claude](https://anythingmcp.com/guides/connect-google-ads-to-claude)
+- [Google Ads audit with Claude](https://anythingmcp.com/guides/google-ads-audit-with-claude)
+- [Google Ads in the marketplace](https://anythingmcp.com/marketplace/google-ads)

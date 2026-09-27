@@ -170,6 +170,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   messaging: 'Messaging',
   crm: 'CRM',
   email: 'Email',
+  advertising: 'Advertising',
   'marketing-automation': 'Marketing Automation',
   'project-management': 'Project Management',
   scheduling: 'Scheduling',

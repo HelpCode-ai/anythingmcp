@@ -18,7 +18,8 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, Equals, Matches, IsArray } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, Equals, Matches, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { UserRole } from '../generated/prisma/client';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
@@ -31,12 +32,14 @@ import { EmailService } from '../settings/email.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
+import { ProductEventService, ProductEvents } from '../audit/product-event.service';
 import { LicenseService } from '../license/license.service';
 import { RolesService } from '../roles/roles.service';
 import { RecoveryCodesService } from './recovery-codes.service';
 import { SsoEnforcementService } from './sso-enforcement.service';
 import { Roles, RolesGuard } from './roles.guard';
 import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
+import { SignupAttributionDto } from './signup-attribution.dto';
 
 /**
  * Registration and password reset answer the same whether or not the address
@@ -91,7 +94,7 @@ const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/
 const PASSWORD_MESSAGE =
   'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
 
-class RegisterDto {
+export class RegisterDto {
   @ApiProperty({ description: 'Email address.', example: 'user@example.com' })
   @IsEmail()
   email: string;
@@ -116,6 +119,17 @@ class RegisterDto {
   @IsBoolean()
   @Equals(true, { message: 'You must accept the Terms of Use' })
   acceptTerms: boolean;
+
+  @ApiPropertyOptional({
+    type: SignupAttributionDto,
+    description:
+      'Cloud only: where the visitor came from (campaign tags, referrer host). ' +
+      'Recorded for a newly created account, ignored otherwise.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SignupAttributionDto)
+  attribution?: SignupAttributionDto;
 }
 
 class VerifyEmailDto {
@@ -208,6 +222,7 @@ export class AuthController {
     private readonly rolesService: RolesService,
     private readonly recoveryCodes: RecoveryCodesService,
     private readonly ssoEnforcement: SsoEnforcementService,
+    private readonly productEvents: ProductEventService,
   ) {}
 
   private getFrontendUrl(_req?: any): string {
@@ -488,7 +503,18 @@ export class AuthController {
     }
 
     try {
-      const { user } = await this.createAccount(dto, 'ADMIN');
+      const { user, organizationId } = await this.createAccount(dto, 'ADMIN');
+      // Only here, for the account just created: an existing address, or a
+      // sign-up that lost the race above, must not add a second attribution
+      // to someone else's account. Not awaited, and log() never throws.
+      if (dto.attribution) {
+        void this.productEvents.log({
+          event: ProductEvents.SIGNUP_ATTRIBUTED,
+          userId: user.id,
+          organizationId,
+          metadata: dto.attribution as Record<string, unknown>,
+        });
+      }
       await this.createAndSendVerificationCode(user.id, user.email, req, { sendInBackground: true });
     } catch (err: any) {
       // Two sign-ups for one new address at once: the other one won.

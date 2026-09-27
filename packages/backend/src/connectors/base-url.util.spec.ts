@@ -96,6 +96,24 @@ describe('validateBaseUrl', () => {
       ).toBeNull();
     });
 
+    it('accepts every engine the database engine supports', () => {
+      const db = { type: 'DATABASE', requirePublicHost: true };
+      for (const url of [
+        'oracle://db.example.test:1521/ORCLPDB1',
+        'mongodb+srv://cluster0.example.test/app',
+        'sqlite:///data/app.db',
+        'sqlite:/data/app.db',
+        'sqlserver://db.example.test:1433/erp',
+        'hana://hana.example.test:30015/?currentSchema=SAPHANADB',
+        'saphana://hana.example.test:30013/QAS',
+      ]) {
+        expect(validateBaseUrl(url, db)).toBeNull();
+      }
+      expect(validateBaseUrl('redis://cache.example.test:6379', db)).toMatch(
+        /not a database connection string/,
+      );
+    });
+
     it('accepts an IPv4 host', () => {
       expect(validateBaseUrl('http://78.24.216.122:8080/api', cloud)).toBeNull();
     });

@@ -78,6 +78,15 @@ const SELECTED_FIELDS_HINT =
   'with `fields` omitted, read the field names that actually come back, then ask ' +
   'again with only those.';
 
+const TYPESAFE_INVALID_REQUEST_HINT =
+  'Jev rejected the shape of a question without saying which one. Check every ' +
+  'question: `type` must be exactly "noul" (yes/no; there is no "bool"), "choice" ' +
+  'or "score"; a choice needs `criteria` as an object of option -> description ' +
+  '(1 to 255 options); a score needs `criteria` as an ARRAY of 2 to 10 level ' +
+  'descriptions, lowest first; `model` must be a name from jev_list_models. Only ' +
+  'state, model and questions go in the request: there is no field for a list ' +
+  'of records, send one call per record instead.';
+
 function bodyText(body: unknown): string {
   if (body === undefined || body === null) return '';
   if (typeof body === 'string') return body;
@@ -131,6 +140,13 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     if (/invalid parameter value|unknown query parameter|unexpected parameter/i.test(text)) {
       return WECLAPP_RAW_FILTER_HINT;
     }
+  }
+
+  // TypeSafe answers a question with an unknown type (and any other field it
+  // does not expect) with a bare "Invalid request.", which names nothing the
+  // model could fix.
+  if (hostMatches(input.host, 'typesafe.ai') && /"Invalid request\."/.test(text)) {
+    return TYPESAFE_INVALID_REQUEST_HINT;
   }
 
   return undefined;

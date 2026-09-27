@@ -8,6 +8,7 @@ import { SoapEngine } from './engines/soap.engine';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { DatabaseEngine } from './engines/database.engine';
+import { ODataEngine } from './engines/odata.engine';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
 import { LoginTokenService } from './engines/login-token.service';
 import { GraphqlSchemaService } from './engines/graphql-schema.service';
@@ -29,6 +30,7 @@ const ENGINES = [
   GraphqlEngine,
   McpClientEngine,
   DatabaseEngine,
+  ODataEngine,
 ];
 
 const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlParser];

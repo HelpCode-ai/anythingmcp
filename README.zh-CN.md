@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：259 个连接器，其中 21 个无需 API 密钥。" width="100%" />
+  <img src="docs/assets/banner.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：263 个连接器，其中 21 个无需 API 密钥。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>将任意 REST/OpenAPI、SOAP、GraphQL 或 SQL API 转化为 Claude、ChatGPT 和 Copilot 可用的 MCP 工具。</strong><br/>
-  自行托管的 MCP 服务器与网关，无需编写代码，259 个现成适配器开箱即用，涵盖 ERP 和电子商务：SAP Business One、Odoo、Xentral、weclapp、Shopware、WooCommerce、Amazon Seller、Kaufland 等。
+  自行托管的 MCP 服务器与网关，无需编写代码，263 个现成适配器开箱即用，涵盖 ERP 和电子商务：SAP Business One、Odoo、Xentral、weclapp、Shopware、WooCommerce、Amazon Seller、Kaufland 等。
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 本文反复使用的三个术语，分别指不同的概念：
 
-- **适配器（adapter）**：本仓库随附的 259 个 JSON 定义之一，例如 SAP Business One、Odoo、weclapp、Xentral、Shopware、WooCommerce、Amazon Seller、DHL 等。其中 21 个完全不需要 API 密钥，其余适配器会在导入时要求你提供相应凭据。
+- **适配器（adapter）**：本仓库随附的 263 个 JSON 定义之一，例如 SAP Business One、Odoo、weclapp、Xentral、Shopware、WooCommerce、Amazon Seller、DHL 等。其中 21 个完全不需要 API 密钥，其余适配器会在导入时要求你提供相应凭据。
 - **连接器（connector）**：在工作区中配置好的适配器，或你自己的 OpenAPI 规范、Postman 集合、WSDL、GraphQL 端点或数据库。只要有可连接的目标，就能在几分钟内完成配置，无需编写 MCP 服务器。
 - **MCP 服务器**：你提供给 Claude 的那个 URL。它只公开分配给它的连接器，不会公开其他连接器。
 
@@ -115,7 +115,7 @@ docker compose up -d
 
 ### SQL 数据库转 MCP
 
-支持 PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite 和 MongoDB。连接器会生成查看 schema、示例和查询的工具；由你决定模型是自己编写 SQL，还是只为你预先写好的查询填写参数。查询工具默认只读，写操作会被拦截。此外，请为它配置一个只读数据库用户，并分配一个只能看到所需工具的角色。[数据库连接器文档](docs/connectors/database.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp) · [5 分钟演示: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
+支持 PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SAP HANA、SQLite 和 MongoDB。连接器会生成查看 schema、示例和查询的工具；由你决定模型是自己编写 SQL，还是只为你预先写好的查询填写参数。查询工具默认只读，写操作会被拦截。此外，请为它配置一个只读数据库用户，并分配一个只能看到所需工具的角色。[数据库连接器文档](docs/connectors/database.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp) · [5 分钟演示: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -196,7 +196,7 @@ docker compose up -d
 
 ### 连接
 
-- **5 种连接器类型** — [REST](docs/connectors/rest.md)、[SOAP](docs/connectors/soap.md)、[GraphQL](docs/connectors/graphql.md)、[数据库](docs/connectors/database.md)、[MCP 到 MCP 桥接](docs/connectors/mcp-bridge.md)。支持七种数据库引擎：PostgreSQL、MySQL、MariaDB、MSSQL、Oracle、MongoDB、SQLite。
+- **6 种连接器类型** — [REST](docs/connectors/rest.md)、[SOAP](docs/connectors/soap.md)、[GraphQL](docs/connectors/graphql.md)、[OData](docs/connectors/odata.md)（含 SAP Gateway）、[数据库](docs/connectors/database.md)、[MCP 到 MCP 桥接](docs/connectors/mcp-bridge.md)。支持八种数据库引擎：PostgreSQL、MySQL、MariaDB、MSSQL、Oracle、SAP HANA、MongoDB、SQLite。
 - **导入现有资源** — OpenAPI/Swagger、Postman、cURL、WSDL、GraphQL 内省，或直接从运行中的 MCP 服务器发现工具。
 - **适配器目录** — [查看已随附的内容](#the-adapter-catalog)。
 - **可视化工具编辑器** — 将参数映射到路径、查询参数、请求体和请求头；调整工具的名称和描述，让 AI 按照你的意图理解它们。
@@ -334,7 +334,7 @@ AI 客户端使用 MCP，而你的系统使用 REST、SOAP、GraphQL 和 SQL。�
 
 ## 适配器目录
 
-259 个适配器，提供 2,400 多个工具。**其中 21 个不需要 API 密钥**，其余适配器会在导入时要求提供凭据，导入后工具即可立即使用。每个适配器都在 [anythingmcp.com/guides](https://anythingmcp.com/guides) 上提供七种语言的设置指南。
+263 个适配器，提供 2,400 多个工具。**其中 21 个不需要 API 密钥**，其余适配器会在导入时要求提供凭据，导入后工具即可立即使用。每个适配器都在 [anythingmcp.com/guides](https://anythingmcp.com/guides) 上提供七种语言的设置指南。
 
 | 分类 | 示例 |
 |---|---|
@@ -347,6 +347,8 @@ AI 客户端使用 MCP，而你的系统使用 REST、SOAP、GraphQL 和 SQL。�
 | 💬 消息与通信 | WhatsApp、LINE 🇯🇵、TeamViewer |
 | 🎾 体育与 Web3 | Playtomic、Sorare |
 | 🏗️ 建筑与地图 | PlanRadar、HERE Geocoding |
+| 📈 广告与分析 | Google Ads、Google Analytics 4、Google Search Console、Matomo |
+| 🧠 AI 决策模型 | TypeSafe 的 Jev：是/否判断、分类和打分，附带概率，约 300 毫秒 |
 
 **一个适配器就是一个 JSON 文件。** 这既解释了目录为何能够达到现在的规模，也意味着添加适配器很适合作为首次贡献。如果缺少你需要的适配器，可以[提出请求](https://github.com/HelpCode-ai/anythingmcp/issues/new?template=adapter_request.yml)，我们会根据 👍 数量安排优先级；也可以[自己构建](CONTRIBUTING.md)。
 

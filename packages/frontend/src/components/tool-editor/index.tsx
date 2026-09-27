@@ -126,6 +126,12 @@ const TARGET_OPTIONS: Record<string, { value: string; label: string }[]> = {
   MCP: [
     { value: 'body', label: 'Pass-through Parameter' },
   ],
+  ODATA: [
+    { value: 'path', label: 'Path Parameter' },
+    { value: 'query', label: 'Query Parameter' },
+    { value: 'body', label: 'Body Field' },
+    { value: 'header', label: 'Header Value' },
+  ],
 };
 
 /** Per-field label inside a parameter row. Phones only: from md up the
@@ -139,6 +145,7 @@ const DEFAULT_TARGET: Record<string, string> = {
   DATABASE: 'sql',
   WEBHOOK: 'body',
   MCP: 'body',
+  ODATA: 'query',
 };
 
 const METHODS_BY_TYPE: Record<string, string[]> = {
@@ -148,11 +155,27 @@ const METHODS_BY_TYPE: Record<string, string[]> = {
   DATABASE: ['query', 'static'],
   WEBHOOK: ['GET', 'POST', 'PUT', 'DELETE', 'static'],
   MCP: ['invoke', 'static'],
+  // The odata_* methods are the built-in helpers every OData connector gets;
+  // listed so editing one keeps its method.
+  ODATA: [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'static',
+    'odata_list_services',
+    'odata_describe_service',
+    'odata_describe_entity',
+    'odata_query',
+    'odata_get',
+  ],
 };
 
 function getNativeLabel(connectorType: string): string {
   switch (connectorType) {
     case 'REST': return 'API Call';
+    case 'ODATA': return 'OData Call';
     case 'GRAPHQL': return 'GraphQL Operation';
     case 'SOAP': return 'SOAP Operation';
     case 'DATABASE': return 'SQL Query';
@@ -564,7 +587,7 @@ export function ToolEditor({
 
   const handlePathChange = (newPath: string) => {
     setPath(newPath);
-    if (type === 'REST' || type === 'WEBHOOK') {
+    if (type === 'REST' || type === 'ODATA' || type === 'WEBHOOK') {
       detectPathParams(newPath);
     }
   };
@@ -813,7 +836,7 @@ export function ToolEditor({
       </div>
 
       {/* Body Mode — only for REST/WEBHOOK write methods */}
-      {(type === 'REST' || type === 'WEBHOOK') && ['POST', 'PUT', 'PATCH'].includes(method) && (
+      {(type === 'REST' || type === 'ODATA' || type === 'WEBHOOK') && ['POST', 'PUT', 'PATCH'].includes(method) && (
         <div className="border border-[var(--border)] rounded-md p-3 space-y-2">
           <div className="flex items-center gap-4">
             <label className="text-xs font-semibold">Request Body</label>

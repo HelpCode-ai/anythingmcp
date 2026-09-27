@@ -12,7 +12,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderToolsTable, access } from './templates/render-tools.mjs';
+import { renderToolsTable, access, allTools } from './templates/render-tools.mjs';
 import { renderReadme } from './readme.mjs';
 
 export const HERE = dirname(fileURLToPath(import.meta.url));
@@ -123,7 +123,7 @@ export const OBJECTS = [
 
 /** Words of an About that name an object no tool of the adapter(s) covers. */
 export function uncoveredObjects(about, adapters) {
-  const names = adapters.flatMap((a) => a.tools.map((t) => t.name.toLowerCase()));
+  const names = adapters.flatMap((a) => allTools(a).map((t) => t.name.toLowerCase()));
   return OBJECTS.filter(([word, tool]) => word.test(about) && !names.some((n) => tool.test(n))).map(
     ([word]) => about.match(word)[0],
   );
@@ -225,8 +225,9 @@ const pretty = (obj) => `${JSON.stringify(obj, null, 2)}\n`;
 /** The read-only call scripts/smoke.mjs makes once tools/list has passed. */
 function smokeCall(sat, adapters) {
   for (const a of adapters) {
-    const byProbe = a.probe?.tool && a.tools.find((t) => t.name === a.probe.tool);
-    const candidates = byProbe ? [byProbe, ...a.tools] : a.tools;
+    const tools = allTools(a);
+    const byProbe = a.probe?.tool && tools.find((t) => t.name === a.probe.tool);
+    const candidates = byProbe ? [byProbe, ...tools] : tools;
     const t = candidates.find(
       (x) => access(x, a.connector?.type) === 'read' && !(x.parameters?.required ?? []).length,
     );
@@ -297,6 +298,26 @@ export const DEMOS = {
     expectedTools: () => ['listcustomers', 'getcustomer', 'listorders', 'getorder', 'addordernote'],
     smokeCall: { tool: 'listorders', args: { status: 'OPEN' } },
   },
+  // No container: the public Northwind service is the demo. It is on the
+  // internet, so nothing needs to be allowed through the SSRF guard.
+  odata: {
+    label: null,
+    hosts: [],
+    services: '',
+    files: {},
+    setup: {
+      type: 'odata',
+      name: 'Northwind (public OData demo)',
+      baseUrl: 'https://services.odata.org/V4/Northwind/Northwind.svc',
+      config: { odata: { toolPrefix: 'northwind' } },
+    },
+    // The five built-ins every OData connector gets, named <toolPrefix>_….
+    expectedTools: () => ['list_services', 'describe_service', 'describe_entity', 'query', 'get_entity'].map((t) => `northwind_${t}`),
+    smokeCall: {
+      tool: 'northwind_query',
+      args: { entity_set: 'Orders', select: 'OrderID,CustomerID,OrderDate,ShipCity', filter: "ShipCountry eq 'Germany'", orderby: 'OrderDate desc', top: 10 },
+    },
+  },
 };
 
 /** docker-compose.yml: the main repository's quickstart, plus the demo services of a generic satellite. */
@@ -304,13 +325,13 @@ export function buildCompose(quickstart, sat) {
   let yml = quickstart;
   const demo = DEMOS[sat.kind];
   const header = [
-    `# ${sat.repo}: AnythingMCP, pulled from Docker Hub${demo ? `, plus ${demo.label}` : ''}.`,
+    `# ${sat.repo}: AnythingMCP, pulled from Docker Hub${demo?.label ? `, plus ${demo.label}` : ''}.`,
     '# Generated from docker-compose.quickstart.yml in HelpCode-ai/anythingmcp.',
     '# Start it with ./scripts/install.sh, which also writes .env.',
     '',
   ].join('\n');
   yml = yml.replace(/^# =+\n[\s\S]*?^# =+\n\n/m, header);
-  if (demo) {
+  if (demo?.services) {
     const anchor = '      - ALLOW_OPEN_REGISTRATION=false\n';
     if (!yml.includes(anchor)) throw new Error('quickstart compose changed: registration anchor not found');
     yml = yml.replace(

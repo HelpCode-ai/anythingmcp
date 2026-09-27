@@ -1,0 +1,10 @@
+- How did my Google Ads account do in the last 30 days? Spend, conversions, cost per conversion and the main campaigns.
+- Compare this month with last month by campaign: spend, conversions, CPA and ROAS.
+- List the search terms from the last 30 days that cost money and never converted, and group them into negative keyword ideas.
+- Which keywords have a Quality Score of 5 or lower, and which component is below average?
+- Are my Search campaigns losing impression share to budget or to rank?
+- Which ads are disapproved or have poor ad strength?
+- Check my conversion tracking: which actions are primary, how are they counted, and did each one record conversions recently?
+- Show spend and conversions by country for the Performance Max campaign, and flag countries we do not target.
+- Who changed bids, budgets or keywords in the account last week?
+- List the client accounts under my manager account with last month's spend for each.
