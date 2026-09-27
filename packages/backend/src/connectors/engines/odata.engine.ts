@@ -6,6 +6,7 @@ import {
   buildKeyPredicate,
   closest,
   formatKeyLiteral,
+  normalizeODataRecord,
   readODataPage,
   serviceAllowed,
 } from '../odata/odata-values';
@@ -326,7 +327,7 @@ export class ODataEngine {
       next = p.nextLink;
       page++;
       if (!next || rows.length >= top || page >= MAX_PAGES) break;
-      body = await this.getNext(config, settings, next, version);
+      body = await this.getNext(config, settings, next, version, `${service}/${resource}`);
     }
     const returned = rows.slice(0, top);
     const more = (count !== undefined && skip + returned.length < count) || !!next || rows.length > top;
@@ -385,9 +386,18 @@ export class ODataEngine {
       { ...endpointMapping, method, queryParams, headers } as any,
       { ...params, ...extra },
     );
-    if (body && typeof body === 'object' && ('d' in (body as object) || 'value' in (body as object))) {
-      const page = readODataPage(body);
-      return strip({ total: page.count, returned: page.rows.length, rows: page.rows, next: page.nextLink });
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      const b = body as Record<string, any>;
+      const isCollection =
+        Array.isArray(b.value) || Array.isArray(b.d) || Array.isArray(b.d?.results);
+      if (isCollection) {
+        const page = readODataPage(body);
+        return strip({ total: page.count, returned: page.rows.length, rows: page.rows, next: page.nextLink });
+      }
+      // A single entity: V2 wraps it in `d`, V4 sends it bare with @odata
+      // control information. Either way, hand back the entity itself.
+      if (b.d && typeof b.d === 'object') return normalizeODataRecord(b.d);
+      if (Object.keys(b).some((k) => k.startsWith('@odata.'))) return normalizeODataRecord(b);
     }
     return body;
   }
@@ -575,9 +585,19 @@ export class ODataEngine {
     settings: ODataSettings,
     next: string,
     version: 'v2' | 'v4',
+    /** Path of the request that returned `next`, relative to the base URL. */
+    requestPath: string,
   ): Promise<unknown> {
     const base = new URL(config.baseUrl);
-    const url = new URL(next, base);
+    // A relative next link (V4 servers send `Orders?$skiptoken=…`) resolves
+    // against the URL of the request that returned it, not against the base
+    // URL: resolved against a service root without a trailing slash it would
+    // lose the root's last segment.
+    const requestUrl = new URL(
+      `${base.pathname.replace(/\/+$/, '')}/${requestPath.replace(/^\/+/, '')}`,
+      base.origin,
+    );
+    const url = new URL(next, requestUrl);
     if (url.origin !== base.origin) {
       throw new Error(`The service returned a next link on another host (${url.host}); not followed.`);
     }

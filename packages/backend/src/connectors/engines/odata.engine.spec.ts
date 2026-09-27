@@ -314,8 +314,27 @@ describe('ODataEngine', () => {
 
       const one: any = await engine.execute(cfg, { method: 'odata_get' }, { entity_set: 'People', key: 'russell' }, undefined);
       expect(one).toEqual({ UserName: 'russell', FirstName: 'Russell' });
+    });
 
-      const list: any = await engine.execute(cfg, { method: 'odata_list_services' }, {}, undefined);
+    it('resolves a relative next link against the request URL, not the service root', async () => {
+      const { rest, calls } = fakeRest({
+        '/$metadata': () => fixture('trippin-v4.xml'),
+        '/People': () => ({ value: [{ UserName: 'a' }], '@odata.nextLink': 'People?$skiptoken=1' }),
+        'https://odata.example.test/TripPin/People': () => ({ value: [{ UserName: 'b' }] }),
+      });
+      const out: any = await new ODataEngine(rest).execute(
+        cfg,
+        { method: 'odata_query' },
+        { entity_set: 'People', top: 5, count: false },
+        undefined,
+      );
+      expect(out.rows).toEqual([{ UserName: 'a' }, { UserName: 'b' }]);
+      expect(calls[2].query).toEqual({ $skiptoken: '1' });
+    });
+
+    it('reports the base URL as the only service', async () => {
+      const { rest } = fakeRest({});
+      const list: any = await new ODataEngine(rest).execute(cfg, { method: 'odata_list_services' }, {}, undefined);
       expect(list.services[0].service).toBe('');
     });
   });
