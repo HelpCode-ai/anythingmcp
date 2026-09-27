@@ -110,6 +110,20 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
     expect(hint).toMatch(/`fields` omitted/);
   });
 
+  // Jev answers `type: "bool"` (and a top-level field it does not know) with a
+  // bare "Invalid request." that names neither the question nor the field.
+  it('spells out the Jev question shapes when TypeSafe says only "Invalid request."', () => {
+    const hint = deriveErrorHint({
+      host: 'api.typesafe.ai',
+      status: 400,
+      body: { detail: { error_type: 'api_usage_error', message: 'Invalid request.' } },
+    });
+    expect(hint).toMatch(/there is no "bool"/);
+    expect(
+      deriveErrorHint({ host: 'api.example.com', status: 400, body: { message: 'Invalid request.' } }),
+    ).toBeUndefined();
+  });
+
   it('still says nothing about an error it does not recognise', () => {
     expect(deriveErrorHint({ status: 500, body: { message: 'boom' } })).toBeUndefined();
   });

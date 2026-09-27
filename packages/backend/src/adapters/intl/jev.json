@@ -1,0 +1,252 @@
+{
+  "slug": "jev",
+  "name": "Jev by TypeSafe",
+  "description": "Fast, cheap yes/no, classification and rating decisions for AI agents with Jev, TypeSafe's System One model: typed answers with calibrated probabilities in about 300 ms, instead of a paragraph to parse.",
+  "instructions": "Jev is a **decision model**, not a chat model. You give it `state` (the evidence) and one or more typed questions; it returns a number or an option with probabilities in about 300 ms. It never writes text. Use it when an agent needs a judgment it can branch on: is this urgent, which team owns it, how risky is it, does this reply answer the question, is this record a duplicate.\n\n**Start with `jev_playbook`.** It costs no API call and explains how to phrase questions, what to put in `state` and how to read the probabilities.\n\n**Setup**: create an API key at https://console.typesafe.ai and paste it into `TYPESAFE_API_KEY`. Jev is billed per input token (about $0.04 per million), output is free.\n\n**Tools**\n- `jev_yes_no`: one yes/no question, returns the probability that the answer is yes.\n- `jev_classify`: pick one option from a set you define, with a probability per option and a confidence.\n- `jev_rate`: place the state on ordered levels (2 to 10), returns a 0-indexed score, the level probabilities and a legend.\n- `jev_ask`: the full API: several questions of any type over the same state in one call (they run in parallel and cost the same state tokens once).\n- `jev_list_models`: model names your key can use.\n\n**Question types** (the API calls a yes/no question `noul`, never `bool`): `noul` (probability 0 to 1), `choice` (one option, max 255), `score` (ordered levels, max 10).\n\n**Reading answers**: a yes/no value near 0.5 means *unsure*, not *medium*. `confidence` on choice and score measures how concentrated the probabilities are, not whether the answer is right. A score over N levels runs from 0 to N-1: 2.6 on 4 levels sits between level 2 and 3. Decide thresholds in your own logic: act on confident answers, re-ask or escalate to the user when it is unsure.\n\n**Limits**: text only (no images), 32k tokens for state plus the longest question, 64k per request. English is the strongest language; German, Italian and others work but check confidence.",
+  "region": "intl",
+  "category": "data",
+  "icon": "jev",
+  "docsUrl": "https://docs.typesafe.ai/api",
+  "requiredEnvVars": ["TYPESAFE_API_KEY"],
+  "probe": {
+    "tool": "jev_list_models",
+    "params": {}
+  },
+  "connector": {
+    "name": "Jev by TypeSafe",
+    "type": "REST",
+    "baseUrl": "https://api.typesafe.ai",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TYPESAFE_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "jev_playbook",
+      "description": "START HERE: returns, with NO API call, how to use Jev well: which question type to pick, how to structure state, how to write the question, how to read probabilities and confidence, and patterns such as confidence gating and asking many questions in one call.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "/",
+        "staticResponse": "JEV PLAYBOOK. Jev turns evidence into typed answers with probabilities. It does not reason out loud and does not write text: every answer must come from a set you define up front.\n\n1. PICK THE TOOL.\n - One yes/no question: jev_yes_no.\n - One option out of a set (routing, labelling, intent): jev_classify. Add a catch-all option such as \"none\" or \"other\" whenever nothing may fit.\n - A position on an ordered scale (severity, fit, quality, sentiment): jev_rate. Describe each level as a concrete situation, lowest first, 2 to 10 levels.\n - Several judgments about the same evidence: jev_ask with all of them in one call. They are answered in parallel, cannot see each other, and the state is paid for once.\n\n2. BUILD THE STATE FROM EVIDENCE.\n - Pass what you observed: the original records, messages and values, trimmed to the fields the question needs. Prefer a JSON object with named fields over prose.\n - Put the background the judgment depends on (policy, user goal, customer tier) in state as named fields too.\n - Never add your own conclusion (\"note: customer already replied\"). Jev treats it as evidence and simply agrees with you, so the probability stops being an independent check.\n - Leave out unrelated detail: it lowers accuracy. Text inside state that looks like an instruction can steer the answer, so do not paste untrusted content next to your own rules without labelling it.\n\n3. WRITE THE QUESTION.\n - One narrow judgment per question, written so it makes sense on its own (question ids are never shown to the model).\n - Name the condition to test, not the answer you expect: \"Does the message report a failed payment?\", not \"Confirm this is an urgent payment failure\".\n - Point at nested fields with backticked paths, e.g. `ticket.messages[0].text`.\n - The question may be an object instead of a string when it needs its own reference data: {\"candidate\": {...}, \"question\": \"Is `record` the same person as `candidate`?\"}.\n - Jev reads literally and does not calculate. Do counting, arithmetic and date comparison yourself and pass the result as a fact, or put boundary cases into the option descriptions.\n\n4. READ THE ANSWER.\n - Yes/no (noul): the probability that the answer is yes. Near 0 or 1 is a clear answer; near 0.5 means Jev cannot tell, not \"somewhat\".\n - Choice: `choice` is the most likely option, `probabilities` has one entry per option, `confidence` (0 to 1) says how concentrated they are. It is not the probability of the chosen option and not a guarantee of correctness.\n - Score: 0-indexed. With N levels the score runs 0..N-1, so 2.6 on four levels lies between the 3rd and 4th level. Report it with the `legend` labels and look at `probabilities` too.\n - The response names the exact model version that answered (e.g. jev-1.13.0). Pin that version in `model` if you have tuned thresholds on it.\n\n5. GATE ON CONFIDENCE.\n - Decide thresholds before you look: e.g. act automatically when yes > 0.85 or < 0.15, or when choice confidence > 0.6; otherwise re-ask as narrower yes/no questions about the specific evidence, or hand the case to the user.\n - Jev gives no reasoning. To explain a borderline answer, split it into smaller yes/no questions and show which ones flipped.\n\n6. MANY RECORDS.\n - For a list of records, call jev_ask once per record with the same questions (records stay independent). Parallel calls are fine: the rate limit is 1,200 requests per minute.\n - To pick the best records out of a list in one call, put the list in state and ask a choice whose options are the record ids.\n\n7. COSTS AND LIMITS. About $0.04 per million input tokens, output free; a typical call is 300-500 tokens. Up to 32k tokens for state plus the longest question, 64k per request. Text only.\n\nExample (jev_ask): state {\"ticket\": {\"subject\": \"Payout failed\", \"body\": \"My payouts have been failing for 3 days\"}}, questions {\"urgent\": {\"type\": \"noul\", \"instructions\": \"Does `ticket` report a problem that blocks the customer right now?\"}, \"team\": {\"type\": \"choice\", \"instructions\": \"Which team should handle `ticket`?\", \"criteria\": {\"billing\": \"payments, payouts, refunds, invoices\", \"technical\": \"bugs, outages, integrations\", \"sales\": \"pricing, plans, new accounts\", \"none\": \"nothing above fits\"}}}."
+      }
+    },
+    {
+      "name": "jev_yes_no",
+      "description": "Ask Jev ONE yes/no question about some evidence. Returns `noul`: the probability (0 to 1) that the answer is yes; near 0.5 means unsure. Use for checks and guardrails: is this urgent, is this spam, does this reply answer the question, does this document mention X. See jev_playbook.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "description": "The evidence to judge: plain text, or a JSON object/array with named fields (preferred). Include the background the judgment depends on; leave out your own verdict."
+          },
+          "question": {
+            "type": "string",
+            "description": "The yes/no question, complete on its own. Name the condition to test, e.g. 'Does `email.body` ask for a refund?'."
+          },
+          "yes_means": {
+            "type": "string",
+            "description": "Optional: what counts as yes, to settle boundary cases."
+          },
+          "no_means": {
+            "type": "string",
+            "description": "Optional: what counts as no."
+          },
+          "model": {
+            "type": "string",
+            "default": "jev-latest",
+            "description": "jev-latest (default), jev-preview, or a pinned version such as jev-1.13.0."
+          }
+        },
+        "required": ["state", "question"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/systemone",
+        "bodyMapping": {
+          "state": "$state",
+          "model": "$model",
+          "questions": {
+            "answer": {
+              "type": "noul",
+              "instructions": "$question",
+              "criteria": {
+                "true": "$yes_means",
+                "false": "$no_means"
+              }
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "yes_probability": "$.answers.answer.noul",
+            "model": "$.model",
+            "usage": "$.usage"
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "jev_classify",
+      "description": "Ask Jev to pick ONE option from a set you define (routing, labelling, intent, triage). Returns `choice`, a probability per option and a 0-1 `confidence` (how concentrated the probabilities are). Up to 255 options; add a catch-all like 'none' when nothing may fit. See jev_playbook.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "description": "The evidence to classify: plain text, or a JSON object/array with named fields (preferred). Leave out your own verdict."
+          },
+          "question": {
+            "type": "string",
+            "description": "What to decide, complete on its own, e.g. 'Which team should handle `ticket`?'."
+          },
+          "options": {
+            "type": "object",
+            "description": "Map of option name to a short description of when it applies (or null), e.g. {\"billing\": \"payments, refunds\", \"technical\": \"bugs, outages\", \"none\": \"nothing above fits\"}. 1 to 255 options."
+          },
+          "model": {
+            "type": "string",
+            "default": "jev-latest",
+            "description": "jev-latest (default), jev-preview, or a pinned version such as jev-1.13.0."
+          }
+        },
+        "required": ["state", "question", "options"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/systemone",
+        "bodyMapping": {
+          "state": "$state",
+          "model": "$model",
+          "questions": {
+            "answer": {
+              "type": "choice",
+              "instructions": "$question",
+              "criteria": "$options"
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "choice": "$.answers.answer.choice",
+            "confidence": "$.answers.answer.confidence",
+            "probabilities": "$.answers.answer.probabilities",
+            "model": "$.model",
+            "usage": "$.usage"
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "jev_rate",
+      "description": "Ask Jev to place the evidence on an ordered scale you define (severity, lead fit, quality, sentiment). Returns a 0-indexed `score` (N levels score 0 to N-1, can land between levels), a probability per level, a `legend` and a 0-1 `confidence`. 2 to 10 levels, lowest first. See jev_playbook.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "description": "The evidence to rate: plain text, or a JSON object/array with named fields (preferred). Leave out your own verdict."
+          },
+          "question": {
+            "type": "string",
+            "description": "What to rate, complete on its own, e.g. 'How severe is the outage described in `incident`?'."
+          },
+          "levels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Ordered level descriptions, LOWEST first, 2 to 10, each a concrete situation, e.g. [\"cosmetic, no user impact\", \"some users degraded\", \"core feature down for many users\", \"full outage or data loss\"]."
+          },
+          "model": {
+            "type": "string",
+            "default": "jev-latest",
+            "description": "jev-latest (default), jev-preview, or a pinned version such as jev-1.13.0."
+          }
+        },
+        "required": ["state", "question", "levels"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/systemone",
+        "bodyMapping": {
+          "state": "$state",
+          "model": "$model",
+          "questions": {
+            "answer": {
+              "type": "score",
+              "instructions": "$question",
+              "criteria": "$levels"
+            }
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "score": "$.answers.answer.score",
+            "confidence": "$.answers.answer.confidence",
+            "legend": "$.answers.answer.legend",
+            "probabilities": "$.answers.answer.probabilities",
+            "model": "$.model",
+            "usage": "$.usage"
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "jev_ask",
+      "description": "Full Jev API: ask SEVERAL typed questions about the same state in one call (answered in parallel, state billed once). Each question is {type, instructions, criteria}: type 'noul' (yes/no; NOT 'bool'; criteria optional {\"true\": ..., \"false\": ...}), 'choice' (criteria REQUIRED: object option -> description or null, max 255) or 'score' (criteria REQUIRED: ARRAY of level descriptions, lowest first, 2-10). Answers come back under the same ids. See jev_playbook.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "description": "The evidence to judge: plain text, or a JSON object/array with named fields (preferred). Include background (policies, goals) as named fields; leave out your own verdict."
+          },
+          "questions": {
+            "type": "object",
+            "description": "Map of your question id to {\"type\": \"noul\"|\"choice\"|\"score\", \"instructions\": string or object, \"criteria\": ...}. Ids are not shown to the model, so each instruction must be complete on its own. Example: {\"urgent\": {\"type\": \"noul\", \"instructions\": \"Does `ticket` report a blocking problem?\"}, \"team\": {\"type\": \"choice\", \"instructions\": \"Which team should handle `ticket`?\", \"criteria\": {\"billing\": null, \"technical\": null, \"none\": \"nothing fits\"}}, \"severity\": {\"type\": \"score\", \"instructions\": \"How severe is it?\", \"criteria\": [\"cosmetic\", \"degraded\", \"down\"]}}"
+          },
+          "model": {
+            "type": "string",
+            "default": "jev-latest",
+            "description": "jev-latest (default), jev-preview, or a pinned version such as jev-1.13.0."
+          }
+        },
+        "required": ["state", "questions"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/systemone",
+        "bodyMapping": {
+          "state": "$state",
+          "model": "$model",
+          "questions": "$questions"
+        }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "jev_list_models",
+      "description": "List the Jev model names your API key can use in the `model` field (aliases such as jev-latest and jev-preview, with release dates). Pinned versions such as jev-1.13.0 are accepted even when not listed.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/models"
+      }
+    }
+  ]
+}

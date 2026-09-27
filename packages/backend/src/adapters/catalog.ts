@@ -136,6 +136,7 @@ import * as insightly from './intl/insightly.json';
 import * as instantly from './intl/instantly.json';
 import * as invoiceNinja from './intl/invoice-ninja.json';
 import * as invoiced from './intl/invoiced.json';
+import * as jev from './intl/jev.json';
 import * as kashflow from './intl/kashflow.json';
 import * as klaviyo from './intl/klaviyo.json';
 import * as kustomer from './intl/kustomer.json';
@@ -520,6 +521,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   instantly as unknown as AdapterDefinition,
   invoiceNinja as unknown as AdapterDefinition,
   invoiced as unknown as AdapterDefinition,
+  jev as unknown as AdapterDefinition,
   kashflow as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
   kustomer as unknown as AdapterDefinition,
