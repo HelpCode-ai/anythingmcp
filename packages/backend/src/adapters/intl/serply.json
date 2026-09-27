@@ -1,0 +1,102 @@
+{
+  "slug": "serply",
+  "name": "Serply",
+  "description": "Google web, news and Scholar search from any AI agent via the Serply API. 3 tools, API-key auth.",
+  "instructions": "This connector wraps the Serply REST API (api.serply.io), which returns Google search results as JSON.\n\n**Setup**:\n1. Create an account at https://serply.io (2,500 free credits, no card required) and copy the API key from the dashboard.\n2. Set `SERPLY_API_KEY`.\n\n**Authentication**: the key is sent as the `X-Api-Key` header on every call, so it never appears in a logged URL.\n\n**Three tools, two endpoints**:\n- `serply_search` - Google web search, `GET /v1/search`. Returns organic hits under `results[]` (`title`, `link`, `description`), plus `answers`, `knowledge_graph` and `related_questions` when Google shows them.\n- `serply_news` - the same endpoint with Google's news vertical (`tbm=nws`), so news hits come back in the same `results[]` shape with direct publisher links.\n- `serply_scholar` - Google Scholar, `GET /v1/scholar`. Returns papers under `articles[]` (`title`, `link`, `author`, `description`).\n\n**Parameters**:\n- `q` accepts Google operators: `site:`, `-site:`, `filetype:`, `inurl:`, `intitle:\"...\"`, quoted phrases.\n- `num` is an upper bound, capped at 10 per request by Serply. At 10 the row count follows the Google page and can be 9 or 11.\n- `gl` is a two-letter country code (`us`, `gb`, `de`). Leave it unset and the region is whatever Google assigns the request, so set it when locality matters.\n- `tbs` restricts recency on web and news: `qdr:h` (hour), `qdr:d` (day), `qdr:w` (week), `qdr:m` (month), `qdr:y` (year). Custom date ranges are not supported.\n\n**Result shape**: each hit carries a URL, title and snippet. Snippets are previews; for exact values on a page, fetch the result `link` separately. This connector does not extract page content.\n\n**Pricing**: one credit per request. Docs: https://serply.io/docs",
+  "region": "intl",
+  "category": "data",
+  "icon": "serply",
+  "docsUrl": "https://serply.io/docs",
+  "requiredEnvVars": ["SERPLY_API_KEY"],
+  "connector": {
+    "name": "Serply API",
+    "type": "REST",
+    "baseUrl": "https://api.serply.io",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{SERPLY_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "serply_search",
+      "description": "Google web search via Serply. Use when the agent needs current information, documentation, or facts not in its training data. Organic hits are in results[] (title, link, description). Supports Google operators in q: site:, -site:, filetype:, inurl:, intitle:.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Search query. Supports site:, -site:, filetype:, inurl:, intitle:\"...\" and quoted phrases." },
+          "num": { "type": "integer", "description": "Max results, 1-10. Serply caps a request at 10." },
+          "gl": { "type": "string", "description": "Two-letter country code to localise results (e.g. 'us', 'gb', 'de')." },
+          "tbs": { "type": "string", "description": "Recency filter: 'qdr:h' (hour), 'qdr:d' (day), 'qdr:w' (week), 'qdr:m' (month), 'qdr:y' (year)." }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/search",
+        "queryParams": {
+          "q": "$q",
+          "num": "$num",
+          "gl": "$gl",
+          "tbs": "$tbs"
+        },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "serply_news",
+      "description": "Google News search via Serply. Calls the same GET /v1/search endpoint as serply_search with Google's news vertical, so hits come back in the same results[] shape with direct publisher links. Use when the user wants news coverage of a topic, company or event rather than general web results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "News search query. Supports the same operators as serply_search." },
+          "num": { "type": "integer", "description": "Max results, 1-10." },
+          "gl": { "type": "string", "description": "Two-letter country code to localise results (e.g. 'us', 'gb', 'de')." },
+          "tbs": { "type": "string", "description": "Recency filter: 'qdr:h' (hour), 'qdr:d' (day), 'qdr:w' (week), 'qdr:m' (month), 'qdr:y' (year)." }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/search",
+        "queryParams": {
+          "q": "$q",
+          "num": "$num",
+          "gl": "$gl",
+          "tbs": "$tbs",
+          "tbm": "nws"
+        },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      }
+    },
+    {
+      "name": "serply_scholar",
+      "description": "Google Scholar search via Serply. Returns academic papers in articles[] (title, link, author, description). Use when the user asks for papers, citations or research on a topic rather than general web pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Scholar query, e.g. a topic, a paper title in quotes, or author:\"name\"." },
+          "num": { "type": "integer", "description": "Max results, 1-10." }
+        },
+        "required": ["q"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/scholar",
+        "queryParams": {
+          "q": "$q",
+          "num": "$num"
+        },
+        "headers": { "User-Agent": "AnythingMCP (https://anythingmcp.com)" }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{ articles: articles }"
+        }
+      }
+    }
+  ],
+  "probe": { "tool": "serply_search", "params": { "q": "serply", "num": 1 } }
+}

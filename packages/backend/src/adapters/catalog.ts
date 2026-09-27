@@ -202,6 +202,7 @@ import * as sapS4hanaOdata from './intl/sap-s4hana-odata.json';
 import * as savvycal from './intl/savvycal.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
+import * as serply from './intl/serply.json';
 import * as signwell from './intl/signwell.json';
 import * as slab from './intl/slab.json';
 import * as snov from './intl/snov.json';
@@ -623,6 +624,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   savvycal as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sentry as unknown as AdapterDefinition,
+  serply as unknown as AdapterDefinition,
   signwell as unknown as AdapterDefinition,
   slab as unknown as AdapterDefinition,
   snov as unknown as AdapterDefinition,
