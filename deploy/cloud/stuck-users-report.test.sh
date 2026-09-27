@@ -179,6 +179,26 @@ has   "$R" "Since the last report: 1 of the 2 orgs listed then have had a succes
 has   "$R" "SUMMARY: 0 new stuck orgs (1 still stuck)" "summary counts still-stuck"
 [ "${KEEP_MAIL:-0}" = 1 ] && { echo "──── second-week report ────"; cat "$R"; echo "────────────────────────────"; }
 
+echo "3b. daily trial report (deploy/cloud/trial-report.sh) on the same schema"
+# org A: trial ending tomorrow, one warning mailed. org B: trial ended two
+# hours ago and a paid licence bought an hour ago, so it counts as converted.
+psql_in >/dev/null <<'SQL'
+insert into licenses (id, license_key, plan, status, expires_at, created_at, updated_at, organization_id) values
+  ('lic_a', 'TRIAL-A', 'trial',   'active',  (now() at time zone 'UTC') + interval '1 day',  (now() at time zone 'UTC') - interval '6 days', now(), 'org_stuck_a'),
+  ('lic_b', 'TRIAL-B', 'trial',   'expired', (now() at time zone 'UTC') - interval '2 hours', (now() at time zone 'UTC') - interval '7 days', now(), 'org_stuck_b'),
+  ('lic_p', 'PAID-B',  'starter', 'active',  null, (now() at time zone 'UTC') - interval '1 hour', now(), 'org_stuck_b');
+insert into org_settings (id, organization_id, key, value, updated_at) values
+  ('os_a', 'org_stuck_a', 'trial_email_warn3', 'x', now());
+SQL
+TRIAL_SCRIPT="$ROOT/deploy/cloud/trial-report.sh"
+if ENV_FILE="$ENVF" PG_CONTAINER="$PG" bash "$TRIAL_SCRIPT" --dry-run > "$WORK/t1.txt" 2>/dev/null; then ok "trial report runs against every migration"; else bad "trial report failed: $(cat "$WORK/t1.txt")"; fi
+R="$WORK/t1.txt"
+has "$R" "SUMMARY: 1 paid in 24 h, 1 trials end in 3 days, 1 of 1 ended yesterday converted." "trial summary"
+has "$R" "starter  bob@example.org" "new paid licence listed"
+has "$R" "alice@example.com" "trial ending tomorrow listed"
+has "$R" "calls, none succeeded; e-mails sent: warn3" "stage and trial e-mails"
+has "$R" "[PAID]" "ended trial marked converted"
+
 echo "4. mail over STARTTLS"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \

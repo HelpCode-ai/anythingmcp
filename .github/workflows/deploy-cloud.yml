@@ -32,7 +32,7 @@ jobs:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/cloud/stuck-users-report.sh,deploy/cloud/systemd/anythingmcp-stuck-report.service,deploy/cloud/systemd/anythingmcp-stuck-report.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/cloud/stuck-users-report.sh,deploy/cloud/systemd/anythingmcp-stuck-report.service,deploy/cloud/systemd/anythingmcp-stuck-report.timer,deploy/cloud/trial-report.sh,deploy/cloud/systemd/anythingmcp-trial-report.service,deploy/cloud/systemd/anythingmcp-trial-report.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
           target: /tmp/anythingmcp-deploy
           overwrite: true
 
@@ -96,6 +96,16 @@ jobs:
             systemctl daemon-reload
             systemctl enable --now anythingmcp-stuck-report.timer
             systemctl is-active anythingmcp-stuck-report.timer
+
+            # Daily trial report, 08:05 Europe/Berlin: licences that became paid,
+            # trials ending in the next 3 days and how far each workspace got,
+            # trials that ended yesterday. Read-only, same mail route as above.
+            install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/trial-report.sh ./trial-report.sh
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-trial-report.service /etc/systemd/system/
+            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-trial-report.timer /etc/systemd/system/
+            systemctl daemon-reload
+            systemctl enable --now anythingmcp-trial-report.timer
+            systemctl is-active anythingmcp-trial-report.timer
 
             mkdir -p ./deploy/motis
             cp /tmp/anythingmcp-deploy/deploy/motis/* ./deploy/motis/
