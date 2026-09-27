@@ -159,7 +159,7 @@
         "no-code",
         "self-hosted"
       ],
-      "website": "https://anythingmcp.com/guides/rest-api-to-mcp",
+      "website": "https://anythingmcp.com/guides/odata-to-mcp",
       "languages": [
         "en"
       ],
@@ -499,7 +499,7 @@
         "erp",
         "on-premise"
       ],
-      "website": "https://anythingmcp.com/guides/sap-hana-to-mcp",
+      "website": "https://anythingmcp.com/guides/connect-sap-hana-to-claude",
       "languages": [
         "en",
         "de"
