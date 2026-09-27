@@ -1,0 +1,87 @@
+---
+title: "Google Ads API senza token sviluppatore: cosa cambia da settembre 2026"
+description: "Dal 9 settembre 2026 la Google Ads API non usa più i token sviluppatore. L'accesso è del progetto Google Cloud: livelli Test, Explorer, Basic e Standard."
+category: "connectors"
+keyword: "google ads api developer token, google ads api access, google ads api without developer token, google ads api explorer access, CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION, google ads api 2026, token sviluppatore google ads, google ads api senza developer token, livelli di accesso google ads api, accesso google ads api"
+publishedAt: "2026-09-27"
+adapterSlug: "google-ads"
+---
+
+## I token sviluppatore non esistono più
+
+**Risposta breve:** dal **9 settembre 2026** la Google Ads API non richiede più un token sviluppatore. L'accesso viene concesso al tuo **progetto Google Cloud**, a uno di quattro livelli (Test, Explorer, Basic, Standard), e lo richiedi dalla pagina Google Ads API del progetto nella console Cloud. Per usare l'API non ti serve più un account amministratore (MCC) di Google Ads. Puoi ancora inviare l'header `developer-token`; Google lo ignora.
+
+La [pagina di Google sul token sviluppatore](https://developers.google.com/google-ads/api/docs/api-policy/developer-token) lo dice chiaramente: i token sviluppatore sono stati dismessi il 9 settembre 2026 e i livelli di accesso esistenti sono stati trasferiti ai progetti Cloud in base all'attività API recente. Le richieste presentate tramite il Centro API di un account amministratore non vengono più elaborate.
+
+## Prima e dopo
+
+| | Fino a settembre 2026 | Dal 9 settembre 2026 |
+|---|---|---|
+| Cosa identifica la tua app | token sviluppatore dal Centro API di un account amministratore | il tuo progetto Google Cloud |
+| Account amministratore (MCC) | obbligatorio per ottenere un token | solo per gestire più account |
+| Dove fai richiesta | Centro API in Google Ads | pagina Google Ads API nella console Cloud |
+| Header `developer-token` | obbligatorio a ogni chiamata | facoltativo, ignorato |
+| Quota | per token sviluppatore | per progetto Cloud |
+| OAuth | credenziali utente | invariato: credenziali utente, scope `adwords` |
+
+## I livelli di accesso
+
+| Livello | Account | Operazioni al giorno | Come lo ottieni |
+|---|---|---|---|
+| Test | solo account di test | 15.000 | predefinito per un progetto nuovo |
+| Explorer | test e produzione | 2.880 in produzione, 15.000 in test | richiesta nella console Cloud; spesso concesso in automatico, senza verifica del brand |
+| Basic | test e produzione | 15.000 | richiesta dopo la verifica del brand del progetto; revisione in pochi minuti |
+| Standard | test e produzione | illimitate (valgono i limiti di frequenza per servizio) | richiesta; revisione manuale di circa 10 giorni lavorativi |
+
+Con l'accesso **Test**, una chiamata a un account reale fallisce con `CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION`. È l'errore che quasi tutti incontrano per primo dopo il cambio: il progetto funziona, l'OAuth funziona, ma il livello è ancora Test.
+
+**Explorer** basta per leggere i tuoi account o una manciata di account cliente. Un report come "rendimento delle campagne del mese scorso" è un'operazione; un agente AI che risponde a una domanda ne fa di solito da due a otto.
+
+## Come ottenere l'accesso oggi
+
+1. Apri [console.cloud.google.com](https://console.cloud.google.com), scegli o crea un progetto, poi vai su **API e servizi → Libreria** e abilita **Google Ads API**.
+2. Apri la pagina **Google Ads API** del progetto. Mostra il livello di accesso attuale; espandi **Upgrade access level** e richiedi Explorer (oppure Basic, dopo la verifica del brand).
+3. Crea un **ID client OAuth** in **API e servizi → Credenziali** e imposta la **Schermata consenso OAuth** su In produzione (in modalità Test i refresh token scadono dopo 7 giorni).
+4. Autorizza con un utente Google che ha accesso agli account pubblicitari. Lo scope `adwords` è l'unico disponibile e non è in sola lettura, quindi dai a quell'utente il ruolo che gli serve e niente di più.
+
+## Cosa significa per gli strumenti esistenti
+
+Script, CLI e server MCP scritti prima di settembre 2026 di solito chiedono un token sviluppatore e un account amministratore. Continuano a funzionare se inviano anche credenziali OAuth di un progetto che ha accesso, perché l'header del token viene ignorato. Ma le loro istruzioni di configurazione ora fanno passare le persone da passaggi che non esistono più, e un nuovo utente che crea un token nel Centro API non ne ricava nulla.
+
+Cosa aggiornare nella tua configurazione:
+
+- Smetti di chiedere `GOOGLE_ADS_DEVELOPER_TOKEN`; tieni ID client OAuth, secret e refresh token.
+- Assicurati che il client OAuth appartenga a un progetto Cloud con accesso Explorer o superiore.
+- Tieni `login-customer-id` solo per l'accesso tramite un account amministratore.
+- Ricorda che ora la quota appartiene al progetto Cloud. Più strumenti che condividono un client OAuth condividono anche la quota.
+
+## Usala da Claude o ChatGPT
+
+Il [connettore Google Ads su AnythingMCP](https://anythingmcp.com/it/guides/google-ads-to-mcp) è stato creato per il nuovo modello: chiede solo un ID client OAuth e un secret (e facoltativamente l'ID di un account amministratore), lo autorizzi una volta nel browser, e Claude, ChatGPT, Cursor o Gemini possono leggere campagne, termini di ricerca, Punteggio di qualità, budget e conversioni. È in sola lettura e non richiede un token sviluppatore.
+
+- [Collega Google Ads a Claude](https://anythingmcp.com/it/guides/connect-google-ads-to-claude)
+- [Collega Google Ads a ChatGPT](https://anythingmcp.com/it/guides/connect-google-ads-to-chatgpt)
+
+## FAQ
+
+**Il mio strumento chiede ancora un token sviluppatore. Cosa inserisco?**
+Qualsiasi valore, oppure lascialo vuoto se lo strumento lo consente: Google ignora l'header. Conta che il client OAuth venga da un progetto Cloud con accesso.
+
+**Mi serve ancora un account amministratore (MCC)?**
+Solo per gestire più account con un unico login. Per il tuo account puoi chiamare l'API direttamente.
+
+**Quale livello di accesso mi serve per leggere il mio account?**
+Explorer. L'accesso Test raggiunge solo gli account di test.
+
+**La quota è per utente o per progetto?**
+Per progetto Google Cloud, su una finestra mobile di 24 ore.
+
+**Dove è documentato?**
+Nelle pagine di Google sul [token sviluppatore](https://developers.google.com/google-ads/api/docs/api-policy/developer-token) e sui [livelli di accesso](https://developers.google.com/google-ads/api/docs/api-policy/access-levels).
+
+## Guide correlate
+
+- [Google Ads MCP server: la panoramica](https://anythingmcp.com/it/guides/google-ads-to-mcp)
+- [Collega Google Ads a Claude](https://anythingmcp.com/it/guides/connect-google-ads-to-claude)
+- [Audit di Google Ads con Claude](https://anythingmcp.com/it/guides/google-ads-audit-with-claude)
+- [Google Ads nel marketplace](https://anythingmcp.com/it/marketplace/google-ads)

@@ -1,0 +1,139 @@
+---
+title: "Google Ads MCP Server: collega Google Ads a Claude, ChatGPT e agenti"
+description: "Interroga Google Ads da Claude o ChatGPT: campagne, termini di ricerca, Punteggio di qualità, budget. Sola lettura, senza token sviluppatore, in 15 minuti."
+category: "connectors"
+keyword: "google ads mcp, google ads mcp server, mcp google ads, google ads claude, google ads chatgpt, google ads ai agent, gaql mcp, AnythingMCP Google Ads, server mcp google ads, google ads con intelligenza artificiale, analizzare google ads con ai, collegare google ads a claude"
+publishedAt: "2026-09-27"
+adapterSlug: "google-ads"
+---
+
+## Google Ads come server MCP
+
+**Risposta breve:** crea un client OAuth in un progetto Google Cloud con accesso alla Google Ads API, installa il connettore Google Ads su AnythingMCP, autorizzalo una volta nel browser e aggiungi AnythingMCP al tuo client AI come server MCP remoto. Claude, ChatGPT, Cursor o Gemini possono così leggere campagne, termini di ricerca, Punteggio di qualità, budget, conversioni e cronologia delle modifiche, e rispondere alle tue domande con i tuoi numeri reali. Il connettore legge soltanto: non può mettere in pausa una campagna né modificare un'offerta.
+
+Dal **9 settembre 2026** Google non usa più i token sviluppatore. L'accesso all'API appartiene al tuo progetto Google Cloud e non serve un account amministratore (MCC). Le guide e gli strumenti che chiedono ancora un token sviluppatore non sono aggiornati; vedi [Accesso alla Google Ads API senza token sviluppatore](https://anythingmcp.com/it/guides/google-ads-api-without-developer-token).
+
+## Cosa puoi chiedere
+
+| Area | Esempi | Tool usati |
+|---|---|---|
+| Salute dell'account | "Com'è andato l'account negli ultimi 30 giorni?" | `gads_account_daily_metrics`, `gads_campaign_performance` |
+| Spesa sprecata | "Quali termini di ricerca sono costati senza mai convertire?" | `gads_search_terms`, `gads_keyword_performance` |
+| Parole chiave escluse | "Suggerisci parole chiave escluse dai termini di ricerca del mese scorso." | `gads_search_terms`, `gads_run_gaql` |
+| Punteggio di qualità | "Quali parole chiave hanno un Punteggio di qualità basso, e quale componente è sotto la media?" | `gads_keyword_performance` |
+| Budget | "Siamo limitati dal budget o dal ranking?" | `gads_budget_pacing` |
+| Annunci | "Quali annunci sono stati rifiutati o hanno un'efficacia scarsa?" | `gads_ad_performance` |
+| Monitoraggio | "Il monitoraggio delle conversioni è configurato correttamente?" | `gads_conversion_actions`, `gads_run_gaql` |
+| Cosa è cambiato | "Chi ha modificato cosa la settimana scorsa?" | `gads_change_history` |
+| Account amministratore | "Confronta la spesa di tutti i miei account cliente." | `gads_list_client_accounts` |
+| Tutto il resto | Qualsiasi report che l'API può produrre | `gads_run_gaql`, `gads_query_field_catalog` |
+
+Un playbook integrato (`gads_playbook`) collega ogni tipo di domanda ai tool giusti e a query testate in Google Ads Query Language (GAQL): panoramica, confronto tra periodi, calo di rendimento, suddivisione per dispositivo, località e ora, pagine di destinazione, gruppi di asset di Performance Max, asset, segmenti di pubblico, fatturazione. Non consuma chiamate API.
+
+## Configurazione
+
+### Passo 1: Un progetto Google Cloud con accesso alla Google Ads API
+
+1. Apri [console.cloud.google.com](https://console.cloud.google.com), scegli o crea un progetto, poi vai su **API e servizi → Libreria** e abilita **Google Ads API**.
+2. Apri la pagina **Google Ads API** del progetto e controlla il **livello di accesso**. Un progetto nuovo parte con l'accesso **Test**, che raggiunge solo gli account di test. Richiedi l'accesso **Explorer** per leggere i tuoi account reali (2.880 operazioni al giorno, spesso approvato in automatico) oppure l'accesso **Basic** (15.000 al giorno, richiede la verifica del brand del progetto).
+3. In **API e servizi → Schermata consenso OAuth** scegli **Interno** se usi Google Workspace, altrimenti **Esterno** e imposta lo stato su **In produzione**. In modalità *Test* Google revoca il refresh token dopo 7 giorni.
+
+### Passo 2: Crea un client OAuth
+
+**Credenziali → Crea credenziali → ID client OAuth → Applicazione web**, poi aggiungi l'URI di reindirizzamento `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (self-hosted: `<your AnythingMCP URL>/api/mcp-oauth/callback`). Copia l'ID client e il secret.
+
+### Passo 3: Installa e autorizza il connettore
+
+1. Crea un workspace su [AnythingMCP Cloud](https://cloud.anythingmcp.com/login?mode=register) (7 giorni gratis) oppure usa il tuo AnythingMCP self-hosted.
+2. Apri **Marketplace**, trova **Google Ads**, clicca su **Installa** e incolla l'ID client e il secret. Se raggiungi gli account cliente tramite un account amministratore, inserisci anche l'ID di 10 cifre dell'amministratore in `GOOGLE_ADS_LOGIN_CUSTOMER_ID`.
+3. Nella pagina del connettore clicca su **Authorize with Provider** e accedi con un utente Google che vede i tuoi account Google Ads. Basta un utente con il ruolo *Sola lettura* in Google Ads.
+
+### Passo 4: Collega il tuo client AI
+
+Ogni client si collega all'URL del tuo server AnythingMCP. claude.ai e ChatGPT fanno login con OAuth; gli altri inviano una MCP API key nell'header `X-API-Key`.
+
+- [Claude (claude.ai e desktop)](https://anythingmcp.com/it/guides/connect-google-ads-to-claude)
+- [ChatGPT](https://anythingmcp.com/it/guides/connect-google-ads-to-chatgpt)
+- [Cursor](https://anythingmcp.com/it/guides/connect-google-ads-to-cursor)
+- [Gemini CLI](https://anythingmcp.com/it/guides/connect-google-ads-to-gemini)
+
+## Gli strumenti
+
+| Strumento | Cosa fa |
+|---|---|
+| `gads_playbook` | Indirizza le domande più comuni verso i tool e le query GAQL testate. Gratuito, nessuna chiamata API. |
+| `gads_list_accessible_customers` | Gli account che l'utente collegato può aprire |
+| `gads_get_customer` | Valuta, fuso orario, se è un account amministratore, tagging automatico, punteggio di ottimizzazione |
+| `gads_list_client_accounts` | Gli account sotto un account amministratore (MCC) |
+| `gads_account_daily_metrics` | Impressioni, clic, costo, conversioni e valore giorno per giorno |
+| `gads_list_campaigns` | Le campagne con stato e i motivi per cui una campagna è limitata o non viene pubblicata |
+| `gads_campaign_performance` | Totali per campagna in un intervallo di date, ordinati per costo |
+| `gads_ad_group_performance` | Totali per gruppo di annunci |
+| `gads_ad_performance` | Annunci con titoli, descrizioni, efficacia dell'annuncio e stato di approvazione |
+| `gads_keyword_performance` | Parole chiave con Punteggio di qualità e le sue tre componenti |
+| `gads_search_terms` | Il report dei termini di ricerca |
+| `gads_budget_pacing` | Budget giornaliero, spesa e quota impressioni persa per budget e per ranking |
+| `gads_conversion_actions` | Azioni di conversione: principale o no, conteggio, finestra di conversione, valore |
+| `gads_change_history` | Chi ha modificato cosa, quando e da quale strumento (ultimi 30 giorni) |
+| `gads_recommendations` | I consigli di Google con l'impatto stimato |
+| `gads_run_gaql` | Qualsiasi query GAQL, con paginazione |
+| `gads_query_field_catalog` | Nomi dei campi, tipi, valori enum e compatibilità |
+
+Ogni tool è contrassegnato come in sola lettura, quindi Claude e ChatGPT possono eseguirlo senza trattarlo come un'azione.
+
+## Cosa succede quando chiedi
+
+Abbiamo chiesto a Claude, su claude.ai, com'era andato il nostro account Google Ads negli ultimi 30 giorni: spesa, conversioni, costo per conversione e campagne principali. Claude ha chiamato sei tool in autonomia: ha elencato gli account accessibili, ha notato che due avevano lo stesso nome e che uno era fermo da tutto l'anno, ha letto valuta e fuso orario, ha recuperato i totali per campagna, l'elenco delle campagne, l'andamento giornaliero e le azioni di conversione.
+
+La risposta è andata oltre i totali. Il costo per conversione sembrava troppo buono per un account B2B, così Claude ha controllato i giorni uno per uno e ha trovato due brevi picchi di clic a circa un centesimo l'uno che avevano prodotto la maggior parte delle conversioni del mese. Ha notato che quasi tutte le conversioni erano un'unica azione di registrazione conteggiata come visita di pagina, e ha suggerito di confrontare i numeri di Google con le registrazioni reali prima di fidarsi dell'ottimizzazione della campagna. È il tipo di verifica che di solito aspetta il prossimo audit manuale. La procedura completa: [Audit di Google Ads con Claude](https://anythingmcp.com/it/guides/google-ads-audit-with-claude).
+
+## Prompt da provare
+
+- "Com'è andato il mio account Google Ads il mese scorso rispetto al mese precedente? Mostra spesa, conversioni, CPA e ROAS."
+- "Elenca i termini di ricerca degli ultimi 30 giorni che sono costati senza mai convertire e raggruppali in idee per parole chiave escluse."
+- "Quali parole chiave hanno un Punteggio di qualità pari o inferiore a 5 e quale componente è sotto la media?"
+- "Le mie campagne sulla rete di ricerca perdono quota impressioni per il budget o per il ranking?"
+- "Controlla il monitoraggio delle conversioni: quali azioni sono principali, e ognuna ha registrato conversioni negli ultimi 30 giorni?"
+- "Chi ha modificato offerte o budget nell'account la settimana scorsa?"
+
+## Google Ads accanto agli altri tuoi dati
+
+Il connettore gira sullo stesso server AnythingMCP degli altri tuoi connettori, quindi una sola chat può combinare più fonti: parole chiave a pagamento e organiche con [Google Search Console](https://anythingmcp.com/it/guides/google-search-console-to-mcp), sessioni e fatturato con [Google Analytics 4](https://anythingmcp.com/it/guides/google-analytics-4-to-mcp), oppure lead e trattative dal tuo CRM. L'accesso è controllato persona per persona sul server e ogni chiamata viene registrata.
+
+## Limiti
+
+- **Sola lettura.** Il connettore non può modificare campagne, offerte, budget o parole chiave. Lo scope OAuth di Google per Ads non è in sola lettura, quindi la protezione è data dal connettore stesso e dall'utente Google che autorizzi.
+- **Quota.** L'accesso Explorer consente 2.880 operazioni al giorno per progetto Cloud, condivise da tutti i connettori che usano il client OAuth di quel progetto. Una domanda richiede di solito da 2 a 8 chiamate.
+- **Dati recenti.** I numeri di oggi sono parziali e le conversioni continuano ad arrivare per giorni dopo un clic.
+- **Performance Max** riporta per scelta pochi dettagli su termini di ricerca e posizionamenti; il connettore mostra ciò che l'API espone (gruppi di asset, categorie di ricerca).
+- **Gli importi** sono espressi in micros della valuta dell'account; il connettore dice al modello di convertirli, quindi controlla la valuta nella risposta.
+
+## FAQ
+
+**Mi serve un token sviluppatore di Google Ads?**
+No. Google ha dismesso i token sviluppatore il 9 settembre 2026. Ora l'accesso dipende dal livello di accesso del tuo progetto Google Cloud (Explorer o superiore per gli account reali).
+
+**Claude può modificare le mie campagne?**
+No. Ogni tool legge soltanto. Non esiste un tool per mettere in pausa, creare o modificare qualcosa.
+
+**Funziona con un account amministratore (MCC)?**
+Sì. Imposta `GOOGLE_ADS_LOGIN_CUSTOMER_ID` con l'ID dell'amministratore e chiedi all'agente di elencare prima gli account cliente. Gli account a cui sei stato invitato direttamente funzionano anche senza.
+
+**Funziona su claude.ai e ChatGPT, non solo negli agenti di coding?**
+Sì. AnythingMCP è un server MCP remoto con OAuth, quindi funziona come connettore personalizzato su claude.ai e come app in modalità sviluppatore su ChatGPT.
+
+**Quanto costa?**
+L'uso della Google Ads API è gratuito entro la quota del tuo progetto. AnythingMCP Cloud ha una prova gratuita di 7 giorni, poi da 19 € al mese; AnythingMCP self-hosted è gratuito e open source (AGPL-3.0).
+
+**In cosa è diverso dal server MCP per Google Ads di Google?**
+Il server open source di Google gira in locale accanto al tuo client, e ogni persona lo configura con le proprie credenziali. Il connettore AnythingMCP gira su un server, funziona nei client web come claude.ai e ChatGPT, viene condiviso da un team con una sola autorizzazione, include un playbook di query testate e sta accanto agli altri tuoi connettori aziendali.
+
+## Guide correlate
+
+- [Collega Google Ads a Claude](https://anythingmcp.com/it/guides/connect-google-ads-to-claude)
+- [Collega Google Ads a ChatGPT](https://anythingmcp.com/it/guides/connect-google-ads-to-chatgpt)
+- [Accesso alla Google Ads API senza token sviluppatore](https://anythingmcp.com/it/guides/google-ads-api-without-developer-token)
+- [Audit di Google Ads con Claude](https://anythingmcp.com/it/guides/google-ads-audit-with-claude)
+- [Collega Google Ads a Cursor](https://anythingmcp.com/it/guides/connect-google-ads-to-cursor)
+- [Collega Google Ads a Gemini CLI](https://anythingmcp.com/it/guides/connect-google-ads-to-gemini)
+- [Google Ads nel marketplace](https://anythingmcp.com/it/marketplace/google-ads)

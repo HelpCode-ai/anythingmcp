@@ -1,0 +1,87 @@
+---
+title: "Google Ads API ohne Entwickler-Token: Die Änderung vom September 2026"
+description: "Google hat die Entwickler-Tokens der Google Ads API am 9. September 2026 abgeschafft. Der Zugriff hängt jetzt am Cloud-Projekt: Test, Explorer, Basic, Standard."
+category: "connectors"
+keyword: "google ads api developer token, google ads api access, google ads api without developer token, google ads api explorer access, CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION, google ads api 2026, google ads api entwickler-token, google ads api ohne entwickler-token, google ads api zugriffsebene, google ads api zugriff beantragen"
+publishedAt: "2026-09-27"
+adapterSlug: "google-ads"
+---
+
+## Entwickler-Tokens gibt es nicht mehr
+
+**Kurzfassung:** Seit dem **9. September 2026** braucht die Google Ads API kein Entwickler-Token mehr. Der Zugriff wird deinem **Google-Cloud-Projekt** gewährt, auf einer von vier Zugriffsebenen (Test, Explorer, Basic, Standard), und du beantragst ihn auf der Seite der Google Ads API deines Projekts in der Cloud Console. Ein Google-Ads-Verwaltungskonto (MCC) brauchst du für die API nicht mehr. Den `developer-token`-Header kannst du weiterhin senden; Google ignoriert ihn.
+
+Googles [Seite zum Entwickler-Token](https://developers.google.com/google-ads/api/docs/api-policy/developer-token) sagt es direkt: Die Entwickler-Tokens wurden am 9. September 2026 eingestellt, und bestehende Zugriffsebenen wurden anhand der jüngsten API-Aktivität auf Cloud-Projekte übertragen. Anträge über das API-Center eines Verwaltungskontos werden nicht mehr bearbeitet.
+
+## Vorher und nachher
+
+| | Bis September 2026 | Seit 9. September 2026 |
+|---|---|---|
+| Was deine App identifiziert | Entwickler-Token aus dem API-Center eines Verwaltungskontos | dein Google-Cloud-Projekt |
+| Verwaltungskonto (MCC) | nötig, um ein Token zu bekommen | nur, um mehrere Konten zu verwalten |
+| Wo du den Zugriff beantragst | API-Center in Google Ads | Seite der Google Ads API in der Cloud Console |
+| `developer-token`-Header | bei jedem Aufruf Pflicht | optional, wird ignoriert |
+| Kontingent | pro Entwickler-Token | pro Cloud-Projekt |
+| OAuth | Nutzer-Zugangsdaten | unverändert: Nutzer-Zugangsdaten, Scope `adwords` |
+
+## Die Zugriffsebenen
+
+| Ebene | Konten | Vorgänge pro Tag | So bekommst du sie |
+|---|---|---|---|
+| Test | nur Testkonten | 15.000 | Standard für ein neues Projekt |
+| Explorer | Test- und Produktionskonten | 2.880 auf Produktionskonten, 15.000 auf Testkonten | in der Cloud Console beantragen; oft automatisch gewährt, keine Markenverifizierung |
+| Basic | Test- und Produktionskonten | 15.000 | nach der Markenverifizierung des Projekts beantragen; Prüfung in wenigen Minuten |
+| Standard | Test- und Produktionskonten | unbegrenzt (Rate Limits pro Dienst gelten) | beantragen; manuelle Prüfung von etwa 10 Werktagen |
+
+Mit **Test**-Zugriff schlägt ein Aufruf auf ein echtes Konto mit `CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION` fehl. Das ist der Fehler, auf den die meisten nach der Umstellung zuerst stoßen: Das Projekt funktioniert, OAuth funktioniert, aber die Ebene steht noch auf Test.
+
+**Explorer** reicht, um deine eigenen Konten oder eine Handvoll Kundenkonten zu lesen. Ein Bericht wie „Kampagnenleistung im letzten Monat“ ist ein Vorgang; ein AI-Agent braucht für die Antwort auf eine Frage meist zwei bis acht.
+
+## So bekommst du jetzt Zugriff
+
+1. Öffne [console.cloud.google.com](https://console.cloud.google.com), wähle ein Projekt aus oder erstelle eines, öffne dann **APIs & Dienste → Bibliothek** und aktiviere die **Google Ads API**.
+2. Öffne die Seite **Google Ads API** des Projekts. Sie zeigt die aktuelle Zugriffsebene; klappe **Upgrade access level** auf und beantrage Explorer (oder Basic, nach der Markenverifizierung).
+3. Erstelle unter **APIs & Dienste → Anmeldedaten** eine **OAuth-Client-ID** und setze den **OAuth-Zustimmungsbildschirm** auf In Produktion (im Modus Testen laufen Refresh-Tokens nach 7 Tagen ab).
+4. Autorisiere mit einem Google-Nutzer, der Zugriff auf die Werbekonten hat. Der `adwords`-Scope ist der einzige; er ist nicht schreibgeschützt, gib diesem Nutzer also genau die Rolle, die er braucht, und nicht mehr.
+
+## Was das für bestehende Tools bedeutet
+
+Skripte, CLIs und MCP-Server, die vor September 2026 geschrieben wurden, verlangen meist ein Entwickler-Token und ein Verwaltungskonto. Sie funktionieren weiter, wenn sie auch OAuth-Zugangsdaten aus einem Projekt mit Zugriff senden, weil der Token-Header ignoriert wird. Ihre Einrichtungsanleitungen schicken die Leute aber durch Schritte, die es nicht mehr gibt, und wer als neuer Nutzer ein Token im API-Center erstellt, hat nichts davon.
+
+Was du in deinem eigenen Setup anpassen solltest:
+
+- Frag nicht mehr nach `GOOGLE_ADS_DEVELOPER_TOKEN`; behalte OAuth-Client-ID, Secret und Refresh-Token.
+- Stelle sicher, dass der OAuth-Client zu einem Cloud-Projekt mit Explorer-Zugriff oder höher gehört.
+- Behalte `login-customer-id` nur für den Zugriff über ein Verwaltungskonto.
+- Denk daran, dass das Kontingent jetzt zum Cloud-Projekt gehört. Mehrere Tools, die sich einen OAuth-Client teilen, teilen sich auch das Kontingent.
+
+## Aus Claude oder ChatGPT nutzen
+
+Der [Google Ads Connector auf AnythingMCP](https://anythingmcp.com/de/guides/google-ads-to-mcp) wurde für das neue Modell gebaut: Er fragt nur nach einer OAuth-Client-ID und einem Secret (und optional nach der ID eines Verwaltungskontos), du autorisierst ihn einmal im Browser, und Claude, ChatGPT, Cursor oder Gemini können deine Kampagnen, Suchbegriffe, Qualitätsfaktoren, Budgets und Conversions lesen. Er ist schreibgeschützt und braucht kein Entwickler-Token.
+
+- [Google Ads mit Claude verbinden](https://anythingmcp.com/de/guides/connect-google-ads-to-claude)
+- [Google Ads mit ChatGPT verbinden](https://anythingmcp.com/de/guides/connect-google-ads-to-chatgpt)
+
+## FAQ
+
+**Mein Tool fragt noch nach einem Entwickler-Token. Was trage ich ein?**
+Irgendetwas, oder lass das Feld leer, wenn das Tool es zulässt: Google ignoriert den Header. Entscheidend ist, dass der OAuth-Client aus einem Cloud-Projekt mit Zugriff stammt.
+
+**Brauche ich noch ein Verwaltungskonto (MCC)?**
+Nur, um mehrere Konten über einen Login zu verwalten. Für dein eigenes Konto kannst du die API direkt aufrufen.
+
+**Welche Zugriffsebene brauche ich, um mein eigenes Konto zu lesen?**
+Explorer. Test-Zugriff erreicht nur Testkonten.
+
+**Gilt das Kontingent pro Nutzer oder pro Projekt?**
+Pro Google-Cloud-Projekt, über ein gleitendes 24-Stunden-Fenster.
+
+**Wo ist das dokumentiert?**
+Auf Googles Seiten zum [Entwickler-Token](https://developers.google.com/google-ads/api/docs/api-policy/developer-token) und zu den [Zugriffsebenen](https://developers.google.com/google-ads/api/docs/api-policy/access-levels).
+
+## Siehe auch
+
+- [Google Ads MCP Server: die Übersicht](https://anythingmcp.com/de/guides/google-ads-to-mcp)
+- [Google Ads mit Claude verbinden](https://anythingmcp.com/de/guides/connect-google-ads-to-claude)
+- [Google Ads Audit mit Claude](https://anythingmcp.com/de/guides/google-ads-audit-with-claude)
+- [Google Ads im Marketplace](https://anythingmcp.com/de/marketplace/google-ads)
