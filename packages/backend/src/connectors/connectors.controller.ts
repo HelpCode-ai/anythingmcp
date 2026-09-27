@@ -1594,15 +1594,23 @@ export class ConnectorsController {
       });
     }
 
+    // JSON definitions and cURL commands describe a few tools, not a whole
+    // API: importing them adds or updates those tools and retires nothing.
+    // Retiring everything else is what a full spec import (OpenAPI, WSDL…)
+    // means; for a handful of hand-written tools it disabled every other tool
+    // of the connector, catalog tools included.
+    const additive = dto.source === 'json' || dto.source === 'curl';
     return this.createToolsFromParsed(
       connector.id,
       parsedTools,
-      odataScope !== undefined
-        ? (t) => {
-            const em = t.endpointMapping as { method?: string; path?: string } | null;
-            return String(em?.path ?? '').startsWith(`${odataScope}/`);
-          }
-        : undefined,
+      additive
+        ? () => false
+        : odataScope !== undefined
+          ? (t) => {
+              const em = t.endpointMapping as { method?: string; path?: string } | null;
+              return String(em?.path ?? '').startsWith(`${odataScope}/`);
+            }
+          : undefined,
     );
   }
 
@@ -1782,8 +1790,10 @@ export class ConnectorsController {
     });
     const byOperationId = new Map<string, typeof existing[number]>();
     const byEndpoint = new Map<string, typeof existing[number]>();
+    const byName = new Map<string, typeof existing[number]>();
     for (const t of existing) {
       if (t.operationId) byOperationId.set(t.operationId, t);
+      byName.set(t.name, t);
       const em = t.endpointMapping as any;
       if (em?.method && em?.path) {
         byEndpoint.set(`${String(em.method).toUpperCase()} ${em.path}`, t);
@@ -1801,9 +1811,13 @@ export class ConnectorsController {
         em?.method && em?.path
           ? `${String(em.method).toUpperCase()} ${em.path}`
           : null;
+      // By name last: a static tool has no path to match on, and without this
+      // a re-import tried to create it again, hit the unique name and left the
+      // old (possibly retired) copy as it was.
       const match =
         (tool.operationId && byOperationId.get(tool.operationId)) ||
         (endpointKey && byEndpoint.get(endpointKey)) ||
+        byName.get(tool.name) ||
         null;
 
       if (match) {

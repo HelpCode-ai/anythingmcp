@@ -1223,3 +1223,43 @@ describe('PUT :id — config is merged, not replaced', () => {
     expect(connectorsService.update.mock.calls[0][1].config).not.toHaveProperty('deniedTables');
   });
 });
+
+describe('POST :id/import — JSON definitions are additive', () => {
+  const existing = [
+    { id: 't1', name: 'sap_guide', operationId: null, endpointMapping: { method: 'static', path: '' }, deprecatedAt: new Date(), isEnabled: false },
+    { id: 't2', name: 'sap_query', operationId: null, endpointMapping: { method: 'query', path: '${query}' }, deprecatedAt: null, isEnabled: true },
+  ];
+
+  function build() {
+    const prisma = {
+      connector: { update: jest.fn() },
+      mcpTool: {
+        findMany: jest.fn().mockResolvedValue(existing),
+        update: jest.fn().mockImplementation(({ where, data }: any) => Promise.resolve({ id: where.id, ...data })),
+        create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'new', ...data })),
+      },
+    };
+    const { controller } = buildController({
+      prisma,
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue({ id: 'c1', type: 'DATABASE', organizationId: 'org1' }),
+      },
+    });
+    return { controller, prisma };
+  }
+
+  it('adds a tool without retiring the others, and matches a static tool by name', async () => {
+    const { controller, prisma } = build();
+    const tools = [
+      { name: 'kpi_dso', description: 'DSO', parameters: {}, endpointMapping: { method: 'query', path: 'SELECT 1 FROM DUMMY' } },
+      { name: 'sap_guide', description: 'Guide', parameters: {}, endpointMapping: { method: 'static', path: '', staticResponse: 'x' } },
+    ];
+    const out: any = await controller.importTools(req('ADMIN'), 'c1', { source: 'json', content: JSON.stringify(tools) } as any);
+
+    expect(out.deprecated).toEqual([]);
+    expect(prisma.mcpTool.create).toHaveBeenCalledTimes(1);
+    const guideUpdate = prisma.mcpTool.update.mock.calls.find((c: any) => c[0].where.id === 't1');
+    expect(guideUpdate[0].data).toMatchObject({ deprecatedAt: null, isEnabled: true });
+    expect(prisma.mcpTool.update.mock.calls.find((c: any) => c[0].where.id === 't2')).toBeUndefined();
+  });
+});
