@@ -1,0 +1,12 @@
+[Unit]
+Description=Mail the AnythingMCP Cloud trial report every morning
+
+[Timer]
+OnCalendar=*-*-* 08:05:00 Europe/Berlin
+# A morning missed because the droplet was down runs at the next boot.
+Persistent=true
+AccuracySec=1min
+Unit=anythingmcp-trial-report.service
+
+[Install]
+WantedBy=timers.target

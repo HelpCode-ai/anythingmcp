@@ -1,0 +1,11 @@
+[Unit]
+Description=AnythingMCP Cloud daily trial report (one run; see the timer)
+Documentation=https://github.com/HelpCode-ai/anythingmcp/blob/main/deploy/cloud/trial-report.sh
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/anythingmcp-cloud/trial-report.sh
+Environment=ENV_FILE=/opt/anythingmcp-cloud/.env
+TimeoutStartSec=10min
