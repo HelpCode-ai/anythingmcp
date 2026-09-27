@@ -1252,7 +1252,13 @@ export class McpEndpointController {
             {
               description: tool.description,
               inputSchema: zodShape,
-              ...(outShape ? { outputSchema: outShape } : {}),
+              // Loose, not a raw shape: the SDK wraps a raw shape in
+              // z.object(), which Zod 4 exports with additionalProperties:
+              // false, and clients (Claude Code, the SDK client) then reject
+              // any key the inferred sample did not have. Google Search
+              // Console adds `metadata` when asked for fresh data, and every
+              // such call failed with "must NOT have additional properties".
+              ...(outShape ? { outputSchema: z.looseObject(outShape) } : {}),
               annotations,
             },
             handler,
