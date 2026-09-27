@@ -87,10 +87,39 @@ export async function openHanaSession(
  */
 export function normalizeHanaValue(value: unknown): unknown {
   if (Buffer.isBuffer(value)) return value.toString('hex').toUpperCase();
+  if (typeof value === 'string' && EXPONENT.test(value)) return expandExponent(value);
   if (typeof value === 'bigint') {
     return Number.isSafeInteger(Number(value)) ? Number(value) : value.toString();
   }
   return value;
+}
+
+const EXPONENT = /^-?\d+(\.\d+)?e[+-]?\d+$/i;
+
+/**
+ * hdb hands DECFLOAT results (a ROUND or division over DECIMALs) back as
+ * "1.15e+1". Rewrite them as the plain decimal "11.5" by moving the point in
+ * the digit string, so no precision is lost and a model reading the row does
+ * not have to parse scientific notation.
+ */
+export function expandExponent(s: string): string {
+  const neg = s.startsWith('-');
+  const [mantissa, expPart] = (neg ? s.slice(1) : s).toLowerCase().split('e');
+  const exp = Number(expPart);
+  const [intPart, fracPart = ''] = mantissa.split('.');
+  let digits = intPart + fracPart;
+  let point = intPart.length + exp;
+  if (point <= 0) {
+    digits = '0'.repeat(1 - point) + digits;
+    point = 1;
+  } else if (point > digits.length) {
+    digits = digits + '0'.repeat(point - digits.length);
+  }
+  let whole = digits.slice(0, point).replace(/^0+(?=\d)/, '');
+  const frac = digits.slice(point).replace(/0+$/, '');
+  if (whole === '') whole = '0';
+  const out = frac ? `${whole}.${frac}` : whole;
+  return neg && out !== '0' ? `-${out}` : out;
 }
 
 function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {

@@ -263,6 +263,10 @@ describe('hana.driver', () => {
     expect(hanaDriver.normalizeHanaValue('1234.50')).toBe('1234.50');
     expect(hanaDriver.normalizeHanaValue(BigInt('9007199254740993'))).toBe('9007199254740993');
     expect(hanaDriver.normalizeHanaValue(BigInt(42))).toBe(42);
+    expect(hanaDriver.normalizeHanaValue('1.15e+1')).toBe('11.5');
+    expect(hanaDriver.normalizeHanaValue('-2.5E-3')).toBe('-0.0025');
+    expect(hanaDriver.normalizeHanaValue('6.17228e+8')).toBe('617228000');
+    expect(hanaDriver.normalizeHanaValue('1e0')).toBe('1');
   });
 
   it('explains how to install @sap/hana-client when it is missing', () => {
