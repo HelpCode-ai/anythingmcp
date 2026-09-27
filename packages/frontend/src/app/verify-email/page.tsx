@@ -7,6 +7,7 @@ import { LogoIcon } from '@/components/logo-icon';
 import { Card } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { pushSignUpVerified } from '@/lib/conversion';
 
 const API_BASE = '';
 
@@ -43,10 +44,12 @@ function VerifyEmailContent() {
       redirect: 'manual',
     })
       .then((res) => {
-        if (res.type === 'opaqueredirect' || res.status === 302 || res.status === 301) {
-          // Redirect means success
-          setStatus('success');
-        } else if (res.ok) {
+        if (res.type === 'opaqueredirect' || res.status === 302 || res.status === 301 || res.ok) {
+          // Redirect means success. Only a confirmed success counts as the
+          // Google Ads conversion (cloud only; a no-op without GTM), not the
+          // network failure below. The link token is single-use, so a reload
+          // answers "already used" and cannot count the sign-up twice.
+          pushSignUpVerified(token.slice(0, 16), 'link');
           setStatus('success');
         } else {
           return res.json().then((data) => {

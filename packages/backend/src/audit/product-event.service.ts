@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { sanitizeSignupAttribution } from './signup-attribution';
 
 /**
  * Product-usage events the UI reports so the activation funnel can be read
@@ -27,12 +28,28 @@ export const ProductEvents = {
   STARTER_PACK_VIEWED: 'starter_pack_viewed',
   /** Installed connectors from the starter pack. metadata.adapterSlug = comma list. */
   STARTER_PACK_INSTALLED: 'starter_pack_installed',
+  /**
+   * A new cloud account was created; metadata = the first and last touch the
+   * visitor arrived through (see signup-attribution.ts). Written by the
+   * server on sign-up, never accepted from a client. Answers: which channel
+   * brings sign-ups, verified sign-ups and paying customers.
+   */
+  SIGNUP_ATTRIBUTED: 'signup_attributed',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
 
-const ALLOWED = new Set<string>(Object.values(ProductEvents));
+/**
+ * Events only the server writes. A signed-in user could otherwise post a
+ * `signup_attributed` of their own and skew the channel report.
+ */
+const SERVER_ONLY = new Set<string>([ProductEvents.SIGNUP_ATTRIBUTED]);
+const CLIENT_REPORTABLE = new Set<string>(
+  Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
+);
 const MAX_METADATA_BYTES = 1024;
+/** Two touches of up to eleven capped fields each. */
+const MAX_ATTRIBUTION_BYTES = 4096;
 
 @Injectable()
 export class ProductEventService {
@@ -40,8 +57,9 @@ export class ProductEventService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Whether a client may report this event. Server-only events are not. */
   isKnown(event: unknown): event is ProductEventName {
-    return typeof event === 'string' && ALLOWED.has(event);
+    return typeof event === 'string' && CLIENT_REPORTABLE.has(event);
   }
 
   /** Best-effort and never throws: a lost event must not break the page. */
@@ -52,7 +70,10 @@ export class ProductEventService {
     metadata?: Record<string, unknown> | null;
   }): Promise<void> {
     try {
-      const metadata = boundMetadata(input.metadata);
+      const metadata =
+        input.event === ProductEvents.SIGNUP_ATTRIBUTED
+          ? boundAttribution(input.metadata)
+          : boundMetadata(input.metadata);
       await this.prisma.productEvent.create({
         data: {
           event: input.event,
@@ -87,4 +108,11 @@ function boundMetadata(
   if (entries.length === 0) return null;
   const out = Object.fromEntries(entries);
   return JSON.stringify(out).length > MAX_METADATA_BYTES ? null : out;
+}
+
+/** The attribution pair, re-sanitized here so no caller can store anything else. */
+function boundAttribution(metadata: unknown): Record<string, unknown> | null {
+  const out = sanitizeSignupAttribution(metadata);
+  if (!out) return null;
+  return JSON.stringify(out).length > MAX_ATTRIBUTION_BYTES ? null : out;
 }

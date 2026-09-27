@@ -1,3 +1,5 @@
+import type { SignupAttribution } from './attribution';
+
 // Use relative paths so requests go to the same origin.
 // In production (Docker / Railway) Next.js rewrites proxy /api/* to the backend.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
@@ -61,9 +63,16 @@ export const auth = {
       method: 'POST',
       body: { email, password },
     }),
-  register: (email: string, password: string, name: string, acceptTerms: boolean) =>
+  register: (
+    email: string,
+    password: string,
+    name: string,
+    acceptTerms: boolean,
+    attribution?: SignupAttribution,
+  ) =>
     // Self-hosted answers with a session. Cloud answers `verificationRequired`
     // whether or not the address already has an account; sign in to continue.
+    // `attribution` (cloud only) says where the visitor came from; see lib/attribution.ts.
     request<{
       accessToken?: string;
       user?: any;
@@ -72,7 +81,7 @@ export const auth = {
       message?: string;
     }>('/api/auth/register', {
       method: 'POST',
-      body: { email, password, name, acceptTerms },
+      body: { email, password, name, acceptTerms, ...(attribution && { attribution }) },
     }),
   forgotPassword: (email: string) =>
     request<{ message: string }>('/api/auth/forgot-password', {
