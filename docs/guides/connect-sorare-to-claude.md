@@ -96,9 +96,7 @@ Restart Claude Desktop. The Sorare tools appear in the 🔧 menu — 18 of them 
 In Claude Code, add the MCP server via the CLI or `~/.config/claude-code/mcp.json`:
 
 ```bash
-claude mcp add sorare \
-  --transport http \
-  --url http://localhost:4000/mcp \
+claude mcp add --transport http sorare http://localhost:4000/mcp \
   --header "Authorization: Bearer YOUR_MCP_API_KEY"
 ```
 

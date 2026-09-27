@@ -95,18 +95,14 @@ Claude Code (CLI) supports adding MCP servers via the command line.
 ### Add AnythingMCP
 
 ```bash
-claude mcp add anythingmcp \
-  --transport http \
-  --url http://localhost:4000/mcp \
+claude mcp add --transport http anythingmcp http://localhost:4000/mcp \
   --header "Authorization: Bearer YOUR_MCP_BEARER_TOKEN"
 ```
 
 ### With API Key
 
 ```bash
-claude mcp add anythingmcp \
-  --transport http \
-  --url http://localhost:4000/mcp \
+claude mcp add --transport http anythingmcp http://localhost:4000/mcp \
   --header "X-API-Key: your-mcp-api-key"
 ```
 
