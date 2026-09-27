@@ -1256,6 +1256,42 @@
         "ebay-mcp-server"
       ],
       "lastVerified": null
+    },
+    {
+      "repo": "jev-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Jev",
+      "adapters": [
+        "jev"
+      ],
+      "wave": 1,
+      "about": "Jev MCP server: use TypeSafe Jev in Claude & ChatGPT. Yes/no, classification and scoring with probabilities, hosted or self-hosted.",
+      "topics": [
+        "typesafe-jev",
+        "jev",
+        "typesafe-ai",
+        "system-one",
+        "text-classification",
+        "ticket-triage",
+        "llm-tools"
+      ],
+      "website": "https://anythingmcp.com/guides/jev-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "openapi-to-mcp",
+        "erp-mcp-server"
+      ],
+      "objects": {
+        "en": "yes/no checks, classifications and scores, with the probability behind every answer"
+      },
+      "lastVerified": {
+        "date": "2026-09-27",
+        "against": "the live TypeSafe API (jev-1.13.0)",
+        "how": "every tool called through a local AnythingMCP over MCP, 27 direct API cases incl. error paths, and Claude Code triaging English and German tickets through the connector"
+      }
     }
   ]
 }
