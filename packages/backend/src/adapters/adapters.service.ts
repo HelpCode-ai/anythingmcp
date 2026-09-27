@@ -211,6 +211,7 @@ export class AdaptersService {
         // time, so the catalog re-sync feature can later detect that the
         // catalog has moved on and whether the user has edited instructions.
         config: {
+          ...((adapter.connector as { config?: Record<string, unknown> }).config ?? {}),
           adapterSlug: slug,
           adapterVersion: adapter.version,
           instructionsBaseline: hashInstructions(adapter.instructions),

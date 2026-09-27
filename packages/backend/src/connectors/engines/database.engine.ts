@@ -6,6 +6,13 @@ import * as mysql from 'mysql2/promise';
 import * as oracledb from 'oracledb';
 import Database from 'better-sqlite3';
 import { assertSafeOutboundHost } from '../../common/ssrf.util';
+import {
+  HanaConnectOptions,
+  HanaDriverName,
+  openHanaSession,
+  resolveHanaDriverName,
+} from './hana.driver';
+import { renderStaticResponse } from '../static-response.util';
 
 @Injectable()
 export class DatabaseEngine {
@@ -15,6 +22,12 @@ export class DatabaseEngine {
   // length bounds the read-only lexical scan below (no unbounded work on a
   // hostile, oversized payload). 100k chars is far beyond any real analytics query.
   private readonly MAX_QUERY_LENGTH = 100_000;
+  // Server-side ceiling on one statement. An agent's unbounded scan on a
+  // production ERP would otherwise run until someone kills it by hand.
+  // MSSQL keeps its own 30 s request timeout; HANA reads `statementTimeout`
+  // from its connection string (see buildHanaConfig).
+  private readonly STATEMENT_TIMEOUT_MS = 60_000;
+  private readonly CONNECT_TIMEOUT_MS = 15_000;
 
   async execute(
     config: {
@@ -26,14 +39,20 @@ export class DatabaseEngine {
       method: string; // "query" or "static"
       path: string; // SQL template
       staticResponse?: string;
+      staticResponses?: Record<string, unknown>;
+      topicParam?: string;
     },
     params: Record<string, unknown>,
-    options?: { readOnly?: boolean },
+    options?: { readOnly?: boolean; deniedTables?: unknown },
   ): Promise<unknown> {
     const readOnly = options?.readOnly !== false; // default true
+    const deniedTables = normalizeDeniedTables(options?.deniedTables);
     // Static response tools (e.g. example queries) — return text without DB execution
-    if (endpointMapping.method === 'static' && endpointMapping.staticResponse) {
-      return { text: endpointMapping.staticResponse };
+    if (
+      endpointMapping.method === 'static' &&
+      (endpointMapping.staticResponse || endpointMapping.staticResponses)
+    ) {
+      return { text: renderStaticResponse(endpointMapping, params) };
     }
 
     // SSRF guard: a connector's connection string is user-supplied, so block it
@@ -62,6 +81,7 @@ export class DatabaseEngine {
       if (readOnly) {
         this.validateQuery(sql);
       }
+      this.assertNoDeniedTables(sql, deniedTables);
       return this.dispatch(config, sql, [], readOnly);
     }
 
@@ -76,6 +96,7 @@ export class DatabaseEngine {
     if (readOnly) {
       this.validateQuery(sql);
     }
+    this.assertNoDeniedTables(sql, deniedTables);
     return this.dispatch(config, sql, values, readOnly);
   }
 
@@ -114,6 +135,7 @@ export class DatabaseEngine {
   }
 
   private detectDriver(baseUrl: string): SqlDriver {
+    if (this.isHana(baseUrl)) return 'hana';
     if (this.isMssql(baseUrl)) return 'mssql';
     if (this.isMysql(baseUrl)) return 'mysql';
     if (this.isOracle(baseUrl)) return 'oracle';
@@ -127,6 +149,9 @@ export class DatabaseEngine {
     values: unknown[],
     readOnly: boolean,
   ): Promise<unknown> {
+    if (this.isHana(config.baseUrl)) {
+      return this.executeHana(config, sql, values, readOnly);
+    }
     if (this.isMssql(config.baseUrl)) {
       return this.executeMssql(config, sql, values);
     }
@@ -162,6 +187,8 @@ export class DatabaseEngine {
       } finally {
         await client.close();
       }
+    } else if (this.isHana(config.baseUrl)) {
+      await this.executeHana(config, 'SELECT 1 AS OK FROM DUMMY', [], true);
     } else if (this.isMssql(config.baseUrl)) {
       const mssqlConfig = this.buildMssqlConfig(config);
       const pool = await mssql.connect(mssqlConfig);
@@ -226,7 +253,11 @@ export class DatabaseEngine {
     const safeHost = connectionString.split('@')[1] ?? 'unknown';
     this.logger.debug(`PostgreSQL query → ${safeHost}`);
 
-    const pool = new Pool({ connectionString });
+    const pool = new Pool({
+      connectionString,
+      statement_timeout: this.STATEMENT_TIMEOUT_MS,
+      connectionTimeoutMillis: this.CONNECT_TIMEOUT_MS,
+    });
     try {
       const result =
         values.length > 0 ? await pool.query(sql, values) : await pool.query(sql);
@@ -510,12 +541,15 @@ export class DatabaseEngine {
     const uri = this.mysqlUri(config.baseUrl, config.authConfig);
     this.logger.debug(`MySQL query → ${new URL(uri).hostname}`);
 
-    const conn = await mysql.createConnection(uri);
+    const conn = await mysql.createConnection({
+      uri,
+      connectTimeout: this.CONNECT_TIMEOUT_MS,
+    });
     try {
       const [result] =
         values.length > 0
-          ? await conn.execute(sql, values as any[])
-          : await conn.query(sql);
+          ? await conn.execute({ sql, timeout: this.STATEMENT_TIMEOUT_MS }, values as any[])
+          : await conn.query({ sql, timeout: this.STATEMENT_TIMEOUT_MS });
       if (Array.isArray(result)) {
         return this.truncateRows(result as Record<string, unknown>[]);
       }
@@ -558,6 +592,8 @@ export class DatabaseEngine {
     this.logger.debug(`Oracle query → ${oraConfig.connectString}`);
 
     const conn = await oracledb.getConnection(oraConfig);
+    // Round-trip ceiling; oracledb cancels the call and raises DPI-1067.
+    conn.callTimeout = this.STATEMENT_TIMEOUT_MS;
     try {
       const result = await conn.execute(sql, values as any[], {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -593,6 +629,149 @@ export class DatabaseEngine {
       user,
       password,
       connectString: `${host}:${port}/${serviceName}`,
+    };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  SAP HANA                                                           */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * One session per call, like every other engine here. The session is set up
+   * before the caller's statement runs:
+   *
+   * - `SET TRANSACTION READ ONLY` when the connector is read-only, so HANA
+   *   itself refuses writes for the rest of the session. The lexical guard is
+   *   the first line; this is the second; the database user's grants are the
+   *   real boundary.
+   * - `SET SCHEMA` so SAP's unqualified table names (ACDOCA, VBAK…) resolve.
+   * - `SET 'CDS_CLIENT'` when an SAP client is configured. SAP's CDS views
+   *   filter on that session variable, and without it they return no rows at
+   *   all, which reads as "no data" rather than as a setup mistake.
+   *
+   * The whole call races a timeout; on expiry the session is closed, which
+   * makes HANA cancel the running statement.
+   */
+  private async executeHana(
+    config: {
+      baseUrl: string;
+      authType: string;
+      authConfig?: Record<string, unknown>;
+    },
+    sql: string,
+    values: unknown[] = [],
+    readOnly = true,
+  ): Promise<unknown> {
+    const hana = this.buildHanaConfig(config);
+    this.logger.debug(
+      `SAP HANA query → ${hana.connect.host}:${hana.connect.port}` +
+        `${hana.connect.databaseName ? `/${hana.connect.databaseName}` : ''} (${hana.driver})`,
+    );
+
+    const session = await openHanaSession(hana.driver, hana.connect);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const work = (async () => {
+        if (readOnly) await session.run('SET TRANSACTION READ ONLY');
+        if (hana.currentSchema) {
+          await session.run(`SET SCHEMA ${quoteHanaIdentifier(hana.currentSchema)}`);
+        }
+        if (hana.sapClient) {
+          await session.run(`SET 'CDS_CLIENT' = '${hana.sapClient}'`);
+        }
+        return session.query(sql, values, this.MAX_ROWS);
+      })();
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `SAP HANA query exceeded ${hana.timeoutSeconds}s and was cancelled. ` +
+                  'Narrow it (filter on company code, fiscal year, period) or aggregate in SQL.',
+              ),
+            ),
+          hana.timeoutSeconds * 1000,
+        );
+      });
+      const result = await Promise.race([work, timeout]);
+      if (result.rowsAffected !== undefined && result.rows.length === 0) {
+        return { rowsAffected: result.rowsAffected };
+      }
+      if (result.truncated) {
+        return {
+          rows: result.rows,
+          truncated: true,
+          totalRows: `more than ${this.MAX_ROWS}`,
+          message: `Results truncated to ${this.MAX_ROWS} rows`,
+        };
+      }
+      return { rows: result.rows, totalRows: result.rows.length };
+    } finally {
+      if (timer) clearTimeout(timer);
+      await session.close().catch(() => undefined);
+    }
+  }
+
+  /**
+   * Parse a HANA connection string:
+   *
+   *   hana://host:30015                          tenant's own SQL port
+   *   hana://host:30013/QS4                      system DB port + tenant name
+   *   hana://host:30015/?databaseName=QS4&currentSchema=SAPHANADB&sapClient=100
+   *
+   * Query options: `databaseName`, `currentSchema` (alias `schema`),
+   * `encrypt` (default true), `sslValidateCertificate` (default true),
+   * `sapClient` (3 digits), `driver` (`hdb` | `hana-client`),
+   * `statementTimeout` in seconds (default 60, max 600).
+   *
+   * Credentials come from the encrypted `authConfig`, falling back to the URL.
+   */
+  buildHanaConfig(config: {
+    baseUrl: string;
+    authConfig?: Record<string, unknown>;
+  }): {
+    driver: HanaDriverName;
+    connect: HanaConnectOptions;
+    currentSchema?: string;
+    sapClient?: string;
+    timeoutSeconds: number;
+  } {
+    const url = new URL(config.baseUrl.replace(/^saphana:\/\//, 'hana://'));
+    const q = url.searchParams;
+    const auth = config.authConfig || {};
+
+    const pathDb = decodeURIComponent(url.pathname.replace(/^\//, '')).trim();
+    const databaseName = (q.get('databaseName') || pathDb || '').trim() || undefined;
+
+    const sapClient = (q.get('sapClient') || q.get('sap-client') || '').trim() || undefined;
+    if (sapClient && !/^\d{3}$/.test(sapClient)) {
+      throw new Error(`sapClient must be a three-digit SAP client such as 100, got "${sapClient}".`);
+    }
+    const currentSchema = (q.get('currentSchema') || q.get('schema') || '').trim() || undefined;
+
+    const bool = (v: string | null, dflt: boolean) =>
+      v === null || v === '' ? dflt : !/^(false|0|no|off)$/i.test(v);
+
+    const rawTimeout = Number(q.get('statementTimeout') || 60);
+    const timeoutSeconds = Number.isFinite(rawTimeout) && rawTimeout > 0
+      ? Math.min(Math.floor(rawTimeout), 600)
+      : 60;
+
+    const port = Number(url.port || 30015);
+    return {
+      driver: resolveHanaDriverName(q.get('driver')),
+      connect: {
+        host: url.hostname.replace(/^\[|\]$/g, ''),
+        port,
+        user: (auth.username as string) || decodeURIComponent(url.username) || undefined,
+        password: (auth.password as string) || decodeURIComponent(url.password) || undefined,
+        databaseName,
+        encrypt: bool(q.get('encrypt'), true),
+        validateCertificate: bool(q.get('sslValidateCertificate'), true),
+      },
+      currentSchema,
+      sapClient,
+      timeoutSeconds,
     };
   }
 
@@ -686,8 +865,14 @@ export class DatabaseEngine {
     return baseUrl.startsWith('mongodb://') || baseUrl.startsWith('mongodb+srv://');
   }
 
+  private isHana(baseUrl: string): boolean {
+    return baseUrl.startsWith('hana://') || baseUrl.startsWith('saphana://');
+  }
+
   private isMssql(baseUrl: string): boolean {
-    return baseUrl.startsWith('mssql://');
+    // `sqlserver://` is accepted as a connection string (base-url.util) and
+    // parses the same way; without it here it fell through to the pg driver.
+    return baseUrl.startsWith('mssql://') || baseUrl.startsWith('sqlserver://');
   }
 
   private isMysql(baseUrl: string): boolean {
@@ -777,6 +962,33 @@ export class DatabaseEngine {
     return out;
   }
 
+  /**
+   * Refuse a statement that names a denied table (`connector.config.deniedTables`).
+   *
+   * Every identifier in the statement is checked, not only the ones after
+   * FROM / JOIN: comma joins, subqueries and schema-qualified or quoted names
+   * (`"SAPHANADB"."PA0008"`) would each slip past a FROM-only parser. The cost
+   * is that a column whose name matches a denied table pattern is refused too,
+   * so keep patterns table-shaped (`PA####`, not `PA*`).
+   *
+   * This is defence in depth against an agent wandering into HR or security
+   * tables. The database user's grants remain the boundary.
+   */
+  private assertNoDeniedTables(sql: string, denied: RegExp[]): void {
+    if (denied.length === 0) return;
+    const stripped = this.stripLiteralsAndComments(sql);
+    const tokens = stripped.match(/"(?:[^"]|"")+"|[A-Za-z_/][A-Za-z0-9_/$#]*/g) || [];
+    for (const raw of tokens) {
+      const name = raw.startsWith('"') ? raw.slice(1, -1).replace(/""/g, '"') : raw;
+      if (denied.some((re) => re.test(name))) {
+        throw new Error(
+          `Access to table ${name.toUpperCase()} is blocked by this connector's denied-tables list. ` +
+            'Ask an administrator if you need it.',
+        );
+      }
+    }
+  }
+
   private validateQuery(sql: string): void {
     const normalized = this.stripLiteralsAndComments(sql).trim().toUpperCase();
 
@@ -809,11 +1021,69 @@ export class DatabaseEngine {
         `Blocked SQL keyword in CTE: ${cteMatch[1]}. Only read-only queries are allowed.`,
       );
     }
+
+    // A SELECT can still write or lock. `SELECT … INTO t` creates a table
+    // (Postgres, SQL Server) or a file (MySQL `INTO OUTFILE`); `FOR UPDATE` /
+    // `FOR SHARE` (Postgres, MySQL, Oracle, SAP HANA) and MySQL's
+    // `LOCK IN SHARE MODE` hold row locks that block the application writing
+    // those rows — on an ERP that is the posting run, not a harmless read.
+    if (/\bINTO\b/.test(normalized)) {
+      throw new Error(
+        'SELECT … INTO is blocked: it writes a table or file. Only read-only queries are allowed.',
+      );
+    }
+    if (
+      /\bFOR\s+(NO\s+KEY\s+)?(UPDATE|SHARE|KEY\s+SHARE)\b|\bLOCK\s+IN\s+SHARE\s+MODE\b/.test(
+        normalized,
+      )
+    ) {
+      throw new Error(
+        'Locking reads (FOR UPDATE / FOR SHARE) are blocked: they hold row locks on the source system. Remove the locking clause.',
+      );
+    }
   }
 
 }
 
-export type SqlDriver = 'postgres' | 'mysql' | 'mssql' | 'oracle' | 'sqlite';
+/**
+ * Compile `connector.config.deniedTables` into anchored, case-insensitive
+ * matchers. Glob syntax: `*` any run of characters, `?` one character,
+ * `#` one digit — `PA####` is SAP's HR infotype tables PA0000–PA9999 without
+ * also matching a column such as PARVW. Anything that is not a non-empty
+ * string is ignored.
+ */
+export function normalizeDeniedTables(input: unknown): RegExp[] {
+  const list = Array.isArray(input)
+    ? input
+    : typeof input === 'string'
+      ? input.split(/[\s,]+/)
+      : [];
+  const out: RegExp[] = [];
+  for (const item of list) {
+    if (typeof item !== 'string') continue;
+    const pattern = item.trim();
+    if (!pattern) continue;
+    let re = '';
+    for (const ch of pattern) {
+      if (ch === '*') re += '.*';
+      else if (ch === '?') re += '.';
+      else if (ch === '#') re += '[0-9]';
+      else re += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    }
+    out.push(new RegExp(`^${re}$`, 'i'));
+  }
+  return out;
+}
+
+export type SqlDriver = 'postgres' | 'mysql' | 'mssql' | 'oracle' | 'sqlite' | 'hana';
+
+/**
+ * Quote a HANA identifier. SAP namespaced objects (`/BIC/AZSALES2`) are only
+ * valid quoted; a double quote inside the name is doubled.
+ */
+export function quoteHanaIdentifier(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
 
 /**
  * Compile a SQL template with `${name}` or `$name` placeholders into a
@@ -826,6 +1096,7 @@ export type SqlDriver = 'postgres' | 'mysql' | 'mssql' | 'oracle' | 'sqlite';
  * - mssql      →  `@p0, @p1, ...` (bound via `request.input('p0', value)`)
  * - oracle     →  `:b0, :b1, ...` (positional array)
  * - sqlite     →  `?, ?, ...`
+ * - hana       →  `?, ?, ...` (hdb and @sap/hana-client prepared statements)
  *
  * The same param name appearing twice in the template is bound twice (once
  * per occurrence) to keep the indices simple. A reference to a parameter
@@ -862,6 +1133,7 @@ function placeholderFor(driver: SqlDriver, oneBasedIndex: number): string {
       return `:b${oneBasedIndex - 1}`;
     case 'mysql':
     case 'sqlite':
+    case 'hana':
     default:
       return '?';
   }

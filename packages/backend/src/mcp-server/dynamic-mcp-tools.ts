@@ -33,6 +33,7 @@ import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
 import { processGauges } from '../common/process-vitals';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
+import { renderStaticResponse } from '../connectors/static-response.util';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -711,14 +712,7 @@ export class DynamicMcpTools {
     // 'replace')" — a message naming neither the tool nor the real problem.
     // api-football's af_analysis_playbook spent six weeks failing that way.
     if (endpointMapping.method === 'static') {
-      if (!endpointMapping.staticResponse) {
-        throw new Error(
-          'This tool is configured to return a fixed text response, but that ' +
-            'response is empty. Set it under the tool\'s endpoint mapping, or ' +
-            'change the method to a real HTTP verb.',
-        );
-      }
-      return { body: { text: endpointMapping.staticResponse } };
+      return { body: { text: renderStaticResponse(endpointMapping, params) } };
     }
 
     switch (connectorType) {
@@ -751,10 +745,12 @@ export class DynamicMcpTools {
           body: await this.mcpClientEngine.execute(config, endpointMapping, params),
         };
       case 'DATABASE': {
-        const readOnly = (extra?.connectorConfig as any)?.readOnly !== false;
+        const connectorConfig = extra?.connectorConfig as any;
+        const readOnly = connectorConfig?.readOnly !== false;
         return {
           body: await this.databaseEngine.execute(config, endpointMapping, params, {
             readOnly,
+            deniedTables: connectorConfig?.deniedTables,
           }),
         };
       }

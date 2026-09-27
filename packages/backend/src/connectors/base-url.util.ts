@@ -14,7 +14,12 @@
  * right, and say what to do instead; they do not try to prove the host exists.
  */
 
-/** Schemes a DATABASE connector's connection string may use. */
+/**
+ * Schemes a DATABASE connector's connection string may use — every prefix
+ * DatabaseEngine recognises, and nothing it does not: a scheme accepted here
+ * but unknown to the engine falls through to the Postgres driver and fails
+ * with a message about Postgres.
+ */
 const DATABASE_SCHEMES = [
   'postgres',
   'postgresql',
@@ -22,6 +27,13 @@ const DATABASE_SCHEMES = [
   'mariadb',
   'mssql',
   'sqlserver',
+  'oracle',
+  'oracledb',
+  'mongodb',
+  'mongodb+srv',
+  'sqlite',
+  'hana',
+  'saphana',
 ];
 
 /**
@@ -65,8 +77,10 @@ export function validateBaseUrl(
   if (isTemplated(raw)) return null;
 
   if (opts.type === 'DATABASE') {
-    const scheme = raw.split('://')[0]?.toLowerCase();
-    if (!raw.includes('://') || !DATABASE_SCHEMES.includes(scheme)) {
+    // `sqlite:/path` is the one accepted form without `//`.
+    const scheme = raw.split(':')[0]?.toLowerCase();
+    const shaped = raw.includes('://') || scheme === 'sqlite';
+    if (!raw.includes(':') || !shaped || !DATABASE_SCHEMES.includes(scheme)) {
       return `"${truncate(raw)}" is not a database connection string. Use one of ${DATABASE_SCHEMES.join(
         ', ',
       )}, for example postgresql://user:password@host:5432/database.`;

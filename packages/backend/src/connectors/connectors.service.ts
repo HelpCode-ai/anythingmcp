@@ -21,6 +21,7 @@ import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
+import { renderStaticResponse } from './static-response.util';
 
 @Injectable()
 export class ConnectorsService {
@@ -408,6 +409,8 @@ export class ConnectorsService {
       bodyMapping?: Record<string, unknown>;
       headers?: Record<string, string>;
       staticResponse?: string;
+      staticResponses?: Record<string, unknown>;
+      topicParam?: string;
     },
     params: Record<string, unknown>,
     /** Names the tool in the missing-variable error, as the MCP path does. */
@@ -436,14 +439,7 @@ export class ConnectorsService {
     // 'replace')" — a message naming neither the tool nor the real problem.
     // api-football's af_analysis_playbook spent six weeks failing that way.
     if (endpointMapping.method === 'static') {
-      if (!endpointMapping.staticResponse) {
-        throw new Error(
-          'This tool is configured to return a fixed text response, but that ' +
-            'response is empty. Set it under the tool\'s endpoint mapping, or ' +
-            'change the method to a real HTTP verb.',
-        );
-      }
-      return { text: endpointMapping.staticResponse };
+      return { text: renderStaticResponse(endpointMapping, params) };
     }
 
     // Resolve {{VAR}} at call time, exactly as DynamicMcpTools does, then
@@ -526,7 +522,10 @@ export class ConnectorsService {
         return this.graphqlEngine.execute(config, endpointMapping, mergedParams);
       case 'DATABASE': {
         const readOnly = (connector.config as any)?.readOnly !== false;
-        return this.databaseEngine.execute(config, endpointMapping, mergedParams, { readOnly });
+        return this.databaseEngine.execute(config, endpointMapping, mergedParams, {
+          readOnly,
+          deniedTables: (connector.config as any)?.deniedTables,
+        });
       }
       case 'MCP':
         return this.mcpClientEngine.execute(config, endpointMapping, mergedParams);
@@ -563,7 +562,8 @@ export class ConnectorsService {
       return this.generateMongoTools(readOnly);
     }
 
-    const isMssql = baseUrl.startsWith('mssql://');
+    const isHana = baseUrl.startsWith('hana://') || baseUrl.startsWith('saphana://');
+    const isMssql = baseUrl.startsWith('mssql://') || baseUrl.startsWith('sqlserver://');
     const isMysql = baseUrl.startsWith('mysql://') || baseUrl.startsWith('mariadb://');
     const isOracle = baseUrl.startsWith('oracle://') || baseUrl.startsWith('oracledb://');
     const isSqlite = baseUrl.startsWith('sqlite://') || baseUrl.startsWith('sqlite:');
@@ -572,7 +572,15 @@ export class ConnectorsService {
     let dbType: string;
     let topSyntax: string;
 
-    if (isMssql) {
+    if (isHana) {
+      dbType = 'SAP HANA';
+      topSyntax = 'SELECT TOP 10';
+      // Scoped to the session schema (`currentSchema` on the connection
+      // string) and carrying HANA's column comments. On an SAP ERP schema this
+      // is still far beyond the 1000-row cap; the SAP S/4HANA adapter's
+      // dictionary tools are the way in there.
+      schemaQuery = `SELECT c.SCHEMA_NAME AS TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE_NAME AS DATA_TYPE, c.LENGTH AS CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 'YES' ELSE 'NO' END AS IS_PRIMARY_KEY, c.COMMENTS FROM SYS.TABLE_COLUMNS c LEFT JOIN (SELECT SCHEMA_NAME, TABLE_NAME, COLUMN_NAME FROM SYS.CONSTRAINTS WHERE IS_PRIMARY_KEY = 'TRUE') pk ON c.SCHEMA_NAME = pk.SCHEMA_NAME AND c.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME WHERE c.SCHEMA_NAME = CURRENT_SCHEMA ORDER BY c.TABLE_NAME, c.POSITION`;
+    } else if (isMssql) {
       dbType = 'SQL Server';
       topSyntax = 'SELECT TOP 10';
       schemaQuery = `SELECT t.TABLE_SCHEMA, t.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 'YES' ELSE 'NO' END AS IS_PRIMARY_KEY FROM INFORMATION_SCHEMA.TABLES t JOIN INFORMATION_SCHEMA.COLUMNS c ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME LEFT JOIN (SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY') pk ON c.TABLE_SCHEMA = pk.TABLE_SCHEMA AND c.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME WHERE t.TABLE_TYPE = 'BASE TABLE' ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION`;
@@ -630,7 +638,7 @@ export class ConnectorsService {
         endpointMapping: {
           method: 'static',
           path: '',
-          staticResponse: this.buildExampleQueriesText({ isMssql, isMysql, isOracle, isSqlite, dbType, readOnly }),
+          staticResponse: this.buildExampleQueriesText({ isHana, isMssql, isMysql, isOracle, isSqlite, dbType, readOnly }),
         },
       },
       // 3. Dynamic query execution
@@ -719,6 +727,7 @@ export class ConnectorsService {
   }
 
   private buildExampleQueriesText(opts: {
+    isHana?: boolean;
     isMssql: boolean;
     isMysql: boolean;
     isOracle: boolean;
@@ -730,6 +739,42 @@ export class ConnectorsService {
     const note = readOnly
       ? '> NOTE: Only SELECT queries are allowed. INSERT, UPDATE, DELETE, DROP, and other write operations are blocked.'
       : '> NOTE: This connector supports both read and write operations (SELECT, INSERT, UPDATE, DELETE, etc.). Use write operations with caution.';
+
+    if (opts.isHana) {
+      return [
+        '# SAP HANA Example Queries',
+        '',
+        '## Tables in the current schema, with their comments',
+        'SELECT TABLE_NAME, COMMENTS FROM SYS.TABLES WHERE SCHEMA_NAME = CURRENT_SCHEMA ORDER BY TABLE_NAME',
+        '',
+        '## Columns of one table, with comments',
+        "SELECT COLUMN_NAME, DATA_TYPE_NAME, LENGTH, SCALE, IS_NULLABLE, COMMENTS FROM SYS.TABLE_COLUMNS WHERE SCHEMA_NAME = CURRENT_SCHEMA AND TABLE_NAME = 'MY_TABLE' ORDER BY POSITION",
+        '',
+        '## Views (including calculation views published to _SYS_BIC)',
+        "SELECT SCHEMA_NAME, VIEW_NAME, COMMENTS FROM SYS.VIEWS WHERE SCHEMA_NAME IN (CURRENT_SCHEMA, '_SYS_BIC') ORDER BY 1, 2",
+        '',
+        '## Preview rows',
+        'SELECT TOP 10 * FROM MY_TABLE',
+        '',
+        '## Names with a namespace or lower case must be quoted',
+        'SELECT TOP 10 * FROM "/BIC/AZSALES2"',
+        '',
+        '## Aggregate, then limit',
+        'SELECT CATEGORY, COUNT(*) AS CNT, SUM(AMOUNT) AS TOTAL FROM MY_TABLE GROUP BY CATEGORY ORDER BY TOTAL DESC LIMIT 20',
+        '',
+        '## Dates: DATE columns compare to DATE literals',
+        "SELECT * FROM MY_TABLE WHERE CREATED_AT BETWEEN '2026-01-01' AND '2026-03-31'",
+        '',
+        '## Constant expressions select FROM DUMMY',
+        'SELECT CURRENT_SCHEMA, CURRENT_USER, CURRENT_DATE FROM DUMMY',
+        '',
+        '> SAP ERP schemas (SAPHANADB, SAPABAP1): table and column names are SAP abbreviations and',
+        '> almost every business table has a client column MANDT. Use the SAP S/4HANA adapter, whose',
+        '> dictionary tools explain each table and field.',
+        '',
+        note,
+      ].join('\n');
+    }
 
     if (opts.isMssql) {
       return [

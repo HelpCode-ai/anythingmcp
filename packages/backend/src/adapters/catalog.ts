@@ -324,6 +324,10 @@ export interface AdapterDefinition extends AdapterMeta {
     /** Path the "Test connection" probe GETs. Without one it probes `/`, which
      *  many APIs answer with 404 — an alarming result for a healthy install. */
     healthcheckPath?: string;
+    /** Seeded into `connector.config` at install (e.g. a database adapter's
+     *  `deniedTables`, an OData adapter's `odata` settings). Keys the install
+     *  itself owns (adapterSlug, adapterVersion…) always win. */
+    config?: Record<string, unknown>;
   };
   tools: Array<{
     name: string;

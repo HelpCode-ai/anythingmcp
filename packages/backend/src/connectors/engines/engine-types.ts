@@ -48,6 +48,9 @@ export interface DatabaseEndpointMapping {
     | string;
   path: string;
   staticResponse?: string;
+  /** Topic → text; see static-response.util.ts. */
+  staticResponses?: Record<string, string>;
+  topicParam?: string;
 }
 
 export interface McpEndpointMapping {
