@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
@@ -22,6 +22,7 @@ import { normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
+import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
 
 @Injectable()
 export class ConnectorsService {
@@ -36,6 +37,7 @@ export class ConnectorsService {
     private readonly graphqlEngine: GraphqlEngine,
     private readonly databaseEngine: DatabaseEngine,
     private readonly mcpClientEngine: McpClientEngine,
+    @Optional() private readonly odataEngine?: ODataEngine,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -298,6 +300,24 @@ export class ConnectorsService {
             authConfig,
           });
           break;
+        case 'ODATA': {
+          if (!this.odataEngine) throw new Error('The OData engine is not available.');
+          const settings = (connector.config as { odata?: Record<string, unknown> } | null)?.odata;
+          const isSap = !!settings?.sap || !!settings?.sapClient;
+          const out = (await this.odataEngine.execute(
+            { baseUrl, authType: connector.authType, authConfig, headers, connectorId: connector.id },
+            { method: isSap ? 'odata_list_services' : 'odata_describe_service', path: '' },
+            {},
+            settings,
+          )) as { total?: number; entitySets?: unknown[] };
+          return {
+            ok: true,
+            kind: 'ok',
+            message: isSap
+              ? `Connection successful — the SAP service catalog lists ${out.total ?? 0} services`
+              : `Connection successful — the service has ${out.entitySets?.length ?? 0} entity sets`,
+          };
+        }
         case 'MCP': {
           const tools = await this.mcpClientEngine.listTools({
             baseUrl: connector.baseUrl,
@@ -496,6 +516,19 @@ export class ConnectorsService {
       specUrl: connector.specUrl ?? undefined,
       connectorId: connector.id,
     };
+
+    if (
+      (connector.type as string) === 'ODATA' ||
+      (connector.type === 'REST' && isODataBuiltinMethod(endpointMapping.method))
+    ) {
+      if (!this.odataEngine) throw new Error('The OData engine is not available.');
+      return this.odataEngine.execute(
+        config,
+        endpointMapping,
+        mergedParams,
+        (connector.config as any)?.odata,
+      );
+    }
 
     switch (connector.type) {
       case 'REST': {

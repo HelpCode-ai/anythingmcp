@@ -11,6 +11,7 @@ import { GraphqlEngine } from '../connectors/engines/graphql.engine';
 import { SoapEngine } from '../connectors/engines/soap.engine';
 import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
 import { DatabaseEngine } from '../connectors/engines/database.engine';
+import { ODataEngine } from '../connectors/engines/odata.engine';
 import { OAuth2TokenService } from '../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../connectors/engines/login-token.service';
 import { GraphqlSchemaService } from '../connectors/engines/graphql-schema.service';
@@ -23,6 +24,7 @@ const ENGINES = [
   SoapEngine,
   McpClientEngine,
   DatabaseEngine,
+  ODataEngine,
 ];
 
 @Module({

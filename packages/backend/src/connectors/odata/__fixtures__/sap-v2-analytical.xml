@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns:sap="http://www.sap.com/Protocols/SAPData">
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="C_GLREVENUEEXPENSES_CDS" xml:lang="en" sap:schema-version="1" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <EntityType Name="C_GLRevenueExpensesResult" sap:semantics="aggregate" sap:label="Revenue and Expenses" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="ID"/>
+        </Key>
+        <Property Name="ID" Type="Edm.String" Nullable="false" MaxLength="2147483647" sap:filterable="false" sap:sortable="false"/>
+        <Property Name="CompanyCode" Type="Edm.String" MaxLength="4" sap:aggregation-role="dimension" sap:label="Company Code" sap:text="CompanyCodeName" sap:required-in-filter="true"/>
+        <Property Name="CompanyCodeName" Type="Edm.String" MaxLength="25" sap:label="Company Name"/>
+        <Property Name="FiscalYear" Type="Edm.String" MaxLength="4" sap:aggregation-role="dimension" sap:label="Fiscal Year"/>
+        <Property Name="FiscalPeriod" Type="Edm.String" MaxLength="3" sap:aggregation-role="dimension" sap:label="Fiscal Period"/>
+        <Property Name="AmountInCompanyCodeCurrency" Type="Edm.Decimal" Precision="24" Scale="3" sap:aggregation-role="measure" sap:label="Amount in CC Crcy" sap:unit="CompanyCodeCurrency" sap:filterable="false"/>
+        <Property Name="CompanyCodeCurrency" Type="Edm.String" MaxLength="5" sap:label="Company Code Currency" sap:semantics="currency-code"/>
+        <Property Name="PostingDate" Type="Edm.DateTime" Precision="0" sap:display-format="Date" sap:label="Posting Date"/>
+      </EntityType>
+      <EntityType Name="C_GLRevenueExpensesType" sap:semantics="parameters" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="P_ExchangeRateType"/>
+        </Key>
+        <Property Name="P_ExchangeRateType" Type="Edm.String" Nullable="false" MaxLength="4" sap:parameter="mandatory" sap:label="Exchange Rate Type"/>
+        <NavigationProperty Name="Set" Relationship="C_GLREVENUEEXPENSES_CDS.assoc_Set" FromRole="FromRole_assoc_Set" ToRole="ToRole_assoc_Set"/>
+      </EntityType>
+      <EntityContainer Name="C_GLREVENUEEXPENSES_CDS_Entities" m:IsDefaultEntityContainer="true" sap:supported-formats="atom json xlsx">
+        <EntitySet Name="C_GLRevenueExpensesResults" EntityType="C_GLREVENUEEXPENSES_CDS.C_GLRevenueExpensesResult" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:addressable="false" sap:content-version="1"/>
+        <EntitySet Name="C_GLRevenueExpenses" EntityType="C_GLREVENUEEXPENSES_CDS.C_GLRevenueExpensesType" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:pageable="false" sap:content-version="1"/>
+        <FunctionImport Name="GetHierarchy" ReturnType="Edm.String" m:HttpMethod="GET"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

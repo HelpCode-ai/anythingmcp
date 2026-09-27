@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { AxiosError } from 'axios';
 import { ToolRegistry } from './tool-registry';
@@ -34,6 +34,7 @@ import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints
 import { processGauges } from '../common/process-vitals';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
+import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -58,6 +59,7 @@ export class DynamicMcpTools {
     private readonly mcpClientEngine: McpClientEngine,
     private readonly databaseEngine: DatabaseEngine,
     private readonly kgService: KgService,
+    @Optional() private readonly odataEngine?: ODataEngine,
   ) {}
 
   /**
@@ -713,6 +715,24 @@ export class DynamicMcpTools {
     // api-football's af_analysis_playbook spent six weeks failing that way.
     if (endpointMapping.method === 'static') {
       return { body: { text: renderStaticResponse(endpointMapping, params) } };
+    }
+
+    // OData built-ins (`odata_*`) run on ODATA connectors and on REST
+    // connectors that carry `config.odata`; the ODATA type sends its plain
+    // HTTP tools through the same engine for sap-client and V2 unwrapping.
+    if (
+      connectorType === 'ODATA' ||
+      (connectorType === 'REST' && isODataBuiltinMethod(endpointMapping.method))
+    ) {
+      if (!this.odataEngine) throw new Error('The OData engine is not available.');
+      return {
+        body: await this.odataEngine.execute(
+          config,
+          endpointMapping,
+          params,
+          (extra?.connectorConfig as any)?.odata,
+        ),
+      };
     }
 
     switch (connectorType) {

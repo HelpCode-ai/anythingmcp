@@ -84,11 +84,14 @@ export class RestEngine {
       // Response headers to hand back alongside the body, e.g. ["link"] for
       // cursor pagination. Opt-in per tool; see response-headers.util.ts.
       exposeHeaders?: string[];
+      // Hand back an XML body as the text it arrived as instead of parsing
+      // it into an object. The OData engine needs `$metadata` verbatim.
+      rawBody?: boolean;
     },
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
     const withMeta = (response: AxiosResponse) => ({
-      body: parseXmlBody(response),
+      body: endpointMapping.rawBody ? response.data : parseXmlBody(response),
       headers: pickExposedHeaders(
         response.headers as Record<string, unknown>,
         endpointMapping.exposeHeaders,

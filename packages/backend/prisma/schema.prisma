@@ -364,6 +364,7 @@ enum ConnectorType {
   MCP
   DATABASE
   WEBHOOK
+  ODATA
 }
 
 enum AuthType {
