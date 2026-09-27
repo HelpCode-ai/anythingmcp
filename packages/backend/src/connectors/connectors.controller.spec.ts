@@ -1180,3 +1180,46 @@ describe('PUT :id — switching to OAuth 1.0a', () => {
     expect(connectorsService.update).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('PUT :id — config is merged, not replaced', () => {
+  const stored = {
+    id: 'c1',
+    type: 'DATABASE',
+    organizationId: 'org1',
+    config: {
+      adapterSlug: 'sap-s4hana-hana',
+      adapterVersion: 'v1',
+      readOnly: true,
+      deniedTables: ['PA####'],
+    },
+  };
+
+  it('keeps adapter keys and deniedTables when the form sends only readOnly', async () => {
+    const { controller, connectorsService } = buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(stored),
+        update: jest.fn().mockResolvedValue({ id: 'c1' }),
+      },
+    });
+    await controller.update(req('ADMIN'), 'c1', { config: { readOnly: false } } as any);
+    expect(connectorsService.update).toHaveBeenCalledWith('c1', {
+      config: {
+        adapterSlug: 'sap-s4hana-hana',
+        adapterVersion: 'v1',
+        readOnly: false,
+        deniedTables: ['PA####'],
+      },
+    });
+  });
+
+  it('clears a key sent as null', async () => {
+    const { controller, connectorsService } = buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(stored),
+        update: jest.fn().mockResolvedValue({ id: 'c1' }),
+      },
+    });
+    await controller.update(req('ADMIN'), 'c1', { config: { deniedTables: null } } as any);
+    expect(connectorsService.update.mock.calls[0][1].config).not.toHaveProperty('deniedTables');
+  });
+});

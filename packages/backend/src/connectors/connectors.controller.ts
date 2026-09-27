@@ -823,6 +823,21 @@ export class ConnectorsController {
     if (dto.headers) {
       data.headers = mergeMaskedHeaders(dto.headers, connector.headers, ctx);
     }
+    // `config` also carries keys no form edits: the catalog adapter's slug,
+    // version and baselines (logo, re-sync), a database adapter's
+    // deniedTables. The database settings form sends only { readOnly }, and
+    // writing that as the whole object silently dropped the rest. Merge, so a
+    // form changes what it shows and nothing else; a key is cleared by
+    // sending it as null.
+    if (dto.config && typeof dto.config === 'object' && !Array.isArray(dto.config)) {
+      const existing =
+        connector.config && typeof connector.config === 'object' && !Array.isArray(connector.config)
+          ? (connector.config as Record<string, unknown>)
+          : {};
+      const merged: Record<string, unknown> = { ...existing, ...dto.config };
+      for (const [k, v] of Object.entries(merged)) if (v === null) delete merged[k];
+      data.config = merged;
+    }
     const updated = await this.connectorsService.update(id, data);
     // The registry keeps its own copy of the connector — base URL, headers,
     // auth — and reads it on every call. Without this, a changed base URL

@@ -93,6 +93,7 @@ export default function ConnectorDetailPage() {
   const [editLtRefreshOn401, setEditLtRefreshOn401] = useState(true);
   const [editHeaderRows, setEditHeaderRows] = useState<HeaderRow[]>([]);
   const [editDbReadOnly, setEditDbReadOnly] = useState(true);
+  const [editDbDeniedTables, setEditDbDeniedTables] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
   const [testResult, setTestResult] = useState<{
@@ -188,6 +189,10 @@ export default function ConnectorDetailPage() {
       setEditLtPassword('');
       setEditHeaderRows(objectToHeaderRows(c.headers as Record<string, string> | null));
       setEditDbReadOnly((c.config as any)?.readOnly !== false);
+      {
+        const denied = (c.config as any)?.deniedTables;
+        setEditDbDeniedTables(Array.isArray(denied) ? denied.join(', ') : '');
+      }
       setToolList(c.tools || []);
       // Load env vars
       const ev = c.envVars as Record<string, string> | null;
@@ -331,7 +336,15 @@ export default function ConnectorDetailPage() {
         data.headers = headerRowsToObject(editHeaderRows);
       }
       if (connector.type === 'DATABASE') {
-        data.config = { readOnly: editDbReadOnly };
+        const deniedTables = editDbDeniedTables
+          .split(/[\s,]+/)
+          .map((t) => t.trim())
+          .filter(Boolean);
+        // The server merges config, so a cleared list must be sent as null.
+        data.config = {
+          readOnly: editDbReadOnly,
+          deniedTables: deniedTables.length > 0 ? deniedTables : null,
+        };
       }
       await connectors.update(id, data, token);
 
@@ -975,6 +988,22 @@ export default function ConnectorDetailPage() {
                     {editDbReadOnly
                       ? 'Only SELECT queries are allowed. Safe for analytics and reporting.'
                       : 'All SQL operations (SELECT, INSERT, UPDATE, DELETE) are allowed. Use with caution.'}
+                  </p>
+                  <label htmlFor="deniedTables" className="block text-sm font-medium mt-4 mb-1">
+                    Denied tables
+                  </label>
+                  <input
+                    id="deniedTables"
+                    type="text"
+                    value={editDbDeniedTables}
+                    onChange={(e) => setEditDbDeniedTables(e.target.value)}
+                    placeholder="e.g. salaries, audit_*, PA####"
+                    className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
+                  />
+                  <p className="text-xs text-[var(--text-3)] mt-1.5">
+                    Queries that name one of these tables are refused. Comma-separated;{' '}
+                    <code>*</code> matches any text, <code>?</code> one character, <code>#</code> one digit.
+                    The database user&apos;s own permissions remain the real boundary.
                   </p>
                 </div>
               )}
