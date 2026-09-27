@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { users, server, organizations, AUTH_EXPIRED_EVENT } from './api';
+import { storage } from './storage';
 
 interface User {
   id: string;
@@ -79,16 +80,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setOrgName(null);
     setOrgs(null);
-    localStorage.removeItem('amcp_token');
-    localStorage.removeItem('amcp_user');
+    storage.remove('amcp_token');
+    storage.remove('amcp_user');
     document.cookie = 'amcp_token=; path=/; max-age=0';
     router.push('/login');
   }, [router]);
 
   // On mount: restore saved token and validate it against the backend
   useEffect(() => {
-    const savedToken = localStorage.getItem('amcp_token');
-    const savedUser = localStorage.getItem('amcp_user');
+    const savedToken = storage.get('amcp_token');
+    const savedUser = storage.get('amcp_user');
 
     if (savedToken && savedUser) {
       setToken(savedToken);
@@ -96,14 +97,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       users.me(savedToken).then((freshUser) => {
         setUser(freshUser);
-        localStorage.setItem('amcp_user', JSON.stringify(freshUser));
+        storage.set('amcp_user', JSON.stringify(freshUser));
         fetchOrgData(savedToken);
         setIsLoading(false);
       }).catch(() => {
         setToken(null);
         setUser(null);
-        localStorage.removeItem('amcp_token');
-        localStorage.removeItem('amcp_user');
+        storage.remove('amcp_token');
+        storage.remove('amcp_user');
         document.cookie = 'amcp_token=; path=/; max-age=0';
         setIsLoading(false);
       });
@@ -137,8 +138,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = (newToken: string, newUser: User) => {
     setToken(newToken);
     setUser(newUser);
-    localStorage.setItem('amcp_token', newToken);
-    localStorage.setItem('amcp_user', JSON.stringify(newUser));
+    storage.set('amcp_token', newToken);
+    storage.set('amcp_user', JSON.stringify(newUser));
     document.cookie = `amcp_token=${newToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
     fetchOrgData(newToken);
   };
@@ -150,8 +151,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Store new token and user from the switch response
       setToken(result.accessToken);
       setUser(result.user);
-      localStorage.setItem('amcp_token', result.accessToken);
-      localStorage.setItem('amcp_user', JSON.stringify(result.user));
+      storage.set('amcp_token', result.accessToken);
+      storage.set('amcp_user', JSON.stringify(result.user));
       document.cookie = `amcp_token=${result.accessToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
       // Update org data
       setOrgName(result.organization?.name || null);
@@ -166,8 +167,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const replaceSession = (newToken: string, newUser: User, newOrgName?: string | null) => {
     setToken(newToken);
     setUser(newUser);
-    localStorage.setItem('amcp_token', newToken);
-    localStorage.setItem('amcp_user', JSON.stringify(newUser));
+    storage.set('amcp_token', newToken);
+    storage.set('amcp_user', JSON.stringify(newUser));
     document.cookie = `amcp_token=${newToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
     if (newOrgName !== undefined) setOrgName(newOrgName);
   };
@@ -176,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
-      localStorage.setItem('amcp_user', JSON.stringify(updated));
+      storage.set('amcp_user', JSON.stringify(updated));
       return updated;
     });
   };

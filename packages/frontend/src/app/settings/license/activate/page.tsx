@@ -8,6 +8,7 @@ import { license } from '@/lib/api';
 import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { sessionStore } from '@/lib/storage';
 
 const KEY_RE = /^AMCP-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}$/;
 const PENDING_KEY = 'amcp_pending_license_key';
@@ -26,11 +27,11 @@ const PENDING_KEY = 'amcp_pending_license_key';
 function takeKeyFromLocation(queryKey: string | null): string {
   if (typeof window === 'undefined') return '';
   const fromHash = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('key');
-  const found = fromHash || queryKey || sessionStorage.getItem(PENDING_KEY) || '';
+  const found = fromHash || queryKey || sessionStore.get(PENDING_KEY) || '';
   if (fromHash || queryKey) {
     window.history.replaceState(null, '', window.location.pathname);
   }
-  if (found) sessionStorage.setItem(PENDING_KEY, found);
+  if (found) sessionStore.set(PENDING_KEY, found);
   return found;
 }
 
@@ -81,7 +82,7 @@ function LicenseActivateInner() {
     setPhase('activating');
     license.setKey(key, token)
       .then((res) => {
-        sessionStorage.removeItem(PENDING_KEY);
+        sessionStore.remove(PENDING_KEY);
         setPhase('success');
         setMessage(res.message || 'License activated successfully.');
         setTimeout(() => router.replace('/settings/license'), 1500);
