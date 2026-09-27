@@ -277,6 +277,46 @@ describe('McpEndpointController — structuredContent', () => {
     expect(result.structuredContent).toEqual({});
   });
 
+  it('lets a real client accept keys the inferred schema did not list', async () => {
+    // What Google Search Console does with dataState=all: the sample the
+    // schema was inferred from had no `metadata`, a later response does.
+    const toolExecutor = {
+      executeTool: jest.fn().mockResolvedValue({
+        content: [{ type: 'text', text: '{}' }],
+        structured: { total: 1, devices: [], metadata: { first_incomplete_date: '2026-09-26' } },
+      }),
+    };
+    const controller = new McpEndpointController(
+      { findById: jest.fn() } as any,
+      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      toolExecutor as any,
+      { getAllowedToolIds: jest.fn() } as any,
+      { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
+      { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
+      { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { create: jest.fn() } as any,
+    );
+    const entries = (controller as any).planToolSet({
+      serverTools: [TOOL],
+      allowedToolIds: null,
+      captureIntent: false,
+      invocationContext: { organizationId: 'org-A', mcpServerId: 'srv-A' },
+    });
+    const server = new McpServer({ name: 'spec', version: '1.0.0' });
+    entries.find((e: any) => e.name === 'list_devices').register(server);
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    const client = new Client({ name: 'spec', version: '1.0.0' });
+    await client.connect(clientSide);
+
+    const listed = (await client.listTools()).tools.find((t) => t.name === 'list_devices');
+    expect(listed?.outputSchema?.additionalProperties).not.toBe(false);
+
+    const result: any = await client.callTool({ name: 'list_devices', arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent.metadata).toEqual({ first_incomplete_date: '2026-09-26' });
+  });
+
   it('skips structuredContent on an error result', async () => {
     const handler = planHandler({
       content: [{ type: 'text', text: '{"error":"boom"}' }],
