@@ -26,7 +26,7 @@ export const REGIONS = [
   'de', 'gb', 'intl', 'br', 'in', 'jp', 'ng',
   'it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk',
 ];
-const ALLOWED_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'DATABASE', 'LOGIN_TOKEN']);
+const ALLOWED_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'DATABASE', 'ODATA', 'LOGIN_TOKEN']);
 export const ALLOWED_AUTH_TYPES = new Set(['NONE', 'API_KEY', 'BEARER_TOKEN', 'BASIC', 'BASIC_AUTH', 'OAUTH2', 'OAUTH1', 'LOGIN_TOKEN', 'QUERY_AUTH', 'CONNECTION_STRING', 'HMAC']);
 const REQUIRED_TOP_LEVEL = ['slug', 'name', 'description', 'region', 'category', 'icon', 'docsUrl', 'requiredEnvVars', 'connector', 'tools'];
 const MIN_INSTRUCTIONS_LEN = 800;
