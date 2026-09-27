@@ -156,9 +156,13 @@ export function buildKeyPredicate(
       } catch {
         throw new Error('key looks like JSON but does not parse.');
       }
-    } else if (type.keys.length > 1 || /^[A-Za-z_]\w*\s*=/.test(raw)) {
+    } else if (type.keys.length > 1 || looksLikePredicate(raw)) {
       // Pre-written predicate; validate the names, keep the literals as given.
-      const names = [...raw.matchAll(/([A-Za-z_]\w*)\s*=/g)].map((m) => m[1]);
+      if (raw.length > 2000) throw new Error('key is too long.');
+      const names = raw
+        .split(',')
+        .map((part) => part.slice(0, part.indexOf('=')).trim())
+        .filter((name) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name));
       const unknown = names.filter((n) => !type.keys.includes(n));
       if (names.length === 0 || unknown.length) {
         throw new Error(
@@ -178,6 +182,12 @@ export function buildKeyPredicate(
     return `(${formatKeyLiteral(values[type.keys[0]], typeOf(type.keys[0]), version)})`;
   }
   return `(${type.keys.map((k) => `${k}=${formatKeyLiteral(values[k], typeOf(k), version)}`).join(',')})`;
+}
+
+/** `Name=…` at the start, checked without a backtracking regex. */
+function looksLikePredicate(raw: string): boolean {
+  const eq = raw.indexOf('=');
+  return eq > 0 && /^[A-Za-z_][A-Za-z0-9_]*$/.test(raw.slice(0, eq).trim());
 }
 
 /** Closest names by edit distance, for "did you mean" hints. */

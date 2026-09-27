@@ -891,9 +891,15 @@ export class ConnectorsController {
         connector.config && typeof connector.config === 'object' && !Array.isArray(connector.config)
           ? (connector.config as Record<string, unknown>)
           : {};
-      const merged: Record<string, unknown> = { ...existing, ...dto.config };
-      for (const [k, v] of Object.entries(merged)) if (v === null) delete merged[k];
-      data.config = merged;
+      // Built key by key: the keys come from the request body, so the
+      // prototype-polluting names are dropped rather than spread in.
+      const merged = new Map<string, unknown>(Object.entries(existing));
+      for (const [k, v] of Object.entries(dto.config as Record<string, unknown>)) {
+        if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+        if (v === null) merged.delete(k);
+        else merged.set(k, v);
+      }
+      data.config = Object.fromEntries(merged);
     }
     const updated = await this.connectorsService.update(id, data);
     // The registry keeps its own copy of the connector — base URL, headers,
