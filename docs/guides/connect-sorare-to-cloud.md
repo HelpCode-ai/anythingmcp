@@ -71,7 +71,7 @@ https://cloud.anythingmcp.com/mcp
 With the header:
 
 ```
-Authorization: Bearer YOUR_MCP_API_KEY
+X-API-Key: YOUR_MCP_API_KEY
 ```
 
 ### Hooking it up to clients

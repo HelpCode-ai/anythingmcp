@@ -76,7 +76,7 @@ Empfohlener Weg — funktioniert auf **claude.ai web** ohne lokale Config-Datei.
 3. Trag ein:
    - **Name:** `Playtomic`
    - **URL:** `https://cloud.anythingmcp.com/mcp`
-   - **Authentication:** Bearer token → MCP-API-Key einfügen (aus AnythingMCP → **Profile → MCP API Keys → New Key**)
+   - **Authentifizierung:** nichts einfügen. Claude meldet sich im nächsten Schritt per OAuth bei AnythingMCP an.
 4. **Connect** klicken.
 
 Alle Playtomic-Tools erscheinen im Chat. Token-Caching, JWT-Refresh (~1 h) und `401`-Retries laufen serverseitig.
@@ -94,7 +94,7 @@ Bei den **Desktop-Apps** gilt die Web-UI nicht — du bearbeitest eine lokale Co
     "playtomic": {
       "url": "https://cloud.anythingmcp.com/mcp",
       "headers": {
-        "Authorization": "Bearer YOUR_MCP_API_KEY"
+        "X-API-Key": "YOUR_MCP_API_KEY"
       }
     }
   }
@@ -107,7 +107,7 @@ Claude Desktop neu starten. Playtomic-Tools erscheinen im 🔧-Menü.
 
 ```bash
 claude mcp add --transport http playtomic https://cloud.anythingmcp.com/mcp \
-  --header "Authorization: Bearer YOUR_MCP_API_KEY"
+  --header "X-API-Key: YOUR_MCP_API_KEY"
 ```
 
 Mit `claude mcp list` prüfen.

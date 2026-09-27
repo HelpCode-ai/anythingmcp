@@ -20,7 +20,7 @@ Goal: go from a running AnythingMCP instance to a working MCP tool call against 
      "mcpServers": {
        "anythingmcp": {
          "url": "http://localhost:4000/mcp",
-         "headers": { "Authorization": "Bearer <your-mcp-key>" }
+         "headers": { "X-API-Key": "<your-mcp-key>" }
        }
      }
    }

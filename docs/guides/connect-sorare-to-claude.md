@@ -78,7 +78,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
     "sorare": {
       "url": "http://localhost:4000/mcp",
       "headers": {
-        "Authorization": "Bearer YOUR_MCP_API_KEY"
+        "X-API-Key": "YOUR_MCP_API_KEY"
       }
     }
   }
@@ -97,7 +97,7 @@ In Claude Code, add the MCP server via the CLI or `~/.config/claude-code/mcp.jso
 
 ```bash
 claude mcp add --transport http sorare http://localhost:4000/mcp \
-  --header "Authorization: Bearer YOUR_MCP_API_KEY"
+  --header "X-API-Key: YOUR_MCP_API_KEY"
 ```
 
 Verify with `claude mcp list`. Sorare tools become available in any Claude Code session.

@@ -60,12 +60,12 @@ In VS Code (Insiders ≥ 1.95, or stable with MCP support):
 2. Type **`MCP: Add Server`** and pick the HTTP option.
 3. Paste:
    - **Server URL:** `https://cloud.anythingmcp.com/mcp`
-   - **Authorization header:** `Bearer YOUR_MCP_API_KEY` (the one from Step 1)
+   - **Header:** `X-API-Key: YOUR_MCP_API_KEY` (the one from Step 1)
 4. Name the server `sorare` and confirm.
 
 VS Code restarts Copilot Chat automatically. All 18 Sorare tools appear in the Copilot tool picker — start typing prompts.
 
-> **JetBrains?** Same flow — open the Copilot panel → MCP servers → Add server → paste the URL + Bearer token.
+> **JetBrains?** Same flow — open the Copilot panel → MCP servers → Add server → paste the URL and the `X-API-Key` header.
 
 <details>
 <summary><strong>Advanced: edit <code>settings.json</code> manually</strong></summary>
@@ -79,7 +79,7 @@ If you'd rather edit the config file directly, open `settings.json` (Cmd/Ctrl + 
       "url": "https://cloud.anythingmcp.com/mcp",
       "transport": "http",
       "headers": {
-        "Authorization": "Bearer YOUR_MCP_API_KEY"
+        "X-API-Key": "YOUR_MCP_API_KEY"
       }
     }
   }

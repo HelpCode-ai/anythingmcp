@@ -63,7 +63,7 @@ Empfohlener Weg — funktioniert auf **claude.ai web** ohne Anfassen einer Konfi
 3. Trage ein:
    - **Name:** `WhatsApp Business`
    - **URL:** `https://cloud.anythingmcp.com/mcp`
-   - **Authentication:** Bearer Token → MCP-API-Key einfügen (aus AnythingMCP → **Profile → MCP API Keys → New Key**)
+   - **Authentifizierung:** nichts einfügen. Claude meldet sich im nächsten Schritt per OAuth bei AnythingMCP an.
 4. Klicke **Connect** zum Autorisieren.
 
 Fertig. Alle 14 WhatsApp-Tools erscheinen in deinem Chat — leg los mit Prompts.
@@ -79,7 +79,7 @@ Fertig. Alle 14 WhatsApp-Tools erscheinen in deinem Chat — leg los mit Prompts
     "whatsapp-business": {
       "url": "https://cloud.anythingmcp.com/mcp",
       "headers": {
-        "Authorization": "Bearer YOUR_MCP_API_KEY"
+        "X-API-Key": "YOUR_MCP_API_KEY"
       }
     }
   }
@@ -92,7 +92,7 @@ Claude Desktop neu starten. WhatsApp-Tools erscheinen im 🔧-Menü.
 
 ```bash
 claude mcp add --transport http whatsapp-business https://cloud.anythingmcp.com/mcp \
-  --header "Authorization: Bearer YOUR_MCP_API_KEY"
+  --header "X-API-Key: YOUR_MCP_API_KEY"
 ```
 
 Prüfen mit `claude mcp list`.

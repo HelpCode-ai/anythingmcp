@@ -58,7 +58,7 @@ OpenClaw gestisce la configurazione dei server MCP in **Settings → Model Conte
 - **Name:** `Playtomic`
 - **Transport:** HTTP
 - **URL:** `https://cloud.anythingmcp.com/mcp`
-- **Headers:** `Authorization: Bearer YOUR_MCP_API_KEY`
+- **Headers:** `X-API-Key: YOUR_MCP_API_KEY`
 
 Salva. OpenClaw si connette, elenca i tool Playtomic e questi diventano disponibili in qualsiasi chat, qualunque sia il modello sottostante.
 
@@ -91,7 +91,7 @@ La metà LLM può girare offline (modello locale). La metà Playtomic richiede i
 **Quali modelli locali gestiscono meglio le chiamate ai tool MCP?**
 Per domande padel strutturate, qualsiasi modello con buon function-calling: Llama 3.1 70B, Mixtral 8×22B, Qwen 2.5 Coder, Hermes 3. I modelli 8 B vanno bene per i 4 tool del connettore public; per i 13 tool del full meglio modelli più grandi.
 
-**Dove sta il bearer token sulla mia macchina?**
+**Dove sta la chiave API MCP sulla mia macchina?**
 OpenClaw lo memorizza nel keychain di sistema (macOS / Credential Manager su Windows / secret service su Linux). Mai in config in chiaro.
 
 **Posso disabilitare il full e tenere solo il public?**

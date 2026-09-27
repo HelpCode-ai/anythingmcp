@@ -58,7 +58,7 @@ OpenClaw stores MCP server configuration in its **Settings → Model Context Pro
 - **Name:** `Playtomic`
 - **Transport:** HTTP
 - **URL:** `https://cloud.anythingmcp.com/mcp`
-- **Headers:** `Authorization: Bearer YOUR_MCP_API_KEY`
+- **Headers:** `X-API-Key: YOUR_MCP_API_KEY`
 
 Save. OpenClaw connects, lists Playtomic tools, and they become available in any chat regardless of the underlying model.
 
@@ -91,7 +91,7 @@ The LLM half can be offline (local model). The Playtomic half needs internet —
 **Which local models handle MCP tool calls best?**
 For padel-style structured questions, any model with solid function-calling: Llama 3.1 70B, Mixtral 8×22B, Qwen 2.5 Coder, Hermes 3. Smaller 8 B models work for the public connector's 4 tools; the full 13-tool variant benefits from larger models.
 
-**Where does the bearer token live on my machine?**
+**Where does the MCP API key live on my machine?**
 OpenClaw stores it in the system keychain on macOS / Windows Credential Manager / Linux secret service. Never in plain config.
 
 **Can I disable the full connector and only allow the public one?**

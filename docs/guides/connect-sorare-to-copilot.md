@@ -72,7 +72,7 @@ Open settings → search **Copilot: MCP servers** → add the following block (o
       "url": "http://localhost:4000/mcp",
       "transport": "http",
       "headers": {
-        "Authorization": "Bearer YOUR_MCP_API_KEY"
+        "X-API-Key": "YOUR_MCP_API_KEY"
       }
     }
   }

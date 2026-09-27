@@ -71,7 +71,7 @@ This is the recommended path — works on **claude.ai web** without touching any
 3. Fill in:
    - **Name:** `Sorare`
    - **URL:** `https://cloud.anythingmcp.com/mcp`
-   - **Authentication:** Bearer token → paste your MCP API key (from AnythingMCP → **Profile → MCP API Keys → New Key**)
+   - **Authentication:** nothing to paste. Claude signs in to AnythingMCP with OAuth in the next step.
 4. Click **Connect** to authorize.
 
 That's it. All 18 Sorare tools appear in your chat — start typing prompts. The token cache, refresh and bcrypt sign-in are all handled server-side; you never see them.
@@ -89,7 +89,7 @@ For the **desktop apps**, the web UI doesn't apply — you edit a local config f
     "sorare": {
       "url": "https://cloud.anythingmcp.com/mcp",
       "headers": {
-        "Authorization": "Bearer YOUR_MCP_API_KEY"
+        "X-API-Key": "YOUR_MCP_API_KEY"
       }
     }
   }
@@ -102,7 +102,7 @@ Restart Claude Desktop. Sorare tools appear in the 🔧 menu.
 
 ```bash
 claude mcp add --transport http sorare https://cloud.anythingmcp.com/mcp \
-  --header "Authorization: Bearer YOUR_MCP_API_KEY"
+  --header "X-API-Key: YOUR_MCP_API_KEY"
 ```
 
 Verify with `claude mcp list`.
