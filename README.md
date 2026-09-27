@@ -89,6 +89,8 @@ The quickstart binds to `127.0.0.1` on purpose: nothing in front of it terminate
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
 &nbsp;
 [![Install on DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://marketplace.digitalocean.com/apps/anythingmcp)
+&nbsp;
+[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/AnythingMCP/)
 
 </details>
 
