@@ -172,8 +172,7 @@
         "date": "2026-09-27",
         "against": "public OData services: Northwind V2 and V4 and TripPin V4 on services.odata.org",
         "how": "the OData engine's live test suite on all three, and this repository's install.sh + scripts/smoke.mjs against Northwind V4 on an image built from the release branch"
-      },
-      "blockedBy": "Waits for the AnythingMCP v0.14.0 image on Docker Hub (ODATA connector type): the demo passed install.sh + smoke.mjs only on a locally built image. Remove blockedBy once the image is published."
+      }
     },
     {
       "repo": "graphql-to-mcp",
