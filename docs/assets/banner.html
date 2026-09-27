@@ -11,15 +11,16 @@
 
       node scripts/generate-banner.mjs --out /tmp/banner
 
-  `{{ADAPTERS}}` and `{{KEYLESS}}` are substituted from the real catalog count.
+  `{{ADAPTERS}}` and `{{KEYLESS}}` are substituted from the real catalog count,
+  the `{{T_*}}` strings from scripts/banner-strings.json, one set per README language.
 -->
-<html lang="en">
+<html lang="{{LANG}}">
   <head>
     <meta charset="utf-8" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,500&family=Geist+Mono:wght@400;500&family=Geist:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,500&family=Geist+Mono:wght@400;500&family=Geist:wght@400;500;600&family=Noto+Sans+JP:wght@400;500&family=Noto+Sans+SC:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <style>
@@ -47,7 +48,7 @@
         height: 500px;
         overflow: hidden;
         background: var(--ink-deep);
-        font-family: Geist, system-ui, sans-serif;
+        font-family: Geist, "Noto Sans JP", "Noto Sans SC", system-ui, sans-serif;
         color: var(--fg);
         -webkit-font-smoothing: antialiased;
       }
@@ -74,7 +75,7 @@
         border-right: 1px solid var(--line);
       }
       .kicker {
-        font-family: "Geist Mono", ui-monospace, monospace;
+        font-family: "Geist Mono", "Noto Sans JP", "Noto Sans SC", ui-monospace, monospace;
         font-size: 22px;
         font-weight: 500;
         letter-spacing: 0.1em;
@@ -93,9 +94,10 @@
         flex: none;
       }
       h1 {
-        font-family: Fraunces, Georgia, serif;
+        font-family: Fraunces, "Noto Sans JP", "Noto Sans SC", Georgia, serif;
         font-weight: 400;
-        font-size: 78px;
+        font-size: {{H1_SIZE}};
+        white-space: nowrap;
         line-height: 1.02;
         letter-spacing: -0.02em;
       }
@@ -145,7 +147,7 @@
         z-index: 2;
       }
       .col-label {
-        font-family: "Geist Mono", ui-monospace, monospace;
+        font-family: "Geist Mono", "Noto Sans JP", "Noto Sans SC", ui-monospace, monospace;
         font-size: 20px;
         font-weight: 500;
         letter-spacing: 0.14em;
@@ -215,7 +217,7 @@
         letter-spacing: -0.01em;
       }
       .core .path {
-        font-family: "Geist Mono", ui-monospace, monospace;
+        font-family: "Geist Mono", "Noto Sans JP", "Noto Sans SC", ui-monospace, monospace;
         font-size: 19px;
         color: rgba(255, 255, 255, 0.72);
       }
@@ -230,11 +232,11 @@
     <div class="banner">
       <div class="claim">
         <div class="kicker">
-          <span class="dot"></span>Open source · AGPL-3.0
+          <span class="dot"></span>{{T_KICKER}}
         </div>
-        <h1><em>{{ADAPTERS}}</em> connectors</h1>
+        <h1><em>{{ADAPTERS}}</em> {{T_CONNECTORS}}</h1>
         <p class="sub">
-          {{KEYLESS}} of them need no API key. Self-hosted or EU cloud.
+          {{T_SUB}}
         </p>
         <div class="wordmark">
           <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -255,7 +257,7 @@
         <svg class="wires" fill="none"></svg>
 
         <div class="col left">
-          <div class="col-label">Your systems</div>
+          <div class="col-label">{{T_SYSTEMS}}</div>
           <div class="node">
             <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg></span>
             REST API
@@ -274,7 +276,7 @@
           </div>
           <div class="node">
             <span class="glyph"><svg viewBox="0 0 52 52" fill="none"><line x1="26" y1="26" x2="26" y2="9" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity=".6"/><line x1="26" y1="26" x2="10" y2="40" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity=".6"/><line x1="26" y1="26" x2="42" y2="40" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity=".6"/><circle cx="26" cy="9" r="5" fill="#93c5fd"/><circle cx="10" cy="40" r="5" fill="#93c5fd"/><circle cx="42" cy="40" r="5" fill="#93c5fd"/><circle cx="26" cy="26" r="8" fill="#93c5fd"/></svg></span>
-            Another MCP server
+            {{T_ANOTHER_MCP}}
           </div>
         </div>
 
@@ -297,7 +299,7 @@
         </div>
 
         <div class="col right">
-          <div class="col-label">Your AI clients</div>
+          <div class="col-label">{{T_CLIENTS}}</div>
           <div class="node"><span class="glyph">{{ICON_CLAUDE}}</span>Claude</div>
           <div class="node"><span class="glyph">{{ICON_CHATGPT}}</span>ChatGPT</div>
           <div class="node"><span class="glyph">{{ICON_COPILOT}}</span>GitHub Copilot</div>

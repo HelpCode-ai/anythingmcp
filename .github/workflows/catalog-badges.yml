@@ -4,12 +4,17 @@ name: Catalog badges
 # which the README reads directly:
 #
 #   adapters.json, tools.json, keyless.json   shields.io endpoint JSON
-#   banner.png                                 the README banner, exact counts
+#   banner.png (+ .de .ja .zh-CN)              the README banners, exact counts
 #   social-preview.png, social-preview.json   the repository's social preview,
 #                                              counts rounded down ("260+")
 #
 # The numbers come from scripts/adapter-count.mjs at runtime, so nothing here
 # quotes them and an adapter PR never has a reason to touch this file.
+#
+# It also keeps the repository's About (description) in step, from
+# .github/repo-about.txt. Editing it needs the Administration permission, which
+# GITHUB_TOKEN cannot have, so that step uses the REPO_ADMIN_TOKEN secret: a
+# fine-grained token limited to this repository with Administration: write.
 #
 # GitHub has no API to set a repository's social preview. When its rounded
 # numbers change, this workflow opens (or updates) an issue with the new image
@@ -24,6 +29,8 @@ on:
       - "packages/backend/src/adapters/**"
       - "scripts/adapter-count.mjs"
       - "scripts/generate-banner.mjs"
+      - "scripts/banner-strings.json"
+      - ".github/repo-about.txt"
       - "docs/assets/banner.html"
       - "docs/assets/icons/**"
       - ".github/workflows/catalog-badges.yml"
@@ -79,7 +86,7 @@ jobs:
           key=$(
             {
               node scripts/adapter-count.mjs
-              cat docs/assets/banner.html scripts/generate-banner.mjs
+              cat docs/assets/banner.html scripts/generate-banner.mjs scripts/banner-strings.json
               find docs/assets/icons -type f | sort | xargs cat
             } | sha256sum | cut -c1-16
           )
@@ -143,4 +150,23 @@ jobs:
             gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
           else
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --assignee keysersoft
+          fi
+
+      - name: Keep the repository's About in step with the catalog
+        env:
+          GH_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::REPO_ADMIN_TOKEN is not set, so the repository's About was not updated."
+            exit 0
+          fi
+          adapters=$(node -e 'console.log(JSON.parse(require("child_process").execFileSync(process.execPath,["scripts/adapter-count.mjs"])).adapters)')
+          want=$(sed "s/{adapters}/${adapters}/g" .github/repo-about.txt | tr -d '\n')
+          have=$(gh repo view "$GITHUB_REPOSITORY" --json description --jq .description)
+          if [ "$want" = "$have" ]; then
+            echo "About already up to date."
+          else
+            gh repo edit "$GITHUB_REPOSITORY" --description "$want"
+            echo "About updated: $want"
           fi

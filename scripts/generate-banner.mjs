@@ -2,7 +2,9 @@
 /**
  * Render docs/assets/banner.html to the two images the project shows publicly:
  *
- *   banner.png          1600x500 — top of the README
+ *   banner.png          1600x500 — top of the README (banner.de.png,
+ *                       banner.ja.png, banner.zh-CN.png for the translated
+ *                       READMEs; strings in scripts/banner-strings.json)
  *   social-preview.png  1280x640 — GitHub social preview / OG image
  *   social-preview.json          — the counts printed on the social preview
  *
@@ -66,10 +68,28 @@ const socialKeyless = `${Math.floor(keyless / 5) * 5}+`;
 
 const work = mkdtempSync(join(tmpdir(), 'amcp-banner-'));
 const template = readFileSync(join(ASSETS, 'banner.html'), 'utf8');
+const STRINGS = JSON.parse(
+  readFileSync(join(ROOT, 'scripts/banner-strings.json'), 'utf8'),
+);
 
 /** Render the banner HTML with these counts; returns the 2x screenshot path. */
-function render(name, adapterLabel, keylessLabel) {
-  const html = template
+function render(name, adapterLabel, keylessLabel, lang = 'en') {
+  const t = STRINGS[lang];
+  // Chinese and Japanese share code points; put the matching Noto first so
+  // Chinese text is not drawn with Japanese glyph shapes.
+  const base =
+    lang === 'zh-CN'
+      ? template.replaceAll('"Noto Sans JP", "Noto Sans SC"', '"Noto Sans SC", "Noto Sans JP"')
+      : template;
+  const html = base
+    .replace(/\{\{LANG\}\}/g, lang)
+    .replace(/\{\{H1_SIZE\}\}/g, t.h1Size ?? '78px')
+    .replace(/\{\{T_KICKER\}\}/g, t.kicker)
+    .replace(/\{\{T_CONNECTORS\}\}/g, t.connectors)
+    .replace(/\{\{T_SUB\}\}/g, t.sub.replace('{keyless}', String(keylessLabel)))
+    .replace(/\{\{T_SYSTEMS\}\}/g, t.systems)
+    .replace(/\{\{T_CLIENTS\}\}/g, t.clients)
+    .replace(/\{\{T_ANOTHER_MCP\}\}/g, t.anotherMcp)
     .replace(/\{\{ADAPTERS\}\}/g, String(adapterLabel))
     .replace(/\{\{KEYLESS\}\}/g, String(keylessLabel))
     .replace(/\{\{ICON_CLAUDE\}\}/g, icon('claude'))
@@ -113,7 +133,13 @@ const magick = (args) => execFileSync(imagemagick, args, { stdio: 'inherit' });
 // README banner: 1600x500 (3.2:1). Wider than 2.5:1 on purpose — at
 // GitHub's ~830px column every 100px of banner height is 100px the demo GIF
 // below it does not get.
-magick([render('banner', adapters, keyless), '-resize', '1600x500', '-strip', join(OUT, 'banner.png')]);
+for (const lang of Object.keys(STRINGS).filter((k) => !k.startsWith('$'))) {
+  magick([
+    render(`banner-${lang}`, adapters, keyless, lang),
+    '-resize', '1600x500', '-strip',
+    join(OUT, STRINGS[lang].file),
+  ]);
+}
 
 // Social preview / OG: 1280x640 (GitHub's 2:1 slot). Scale the whole 2.5:1
 // banner down and letterbox it — cropping to 2:1 would cut the headline on one
@@ -134,6 +160,6 @@ writeFileSync(
 );
 
 console.log(
-  `${OUT}: banner.png with "${adapters} connectors, ${keyless} keyless", ` +
+  `${OUT}: banner.png (+ de, ja, zh-CN) with "${adapters} connectors, ${keyless} keyless", ` +
     `social-preview.png with "${socialAdapters} connectors, ${socialKeyless} keyless".`,
 );

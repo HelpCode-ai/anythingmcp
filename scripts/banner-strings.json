@@ -1,0 +1,43 @@
+{
+  "$comment": "Strings for docs/assets/banner.html, one set per README. {keyless} is replaced with the number of keyless adapters. The file suffix is the README's: README.md -> banner.png, README.de.md -> banner.de.png. h1Size keeps the headline on one line.",
+  "en": {
+    "file": "banner.png",
+    "kicker": "Open source · AGPL-3.0",
+    "connectors": "connectors",
+    "sub": "{keyless} of them need no API key. Self-hosted or EU cloud.",
+    "systems": "Your systems",
+    "clients": "Your AI clients",
+    "anotherMcp": "Another MCP server",
+    "h1Size": "78px"
+  },
+  "de": {
+    "file": "banner.de.png",
+    "kicker": "Open Source · AGPL-3.0",
+    "connectors": "Connectors",
+    "sub": "{keyless} davon ohne API-Schlüssel. Self-hosted oder EU-Cloud.",
+    "systems": "Deine Systeme",
+    "clients": "Deine KI-Clients",
+    "anotherMcp": "Anderer MCP-Server",
+    "h1Size": "70px"
+  },
+  "ja": {
+    "file": "banner.ja.png",
+    "kicker": "オープンソース · AGPL-3.0",
+    "connectors": "のコネクター",
+    "sub": "うち {keyless} は API キー不要。セルフホストまたは EU クラウド。",
+    "systems": "あなたのシステム",
+    "clients": "AI クライアント",
+    "anotherMcp": "他の MCP サーバー",
+    "h1Size": "62px"
+  },
+  "zh-CN": {
+    "file": "banner.zh-CN.png",
+    "kicker": "开源 · AGPL-3.0",
+    "connectors": "个连接器",
+    "sub": "其中 {keyless} 个无需 API 密钥。可自托管，也可使用欧盟云。",
+    "systems": "你的系统",
+    "clients": "你的 AI 客户端",
+    "anotherMcp": "其他 MCP 服务器",
+    "h1Size": "66px"
+  }
+}
