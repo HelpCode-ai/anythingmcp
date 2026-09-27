@@ -14,7 +14,7 @@ import {
   uncoveredObjects,
   applyMetadataScript,
 } from './lib.mjs';
-import { access, renderToolsTable, replaceBetweenMarkers } from './templates/render-tools.mjs';
+import { access, allTools, renderToolsTable, replaceBetweenMarkers, summarize } from './templates/render-tools.mjs';
 import { introWordCount } from './readme.mjs';
 
 const FIXTURES = join(HERE, '__fixtures__');
@@ -169,4 +169,27 @@ test('apply-metadata.sh sets description, homepage and every topic', () => {
   const sh = applyMetadataScript([sat], config);
   assert.match(sh, /gh repo edit kochfreiburg\/weclapp-mcp-server/);
   assert.match(sh, /--add-topic mcp,mcp-server,.*,weclapp,/);
+});
+
+test('OData adapters list the five built-ins the product adds, read-only, under the tool prefix', () => {
+  const odata = { slug: 'erp-odata', name: 'ERP (OData)', connector: { type: 'ODATA', config: { odata: { toolPrefix: 's4', sap: true } } }, tools: [{ name: 's4_guide', endpointMapping: { method: 'static' } }] };
+  const names = allTools(odata).map((t) => t.name);
+  assert.deepEqual(names, ['s4_list_services', 's4_describe_service', 's4_describe_entity', 's4_query', 's4_get_entity', 's4_guide']);
+  assert.ok(allTools(odata).every((t) => access(t, 'ODATA') === 'read'));
+  assert.match(renderToolsTable([odata, { ...odata, name: 'Other' }]), /#### ERP \(OData\) \(6\)/);
+  // No prefix configured: the slug plus _odata, as odataToolPrefix() does in the backend.
+  assert.equal(allTools({ slug: 'acme-sales', connector: { type: 'REST', config: { odata: {} } }, tools: [] })[0].name, 'acme_sales_odata_list_services');
+  assert.deepEqual(allTools({ slug: 'plain', connector: { type: 'REST' }, tools: [{ name: 'x' }] }).map((t) => t.name), ['x']);
+});
+
+test('the OData demo adds no container and no SSRF exception', () => {
+  const quickstart = readFileSync(join(FIXTURES, 'docker-compose.quickstart.yml'), 'utf8');
+  const yml = buildCompose(quickstart, { repo: 'odata-to-mcp', kind: 'odata' });
+  assert.doesNotMatch(yml, /SSRF_ALLOWED_HOSTS/);
+  assert.doesNotMatch(yml, /plus null/);
+});
+
+test('summarize() keeps "e.g." and "i.e." inside the first sentence', () => {
+  assert.equal(summarize('Find tables by words in their description (e.g. "billing document"). Top 50.'), 'Find tables by words in their description (e.g. "billing document").');
+  assert.equal(summarize('One. Two.'), 'One.');
 });

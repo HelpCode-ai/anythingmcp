@@ -1,0 +1,11 @@
+- Which company codes, plants and sales organizations does this SAP system have, and in which currencies?
+- What was our revenue per company code in this fiscal year, from the Universal Journal, with currency?
+- Which customers had the highest billed net value last quarter, per sales organization?
+- Which tables hold the net due date of an open item, and how do they join to the customer master?
+- Is there a released CDS view for billing documents? Show its measures and dimensions.
+- What do the values of field KOART in ACDOCA mean?
+- Which purchase orders older than 30 days are still open, per supplier?
+- Which materials have stock but no goods movement in the last 180 days, per plant?
+- Describe table VBRK: which field carries the currency of the net value?
+- Which S/4HANA tables are compatibility views, and what should I read instead?
+- Is the connection working, and which client and schema am I reading?

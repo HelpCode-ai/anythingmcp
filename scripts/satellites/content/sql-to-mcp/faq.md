@@ -8,7 +8,7 @@ Yes, by default. The query tools only run a single SELECT (or `WITH … SELECT`)
 The database connection stays between AnythingMCP and your database. Query results go to the AI model you use; response mapping drops columns before they do, and every query is logged in your own audit log.
 
 ### Which databases are supported?
-PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, Oracle and MongoDB have ready connectors with five tools each; SQLite works as a custom database connector.
+PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, Oracle and MongoDB have ready connectors with five tools each; SQLite and SAP HANA work as custom database connectors. For SAP S/4HANA on HANA there is a dedicated adapter that reads SAP's data dictionary first (sap-hana-mcp-server).
 
 ### Is this text-to-SQL?
 It is the model doing text-to-SQL with the schema in front of it: it reads the table and column names first, then writes the query. The quality depends on how readable your table and column names are.

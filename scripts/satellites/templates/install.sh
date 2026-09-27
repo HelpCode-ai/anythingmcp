@@ -86,6 +86,18 @@ elif [ "$SETUP_TYPE" = "openapi" ]; then
   else
     echo "REST connector '$NAME' already exists."
   fi
+elif [ "$SETUP_TYPE" = "odata" ]; then
+  NAME=$(manifest 'm.setup.name')
+  EXISTING=$(curl -s "${AUTH[@]}" "$API/api/connectors" | json "(Array.isArray(j)?j:j.items||j.data||[]).find(c=>c.name==='$NAME')?.id")
+  if [ -z "$EXISTING" ]; then
+    # An OData connector gets its five built-in tools on creation; no import needed.
+    CREATE=$(node -e 'const m=require("./satellite.json").setup;console.log(JSON.stringify({name:m.name,type:"ODATA",baseUrl:m.baseUrl,config:m.config}))')
+    ID=$(curl -s "${AUTH[@]}" -d "$CREATE" "$API/api/connectors" | json 'j.id')
+    [ -n "$ID" ] || { echo "Could not create the OData connector."; exit 1; }
+    echo "OData connector created for $(manifest 'm.setup.baseUrl')"
+  else
+    echo "OData connector '$NAME' already exists."
+  fi
 else
   INSTALLED=$(curl -s "${AUTH[@]}" "$API/api/connectors" | json '(Array.isArray(j)?j:j.items||[]).map(c=>c.config&&c.config.adapterSlug).filter(Boolean).join(" ")')
   for SLUG in $(manifest "m.adapters.map(a=>a.slug).join(' ')"); do

@@ -28,7 +28,8 @@ const HEADINGS = {
 /** First sentence of a tool description, trimmed for a table cell. */
 export function summarize(description = '') {
   const flat = description.replace(/\s+/g, ' ').trim();
-  const cut = flat.match(/^(.+?[.!?])(\s|$)/);
+  // "e.g." and "i.e." do not end a sentence.
+  const cut = flat.match(/^(.+?(?<!\b(?:e\.g|i\.e))[.!?])(\s|$)/);
   let s = cut ? cut[1] : flat;
   if (s.length > 160) s = `${s.slice(0, 157).replace(/\s+\S*$/, '')}…`;
   // Escape backslashes first, then pipes, so a description can't end a cell early.
@@ -69,15 +70,57 @@ export function access(tool, connectorType = 'REST') {
   return READ_NAME.test(tool.name) ? 'read' : 'write';
 }
 
+/**
+ * The five generic OData tools AnythingMCP adds when it installs an ODATA
+ * adapter, or a REST adapter with `connector.config.odata`. They are not in
+ * the adapter JSON, so they are listed here to keep the table and the tool
+ * count equal to what the connector store shows. Names follow the product:
+ * `config.odata.toolPrefix`, else the slug plus `_odata`.
+ */
+export function odataBuiltins(adapter) {
+  const type = String(adapter.connector?.type ?? '').toUpperCase();
+  const odata = adapter.connector?.config?.odata;
+  if (type !== 'ODATA' && !(type === 'REST' && odata && typeof odata === 'object')) return [];
+  let prefix = odata?.toolPrefix;
+  if (!/^[a-z][a-z0-9_]*$/.test(prefix ?? '')) {
+    const base = String(adapter.slug ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).join('_') || 'odata';
+    prefix = base.includes('odata') ? base : `${base}_odata`;
+  }
+  const sap = odata?.sap === true || !!odata?.sapClient;
+  const listed = Array.isArray(odata?.services) && odata.services.length > 0;
+  const tool = (suffix, description) => ({ name: `${prefix}_${suffix}`, description, annotations: { readOnlyHint: true } });
+  return [
+    tool(
+      'list_services',
+      sap
+        ? 'List the OData services published by the SAP Gateway (V2 and V4 catalog), filtered by words in their name, title or description.'
+        : listed
+          ? 'List the OData services this connector reaches.'
+          : 'Where the OData service lives.',
+    ),
+    tool('describe_service', 'The entity sets of an OData service with their business labels, keys and whether they are analytical or parameterised.'),
+    tool('describe_entity', 'The fields of one entity set: labels, types, keys, the currency or unit field of each amount, dimensions and measures, and required filters.'),
+    tool('query', 'Read rows from an entity set, with field names checked against the service model and server paging followed.'),
+    tool('get_entity', 'Read one entity by its key, optionally with related entities.'),
+  ];
+}
+
+/** Every tool the installed connector has: the OData built-ins first, as in the product, then the adapter's own. */
+export function allTools(adapter) {
+  const own = new Set(adapter.tools.map((t) => t.name));
+  return [...odataBuiltins(adapter).filter((t) => !own.has(t.name)), ...adapter.tools];
+}
+
 export function renderToolsTable(adapters, lang = 'en') {
   const h = HEADINGS[lang] ?? HEADINGS.en;
   const multi = adapters.length > 1;
   const blocks = adapters.map((a) => {
-    const rows = a.tools.map(
+    const tools = allTools(a);
+    const rows = tools.map(
       (t) => `| \`${t.name}\` | ${summarize(t.description)} | ${h[access(t, a.connector?.type)]} |`,
     );
     const table = [`| ${h.tool} | ${h.what} | ${h.access} |`, '|---|---|---|', ...rows].join('\n');
-    return multi ? `#### ${a.name} (${a.tools.length})\n\n${table}` : table;
+    return multi ? `#### ${a.name} (${tools.length})\n\n${table}` : table;
   });
   return `${START}\n${blocks.join('\n\n')}\n${END}`;
 }

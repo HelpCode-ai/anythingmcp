@@ -1,6 +1,10 @@
 - Which sales orders are still open in SAP Business One, and for which customers?
 - Show business partner 10100001 in S/4HANA Cloud with its sales orders.
 - Which billing documents did S/4HANA create last week?
+- Which company codes, plants and sales organizations does our S/4HANA system have, and in which currencies?
+- What was our revenue per company code this fiscal year, from the Universal Journal, with currency?
+- Which OData services does our SAP Gateway offer for billing documents?
+- What do the values of the billing type field in VBRK mean?
 - Which purchase orders were created in S/4HANA this month, and for which suppliers?
 - Which expense reports in Concur are waiting for my approval?
 - Show the journal entries posted to account 400000 this month.

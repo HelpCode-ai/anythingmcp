@@ -7,7 +7,7 @@
  * content/<repo>/. Nothing here states a number that is not computed from the
  * adapter JSON.
  */
-import { renderToolsTable, access } from './templates/render-tools.mjs';
+import { renderToolsTable, access, allTools } from './templates/render-tools.mjs';
 
 const MAIN = 'https://github.com/HelpCode-ai/anythingmcp';
 const AUTH = { API_KEY: 'API key', BEARER_TOKEN: 'API token', BASIC_AUTH: 'User + password', OAUTH2: 'OAuth 2.0', OAUTH1: 'OAuth 1.0a', LOGIN_TOKEN: 'Login session', HMAC: 'Signed API key', CONNECTION_STRING: 'DB user', NONE: 'None' };
@@ -164,7 +164,9 @@ function relatedList(sat, config, t) {
 
 function header(sat, ctx, t, title, taglineText) {
   const { config, date, lang } = ctx;
-  const langs = sat.languages ?? ['en'];
+  // Only connector READMEs are translated (renderReadme); an umbrella or generic
+  // satellite would otherwise link a docs/README.<lang>.md that is never written.
+  const langs = sat.type === 'connector' ? sat.languages ?? ['en'] : ['en'];
   const switcher =
     langs.length > 1
       ? `\n${langs
@@ -194,11 +196,12 @@ function connectorReadme(sat, ctx) {
   const { adapters, content, lang, config } = ctx;
   const t = T[lang];
   const a = adapters[0];
+  const tools = allTools(a);
   const vars = a.requiredEnvVars ?? [];
-  const writes = a.tools.filter((x) => access(x, a.connector?.type) === 'write').map((x) => x.name);
+  const writes = tools.filter((x) => access(x, a.connector?.type) === 'write').map((x) => x.name);
   const objects = sat.objects?.[lang] ?? sat.objects?.en ?? sat.about.split('. ').pop().replace(/\.$/, '');
   const title = `${sat.system} MCP Server`;
-  const introText = t.intro(title, a.tools.length, sat.system, lcFirst(objects), writes.length);
+  const introText = t.intro(title, tools.length, sat.system, lcFirst(objects), writes.length);
   const c = content[lang] ?? {};
   const cEn = content.en ?? {};
   const prompts = (c.prompts ?? cEn.prompts ?? '').split('\n').filter((l) => l.startsWith('- ')).slice(0, 6).join('\n');
@@ -239,7 +242,7 @@ function connectorReadme(sat, ctx) {
     '',
     `## ${t.tools}`,
     '',
-    t.toolsIntro(a.tools.length, `[\`adapter/${a.slug}.json\`](${lang === 'en' ? '' : '../'}adapter/${a.slug}.json)`),
+    t.toolsIntro(tools.length, `[\`adapter/${a.slug}.json\`](${lang === 'en' ? '' : '../'}adapter/${a.slug}.json)`),
     '',
     renderToolsTable([a], lang),
     '',
@@ -255,7 +258,7 @@ function connectorReadme(sat, ctx) {
     '',
     `## ${t.security}`,
     '',
-    t.securityItems(a.tools.length - writes.length, writes).map((s) => `- ${s}`).join('\n'),
+    t.securityItems(tools.length - writes.length, writes).map((s) => `- ${s}`).join('\n'),
     '',
     `## ${t.faq}`,
     '',
@@ -282,9 +285,11 @@ function umbrellaReadme(sat, ctx) {
   const { adapters, content, config, catalog } = ctx;
   const t = T.en;
   const title = `${sat.system} MCP Server`;
-  const total = adapters.reduce((n, a) => n + a.tools.length, 0);
+  const total = adapters.reduce((n, a) => n + allTools(a).length, 0);
+  // One system reached two ways ("SAP S/4HANA (OData)", "SAP S/4HANA (HANA SQL)") counts once.
+  const systems = new Set(adapters.map((a) => a.name.replace(/\s*\([^)]*\)$/, ''))).size;
   const introText =
-    `${title} connects ${adapters.length} ${sat.system === 'SAP' ? 'SAP products' : `${sat.system === 'ERP' ? 'ERP' : 'e-commerce'} systems`} to Claude, ChatGPT, Copilot and Cursor through one MCP endpoint: ${total} tools in total. ` +
+    `${title} connects ${systems} ${sat.system === 'SAP' ? 'SAP products' : `${sat.system === 'ERP' ? 'ERP' : 'e-commerce'} systems`} to Claude, ChatGPT, Copilot and Cursor through one MCP endpoint: ${total} tools in total. ` +
     'Pick the systems you run, add their credentials, and each becomes a set of MCP tools. It runs on AnythingMCP Cloud or self-hosted with Docker, with encrypted credentials and an audit log.';
   const dedicated = (slug) => config.satellites.find((s) => s.type === 'connector' && s.adapters.length === 1 && s.adapters[0] === slug);
   const rows = adapters.map((a) => {
@@ -292,7 +297,7 @@ function umbrellaReadme(sat, ctx) {
     const flag = /\*\*Unverified/.test(a.instructions ?? '') ? ' †' : '';
     const region = (catalog.get(a.slug)?.region ?? '').toUpperCase().replace('INTL', 'Global');
     const verified = d?.lastVerified ? `yes, ${d.lastVerified.date}` : flag ? 'no †' : 'not yet';
-    return `| ${a.name}${flag} | ${region} | ${a.tools.length} | ${AUTH[a.connector?.authType] ?? a.connector?.authType ?? ''} | ${verified} | [install](${CLOUD}/connectors/store?install=${a.slug}) | ${(d && repoLink(config, d.repo)) || '–'} |`;
+    return `| ${a.name}${flag} | ${region} | ${allTools(a).length} | ${AUTH[a.connector?.authType] ?? a.connector?.authType ?? ''} | ${verified} | [install](${CLOUD}/connectors/store?install=${a.slug}) | ${(d && repoLink(config, d.repo)) || '–'} |`;
   });
   const bridge =
     sat.system === 'E-commerce'
@@ -300,12 +305,12 @@ function umbrellaReadme(sat, ctx) {
       : [
           `## Your ${sat.system === 'SAP' ? 'SAP system' : 'ERP'} isn't listed?`,
           '',
-          `Connect it through what it already exposes: its REST/OData API (${linkOrName(config, 'openapi-to-mcp')}), its SOAP services (${linkOrName(config, 'soap-to-mcp')}) or its SQL database, read-only (${linkOrName(config, 'sql-to-mcp')}). That covers custom and on-premises builds that no catalog adapter will ever know.`,
+          `Connect it through what it already exposes: its OData services (${linkOrName(config, 'odata-to-mcp')}), its REST API (${linkOrName(config, 'openapi-to-mcp')}), its SOAP services (${linkOrName(config, 'soap-to-mcp')}) or its SQL database, read-only (${linkOrName(config, 'sql-to-mcp')}). That covers custom and on-premises builds that no catalog adapter will ever know.`,
 
           '',
         ].join('\n');
   return [
-    header(sat, { ...ctx, introText }, t, title, `Connect ${adapters.length} ${sat.system === 'E-commerce' ? 'shops and marketplaces' : sat.system === 'SAP' ? 'SAP products' : 'ERPs'} to Claude, ChatGPT and Copilot through one MCP server.`),
+    header(sat, { ...ctx, introText }, t, title, `Connect ${systems} ${sat.system === 'E-commerce' ? 'shops and marketplaces' : sat.system === 'SAP' ? 'SAP products' : 'ERPs'} to Claude, ChatGPT and Copilot through one MCP server.`),
     '## Systems',
     '',
     '| System | Region | Tools | Auth | Verified live | Cloud | Dedicated repo |',
@@ -480,14 +485,14 @@ function genericTail(sat, ctx, t, security, troubleRows) {
 }
 
 function sqlReadme(sat, ctx) {
-  const { adapters } = ctx;
+  const { adapters, config } = ctx;
   const t = T.en;
   const introText =
-    'SQL to MCP lets Claude, ChatGPT, Copilot and Cursor query PostgreSQL, MySQL, MariaDB, SQL Server, Oracle and MongoDB through MCP, without code. ' +
+    'SQL to MCP lets Claude, ChatGPT, Copilot and Cursor query PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SAP HANA and MongoDB through MCP, without code. ' +
     'AnythingMCP turns each database into schema, example and query tools. This repository runs the chain locally against two demo databases, reached as a read-only user.';
   const rows = adapters.map((a) => `| ${a.name} | ${a.tools.length} | ${a.tools.map((x) => `\`${x.name}\``).join(', ')} |`);
   return [
-    header(sat, { ...ctx, introText }, t, 'SQL to MCP', 'Connect PostgreSQL, MySQL, SQL Server, Oracle or MongoDB to Claude, ChatGPT and Copilot.'),
+    header(sat, { ...ctx, introText }, t, 'SQL to MCP', 'Connect PostgreSQL, MySQL, SQL Server, Oracle, SAP HANA or MongoDB to Claude, ChatGPT and Copilot.'),
     '## Try it in five minutes',
     '',
     'Needs Docker 24+, openssl and Node 18+.',
@@ -507,7 +512,7 @@ function sqlReadme(sat, ctx) {
     '|---|---|---|',
     ...rows,
     '',
-    'MariaDB uses the MySQL connector; SQLite is available as a custom database connector in the UI. `*_query` runs a SELECT the model writes; the other tools read the schema or return fixed example queries.',
+    `MariaDB uses the MySQL connector; SQLite and SAP HANA (\`hana://\`) are available as custom database connectors in the UI. SAP S/4HANA on HANA has its own adapter that turns SAP's data dictionary into tools (${linkOrName(config, 'sap-hana-mcp-server')}). \`*_query\` runs a SELECT the model writes; the other tools read the schema or return fixed example queries.`,
     '',
     '## Connect your own database',
     '',
@@ -604,6 +609,81 @@ function openapiReadme(sat, ctx) {
   ].join('\n');
 }
 
+function odataReadme(sat, ctx) {
+  const { config, manifest } = ctx;
+  const t = T.en;
+  const introText =
+    'OData to MCP turns any OData V2 or V4 service, SAP Gateway included, into MCP tools that Claude, ChatGPT, Copilot and Cursor can call, without code. ' +
+    'AnythingMCP reads `$metadata`, so the model sees entity sets, keys and field labels before it queries. This repository runs the chain against the public Northwind service.';
+  const p = manifest.setup.config.odata.toolPrefix;
+  return [
+    header(sat, { ...ctx, introText }, t, 'OData to MCP', 'Turn any OData V2 or V4 service, SAP Gateway included, into MCP tools for Claude, ChatGPT and Copilot.'),
+    '## Try it in five minutes',
+    '',
+    'Needs Docker 24+, openssl and Node 18+.',
+    '',
+    '```bash',
+    `git clone https://github.com/${sat.owner}/${sat.repo}.git`,
+    `cd ${sat.repo}`,
+    './scripts/install.sh',
+    'npm install && node scripts/smoke.mjs',
+    '```',
+    '',
+    `\`install.sh\` starts AnythingMCP, creates an OData connector for the public Northwind V4 service (\`${manifest.setup.baseUrl}\`: customers, orders, products; read-only, no login) and an MCP API key. The service is on the internet, so there is no demo container and nothing to add to \`SSRF_ALLOWED_HOSTS\`. \`smoke.mjs\` lists the tools and asks for the latest orders shipped to Germany.`,
+    '',
+    'Every OData connector gets five built-in tools as soon as it is created:',
+    '',
+    '| MCP tool | What it answers |',
+    '|---|---|',
+    `| \`${p}_list_services\` | Where the service lives; on SAP Gateway, a search of the V2 and V4 service catalog |`,
+    `| \`${p}_describe_service\` | Entity sets with their labels and keys, flagged when they are analytical or parameterised |`,
+    `| \`${p}_describe_entity\` | Fields with label, type and key, the currency or unit field of each amount, dimensions and measures, navigation properties |`,
+    `| \`${p}_query\` | \`select\`, \`filter\`, \`orderby\`, \`top\` (up to 1000), \`skip\`, \`expand\`, V4 \`apply\` and \`search\`; field names are checked against the model, server paging is followed and rows come back flat |`,
+    `| \`${p}_get_entity\` | One entity by key; a composite key as a JSON string such as \`{"OrderID": 10248, "ProductID": 11}\` |`,
+    '',
+    `The prefix is \`config.odata.toolPrefix\` (here \`${p}\`), or the connector name plus \`_odata\`. The built-ins only read and are annotated read-only for MCP clients. \`$metadata\` is cached for 24 hours.`,
+    '',
+    '## Use your own OData service',
+    '',
+    '1. In the AnythingMCP UI, **Connectors → New connector → OData**. For one service, the base URL is its service root (`https://services.example.com/odata/v4/Sales`). For SAP, choose *SAP Gateway* and give only the host with its HTTPS port (`https://s4.example.com:44300`); services then come from SAP\'s catalog.',
+    '2. Pick the auth. The OData connector runs on the REST engine, so every REST method works: Basic, OAuth 2.0, API key, client certificates, a login token.',
+    '3. Optional: **Import Tools → OData $metadata** turns entity sets into named tools (`<set>_list`, `<set>_get`) next to the built-ins.',
+    '4. List the service paths the agent may call under *Allowed services* (`*` as wildcard), and assign the connector to an MCP server.',
+    '',
+    'Through the API:',
+    '',
+    '```bash',
+    'curl -s http://localhost:4000/api/connectors -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \\',
+    `  -d '{"name":"Sales","type":"ODATA","baseUrl":"https://services.example.com/odata/v4/Sales","authType":"BASIC_AUTH","authConfig":{"username":"reader","password":"…"},"config":{"odata":{"toolPrefix":"sales"}}}'`,
+    '```',
+    '',
+    '| Setting (`config.odata`) | Meaning |',
+    '|---|---|',
+    '| `sap` | SAP Gateway mode: catalog discovery and SAP parameters. Implied by `sapClient`. |',
+    '| `sapClient`, `sapLanguage` | Sent as `sap-client` and `sap-language` on every request. |',
+    '| `services` | Allowed service paths, `*` as wildcard; other services are refused. |',
+    '| `version` | `v2` or `v4`, to override the detection from `$metadata`. |',
+    '| `maxRows` | Row cap per query, at most 1000. |',
+    '| `toolPrefix` | Prefix of the built-in tool names. |',
+    '',
+    `**SAP S/4HANA, ECC and BW:** the *SAP S/4HANA (OData)* catalog adapter packages the SAP setup (built-ins with the \`s4\` prefix, ready tools for released APIs and a guide to SAP's filters and analytical views). See ${linkOrName(config, 'sap-mcp-server')}.`,
+    '',
+    genericTail(sat, ctx, t, [
+      '**The built-ins only read.** Imported or hand-written tools that POST, PATCH or DELETE are write tools; leave them out of the MCP server\'s role.',
+      '**Allowed services** limit which service paths a connector calls, and server paging is only followed on the connector\'s own host.',
+      '**The service decides what the user may see.** On SAP, the technical user\'s authorizations are checked on every call; they are the real boundary.',
+      '**Credentials** stay in the connector, encrypted with AES-256-GCM; the model never sees them.',
+      '**Audit log:** every call with input, output, duration and status.',
+    ], [
+      ['"Unknown field … Did you mean …"', 'The model guessed a field name. The query is checked against `$metadata` before it is sent; let it call `describe_entity` first.'],
+      ['A query is refused for a missing filter or parameter', 'The entity set requires a filter or is a parameterised view. `describe_entity` names them; pass them in `filter` and `parameters`.'],
+      ['`403` from SAP Gateway', 'The technical user lacks `S_SERVICE` for that service, or the business authorization. Fix the role in SAP.'],
+      ['New fields are missing', '`$metadata` is cached for 24 hours. Call `describe_service` with `refresh: true`.'],
+      ['"SSRF" or "blocked host" error', 'The service is on a private network. Add its hostname to `SSRF_ALLOWED_HOSTS` on a self-hosted instance.'],
+    ]),
+  ].join('\n');
+}
+
 function parseRows(md) {
   if (!md) return [];
   return md
@@ -629,5 +709,6 @@ export function renderReadme(sat, ctx) {
   if (sat.kind === 'soap') return soapReadme(sat, ctx);
   if (sat.kind === 'sql') return sqlReadme(sat, ctx);
   if (sat.kind === 'openapi') return openapiReadme(sat, ctx);
+  if (sat.kind === 'odata') return odataReadme(sat, ctx);
   return null;
 }
