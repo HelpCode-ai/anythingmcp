@@ -118,5 +118,5 @@ Yes, with safety. PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB and SQLite 
 <details>
 <summary><strong>How is auth handled?</strong></summary>
 
-OAuth2 (PKCE + Client Credentials), Bearer Token, API Key, Basic Auth, query-parameter auth, WS-Security and TLS client certificates are all supported. Credentials are stored AES-256-GCM encrypted at rest. Per-user MCP API keys are issued on top so each AI client gets its own key with usage tracking.
+OAuth2 (PKCE + Client Credentials), Bearer Token, API Key, Basic Auth, query-parameter auth and HMAC request signing are supported. WS-Security headers and TLS client certificates are not implemented yet. Credentials are stored AES-256-GCM encrypted at rest. Per-user MCP API keys are issued on top so each AI client gets its own key with usage tracking.
 </details>

@@ -1,6 +1,6 @@
-# REST Connector — REST API to MCP
+# REST / OpenAPI to MCP
 
-> Convert any REST API into MCP tools. Import from OpenAPI, Postman, cURL, or define tools manually.
+AnythingMCP turns any REST API into MCP tools for Claude, ChatGPT and Copilot without code. Import an OpenAPI 3.x or Swagger 2.0 spec, a Postman collection or cURL commands, and every operation becomes a tool on your MCP server, with parameters, auth and endpoint mapping filled in. You can also define tools by hand.
 
 [Back to README](../../README.md)
 
@@ -84,10 +84,10 @@ Paste the spec URL or JSON/YAML content. Tools are auto-generated for each `path
 
 ```bash
 # Import from URL
-curl -s http://localhost:4000/api/connectors/$CONNECTOR_ID/import-spec \
+curl -s http://localhost:4000/api/connectors/$CONNECTOR_ID/import \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"specUrl": "https://petstore.swagger.io/v2/swagger.json"}'
+  -d '{"source": "openapi", "url": "https://petstore.swagger.io/v2/swagger.json"}'
 ```
 
 ### From Postman Collection

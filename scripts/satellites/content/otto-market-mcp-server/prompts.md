@@ -1,0 +1,10 @@
+- Which OTTO orders since Monday are not shipped yet?
+- Show order 1234567 with every position and the delivery address.
+- Which returns came in this week, and what were the reasons?
+- What stock does OTTO show for SKU DR-1001, and does it match our ERP?
+- Which of my products are not live on otto.de, and why?
+- Set the stock of SKU LK-2040 to 50 on OTTO. (write)
+- Change the price of SKU DR-1002 to 229.90 EUR. (write)
+- Which SKUs have the highest return rate this month?
+- Show product DR-1001 with its category and attributes.
+- How many orders did we get from OTTO yesterday?

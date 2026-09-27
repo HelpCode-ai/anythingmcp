@@ -57,6 +57,22 @@
 	# the release test caught exactly that, one 503 in ~4000 requests.
 	vars amcp_colour {file./config/amcp-colour}
 
+	# Compress the backend's JSON. Next compresses its own pages, the backend
+	# does not, and nothing here did: GET /api/adapters, the catalogue the
+	# connector store loads, went out as 551 KB of raw JSON (Sentry
+	# ANYTHINGMCP-CLOUD-FRONTEND-5, "Large HTTP payload"). JSON only, on
+	# purpose: MCP streams text/event-stream, and a compressor in front of a
+	# stream can hold events back until its buffer fills. Clients that do not
+	# send Accept-Encoding still get plain JSON.
+	encode {
+		match {
+			header Content-Type application/json*
+		}
+		zstd
+		gzip
+		minimum_length 1024
+	}
+
 	# ── Backend ────────────────────────────────────────────────────────────
 	# This list must match the `rewrites()` in packages/frontend/next.config.ts.
 	#

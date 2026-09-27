@@ -1,6 +1,6 @@
-# GraphQL Connector — GraphQL to MCP
+# GraphQL to MCP
 
-> Turn GraphQL APIs into MCP tools. Auto-generate tools from introspection queries.
+AnythingMCP turns any GraphQL API into MCP tools for Claude, ChatGPT and Copilot without code. Introspection generates a tool per query and mutation, or you define the operations yourself, with the same auth, audit and response mapping as every other connector.
 
 [Back to README](../../README.md)
 

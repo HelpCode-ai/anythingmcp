@@ -1,0 +1,6 @@
+- Welche Produkte haben wir vom Hersteller „Hörmann"?
+- Was kostet Artikel SW10001, und ist er vorrätig?
+- Welche Produkte liegen in der Kategorie „Innentüren"?
+- Welche Vorschläge liefert die Shopsuche für „Türdrücker"?
+- Welche Cross-Sellings sind für Artikel SW10001 hinterlegt?
+- Welche Produkte ohne Titelbild gibt es noch?

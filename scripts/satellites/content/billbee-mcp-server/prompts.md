@@ -1,0 +1,12 @@
+- Which orders from yesterday are still unshipped?
+- Find the Billbee order for Kaufland order number 123-456.
+- Show all orders of customer 4711 this year.
+- Which products are low on stock?
+- What does the product with EAN 4006381333931 cost, and how many do we have?
+- How many orders did we get per sales channel last week?
+- Which shipping providers are configured?
+- List the orders changed since this morning.
+- Which customers ordered more than five times this year?
+- Show the full detail of order 1234567, including its items.
+- Which orders with a total over 500 EUR came in this month?
+- Compare this week's order count with last week's.

@@ -1,0 +1,14 @@
+- Which products are low on stock, and how many of each did we sell last month?
+- Show order 1042 with its items and the customer's address.
+- Which orders are still "processing" after three days?
+- Put order 1042 on hold and add a note that the customer called about the delivery date. (write)
+- Refund 10 EUR on order 1042 for a scratched door. (write)
+- What were our sales and order totals last week?
+- Which products sell best this month?
+- Set the stock of SKU LK-2040 to 50. (write)
+- Create a 10% coupon called AUTUMN10 that ends on 31 October. (write)
+- Find the customer anna@example.com and list her orders.
+- Which products have no description or no image yet?
+- Lower the price of every product in the "Clearance" category by 20%. (write)
+- How many orders did coupon AUTUMN10 bring in?
+- Which variations of product 55 are out of stock?

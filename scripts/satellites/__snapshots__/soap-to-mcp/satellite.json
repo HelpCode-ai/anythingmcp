@@ -1,0 +1,24 @@
+{
+  "$comment": "Read by scripts/install.sh, scripts/smoke.mjs and the sync workflow. Generated; edit satellites.config.json in HelpCode-ai/anythingmcp instead.",
+  "repo": "soap-to-mcp",
+  "owner": "HelpCode-ai",
+  "mainRepo": "HelpCode-ai/anythingmcp",
+  "adapters": [],
+  "setup": {
+    "type": "soap",
+    "name": "Inventory (demo SOAP service)",
+    "baseUrl": "http://soap-demo:8080/inventory",
+    "wsdl": "http://soap-demo:8080/inventory?wsdl"
+  },
+  "smokeCall": {
+    "tool": "inventoryservice_getitem",
+    "args": {
+      "sku": "DR-1001"
+    }
+  },
+  "expectedTools": [
+    "inventoryservice_getitem",
+    "inventoryservice_listlowstock",
+    "inventoryservice_getorderstatus"
+  ]
+}

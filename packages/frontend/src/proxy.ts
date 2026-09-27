@@ -49,7 +49,10 @@ export function proxy(request: NextRequest) {
 
   if (!token) {
     const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname);
+    // Keep the query string: install links such as
+    // /connectors/store?install=weclapp are shared publicly and opened by
+    // signed-out visitors, who would otherwise land on a bare store page.
+    loginUrl.searchParams.set('redirect', pathname + request.nextUrl.search);
     return NextResponse.redirect(loginUrl);
   }
 

@@ -11,6 +11,7 @@ import { ProviderMark } from '@/components/provider-mark';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { safeRedirect } from '@/lib/safe-redirect';
 
 type SetupStep = 'auth' | 'verify-email' | 'check-inbox' | 'license-choice' | 'license-email-sent' | 'license-key' | 'trial-activated';
 
@@ -65,7 +66,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const { login } = useAuth();
 
-  const redirectTo = searchParams.get('redirect') || '/';
+  const redirectTo = safeRedirect(searchParams.get('redirect'));
   const emailVerifiedParam = searchParams.get('emailVerified');
   const modeParam = searchParams.get('mode'); // 'register' or 'login'
   const ssoCode = searchParams.get('sso');

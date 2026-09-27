@@ -1,0 +1,36 @@
+name: Sync adapter
+
+# Daily check for a newer adapter definition in HelpCode-ai/anythingmcp.
+# A change becomes a pull request for a maintainer to review, never a push.
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: sync
+        run: node scripts/sync-adapter.mjs
+      - if: steps.sync.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: sync/adapter
+          delete-branch: true
+          commit-message: 'Sync adapter from AnythingMCP'
+          title: 'Sync adapter from AnythingMCP'
+          body: |
+            The adapter definition changed upstream in HelpCode-ai/anythingmcp.
+            This PR updates `adapter/`, the tools table and the "Adapter synced" date.
+
+            Before merging, check the diff of the tools table. If a tool was
+            renamed or removed, update `examples/prompts.md` and the FAQ too.

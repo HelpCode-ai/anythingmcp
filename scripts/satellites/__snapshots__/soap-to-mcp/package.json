@@ -1,0 +1,15 @@
+{
+  "name": "soap-to-mcp",
+  "private": true,
+  "type": "module",
+  "description": "Turn any SOAP/WSDL web service into MCP tools for Claude & ChatGPT. Legacy SOAP APIs as AI tools, no code, self-hosted.",
+  "scripts": {
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

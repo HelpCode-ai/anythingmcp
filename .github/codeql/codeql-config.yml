@@ -7,3 +7,13 @@ paths-ignore:
   # the script: the file is our own catalog, not user input, and the script
   # runs only in CI and from an operator's shell.
   - scripts/probe-keyless.mjs
+  # Byte-for-byte copies of scripts/satellites/templates/, kept as test
+  # fixtures. The templates themselves are analysed; the copies only double
+  # every finding.
+  - scripts/satellites/__snapshots__
+  # Same reasoning as probe-keyless: the satellite sync fetches the adapter
+  # named in its own satellite.json and writes it back after checking it is
+  # that adapter, and `generate.mjs --online` requests the website URLs from
+  # satellites.config.json. File data driving a request is the job of both.
+  - scripts/satellites/templates/sync-adapter.mjs
+  - scripts/satellites/generate.mjs

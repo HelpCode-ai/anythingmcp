@@ -1,0 +1,205 @@
+{
+  "slug": "directus",
+  "name": "Directus",
+  "description": "Connect to a Directus instance (self-hosted or Directus Cloud) to discover collections and fields, query items, and retrieve individual records through the read-only REST API.",
+  "region": "intl",
+  "category": "cms",
+  "icon": "directus",
+  "docsUrl": "https://directus.com/docs/api",
+  "instructions": "Set DIRECTUS_URL to the root URL of your Directus instance, for example https://directus.example.com. Directus Cloud and any other publicly reachable instance work as they are. A self-hosted instance on a private network or a private IP address must also be allowed through SSRF_ALLOWED_HOSTS, because the outbound guard blocks private address space by default. Set DIRECTUS_TOKEN to a Directus user's static access token; it is sent using the Authorization Bearer header and must never be placed in the query string. This adapter is read-only. Use directus_list_collections to discover available collections and directus_list_fields before constructing filters. The token needs separate read permission for the directus_fields system collection to use directus_list_fields. A token may be able to read items while receiving HTTP 403 from /fields/{collection}. Directus returns HTTP 403 with an intentionally ambiguous 'no permission or it does not exist' message for inaccessible collections, so this response does not prove that the collection is absent. Collection names and item ids are percent-encoded into the request path, so a value can only ever name one collection or one item. When directus_list_items is called with meta, the result is an object with data and meta (for example total_count or filter_count, useful for paging); without meta it is the list of items.",
+  "requiredEnvVars": ["DIRECTUS_URL", "DIRECTUS_TOKEN"],
+  "connector": {
+    "name": "Directus API",
+    "type": "REST",
+    "baseUrl": "{{DIRECTUS_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{DIRECTUS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/server/info"
+  },
+  "probe": {
+    "tool": "directus_server_info"
+  },
+  "tools": [
+    {
+      "name": "directus_list_collections",
+      "description": "List the collections visible to the configured Directus token. Call this first to discover valid collection names before querying fields or items.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data"
+        }
+      }
+    },
+    {
+      "name": "directus_list_fields",
+      "description": "List the fields defined in a Directus collection. Call this before filtering, sorting, aggregating, or selecting fields so later requests use real field names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Name of the Directus collection, as returned by directus_list_collections. Example: articles."
+          }
+        },
+        "required": ["collection"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fields/{collection}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data"
+        }
+      }
+    },
+    {
+      "name": "directus_list_items",
+      "description": "List, filter, search, sort, paginate, or aggregate items in a Directus collection. Use directus_list_collections and directus_list_fields first to discover valid collection and field names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Name of the Directus collection to query, as returned by directus_list_collections. Example: articles."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return. Request only the fields needed to reduce response size. Example: id,title,status.",
+            "default": "id"
+          },
+          "filter": {
+            "type": "string",
+            "description": "Directus JSON filter object. Use field names returned by directus_list_fields and Directus operators rather than SQL. Common operators include _eq, _neq, _gt, _gte, _lt, _lte, _in, _nin, _contains, and _icontains. Example: {\"status\":{\"_eq\":\"published\"}}.",
+            "additionalProperties": true
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated fields used to sort the results. Prefix a field with - for descending order. Example: -date_created,title."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return. Use a small value unless more results are explicitly needed.",
+            "default": 25,
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of items to skip before returning results. Use this for offset-based pagination.",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number for page-based pagination. The first page is 1. Usually used together with limit.",
+            "minimum": 1
+          },
+          "search": {
+            "type": "string",
+            "description": "Search term matched against searchable string and text fields in the collection."
+          },
+          "meta": {
+            "type": "string",
+            "description": "Optional metadata to request. Common values include total_count and filter_count."
+          },
+          "aggregate": {
+            "type": "string",
+            "description": "Directus aggregate request. Supported functions include count, countDistinct, sum, avg, min, and max. Example: {\"count\":\"*\"} counts items, while {\"avg\":\"price\"} calculates the average price.",
+            "additionalProperties": true
+          }
+        },
+        "required": ["collection"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{collection}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields",
+          "filter": "$filter",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset",
+          "page": "$page",
+          "search": "$search",
+          "meta": "$meta",
+          "aggregate": "$aggregate"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "meta && {data: data, meta: meta} || data"
+        }
+      }
+    },
+    {
+      "name": "directus_get_item",
+      "description": "Retrieve one item from a Directus collection by its primary key. Use directus_list_fields first if the collection structure is unknown.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Name of the Directus collection containing the item. Example: articles."
+          },
+          "id": {
+            "type": "string",
+            "description": "Primary key of the item to retrieve. It may be a number, UUID, or another string value depending on the collection."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional comma-separated list of fields to return. Example: id,title,status."
+          }
+        },
+        "required": ["collection", "id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{collection}/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "fields": "$fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data"
+        }
+      }
+    },
+    {
+      "name": "directus_server_info",
+      "description": "Retrieve information about the connected Directus server. This tool is also used to verify that the configured URL and token can reach the Directus instance.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/server/info"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data"
+        }
+      }
+    }
+  ]
+}

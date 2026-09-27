@@ -1,0 +1,6 @@
+- Welche Kaufland-Bestellungen der letzten zwei Tage sind noch nicht versendet?
+- Zeig mir Bestellung 123-456 mit allen Bestelleinheiten und der Lieferadresse.
+- Welche Kundentickets sind noch offen?
+- Welche meiner Angebote auf kaufland.de sind ausverkauft?
+- Welche Sendungen gingen gestern raus, und mit welchem Versanddienstleister?
+- Auf welchen Storefronts bin ich aktiv?

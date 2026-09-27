@@ -1,0 +1,6 @@
+- Welche Kundenaufträge aus dieser Woche sind noch offen?
+- Zeig mir Geschäftspartner C20000 mit Saldo und Kontaktdaten.
+- Welche Ausgangsrechnungen sind mehr als 30 Tage überfällig?
+- Welche Angebote aus dem letzten Monat wurden noch nicht zum Auftrag?
+- Lege einen Auftrag für C20000 an: 10 Stück A00001. (schreibend)
+- Welche Artikel hatten in den letzten 90 Tagen keinen Umsatz?

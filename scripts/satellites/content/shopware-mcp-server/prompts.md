@@ -1,0 +1,10 @@
+- Which products do we have from the manufacturer "Hörmann"?
+- What does product SW10001 cost, and is it in stock?
+- Which products are in the category "Innentüren"?
+- Suggest products for the search term "Türdrücker".
+- Which cross-sells are set up for product SW10001?
+- Which products in "Sale" cost less than 100 EUR?
+- Show the category tree under "Beschläge".
+- Compare the prices of the three oak doors in the catalog.
+- Which products have no cover image?
+- What would a customer find when they type "brandschutz" into the shop search?

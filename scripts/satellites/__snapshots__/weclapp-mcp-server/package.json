@@ -1,0 +1,17 @@
+{
+  "name": "weclapp-mcp-server",
+  "private": true,
+  "type": "module",
+  "description": "weclapp MCP server: connect weclapp Cloud ERP to Claude & ChatGPT. Customers, orders, invoices, quotes and opportunities.",
+  "scripts": {
+    "smoke": "node scripts/smoke.mjs",
+    "render-tools": "node scripts/render-tools.mjs",
+    "sync": "node scripts/sync-adapter.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

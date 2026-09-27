@@ -1,0 +1,6 @@
+- Welche Aufträge aus dieser Woche sind noch offen?
+- Wie viel Bestand von Artikel 100245 haben wir pro Lager, und wie viel ist reserviert?
+- Welche Rechnungen sind noch offen, und über welchen Betrag?
+- Zeig mir Kunde 10023 mit Ansprechpartnern und Zahlungsbedingungen.
+- Was war unser Rechnungsbetrag im letzten Monat?
+- Welche Kunden liegen mit dem offenen Betrag über ihrem Kreditlimit?
