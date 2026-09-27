@@ -18,6 +18,7 @@ const CONNECTOR_TYPES = [
   { id: 'REST', name: 'REST API', description: 'Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually.', tone: 'bg-[var(--t-info-bg)] text-[var(--t-info-fg)]' },
   { id: 'SOAP', name: 'SOAP Service', description: 'Connect to SOAP web services via WSDL.', tone: 'bg-[var(--t-warn-bg)] text-[var(--t-warn-fg)]' },
   { id: 'GRAPHQL', name: 'GraphQL', description: 'Connect to GraphQL APIs with schema introspection.', tone: 'bg-[var(--t-pink-bg)] text-[var(--t-pink-fg)]' },
+  { id: 'ODATA', name: 'OData', description: 'Connect to OData V2/V4 services, including SAP S/4HANA and SAP Gateway. Services, fields and labels are read from $metadata.', tone: 'bg-[var(--t-success-bg)] text-[var(--t-success-fg)]' },
   { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', tone: 'bg-[var(--t-purple-bg)] text-[var(--t-purple-fg)]' },
   { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, or SQLite. Supports read-only or read-write mode.', tone: 'bg-[var(--t-emerald-bg)] text-[var(--t-emerald-fg)]' },
 ];
@@ -36,6 +37,7 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
   REST: <RestIcon />,
   SOAP: <SoapIcon />,
   GRAPHQL: <GraphqlIcon />,
+  ODATA: <ODataIcon />,
   MCP: <McpIcon />,
   DATABASE: <DatabaseIcon />,
 };
@@ -44,6 +46,10 @@ export default function NewConnectorPage() {
   const { token } = useAuth();
   const router = useRouter();
   const [selectedType, setSelectedType] = useState<string | null>(null);
+  // OData: SAP Gateway mode (catalog, sap-client) and its settings.
+  const [odataSap, setOdataSap] = useState(true);
+  const [odataSapClient, setOdataSapClient] = useState('');
+  const [odataSapLanguage, setOdataSapLanguage] = useState('EN');
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [specUrl, setSpecUrl] = useState('');
@@ -129,6 +135,16 @@ export default function NewConnectorPage() {
     }
   };
 
+  const buildODataConfig = () => ({
+    odata: odataSap
+      ? {
+          sap: true,
+          ...(odataSapClient.trim() ? { sapClient: odataSapClient.trim() } : {}),
+          ...(odataSapLanguage.trim() ? { sapLanguage: odataSapLanguage.trim() } : {}),
+        }
+      : {},
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !selectedType) return;
@@ -149,6 +165,9 @@ export default function NewConnectorPage() {
       if (specUrl) data.specUrl = specUrl;
       if (selectedType === 'DATABASE') {
         data.config = { readOnly: dbReadOnly };
+      }
+      if (selectedType === 'ODATA') {
+        data.config = buildODataConfig();
       }
 
       const created = await connectors.create(data, token);
@@ -191,6 +210,7 @@ export default function NewConnectorPage() {
 
     try {
       const data: any = { name: name || 'Test', type: selectedType, baseUrl, authType };
+      if (selectedType === 'ODATA') data.config = buildODataConfig();
       const authConfig = buildAuthConfig();
       if (authConfig) data.authConfig = authConfig;
       const headers = headerRowsToObject(headerRows);
@@ -342,6 +362,10 @@ export default function NewConnectorPage() {
                       ? 'postgresql://user:pass@host:5432/db  or  hana://host:30015/?currentSchema=SAPHANADB'
                       : selectedType === 'MCP'
                         ? 'https://mcp.example.com/mcp'
+                        : selectedType === 'ODATA'
+                          ? odataSap
+                            ? 'https://s4.example.com:44300'
+                            : 'https://services.example.com/odata/v4/Service'
                         : 'https://api.example.com/v1'
                   }
                   className={cn(inputClass, 'font-mono text-[13px]')}
@@ -359,6 +383,56 @@ export default function NewConnectorPage() {
                   </p>
                 )}
               </div>
+
+              {selectedType === 'ODATA' && (
+                <div className="space-y-3">
+                  <label className="flex items-start gap-2 text-[13px] text-[var(--text)]">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={odataSap}
+                      onChange={(e) => setOdataSap(e.target.checked)}
+                    />
+                    <span>
+                      SAP Gateway (S/4HANA, ECC, BW)
+                      <span className="block text-[11.5px] text-[var(--text-3)]">
+                        The base URL is the SAP host; services are found through SAP&apos;s service catalog. Leave
+                        unticked for a single OData service, with its service root as the base URL.
+                      </span>
+                    </span>
+                  </label>
+                  {odataSap && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelClass}>SAP client</label>
+                        <input
+                          type="text"
+                          value={odataSapClient}
+                          onChange={(e) => setOdataSapClient(e.target.value)}
+                          placeholder="e.g. 100"
+                          maxLength={3}
+                          className={cn(inputClass, 'font-mono')}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>SAP language</label>
+                        <input
+                          type="text"
+                          value={odataSapLanguage}
+                          onChange={(e) => setOdataSapLanguage(e.target.value)}
+                          placeholder="EN"
+                          maxLength={2}
+                          className={cn(inputClass, 'font-mono')}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-[11.5px] text-[var(--text-3)]">
+                    The connector comes with tools to list services, read their fields and labels, query entity sets and
+                    read single entities. Specific tools per entity set can be imported from $metadata afterwards.
+                  </p>
+                </div>
+              )}
 
               {selectedType === 'DATABASE' && (
                 <div>
@@ -662,6 +736,14 @@ function McpIcon() {
       <rect x="2" y="6" width="8" height="8" rx="1" />
       <rect x="14" y="6" width="8" height="8" rx="1" />
       <path d="M10 10h4" />
+    </svg>
+  );
+}
+function ODataIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="7" cy="12" r="4" />
+      <path d="M14 7h7M14 12h7M14 17h7" />
     </svg>
   );
 }
