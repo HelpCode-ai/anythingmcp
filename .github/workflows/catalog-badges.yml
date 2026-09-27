@@ -1,9 +1,19 @@
 name: Catalog badges
 
-# Publishes the adapter, tool and keyless counts as shields.io endpoint JSON on
-# the `badges` branch, which the README badges read. The numbers come from
-# scripts/adapter-count.mjs at runtime, so nothing here quotes them and an
-# adapter PR never has a reason to touch this file.
+# Publishes everything that quotes the catalog size on the `badges` branch,
+# which the README reads directly:
+#
+#   adapters.json, tools.json, keyless.json   shields.io endpoint JSON
+#   banner.png                                 the README banner, exact counts
+#   social-preview.png, social-preview.json   the repository's social preview,
+#                                              counts rounded down ("260+")
+#
+# The numbers come from scripts/adapter-count.mjs at runtime, so nothing here
+# quotes them and an adapter PR never has a reason to touch this file.
+#
+# GitHub has no API to set a repository's social preview. When its rounded
+# numbers change, this workflow opens (or updates) an issue with the new image
+# so a maintainer can upload it under Settings, General, Social preview.
 #
 # Runs on main only: a fork PR never gets to write to the branch.
 
@@ -13,10 +23,15 @@ on:
     paths:
       - "packages/backend/src/adapters/**"
       - "scripts/adapter-count.mjs"
+      - "scripts/generate-banner.mjs"
+      - "docs/assets/banner.html"
+      - "docs/assets/icons/**"
+      - ".github/workflows/catalog-badges.yml"
   workflow_dispatch:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: catalog-badges
@@ -24,9 +39,9 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish catalog badges
+    name: Publish catalog badges and banner
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
@@ -39,7 +54,7 @@ jobs:
       - name: Write the badge files
         run: node scripts/adapter-count.mjs --badges "$RUNNER_TEMP/badges"
 
-      - name: Commit them to the badges branch
+      - name: Check out the badges branch
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -52,7 +67,54 @@ jobs:
             git -C "$RUNNER_TEMP/branch" checkout --orphan badges
             git -C "$RUNNER_TEMP/branch" rm -rfq .
           fi
-          cp "$RUNNER_TEMP"/badges/*.json "$RUNNER_TEMP/branch/"
+
+      # A headless render is not byte-for-byte stable, so the images are only
+      # re-rendered when something they show changed: the counts, the template,
+      # the icons or the script. Otherwise every catalog edit would commit two
+      # new PNGs that look the same.
+      - name: Decide whether the banner needs a new render
+        id: banner
+        run: |
+          set -euo pipefail
+          key=$(
+            {
+              node scripts/adapter-count.mjs
+              cat docs/assets/banner.html scripts/generate-banner.mjs
+              find docs/assets/icons -type f | sort | xargs cat
+            } | sha256sum | cut -c1-16
+          )
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          if [ -f "$RUNNER_TEMP/branch/banner.key" ] && [ "$(cat "$RUNNER_TEMP/branch/banner.key")" = "$key" ] \
+            && [ -f "$RUNNER_TEMP/branch/banner.png" ]; then
+            echo "render=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "render=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Render the banner and the social preview
+        if: steps.banner.outputs.render == 'true'
+        run: |
+          set -euo pipefail
+          command -v convert > /dev/null || command -v magick > /dev/null \
+            || { sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick; }
+          CHROME_PATH="$(command -v google-chrome || command -v chromium)" \
+            node scripts/generate-banner.mjs --out "$RUNNER_TEMP/badges"
+          echo "${{ steps.banner.outputs.key }}" > "$RUNNER_TEMP/badges/banner.key"
+
+      - name: Did the social preview's numbers change?
+        id: social
+        if: steps.banner.outputs.render == 'true'
+        run: |
+          set -euo pipefail
+          new=$(cat "$RUNNER_TEMP/badges/social-preview.json")
+          old=$(cat "$RUNNER_TEMP/branch/social-preview.json" 2>/dev/null || echo none)
+          echo "label=$(node -e 'const j=JSON.parse(process.argv[1]);console.log(`${j.adapters} connectors, ${j.keyless} keyless`)' "$new")" >> "$GITHUB_OUTPUT"
+          if [ "$new" != "$old" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Commit to the badges branch
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP"/badges/* "$RUNNER_TEMP/branch/"
           cd "$RUNNER_TEMP/branch"
           git add -A
           if git diff --cached --quiet; then
@@ -61,3 +123,24 @@ jobs:
           fi
           git commit -m "Update catalog badges from ${GITHUB_SHA::7}"
           git push origin badges
+
+      - name: Ask for the social preview upload
+        if: steps.social.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LABEL: ${{ steps.social.outputs.label }}
+        run: |
+          set -euo pipefail
+          title="Upload the new social preview"
+          image="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/badges/social-preview.png"
+          body=$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
+            "The catalog crossed a new round number, so the repository's social preview now reads **${LABEL}**." \
+            "GitHub has no API for it: download the image below and upload it under Settings, General, Social preview, then close this issue." \
+            "![social preview](${image})" \
+            "Rendered by the catalog-badges workflow from ${GITHUB_SHA::7}.")
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --assignee keysersoft
+          fi

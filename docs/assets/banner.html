@@ -1,16 +1,17 @@
 <!doctype html>
 <!--
-  Source of truth for docs/assets/banner.png (and the GitHub social preview).
+  Source of truth for the README banner and the GitHub social preview.
 
   The old banner had its claims baked into a PNG: it still said
   "SOURCE-AVAILABLE · 36+ CONNECTORS" four months after both had changed, and
   nobody could tell without opening an image editor. This file is the editable
-  original — change the kicker below and run:
+  original. The catalog-badges workflow renders it on every catalog change and
+  publishes banner.png (exact counts) and social-preview.png (counts rounded
+  down) on the `badges` branch, which the README reads. To preview locally:
 
-      node scripts/generate-banner.mjs
+      node scripts/generate-banner.mjs --out /tmp/banner
 
-  which re-renders banner.png (1600x500) and social-preview.png (1280x640) with
-  headless Chrome. `{{ADAPTERS}}` is substituted from the real catalog count.
+  `{{ADAPTERS}}` and `{{KEYLESS}}` are substituted from the real catalog count.
 -->
 <html lang="en">
   <head>
