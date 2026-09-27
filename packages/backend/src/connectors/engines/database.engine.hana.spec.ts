@@ -72,6 +72,15 @@ describe('DatabaseEngine — SAP HANA', () => {
       expect(cfg.timeoutSeconds).toBe(600); // capped
     });
 
+    it('maps the one-knob tls option', () => {
+      const cfg = (tls: string) =>
+        engine.buildHanaConfig({ baseUrl: `hana://h.example.test:30015/?tls=${tls}` }).connect;
+      expect(cfg('verify')).toMatchObject({ encrypt: true, validateCertificate: true });
+      expect(cfg('no-verify')).toMatchObject({ encrypt: true, validateCertificate: false });
+      expect(cfg('off')).toMatchObject({ encrypt: false, validateCertificate: false });
+      expect(() => cfg('maybe')).toThrow(/tls must be/);
+    });
+
     it('defaults to the bundled driver unless HANA_DRIVER says otherwise', () => {
       process.env.HANA_DRIVER = 'hana-client';
       expect(

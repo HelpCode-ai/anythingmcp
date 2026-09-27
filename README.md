@@ -108,7 +108,7 @@ Point AnythingMCP at a WSDL and each SOAP operation becomes a tool: envelopes, p
 
 ### SQL database to MCP
 
-PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite and MongoDB. The connector generates schema, example and query tools; you decide whether the model writes SQL or only fills in the parameters of queries you wrote. Query tools are read-only by default: AnythingMCP runs a single SELECT and blocks writes and stacked statements. Add a read-only database user and a role that sees only the tools it needs. [Database connector docs](docs/connectors/database.md) · [guide](https://anythingmcp.com/guides/database-to-mcp) · [5-minute demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
+PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SAP HANA, SQLite and MongoDB. The connector generates schema, example and query tools; you decide whether the model writes SQL or only fills in the parameters of queries you wrote. Query tools are read-only by default: AnythingMCP runs a single SELECT and blocks writes and stacked statements. Add a read-only database user and a role that sees only the tools it needs. [Database connector docs](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [guide](https://anythingmcp.com/guides/database-to-mcp) · [5-minute demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
 
 ### GraphQL to MCP
 
@@ -181,7 +181,7 @@ Shops and marketplaces, from Amazon and eBay to the DACH marketplaces. Each name
 
 ### Connect
 
-- **5 connector types** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Database](docs/connectors/database.md), [MCP-to-MCP bridge](docs/connectors/mcp-bridge.md). Seven database engines: PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite.
+- **5 connector types** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Database](docs/connectors/database.md), [MCP-to-MCP bridge](docs/connectors/mcp-bridge.md). Eight database engines: PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, SQLite.
 - **Import from what you already have** — OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL introspection, or tool discovery straight from a running MCP server.
 - **The adapter catalog** — [see what ships](#the-adapter-catalog).
 - **Visual tool editor** — map parameters to path, query, body and headers; rename and describe tools so the AI reads them the way you meant.

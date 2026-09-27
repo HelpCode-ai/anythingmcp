@@ -115,7 +115,7 @@ docker compose up -d
 
 ### SQL 数据库转 MCP
 
-支持 PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite 和 MongoDB。连接器会生成查看 schema、示例和查询的工具；由你决定模型是自己编写 SQL，还是只为你预先写好的查询填写参数。查询工具默认只读，写操作会被拦截。此外，请为它配置一个只读数据库用户，并分配一个只能看到所需工具的角色。[数据库连接器文档](docs/connectors/database.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp) · [5 分钟演示: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
+支持 PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SAP HANA、SQLite 和 MongoDB。连接器会生成查看 schema、示例和查询的工具；由你决定模型是自己编写 SQL，还是只为你预先写好的查询填写参数。查询工具默认只读，写操作会被拦截。此外，请为它配置一个只读数据库用户，并分配一个只能看到所需工具的角色。[数据库连接器文档](docs/connectors/database.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp) · [5 分钟演示: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -196,7 +196,7 @@ docker compose up -d
 
 ### 连接
 
-- **5 种连接器类型** — [REST](docs/connectors/rest.md)、[SOAP](docs/connectors/soap.md)、[GraphQL](docs/connectors/graphql.md)、[数据库](docs/connectors/database.md)、[MCP 到 MCP 桥接](docs/connectors/mcp-bridge.md)。支持七种数据库引擎：PostgreSQL、MySQL、MariaDB、MSSQL、Oracle、MongoDB、SQLite。
+- **5 种连接器类型** — [REST](docs/connectors/rest.md)、[SOAP](docs/connectors/soap.md)、[GraphQL](docs/connectors/graphql.md)、[数据库](docs/connectors/database.md)、[MCP 到 MCP 桥接](docs/connectors/mcp-bridge.md)。支持八种数据库引擎：PostgreSQL、MySQL、MariaDB、MSSQL、Oracle、SAP HANA、MongoDB、SQLite。
 - **导入现有资源** — OpenAPI/Swagger、Postman、cURL、WSDL、GraphQL 内省，或直接从运行中的 MCP 服务器发现工具。
 - **适配器目录** — [查看已随附的内容](#the-adapter-catalog)。
 - **可视化工具编辑器** — 将参数映射到路径、查询参数、请求体和请求头；调整工具的名称和描述，让 AI 按照你的意图理解它们。

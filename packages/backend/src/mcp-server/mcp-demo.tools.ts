@@ -70,7 +70,7 @@ const CONNECTORS = `AnythingMCP ships ${ADAPTER_COUNT} pre-built connectors (${K
 • Sports & Web3 — Playtomic, Sorare
 
 Plus 5 connector types you can build yourself with no code: REST, SOAP/WSDL,
-GraphQL, Database (PostgreSQL/MySQL/MSSQL/Oracle/MongoDB/SQLite) and an
+GraphQL, Database (PostgreSQL/MySQL/MSSQL/Oracle/SAP HANA/MongoDB/SQLite) and an
 MCP-to-MCP bridge. Browse everything: ${SITE}/guides`;
 
 /**

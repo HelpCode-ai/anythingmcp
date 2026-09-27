@@ -115,7 +115,7 @@ WSDL を指定すると、SOAP の各オペレーションがツールになり�
 
 ### SQL データベースを MCP に
 
-PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SQLite、MongoDB に対応しています。コネクターはスキーマ、クエリー例、クエリー実行のツールを生成します。モデルに SQL を書かせるか、自分で書いたクエリーのパラメーターだけを埋めさせるかを選べます。クエリーツールは初期設定で読み取り専用で、書き込みはブロックされます。さらに読み取り専用のデータベースユーザーと、必要なツールだけが見えるロールを割り当ててください。[データベースコネクターのドキュメント](docs/connectors/database.md) · [ガイド](https://anythingmcp.com/ja/guides/database-to-mcp) · [5 分デモ: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
+PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SAP HANA、SQLite、MongoDB に対応しています。コネクターはスキーマ、クエリー例、クエリー実行のツールを生成します。モデルに SQL を書かせるか、自分で書いたクエリーのパラメーターだけを埋めさせるかを選べます。クエリーツールは初期設定で読み取り専用で、書き込みはブロックされます。さらに読み取り専用のデータベースユーザーと、必要なツールだけが見えるロールを割り当ててください。[データベースコネクターのドキュメント](docs/connectors/database.md) · [ガイド](https://anythingmcp.com/ja/guides/database-to-mcp) · [5 分デモ: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -196,7 +196,7 @@ Amazon や eBay から DACH 地域のマーケットプレイスまで、ショ�
 
 ### 接続
 
-- **5 種類のコネクター** — [REST](docs/connectors/rest.md)、[SOAP](docs/connectors/soap.md)、[GraphQL](docs/connectors/graphql.md)、[データベース](docs/connectors/database.md)、[MCP 間のブリッジ](docs/connectors/mcp-bridge.md)。データベースは PostgreSQL、MySQL、MariaDB、MSSQL、Oracle、MongoDB、SQLite の 7 エンジンに対応しています。
+- **5 種類のコネクター** — [REST](docs/connectors/rest.md)、[SOAP](docs/connectors/soap.md)、[GraphQL](docs/connectors/graphql.md)、[データベース](docs/connectors/database.md)、[MCP 間のブリッジ](docs/connectors/mcp-bridge.md)。データベースは PostgreSQL、MySQL、MariaDB、MSSQL、Oracle、SAP HANA、MongoDB、SQLite の 8 エンジンに対応しています。
 - **既存の情報からインポート** — OpenAPI/Swagger、Postman、cURL、WSDL、GraphQL イントロスペクションに対応し、稼働中の MCP サーバーから直接ツールを検出することもできます。
 - **アダプターカタログ** — [同梱されているアダプターを確認する](#the-adapter-catalog)。
 - **ビジュアルツールエディター** — パラメーターをパス、クエリ、リクエストボディ、ヘッダーに対応付けられます。ツールの名前や説明を調整し、AI が意図したとおりに理解できるようにします。

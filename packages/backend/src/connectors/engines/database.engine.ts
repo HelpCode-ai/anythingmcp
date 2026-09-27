@@ -720,7 +720,8 @@ export class DatabaseEngine {
    *   hana://host:30015/?databaseName=QS4&currentSchema=SAPHANADB&sapClient=100
    *
    * Query options: `databaseName`, `currentSchema` (alias `schema`),
-   * `encrypt` (default true), `sslValidateCertificate` (default true),
+   * `tls` (verify | no-verify | off), or the separate `encrypt` (default
+   * true) and `sslValidateCertificate` (default true),
    * `sapClient` (3 digits), `driver` (`hdb` | `hana-client`),
    * `statementTimeout` in seconds (default 60, max 600).
    *
@@ -752,6 +753,17 @@ export class DatabaseEngine {
     const bool = (v: string | null, dflt: boolean) =>
       v === null || v === '' ? dflt : !/^(false|0|no|off)$/i.test(v);
 
+    // `tls` is the one-knob form adapters expose: verify | no-verify | off.
+    // It wins over encrypt / sslValidateCertificate when both are present.
+    const tls = (q.get('tls') || '').trim().toLowerCase();
+    if (tls && !['verify', 'no-verify', 'off'].includes(tls)) {
+      throw new Error(`tls must be verify, no-verify or off, got "${tls}".`);
+    }
+    const encrypt = tls ? tls !== 'off' : bool(q.get('encrypt'), true);
+    const validateCertificate = tls
+      ? tls === 'verify'
+      : bool(q.get('sslValidateCertificate'), true);
+
     const rawTimeout = Number(q.get('statementTimeout') || 60);
     const timeoutSeconds = Number.isFinite(rawTimeout) && rawTimeout > 0
       ? Math.min(Math.floor(rawTimeout), 600)
@@ -766,8 +778,8 @@ export class DatabaseEngine {
         user: (auth.username as string) || decodeURIComponent(url.username) || undefined,
         password: (auth.password as string) || decodeURIComponent(url.password) || undefined,
         databaseName,
-        encrypt: bool(q.get('encrypt'), true),
-        validateCertificate: bool(q.get('sslValidateCertificate'), true),
+        encrypt,
+        validateCertificate,
       },
       currentSchema,
       sapClient,

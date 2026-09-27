@@ -1,6 +1,6 @@
 # SQL database to MCP
 
-AnythingMCP lets Claude, ChatGPT and Copilot query PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, Oracle, SQLite and MongoDB through MCP, without code. The connector generates schema, example and query tools; you choose whether the model writes the query or only fills in the parameters of queries you defined. Query tools are read-only by default: a single SELECT (or `WITH … SELECT`) runs, writes and stacked statements are blocked. Pair that with a read-only database user.
+AnythingMCP lets Claude, ChatGPT and Copilot query PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, Oracle, SAP HANA, SQLite and MongoDB through MCP, without code. The connector generates schema, example and query tools; you choose whether the model writes the query or only fills in the parameters of queries you defined. Query tools are read-only by default: a single SELECT (or `WITH … SELECT`) runs, writes and stacked statements are blocked. Pair that with a read-only database user.
 
 [Back to README](../../README.md)
 
@@ -8,9 +8,9 @@ AnythingMCP lets Claude, ChatGPT and Copilot query PostgreSQL, MySQL, MariaDB, M
 
 ## Overview
 
-The Database connector lets AI clients query databases directly through MCP. It auto-generates tools for schema introspection, example queries, and dynamic query execution. Supports **PostgreSQL**, **MySQL**, **MariaDB**, **Microsoft SQL Server**, **Oracle**, **MongoDB**, and **SQLite**.
+The Database connector lets AI clients query databases directly through MCP. It auto-generates tools for schema introspection, example queries, and dynamic query execution. Supports **PostgreSQL**, **MySQL**, **MariaDB**, **Microsoft SQL Server**, **Oracle**, **SAP HANA**, **MongoDB**, and **SQLite**.
 
-**Keywords:** Database to MCP, PostgreSQL to MCP, MySQL to MCP, MariaDB to MCP, SQL to MCP, MongoDB to MCP, MSSQL to MCP, Oracle to MCP, SQLite to MCP, database MCP bridge, query database with AI, natural language SQL MCP
+**Keywords:** Database to MCP, PostgreSQL to MCP, MySQL to MCP, MariaDB to MCP, SQL to MCP, MongoDB to MCP, MSSQL to MCP, Oracle to MCP, SAP HANA to MCP, SQLite to MCP, database MCP bridge, query database with AI, natural language SQL MCP
 
 ---
 
@@ -23,6 +23,7 @@ The Database connector lets AI clients query databases directly through MCP. It 
 | **MariaDB** | `mariadb://user:pass@host:3306/dbname` |
 | **Microsoft SQL Server** | `mssql://user:pass@host:1433/dbname` |
 | **Oracle** | `oracle://user:pass@host:1521/service_name` |
+| **SAP HANA** | `hana://host:30015/?databaseName=TENANT&currentSchema=SCHEMA` (see [SAP HANA](sap-hana.md)) |
 | **MongoDB** | `mongodb://user:pass@host:27017/dbname` or `mongodb+srv://...` |
 | **SQLite** | `sqlite:///absolute/path/to/db.sqlite` |
 
@@ -214,3 +215,20 @@ MongoDB connectors generate tools that support native MongoDB operations:
 ---
 
 [Back to README](../../README.md) | [Tool Definition Format](../tool-definition.md) | [API Reference](../api-reference.md)
+
+---
+
+## Denied tables
+
+`connector.config.deniedTables` lists tables a query may not name, as glob patterns: `*` any run of characters, `?` one character, `#` one digit. A statement that mentions a denied table anywhere (FROM, JOIN, a subquery, a quoted or schema-qualified name) is refused before it reaches the database.
+
+```json
+{ "readOnly": true, "deniedTables": ["PA####", "HRP####", "salaries", "audit_*"] }
+```
+
+Every identifier is checked, not only table positions, so keep the patterns table-shaped: `PA####` blocks SAP's HR infotype tables without also blocking a column called `PARVW`. The list is defence in depth; the database user's grants remain the boundary.
+
+## Timeouts
+
+A statement runs for at most 60 seconds on PostgreSQL, MySQL/MariaDB, Oracle and SAP HANA (SQL Server keeps its 30-second request timeout). On SAP HANA the limit is set per connector with `statementTimeout` on the connection string.
+

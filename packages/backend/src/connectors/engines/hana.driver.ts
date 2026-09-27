@@ -105,7 +105,7 @@ function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {
 
 async function openHdbSession(opts: HanaConnectOptions): Promise<HanaSession> {
   // Loaded lazily: a deployment without any HANA connector never pays for it.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const hdb = require('hdb');
   const client = hdb.createClient({
     host: opts.host,
@@ -213,7 +213,7 @@ export function loadHanaClient(): any {
     }
   }
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     return require('@sap/hana-client');
   } catch (err: any) {
     attempts.push(`@sap/hana-client: ${err?.code || err?.message}`);

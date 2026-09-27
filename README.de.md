@@ -115,7 +115,7 @@ Gib AnythingMCP eine WSDL, und jede SOAP-Operation wird zu einem Tool: Envelopes
 
 ### SQL-Datenbank zu MCP
 
-PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SQLite und MongoDB. Der Connector erzeugt Tools für Schema, Beispiele und Abfragen; du entscheidest, ob das Modell selbst SQL schreibt oder nur die Parameter von Abfragen ausfüllt, die du vorgegeben hast. Die Abfrage-Tools sind standardmäßig schreibgeschützt: AnythingMCP führt ein einzelnes SELECT aus und blockiert Schreibzugriffe und verkettete Statements. Gib ihm zusätzlich einen Datenbankbenutzer mit reinem Lesezugriff und eine Rolle, die nur die Tools sieht, die sie wirklich braucht. [Dokumentation zum Datenbank-Connector](docs/connectors/database.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp) · [5-Minuten-Demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
+PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SAP HANA, SQLite und MongoDB. Der Connector erzeugt Tools für Schema, Beispiele und Abfragen; du entscheidest, ob das Modell selbst SQL schreibt oder nur die Parameter von Abfragen ausfüllt, die du vorgegeben hast. Die Abfrage-Tools sind standardmäßig schreibgeschützt: AnythingMCP führt ein einzelnes SELECT aus und blockiert Schreibzugriffe und verkettete Statements. Gib ihm zusätzlich einen Datenbankbenutzer mit reinem Lesezugriff und eine Rolle, die nur die Tools sieht, die sie wirklich braucht. [Dokumentation zum Datenbank-Connector](docs/connectors/database.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp) · [5-Minuten-Demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
 
 <a id="graphql-to-mcp"></a>
 
@@ -196,7 +196,7 @@ Shops und Marktplätze, von Amazon und eBay bis zu den Marktplätzen im DACH-Rau
 
 ### Verbinden
 
-- **5 Connector-Typen** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Datenbank](docs/connectors/database.md), [MCP-zu-MCP-Brücke](docs/connectors/mcp-bridge.md). Sieben Datenbank-Engines: PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite.
+- **5 Connector-Typen** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Datenbank](docs/connectors/database.md), [MCP-zu-MCP-Brücke](docs/connectors/mcp-bridge.md). Acht Datenbank-Engines: PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, SQLite.
 - **Vorhandenes importieren** — OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL-Introspection oder die Tool-Erkennung direkt an einem laufenden MCP-Server.
 - **Der Adapterkatalog** — [was bereits enthalten ist](#the-adapter-catalog).
 - **Visueller Tool-Editor** — ordne Parameter dem Pfad, Query-Parametern, Request-Body und Headern zu. Benenne und beschreibe Tools so, dass die KI sie wie beabsichtigt versteht.

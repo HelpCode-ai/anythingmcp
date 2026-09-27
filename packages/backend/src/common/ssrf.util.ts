@@ -168,7 +168,7 @@ export async function assertSafeOutboundUrl(
  * checks as {@link assertSafeOutboundUrl} (env + DB allowlists, literal-IP check,
  * loopback/local block, DNS resolution against blocked ranges) — but without the
  * http(s) URL assumption, so it also guards non-HTTP outbound connections such as
- * database drivers (Postgres, MySQL, MSSQL, Oracle, MongoDB).
+ * database drivers (Postgres, MySQL, MSSQL, Oracle, SAP HANA, MongoDB).
  *
  * Returns silently when the host is permitted.
  */

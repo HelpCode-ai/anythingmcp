@@ -19,7 +19,7 @@ const CONNECTOR_TYPES = [
   { id: 'SOAP', name: 'SOAP Service', description: 'Connect to SOAP web services via WSDL.', tone: 'bg-[var(--t-warn-bg)] text-[var(--t-warn-fg)]' },
   { id: 'GRAPHQL', name: 'GraphQL', description: 'Connect to GraphQL APIs with schema introspection.', tone: 'bg-[var(--t-pink-bg)] text-[var(--t-pink-fg)]' },
   { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', tone: 'bg-[var(--t-purple-bg)] text-[var(--t-purple-fg)]' },
-  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, or SQLite. Supports read-only or read-write mode.', tone: 'bg-[var(--t-emerald-bg)] text-[var(--t-emerald-fg)]' },
+  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, or SQLite. Supports read-only or read-write mode.', tone: 'bg-[var(--t-emerald-bg)] text-[var(--t-emerald-fg)]' },
 ];
 
 // Shared by the type buttons and the marketplace link. A native <button>
@@ -339,7 +339,7 @@ export default function NewConnectorPage() {
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder={
                     selectedType === 'DATABASE'
-                      ? 'postgresql://user:pass@host:5432/db  or  mysql://user:pass@host:3306/db'
+                      ? 'postgresql://user:pass@host:5432/db  or  hana://host:30015/?currentSchema=SAPHANADB'
                       : selectedType === 'MCP'
                         ? 'https://mcp.example.com/mcp'
                         : 'https://api.example.com/v1'
