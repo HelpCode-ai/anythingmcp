@@ -1292,6 +1292,42 @@
         "against": "the live TypeSafe API (jev-1.13.0)",
         "how": "every tool called through a local AnythingMCP over MCP, 27 direct API cases incl. error paths, and Claude Code triaging English and German tickets through the connector"
       }
+    },
+    {
+      "repo": "google-ads-mcp-server",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Google Ads",
+      "adapters": [
+        "google-ads"
+      ],
+      "wave": 1,
+      "about": "Google Ads MCP server: ask Claude & ChatGPT about campaigns, search terms, Quality Score and budgets. Read-only, no developer token.",
+      "topics": [
+        "google-ads",
+        "google-ads-api",
+        "gaql",
+        "ppc",
+        "adwords",
+        "performance-max",
+        "marketing-analytics"
+      ],
+      "website": "https://anythingmcp.com/guides/google-ads-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "openapi-to-mcp",
+        "jev-mcp-server"
+      ],
+      "objects": {
+        "en": "campaigns, ad groups, ads, keywords, search terms, budgets, conversion actions and change history"
+      },
+      "lastVerified": {
+        "date": "2026-09-27",
+        "against": "two production Google Ads accounts (API v25, Explorer access)",
+        "how": "all 17 tools and the 15 playbook queries called live, the connector authorized on AnythingMCP Cloud, and an account review run from claude.ai"
+      }
     }
   ]
 }
