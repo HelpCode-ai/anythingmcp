@@ -31,21 +31,28 @@ export function buildODataBuiltinTools(opts: {
   prefix: string;
   displayName: string;
   sap: boolean;
+  /** The connector lists its services itself (config.odata.services). */
+  listed?: boolean;
 }): ODataBuiltinTool[] {
   const { prefix, displayName, sap } = opts;
+  const multi = sap || !!opts.listed;
   const service = {
     type: 'string',
     description: sap
       ? 'Service path from list_services, e.g. /sap/opu/odata/sap/API_BUSINESS_PARTNER.'
-      : 'Leave empty: the connector points at one service.',
+      : multi
+        ? 'Service path from list_services.'
+        : 'Leave empty: the connector points at one service.',
   };
-  const serviceRequired = sap ? ['service'] : [];
+  const serviceRequired = multi ? ['service'] : [];
   return [
     {
       name: `${prefix}_list_services`,
       description: sap
         ? `List the OData services published by ${displayName} (SAP Gateway catalog, V2 and V4), filtered by words in their name, title or description, e.g. "journal entry", "sales order", "API_BUSINESS_PARTNER". Start here.`
-        : `Where the ${displayName} OData service lives. Start here, then describe_service.`,
+        : multi
+          ? `List the OData services this ${displayName} connector reaches. Start here.`
+          : `Where the ${displayName} OData service lives. Start here, then describe_service.`,
       parameters: {
         type: 'object',
         properties: {

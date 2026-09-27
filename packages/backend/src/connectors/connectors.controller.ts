@@ -674,6 +674,7 @@ export class ConnectorsController {
         prefix: odataToolPrefix({ toolPrefix: settings.toolPrefix, name: dto.name }),
         displayName: dto.name,
         sap: !!settings.sap,
+        listed: !!settings.services?.length,
       });
       for (const tool of builtinTools) {
         try {

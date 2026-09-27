@@ -196,7 +196,7 @@ Shops und Marktplätze, von Amazon und eBay bis zu den Marktplätzen im DACH-Rau
 
 ### Verbinden
 
-- **5 Connector-Typen** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [Datenbank](docs/connectors/database.md), [MCP-zu-MCP-Brücke](docs/connectors/mcp-bridge.md). Acht Datenbank-Engines: PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, SQLite.
+- **6 Connector-Typen** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [OData](docs/connectors/odata.md) (inklusive SAP Gateway), [Datenbank](docs/connectors/database.md), [MCP-zu-MCP-Brücke](docs/connectors/mcp-bridge.md). Acht Datenbank-Engines: PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, SQLite.
 - **Vorhandenes importieren** — OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL-Introspection oder die Tool-Erkennung direkt an einem laufenden MCP-Server.
 - **Der Adapterkatalog** — [was bereits enthalten ist](#the-adapter-catalog).
 - **Visueller Tool-Editor** — ordne Parameter dem Pfad, Query-Parametern, Request-Body und Headern zu. Benenne und beschreibe Tools so, dass die KI sie wie beabsichtigt versteht.

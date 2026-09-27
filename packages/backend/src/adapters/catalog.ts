@@ -198,6 +198,7 @@ import * as salesloft from './intl/salesloft.json';
 import * as sapConcur from './intl/sap-concur.json';
 import * as sapS4hanaCloud from './intl/sap-s4hana-cloud.json';
 import * as sapS4hanaHana from './intl/sap-s4hana-hana.json';
+import * as sapS4hanaOdata from './intl/sap-s4hana-odata.json';
 import * as savvycal from './intl/savvycal.json';
 import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
@@ -401,11 +402,13 @@ function withODataBuiltins(adapter: AdapterDefinition): AdapterDefinition {
     toolPrefix?: string;
     sap?: boolean;
     sapClient?: string;
+    services?: string[];
   };
   const builtins = buildODataBuiltinTools({
     prefix: odataToolPrefix({ toolPrefix: odata.toolPrefix, name: adapter.slug }),
     displayName: adapter.name,
     sap: odata.sap === true || !!odata.sapClient,
+    listed: Array.isArray(odata.services) && odata.services.length > 0,
   }) as unknown as AdapterDefinition['tools'];
   const own = new Set(adapter.tools.map((t) => t.name));
   return { ...adapter, tools: [...builtins.filter((t) => !own.has(t.name)), ...adapter.tools] };
@@ -616,6 +619,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sapConcur as unknown as AdapterDefinition,
   sapS4hanaCloud as unknown as AdapterDefinition,
   sapS4hanaHana as unknown as AdapterDefinition,
+  sapS4hanaOdata as unknown as AdapterDefinition,
   savvycal as unknown as AdapterDefinition,
   sendgrid as unknown as AdapterDefinition,
   sentry as unknown as AdapterDefinition,

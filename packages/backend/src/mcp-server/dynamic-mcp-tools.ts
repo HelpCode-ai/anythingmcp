@@ -380,7 +380,14 @@ export class DynamicMcpTools {
           engineConfig,
           interpolatedMapping,
           mergedParams,
-          { connectorConfig: tool.connectorConfig.config },
+          {
+            connectorConfig: tool.connectorConfig.config,
+            // OData settings may carry {{VAR}} (an adapter's SAP client).
+            odataSettings: interpolateDeep(
+              (tool.connectorConfig.config as { odata?: unknown } | undefined)?.odata,
+              envVars,
+            ),
+          },
         );
       } finally {
         processGauges.dec('toolCallsInFlight');
@@ -703,7 +710,7 @@ export class DynamicMcpTools {
     config: any,
     endpointMapping: any,
     params: Record<string, unknown>,
-    extra?: { connectorConfig?: Record<string, unknown> },
+    extra?: { connectorConfig?: Record<string, unknown>; odataSettings?: unknown },
   ): Promise<{ body: unknown; meta?: ResponseMeta }> {
     // Static response tools — return text immediately without engine dispatch.
     //
@@ -730,7 +737,7 @@ export class DynamicMcpTools {
           config,
           endpointMapping,
           params,
-          (extra?.connectorConfig as any)?.odata,
+          extra?.odataSettings ?? (extra?.connectorConfig as any)?.odata,
         ),
       };
     }

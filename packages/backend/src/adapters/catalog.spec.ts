@@ -34,6 +34,15 @@ const VALID_GRAPHQL_METHODS = new Set([
 // see DatabaseEngine.execute. Their `path` IS the statement, so the REST rules
 // about `{placeholders}` and `${x}` do not apply to it.
 const VALID_DATABASE_METHODS = new Set(['QUERY', 'STATIC', 'MONGO_SCHEMA']);
+// The OData built-ins every ODATA adapter (and REST adapter with
+// connector.config.odata) carries; executed by ODataEngine, not as HTTP verbs.
+const VALID_ODATA_BUILTIN_METHODS = new Set([
+  'ODATA_LIST_SERVICES',
+  'ODATA_DESCRIBE_SERVICE',
+  'ODATA_DESCRIBE_ENTITY',
+  'ODATA_QUERY',
+  'ODATA_GET',
+]);
 
 /**
  * Recursively collect every string value in an object/array, together with the
@@ -293,7 +302,12 @@ describe('adapter catalog', () => {
           : adapter.connector.type === 'GRAPHQL'
             ? VALID_GRAPHQL_METHODS
             : VALID_REST_METHODS;
-        expect(allowed.has(String(em.method).toUpperCase())).toBe(true);
+        const method = String(em.method).toUpperCase();
+        const odataBuiltin =
+          VALID_ODATA_BUILTIN_METHODS.has(method) &&
+          (adapter.connector.type === 'ODATA' ||
+            !!(adapter.connector as { config?: { odata?: unknown } }).config?.odata);
+        expect(allowed.has(method) || odataBuiltin).toBe(true);
         expect(typeof em.path).toBe('string');
 
         // Legacy `body` field must be renamed to `bodyMapping`/`bodyTemplate`

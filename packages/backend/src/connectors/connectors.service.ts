@@ -302,7 +302,10 @@ export class ConnectorsService {
           break;
         case 'ODATA': {
           if (!this.odataEngine) throw new Error('The OData engine is not available.');
-          const settings = (connector.config as { odata?: Record<string, unknown> } | null)?.odata;
+          const settings = interpolateDeep(
+            (connector.config as { odata?: Record<string, unknown> } | null)?.odata,
+            envVars,
+          );
           const isSap = !!settings?.sap || !!settings?.sapClient;
           const out = (await this.odataEngine.execute(
             { baseUrl, authType: connector.authType, authConfig, headers, connectorId: connector.id },
@@ -526,7 +529,7 @@ export class ConnectorsService {
         config,
         endpointMapping,
         mergedParams,
-        (connector.config as any)?.odata,
+        interpolateDeep((connector.config as any)?.odata, envVars ?? {}),
       );
     }
 

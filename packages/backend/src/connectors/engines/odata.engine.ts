@@ -125,6 +125,14 @@ export class ODataEngine {
     settings: ODataSettings,
     params: Record<string, unknown>,
   ): Promise<unknown> {
+    if (!settings.sap && settings.services?.some((s) => !s.includes('*'))) {
+      return {
+        services: settings.services
+          .filter((s) => !s.includes('*'))
+          .map((s) => ({ service: s.replace(/\/+$/, ''), name: s.split('/').filter(Boolean).pop() })),
+        hint: 'Pass a service path to describe_service to see its entity sets.',
+      };
+    }
     if (!settings.sap) {
       return {
         services: [{ service: '', name: '(service root)', title: 'The connector base URL is the service' }],

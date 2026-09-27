@@ -6,7 +6,7 @@
   "category": "erp",
   "icon": "sap-s4hana-cloud",
   "docsUrl": "https://api.sap.com/package/SAPS4HANACloud",
-  "instructions": "**Setup (one-off, done by the S/4 admin)**:\n1. In your S/4HANA Cloud tenant open **Communication Arrangements** and create one for *SAP_COM_0008 — Business Partner Integration* (and others as needed: 0109 Sales Order, 0026 Purchase Order, 0186 Billing).\n2. Create a **Communication User** + **Communication System**. Pick **OAuth 2.0** as the authentication method, grant type **Client Credentials**.\n3. S/4 generates a `Client ID`, `Client Secret`, and a per-tenant **Token URL** like `https://my300000.authentication.eu10.hana.ondemand.com/oauth/token`.\n4. The tenant **Base URL** is `https://my300000.s4hana.cloud.sap` (your tenant ID replaces 300000).\n5. Set the four env vars below.\n\n**Auth header method**: Public Edition strictly requires Client ID/Secret sent via **HTTP Basic Authorization header** (not form fields). This adapter does that automatically.\n\n**Token lifetime**: typically 1 hour. The connector engine refreshes proactively 5 min before expiry, single-shot client_credentials grant (no refresh_token needed).",
+  "instructions": "**Setup (one-off, done by the S/4 admin)**:\n1. In your S/4HANA Cloud tenant open **Communication Arrangements** and create one for *SAP_COM_0008 — Business Partner Integration* (and others as needed: 0109 Sales Order, 0026 Purchase Order, 0186 Billing).\n2. Create a **Communication User** + **Communication System**. Pick **OAuth 2.0** as the authentication method, grant type **Client Credentials**.\n3. S/4 generates a `Client ID`, `Client Secret`, and a per-tenant **Token URL** like `https://my300000.authentication.eu10.hana.ondemand.com/oauth/token`.\n4. The tenant **Base URL** is `https://my300000.s4hana.cloud.sap` (your tenant ID replaces 300000).\n5. Set the four env vars below.\n\n**Auth header method**: Public Edition strictly requires Client ID/Secret sent via **HTTP Basic Authorization header** (not form fields). This adapter does that automatically.\n\n**Token lifetime**: typically 1 hour. The connector engine refreshes proactively 5 min before expiry, single-shot client_credentials grant (no refresh_token needed).\n\n**Generic OData tools**: besides the tools below, `s4_cloud_list_services`, `s4_cloud_describe_service`, `s4_cloud_describe_entity`, `s4_cloud_query` and `s4_cloud_get_entity` read the listed APIs' `$metadata`, so the agent can reach any field of those services with SAP's labels. A service outside the list needs its communication arrangement first.",
   "requiredEnvVars": ["S4_BASE_URL", "S4_TOKEN_URL", "S4_CLIENT_ID", "S4_CLIENT_SECRET"],
   "connector": {
     "name": "SAP S/4HANA Cloud",
@@ -18,6 +18,21 @@
       "tokenUrl": "{{S4_TOKEN_URL}}",
       "clientId": "{{S4_CLIENT_ID}}",
       "clientSecret": "{{S4_CLIENT_SECRET}}"
+    },
+    "config": {
+      "odata": {
+        "toolPrefix": "s4_cloud",
+        "services": [
+          "/sap/API_BUSINESS_PARTNER",
+          "/sap/API_SALES_ORDER_SRV",
+          "/sap/API_PURCHASEORDER_PROCESS_SRV",
+          "/sap/API_BILLING_DOCUMENT_SRV",
+          "/sap/API_OUTBOUND_DELIVERY_SRV",
+          "/sap/API_JOURNALENTRYITEMBASIC_SRV",
+          "/sap/API_PRODUCT_SRV",
+          "/sap/API_PURCHASEREQ_PROCESS_SRV"
+        ]
+      }
     }
   },
   "tools": [
@@ -208,7 +223,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/sap/API_JOURNALENTRYITEMBASIC/JournalEntryItemBasic",
+        "path": "/sap/API_JOURNALENTRYITEMBASIC_SRV/A_JournalEntryItemBasic",
         "queryParams": { "$top": "$top", "$format": "json" }
       }
     },
