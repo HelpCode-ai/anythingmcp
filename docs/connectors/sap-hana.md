@@ -44,7 +44,7 @@ Install it from the catalog (Connectors → Store → *SAP S/4HANA (HANA SQL)*).
 |------|------------------------|
 | `sap_guide` | A guide to the SAP data model for SQL, by topic: basics (client, dates, leading zeros, currencies), finance (the Universal Journal ACDOCA), sales, inventory, procurement, operations, pitfalls, query recipes. Costs nothing. |
 | `sap_org_structure` | Company codes with currency, chart of accounts and fiscal year variant; controlling areas, plants, sales and purchasing organizations. |
-| `sap_search_tables` | Tables by name or description, flagging S/4HANA compatibility views (`REPLACED_BY`) that plain SQL would read wrongly. |
+| `sap_search_tables` | Tables by name or description, with their row count (tables holding data rank first), flagging S/4HANA compatibility views (`REPLACED_BY`) that plain SQL would read wrongly. |
 | `sap_describe_table` | Fields with labels, keys, the currency/unit field of each amount, check tables. |
 | `sap_find_fields` | Which tables hold a business field ("net due date"). |
 | `sap_field_values` | What the codes of a field mean. |
@@ -65,6 +65,7 @@ GRANT SELECT ON SAPHANADB.DD02L TO AMCP_READER;
 GRANT SELECT ON SAPHANADB.DD02T TO AMCP_READER;
 GRANT SELECT ON SAPHANADB.DD03L TO AMCP_READER;
 GRANT SELECT ON SAPHANADB.DD03T TO AMCP_READER;
+GRANT SELECT ON SAPHANADB.DD03ND TO AMCP_READER;
 GRANT SELECT ON SAPHANADB.DD04T TO AMCP_READER;
 GRANT SELECT ON SAPHANADB.DD07T TO AMCP_READER;
 GRANT SELECT ON SAPHANADB.DD08L TO AMCP_READER;
