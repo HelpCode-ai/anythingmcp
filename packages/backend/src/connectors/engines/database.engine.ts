@@ -716,8 +716,8 @@ export class DatabaseEngine {
    * Parse a HANA connection string:
    *
    *   hana://host:30015                          tenant's own SQL port
-   *   hana://host:30013/QS4                      system DB port + tenant name
-   *   hana://host:30015/?databaseName=QS4&currentSchema=SAPHANADB&sapClient=100
+   *   hana://host:30013/QAS                      system DB port + tenant name
+   *   hana://host:30015/?databaseName=QAS&currentSchema=SAPHANADB&sapClient=100
    *
    * Query options: `databaseName`, `currentSchema` (alias `schema`),
    * `tls` (verify | no-verify | off), or the separate `encrypt` (default
