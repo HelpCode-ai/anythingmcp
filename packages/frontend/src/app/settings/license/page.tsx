@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { license } from '@/lib/api';
-import { buildPricingUrl } from '@/lib/marketing';
+import { usePricingUrl } from '@/lib/use-pricing-url';
 import { useManagePlan } from '@/lib/use-manage-plan';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -29,6 +29,7 @@ export default function LicenseSettingsPage() {
   const [verifying, setVerifying] = useState(false);
   const [openingPortal, setOpeningPortal] = useState(false);
   const managePlan = useManagePlan();
+  const pricingUrl = usePricingUrl();
 
   const isCloud = deploymentMode === 'cloud';
   // The Stripe billing portal only applies to a real paid subscription —
@@ -307,7 +308,7 @@ export default function LicenseSettingsPage() {
             <p className="text-sm text-[var(--text-2)] mb-4">
               Purchase a license at{' '}
               <a
-                href={buildPricingUrl()}
+                href={pricingUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[var(--brand)] hover:underline font-medium"
@@ -339,7 +340,7 @@ export default function LicenseSettingsPage() {
             Upgrade to a paid plan to continue using AnythingMCP Cloud after your trial ends.
           </p>
           <a
-            href={buildPricingUrl()}
+            href={pricingUrl}
             target="_blank"
             rel="noopener noreferrer"
             className={cn(buttonVariants({ variant: 'primary' }))}

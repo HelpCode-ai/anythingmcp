@@ -1,3 +1,5 @@
+import { CLICK_ID_KEYS, cleanClickId, type ClickIds } from './attribution';
+
 const DEFAULT_MARKETING_URL = 'https://anythingmcp.com';
 
 export function getMarketingUrl(): string {
@@ -9,11 +11,22 @@ export function getMarketingUrl(): string {
   return DEFAULT_MARKETING_URL;
 }
 
-export function buildPricingUrl(returnPath = '/settings/license/activate'): string {
+/**
+ * The pricing page, with `return_url` back to this app. On AnythingMCP Cloud
+ * the caller may pass the user's own Google Ads click id (see usePricingUrl),
+ * which the pricing page puts into the checkout so the purchase can be
+ * reported to Google Ads; anything that is not a well-formed id is left out.
+ */
+export function buildPricingUrl(returnPath = '/settings/license/activate', clickIds?: ClickIds | null): string {
   const base = `${getMarketingUrl()}/pricing`;
   if (typeof window === 'undefined') return base;
   const returnUrl = `${window.location.origin}${returnPath}`;
-  return `${base}?return_url=${encodeURIComponent(returnUrl)}`;
+  let url = `${base}?return_url=${encodeURIComponent(returnUrl)}`;
+  for (const key of CLICK_ID_KEYS) {
+    const id = cleanClickId(clickIds?.[key]);
+    if (id) url += `&${key}=${id}`;
+  }
+  return url;
 }
 
 /**

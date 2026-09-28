@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
-import { sanitizeSignupAttribution } from './signup-attribution';
+import { AttributionClickId, clickIdFromAttribution, sanitizeSignupAttribution } from './signup-attribution';
 
 /**
  * Product-usage events the UI reports so the activation funnel can be read
@@ -48,8 +48,8 @@ const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
 );
 const MAX_METADATA_BYTES = 1024;
-/** Two touches of up to eleven capped fields each. */
-const MAX_ATTRIBUTION_BYTES = 4096;
+/** Two touches of up to fifteen capped fields each, three of them click ids of up to 150 chars. */
+const MAX_ATTRIBUTION_BYTES = 5120;
 
 @Injectable()
 export class ProductEventService {
@@ -85,6 +85,26 @@ export class ProductEventService {
     } catch (err: any) {
       this.logger.warn(`product event ${input.event} not recorded: ${err?.message ?? err}`);
     }
+  }
+
+  /**
+   * The Google Ads click id this user signed up through, if they granted ad
+   * consent: read from their own `signup_attributed` event only, keyed by the
+   * user id alone. Null when there is none.
+   */
+  async clickIdForUser(userId: string | null | undefined): Promise<AttributionClickId | null> {
+    if (!userId) return null;
+    const rows = await this.prisma.productEvent.findMany({
+      where: { userId, event: ProductEvents.SIGNUP_ATTRIBUTED },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: { metadata: true },
+    });
+    for (const row of rows) {
+      const found = clickIdFromAttribution(row.metadata);
+      if (found) return found;
+    }
+    return null;
   }
 }
 

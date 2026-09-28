@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { buildPricingUrl } from '@/lib/marketing';
+import { usePricingUrl } from '@/lib/use-pricing-url';
 import { useManagePlan } from '@/lib/use-manage-plan';
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
@@ -19,6 +19,7 @@ type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed';
 export function LicenseWall() {
   const { token, deploymentMode } = useAuth();
   const managePlan = useManagePlan();
+  const pricingUrl = usePricingUrl();
   const [reason, setReason] = useState<BlockReason | null>(null);
   const [starting, setStarting] = useState(false);
   const [startErr, setStartErr] = useState<string | null>(null);
@@ -143,7 +144,7 @@ export function LicenseWall() {
               </button>
               {startErr && <p className="text-xs text-[var(--danger)]">{startErr}</p>}
               <a
-                href={buildPricingUrl()}
+                href={pricingUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={cn(buttonVariants({ variant: 'secondary', size: 'lg' }), 'w-full')}
@@ -163,7 +164,7 @@ export function LicenseWall() {
             </a>
           ) : (
             <a
-              href={buildPricingUrl()}
+              href={pricingUrl}
               target="_blank"
               rel="noopener noreferrer"
               className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}

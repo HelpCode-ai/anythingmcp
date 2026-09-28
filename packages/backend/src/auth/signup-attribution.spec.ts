@@ -21,6 +21,7 @@ const base = {
 };
 
 const TS = Date.parse('2026-09-24T08:30:00Z');
+const GCLID = 'Cj0KCQjw-abc_DEF123';
 
 const ATTRIBUTION = {
   first_touch: {
@@ -63,11 +64,51 @@ describe('RegisterDto through the global ValidationPipe', () => {
     expect(dto.attribution?.last_touch).toBeUndefined();
   });
 
-  it('refuses keys it does not know, such as a click id', async () => {
+  it('refuses keys it does not know, such as a non-Google click id', async () => {
     await expect(
-      validate({ ...base, attribution: { first_touch: { gclid: 'Cj0KCQ' } } }),
+      validate({ ...base, attribution: { first_touch: { fbclid: 'IwAR0abc' } } }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      validate({ ...base, attribution: { first_touch: { email: 'jane@example.com' } } }),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(validate({ ...base, attribution: { email: 'x' } })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('accepts Google Ads click ids with an ad consent state', async () => {
+    const dto = await validate({
+      ...base,
+      attribution: {
+        first_touch: { gclid: GCLID, gbraid: 'Gb-1_x', wbraid: 'Wb_2-y', ad_consent: 'granted', paid: true },
+        last_touch: { gclid: GCLID, ad_consent: 'denied' },
+      },
+    });
+    expect(dto.attribution?.first_touch?.gclid).toBe(GCLID);
+    expect(dto.attribution?.first_touch?.ad_consent).toBe('granted');
+    expect(dto.attribution?.last_touch?.ad_consent).toBe('denied');
+    await expect(
+      validate({ ...base, attribution: { first_touch: { ad_consent: 'unknown' } } }),
+    ).resolves.toBeDefined();
+  });
+
+  it.each([
+    ['a character outside [A-Za-z0-9_-]', { gclid: 'Cj0KCQ.abc', ad_consent: 'granted' }],
+    ['a space', { gbraid: 'abc def', ad_consent: 'granted' }],
+    ['an address', { wbraid: 'jane@example.com', ad_consent: 'granted' }],
+    ['more than 150 characters', { gclid: 'a'.repeat(151), ad_consent: 'granted' }],
+    ['a non-string', { gclid: 12345, ad_consent: 'granted' }],
+    ['an unknown consent state', { gclid: GCLID, ad_consent: 'yes' }],
+  ])('refuses a click id touch with %s', async (_label, touch) => {
+    await expect(validate({ ...base, attribution: { first_touch: touch } })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('accepts a click id of exactly 150 characters', async () => {
+    const dto = await validate({
+      ...base,
+      attribution: { first_touch: { gclid: 'a'.repeat(150), ad_consent: 'granted' } },
+    });
+    expect(dto.attribution?.first_touch?.gclid).toHaveLength(150);
   });
 
   it('refuses values beyond the caps and of the wrong type', async () => {
@@ -217,6 +258,61 @@ describe('AuthController — sign-up attribution', () => {
     expect(meta.last_touch).toEqual(meta.first_touch);
     expect(JSON.stringify(meta)).not.toContain('jane');
   });
+
+  it('stores a click id that comes with ad consent granted', async () => {
+    const { controller, events } = makeController('cloud');
+    const dto = await validate({
+      ...base,
+      attribution: {
+        first_touch: { utm_source: 'google', gclid: GCLID, ad_consent: 'granted', captured_on: 'site', ts: TS },
+      },
+    });
+    await controller.register({}, dto);
+    await flush();
+
+    expect(events[0].metadata.first_touch).toEqual({
+      utm_source: 'google',
+      gclid: GCLID,
+      ad_consent: 'granted',
+      paid: true,
+      captured_on: 'site',
+      ts: '2026-09-24T08:30:00.000Z',
+      channel: 'google_ads',
+    });
+  });
+
+  it.each([['denied'], ['unknown'], [undefined]])(
+    'drops every click id when ad consent is %s, and keeps the rest of the touch',
+    async (adConsent) => {
+      const { controller, events } = makeController('cloud');
+      const dto = await validate({
+        ...base,
+        attribution: {
+          first_touch: {
+            utm_source: 'google',
+            gclid: GCLID,
+            gbraid: 'Gb-1',
+            wbraid: 'Wb-2',
+            paid: true,
+            captured_on: 'site',
+            ...(adConsent && { ad_consent: adConsent }),
+          },
+        },
+      });
+      await controller.register({}, dto);
+      await flush();
+
+      const meta = events[0].metadata;
+      expect(meta.first_touch).toEqual({
+        utm_source: 'google',
+        paid: true,
+        captured_on: 'site',
+        ...(adConsent && { ad_consent: adConsent }),
+        channel: 'google_ads',
+      });
+      expect(JSON.stringify(meta)).not.toMatch(/gclid|gbraid|wbraid|Cj0KCQ/);
+    },
+  );
 
   it('records nothing for an address that already has an account', async () => {
     const { controller, events } = makeController('cloud', ['new@example.com']);

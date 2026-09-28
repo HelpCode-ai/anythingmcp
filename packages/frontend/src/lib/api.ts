@@ -1,4 +1,4 @@
-import type { SignupAttribution } from './attribution';
+import type { ClickIds, SignupAttribution } from './attribution';
 
 // Use relative paths so requests go to the same origin.
 // In production (Docker / Railway) Next.js rewrites proxy /api/* to the backend.
@@ -82,6 +82,13 @@ export const auth = {
     }>('/api/auth/register', {
       method: 'POST',
       body: { email, password, name, acceptTerms, ...(attribution && { attribution }) },
+    }),
+  // Cloud only: the signed-in user's own sign-up click id, if they granted ad
+  // consent; `{}` otherwise and on self-hosted. Never logs out on a 401.
+  attributionClickIds: (token: string) =>
+    request<ClickIds & { ad_consent?: 'granted'; captured_at?: string }>('/api/auth/attribution/click-ids', {
+      token,
+      skipAutoLogout: true,
     }),
   forgotPassword: (email: string) =>
     request<{ message: string }>('/api/auth/forgot-password', {

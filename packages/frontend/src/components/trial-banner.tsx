@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react';
 import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { buildPricingUrl } from '@/lib/marketing';
+import { usePricingUrl } from '@/lib/use-pricing-url';
 
 export function TrialBanner() {
   const { token } = useAuth();
+  const pricingUrl = usePricingUrl();
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
   const [plan, setPlan] = useState<string | null>(null);
   const [connectors, setConnectors] = useState<number | null>(null);
@@ -57,7 +58,7 @@ export function TrialBanner() {
       <span>{countdown}{value}</span>
       {' '}
       <a
-        href={buildPricingUrl()}
+        href={pricingUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="underline font-medium hover:no-underline"

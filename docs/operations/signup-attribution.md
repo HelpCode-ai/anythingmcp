@@ -4,10 +4,14 @@ Which channel brings AnythingMCP Cloud sign-ups, and which of them verify and pa
 
 ## How it is recorded
 
-1. **anythingmcp.com** notes, per visitor, the first and the last *touch*: UTM tags, Google Ads' `gad_source` / `gad_campaignid`, `paid` (a gclid, gbraid or wbraid was on the URL; the id itself is never kept), the referrer's host and the landing path. Kept in memory for the visit, and in localStorage for 30 days only once the visitor has allowed analytics in the cookie banner.
+1. **anythingmcp.com** notes, per visitor, the first and the last *touch*: UTM tags, Google Ads' `gad_source` / `gad_campaignid`, `paid` (a gclid, gbraid or wbraid was on the URL), the referrer's host and the landing path. The click id itself travels only with `ad_consent: "granted"` (the visitor allowed marketing cookies). Kept in memory for the visit, and in localStorage for 30 days only once the visitor has allowed analytics in the cookie banner.
 2. When the visitor clicks through to `cloud.anythingmcp.com`, the link gets `amcp_src=<base64url JSON first touch>` and, if different, `amcp_lt=<last touch>`.
-3. **The cloud sign-up page** reads those, or, for a visitor who came straight to the cloud app, builds its own touch from its URL and the referrer's host (`captured_on: "cloud"`). It sends them with `POST /api/auth/register` as `attribution: { first_touch, last_touch }`.
-4. **The backend** sanitizes them again and, for a **newly created account only**, writes a `signup_attributed` row to `product_events` (`user_id`, `organization_id` = the workspace created at sign-up). An address that already has an account records nothing, and the answer to the sign-up is the same either way.
+3. **The cloud sign-up page** reads those, or, for a visitor who came straight to the cloud app, builds its own touch from its URL and the referrer's host (`captured_on: "cloud"`). For its own touch, a click id is kept only if the cloud's cookie banner has the *marketing* category accepted; if that banner says no, click ids handed over by the site are dropped too. It sends them with `POST /api/auth/register` as `attribution: { first_touch, last_touch }`.
+4. **The backend** sanitizes them again and, for a **newly created account only**, writes a `signup_attributed` row to `product_events` (`user_id`, `organization_id` = the workspace created at sign-up). A click id (`gclid`, `gbraid`, `wbraid`: `[A-Za-z0-9_-]`, at most 150 characters) is stored only on a touch with `ad_consent: "granted"` and dropped otherwise. An address that already has an account records nothing, and the answer to the sign-up is the same either way.
+
+## Purchases as Google Ads offline conversions
+
+`GET /api/auth/attribution/click-ids` (signed in, cloud only; `{}` on self-hosted) returns the caller's own click id from their `signup_attributed` row, e.g. `{ "gclid": "…", "ad_consent": "granted", "captured_at": "…" }`: one id (last touch before first; gclid before gbraid before wbraid), and only if it was stored with consent. The cloud app appends it to its links to the pricing page (`?return_url=…&gclid=…`); the pricing page puts it into the Stripe checkout metadata and the site's Stripe webhook uploads the purchase to Google Ads.
 
 Stored metadata (the channel is derived on the server, see `packages/backend/src/audit/signup-attribution.ts`):
 

@@ -1,14 +1,23 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
-import { MAX_TOUCH_FIELD } from '../audit/signup-attribution';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min, ValidateNested } from 'class-validator';
+import {
+  AD_CONSENT_VALUES,
+  CLICK_ID_PATTERN,
+  MAX_CLICK_ID,
+  MAX_TOUCH_FIELD,
+  type AdConsent,
+} from '../audit/signup-attribution';
+
+const CLICK_ID_MESSAGE = 'must be a Google Ads click id (letters, digits, "-" and "_")';
 
 /**
  * One touch: what a landing on the marketing site (or on the cloud app, for
  * visitors who came straight there) said about where the visitor came from.
- * Campaign-level only: no click id, no referrer path, nothing personal. The
- * server sanitizes again before storing (audit/signup-attribution.ts); these
- * rules only bound what the register endpoint accepts.
+ * Campaign-level, no referrer path, nothing personal; a Google Ads click id
+ * only next to `ad_consent: 'granted'`. The server sanitizes again before
+ * storing (audit/signup-attribution.ts) and drops a click id sent without
+ * that consent; these rules only bound what the register endpoint accepts.
  *
  * Keep the key set in step with the cloud frontend (lib/attribution.ts): the
  * global ValidationPipe rejects unknown keys, and the frontend drops any key
@@ -57,10 +66,48 @@ export class SignupTouchDto {
   @MaxLength(MAX_TOUCH_FIELD)
   gad_campaignid?: string;
 
-  @ApiPropertyOptional({ description: 'A Google Ads click id was present. The id itself is never sent.' })
+  @ApiPropertyOptional({ description: 'A Google Ads click id was present, whether or not the id itself is sent.' })
   @IsOptional()
   @IsBoolean()
   paid?: boolean;
+
+  @ApiPropertyOptional({
+    description: "Google Ads click id. Stored only when `ad_consent` is 'granted'.",
+    maxLength: MAX_CLICK_ID,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_CLICK_ID)
+  @Matches(CLICK_ID_PATTERN, { message: `gclid ${CLICK_ID_MESSAGE}` })
+  gclid?: string;
+
+  @ApiPropertyOptional({
+    description: "Google Ads click id for app-to-web (iOS). Stored only when `ad_consent` is 'granted'.",
+    maxLength: MAX_CLICK_ID,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_CLICK_ID)
+  @Matches(CLICK_ID_PATTERN, { message: `gbraid ${CLICK_ID_MESSAGE}` })
+  gbraid?: string;
+
+  @ApiPropertyOptional({
+    description: "Google Ads click id for web-to-app (iOS). Stored only when `ad_consent` is 'granted'.",
+    maxLength: MAX_CLICK_ID,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_CLICK_ID)
+  @Matches(CLICK_ID_PATTERN, { message: `wbraid ${CLICK_ID_MESSAGE}` })
+  wbraid?: string;
+
+  @ApiPropertyOptional({
+    enum: AD_CONSENT_VALUES,
+    description: 'The visitor\'s ad (marketing cookie) consent when the touch was recorded.',
+  })
+  @IsOptional()
+  @IsIn(AD_CONSENT_VALUES)
+  ad_consent?: AdConsent;
 
   @ApiPropertyOptional({ description: 'Host of the referring page, without path or query.', maxLength: MAX_TOUCH_FIELD })
   @IsOptional()
