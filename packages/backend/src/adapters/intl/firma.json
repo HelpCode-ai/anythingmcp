@@ -1,0 +1,486 @@
+{
+  "slug": "firma",
+  "name": "Firma.dev",
+  "description": "Firma.dev e-signature from any AI agent: templates, signing requests from a template, sending and reminders, recipient status, audit trail and signed PDFs. 13 tools, API-key auth, with free test keys.",
+  "instructions": "This connector drives **Firma.dev** (api.firma.dev), a developer-first e-signature API: templates, signing requests (envelopes), their recipients, audit trail and signed documents. 13 tools.\n\n**Setup**\n1. Sign up at https://firma.dev (free, no card) and open your workspace in the dashboard.\n2. Copy an API key into `FIRMA_API_KEY`. Every workspace has two: the **test** key creates watermarked test requests and consumes **no credits**, the **live** key sends real, legally binding requests and consumes one credit per envelope (about €0.049). Start with the test key.\n3. The key is sent as the `Authorization` header, without a Bearer prefix. It is stored encrypted.\n\nA workspace key only sees that workspace's templates and requests. The account's main key (protected workspace) sees the company account too.\n\n**The usual flow: a document from a template**\n1. `firma_list_templates` (filter by `name`) and `firma_get_template` to find the template.\n2. `firma_list_template_recipients` for its recipient slots: each has an `id` (use it as `template_user_id`), a `designation` (Signer, Approver, CC) and an `order`.\n3. `firma_create_signing_request_from_template` with the real people for those slots. This creates a **draft**: nothing is emailed and no credit is used.\n4. Show the user the draft (name, recipients, emails) and ask for confirmation. Then `firma_send_signing_request`: this emails every signer and, on a live key, consumes one credit. `firma_get_company` shows the remaining `credits`.\n5. Track it with `firma_get_signing_request` (status flags and timestamps), `firma_list_signing_request_recipients` (who signed, who declined and why, who is still missing fields) and `firma_get_signing_request_audit`.\n6. When it is finished, `firma_get_signed_document_url` returns a short-lived download URL for the signed PDF.\n\n**Rules**\n- Never send, resend or cancel without the user's explicit go-ahead: these email real people.\n- `firma_resend_signing_request` only reaches recipients who are eligible to sign now (with a signing order, only the current step) and never people who already signed.\n- `firma_cancel_signing_request` works only on sent requests that are not finished or cancelled; set `notify_signers` to tell them.\n- Status values for filtering: `not_sent`, `in_progress`, `finished`, `cancelled`, `declined`, `expired` (comma-separated for several).\n- Dates are ISO 8601. Lists are paginated: `pagination.total_pages` tells you whether to ask for the next `page`.\n\n**Errors**: 401 `INVALID_API_KEY` = wrong or revoked key; 402 or a credits message = the account needs credits (or use the test key); 429 = rate limit (200 reads and 120 writes per minute per key), wait for `Retry-After`.",
+  "region": "intl",
+  "category": "e-signature",
+  "icon": "firma",
+  "docsUrl": "https://docs.firma.dev",
+  "requiredEnvVars": [
+    "FIRMA_API_KEY"
+  ],
+  "connector": {
+    "name": "Firma.dev",
+    "type": "REST",
+    "baseUrl": "https://api.firma.dev/functions/v1/signing-request-api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{FIRMA_API_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "firma_get_company",
+      "description": "The Firma.dev company account behind the key: name, owner, language and the remaining envelope credits. Use it before sending to check credits. Needs the account's main key; a workspace key may get 403.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firma_list_templates",
+      "description": "List the workspace's templates (reusable documents with recipient slots and fields), newest first unless sorted otherwise. Filter by name to find the one to send.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Part of the template name, case-insensitive."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Items per page (default 20)."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "name",
+              "created_on",
+              "last_changed_on"
+            ],
+            "description": "Field to sort by."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates",
+        "queryParams": {
+          "name": "$name",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firma_get_template",
+      "description": "One template in full: its settings, document, fields and reminders, as it would be copied into a signing request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "The template id, as returned by the list tools."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates/{template_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firma_list_template_recipients",
+      "description": "The recipient slots of a template: id (pass it as template_user_id when creating a signing request), designation (Signer, Approver, CC), signing order and any preset name or email. Call it before firma_create_signing_request_from_template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "The template id, as returned by the list tools."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates/{template_id}/users"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firma_list_signing_requests",
+      "description": "List signing requests (envelopes) with their status and dates, filtered by status, name, signer or creation date. Returns a trimmed view; use firma_get_signing_request for one request in full.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "not_sent, in_progress, finished, cancelled, declined or expired; comma-separate several, e.g. 'in_progress,declined'."
+          },
+          "name": {
+            "type": "string",
+            "description": "Part of the request name, case-insensitive."
+          },
+          "signer_email": {
+            "type": "string",
+            "description": "Exact email of a signer."
+          },
+          "signer_name": {
+            "type": "string",
+            "description": "Part of a signer's name."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "ISO 8601 date or timestamp."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "ISO 8601 date or timestamp."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Items per page (default 20)."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "name",
+              "created_on",
+              "expiration_hours",
+              "sent_on",
+              "finished_on"
+            ],
+            "description": "Field to sort by."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/signing-requests",
+        "queryParams": {
+          "status": "$status",
+          "name": "$name",
+          "signer_email": "$signer_email",
+          "signer_name": "$signer_name",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{results: results[].{id: id, name: name, status: status, template_id: template_id, credit_cost: credit_cost, created_date: created_date, sent_date: sent_date, finished_date: finished_date, cancelled_date: cancelled_date, declined_date: declined_date, expires_at: expires_at, recipients: recipients[].{name: name, email: email, designation: designation, finished_on: finished_on, declined_on: declined_on}}, pagination: pagination}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firma_get_signing_request",
+      "description": "One signing request in full: status flags (sent, finished, cancelled, declined, expired), timestamps, expiry, credit cost and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signing_request_id": {
+            "type": "string",
+            "description": "The signing request id, as returned by the list tools."
+          }
+        },
+        "required": [
+          "signing_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/signing-requests/{signing_request_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firma_list_signing_request_recipients",
+      "description": "The recipients of a signing request with where each one stands: finished_on (signed), declined_on and decline_reason, signing order, and missing_fields / ready_to_send before sending. Use it to answer 'who still has to sign'.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signing_request_id": {
+            "type": "string",
+            "description": "The signing request id, as returned by the list tools."
+          }
+        },
+        "required": [
+          "signing_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/signing-requests/{signing_request_id}/users"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firma_get_signing_request_audit",
+      "description": "The audit trail of a signing request in chronological order: created, edited, sent and cancelled by the sender; viewed, signed, declined and downloaded by each signer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signing_request_id": {
+            "type": "string",
+            "description": "The signing request id, as returned by the list tools."
+          }
+        },
+        "required": [
+          "signing_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/signing-requests/{signing_request_id}/audit"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firma_get_signed_document_url",
+      "description": "A short-lived download URL for the signed PDF of a finished signing request (or the partially signed PDF when partial download is enabled). Give the user the URL; it expires at expires_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signing_request_id": {
+            "type": "string",
+            "description": "The signing request id, as returned by the list tools."
+          }
+        },
+        "required": [
+          "signing_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/signing-requests/{signing_request_id}/download"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "firma_create_signing_request_from_template",
+      "description": "Create a DRAFT signing request from a template, with the real recipients filled into the template's slots. Nothing is emailed and no credit is used until firma_send_signing_request. Get the slot ids with firma_list_template_recipients.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "The template id, as returned by the list tools."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the signing request, e.g. 'NDA - Acme GmbH'. Defaults to the template's name."
+          },
+          "recipients": {
+            "type": "array",
+            "description": "One entry per template slot you fill: {\"template_user_id\": \"<slot id>\", \"first_name\": \"Ada\", \"last_name\": \"Lovelace\", \"email\": \"ada@example.com\", \"designation\": \"Signer\"}. designation is Signer, Approver or CC; first_name, email and designation are required. Omit to keep the template's own recipients.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "expiration_hours": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Hours until the request expires once sent (default 168 = 7 days)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description shown to recipients."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/signing-requests",
+        "bodyMapping": {
+          "template_id": "$template_id",
+          "name": "$name",
+          "recipients": "$recipients",
+          "expiration_hours": "$expiration_hours",
+          "description": "$description"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "firma_send_signing_request",
+      "description": "Send a draft signing request: every signer gets the signing email. On a live key this consumes one credit and cannot be undone (only cancelled). Ask the user to confirm the recipients first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signing_request_id": {
+            "type": "string",
+            "description": "The signing request id, as returned by the list tools."
+          }
+        },
+        "required": [
+          "signing_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/signing-requests/{signing_request_id}/send"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "firma_resend_signing_request",
+      "description": "Email the signing link again to recipients who can sign now and have not signed yet, optionally with a short message. Recipient ids come from firma_list_signing_request_recipients.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signing_request_id": {
+            "type": "string",
+            "description": "The signing request id, as returned by the list tools."
+          },
+          "recipient_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the recipients to remind."
+          },
+          "custom_message": {
+            "type": "string",
+            "description": "Optional message added to the reminder email."
+          }
+        },
+        "required": [
+          "signing_request_id",
+          "recipient_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/signing-requests/{signing_request_id}/resend",
+        "bodyMapping": {
+          "recipient_ids": "$recipient_ids",
+          "custom_message": "$custom_message"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "firma_cancel_signing_request",
+      "description": "Cancel a sent signing request that is not finished yet; signers can no longer sign it. Only with the user's explicit go-ahead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signing_request_id": {
+            "type": "string",
+            "description": "The signing request id, as returned by the list tools."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional reason, shown to signers when they are notified."
+          },
+          "notify_signers": {
+            "type": "boolean",
+            "description": "Email the signers about the cancellation."
+          }
+        },
+        "required": [
+          "signing_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/signing-requests/{signing_request_id}/cancel",
+        "bodyMapping": {
+          "reason": "$reason",
+          "notify_signers": "$notify_signers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ],
+  "probe": {
+    "tool": "firma_list_templates",
+    "params": {
+      "page_size": 1
+    }
+  }
+}

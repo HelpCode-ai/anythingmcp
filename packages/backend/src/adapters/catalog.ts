@@ -108,6 +108,7 @@ import * as etsy from './intl/etsy.json';
 import * as fathom from './intl/fathom.json';
 import * as fhir from './intl/fhir.json';
 import * as fillout from './intl/fillout.json';
+import * as firma from './intl/firma.json';
 import * as flutterwave from './intl/flutterwave.json';
 import * as folk from './intl/folk.json';
 import * as freshbooks from './intl/freshbooks.json';
@@ -530,6 +531,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   fathom as unknown as AdapterDefinition,
   fhir as unknown as AdapterDefinition,
   fillout as unknown as AdapterDefinition,
+  firma as unknown as AdapterDefinition,
   flutterwave as unknown as AdapterDefinition,
   folk as unknown as AdapterDefinition,
   freshbooks as unknown as AdapterDefinition,

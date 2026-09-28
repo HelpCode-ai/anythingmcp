@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。264 のコネクター、うち 21 は API キー不要。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。265 のコネクター、うち 21 は API キー不要。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>REST/OpenAPI、SOAP、GraphQL、SQL のあらゆる API を、Claude、ChatGPT、Copilot 用の MCP ツールに変換します。</strong><br/>
-  コード不要のセルフホスト型 MCP サーバー兼ゲートウェイです。SAP Business One、Odoo、Xentral、weclapp、Shopware、WooCommerce、Amazon Seller、Kaufland など、ERP や E コマースを含む 264 種類の既製アダプターを用意しています。
+  コード不要のセルフホスト型 MCP サーバー兼ゲートウェイです。SAP Business One、Odoo、Xentral、weclapp、Shopware、WooCommerce、Amazon Seller、Kaufland など、ERP や E コマースを含む 265 種類の既製アダプターを用意しています。
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ docker compose up -d   # → http://localhost:3000
 
 この文書で繰り返し使う 3 つの用語は、それぞれ異なるものを指します。
 
-- **アダプター（adapter）**は、このリポジトリに含まれる 264 個の JSON 定義のいずれかです。SAP Business One、Odoo、weclapp、Xentral、Shopware、WooCommerce、Amazon Seller、DHL などがあります。そのうち 21 個は API キーを一切必要とせず、それ以外はインポート時に認証情報を設定します。
+- **アダプター（adapter）**は、このリポジトリに含まれる 265 個の JSON 定義のいずれかです。SAP Business One、Odoo、weclapp、Xentral、Shopware、WooCommerce、Amazon Seller、DHL などがあります。そのうち 21 個は API キーを一切必要とせず、それ以外はインポート時に認証情報を設定します。
 - **コネクター（connector）**は、アダプター、または独自の OpenAPI 仕様・Postman コレクション・WSDL・GraphQL エンドポイント・データベースを、ワークスペース内で設定したものです。接続先を指定すれば、MCP サーバーを書くことなく数分で設定できます。
 - **MCP サーバー**は、Claude に渡す URL です。そのサーバーに割り当てたコネクターだけを公開します。
 
@@ -334,7 +334,7 @@ AI クライアントは MCP を使いますが、業務システムは REST、S
 
 ## アダプターカタログ
 
-264 個のアダプターで、2,400 以上のツールを公開できます。**21 個は API キーが不要**です。それ以外はインポート時に認証情報を設定すれば、すぐにツールを利用できます。各アダプターには [anythingmcp.com/guides](https://anythingmcp.com/guides) で 7 言語のセットアップガイドを用意しています。
+265 個のアダプターで、2,400 以上のツールを公開できます。**21 個は API キーが不要**です。それ以外はインポート時に認証情報を設定すれば、すぐにツールを利用できます。各アダプターには [anythingmcp.com/guides](https://anythingmcp.com/guides) で 7 言語のセットアップガイドを用意しています。
 
 | カテゴリー | 例 |
 |---|---|
