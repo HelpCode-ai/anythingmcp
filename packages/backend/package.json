@@ -37,7 +37,7 @@
     "@nestjs/platform-express": "^11.2.6",
     "@nestjs/swagger": "^11.4.7",
     "@nestjs/terminus": "^11.0.0",
-    "@nestjs/throttler": "^6.7.0",
+    "@nestjs/throttler": "^6.7.1",
     "@opentelemetry/auto-instrumentations-node": "^0.80.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
     "@opentelemetry/resources": "^2.7.1",
