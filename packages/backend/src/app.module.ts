@@ -39,6 +39,7 @@ import { EmailVerifiedGuard } from './auth/email-verified.guard';
 import { AdaptersModule } from './adapters/adapters.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { CloudModule } from './ee/cloud/cloud.module';
+import { LicensingModule } from './ee/licensing/licensing.module';
 import { getRequiredSecret } from './common/secrets.util';
 import { AppLoggerModule } from './common/logger.module';
 import { SentryContextInterceptor } from './common/sentry-context.interceptor';
@@ -148,6 +149,7 @@ if (useOAuth) {
     KgModule,
     McpServersModule,
     LicenseModule,
+    LicensingModule,
 
     // Cloud-specific modules (conditionally loaded)
     ...cloudImports,

@@ -7,6 +7,7 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { Footer } from '@/components/footer';
 import { TrialBanner } from '@/components/trial-banner';
 import { UsageBanner } from '@/components/usage-banner';
+import { EditionBanner } from '@/components/edition-banner';
 import { cn } from '@/lib/utils';
 
 interface AppShellProps {
@@ -89,6 +90,7 @@ export function AppShell({
         <div className="flex-shrink-0">
           <TrialBanner />
           <UsageBanner />
+          <EditionBanner />
         </div>
         {/* Content header */}
         {/* Phones get two rows: the title owns the first one — so it is never

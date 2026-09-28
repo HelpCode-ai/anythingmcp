@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import axios from 'axios';
 import * as crypto from 'crypto';
 import { PrismaService } from '../common/prisma.service';
@@ -43,9 +43,10 @@ export interface RemoteVerifyResponse {
 }
 
 @Injectable()
-export class LicenseService implements OnModuleInit {
+export class LicenseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LicenseService.name);
   private readonly apiBase = LICENSE_API_URL;
+  private reverifyTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -56,6 +57,17 @@ export class LicenseService implements OnModuleInit {
   async onModuleInit() {
     await this.ensureInstanceId();
     await this.verifyOnStartup();
+    // A self-hosted instance can run for months without a restart; without
+    // this, a cancelled or renewed licence would only be noticed at the next
+    // one. verifyOnStartup skips keys verified in the last 24 hours.
+    if (!this.deployment.isCloud()) {
+      this.reverifyTimer = setInterval(() => void this.verifyOnStartup(), 6 * 60 * 60 * 1000);
+      this.reverifyTimer.unref();
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.reverifyTimer) clearInterval(this.reverifyTimer);
   }
 
   // ── Instance ID ────────────────────────────────────────────────────────────

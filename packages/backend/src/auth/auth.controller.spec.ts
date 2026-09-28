@@ -125,6 +125,7 @@ function makeController({
     ssoEnforcement as any,
     // The real service, so the test sees what would actually be stored.
     new ProductEventService(prisma as any),
+    { assertSeatAvailable: jest.fn(async () => undefined), getState: jest.fn(async () => ({ trialAvailable: true })) } as any, // edition
   );
   return { controller, users, sent, events, authService, usersService, emailService, prisma };
 }

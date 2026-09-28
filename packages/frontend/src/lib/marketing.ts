@@ -16,12 +16,18 @@ export function getMarketingUrl(): string {
  * the caller may pass the user's own Google Ads click id (see usePricingUrl),
  * which the pricing page puts into the checkout so the purchase can be
  * reported to Google Ads; anything that is not a well-formed id is left out.
+ * A self-hosted instance opens the page on its own plans (`hosting=self-hosted`).
  */
-export function buildPricingUrl(returnPath = '/settings/license/activate', clickIds?: ClickIds | null): string {
+export function buildPricingUrl(
+  returnPath = '/settings/license/activate',
+  clickIds?: ClickIds | null,
+  selfHosted = false,
+): string {
   const base = `${getMarketingUrl()}/pricing`;
-  if (typeof window === 'undefined') return base;
+  if (typeof window === 'undefined') return selfHosted ? `${base}?hosting=self-hosted` : base;
   const returnUrl = `${window.location.origin}${returnPath}`;
   let url = `${base}?return_url=${encodeURIComponent(returnUrl)}`;
+  if (selfHosted) url += '&hosting=self-hosted';
   for (const key of CLICK_ID_KEYS) {
     const id = cleanClickId(clickIds?.[key]);
     if (id) url += `&${key}=${id}`;

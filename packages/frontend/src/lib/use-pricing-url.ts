@@ -48,5 +48,5 @@ export function usePricingUrl(returnPath?: string): string {
   }, [isCloud, token]);
 
   const clickIds = isCloud && token && found?.token === token ? found.ids : null;
-  return buildPricingUrl(returnPath, clickIds);
+  return buildPricingUrl(returnPath, clickIds, deploymentModeLoaded && !isCloud);
 }

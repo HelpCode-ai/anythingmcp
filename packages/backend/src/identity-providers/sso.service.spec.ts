@@ -15,6 +15,7 @@ describe('SsoService', () => {
   let service: any;
   let prisma: any;
   let securityEvents: { log: jest.Mock };
+  let edition: { hasBusiness: jest.Mock; seatAvailable: jest.Mock };
 
   const provider = {
     id: 'p1',
@@ -44,6 +45,10 @@ describe('SsoService', () => {
       $transaction: jest.fn((fn: any) => fn(prisma)),
     };
     securityEvents = { log: jest.fn() };
+    edition = {
+      hasBusiness: jest.fn(async () => true),
+      seatAvailable: jest.fn(async () => ({ ok: true, limit: null })),
+    };
     service = new SsoService(
       prisma,
       { get: () => 'http://localhost:3000' } as any,
@@ -52,6 +57,7 @@ describe('SsoService', () => {
       { generateToken: jest.fn(() => 'jwt') } as any,
       securityEvents as any,
       { syncOnLogin: jest.fn(async () => ({ applied: false, reason: 'disabled' })) } as any,
+      edition as any,
     );
   });
 
@@ -163,6 +169,42 @@ describe('SsoService', () => {
       expect(created.organizationId).toBe('org-1');
       expect(prisma.organizationMember.create).toHaveBeenCalled();
       expect(prisma.userIdentity.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('account creation and the edition', () => {
+    const resolveJit = () =>
+      service.resolveUser(
+        { ...provider, jitProvisioning: true },
+        'a-stable-object-id',
+        goodClaims.tid,
+        goodClaims,
+        {},
+      );
+
+    beforeEach(() => {
+      prisma.userIdentity.findUnique.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({ id: 'new-user' });
+    });
+
+    it('does not create an account without Business', async () => {
+      edition.hasBusiness.mockResolvedValue(false);
+      await expect(resolveJit()).rejects.toThrow(expect.objectContaining({ reason: 'edition_required' }));
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('does not create an account when the instance has no free seat', async () => {
+      edition.seatAvailable.mockResolvedValue({ ok: false, limit: 3 });
+      await expect(resolveJit()).rejects.toThrow(expect.objectContaining({ reason: 'seat_limit' }));
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('still signs in a known identity without Business', async () => {
+      edition.hasBusiness.mockResolvedValue(false);
+      prisma.userIdentity.findUnique.mockResolvedValue({ id: 'i1', userId: 'u1' });
+      expect(await resolveJit()).toBe('u1');
+      expect(edition.hasBusiness).not.toHaveBeenCalled();
     });
   });
 

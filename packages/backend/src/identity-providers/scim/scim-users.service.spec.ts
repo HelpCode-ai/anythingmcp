@@ -170,6 +170,19 @@ describe('ScimUsersService', () => {
       expect(eventNames()).toEqual(['SCIM_USER_REACTIVATED']);
     });
 
+    it('active:true answers 403 when the instance has no free seat, and changes nothing', async () => {
+      lifecycle.reactivateInOrganization.mockResolvedValueOnce({ status: 'seat_limit', limit: 3 });
+      prisma.userIdentity.findUnique.mockResolvedValueOnce(
+        identity({}, { memberships: [{ organizationId: ORG, deactivatedAt: new Date() }] }),
+      );
+      const err = await service
+        .patch(provider, 'u1', patch([{ op: 'replace', value: { active: true } }]), ctx)
+        .catch((e) => e);
+      expect(err.getStatus()).toBe(403);
+      expect(roleSync.syncFromScim).not.toHaveBeenCalled();
+      expect(eventNames()).toEqual([]);
+    });
+
     // The membership is the workspace's one way back in; Entra is told loudly.
     it('surfaces the last-admin outcome as a 409 after revoking sessions and keys', async () => {
       lifecycle.deactivateInOrganization.mockResolvedValue({ status: 'last_admin_retained', keysDeactivated: 2 });

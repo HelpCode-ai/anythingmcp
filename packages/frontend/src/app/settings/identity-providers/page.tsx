@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { useEdition } from '@/lib/use-edition';
+import { BusinessNotice } from '@/components/business-notice';
 import {
   identityProviders,
   roles,
@@ -132,6 +134,9 @@ export default function IdentityProvidersPage() {
   // Identity providers are a self-hosted feature: in cloud the API answers
   // 404, so do not even ask — render the explanation instead.
   const isCloud = deploymentMode === 'cloud';
+  const { edition } = useEdition();
+  // Existing providers stay listed and deletable; setting one up needs Business.
+  const locked = edition !== null && !edition.business;
 
   const [providers, setProviders] = useState<IdentityProvider[]>([]);
   const [mcpRoles, setMcpRoles] = useState<{ id: string; name: string }[]>([]);
@@ -373,6 +378,17 @@ export default function IdentityProvidersPage() {
 
   return (
     <div className="space-y-6">
+      {locked && (
+        <BusinessNotice
+          edition={edition!}
+          title="Single sign-on and SCIM are part of AnythingMCP Business"
+          body={
+            providers.length > 0
+              ? 'The providers below keep signing members in. Adding or changing a provider, turning on SCIM or requiring single sign-on needs Business.'
+              : 'Connect Entra ID, Google, Okta or any OIDC provider, provision users with SCIM and map directory groups to roles.'
+          }
+        />
+      )}
       {loading ? (
         <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
       ) : (
@@ -386,7 +402,7 @@ export default function IdentityProvidersPage() {
                 for this workspace.
               </p>
             </div>
-            <Button size="sm" onClick={showForm ? () => setShowForm(false) : openCreate}>
+            <Button size="sm" onClick={showForm ? () => setShowForm(false) : openCreate} disabled={locked && !showForm}>
               {showForm ? 'Cancel' : 'Add provider'}
             </Button>
           </div>

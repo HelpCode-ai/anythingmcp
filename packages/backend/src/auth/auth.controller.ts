@@ -39,6 +39,7 @@ import { RecoveryCodesService } from './recovery-codes.service';
 import { SsoEnforcementService } from './sso-enforcement.service';
 import { Roles, RolesGuard } from './roles.guard';
 import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
+import { EditionService } from '../ee/licensing/edition.service';
 import { SignupAttributionDto } from './signup-attribution.dto';
 
 /**
@@ -223,6 +224,7 @@ export class AuthController {
     private readonly recoveryCodes: RecoveryCodesService,
     private readonly ssoEnforcement: SsoEnforcementService,
     private readonly productEvents: ProductEventService,
+    private readonly edition: EditionService,
   ) {}
 
   private getFrontendUrl(_req?: any): string {
@@ -398,7 +400,10 @@ export class AuthController {
     let needsLicenseSetup = false;
     if (user.role === 'ADMIN') {
       const licenseKey = await this.siteSettings.get('license_key');
-      if (!licenseKey) {
+      // Self-hosted: once the Business trial has been started the choice has
+      // been made, and the chooser would only offer a trial that cannot start.
+      const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
+      if (!licenseKey && (isCloud || (await this.edition.getState()).trialAvailable)) {
         needsLicenseSetup = true;
       }
     }
@@ -445,6 +450,7 @@ export class AuthController {
     if (existing) {
       throw new ConflictException('Email already registered');
     }
+    if (userCount > 0) await this.edition.assertSeatAvailable();
 
     // Self-hosted: first user is ADMIN of a new organization, later ones
     // join the existing (first) organization as EDITOR.
@@ -721,6 +727,9 @@ export class AuthController {
       }
       // User exists but not in this org — allow invitation for multi-org membership
     }
+    // Refused here too, not only on acceptance, so the admin learns it before
+    // the invitee does.
+    await this.edition.assertSeatAvailable(existing?.id);
 
     // Reuse an existing pending invitation instead of rejecting: throwing a
     // 409 here left admins stuck with no way to get the link after a failed
@@ -852,11 +861,13 @@ export class AuthController {
             : 'You are already a member of this organization',
         );
       }
+      await this.edition.assertSeatAvailable(existing.id);
       await this.organizationsService.addMember(existing.id, invite.organizationId, invite.role);
       // Switch their active org to the newly joined one
       user = await this.organizationsService.switchOrg(existing.id, invite.organizationId);
     } else {
       // New user — create account and join the organization
+      await this.edition.assertSeatAvailable();
       const passwordHash = await this.authService.hashPassword(dto.password);
       user = await this.usersService.create({
         email: invite.email,

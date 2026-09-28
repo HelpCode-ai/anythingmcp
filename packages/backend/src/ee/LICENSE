@@ -13,13 +13,15 @@ Without a Commercial Agreement you may:
   1. View and audit the EE Code.
   2. Modify the EE Code solely for the purpose of contributing changes
      back to helpcode.ai GmbH.
-  3. Build and run the software with the EE Code disabled (the default
-     for self-hosted deployments — EE modules are only loaded when
-     DEPLOYMENT_MODE=cloud or an equivalent operator flag is set).
+  3. Build and run the software with the EE Code's commercial
+     functionality inactive, which is the default for self-hosted
+     deployments without a licence key.
 
 Without a Commercial Agreement you may NOT:
 
-  1. Run the EE Code in production.
+  1. Use the EE Code's commercial functionality in production without
+     a valid licence key or Commercial Agreement, other than during the
+     built-in trial or the transition period of an upgraded instance.
   2. Redistribute the EE Code, modified or unmodified, as part of any
      product or service.
   3. Remove, bypass, or alter any license-checking or feature-gating

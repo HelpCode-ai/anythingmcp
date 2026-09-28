@@ -33,8 +33,8 @@ function isExcluded(pathname: string | null): boolean {
  *
  * Gate precedence (matches LicenseWall + login multi-step flows):
  *  1. Email must be verified — unverified users see verify prompts.
- *  2. License must be active (cloud has a plan, or self-host community
- *     personal-use already chosen). LicenseWall reads the same source.
+ *  2. Cloud: the license must be active. LicenseWall reads the same
+ *     source. Self-hosted is never blocked here.
  *  3. Wizard not yet completed/skipped (onboardingCompletedAt === null).
  *  4. User has zero connectors — once they own at least one, the wizard
  *     is moot and we auto-stamp completion (so they don't re-see it).
@@ -82,7 +82,7 @@ export function OnboardingRedirect() {
         if (me?.emailVerified === false) return;
 
         // License gate — mirror LicenseWall's logic exactly so the two
-        // never disagree. Self-host with no plan = community tier OK.
+        // never disagree. It walls Cloud only; self-hosted runs Community.
         const isCloud = deploymentMode === 'cloud';
         const noPlan = !lic.plan;
         const trialEnded =
@@ -90,7 +90,7 @@ export function OnboardingRedirect() {
           typeof lic.trialDaysLeft === 'number' &&
           lic.trialDaysLeft <= 0;
         const expired = lic.status === 'expired' || lic.status === 'revoked';
-        const licenseBlocking = (isCloud && noPlan) || trialEnded || expired;
+        const licenseBlocking = isCloud && (noPlan || trialEnded || expired);
         if (licenseBlocking) return;
 
         const hasConnector = (connList?.length ?? 0) > 0;

@@ -303,6 +303,20 @@ function LoginForm() {
     }
   };
 
+  // A company starts on the Business trial right away: it runs on this
+  // instance, with no payment details and nothing sent anywhere.
+  const handleCompanyUse = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await license.startBusinessTrial(authToken);
+      router.push(redirectTo);
+    } catch (err: any) {
+      setError(err.message || 'Could not start the trial');
+      setLoading(false);
+    }
+  };
+
   const handleCommercialChoice = () => {
     setSetupStep('license-key');
   };
@@ -511,8 +525,7 @@ function LoginForm() {
             How will you use Anything<span className="text-[var(--brand)]">MCP</span>?
           </h2>
           <p className="text-sm text-[var(--text-2)] mb-6 text-center">
-            AnythingMCP is open source under AGPL-3.0 and nothing here is locked
-            — this only records which licence this instance runs under.
+            You can change this later under Settings → License.
           </p>
 
           {error && <div className={alertDanger}>{error}</div>}
@@ -523,27 +536,33 @@ function LoginForm() {
               disabled={loading}
               className="w-full border border-[var(--border)] rounded-[9px] p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors disabled:opacity-50"
             >
-              <div className="font-medium text-sm text-[var(--text)]">Open source (AGPL-3.0)</div>
+              <div className="font-medium text-sm text-[var(--text)]">Personal, education or evaluation</div>
               <div className="text-xs text-[var(--text-2)] mt-1">
-                Personal, internal company or evaluation use. We email you a free
+                Community edition, free, for up to 3 users. We email you a
                 community key so you get security and release notices.
               </div>
             </button>
 
             <button
-              onClick={handleCommercialChoice}
+              onClick={handleCompanyUse}
               disabled={loading}
               className="w-full border border-[var(--border)] rounded-[9px] p-4 text-left hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors disabled:opacity-50"
             >
-              <div className="font-medium text-sm text-[var(--text)]">Commercial licence</div>
+              <div className="font-medium text-sm text-[var(--text)]">For a company or team</div>
               <div className="text-xs text-[var(--text-2)] mt-1">
-                Same software, without the AGPL copyleft obligation — for
-                redistributing it or building it into a product you ship.
+                Try Business free for 30 days: more users, single sign-on with
+                Entra ID, Google or Okta, and SCIM. No payment details.
               </div>
             </button>
           </div>
 
-          <div className="mt-4 text-center">
+          <div className="mt-4 flex justify-between text-sm">
+            <button
+              onClick={handleCommercialChoice}
+              className="text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
+            >
+              I have a license key
+            </button>
             <button
               onClick={handleSkip}
               className="text-sm text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
@@ -634,11 +653,9 @@ function LoginForm() {
           </div>
 
           <p className="text-sm text-[var(--text-2)] mb-4">
-            A commercial licence only matters if the AGPL copyleft obligation is
-            a problem for you — running AnythingMCP inside your own company never
-            needs one. Details and keys at{' '}
+            Business and Enterprise license keys are available at{' '}
             <a
-              href={buildPricingUrl()}
+              href={buildPricingUrl(undefined, null, true)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-[var(--brand)] hover:underline font-medium"

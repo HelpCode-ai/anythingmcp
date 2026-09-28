@@ -17,6 +17,7 @@ describe('UserLifecycleService', () => {
   let organizations: any;
   let events: any[];
   let service: UserLifecycleService;
+  let edition: { seatAvailable: jest.Mock };
 
   const admin = { reason: 'admin' as const, actor: { type: 'USER' as const, userId: 'admin-1' } };
   const scim = { reason: 'scim' as const, actor: { type: 'SYSTEM' as const }, providerId: 'idp-1' };
@@ -46,10 +47,12 @@ describe('UserLifecycleService', () => {
       $transaction: jest.fn((fn: any) => fn(prisma)),
     };
     organizations = { assertNotLastAdmin: jest.fn(async () => undefined) };
+    edition = { seatAvailable: jest.fn(async () => ({ ok: true, limit: null })) };
     service = new UserLifecycleService(
       prisma,
       organizations,
       new SecurityEventService(prisma as unknown as PrismaService),
+      edition as any,
     );
   });
 
@@ -200,6 +203,16 @@ describe('UserLifecycleService', () => {
       const updates = prisma.user.update.mock.calls.map((c: any[]) => c[0].data);
       expect(updates.some((d: any) => 'sessionsValidFrom' in d)).toBe(false);
       expect(eventNames()).toEqual(['USER_REACTIVATED']);
+    });
+
+    // Reactivating is adding a person back: it takes a seat like an invitation.
+    it('refuses without writes when the instance has no free seat', async () => {
+      prisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: new Date() });
+      edition.seatAvailable.mockResolvedValueOnce({ ok: false, limit: 3 });
+      expect(await service.reactivateInOrganization(USER, ORG, scim)).toEqual({ status: 'seat_limit', limit: 3 });
+      expect(edition.seatAvailable).toHaveBeenCalledWith(USER);
+      expect(prisma.organizationMember.update).not.toHaveBeenCalled();
+      expect(eventNames()).toEqual([]);
     });
 
     it('does not touch the active org when the user already has one', async () => {

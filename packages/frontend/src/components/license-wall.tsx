@@ -47,18 +47,17 @@ export function LicenseWall() {
     // doesn't keep covering the login page. Without this reset the modal
     // stays mounted after Logout because we'd only ever *set* `reason`,
     // never unset it.
-    if (!token) {
+    // Self-hosted is never walled: without a valid licence it simply runs
+    // Community (see useEdition), including when a key expires or is revoked.
+    if (!token || !isCloud) {
       setReason(null);
       return;
     }
 
     license.getStatus(token).then((status) => {
-      // Cloud: no license at all means the org is not allowed to use the
-      // product. Self-hosted: a missing license means "running on the
-      // community tier", which is permitted.
+      // No license at all means the org is not allowed to use the product.
       if (!status.plan) {
-        if (isCloud) setReason('no-license');
-        else setReason(null);
+        setReason('no-license');
         return;
       }
       // Block when trial is expired

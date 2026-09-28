@@ -10,7 +10,7 @@
 
 AnythingMCP is licensed under the **GNU Affero General Public License v3** (AGPL-3.0-only), an OSI-approved **open-source** license. It is the same license used by Twenty, Cal.com, Grafana, Plausible and Mastodon.
 
-The only exception is code under `ee/` directories (e.g. `packages/backend/src/ee/`), which contains operator-only functionality for the AnythingMCP Cloud offering and is licensed under the [AnythingMCP Commercial License](../packages/backend/src/ee/LICENSE). EE code is inert in self-hosted deployments — you don't need it.
+The only exception is code under `ee/` directories (e.g. `packages/backend/src/ee/`), which contains the AnythingMCP Cloud operation and the licensing of the Business edition, and is licensed under the [AnythingMCP Commercial License](../packages/backend/src/ee/LICENSE).
 
 ---
 
@@ -50,13 +50,18 @@ You can *use* AnythingMCP from a proprietary product over its API (your product 
 
 ## What is the `ee/` directory?
 
-Code under `ee/` directories powers the AnythingMCP Cloud operation (e.g. onboarding lifecycle emails). It is:
+Code under `ee/` directories powers the AnythingMCP Cloud operation (e.g. onboarding lifecycle emails) and decides which edition a self-hosted instance runs. It is:
 
 - **Visible** — you can read and audit it like the rest of the repo
 - **Not AGPL** — it's under the AnythingMCP Commercial License
-- **Not needed for self-hosting** — EE modules only load when `DEPLOYMENT_MODE=cloud`
 
 This split (AGPL core + commercial `ee/`) is the same model used by Cal.com and GitLab.
+
+---
+
+## Community and Business
+
+A self-hosted instance runs **Community** unless a licence key is activated. Community includes up to 3 active users. **Business** adds more users, single sign-on (Entra ID, Google, Okta, OIDC) and SCIM provisioning; administrators can try it for 30 days under **Settings → License**. See [anythingmcp.com/pricing](https://anythingmcp.com/pricing).
 
 ---
 

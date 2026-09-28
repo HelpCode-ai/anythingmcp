@@ -9,6 +9,8 @@ import { AppSelect } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
+import { useEdition } from '@/lib/use-edition';
+import { BusinessNotice } from '@/components/business-notice';
 
 const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
 
@@ -23,6 +25,9 @@ export default function SettingsUsersPage() {
   const [roleList, setRoleList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
+  const { edition, reload: reloadEdition } = useEdition();
+  const seatsFull =
+    edition !== null && edition.seatLimit !== null && edition.seatsUsed >= edition.seatLimit;
 
   // Invite form
   const [showInvite, setShowInvite] = useState(false);
@@ -101,6 +106,7 @@ export default function SettingsUsersPage() {
         prev.map((u) => (u.id === userId ? { ...u, active: true, deactivatedAt: null } : u)),
       );
       setMsg('User reactivated. Revoked MCP keys stay revoked — they can create a new one.');
+      reloadEdition();
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
     }
@@ -138,6 +144,7 @@ export default function SettingsUsersPage() {
       await users.delete(userId, token);
       setUserList((prev) => prev.filter((u) => u.id !== userId));
       setMsg('User deleted');
+      reloadEdition();
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
     }
@@ -247,9 +254,19 @@ export default function SettingsUsersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-[var(--text)]">User Management</h2>
-          <p className="text-sm text-[var(--text-2)]">Manage users and send invitations.</p>
+          <p className="text-sm text-[var(--text-2)]">
+            Manage users and send invitations.
+            {edition && edition.seatLimit !== null && (
+              <>
+                {' '}
+                {edition.seatsUsed <= edition.seatLimit
+                  ? `${edition.seatsUsed} of ${edition.seatLimit} users on this instance.`
+                  : `${edition.seatsUsed} users on this instance, ${edition.seatLimit} included.`}
+              </>
+            )}
+          </p>
         </div>
-        <Button size="sm" onClick={() => setShowInvite(!showInvite)}>
+        <Button size="sm" onClick={() => setShowInvite(!showInvite)} disabled={seatsFull && !showInvite}>
           {showInvite ? 'Cancel' : 'Invite User'}
         </Button>
       </div>
@@ -258,6 +275,21 @@ export default function SettingsUsersPage() {
         <div className="p-3 rounded-[9px] text-sm flex items-center" style={{ background: 'var(--t-info-bg)', color: 'var(--t-info-fg)' }}>
           {msg}
           <button onClick={() => setMsg('')} className="ml-2 underline">dismiss</button>
+        </div>
+      )}
+
+      {seatsFull && !edition!.business && (
+        <BusinessNotice
+          edition={edition!}
+          title={`Community includes ${edition!.seatLimit} users`}
+          body="Everyone here keeps working. To invite more people, move to AnythingMCP Business — it also adds single sign-on and SCIM."
+        />
+      )}
+
+      {seatsFull && edition!.business && (
+        <div className="p-3 rounded-[9px] text-sm" style={{ background: 'var(--t-warn-bg)', color: 'var(--t-warn-fg)' }}>
+          Your license includes {edition!.seatLimit} users. To invite more people, change your plan under{' '}
+          <Link href="/settings/license" className="underline font-medium">Settings → License</Link>.
         </div>
       )}
 

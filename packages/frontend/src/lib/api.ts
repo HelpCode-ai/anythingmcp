@@ -1162,8 +1162,36 @@ export const mcpKeys = {
     request(`/api/mcp-keys/${id}`, { method: 'DELETE', token }),
 };
 
+/** GET /api/license/edition — see packages/backend/src/ee/licensing/edition.service.ts. */
+export interface EditionState {
+  edition: 'cloud' | 'community' | 'business';
+  business: boolean;
+  source: 'license' | 'trial' | 'transition' | null;
+  plan: string | null;
+  seatLimit: number | null;
+  seatsUsed: number;
+  communitySeatLimit: number;
+  trialEndsAt: string | null;
+  trialAvailable: boolean;
+  trialDays: number;
+  transitionUntil: string | null;
+}
+
+/** Error codes the backend attaches to edition refusals. */
+export const EDITION_REQUIRED = 'edition_required';
+export const SEAT_LIMIT = 'seat_limit';
+
+export function editionErrorCode(err: unknown): string | null {
+  const code = err instanceof ApiError ? err.body?.code : null;
+  return code === EDITION_REQUIRED || code === SEAT_LIMIT ? code : null;
+}
+
 // License
 export const license = {
+  getEdition: (token: string) =>
+    request<EditionState>('/api/license/edition', { token }),
+  startBusinessTrial: (token: string) =>
+    request<EditionState>('/api/license/business-trial', { method: 'POST', token }),
   getStatus: (token?: string) =>
     request<{ plan: string | null; status: string; features: any; expiresAt: string | null; lastVerifiedAt: string | null; instanceId: string | null; trialDaysLeft?: number }>('/api/license/status', { token }),
   activateTrial: (token: string) =>

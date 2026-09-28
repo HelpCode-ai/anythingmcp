@@ -20,6 +20,7 @@ import { Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { SelfHostedOnlyGuard } from '../../common/self-hosted-only.guard';
+import { EditionService, seatLimitMessage } from '../../ee/licensing/edition.service';
 import { ScimAuthGuard, ScimProvider } from './scim-auth.guard';
 import { SCIM_CONTENT_TYPE, ScimError, ScimExceptionFilter } from './scim.errors';
 import { parseExcluded, parseFilter, parsePagination } from './scim.parser';
@@ -59,6 +60,7 @@ export class ScimController {
     private readonly users: ScimUsersService,
     private readonly groups: ScimGroupsService,
     private readonly config: ConfigService,
+    private readonly edition: EditionService,
   ) {}
 
   // ── Discovery ─────────────────────────────────────────────────────────────
@@ -114,7 +116,15 @@ export class ScimController {
   @Post('Users')
   @HttpCode(HttpStatus.CREATED)
   @ScimJson()
-  createUser(@Req() req: Request, @Body() body: unknown) {
+  async createUser(@Req() req: Request, @Body() body: unknown) {
+    // Provisioning someone new needs Business and a free seat. Updates,
+    // deactivation and deletion keep working whatever the edition, so a
+    // directory can always take a leaver's access away.
+    if (!(await this.edition.hasBusiness())) {
+      throw new ScimError(403, 'Provisioning new users through SCIM requires AnythingMCP Business.');
+    }
+    const seat = await this.edition.seatAvailable();
+    if (!seat.ok) throw new ScimError(403, seatLimitMessage(seat.limit!));
     return this.users.create(this.provider(req), body, this.ctx(req));
   }
 
@@ -153,7 +163,10 @@ export class ScimController {
   @Post('Groups')
   @HttpCode(HttpStatus.CREATED)
   @ScimJson()
-  createGroup(@Req() req: Request, @Body() body: unknown) {
+  async createGroup(@Req() req: Request, @Body() body: unknown) {
+    if (!(await this.edition.hasBusiness())) {
+      throw new ScimError(403, 'Provisioning new groups through SCIM requires AnythingMCP Business.');
+    }
     return this.groups.create(this.provider(req), body, this.ctx(req));
   }
 
