@@ -17,7 +17,7 @@
  * the caller's business, not a missing credential.
  */
 
-const VAR_PATTERN = /\{\{([^}]+)\}\}/g;
+const VAR_PATTERN = /\{\{\s*([^{}\s]+)\s*\}\}/g;
 
 /** Every `{{VAR}}` name still present anywhere in the value, deduplicated. */
 export function findUnresolvedPlaceholders(value: unknown): string[] {

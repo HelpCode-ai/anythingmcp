@@ -10,7 +10,7 @@
  *   interpolate('{{BASE_URL}}/v1/users', envVars) → 'https://api.example.com/v1/users'
  */
 
-const VAR_PATTERN = /\{\{([^}]+)\}\}/g;
+const VAR_PATTERN = /\{\{\s*([^{}\s]+)\s*\}\}/g;
 
 export interface InterpolateOptions {
   /**

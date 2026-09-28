@@ -107,7 +107,7 @@ export function isSecretValue(value: string): boolean {
  */
 const SECRET_SLOT = /secret|passw|token|key|credential|private|signature|assertion|authorization|cookie|session|jwt|bearer/i;
 const NOT_A_SLOT = /(url|uri|endpoint|path)$/i;
-const VAR_PATTERN = /\{\{([^}]+)\}\}/g;
+const VAR_PATTERN = /\{\{\s*([^{}\s]+)\s*\}\}/g;
 
 function collectSlotVars(node: unknown, key: string, out: Set<string>): void {
   if (typeof node === 'string') {
