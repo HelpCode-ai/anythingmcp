@@ -1164,7 +1164,7 @@ export const mcpKeys = {
 
 /** GET /api/license/edition — see packages/backend/src/ee/licensing/edition.service.ts. */
 export interface EditionState {
-  edition: 'cloud' | 'community' | 'business';
+  edition: 'cloud' | 'community' | 'starter' | 'team' | 'business' | 'enterprise';
   business: boolean;
   source: 'license' | 'trial' | 'transition' | null;
   plan: string | null;

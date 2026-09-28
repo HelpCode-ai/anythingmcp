@@ -64,7 +64,7 @@ describe('EditionService', () => {
         license: { plan: 'business', status: 'active', expiresAt: null, features: { maxUsers: 10 } },
       });
       const s = await service.getState();
-      expect(s).toMatchObject({ edition: 'business', source: 'license', seatLimit: 10, trialAvailable: false });
+      expect(s).toMatchObject({ edition: 'business', business: true, source: 'license', seatLimit: 10, trialAvailable: false });
     });
 
     it('never gives a paid licence fewer users than Community', async () => {
@@ -72,6 +72,34 @@ describe('EditionService', () => {
         license: { plan: 'starter', status: 'active', expiresAt: null, features: { maxUsers: 1 } },
       });
       expect((await service.getState()).seatLimit).toBe(COMMUNITY_SEAT_LIMIT);
+    });
+
+    it('licenses Starter and Team without SSO or SCIM, and still offers the Business trial', async () => {
+      for (const plan of ['starter', 'team']) {
+        const { service } = make({
+          license: { plan, status: 'active', expiresAt: null, features: { maxUsers: 3 } },
+        });
+        expect(await service.getState()).toMatchObject({
+          edition: plan,
+          business: false,
+          source: 'license',
+          seatLimit: COMMUNITY_SEAT_LIMIT,
+          trialAvailable: true,
+        });
+      }
+    });
+
+    it('lifts the user limit of a Starter key during the Business trial', async () => {
+      const { service } = make({
+        license: { plan: 'starter', status: 'active', expiresAt: null, features: { maxUsers: 1 } },
+        settings: { business_trial_ends_at: new Date(Date.now() + DAY).toISOString() },
+      });
+      expect(await service.getState()).toMatchObject({ edition: 'starter', business: true, source: 'trial', seatLimit: null });
+    });
+
+    it('refuses Business capabilities to a Starter key', async () => {
+      const { service } = make({ license: { plan: 'team', status: 'active', expiresAt: null } });
+      await expect(service.assertBusiness('Single sign-on')).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('has no user limit when the licence carries none', async () => {

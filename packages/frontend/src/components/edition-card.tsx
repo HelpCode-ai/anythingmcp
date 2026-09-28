@@ -57,14 +57,12 @@ export function EditionCard({ edition, onChange }: { edition: EditionState; onCh
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-center gap-2 mb-1">
-        <h2 className="text-sm font-semibold text-[var(--text)]">
-          {edition.business ? 'Business' : 'Community'}
-        </h2>
+        <h2 className="text-sm font-semibold text-[var(--text)] capitalize">{edition.edition}</h2>
         {source && <Badge tone={edition.source === 'license' ? 'success' : 'info'}>{source}</Badge>}
       </div>
       <p className="text-sm text-[var(--text-2)]">
         {users}
-        {!edition.business && ` · Community includes up to ${edition.communitySeatLimit} users.`}
+        {edition.edition === 'community' && ` · Community includes up to ${edition.communitySeatLimit} users.`}
       </p>
 
       <div className="mt-4">
@@ -105,7 +103,7 @@ export function EditionCard({ edition, onChange }: { edition: EditionState; onCh
 
       {error && <p className="mt-3 text-sm text-[var(--danger)]">{error}</p>}
 
-      {edition.source !== 'license' && (
+      {!(edition.source === 'license' && edition.business) && (
         <div className="mt-4 pt-4 border-t border-[var(--border)] flex flex-wrap gap-3">
           {edition.trialAvailable && (
             <Button onClick={startTrial} disabled={starting}>

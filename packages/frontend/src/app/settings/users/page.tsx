@@ -278,7 +278,7 @@ export default function SettingsUsersPage() {
         </div>
       )}
 
-      {seatsFull && !edition!.business && (
+      {seatsFull && edition!.edition === 'community' && (
         <BusinessNotice
           edition={edition!}
           title={`Community includes ${edition!.seatLimit} users`}
@@ -286,7 +286,7 @@ export default function SettingsUsersPage() {
         />
       )}
 
-      {seatsFull && edition!.business && (
+      {seatsFull && edition!.edition !== 'community' && (
         <div className="p-3 rounded-[9px] text-sm" style={{ background: 'var(--t-warn-bg)', color: 'var(--t-warn-fg)' }}>
           Your license includes {edition!.seatLimit} users. To invite more people, change your plan under{' '}
           <Link href="/settings/license" className="underline font-medium">Settings → License</Link>.

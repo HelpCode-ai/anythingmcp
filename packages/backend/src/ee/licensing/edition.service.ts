@@ -22,16 +22,18 @@ export const BUSINESS_TRIAL_DAYS = 30;
 export const TRANSITION_DAYS = 60;
 
 const PAID_PLANS = new Set(['starter', 'team', 'business', 'enterprise']);
+/** Paid plans that include single sign-on, SCIM and role sync. */
+const BUSINESS_PLANS = new Set(['business', 'enterprise']);
 const TRIAL_KEY = 'business_trial_ends_at';
 const TRANSITION_KEY = 'business_transition_until';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type Edition = 'cloud' | 'community' | 'business';
+export type Edition = 'cloud' | 'community' | 'starter' | 'team' | 'business' | 'enterprise';
 export type BusinessSource = 'license' | 'trial' | 'transition' | null;
 
 export interface EditionState {
   edition: Edition;
-  /** Whether Business capabilities (SSO, SCIM, more users) are available. */
+  /** Whether Business capabilities (SSO, SCIM, role sync) are available. */
   business: boolean;
   source: BusinessSource;
   /** Plan of the activated licence key, if any. */
@@ -53,9 +55,11 @@ export const SEAT_LIMIT = 'seat_limit';
 /**
  * Which edition a self-hosted instance runs, and what that allows.
  *
- * Community is the default. Business comes from an activated licence key,
- * from the one-time evaluation, or from the transition period of an instance
- * that already relied on Business capabilities when it was upgraded.
+ * Community is the default. A Starter or Team key licenses the instance for
+ * its users. Business capabilities (SSO, SCIM, role sync) come from a
+ * Business or Enterprise key, from the one-time evaluation, or from the
+ * transition period of an instance that already relied on them when it was
+ * upgraded.
  *
  * The rules never take away something that already works: existing users stay
  * active above the limit, existing single sign-on identities keep signing in,
@@ -136,32 +140,38 @@ export class EditionService implements OnModuleInit {
     const trialActive = !!trialEnds && trialEnds > now;
     const transitionActive = !!transitionUntil && transitionUntil > now;
 
-    const source: BusinessSource = paid
+    const businessKey = paid && BUSINESS_PLANS.has(license!.plan);
+    const source: BusinessSource = businessKey
       ? 'license'
       : trialActive
         ? 'trial'
         : transitionActive
           ? 'transition'
-          : null;
+          : paid
+            ? 'license'
+            : null;
+    const business = businessKey || trialActive || transitionActive;
 
+    // A paid key never allows fewer users than Community; the evaluation and
+    // the transition period have no limit, whichever key is active.
     let seatLimit: number | null = COMMUNITY_SEAT_LIMIT;
-    if (source === 'license') {
+    if (trialActive || transitionActive) {
+      seatLimit = null;
+    } else if (paid) {
       const max = (license?.features as any)?.maxUsers;
       seatLimit = typeof max === 'number' ? Math.max(COMMUNITY_SEAT_LIMIT, max) : null;
-    } else if (source) {
-      seatLimit = null;
     }
 
     return {
-      edition: source ? 'business' : 'community',
-      business: source !== null,
+      edition: paid ? (license!.plan as Edition) : business ? 'business' : 'community',
+      business,
       source,
       plan: license?.plan ?? null,
       seatLimit,
       seatsUsed,
       communitySeatLimit: COMMUNITY_SEAT_LIMIT,
       trialEndsAt: trialEnds?.toISOString() ?? null,
-      trialAvailable: trialRaw === null && !paid,
+      trialAvailable: trialRaw === null && !businessKey,
       trialDays: BUSINESS_TRIAL_DAYS,
       transitionUntil: transitionActive ? transitionUntil!.toISOString() : null,
     };

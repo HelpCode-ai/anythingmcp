@@ -33,7 +33,7 @@ export function EditionBanner() {
   } else if (edition.source === 'transition' && edition.transitionUntil) {
     text = `Single sign-on, SCIM and more than ${edition.communitySeatLimit} users remain available on this instance until ${formatDay(edition.transitionUntil)}.`;
   } else if (
-    !edition.business &&
+    edition.edition === 'community' &&
     edition.seatLimit !== null &&
     edition.seatsUsed >= edition.seatLimit
   ) {

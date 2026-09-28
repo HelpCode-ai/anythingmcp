@@ -59,9 +59,9 @@ This split (AGPL core + commercial `ee/`) is the same model used by Cal.com and 
 
 ---
 
-## Community and Business
+## Community, Starter, Team and Business
 
-A self-hosted instance runs **Community** unless a licence key is activated. Community includes up to 3 active users. **Business** adds more users, single sign-on (Entra ID, Google, Okta, OIDC) and SCIM provisioning; administrators can try it for 30 days under **Settings → License**. See [anythingmcp.com/pricing](https://anythingmcp.com/pricing).
+A self-hosted instance runs **Community** unless a licence key is activated. Community is meant for personal use, education and evaluation, and includes up to 3 active users. **Starter** and **Team** license an instance for small teams at work. **Business** adds more users, single sign-on (Entra ID, Google, Okta, OIDC) and SCIM provisioning; administrators can try it for 30 days under **Settings → License**. See [anythingmcp.com/pricing](https://anythingmcp.com/pricing).
 
 ---
 
