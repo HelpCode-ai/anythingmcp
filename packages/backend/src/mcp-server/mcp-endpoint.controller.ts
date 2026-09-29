@@ -26,7 +26,16 @@ import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool } from './tool-registry';
-import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
+import {
+  McpConnectionGrantService,
+  ResolvedGrant,
+} from '../mcp-servers/mcp-connection-grant.service';
+import {
+  SHARED_TOOLSET_INSTRUCTIONS,
+  SharedToolsetDeps,
+  registerSharedToolset,
+  sharedEndpointMode,
+} from './shared-toolset';
 
 /**
  * The OAuth client an access token was issued to.
@@ -61,6 +70,7 @@ import {
   callerConnectorIds,
   planServerResources,
 } from './mcp-resources';
+import { jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -95,6 +105,10 @@ function readAppVersion(): string {
 }
 
 const APP_VERSION: string = readAppVersion();
+
+function trimSlash(url: string | undefined): string {
+  return (url || '').trim().replace(/\/+$/, '');
+}
 
 /** Trailer appended to every live demo tool result. */
 const DEMO_RESULT_FOOTER =
@@ -203,6 +217,13 @@ export class McpEndpointController {
   @Post()
   async handleGlobalPost(@Req() req: Request, @Res() res: Response) {
     const visible = await this.attachVisibleTools(req);
+    // The fixed tool set (see shared-toolset.ts). Operator credentials
+    // (`visible === null`) keep the direct tools: they only exist on a
+    // single-tenant self-hosted box.
+    if (visible !== null && sharedEndpointMode() === 'fixed') {
+      await this.serveSharedToolset(req, res);
+      return;
+    }
     if (this.refuseHiddenToolCall(req, res, visible)) return;
     if (this.answerToolsList(req, res, visible)) return;
     await mcpHttpTransport.httpHandlers.handlePost(req, res);
@@ -210,13 +231,137 @@ export class McpEndpointController {
 
   @Get()
   async handleGlobalGet(@Req() req: Request, @Res() res: Response) {
+    if (this.servesSharedToolset(req)) return this.statelessOnly(res);
     await this.attachVisibleTools(req);
     await mcpHttpTransport.httpHandlers.handleGet(req, res);
   }
 
   @Delete()
   async handleGlobalDelete(@Req() req: Request, @Res() res: Response) {
+    if (this.servesSharedToolset(req)) return this.statelessOnly(res);
     await mcpHttpTransport.httpHandlers.handleDelete(req, res);
+  }
+
+  /** Same condition as in handleGlobalPost, without resolving visibility. */
+  private servesSharedToolset(req: Request): boolean {
+    return !!(req as any).user?.sub && sharedEndpointMode() === 'fixed';
+  }
+
+  private statelessOnly(res: Response): void {
+    res.status(405).json({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Method not allowed in stateless mode' },
+      id: null,
+    });
+  }
+
+  /**
+   * Serves the shared endpoint's fixed tool set, statelessly, over exactly the
+   * tools `attachVisibleTools` resolved for this caller. Every run is executed
+   * in the one connector that owns the tool, so a same-named tool elsewhere
+   * can never be reached.
+   */
+  private async serveSharedToolset(req: Request, res: Response): Promise<void> {
+    const user = (req as any).user;
+    let scopeTools: RegisteredTool[] =
+      (req as { visibleTools?: RegisteredTool[] }).visibleTools ?? [];
+
+    // A credential pinned to one server reaches that server's connectors only,
+    // as its calls already did on this endpoint.
+    if (user.mcpServerId) {
+      const ids = new Set(await this.mcpServersService.getConnectorIds(user.mcpServerId));
+      scopeTools = scopeTools.filter((t) => ids.has(t.connectorId));
+    }
+
+    const grant = (req as { mcpGrant?: ResolvedGrant | null }).mcpGrant ?? null;
+    const serverIds: string[] = user.mcpServerId
+      ? [user.mcpServerId]
+      : grant?.mode === 'servers'
+        ? grant.servers.map((s) => s.id)
+        : [];
+    const organizationId =
+      grant?.mode === 'organization' ? grant.organizationId : user.organizationId;
+    const requestBase = this.requestBaseUrl(req);
+    const dashboardBase = trimSlash(process.env.FRONTEND_URL) || requestBase;
+    const mcpBase = trimSlash(process.env.SERVER_URL) || requestBase;
+
+    const deps: SharedToolsetDeps = {
+      execute: async (tool, args) => {
+        const { structured: _structured, ...result } =
+          await this.toolExecutor.executeTool(tool.name, args, {
+            userId: user.sub,
+            userEmail: user.email || user.user_data?.email,
+            // The tool's own organization: under a grant it can differ from
+            // the caller's active one, and the licence and audit row belong
+            // to the workspace whose connector runs.
+            organizationId: tool.organizationId,
+            authMethod: user.authMethod || 'none',
+            apiKeyName: user.apiKeyName,
+            mcpServerId: user.mcpServerId,
+            connectorIds: [tool.connectorId],
+          });
+        return result;
+      },
+      connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
+      guide: (ids, wholeScope) =>
+        this.mcpServersService.getSharedGuide({
+          connectorIds: ids,
+          serverIds: wholeScope ? serverIds : [],
+        }),
+      kgLookup: async (query, ids) => {
+        if (process.env.KG_MCP_TOOL === 'off') return null;
+        const wanted = new Set(ids);
+        const byOrg = new Map<string, Set<string>>();
+        for (const t of scopeTools) {
+          if (!wanted.has(t.connectorId)) continue;
+          if (!byOrg.has(t.organizationId)) byOrg.set(t.organizationId, new Set());
+          byOrg.get(t.organizationId)!.add(t.connectorId);
+        }
+        const results: unknown[] = [];
+        for (const [orgId, connectorIds] of byOrg) {
+          if (!(await this.kgService.isEnabled(orgId))) continue;
+          results.push(
+            await this.kgService.lookup(orgId, query, { connectorIds: [...connectorIds] }),
+          );
+        }
+        if (results.length === 0) return null;
+        return results.length === 1 ? results[0] : { workspaces: results };
+      },
+      configuration: async () => {
+        const servers = serverIds.length
+          ? await this.mcpServersService.getServerNames(serverIds)
+          : organizationId
+            ? await this.mcpServersService.getServerNamesByOrg(organizationId)
+            : [];
+        return {
+          dashboardUrl: `${dashboardBase}/connectors`,
+          servers: servers.map((s) => ({ name: s.name, url: `${mcpBase}/mcp/${s.id}` })),
+        };
+      },
+    };
+
+    await this.serveStateless(
+      req,
+      res,
+      (req as any).body,
+      () => {
+        const mcpServer = new McpServer(
+          { name: 'AnythingMCP', version: APP_VERSION },
+          { instructions: SHARED_TOOLSET_INSTRUCTIONS },
+        );
+        registerSharedToolset(mcpServer, scopeTools, deps);
+        return mcpServer;
+      },
+      'shared /mcp',
+    );
+  }
+
+  /** Origin the request came in on, used when no public URL is configured. */
+  private requestBaseUrl(req: Request): string {
+    const proto =
+      (req.headers['x-forwarded-proto'] as string) || (req.secure ? 'https' : 'http');
+    const host = (req.headers['x-forwarded-host'] as string) || req.headers.host;
+    return `${proto}://${host}`;
   }
 
   /**
@@ -264,6 +409,7 @@ export class McpEndpointController {
     // means it HAS one and nothing in it validated any more, which is no tools.
     // Collapsing the two would turn a revoked membership into full access.
     const grant = await this.grants.resolve(oauthClientId(user), user.sub);
+    (req as { mcpGrant?: ResolvedGrant | null }).mcpGrant = grant;
 
     let reachable: RegisteredTool[];
     if (!grant) {
@@ -1533,87 +1679,15 @@ export class McpEndpointController {
     return handles;
   }
 
-  /**
-   * Convert a JSON Schema to a Zod raw shape for McpServer.tool() registration.
-   */
+  /** Kept as a method: adapter live specs call it through the prototype. */
   private jsonSchemaToZodShape(schema: Record<string, unknown>): Record<string, z.ZodType> {
-    const properties = schema?.properties as Record<string, any> | undefined;
-    if (!properties) return {};
-
-    const required = (schema?.required as string[]) || [];
-    const shape: Record<string, z.ZodType> = {};
-
-    for (const [key, prop] of Object.entries(properties)) {
-      let zodType: z.ZodType;
-
-      switch (prop.type) {
-        case 'string':
-          zodType = prop.enum
-            ? z.enum(prop.enum as [string, ...string[]])
-            : z.string();
-          break;
-        case 'number':
-        case 'integer':
-          zodType = z.number();
-          break;
-        case 'boolean':
-          zodType = z.boolean();
-          break;
-        case 'array':
-          zodType = z.array(z.any());
-          break;
-        case 'object':
-          zodType = z.record(z.string(), z.any());
-          break;
-        default:
-          zodType = z.any();
-      }
-
-      if (prop.description) {
-        zodType = zodType.describe(prop.description);
-      }
-
-      if (prop.default !== undefined) {
-        zodType = zodType.default(prop.default);
-      }
-
-      if (!required.includes(key)) {
-        zodType = zodType.optional();
-      }
-
-      shape[key] = zodType;
-    }
-
-    return shape;
+    return jsonSchemaToZodShape(schema);
   }
 
-  /**
-   * Remove parameters covered by connector env vars.
-   */
   private stripEnvVarParams(
     schema: Record<string, unknown>,
     envVars?: Record<string, string>,
   ): Record<string, unknown> {
-    if (!envVars || Object.keys(envVars).length === 0) return schema;
-
-    const properties = schema.properties as Record<string, unknown> | undefined;
-    if (!properties) return schema;
-
-    const envKeys = new Set(Object.keys(envVars));
-    const newProperties: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(properties)) {
-      if (!envKeys.has(key)) {
-        newProperties[key] = value;
-      }
-    }
-
-    const required = (schema.required as string[]) || [];
-    const newRequired = required.filter((k) => !envKeys.has(k));
-
-    return {
-      ...schema,
-      properties: newProperties,
-      ...(newRequired.length > 0 ? { required: newRequired } : {}),
-    };
+    return stripEnvVarParams(schema, envVars);
   }
 }
