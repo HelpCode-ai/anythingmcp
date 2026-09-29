@@ -225,4 +225,40 @@ describe('KgObservationalService.ingestOrganization', () => {
     const kinds = prisma.kgEdge.create.mock.calls.map((c: any[]) => c[0].data.kind).sort();
     expect(kinds).toEqual(['produces_consumes', 'same_identity']);
   });
+
+  it('writes each edge once per pass, however many values link the same nodes', async () => {
+    const occ = (hash: string) => [
+      { valueHash: hash, connectorId: 'c2', entity: 'order', field: 'customer_id', direction: 'output' },
+      { valueHash: hash, connectorId: 'c1', entity: 'customer', field: 'id', direction: 'input' },
+    ];
+    const { svc, prisma } = make({
+      pages: [[row('r1', 'c2', 1, 'erp_get_order')]],
+      payloads: { r1: { input: {}, output: { order: { customer_id: 'CUST-12345' } } } },
+      valueSeen: ['h1', 'h2', 'h3', 'h4'].flatMap(occ),
+    });
+    // produces_consumes already seen 3 times; same_identity is new.
+    prisma.kgEdge.findUnique.mockImplementation(async (args: any) =>
+      args.where.organizationId_sourceNodeId_targetNodeId_kind.kind === 'produces_consumes'
+        ? { id: 'e1', observations: 3, isManual: false, status: 'active' }
+        : null,
+    );
+    await svc.ingestOrganization(ORG);
+
+    expect(prisma.kgEdge.findUnique).toHaveBeenCalledTimes(2);
+    expect(prisma.kgEdge.update).toHaveBeenCalledTimes(1);
+    const upd = prisma.kgEdge.update.mock.calls[0][0].data;
+    // Four values, four observations, as four sequential bumps would leave it.
+    expect(upd.observations).toBe(7);
+    expect(upd.confidence).toBeCloseTo(0.55 + 0.05 * 6);
+    expect(upd.matchKey).toBe('id');
+
+    expect(prisma.kgEdge.create).toHaveBeenCalledTimes(1);
+    const created = prisma.kgEdge.create.mock.calls[0][0].data;
+    expect(created.kind).toBe('same_identity');
+    expect(created.observations).toBe(4);
+    expect(created.confidence).toBeCloseTo(0.2 + 0.05 * 3);
+    expect(created.status).toBe('suggested');
+
+    expect(prisma.kgEdge.updateMany).toHaveBeenCalledTimes(1);
+  });
 });
