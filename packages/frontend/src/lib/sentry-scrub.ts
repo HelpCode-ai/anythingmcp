@@ -118,6 +118,9 @@ export const BROWSER_IGNORE_ERRORS: Array<string | RegExp> = [
   // mobile connections, ANYTHINGMCP-WEBSITE-A). Next falls back to a full
   // navigation; there is nothing to fix on our side.
   /^Connection closed\.$/,
+  // A WebExtension (runtime.sendMessage is extension-only API; the site
+  // never calls it) messaging a tab that has closed (ANYTHINGMCP-WEBSITE-J on the site).
+  /Invalid call to runtime\.sendMessage\(\)\. Tab not found/,
 ];
 
 /** Errors raised by scripts browser extensions inject into the page. */
