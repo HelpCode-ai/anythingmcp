@@ -379,12 +379,16 @@ export class KgSkillService {
   }
 
   /** Active skills composed into an MCP server's instructions at serve time. */
-  async activeSkillsText(serverId: string, connectorIds: string[]): Promise<string | null> {
+  async activeSkillsText(
+    serverId: string | string[],
+    connectorIds: string[],
+  ): Promise<string | null> {
+    const serverIds = Array.isArray(serverId) ? serverId : [serverId];
     const skills = await this.prisma.kgSkillSuggestion.findMany({
       where: {
         status: 'applied',
         OR: [
-          { mcpServerId: serverId },
+          { mcpServerId: { in: serverIds.length ? serverIds : ['__none__'] } },
           { connectorId: { in: connectorIds.length ? connectorIds : ['__none__'] } },
         ],
       },
