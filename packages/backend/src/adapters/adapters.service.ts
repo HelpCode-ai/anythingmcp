@@ -465,7 +465,8 @@ export type ImportProbeResult =
 
 /** Set, and not a `{{VAR}}` placeholder left over from the template. */
 function hasUsableValue(value: unknown): boolean {
-  return typeof value === 'string' && value.trim() !== '' && !/\{\{[^}]+\}\}/.test(value);
+  // [^{}] rather than [^}]: linear on a run of '{' (#788).
+  return typeof value === 'string' && value.trim() !== '' && !/\{\{[^{}]+\}\}/.test(value);
 }
 
 /** A short, printable slice of the probe's response for the install form. */

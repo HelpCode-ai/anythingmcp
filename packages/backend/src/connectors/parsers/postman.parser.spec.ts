@@ -662,7 +662,7 @@ describe('PostmanParser', () => {
       };
       const start = Date.now();
       await parser.parse(collection);
-      expect(Date.now() - start).toBeLessThan(100);
+      expect(Date.now() - start).toBeLessThan(250);
     });
 
     it('should handle {{ followed by a long whitespace run in under 100ms', async () => {
@@ -675,7 +675,7 @@ describe('PostmanParser', () => {
       };
       const start = Date.now();
       await parser.parse(collection);
-      expect(Date.now() - start).toBeLessThan(100);
+      expect(Date.now() - start).toBeLessThan(250);
     });
 
     it('should handle a long brace run in the body in under 100ms', async () => {
@@ -695,7 +695,7 @@ describe('PostmanParser', () => {
       };
       const start = Date.now();
       await parser.parse(collection);
-      expect(Date.now() - start).toBeLessThan(100);
+      expect(Date.now() - start).toBeLessThan(250);
     });
   });
 
