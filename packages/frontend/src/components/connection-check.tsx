@@ -92,7 +92,7 @@ export function ConnectionCheck({ serverId, token }: { serverId: string; token: 
 
   if (state.kind === 'arrived') {
     return (
-      <Card className="p-[18px]" role="status">
+      <Card className="p-[18px]" role="region" aria-label="Connection check" aria-live="polite">
         <div className="flex items-start gap-3">
           <span
             className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold"
@@ -113,7 +113,7 @@ export function ConnectionCheck({ serverId, token }: { serverId: string; token: 
   }
 
   return (
-    <Card className="p-[18px]" role="status" aria-live="polite">
+    <Card className="p-[18px]" role="region" aria-label="Connection check" aria-live="polite">
       <div className="flex items-start gap-3">
         <span className="relative mt-1 flex h-2.5 w-2.5 flex-shrink-0" aria-hidden>
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--brand)] opacity-60" />
