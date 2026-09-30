@@ -131,13 +131,16 @@ const imagemagick = (() => {
 const magick = (args) => execFileSync(imagemagick, args, { stdio: 'inherit' });
 
 // README banner: 1600x500 (3.2:1). Wider than 2.5:1 on purpose — at
-// GitHub's ~830px column every 100px of banner height is 100px the demo GIF
-// below it does not get.
+// GitHub's ~830px column every 100px of banner height is 100px the demo video
+// below it does not get. GitHub loads README images eagerly, so the banner is
+// written as a 256-colour PNG: ~90 KB instead of ~320 KB, and with dithering
+// off the dark gradient stays smooth instead of turning to grain.
 for (const lang of Object.keys(STRINGS).filter((k) => !k.startsWith('$'))) {
   magick([
     render(`banner-${lang}`, adapters, keyless, lang),
     '-resize', '1600x500', '-strip',
-    join(OUT, STRINGS[lang].file),
+    '-dither', 'None', '-colors', '256',
+    `PNG8:${join(OUT, STRINGS[lang].file)}`,
   ]);
 }
 

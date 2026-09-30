@@ -29,6 +29,6 @@ Dates).
 ## Contributions
 
 Contributions are accepted under the [Contributor License
-Agreement](CLA.md) — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Agreement](CLA.md) — see [CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
 For commercial licensing inquiries: info@helpcode.ai

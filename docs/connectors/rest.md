@@ -27,7 +27,7 @@ Goal: go from a running AnythingMCP instance to a working MCP tool call against 
    ```
    Restart Claude Desktop, then ask: *"Use AnythingMCP to validate VAT number DE123456789."* The tool call appears in the audit log at `/audit`.
 
-If you'd rather use a pre-built adapter (DHL, DPD, Personio, VIES, …) instead of importing from a spec, see [Pre-configured MCP Connectors](../../README.md#pre-configured-mcp-connectors) — those skip steps 2–3.
+If you'd rather use a pre-built adapter (DHL, DPD, Personio, VIES, …) instead of importing from a spec, see [Pre-configured MCP Connectors](../../README.md#connector-catalog) — those skip steps 2–3.
 
 ---
 

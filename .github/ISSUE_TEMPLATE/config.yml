@@ -7,7 +7,7 @@ contact_links:
     url: https://anythingmcp.com
     about: Setup guides for every adapter and every AI client, in seven languages.
   - name: 🔐 Security vulnerabilities
-    url: https://github.com/HelpCode-ai/anythingmcp/blob/main/SECURITY.md
+    url: https://github.com/HelpCode-ai/anythingmcp/blob/main/.github/SECURITY.md
     about: Please do NOT open a public issue. Follow the security disclosure policy.
   - name: 💼 Commercial licensing & support
     url: mailto:info@helpcode.ai

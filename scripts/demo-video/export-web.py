@@ -7,7 +7,9 @@ Writes renders/web/:
   demo.mp4 / demo.webm           full film with sound, for the theatre player
   demo-preview.mp4 / .webm       silent 23 s highlight loop for the page background (product footage only)
   demo-poster.jpg                poster frame
-  demo.gif                       README loop (under 10 MB)
+  demo-github.mp4                full film for the README, under 10 MB (GitHub's upload cap on
+                                 free plans); its first frame is the poster, which the player
+                                 shows before anyone presses play
 """
 from __future__ import annotations
 
@@ -73,7 +75,6 @@ def loop(cuts, out: Path) -> Path:
     return out
 
 
-highlight = loop(HIGHLIGHTS, OUT / "highlight-master.mp4")
 background = loop(BACKGROUND, OUT / "background-master.mp4")
 
 run("-i", str(background), "-vf", "scale=1280:-2", "-c:v", "libx264", "-preset", "slow", "-crf", "30", "-maxrate", "700k",
@@ -84,18 +85,21 @@ run("-i", str(background), "-vf", "scale=1280:-2", "-c:v", "libsvtav1", "-preset
 # Poster.
 run("-ss", str(POSTER_AT), "-i", str(SRC), "-frames:v", "1", "-q:v", "3", str(OUT / "demo-poster.jpg"))
 
-# README GIF: gifski from PNG frames, shrinking until it fits under 10 MB.
-frames = OUT / "gif-frames"
-for width, fps, quality in [(960, 12, 70), (880, 12, 65), (800, 10, 60), (720, 10, 55)]:
-    subprocess.run(["rm", "-rf", str(frames)], check=True)
-    frames.mkdir()
-    run("-i", str(highlight), "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", str(frames / "f%04d.png"))
-    gif = OUT / "demo.gif"
-    subprocess.run(["gifski", "--quiet", "--fps", str(fps), "--width", str(width), "--quality", str(quality),
-                    "-o", str(gif), *sorted(str(p) for p in frames.glob("f*.png"))], check=True)
-    if gif.stat().st_size < 9.5e6:
+# README video: GitHub plays an uploaded mp4 inline, but only takes 10 MB on a
+# free plan. 720p is plenty for an ~830 px column; the poster goes in as the
+# first frame (one frame, audio delayed to match) so the player's still is the
+# Claude answer rather than an empty title card. Raise the CRF until it fits.
+for crf in (26, 27, 28, 30):
+    github = OUT / "demo-github.mp4"
+    run("-loop", "1", "-framerate", "30", "-t", "0.0334", "-i", str(OUT / "demo-poster.jpg"), "-i", str(SRC),
+        "-filter_complex",
+        "[0:v]scale=1280:720:flags=lanczos,format=yuv420p,setsar=1[p];"
+        "[1:v]scale=1280:720:flags=lanczos,format=yuv420p,setsar=1[m];"
+        "[p][m]concat=n=2:v=1:a=0[v];[1:a]adelay=33|33[a]",
+        "-map", "[v]", "-map", "[a]", "-r", "30", "-c:v", "libx264", "-preset", "slow", "-crf", str(crf),
+        "-c:a", "aac", "-b:a", "80k", "-movflags", "+faststart", str(github))
+    if github.stat().st_size < 9.5e6:
         break
-subprocess.run(["rm", "-rf", str(frames)], check=True)
 
 for p in sorted(OUT.iterdir()):
     print(f"{p.name:28s} {size(p)}")

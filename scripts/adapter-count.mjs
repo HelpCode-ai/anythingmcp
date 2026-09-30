@@ -90,18 +90,18 @@ if (args.includes('--check')) {
     ['CITATION.cff', /\b(\d{2,3})\s+pre-built adapters\b/g],
     ['server.json', /\b(\d{2,3})\s+(?:pre-built )?(?:adapters|connectors)\b/g],
     ['package.json', /\b(\d{2,3})\s+pre-built adapters\b/g],
-    ['README.de.md', /\b(\d{2,3})\s+(?:Connectors|fertige Adapter|JSON-Definitionen|Adapter)\b/g, 4],
-    ['README.zh-CN.md', /(\d{2,3})\s*个\s*(?:连接器|现成适配器|适配器|JSON 定义)/g, 4],
-    ['README.ja.md', /(\d{2,3})\s*(?:のコネクター|種類の既製アダプター|個の JSON 定義|個のアダプター)/g, 4],
+    ['README.de.md', /\b(\d{2,3})\s+(?:Connectors|fertige Adapter|JSON-Definitionen|Adapter)\b/g, 3],
+    ['README.zh-CN.md', /(\d{2,3})\s*个\s*(?:连接器|现成适配器|适配器|JSON 定义)/g, 3],
+    ['README.ja.md', /(\d{2,3})\s*(?:のコネクター|種類の既製アダプター|個の JSON 定義|個のアダプター)/g, 3],
   ];
   // Same idea for the "no API key needed" number, which the README, the demo
   // tools and the website all quote as a selling point.
   const keylessChecks = [
     ['README.md', /\b(\d{1,3})\s+(?:of them\s+)?(?:need|needs)\s+no API key\b/g],
     ['README.md', /\b(\d{1,3})\s+adapters need no API key\b/g],
-    ['README.de.md', /\b(\d{1,3})\s+(?:davon|benötigen keinen API-Schlüssel)/g, 3],
-    ['README.zh-CN.md', /其中\s*(\d{1,3})\s*个/g, 3],
-    ['README.ja.md', /(\d{1,3})\s*個?\s*は\s*API\s*キー/g, 3],
+    ['README.de.md', /\b(\d{1,3})\s+(?:davon|benötigen keinen API-Schlüssel)/g, 2],
+    ['README.zh-CN.md', /其中\s*(\d{1,3})\s*个/g, 2],
+    ['README.ja.md', /(\d{1,3})\s*個?\s*は\s*API\s*キー/g, 2],
   ];
   const banned = [
     // Wording that no longer describes the project. CHANGELOG/LICENSING/license-faq

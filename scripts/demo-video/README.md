@@ -113,10 +113,10 @@ python3 build.py            # cut list, captions, overlays -> index.html (see th
 npx hyperframes check
 npx hyperframes preview --background
 npx hyperframes render --output ../renders/anythingmcp-demo-lumen-clay-en.mp4 --fps 30 --quality delivery
-cd .. && python3 export-web.py   # demo.mp4/.webm, 23 s preview loop, poster, README GIF
+cd .. && python3 export-web.py   # demo.mp4/.webm, 23 s preview loop, poster, README video
 ```
 
 - **Cut list**: `SCENES` in `build.py`, one line per kept range: clip, source in/out, speed, caption. Claude waits run at 6–8× with a visible speed label; cut after the Send click, before Recordly's zoom-out.
 - **Look**: overlays follow the Claude Design styleframes (AnythingMCP Design System: Fraunces, Geist, cream/ink/blue); recordings fly in and out in 3D on a dark stage, captions sit below them.
 - **Music**: a HeyGen catalog track (`npx hyperframes media-use resolve --type bgm`, needs `heygen auth login --oauth`), kept out of git in `compositions/.media/`. Its licence for use outside HeyGen is not confirmed.
-- **Publishing**: the site streams the files from DigitalOcean Spaces (`koch-katalog` bucket, `anythingmcp/demo/<date>/`, public-read, `Cache-Control: immutable`), so a new cut goes into a new dated folder and `lib/demo-media.ts` in the website repo points at it. The README uses `docs/assets/demo-lumen-clay.gif`.
+- **Publishing**: the site streams the files from DigitalOcean Spaces (`koch-katalog` bucket, `anythingmcp/demo/<date>/`, public-read, `Cache-Control: immutable`), so a new cut goes into a new dated folder and `lib/demo-media.ts` in the website repo points at it. The README embeds `demo-github.mp4`, uploaded to GitHub by dropping it into a comment box (without posting) so GitHub plays it inline; a new cut needs a new upload and a new link in the four READMEs.

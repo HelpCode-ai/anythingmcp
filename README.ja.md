@@ -2,15 +2,15 @@
   <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。265 のコネクター、うち 21 は API キー不要。" width="100%" />
 </p>
 
-<h1 align="center">AnythingMCP</h1>
+<h1 align="center">AnythingMCP：セルフホスト型 MCP ゲートウェイ</h1>
 
 <p align="center">
   <a href="README.md">English</a> · <a href="README.de.md">Deutsch</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a>
 </p>
 
 <p align="center">
-  <strong>REST/OpenAPI、SOAP、GraphQL、SQL のあらゆる API を、Claude、ChatGPT、Copilot 用の MCP ツールに変換します。</strong><br/>
-  コード不要のセルフホスト型 MCP サーバー兼ゲートウェイです。SAP Business One、Odoo、Xentral、weclapp、Shopware、WooCommerce、Amazon Seller、Kaufland など、ERP や E コマースを含む 265 種類の既製アダプターを用意しています。
+  <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、REST/OpenAPI、SOAP、GraphQL、OData、SQL のあらゆるシステムを Claude、ChatGPT、Copilot 用の MCP ツールに変換します。</strong><br/>
+  SAP、Odoo、Xentral、weclapp、Shopware、WooCommerce、Amazon Seller などを含む 265 種類の既製アダプターを同梱しており、うち 21 は API キー不要です。
 </p>
 
 <p align="center">
@@ -20,35 +20,15 @@
   <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/docker/pulls/helpcodeai/anythingmcp?logo=docker&logoColor=white&color=2563eb&labelColor=0b1220" alt="Docker pulls"></a>
 </p>
 
-**Claude への 1 つの質問に、Etsy、SAP、物流 API のデータで回答します。** AnythingMCP はマーケットプレイスから Etsy を、OData で SAP S/4HANA を、OpenAPI 仕様から REST API を接続し、Claude は 3 つのシステムをまたいで作業します。
-
 <p align="center">
-  <a href="https://anythingmcp.com/video-promo"><img src="docs/assets/demo-lumen-clay.gif" alt="AnythingMCP のデモ：マーケットプレイスから Etsy をインストールし、SAP S/4HANA を OData コネクタとして追加し、物流 API を OpenAPI 仕様から取り込んだ後、Claude が配送で止まっている Etsy の注文と、SAP に再送用の在庫があるかを答える様子。" width="100%" /></a>
+  <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>クラウド版を 7 日間無料で試す</strong></a> · <a href="#run-it-yourself">自分で動かす</a> · <a href="docs/guides.md">ドキュメント</a> · <a href="https://anythingmcp.com/ja/guides">コネクターガイド</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
-<p align="center"><a href="https://anythingmcp.com/video-promo">▶ デモ全編を見る（2:40、音声付き）</a></p>
+**Claude への 1 つの質問に、Etsy、SAP、物流 API のデータで答えます。** デモでは、カタログから Etsy をインストールし、SAP S/4HANA を OData で追加し、物流 API を OpenAPI 仕様からインポートします。その後、Claude が 3 つのシステムをまたいで作業します（2:40、音声あり、英語）。
 
-**自分で動かす** — 3 行のコマンドで、リポジトリのクローンは不要です。[詳しい手順はこちら](#run-it-yourself)。
+https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
 
-```bash
-mkdir anythingmcp && cd anythingmcp
-curl -fsSLo docker-compose.yml \
-  https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docker-compose.quickstart.yml
-printf 'JWT_SECRET=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
-docker compose up -d   # → http://localhost:3000
-```
-
----
-
-この文書で繰り返し使う 3 つの用語は、それぞれ異なるものを指します。
-
-- **アダプター（adapter）**は、このリポジトリに含まれる 265 個の JSON 定義のいずれかです。SAP Business One、Odoo、weclapp、Xentral、Shopware、WooCommerce、Amazon Seller、DHL などがあります。そのうち 21 個は API キーを一切必要とせず、それ以外はインポート時に認証情報を設定します。
-- **コネクター（connector）**は、アダプター、または独自の OpenAPI 仕様・Postman コレクション・WSDL・GraphQL エンドポイント・データベースを、ワークスペース内で設定したものです。接続先を指定すれば、MCP サーバーを書くことなく数分で設定できます。
-- **MCP サーバー**は、Claude に渡す URL です。そのサーバーに割り当てたコネクターだけを公開します。
-
-すべてが自社のインフラ上で動くため、外部へ出すデータを自分で決められます。ツールごとのレスポンスマッピングで、モデルに渡せるフィールドを定義できます。認証情報は AES-256-GCM で暗号化して保存し、監査ログには上流システムの完全な応答を自社側で保持します。OAuth2、RBAC、SSO、SCIM はセルフホスト版に含まれており、有料プラン専用の機能ではありません。
-
-**[KOCH Freiburg GmbH](https://www.kochfreiburg.de/) で本番稼働しています。** 同社では AI アシスタントを ERP、CRM、SOAP サービス、オンプレミスのデータベースなど、15 以上の社内システムに接続しています。ドイツ・フライブルクの [helpcode.ai](https://helpcode.ai) がこのシステムから AnythingMCP を切り出し、オープンソースとして公開しました。アダプターカタログは、単一の製品としてよりも、コミュニティで育てるほうが速く成長するからです。
+**[KOCH Freiburg GmbH](https://www.kochfreiburg.de/) で本番稼働しています。** 同社では AI アシスタントを ERP、CRM、SOAP サービス、オンプレミスのデータベースなど、15 以上の社内システムに接続しています。[helpcode.ai](https://helpcode.ai) がこのシステムから切り出してオープンソース化しました。アダプターカタログは、単一の製品としてよりもコミュニティで育てるほうが速く成長するからです。
 
 ---
 
@@ -56,7 +36,7 @@ docker compose up -d   # → http://localhost:3000
 
 ## 自分で動かす
 
-**以下が推奨の方法です。** 後述の計測もこの方法で行っています。Docker 24+ と `openssl` が必要です。macOS では、先に Docker Desktop を起動してください。
+Docker 24 以上と `openssl` が必要です。macOS では先に Docker Desktop を起動してください。リポジトリのクローンは不要です。
 
 ```bash
 mkdir anythingmcp && cd anythingmcp
@@ -66,26 +46,20 @@ printf 'JWT_SECRET=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl
 docker compose up -d
 ```
 
-<http://localhost:3000> を開いて登録します。**最初のアカウントが管理者になります。**
+<http://localhost:3000> を開いて登録します。**最初のアカウントが管理者になります。** MCP エンドポイントは `http://localhost:4000/mcp`、API ドキュメントは `http://localhost:4000/api/docs` です。
 
-> **生成された `.env` を保管してください。** 保存した認証情報を復号するには `ENCRYPTION_KEY` が必要です。紛失すると、すべてのコネクターの認証情報を再設定しなければなりません。他のシークレットと同じようにバックアップしてください。
+> **生成された `.env` は保管してください。** `ENCRYPTION_KEY` は保存した認証情報の復号に使います。失うと、すべてのコネクターで認証情報を設定し直すことになります。
 
-| サービス | 既定の URL |
-|---|---|
-| Web UI | `http://localhost:3000` |
-| MCP エンドポイント | `http://localhost:4000/mcp` |
-| Swagger ドキュメント | `http://localhost:4000/api/docs` |
+amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利用可能になります。イメージは現在 amd64 のみですが、compose ファイルがプラットフォームを固定しているため、Apple Silicon でもエミュレーションで動作します。
 
-*amd64 での計測結果：イメージの取得に 31 秒、API が正常に動作してログインページが表示されるまでに 24 秒。現在、公開イメージは amd64 のみをサポートしています。Compose ファイルでプラットフォームを明示しているため、Apple Silicon でも Docker Desktop のエミュレーションを使って実行できます。M シリーズ搭載ノートパソコンでは同じ起動に 24 秒かかりましたが、古いハードウェアでは数分かかる場合があります。*
-
-クイックスタートでは、意図的に `127.0.0.1` にバインドしています。前段に TLS を終端する仕組みがまだないためです。**他の人やクラウドの AI クライアントからアクセスできるインスタンスが必要な場合**は、リポジトリをクローンして `./setup.sh` を実行してください。ドメインを入力すると、Caddy による証明書の取得、シークレットの生成、MCP 認証モードの設定を行います。[デプロイガイド](docs/deployment.md)を参照してください。
+クイックスタートは意図的に `127.0.0.1` にのみバインドします。前段で TLS を終端するものがないためです。**他の人やクラウドの AI クライアントからアクセスできるインスタンス**が必要な場合は、リポジトリをクローンして `./setup.sh` を実行してください。ドメインを尋ね、Caddy で証明書を取得し、シークレットを生成して MCP の認証モードを設定します。[デプロイガイド](docs/deployment.md)を参照してください。
 
 <details>
-<summary><strong>その他のデプロイ方法</strong> — マネージドクラウド、Railway、DigitalOcean</summary>
+<summary><strong>その他の動かし方：</strong>マネージドクラウド、Railway、DigitalOcean</summary>
 
 <br/>
 
-[**AnythingMCP Cloud**](https://cloud.anythingmcp.com) は同じ AGPL コードを使い、私たちが**ドイツ・フランクフルト**で運用しています。インフラを用意せずに自社の API で試し、認証情報を社内に置きたくなったらセルフホストへ移行できます。どちらでも使うコネクターは同じです。DPA/AVV は [info@helpcode.ai](mailto:info@helpcode.ai) へのご依頼に応じて提供します。SSO と SCIM はセルフホスト版でのみ利用できます。
+[**AnythingMCP Cloud**](https://cloud.anythingmcp.com) は同じ AGPL コードを、ドイツ・**フランクフルト**で当社が運用するものです。7 日間の無料トライアルがあります。まずクラウドで自社の API を試し、認証情報を外に出したくなくなった時点で社内に移せます。コネクターはどちらでも同じです。DPA/AVV は [info@helpcode.ai](mailto:info@helpcode.ai) までご依頼ください。SSO と SCIM はセルフホスト版のみです。
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
 &nbsp;
@@ -95,49 +69,59 @@ docker compose up -d
 
 ---
 
-<a id="connect-any-system"></a>
+<a id="how-it-works"></a>
 
-## あらゆるシステムを接続する
+## 仕組み
 
-多くの企業には、まだ MCP サーバーがありません。あるのは REST API、ERP、SOAP サービス、データベースです。そのそれぞれが一連の MCP ツールになり、1 つの MCP サーバー URL を通じて Claude、ChatGPT、Copilot に渡されます。
-
-<a id="openapi--rest-api-to-mcp"></a>
-
-### OpenAPI / REST API を MCP に
-
-OpenAPI 3.x または Swagger 2.0 の仕様を URL か貼り付けでインポートすると、各オペレーションが MCP ツールになり、パラメーター、認証、エンドポイントの対応付けも設定済みの状態になります。モデルが適切なツールを選べるよう、ビジュアルエディターでツールの名前と説明を調整できます。[REST コネクターのドキュメント](docs/connectors/rest.md) · [ガイド](https://anythingmcp.com/ja/guides/rest-api-to-mcp) · [5 分デモ: openapi-to-mcp](https://github.com/HelpCode-ai/openapi-to-mcp)
-
-<a id="soap--wsdl-to-mcp"></a>
-
-### SOAP / WSDL を MCP に
-
-WSDL を指定すると、SOAP の各オペレーションがツールになります。エンベロープ、パラメーターの順序、WCF サービスは AnythingMCP が処理し、認証には Basic、Bearer、API キーを使えます。2009 年の SOAP サービスを、2026 年のモデルからすぐに使えるようにできます。[SOAP コネクターのドキュメント](docs/connectors/soap.md) · [ガイド](https://anythingmcp.com/ja/guides/soap-to-mcp) · [5 分デモ: soap-to-mcp](https://github.com/HelpCode-ai/soap-to-mcp)
-
-<a id="sql-database-to-mcp"></a>
-
-### SQL データベースを MCP に
-
-PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SAP HANA、SQLite、MongoDB に対応しています。コネクターはスキーマ、クエリー例、クエリー実行のツールを生成します。モデルに SQL を書かせるか、自分で書いたクエリーのパラメーターだけを埋めさせるかを選べます。クエリーツールは初期設定で読み取り専用で、書き込みはブロックされます。さらに読み取り専用のデータベースユーザーと、必要なツールだけが見えるロールを割り当ててください。[データベースコネクターのドキュメント](docs/connectors/database.md) · [ガイド](https://anythingmcp.com/ja/guides/database-to-mcp) · [5 分デモ: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
-
-<a id="graphql-to-mcp"></a>
-
-### GraphQL を MCP に
-
-イントロスペクションによって、GraphQL エンドポイントのクエリーとミューテーションが MCP ツールになります。オペレーションを自分で定義することもできます。[GraphQL コネクターのドキュメント](docs/connectors/graphql.md) · [ガイド](https://anythingmcp.com/ja/guides/graphql-to-mcp)
-
-<a id="postman-collection-to-mcp"></a>
-
-### Postman コレクションを MCP に
-
-Postman v2.1 のコレクションをインポートすると、フォルダー、認証、ボディモード、`{{variables}}` が引き継がれ、各リクエストがツールになります。cURL コマンドも同じように使えます。[Postman インポートのドキュメント](docs/connectors/rest.md#from-postman-collection)
+1. **コネクターを追加する。** カタログから**アダプター**（SAP、Odoo、DHL などの既製 JSON 定義）をインストールするか、独自の OpenAPI 仕様、WSDL、GraphQL エンドポイント、Postman コレクション、データベースを AnythingMCP に指定します。ワークスペースで設定したものが**コネクター**で、その各操作が MCP ツールになります。
+2. **モデルに見せる内容を決める。** ビジュアルエディターでツールの名前と説明を整え、ネットワークの外に出してはいけないフィールドを削除し、どのロールがどのツールを呼び出せるかを決めます。
+3. **AI クライアントに URL を 1 つ渡す。** **MCP サーバー**は、Claude、ChatGPT、Copilot、Gemini、Cursor に追加するエンドポイントです。割り当てたコネクターだけを公開します。
 
 ---
 
+<a id="connect-any-api-soap-service-or-database"></a>
+
+## あらゆる API、SOAP サービス、データベースを接続する
+
+多くの企業には、まだ MCP サーバーがありません。あるのは REST API、ERP、2009 年の SOAP サービス、そしてデータベースです。そのどれもが MCP ツールになります。
+
+| 接続元 | 得られるもの | ドキュメント |
+|---|---|---|
+| **OpenAPI / Swagger（REST）** | 仕様を URL でインポートするか貼り付けると、各操作がツールになり、パラメーター、認証、エンドポイントのマッピングが自動で入ります | [REST](docs/connectors/rest.md) · [ガイド](https://anythingmcp.com/ja/guides/rest-api-to-mcp) · [デモ：openapi-to-mcp](https://github.com/HelpCode-ai/openapi-to-mcp) |
+| **Postman コレクション、cURL** | フォルダー、認証、ボディモード、`{{variables}}` を引き継ぎ、各リクエストがツールになります | [Postman インポート](docs/connectors/rest.md#from-postman-collection) |
+| **SOAP / WSDL** | 各操作がツールになります。エンベロープ、パラメーターの順序、WCF サービスは自動で処理します | [SOAP](docs/connectors/soap.md) · [ガイド](https://anythingmcp.com/ja/guides/soap-to-mcp) · [デモ：soap-to-mcp](https://github.com/HelpCode-ai/soap-to-mcp) |
+| **GraphQL** | イントロスペクションでクエリとミューテーションをツールにするか、操作を自分で定義します | [GraphQL](docs/connectors/graphql.md) · [ガイド](https://anythingmcp.com/ja/guides/graphql-to-mcp) |
+| **OData**（SAP Gateway を含む） | 各サービスの `$metadata` を読み取り、エンティティセット、キー、SAP の業務ラベルをモデルに見せます。V2 と V4 に対応 | [OData](docs/connectors/odata.md) · [ガイド](https://anythingmcp.com/ja/guides/odata-to-mcp) |
+| **SQL と MongoDB** | PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SAP HANA、SQLite、MongoDB：スキーマ、サンプル、クエリの各ツール。既定で読み取り専用 | [データベース](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [ガイド](https://anythingmcp.com/ja/guides/database-to-mcp) · [デモ：sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp) |
+| **別の MCP サーバー** | そのツールを検出し、同じ認証と監査のもとで自社のツールと並べて提供します | [MCP ブリッジ](docs/connectors/mcp-bridge.md) |
+
+ツールは実行時に登録され、再起動は不要です。コネクターごとの `{{VAR}}` の値はサーバー側で埋め込まれ、AI には見えません。
+
+---
+
+<a id="connector-catalog"></a>
+
+## コネクターカタログ
+
+265 個のアダプターで 2,400 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
+
+| カテゴリー | 例 |
+|---|---|
+| 💼 ERP・会計・請求 | SAP Business One、SAP S/4HANA、Odoo、weclapp、Xentral、Dynamics NAV、Lexware Office、sevDesk、Exact Online、bexio |
+| 🛍️ E コマース・マーケットプレイス | Amazon Seller、WooCommerce、Shopware 6、Magento、eBay、Etsy、Kaufland、OTTO、Oxomi |
+| 📦 物流・配送 | Deutsche Bahn、DHL、DPD、GLS、Shipcloud、Sendcloud |
+| 👥 人事・フィールドサービス | Personio、HRWorks、Kenjo、MFR Mobile Field Report |
+| 🏛️ 行政・公開データ | VIES VAT、Handelsregister、UK Companies House、DESTATIS、Bundesbank、OpenPLZ、NINA |
+| 🏦 銀行・決済 | Revolut Business、Wise、PAYONE、Razorpay、Paystack |
+| 💬 メッセージング | WhatsApp、LINE、TeamViewer |
+| 📈 広告・分析 | Google Ads、Google Analytics 4、Google Search Console、Matomo |
+| 🧠 AI 判定モデル | TypeSafe の Jev：Yes/No 判定、分類、確率付きスコアリングを約 300 ミリ秒で |
+
 <a id="erp-connectors"></a>
+<details>
+<summary><strong>ERP コネクター</strong>：18 システム、ツール数と対象市場</summary>
 
-## ERP コネクター
-
-注文、在庫、請求書に関する質問の多くは、ERP に行き着きます。そうした ERP 向けの既製アダプターを用意しています。インストールして認証情報を追加すれば、ツールがすぐに MCP サーバー上で使えるようになります。各システム名はセットアップガイドにリンクしています。
+<br/>
 
 | システム | 市場 | ツール数 | AI ができること |
 |---|---|---|---|
@@ -164,15 +148,13 @@ Postman v2.1 のコレクションをインポートすると、フォルダー�
 
 **リポジトリ:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
-**お使いの ERP が一覧にない場合や、独自開発・オンプレミスの ERP の場合は？** その [REST API](#openapi--rest-api-to-mcp) や [SOAP サービス](#soap--wsdl-to-mcp)を通じて、または [SQL データベース](#sql-database-to-mcp)に直接、読み取り専用で接続できます。[KOCH Freiburg](https://www.kochfreiburg.de/) は、この方法で自社の ERP を本番環境で接続しています。
-
----
+</details>
 
 <a id="e-commerce--marketplace-connectors"></a>
+<details>
+<summary><strong>E コマース・マーケットプレイスのコネクター</strong>：13 のショップとマーケットプレイス</summary>
 
-## E コマース・マーケットプレイスのコネクター
-
-Amazon や eBay から DACH 地域のマーケットプレイスまで、ショップとマーケットプレイスに対応しています。各システム名はセットアップガイドにリンクしています。
+<br/>
 
 | システム | 市場 | ツール数 | AI ができること |
 |---|---|---|---|
@@ -194,78 +176,23 @@ Amazon や eBay から DACH 地域のマーケットプレイスまで、ショ�
 
 **リポジトリ:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server) · [woocommerce-mcp-server](https://github.com/keysersoft/woocommerce-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
 
----
+</details>
 
-## 接続・管理・学習できること
-
-### 接続
-
-- **6 種類のコネクター** — [REST](docs/connectors/rest.md)、[SOAP](docs/connectors/soap.md)、[GraphQL](docs/connectors/graphql.md)、[OData](docs/connectors/odata.md)（SAP Gateway を含む）、[データベース](docs/connectors/database.md)、[MCP 間のブリッジ](docs/connectors/mcp-bridge.md)。データベースは PostgreSQL、MySQL、MariaDB、MSSQL、Oracle、SAP HANA、MongoDB、SQLite の 8 エンジンに対応しています。
-- **既存の情報からインポート** — OpenAPI/Swagger、Postman、cURL、WSDL、GraphQL イントロスペクションに対応し、稼働中の MCP サーバーから直接ツールを検出することもできます。
-- **アダプターカタログ** — [同梱されているアダプターを確認する](#the-adapter-catalog)。
-- **ビジュアルツールエディター** — パラメーターをパス、クエリ、リクエストボディ、ヘッダーに対応付けられます。ツールの名前や説明を調整し、AI が意図したとおりに理解できるようにします。
-- **動的な MCP サーバー** — ツールは実行時に登録されるため、再起動は不要です。コネクターごとに `{{VAR}}` を展開でき、その値は AI から隠されます。
-
-### 管理
-
-- **[レスポンスの整形](#control-what-the-model-sees)** — モデルへ渡すフィールドをツールごとに正確に指定し、変更前後の内容をリアルタイムで確認できます。
-- **必要な箇所を読み取り専用に。** 各ツールには、操作から導出される MCP アノテーション（`readOnlyHint`、`destructiveHint`）が付き、ツール単位で上書きできます。クライアントは、請求書の読み取りとクレジットノートの発行を区別して表示できます。ロールに基づくツールの許可リストを使えば、読み取りしかできない MCP サーバーを公開できます。ERP の導入では、多くの場合ここから始めるのが適切です。
-- **幅広い認証方式** — OAuth2（PKCE と Client Credentials）、Bearer、API Key、Basic、HMAC 署名、[LOGIN_TOKEN](docs/connectors/login-token-auth.md)、OAuth 1.0a に対応しています。
-- **監査ログ** — すべてのツール呼び出しについて、入力、出力、所要時間、ステータスを自社のデータベースに記録します。
-- **[SSO](docs/sso.md) と [SCIM](docs/scim-entra-setup.md)** — Entra ID、Google、Okta、Auth0、汎用 OIDC に対応しています。サインインのたびにディレクトリのグループからロールを同期します。ディレクトリでユーザーを無効にすると、そのユーザーのワークスペースへのアクセスと MCP API キーも無効になります（セルフホスト版のみ）。
-
-### 学習
-
-- **[ナレッジグラフ](docs/knowledge-graph.md)** — コネクターのデータ同士の関係を、個人識別情報（PII）を保護しながらワークスペースごとに整理します。MCP ツールとしてエージェントに返すことで、複数のシステムにまたがる呼び出しを正しくつなげられます。
-- **[AI スキル](docs/knowledge-graph.md)** — 繰り返される利用パターンを小さな再利用可能なルールに変え、サーバーの指示に組み込みます。追加のツール呼び出しをせずにエージェントを導けます（任意のオプトイン機能）。
+**アダプターは 1 つの JSON ファイルです。** だからこそカタログがこの規模になり、新しいアダプターの追加は最初の貢献に向いています。必要なものがない場合は、[リクエスト](https://github.com/HelpCode-ai/anythingmcp/issues/new?template=adapter_request.yml)（👍 の数で優先度を決めます）するか、[自分で作成](.github/CONTRIBUTING.md)してください。お使いの ERP が一覧にない、または独自開発の場合は、その REST API、SOAP サービス、SQL データベースに読み取り専用で直接接続できます。
 
 ---
 
-## 他のプロジェクトとの比較
+<a id="security-and-governance"></a>
 
-AnythingMCP は、一段階前から始める MCP ゲートウェイです。既に運用している API、ERP、データベースから MCP サーバーを作成し、1 つのエンドポイントの背後で提供し、公開範囲を限定し、監査します。他の MCP ゲートウェイは、既にある MCP サーバーをまとめて安全に運用するためのものです。しかし多くの企業には、まだ MCP サーバーがありません。あるのは REST API、2009 年の SOAP サービス、そして直接公開したくないデータベースです。以下のプロジェクトはいずれも実際の問題を解決していますが、扱う問題は同じではありません。
+## セキュリティとガバナンス
 
-| | どのようなものか | こちらを選ぶとよい場合 |
-|---|---|---|
-| **[ContextForge](https://github.com/IBM/mcp-context-forge)**（IBM） | 既存の MCP サーバーの前段に置くフェデレーション機能とレジストリー | ツールが既に MCP サーバーとして提供されていて、フェデレーション、仮想サーバー、レジストリーが必要な場合 |
-| **[Docker MCP Gateway](https://github.com/docker/mcp-gateway)** | カタログ内の MCP サーバーを、シークレット管理付きのコンテナーとして単一のエンドポイントの背後で実行 | ベンダー公開の MCP サーバーを Docker 内に隔離したく、公開カタログで要件を満たせる場合 |
-| **[MetaMCP](https://github.com/metatool-ai/metamcp)** | 名前空間で分離したエンドポイントとミドルウェア層に MCP サーバーを集約 | 主に既存の MCP サーバーをクライアントごとにグループ化し、公開範囲を再設定したい場合 |
-| **[Composio](https://github.com/ComposioHQ/composio)** | 認証を代行するマネージド連携のホスト型カタログ | 固定のマネージドカタログで十分で、独自の SOAP サービス、社内 API、データベースを追加する必要がない場合 |
-| **AnythingMCP** | 既に運用している API、SOAP サービス、データベースを MCP ツールに変換 | システムが**まだ MCP サーバーではなく**、認証情報を自分で管理する選択肢を持ちたい場合 |
+すべてが自社のインフラ上で動くため、外部に出すデータを自分で決められます。OAuth2、RBAC、SSO、SCIM はセルフホスト版に含まれており、有料プラン専用の機能ではありません。
 
-機能を詳しく比較した表は [anythingmcp.com/vs](https://anythingmcp.com/vs) にあります。
-
----
-
-<a id="knowledge-graph--ai-skills"></a>
-
-## ナレッジグラフと AI スキル
-
-呼び出しを転送するだけでは、難しい判断はエージェントに残ります。次にどのツールを呼ぶべきか、業務でいう「未完了の注文」や「アクティブな顧客」が実際に何を意味するのか、といった判断です。AnythingMCP は、**コネクター内のデータ同士の関係**と、**チームが実際にツールをどう使っているか**の両方を学習します。そして追加のツール呼び出しではなく、コンテキストとして AI クライアントへ返します。
-
-- **ナレッジグラフ** — 顧客、注文、商品などの*エンティティ*と、その*関係*をワークスペースごとに整理します。ツール名、パラメーター、実際の呼び出しの入出力から自動で構築されます。オプションの AI 分析では、ヒューリスティックで捉えられないコネクター間のつながりを推定します。**PII を保護する設計**で、保存するのはエンティティやフィールドの*名前*と関係のメタデータだけです。値そのものは保存しません。
-- **視覚的に構築** — グラフエディターでエンティティや接続を手動で作成、編集、削除できます。説明を追加し、AI の提案を確認して調整することもできます。
-- **MCP 経由で提供** — 各サーバーは `kg_how_to_obtain` ツールを公開します。*利用者側の*エージェントが「Shopware の注文から DHL の追跡番号を取得するには？」と尋ねると、コネクターをつなぐためのヒントを受け取れます。
-- **実際の利用から生まれる AI スキル** — 意図の記録を有効にすると、各ツール呼び出しで*なぜ呼び出したのか*を記録できます。AI 分析が繰り返し現れるパターンを、*「今日の売上にはステータス 2、3、4 の注文を含める」*といった小さな再利用可能なルールに変えます。各ルールを適用、編集、却下することも、信頼度の高いものを自動適用することもできます。適用済みのスキルは、提供時に MCP サーバーの**指示**へ組み込まれるため、**ツール呼び出しを一度も追加せずに**エージェントを導けます。システムの利用を通じて蓄積した知識を、個人の頭の中だけに留めずに済みます。
-
-AI 分析は**既定では無効**です。全体の環境変数フラグ*と*ワークスペースごとのスイッチで有効にし、OpenAI、OpenRouter、Anthropic を利用できます。グラフ、手動編集、MCP ツール自体は、LLM キーなしで使えます。
-
-➡️ **[ナレッジグラフと AI スキルのガイド →](docs/knowledge-graph.md)**
-
----
-
-<a id="control-what-the-model-sees"></a>
-
-## モデルに見せる内容を制御する
-
-各ツールで、**どのフィールドが自社のインフラの外に出るかを正確に定義**できます。マッピングはツールごとに設定され、応答の送信時に適用されます。AI クライアントと、その背後にあるサードパーティーのモデルには、承認したデータ構造だけが渡ります。
-
-- **外部に出すべきでないものを削除。** 削除するパスを指定すると、エージェントへ応答を渡す前に除去されます。顧客の IBAN、従業員の給与、API がデータと一緒に返すアクセストークンなどが対象になります。
-- **出力全体を定義することも可能。** `select` テンプレートで、残すフィールドと出力名を指定します。テンプレートで表現できない変換には JMESPath 式を使えます。エージェントにとって構造が安定しているほうが扱いやすい場合は、フィールドを削除せず、値をプレースホルダー（`"iban": "= [redacted]"`）に置き換えます。
-- **保存前に結果を確認。** エディターが実際の応答にマッピングを適用し、変換前後の内容とサイズの差を並べて表示します。同梱アダプターの一例では、列車 4 件の結果で **12,172 B → 1,072 B（91% 削減）**を計測しています。
-- **既定はフェイルオープンであり、その挙動を明記しています。** 実行時にマッピングが失敗すると、元の応答を返し、警告を記録します。誤った式が 1 つあるだけで、動作していたツール全体が使えなくなるのを防ぐためです。ただし、外部へ絶対に出してはいけないフィールドには、この既定値は適していません。そのようなツールには **`"fallbackToRaw": false`** を設定してください。マッピングが失敗したときは、データをそのまま渡すのではなく、呼び出し自体が失敗します。
-
-機密フィールドをモデルに渡さずに済むうえ、削除したフィールドの分だけコンテキストウィンドウの費用も減らせます。
+- **レスポンスマッピング。** ツールごとに、モデルに渡すフィールドを宣言します。顧客の IBAN や従業員の給与を削除したり、残すフィールドだけを指定したりできます。エディターは実際の応答で変換前後を表示します。同梱のあるアダプターは 12,172 B から 1,072 B（−91%）になり、その分のコンテキストウィンドウも節約できます。マッピングが壊れた場合は既定で元の応答を返します。絶対に外に出してはいけないフィールドを持つツールでは `"fallbackToRaw": false` を設定すると、代わりに呼び出しが失敗します。
+- **重要な場面では読み取り専用。** すべてのツールに MCP アノテーション（`readOnlyHint`、`destructiveHint`）が付き、操作から自動で導出され、ツールごとに上書きできます。ロール単位のツールのホワイトリストで、読み取りしかできない MCP サーバーを公開できます。ERP ではまずここから始めるのがおすすめです。データベースのクエリツールは単一の SELECT だけを実行し、書き込みや複数文の連結をブロックします。
+- **あらゆる認証方式に対応。** OAuth2（PKCE と Client Credentials）、Bearer、API キー、Basic、HMAC リクエスト署名、[LOGIN_TOKEN](docs/connectors/login-token-auth.md)、OAuth 1.0a。認証情報は AES-256-GCM で暗号化して保存します。
+- **監査ログ。** すべてのツール呼び出しを、入力、出力、所要時間、ステータスとともに自社のデータベースに記録します。モデルが見ていない上流の完全な応答も含まれます。
+- **[SSO](docs/sso.md) と [SCIM](docs/scim-entra-setup.md)。** Entra ID、Google、Okta、Auth0、任意の OIDC プロバイダー。サインインのたびにディレクトリのグループからロールを同期し、ディレクトリで無効化されたユーザーはワークスペースへのアクセスと MCP API キーを同時に失います。
 
 ```json
 {
@@ -278,91 +205,40 @@ AI 分析は**既定では無効**です。全体の環境変数フラグ*と*�
 }
 ```
 
-> 監査ログには、自社のデータベース内で完全な上流応答が引き続き記録されます。エージェントに見せる内容を調整しても、API が実際に何を返したかという証拠は失われません。
-
-➡️ **[レスポンスマッピングのリファレンス →](docs/tool-definition.md#3-response-mapping-optional)**
+[レスポンスマッピングのリファレンス](docs/tool-definition.md#3-response-mapping-optional)
 
 ---
 
-## コードを書かずに独自の Claude コネクターを作る
+<a id="use-it-from-claude-chatgpt-copilot-and-gemini"></a>
 
-Claude は**カスタムコネクター**をサポートしています。*Customize → Connectors* でリモート MCP サーバーを一度追加すると、Claude.ai、Claude Desktop、Claude Code で利用できます。AnythingMCP なら、**既存の任意の API からそのコネクターを作成**でき、MCP サーバーを実装する必要はありません。
+## Claude、ChatGPT、Copilot、Gemini から使う
 
-1. API 仕様をインポートするか、既製のアダプターを選びます。
-2. **ビジュアルエディター**でツール名、説明、パラメーターを調整します。AI に何を見せるかは自分で決められます。
-3. MCP サーバーの URL を Claude のカスタムコネクターとして追加します（OAuth 2.0 を標準でサポート）。
+同じ MCP サーバーが MCP 対応のあらゆるクライアントで動くため、コネクターは一度作るだけで済みます。
 
-認証情報は自社のインフラ上に残り、すべてのツール呼び出しが監査ログに記録されます。どのユーザーがどのツールを利用できるかは、ロールに基づくアクセス制御で管理します。[詳しい手順 →](docs/integrations/claude.md)
-
----
-
-## API を ChatGPT アプリにする
-
-**ChatGPT のアプリは MCP を基盤にしています。** AnythingMCP は、その MCP バックエンドを自分で書くことなく用意できます。REST、SOAP、GraphQL、データベースのエンドポイントを指定すれば、ChatGPT で使えるコネクターになります。ChatGPT の設定で追加するか、Apps SDK アプリのツール層として使うことで、ChatGPT が業務データを読み取り、操作できるようになります。
-
-同じコネクターを **Claude、ChatGPT、Gemini、Copilot、Cursor** で同時に使えます。一度構築すれば、各クライアントへ接続できます。[ChatGPT の設定ガイド →](docs/integrations/chatgpt.md)
+- **Claude。** *Customize → Connectors* でサーバーの URL を**カスタムコネクター**として追加すると、Claude.ai、Claude Desktop、Claude Code で使えます。OAuth 2.0 に標準対応しています。[Claude の設定](docs/integrations/claude.md)
+- **ChatGPT。** ChatGPT のアプリは MCP の上に作られています。ChatGPT の設定でサーバーを追加するか、Apps SDK アプリのツール層として使います。[ChatGPT の設定](docs/integrations/chatgpt.md)
+- **Copilot、Gemini、Cursor** などの MCP クライアント：[クライアント設定ガイド](docs/guides.md)。
 
 ---
 
-## AnythingMCP を使う理由
+<a id="knowledge-graph-and-ai-skills"></a>
 
-AI クライアントは MCP を使いますが、業務システムは REST、SOAP、GraphQL、SQL を使います。システムごとに専用の MCP サーバーを作成し、認証、監査、アクセス制御まで含めて保守するには、それぞれ数週間かかります。AnythingMCP は、その間をつなぐノーコードの層です。
+## ナレッジグラフと AI スキル
 
-| 課題 | 解決方法 |
-|---|---|
-| REST API はあるが、AI クライアントは MCP を使う | OpenAPI / Swagger のインポートによる **REST → MCP** 変換 |
-| 古い SOAP / WSDL サービスがある | 自動 WSDL 解析による **SOAP → MCP** ブリッジ |
-| AI エージェントからデータベースを照会したい | クエリーツールを自動生成する **DB → MCP**（7 エンジン） |
-| すべての API を 1 つのエンドポイントにまとめたい | 複数のコネクターを集約する **MCP ミドルウェア** |
-| SAP Business One / Odoo / Shopware などの MCP サーバーが必要 | **アダプターカタログ**から選び、1 分でインストールして認証情報を設定 |
-| 認証情報をサードパーティーへ預けられない | **自社のインフラ上で実行**し、認証情報を AES-256-GCM で暗号化して保存 |
-| 認証、監査ログ、RBAC が必要 | **OAuth2、監査ログ、ロールベースのアクセス制御**を標準搭載 |
-| サードパーティーのモデルが API 応答の全フィールドを見てしまう | **[ツールごとのレスポンスマッピング](#control-what-the-model-sees)**で、ネットワークの外に出る前にフィールドを削除・整形 |
-| エージェントがツールの順序を間違えたり、システム間の関係を見落としたりする | **[ナレッジグラフと AI スキル](#knowledge-graph--ai-skills)**で、呼び出しのつなぎ方と学習した業務ルールをコンテキストとして提供 |
+呼び出しを転送するだけでは、難しい部分がエージェントに残ります。次にどのツールを呼ぶべきか、そして自社で言う「未完了の注文」が何を指すのか、です。AnythingMCP はその両方を学習し、追加のツール呼び出しではなくコンテキストとして返します。
 
-**実際の活用例**
+- **ナレッジグラフ。** ワークスペースごとに、エンティティ（顧客、注文、製品）とコネクターをまたぐ関係を表したマップです。ツール定義と実際の呼び出しから構築され、手動でも編集できます。保存するのはフィールド名と関係だけで、値は保存しません。各サーバーは `kg_how_to_obtain` ツールでこれを提供するため、エージェントは Shopware の注文から DHL の追跡番号にたどり着く方法を尋ねられます。
+- **AI スキル。** 繰り返される使い方を小さなルール（例：「本日の売上には注文ステータス 2、3、4 を含む」）にまとめます。適用、編集、却下はあなたが決め、適用したものはサーバーの指示に組み込まれます。
 
-| | ガイド |
-|---|---|
-| Claude から ERP と対話する | [SAP Business One](https://anythingmcp.com/ja/guides/connect-sap-business-one-to-claude) · [Odoo](https://anythingmcp.com/ja/guides/connect-odoo-to-claude) · [weclapp](https://anythingmcp.com/ja/guides/weclapp-to-mcp) · [Xentral](https://anythingmcp.com/ja/guides/xentral-to-mcp) |
-| 複数のショップやマーケットプレイスの注文、在庫、手数料を確認する | [Amazon Seller](https://anythingmcp.com/ja/guides/connect-amazon-seller-to-claude) · [WooCommerce](https://anythingmcp.com/ja/guides/connect-woocommerce-to-claude) · [Kaufland](https://anythingmcp.com/ja/guides/connect-kaufland-to-claude) |
-| 荷物を追跡する | [DHL](https://anythingmcp.com/guides/dhl-tracking-to-mcp) · [GLS](https://anythingmcp.com/guides/gls-tracking-to-mcp) |
-| 支払い前に請求書を検証する | [VIES VAT](https://anythingmcp.com/guides/vies-vat-to-mcp) · [Handelsregister](https://anythingmcp.com/guides/handelsregister-to-mcp) |
-| エージェントから本番データベースを読み取り専用で使う | [データベースコネクター](docs/connectors/database.md) |
-| 2009 年の SOAP サービスを 2026 年のモデルにつなぐ | [SOAP → MCP](https://anythingmcp.com/guides/soap-to-mcp) |
-| 列車、現在の遅延、経路を調べる | [Deutsche Bahn](https://anythingmcp.com/guides/deutsche-bahn-to-mcp) |
+AI による処理は既定でオフで、お手持ちの OpenAI、OpenRouter、Anthropic のキーを使います。グラフ、エディター、MCP ツールはキーなしでも動きます。[ナレッジグラフのガイド](docs/knowledge-graph.md)
 
 ---
 
-<a id="the-adapter-catalog"></a>
+<a id="where-it-fits"></a>
 
-## アダプターカタログ
+## 位置づけ
 
-265 個のアダプターで、2,400 以上のツールを公開できます。**21 個は API キーが不要**です。それ以外はインポート時に認証情報を設定すれば、すぐにツールを利用できます。各アダプターには [anythingmcp.com/guides](https://anythingmcp.com/guides) で 7 言語のセットアップガイドを用意しています。
-
-| カテゴリー | 例 |
-|---|---|
-| 📦 物流・配送 | Deutsche Bahn、DHL、DPD、GLS、Shipcloud、Sendcloud |
-| 💼 ERP・会計・請求 | [SAP Business One、Odoo、weclapp、Xentral ほか 12 種類の ERP](#erp-connectors)、Lexware Office、sevDesk、Exact Online、bexio |
-| 🛍️ E コマース | [Amazon Seller、WooCommerce、Shopware 6、Kaufland、OTTO ほか 8 種類](#e-commerce--marketplace-connectors)、Oxomi |
-| 👥 人事・フィールドサービス | Personio、HRWorks、Kenjo、MFR Mobile Field Report |
-| 🏛️ 行政・公開データ | VIES VAT、Handelsregister、UK Companies House 🇬🇧、DESTATIS、Bundesbank、OpenPLZ、NINA |
-| 🏦 銀行・決済 | Revolut Business、Wise 🇬🇧、PAYONE、Razorpay 🇮🇳、Paystack 🇳🇬 |
-| 💬 メッセージング・通信 | WhatsApp、LINE 🇯🇵、TeamViewer |
-| 🎾 スポーツ・Web3 | Playtomic、Sorare |
-| 🏗️ 建設・地図 | PlanRadar、HERE Geocoding |
-| 📈 広告・アナリティクス | Google Ads、Google Analytics 4、Google Search Console、Matomo |
-| 🧠 AI 判断モデル | TypeSafe の Jev：yes/no 判定、分類、スコアリングを確率付きで約 300 ms |
-
-**アダプターは 1 つの JSON ファイルです。** だからこそカタログをこの規模まで増やすことができ、新しいアダプターの追加は最初の貢献にも適しています。必要なものが見つからない場合は、[リクエスト](https://github.com/HelpCode-ai/anythingmcp/issues/new?template=adapter_request.yml)してください。👍 の数を基に優先順位を決めます。[自分で作成](CONTRIBUTING.md)することもできます。
-
----
-
-## ガイド・クライアント設定・FAQ
-
-➡️ **[docs/guides.md](docs/guides.md)** — Claude / ChatGPT / Gemini / Copilot / Cursor の設定 · REST / SOAP / GraphQL / データベース / MCP ブリッジのコネクターガイド · API リファレンスとデプロイドキュメント · FAQ。
-
-特定のサービスを探している場合は、**[anythingmcp.com/guides](https://anythingmcp.com/guides)** に各アダプターの詳しい手順があります。
+多くの MCP ゲートウェイは、既存の MCP サーバーを束ねて保護するものです。AnythingMCP はその一歩手前から始めます。すでに運用している API、ERP、データベースから MCP サーバーを生成し、権限管理と監査を備えた 1 つのエンドポイントで提供します。ツールがすでに MCP サーバーで、束ねるだけでよいなら、純粋なゲートウェイで十分かもしれません。詳しい比較：[anythingmcp.com/ja/vs](https://anythingmcp.com/ja/vs)。
 
 ---
 
@@ -370,60 +246,61 @@ AI クライアントは MCP を使いますが、業務システムは REST、S
 
 ## よくある質問（FAQ）
 
-**ERP（SAP Business One、Odoo、Xentral など）を Claude や ChatGPT に接続するには？**
-[カタログ](#erp-connectors)から ERP のアダプターをインストールして API の認証情報を入力し、MCP サーバーの URL を Claude にはカスタムコネクターとして、ChatGPT にはアプリとして追加します。ERP にアダプターがない場合は、その REST API、SOAP API、または SQL データベースに直接接続してください。最初は読み取りしかできないロールから始めましょう。
+### MCP ゲートウェイとは何ですか？
+多数のツールの前に置く単一の MCP エンドポイントで、認証、アクセス制御、監査をまとめて担います。Claude や ChatGPT などの AI クライアントは、各システムではなくゲートウェイに接続します。AnythingMCP は、独自の MCP サーバーを持たない API やデータベースからツールを生成する機能も備えたゲートウェイです。
 
-**OpenAPI 仕様を MCP サーバーにするには？**
-REST コネクターを作成し、仕様を URL か貼り付けでインポートします。各オペレーションが、サーバーの `/mcp` エンドポイント上の MCP ツールになります。コードは不要です。[仕組みはこちら](docs/connectors/rest.md#from-openapi--swagger)
+### ERP（SAP、Odoo、Xentral など）を Claude や ChatGPT に接続するには？
+[カタログ](#connector-catalog)から ERP のアダプターをインストールし、API の認証情報を入力して、MCP サーバーの URL を Claude にはカスタムコネクターとして、ChatGPT にはアプリとして追加します。アダプターがない場合は、REST API、SOAP API、SQL データベースに直接接続します。まずは読み取り専用のロールから始めてください。
 
-**SOAP/WSDL サービスを Claude に接続できますか？**
-はい。AnythingMCP が WSDL を解析して各オペレーションをツールに変換し、呼び出しのたびに SOAP エンベロープを組み立てます。WCF サービスにも対応しています。認証は HTTP Basic、Bearer、API キーヘッダーで行います。WS-Security ヘッダーはまだ実装されていません。[SOAP コネクターのドキュメント](docs/connectors/soap.md)
+### OpenAPI 仕様を MCP サーバーにするには？
+REST コネクターを作成し、仕様を URL か貼り付けでインポートします。各操作がサーバーの `/mcp` エンドポイント上の MCP ツールになり、コードは不要です。[仕組み](docs/connectors/rest.md#from-openapi--swagger)
 
-**Claude から SQL Server、Oracle、PostgreSQL のデータベースを安全に照会できますか？**
-データベースコネクターは初期設定で読み取り専用です。AnythingMCP は単一の SELECT（または `WITH … SELECT`）だけを実行し、書き込みや複数ステートメントをブロックします。そのうえで、SELECT 権限だけを持つデータベースユーザーを使い、モデルがパラメーターだけを指定する静的クエリーを優先し、ロールごとにツールを許可リストで絞り込んでください。レスポンスマッピングでモデルに渡してはいけない列を削除でき、すべてのクエリーは自社データベース内の監査ログに記録されます。
+### SOAP/WSDL サービスを Claude に接続できますか？
+はい。AnythingMCP は WSDL を解析して各操作をツールにし、呼び出しのたびに SOAP エンベロープを組み立てます。WCF サービスにも対応しています。認証は HTTP Basic、Bearer、API キーヘッダーです。WS-Security ヘッダーはまだ実装されていません。[SOAP コネクターのドキュメント](docs/connectors/soap.md)
 
-**Shopware、WooCommerce、Amazon Seller Central を Claude に接続するには？**
-ショップやマーケットプレイスに対応する [E コマースアダプター](#e-commerce--marketplace-connectors)をインストールし、認可します。WooCommerce には 49 のツールがあり、Amazon Seller Central は公式の Selling Partner API を使います。Shopware 6 アダプターは Store API を通じてストアフロントのカタログを読み取ります。
+### Claude で SQL Server、Oracle、PostgreSQL を安全にクエリできますか？
+クエリツールは既定で読み取り専用です。加えて、SELECT 権限だけを持つデータベースユーザーを使い、モデルがパラメーターだけを渡す静的クエリを優先し、ロールごとにツールをホワイトリスト化してください。レスポンスマッピングでモデルに渡してはいけない列を削除でき、すべてのクエリが監査ログに記録されます。
 
-**AnythingMCP は MCP ゲートウェイですか？セルフホストで無料ですか？**
-はい、3 つともそのとおりです。すべてのコネクターの前段に 1 つの MCP エンドポイントを置き、OAuth2、RBAC、SSO、監査を備えています。AGPL-3.0 のもとで自社のサーバー上で動作し、商用利用も含まれます。[AnythingMCP Cloud](https://cloud.anythingmcp.com) はオプションのホスト版です。
+### Shopware、WooCommerce、Amazon Seller Central を Claude に接続するには？
+お使いのショップやマーケットプレイスの [E コマースアダプター](#e-commerce--marketplace-connectors)をインストールして認可します。WooCommerce には 49 のツールがあり、Amazon Seller Central は公式の Selling Partner API を使い、Shopware 6 アダプターは Store API でストアフロントのカタログを読み取ります。
 
-**Composio とはどう違いますか？**
-Composio はマネージド連携のホスト型カタログです。AnythingMCP は社内の独自 API、SOAP サービス、データベースもツールに変換でき、すべての認証情報を自社のインフラ上に保持できます。[詳しい比較](https://anythingmcp.com/ja/vs/alternatives-to-composio)
+### AnythingMCP は無料ですか？セルフホストできますか？
+はい。AGPL-3.0 のもと、自社のサーバーで動かせます。商用利用も含まれます。[AnythingMCP Cloud](https://cloud.anythingmcp.com/login?mode=register) はフランクフルトで運用するオプションのホスト版で、7 日間の無料トライアルがあります。
 
 ---
 
 ## コミュニティとサポート
 
-- 💬 **質問・ディスカッション** — [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions)で、次に追加するアダプターへ投票したり、作成したものを共有したりできます。
-- 🐛 **不具合 / 💡 機能の提案** — [Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · 🆘 [SUPPORT.md](SUPPORT.md)
-- 🔐 **セキュリティ** — 公開 Issue は作成せず、[SECURITY.md](SECURITY.md) の手順に従ってください。
-- 🏢 ドイツ・フライブルクの [helpcode.ai](https://helpcode.ai) が開発しています。AI を活用して開発し、人がレビューしています。対象となる部分や進め方は [AUTHORS.md](AUTHORS.md) に記載しています。
+- 💬 **質問とアイデア：**[GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions)。次のアダプターに投票したり、作ったものを共有したりできます。
+- 🐛 **バグと機能要望：**[Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · [サポート](.github/SUPPORT.md)
+- 👥 **導入事例：**[本番環境で AnythingMCP を使っている組織](docs/ADOPTERS.md)と、掲載の方法
+- 🔐 **セキュリティ：**公開の issue は作成せず、[セキュリティポリシー](.github/SECURITY.md)に従ってください
+- 🤖 **AI エージェントとクローラー向け：**[anythingmcp.com/llms.txt](https://anythingmcp.com/llms.txt)
+- 🏢 ドイツ・フライブルクの [helpcode.ai](https://helpcode.ai) が開発しています。AI 支援で開発し、人がレビューしています。どの部分をどのように、は [AUTHORS.md](docs/AUTHORS.md) に記載しています。
 
 ## 貢献する
 
-PR を作成する前に、[貢献ガイド](CONTRIBUTING.md)を読んでください。最も取り組みやすく有用な貢献は、1 つの JSON ファイルからなるアダプターの追加です。そのための[手順を解説した Issue](https://github.com/HelpCode-ai/anythingmcp/issues/150)もあります。
+PR を送る前に[コントリビューションガイド](.github/CONTRIBUTING.md)をお読みください。いちばん手軽で役に立つ貢献はアダプターです。JSON ファイル 1 つで済み、[手順を説明した issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) もあります。
 
 ## License
 
-**Open source** under the [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Commercial use inside your own company is included and always was; the copyleft obligation only starts if you modify AnythingMCP and offer the modified version to others over a network. Cloud-operator code under `ee/` is separately licensed and is not required for self-hosting — see the [License FAQ](docs/license-faq.md).
-
+[GNU Affero General Public License v3](LICENSE)（AGPL-3.0-only）のもとで**オープンソース**です。自社内での商用利用は当初から認められています。コピーレフトの義務が生じるのは、AnythingMCP を改変し、その改変版をネットワーク経由で他者に提供する場合だけです。`ee/` 配下のクラウド運用者向けコードは別ライセンスで、セルフホストには不要です。[ライセンス FAQ](docs/license-faq.md) を参照してください。
 
 ---
 
 <p align="center">
-  <strong>⭐ MCP サーバーの実装にかかる 1 週間を節約できたら、スターを付けてください。</strong><br/>
-  <em>スターは、次の利用者がプロジェクトを見つけるきっかけになり、次に作るアダプターを決める参考にもなります。</em>
+  <strong>⭐ MCP サーバーを書く 1 週間を節約できたなら、Star をお願いします。</strong><br/>
+  <em>Star は次の人がこのプロジェクトを見つける手がかりになり、次にどのアダプターを作るかを決める材料にもなります。</em>
 </p>
 
 <p align="center">
   <a href="https://star-history.com/#HelpCode-ai/anythingmcp&Date">
-    <img src="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date" alt="スター数の推移" width="70%">
+    <img src="https://api.star-history.com/svg?repos=HelpCode-ai/anythingmcp&type=Date" alt="Star history" width="70%">
   </a>
 </p>
 
 <p align="center">
   <a href="https://github.com/HelpCode-ai/anythingmcp/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=HelpCode-ai/anythingmcp" alt="コントリビューター">
+    <img src="https://contrib.rocks/image?repo=HelpCode-ai/anythingmcp" alt="Contributors">
   </a>
 </p>

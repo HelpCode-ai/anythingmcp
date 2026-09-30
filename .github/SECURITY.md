@@ -62,7 +62,7 @@ Update the value in `.env` and restart: `docker compose up -d`. Existing session
 
 `ENCRYPTION_KEY` encrypts connector credentials (API keys, OAuth tokens, database passwords) at rest. Rotating it requires re-encrypting every stored secret, because the existing ciphertext was sealed with the old key.
 
-Until a built-in rotation command ships (tracked in [ROADMAP.md](ROADMAP.md)), the safe procedure is:
+Until a built-in rotation command ships (tracked in [ROADMAP.md](../docs/ROADMAP.md)), the safe procedure is:
 
 1. **Take a database backup** — `docker compose exec postgres pg_dump -U amcp anythingmcp > backup-pre-rotation.sql`.
 2. **Export connector configs** — from the Admin UI, export each connector to JSON (this captures the *decrypted* credentials in transit; keep the export file in a secure location and delete it after step 5).

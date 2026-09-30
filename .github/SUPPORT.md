@@ -14,12 +14,12 @@ The fastest answers usually come from other users. Before opening an issue, chec
 
 ## Documentation
 
-- **[README](README.md)** — overview and quick start
+- **[README](../README.md)** — overview and quick start
 - **[anythingmcp.com](https://anythingmcp.com)** — website with 150+ guides for individual adapters and AI clients (English / German / Italian)
-- **[Deployment Guide](docs/deployment.md)** — production self-hosting
-- **[API Reference](docs/api-reference.md)** — full REST API
-- **[Tool Definition Format](docs/tool-definition.md)** — how adapter JSON files are structured
-- **[License FAQ](docs/license-faq.md)** — what the AGPL-3.0 license means in practice
+- **[Deployment Guide](../docs/deployment.md)** — production self-hosting
+- **[API Reference](../docs/api-reference.md)** — full REST API
+- **[Tool Definition Format](../docs/tool-definition.md)** — how adapter JSON files are structured
+- **[License FAQ](../docs/license-faq.md)** — what the AGPL-3.0 license means in practice
 
 ## Bug reports
 

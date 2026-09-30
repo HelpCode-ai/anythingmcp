@@ -21,6 +21,6 @@
 # Documentation
 /docs/                  @keysersoft
 /README.md              @keysersoft
-/CONTRIBUTING.md        @keysersoft
-/SECURITY.md            @keysersoft
-/ROADMAP.md             @keysersoft
+/.github/CONTRIBUTING.md        @keysersoft
+/.github/SECURITY.md            @keysersoft
+/docs/ROADMAP.md             @keysersoft

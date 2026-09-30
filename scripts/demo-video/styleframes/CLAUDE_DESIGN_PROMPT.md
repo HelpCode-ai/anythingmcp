@@ -5,7 +5,7 @@ Paste everything below the line into a new Claude Design project. Attach:
 and one screenshot of the anythingmcp.com hero (cream background, dark gateway diagram).
 
 When the frames are approved, use **Export → Handoff to Claude Code** and save the
-bundle into `video/demo/styleframes/handoff/`.
+bundle into `scripts/demo-video/styleframes/handoff/`.
 
 ---
 

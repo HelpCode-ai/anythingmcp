@@ -2,15 +2,15 @@
   <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP turns ERP, e-commerce, REST, SOAP and SQL systems into MCP tools for Claude and ChatGPT: 265 connectors, 21 of them with no API key." width="100%" />
 </p>
 
-<h1 align="center">AnythingMCP</h1>
+<h1 align="center">AnythingMCP: self-hosted MCP gateway</h1>
 
 <p align="center">
   <a href="README.md">English</a> · <a href="README.de.md">Deutsch</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a>
 </p>
 
 <p align="center">
-  <strong>Turn any REST/OpenAPI, SOAP, GraphQL or SQL API into MCP tools for Claude, ChatGPT and Copilot.</strong><br/>
-  A self-hosted MCP server and gateway, no code, 265 ready connectors including ERP and e-commerce: SAP Business One, Odoo, Xentral, weclapp, Shopware, WooCommerce, Amazon Seller, Kaufland and more.
+  <strong>AnythingMCP is an open-source, self-hosted MCP gateway that turns any REST/OpenAPI, SOAP, GraphQL, OData or SQL system into MCP tools for Claude, ChatGPT and Copilot, without writing an MCP server.</strong><br/>
+  It ships 265 ready connectors, among them SAP, Odoo, Xentral, weclapp, Shopware, WooCommerce and Amazon Seller, and 21 of them need no API key.
 </p>
 
 <p align="center">
@@ -18,46 +18,23 @@
   <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/open%20source-AGPL--3.0-2563eb?labelColor=0b1220" alt="Open source, AGPL-3.0"></a>
   <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/docker/pulls/helpcodeai/anythingmcp?logo=docker&logoColor=white&color=2563eb&labelColor=0b1220" alt="Docker pulls"></a>
-  <a href="#the-adapter-catalog"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FHelpCode-ai%2Fanythingmcp%2Fbadges%2Fadapters.json" alt="Adapters in the catalog"></a>
-  <a href="#the-adapter-catalog"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FHelpCode-ai%2Fanythingmcp%2Fbadges%2Ftools.json" alt="Tools across all adapters"></a>
-  <a href="#the-adapter-catalog"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FHelpCode-ai%2Fanythingmcp%2Fbadges%2Fkeyless.json" alt="Adapters that need no API key"></a>
 </p>
-
-**One question in Claude, answered from Etsy, SAP and a logistics API.** AnythingMCP connects the shop from the marketplace, SAP S/4HANA over OData and a REST API from its OpenAPI spec, then Claude works across all three:
 
 <p align="center">
-  <a href="https://anythingmcp.com/video-promo"><img src="docs/assets/demo-lumen-clay.gif" alt="AnythingMCP demo: Etsy installed from the marketplace, SAP S/4HANA added as an OData connector, a logistics API imported from its OpenAPI spec, then Claude answers which Etsy orders are stuck and whether SAP has stock to resend them" width="100%" /></a>
+  <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>Try the Cloud free for 7 days</strong></a> · <a href="#run-it-yourself">Run it yourself</a> · <a href="docs/guides.md">Docs</a> · <a href="https://anythingmcp.com/guides">Connector guides</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
-<p align="center"><a href="https://anythingmcp.com/video-promo">▶ Watch the full demo (2:40, with sound)</a></p>
+**One question in Claude, answered from Etsy, SAP and a logistics API.** The demo installs Etsy from the catalog, adds SAP S/4HANA over OData and imports a logistics API from its OpenAPI spec, then Claude works across all three (2:40, with sound):
 
-**Run it yourself** — three lines, no clone, [details below](#run-it-yourself):
+https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
 
-```bash
-mkdir anythingmcp && cd anythingmcp
-curl -fsSLo docker-compose.yml \
-  https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docker-compose.quickstart.yml
-printf 'JWT_SECRET=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
-docker compose up -d   # → http://localhost:3000
-```
-
----
-
-Three words appear throughout and mean three different things:
-
-- an **adapter** is one of the 265 JSON definitions that ship in this repo — SAP Business One, Odoo, weclapp, Xentral, Shopware, WooCommerce, Amazon Seller, DHL and the rest. 21 of them need no API key at all; the others ask for your credentials at import.
-- a **connector** is an adapter, or your own OpenAPI spec / Postman collection / WSDL / GraphQL endpoint / database, once you have configured it in your workspace. Anything you can point at, in minutes, without writing an MCP server.
-- an **MCP server** is the URL you hand to Claude. It exposes the connectors you assign to it, and nothing else.
-
-Everything runs on your infrastructure, so you decide what leaves it. Per-tool response mapping declares which fields ever reach the model; credentials are AES-256-GCM at rest; the audit log keeps the full upstream response on your side. OAuth2, RBAC, SSO and SCIM are in the self-hosted build, not held back for a paid tier.
-
-**In production at [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**, where it connects AI assistants to 15+ internal systems — ERP, CRM, SOAP services and on-prem databases. AnythingMCP was extracted from that system by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany, and open-sourced because an adapter catalog grows faster as a community than as a product.
+**In production at [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**, where it connects AI assistants to 15+ internal systems: ERP, CRM, SOAP services and on-prem databases. [helpcode.ai](https://helpcode.ai) extracted it from that system and open-sourced it, because an adapter catalog grows faster as a community than as a product.
 
 ---
 
 ## Run it yourself
 
-**The recommended path**, and the one measured below. Requires Docker 24+ and `openssl`; on macOS, start Docker Desktop first.
+Requires Docker 24+ and `openssl`; on macOS, start Docker Desktop first. No clone needed:
 
 ```bash
 mkdir anythingmcp && cd anythingmcp
@@ -67,26 +44,20 @@ printf 'JWT_SECRET=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" "$(openssl
 docker compose up -d
 ```
 
-Open <http://localhost:3000> and register — **the first account becomes admin**.
+Open <http://localhost:3000> and register: **the first account becomes admin**. Your MCP endpoint is `http://localhost:4000/mcp`, the API docs are at `http://localhost:4000/api/docs`.
 
-> **Keep the generated `.env`.** `ENCRYPTION_KEY` is what decrypts the credentials you store. Lose it and every connector has to be re-credentialed; back it up wherever you keep your other secrets.
+> **Keep the generated `.env`.** `ENCRYPTION_KEY` decrypts the credentials you store. Lose it and every connector has to be re-credentialed.
 
-| Service | Default URL |
-|---|---|
-| Web UI | `http://localhost:3000` |
-| MCP endpoint | `http://localhost:4000/mcp` |
-| Swagger docs | `http://localhost:4000/api/docs` |
+On amd64 the image pulls in about 30 s and the API is healthy 24 s later. The image is amd64 only for now; the compose file pins the platform, so it also runs on Apple Silicon under emulation.
 
-*Measured on amd64: 31 s to pull the image, 24 s to a healthy API and a login page. The published image is amd64 only for now — the compose file pins the platform so it also runs on Apple Silicon under Docker Desktop's emulation, where the same boot took 24 s on an M-series laptop but can take a few minutes on older hardware.*
-
-The quickstart binds to `127.0.0.1` on purpose: nothing in front of it terminates TLS. **For an instance other people or a cloud AI client can reach**, clone the repo and run `./setup.sh` — it asks for a domain, gets certificates through Caddy, generates the secrets and sets the MCP auth mode. See the [Deployment Guide](docs/deployment.md).
+The quickstart binds to `127.0.0.1` on purpose, because nothing in front of it terminates TLS. **For an instance other people or a cloud AI client can reach**, clone the repo and run `./setup.sh`: it asks for a domain, gets certificates through Caddy, generates the secrets and sets the MCP auth mode. See the [Deployment Guide](docs/deployment.md).
 
 <details>
-<summary><strong>Other ways to deploy</strong> — managed cloud, Railway, DigitalOcean</summary>
+<summary><strong>Other ways to run it:</strong> managed cloud, Railway, DigitalOcean</summary>
 
 <br/>
 
-[**AnythingMCP Cloud**](https://cloud.anythingmcp.com) is the same AGPL code, operated by us in **Frankfurt, Germany**. Start there to see it work on your own APIs without provisioning anything, and move it in-house when you want the credentials to stop travelling — the connectors are the same either way. DPA/AVV on request via [info@helpcode.ai](mailto:info@helpcode.ai). SSO and SCIM are self-hosted only.
+[**AnythingMCP Cloud**](https://cloud.anythingmcp.com) is the same AGPL code, operated by us in **Frankfurt, Germany**, with a 7-day free trial. Start there to try it on your own APIs, and move it in-house when you want the credentials to stop travelling; the connectors are the same either way. DPA/AVV on request via [info@helpcode.ai](mailto:info@helpcode.ai). SSO and SCIM are self-hosted only.
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
 &nbsp;
@@ -96,35 +67,53 @@ The quickstart binds to `127.0.0.1` on purpose: nothing in front of it terminate
 
 ---
 
-## Connect any system
+## How it works
 
-Most companies have no MCP servers yet. They have a REST API, an ERP, a SOAP service and a database. Each of them becomes a set of MCP tools, and one MCP server URL hands them to Claude, ChatGPT or Copilot.
-
-### OpenAPI / REST API to MCP
-
-Import an OpenAPI 3.x or Swagger 2.0 spec, by URL or by pasting it, and every operation becomes an MCP tool with its parameters, auth and endpoint mapping filled in. Rename and describe the tools in the visual editor so the model picks the right one. [REST connector docs](docs/connectors/rest.md) · [guide](https://anythingmcp.com/guides/rest-api-to-mcp) · [5-minute demo: openapi-to-mcp](https://github.com/HelpCode-ai/openapi-to-mcp)
-
-### SOAP / WSDL to MCP
-
-Point AnythingMCP at a WSDL and each SOAP operation becomes a tool: envelopes, parameter order and WCF services are handled for you, with Basic, Bearer or API-key auth. That is how a SOAP service from 2009 ends up in front of a 2026 model, in minutes rather than weeks. [SOAP connector docs](docs/connectors/soap.md) · [guide](https://anythingmcp.com/guides/soap-to-mcp) · [5-minute demo: soap-to-mcp](https://github.com/HelpCode-ai/soap-to-mcp)
-
-### SQL database to MCP
-
-PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SAP HANA, SQLite and MongoDB. The connector generates schema, example and query tools; you decide whether the model writes SQL or only fills in the parameters of queries you wrote. Query tools are read-only by default: AnythingMCP runs a single SELECT and blocks writes and stacked statements. Add a read-only database user and a role that sees only the tools it needs. [Database connector docs](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [guide](https://anythingmcp.com/guides/database-to-mcp) · [5-minute demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp)
-
-### GraphQL to MCP
-
-Introspection turns the queries and mutations of a GraphQL endpoint into MCP tools, or you define the operations yourself. [GraphQL connector docs](docs/connectors/graphql.md) · [guide](https://anythingmcp.com/guides/graphql-to-mcp)
-
-### Postman collection to MCP
-
-Import a Postman v2.1 collection: folders, auth, body modes and `{{variables}}` carry over, and every request becomes a tool. cURL commands work the same way. [Postman import docs](docs/connectors/rest.md#from-postman-collection)
+1. **Add a connector.** Install an **adapter** from the catalog (a ready JSON definition for SAP, Odoo, DHL and the rest), or point AnythingMCP at your own OpenAPI spec, WSDL, GraphQL endpoint, Postman collection or database. Once configured in your workspace it is a **connector**, and each of its operations is an MCP tool.
+2. **Decide what the model sees.** Rename and describe the tools in the visual editor, drop the fields that must not leave your network, and choose which roles may call which tools.
+3. **Hand one URL to your AI client.** An **MCP server** is the endpoint you add to Claude, ChatGPT, Copilot, Gemini or Cursor. It exposes the connectors you assign to it, and nothing else.
 
 ---
 
-## ERP connectors
+## Connect any API, SOAP service or database
 
-Ready adapters for the ERPs behind most order, stock and invoice questions. Install one, add your credentials, and the tools are live on your MCP server. Each name links to its setup guide.
+Most companies have no MCP servers yet. They have a REST API, an ERP, a SOAP service from 2009 and a database. Each of them becomes a set of MCP tools:
+
+| Source | What you get | Docs |
+|---|---|---|
+| **OpenAPI / Swagger (REST)** | Import a spec by URL or paste it; every operation becomes a tool with parameters, auth and endpoint mapping filled in | [REST](docs/connectors/rest.md) · [guide](https://anythingmcp.com/guides/rest-api-to-mcp) · [demo: openapi-to-mcp](https://github.com/HelpCode-ai/openapi-to-mcp) |
+| **Postman collection, cURL** | Folders, auth, body modes and `{{variables}}` carry over; every request becomes a tool | [Postman import](docs/connectors/rest.md#from-postman-collection) |
+| **SOAP / WSDL** | Each operation becomes a tool; envelopes, parameter order and WCF services are handled for you | [SOAP](docs/connectors/soap.md) · [guide](https://anythingmcp.com/guides/soap-to-mcp) · [demo: soap-to-mcp](https://github.com/HelpCode-ai/soap-to-mcp) |
+| **GraphQL** | Introspection turns queries and mutations into tools, or you define the operations yourself | [GraphQL](docs/connectors/graphql.md) · [guide](https://anythingmcp.com/guides/graphql-to-mcp) |
+| **OData** (SAP Gateway included) | Reads each service's `$metadata`, so the model sees entity sets, keys and SAP's business labels; V2 and V4 | [OData](docs/connectors/odata.md) · [guide](https://anythingmcp.com/guides/odata-to-mcp) |
+| **SQL and MongoDB** | PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SAP HANA, SQLite and MongoDB: schema, example and query tools, read-only by default | [Database](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [guide](https://anythingmcp.com/guides/database-to-mcp) · [demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp) |
+| **Another MCP server** | Discover its tools and serve them next to your own, behind the same auth and audit | [MCP bridge](docs/connectors/mcp-bridge.md) |
+
+Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are interpolated on the server and never shown to the AI.
+
+---
+
+## Connector catalog
+
+265 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+
+| Category | Examples |
+|---|---|
+| 💼 ERP, accounting &amp; invoicing | SAP Business One, SAP S/4HANA, Odoo, weclapp, Xentral, Dynamics NAV, Lexware Office, sevDesk, Exact Online, bexio |
+| 🛍️ E-commerce &amp; marketplaces | Amazon Seller, WooCommerce, Shopware 6, Magento, eBay, Etsy, Kaufland, OTTO, Oxomi |
+| 📦 Logistics &amp; shipping | Deutsche Bahn, DHL, DPD, GLS, Shipcloud, Sendcloud |
+| 👥 HR &amp; field service | Personio, HRWorks, Kenjo, MFR Mobile Field Report |
+| 🏛️ Government &amp; public data | VIES VAT, Handelsregister, UK Companies House, DESTATIS, Bundesbank, OpenPLZ, NINA |
+| 🏦 Banking &amp; payments | Revolut Business, Wise, PAYONE, Razorpay, Paystack |
+| 💬 Messaging | WhatsApp, LINE, TeamViewer |
+| 📈 Advertising &amp; analytics | Google Ads, Google Analytics 4, Google Search Console, Matomo |
+| 🧠 AI decision models | Jev by TypeSafe: yes/no, classification and scoring with probabilities, in about 300 ms |
+
+<a name="erp-connectors"></a>
+<details>
+<summary><strong>ERP connectors</strong>: 18 systems, with tools and markets</summary>
+
+<br/>
 
 | System | Market | Tools | What the AI can do |
 |---|---|---|---|
@@ -151,13 +140,13 @@ Ready adapters for the ERPs behind most order, stock and invoice questions. Inst
 
 **Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
-**Your ERP isn't listed, or it's a custom or on-prem build?** Connect it through its [REST API](#openapi--rest-api-to-mcp), [SOAP services](#soap--wsdl-to-mcp) or straight to its [SQL database](#sql-database-to-mcp), read-only. That is how [KOCH Freiburg](https://www.kochfreiburg.de/) runs its ERP in production.
+</details>
 
----
+<a name="e-commerce--marketplace-connectors"></a>
+<details>
+<summary><strong>E-commerce &amp; marketplace connectors</strong>: 13 shops and marketplaces</summary>
 
-## E-commerce &amp; marketplace connectors
-
-Shops and marketplaces, from Amazon and eBay to the DACH marketplaces. Each name links to its setup guide.
+<br/>
 
 | System | Market | Tools | What the AI can do |
 |---|---|---|---|
@@ -179,94 +168,21 @@ Shops and marketplaces, from Amazon and eBay to the DACH marketplaces. Each name
 
 **Repositories:** [ecommerce-mcp-server](https://github.com/HelpCode-ai/ecommerce-mcp-server) · [amazon-seller-mcp-server](https://github.com/keysersoft/amazon-seller-mcp-server) · [billbee-mcp-server](https://github.com/kochfreiburg/billbee-mcp-server) · [magento-mcp-server](https://github.com/keysersoft/magento-mcp-server) · [woocommerce-mcp-server](https://github.com/keysersoft/woocommerce-mcp-server) · [shopware-mcp-server](https://github.com/kochfreiburg/shopware-mcp-server) · [kaufland-mcp-server](https://github.com/kochfreiburg/kaufland-mcp-server) · [otto-market-mcp-server](https://github.com/kochfreiburg/otto-market-mcp-server)
 
----
+</details>
 
-## What it connects, governs and learns
-
-### Connect
-
-- **6 connector types** — [REST](docs/connectors/rest.md), [SOAP](docs/connectors/soap.md), [GraphQL](docs/connectors/graphql.md), [OData](docs/connectors/odata.md) (SAP Gateway included), [Database](docs/connectors/database.md), [MCP-to-MCP bridge](docs/connectors/mcp-bridge.md). Eight database engines: PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, SQLite.
-- **Import from what you already have** — OpenAPI/Swagger, Postman, cURL, WSDL, GraphQL introspection, or tool discovery straight from a running MCP server.
-- **The adapter catalog** — [see what ships](#the-adapter-catalog).
-- **Visual tool editor** — map parameters to path, query, body and headers; rename and describe tools so the AI reads them the way you meant.
-- **Dynamic MCP server** — tools register at runtime, no restart. Per-connector `{{VAR}}` interpolation, hidden from the AI.
-
-### Govern
-
-- **[Response shaping](#control-what-the-model-sees)** — declare per tool exactly which fields reach the model, with a live before/after preview.
-- **Read-only where it matters.** Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`), derived from the operation and overridable per tool, so a client can show the difference between reading an invoice and issuing a credit note. Role-based tool whitelisting lets you publish an MCP server that can only read — which is how most people should start with an ERP.
-- **Every auth scheme you will meet** — OAuth2 (PKCE and Client Credentials), Bearer, API Key, Basic, HMAC request signing, [LOGIN_TOKEN](docs/connectors/login-token-auth.md) and OAuth 1.0a.
-- **Audit logging** — every tool call recorded with input, output, duration and status, in your own database.
-- **[SSO](docs/sso.md) and [SCIM](docs/scim-entra-setup.md)** — Entra ID, Google, Okta, Auth0, generic OIDC. Roles sync from your directory groups on every sign-in; disable someone in the directory and their workspace access and MCP API keys die with it (self-hosted only).
-
-### Learn
-
-- **[Knowledge Graph](docs/knowledge-graph.md)** — a per-workspace, PII-safe map of how your connectors' data relates, served back to the agent as an MCP tool so it chains calls across systems correctly.
-- **[AI skills](docs/knowledge-graph.md)** — recurring usage turned into small reusable rules and composed into the server's instructions, so they guide the agent without adding a tool call (optional, opt-in).
+**An adapter is a single JSON file.** That is why the catalog is this size, and why adding one is a reasonable first contribution. Missing yours? [Request it](https://github.com/HelpCode-ai/anythingmcp/issues/new?template=adapter_request.yml) (we prioritise by 👍) or [build it](.github/CONTRIBUTING.md). Your ERP isn't listed, or it's a custom build? Connect its REST API, its SOAP services or its SQL database directly, read-only.
 
 ---
 
-## Knowledge Graph &amp; AI skills
+## Security and governance
 
-Forwarding calls leaves the hard part to the agent: knowing which tool to call
-next, and what your business actually means by "open order" or "active
-customer". AnythingMCP learns both — **how the data in your connectors
-relates**, and **how your team really uses the tools** — then feeds that back to
-the AI client as context rather than as extra tool calls.
+Everything runs on your infrastructure, so you decide what leaves it. OAuth2, RBAC, SSO and SCIM are in the self-hosted build, not held back for a paid tier.
 
-- **Knowledge Graph** — a per-workspace map of *entities* (customers, orders,
-  products…) and their *relationships*. It builds itself from tool names,
-  parameters and the input/output of real calls; an optional AI pass infers the
-  cross-connector links heuristics miss. It stays **PII-safe**: it stores
-  entity/field *names* and relationship metadata, never the values.
-- **Build it visually** — a graph editor lets you create, edit and delete
-  entities and connections by hand, add descriptions, and curate what the AI
-  proposed.
-- **Served over MCP** — each server exposes a `kg_how_to_obtain` tool, so the
-  *customer's* agent can ask "how do I get from a Shopware order to a DHL
-  tracking number?" and receive chaining hints across connectors.
-- **AI skills, written from real usage** — with intent capture on, each tool
-  call can record *why* it was made. An AI pass turns recurring patterns into
-  small reusable rules (e.g. *"today's revenue includes order statuses 2, 3 and
-  4"*). You Apply, Edit or Dismiss each one, or let auto-apply take the
-  high-confidence ones unattended. Applied skills are composed into the MCP
-  server's **instructions** at serve time, so they guide the agent **without
-  adding a single tool call**. The knowledge your team builds up by using the
-  system stops living in someone's head.
-
-The AI passes are **off by default** — opt in with a global env flag *and* a
-per-workspace switch, using OpenAI, OpenRouter or Anthropic. The graph, manual
-editing and the MCP tool work with no LLM key at all.
-
-➡️ **[Knowledge Graph &amp; AI skills guide →](docs/knowledge-graph.md)**
-
----
-
-## Control what the model sees
-
-Every tool can declare **exactly which fields leave your infrastructure**. The
-mapping is attached per tool and applied on the way out, so the AI client — and
-the third-party model behind it — only ever receives the shape you approved.
-
-- **Drop what should never travel.** List the paths to remove and they are
-  stripped before the response reaches the agent: a customer's IBAN, an
-  employee's salary, an access token an API hands back alongside the data.
-- **Or declare the whole output.** A `select` template names the fields to keep
-  and what to call them; a JMESPath expression covers the reshaping a template
-  can't express. Where an agent is better served by a stable shape, swap the
-  value for a placeholder (`"iban": "= [redacted]"`) instead of removing the
-  field.
-- **See it before you save it.** The editor runs the mapping against a real
-  response and shows the before/after side by side, with the size difference. A
-  shipped adapter measures **12,172 B → 1,072 B (−91%)** on a four-train result.
-- **It fails open by default, and this says so.** If a mapping breaks at
-  runtime, the raw response is returned and a warning is logged, so one bad
-  expression cannot take a working tool offline. That default is wrong for
-  fields that must never travel: set **`"fallbackToRaw": false`** on those
-  tools and a broken mapping fails the call instead of leaking through it.
-
-Two payoffs at once: sensitive fields never reach the model, and every field you
-drop is a field you don't pay for in the context window.
+- **Response mapping.** Each tool declares exactly which fields reach the model: drop a customer's IBAN or an employee's salary, or name the fields to keep. The editor shows the before/after on a real response; a shipped adapter goes from 12,172 B to 1,072 B (−91%), so you also stop paying for those fields in the context window. A broken mapping returns the raw response by default; set `"fallbackToRaw": false` on tools whose fields must never travel, and the call fails instead.
+- **Read-only where it matters.** Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`), derived from the operation and overridable per tool. Role-based tool whitelisting lets you publish an MCP server that can only read, which is how most people should start with an ERP. Database query tools run a single SELECT and block writes and stacked statements.
+- **Every auth scheme you will meet.** OAuth2 (PKCE and Client Credentials), Bearer, API key, Basic, HMAC request signing, [LOGIN_TOKEN](docs/connectors/login-token-auth.md) and OAuth 1.0a. Credentials are encrypted at rest with AES-256-GCM.
+- **Audit log.** Every tool call is recorded with input, output, duration and status in your own database, including the full upstream response the model never saw.
+- **[SSO](docs/sso.md) and [SCIM](docs/scim-entra-setup.md).** Entra ID, Google, Okta, Auth0 or any OIDC provider. Roles sync from your directory groups on every sign-in; disable someone in the directory and their workspace access and MCP API keys go with it.
 
 ```json
 {
@@ -279,154 +195,84 @@ drop is a field you don't pay for in the context window.
 }
 ```
 
-> The audit log still records the full upstream response inside your own
-> database. Shaping what the agent sees never costs you the evidence of what the
-> API actually returned.
-
-➡️ **[Response mapping reference →](docs/tool-definition.md#3-response-mapping-optional)**
+[Response mapping reference](docs/tool-definition.md#3-response-mapping-optional)
 
 ---
 
-## Build custom Claude connectors — no code
+## Use it from Claude, ChatGPT, Copilot and Gemini
 
-Claude supports **custom connectors**: remote MCP servers you add once in *Customize → Connectors*, and that work across Claude.ai, Claude Desktop and Claude Code. AnythingMCP creates that connector **from any API you already have** — without writing an MCP server:
+The same MCP server works in every client that speaks MCP, so you build a connector once:
 
-1. Import your API spec, or pick a pre-built adapter
-2. Adjust tool names, descriptions and parameters in the **visual editor** — what the AI sees is up to you
-3. Add your MCP server's URL to Claude as a custom connector (OAuth 2.0 supported out of the box)
-
-Your credentials stay on your infrastructure, every tool call lands in the audit log, and role-based access controls which users see which tools. [Step-by-step guide →](docs/integrations/claude.md)
+- **Claude.** Add the server URL as a **custom connector** under *Customize → Connectors*; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. [Claude setup](docs/integrations/claude.md)
+- **ChatGPT.** Apps in ChatGPT are built on MCP. Add the server in ChatGPT's settings, or use it as the tool layer of an Apps SDK app. [ChatGPT setup](docs/integrations/chatgpt.md)
+- **Copilot, Gemini, Cursor** and other MCP clients: [client setup guides](docs/guides.md).
 
 ---
 
-## Turn your API into a ChatGPT app
+## Knowledge Graph and AI skills
 
-**Apps in ChatGPT are built on MCP**, and AnythingMCP gives you that MCP backend without writing one. Point it at your REST, SOAP, GraphQL or database endpoint and you get a ChatGPT-ready connector: add it in ChatGPT's settings (or use it as the tool layer of an Apps SDK app) and ChatGPT can read and act on your business data.
+Forwarding calls leaves the hard part to the agent: knowing which tool to call next, and what your business means by "open order". AnythingMCP learns both and hands them back as context, not as extra tool calls.
 
-The same connector works simultaneously in **Claude, ChatGPT, Gemini, Copilot and Cursor** — build once, connect everywhere. [ChatGPT setup guide →](docs/integrations/chatgpt.md)
+- **Knowledge Graph.** A per-workspace map of entities (customers, orders, products) and how they relate across connectors, built from tool definitions and real calls, and editable by hand. It stores field names and relationships, never values. Each server exposes it through a `kg_how_to_obtain` tool, so the agent can ask how to get from a Shopware order to a DHL tracking number.
+- **AI skills.** Recurring usage turned into small rules ("today's revenue includes order statuses 2, 3 and 4") that you apply, edit or dismiss, and that are composed into the server's instructions.
 
----
-
-## Why AnythingMCP
-
-AI clients speak MCP, but your systems speak REST, SOAP, GraphQL and SQL. Writing and maintaining a bespoke MCP server per system — with auth, audit and access control — takes weeks each. AnythingMCP is the no-code layer in between:
-
-| Problem | Solution |
-|---|---|
-| You have REST APIs but AI clients speak MCP | **REST → MCP** conversion with OpenAPI / Swagger import |
-| You have legacy SOAP/WSDL services | **SOAP → MCP** bridge with automatic WSDL parsing |
-| You need to query databases from AI agents | **DB → MCP** with auto-generated query tools (7 engines) |
-| You want one endpoint for all your APIs | **MCP middleware** that aggregates multiple connectors |
-| You need an MCP server for SAP Business One / Odoo / Shopware / … | **The adapter catalog** — install and credential it in a minute |
-| You can't ship credentials to a third party | **Runs on your infrastructure** — credentials AES-256-GCM at rest |
-| You need auth, audit logs and RBAC | Built-in **OAuth2, audit log and role-based access** — no DIY |
-| A third-party model would see every field your API returns | **[Per-tool response mapping](#control-what-the-model-sees)** — drop or reshape fields before they leave your network |
-| Your agent calls tools in the wrong order, or misses how two systems connect | **[Knowledge Graph &amp; AI skills](#knowledge-graph--ai-skills)** — chaining hints and learned business rules, served as context |
-
-**What people actually build with it**
-
-| | Guides |
-|---|---|
-| Talk to the ERP from Claude | [SAP Business One](https://anythingmcp.com/guides/connect-sap-business-one-to-claude) · [Odoo](https://anythingmcp.com/guides/connect-odoo-to-claude) · [weclapp](https://anythingmcp.com/guides/weclapp-to-mcp) · [Xentral](https://anythingmcp.com/guides/xentral-to-mcp) |
-| Check orders, stock and fees across shops and marketplaces | [Amazon Seller](https://anythingmcp.com/guides/connect-amazon-seller-to-claude) · [WooCommerce](https://anythingmcp.com/guides/connect-woocommerce-to-claude) · [Kaufland](https://anythingmcp.com/guides/connect-kaufland-to-claude) |
-| Track parcels | [DHL](https://anythingmcp.com/guides/dhl-tracking-to-mcp) · [GLS](https://anythingmcp.com/guides/gls-tracking-to-mcp) |
-| Validate an invoice before paying it | [VIES VAT](https://anythingmcp.com/guides/vies-vat-to-mcp) · [Handelsregister](https://anythingmcp.com/guides/handelsregister-to-mcp) |
-| Let agents read a production database, read-only | [Database connectors](docs/connectors/database.md) |
-| Bridge a SOAP service from 2009 to a 2026 model | [SOAP → MCP](https://anythingmcp.com/guides/soap-to-mcp) |
-| Ask about trains, live delays and routes | [Deutsche Bahn](https://anythingmcp.com/guides/deutsche-bahn-to-mcp) |
+The AI passes are off by default and use your own OpenAI, OpenRouter or Anthropic key; the graph, the editor and the MCP tool work without one. [Knowledge Graph guide](docs/knowledge-graph.md)
 
 ---
 
-## The adapter catalog
+## Where it fits
 
-265 adapters, exposing 2,400+ tools. **21 need no API key**; the rest ask for your credentials at import and the tools are available immediately. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
-
-| Category | Examples |
-|---|---|
-| 📦 Logistics &amp; shipping | Deutsche Bahn, DHL, DPD, GLS, Shipcloud, Sendcloud |
-| 💼 ERP, accounting &amp; invoicing | [SAP Business One, Odoo, weclapp, Xentral and 12 more ERPs](#erp-connectors), Lexware Office, sevDesk, Exact Online, bexio |
-| 🛍️ E-commerce | [Amazon Seller, WooCommerce, Shopware 6, Kaufland, OTTO and 8 more](#e-commerce--marketplace-connectors), Oxomi |
-| 👥 HR &amp; field service | Personio, HRWorks, Kenjo, MFR Mobile Field Report |
-| 🏛️ Government &amp; public data | VIES VAT, Handelsregister, UK Companies House 🇬🇧, DESTATIS, Bundesbank, OpenPLZ, NINA |
-| 🏦 Banking &amp; payments | Revolut Business, Wise 🇬🇧, PAYONE, Razorpay 🇮🇳, Paystack 🇳🇬 |
-| 💬 Messaging &amp; communication | WhatsApp, LINE 🇯🇵, TeamViewer |
-| 🎾 Sports &amp; Web3 | Playtomic, Sorare |
-| 🏗️ Construction &amp; mapping | PlanRadar, HERE Geocoding |
-| 📈 Advertising &amp; analytics | Google Ads, Google Analytics 4, Google Search Console, Matomo |
-| 🧠 AI decision models | Jev by TypeSafe: yes/no, classification and scoring with probabilities, in about 300 ms |
-
-**An adapter is a single JSON file.** That is why the catalog is this size, and why adding one is a reasonable first contribution. Missing yours? [Request it](https://github.com/HelpCode-ai/anythingmcp/issues/new?template=adapter_request.yml) — we prioritise by 👍 — or [build it](CONTRIBUTING.md).
+Most MCP gateways federate and secure MCP servers you already have. AnythingMCP starts one step earlier: it creates the MCP servers from the APIs, ERPs and databases you already run, then serves, scopes and audits them behind one endpoint. If your tools are already MCP servers and all you need is federation, a pure gateway may be enough. Side-by-side comparisons: [anythingmcp.com/vs](https://anythingmcp.com/vs).
 
 ---
-
-## Guides, client setup &amp; FAQ
-
-➡️ **[docs/guides.md](docs/guides.md)** — Claude / ChatGPT / Gemini / Copilot / Cursor setup · REST / SOAP / GraphQL / Database / MCP-bridge connector guides · API reference &amp; deployment docs · FAQ.
-
-Looking for a specific service? Every adapter has a step-by-step guide at **[anythingmcp.com/guides](https://anythingmcp.com/guides)**.
-
----
-
-## How AnythingMCP compares
-
-AnythingMCP is an MCP gateway that starts one step earlier: it creates the MCP servers from the APIs, ERPs and databases you already run, then serves, scopes and audits them behind one endpoint. The other MCP gateways federate and secure MCP servers you already have, but most companies have none yet — they have a REST API, a SOAP service from 2009 and a database nobody wants to expose. Every project below solves a real problem; they just don't solve the same one.
-
-| | What it is | Choose it instead if… |
-|---|---|---|
-| **[ContextForge](https://github.com/IBM/mcp-context-forge)** (IBM) | Federation and a registry in front of MCP servers you already have | Your tools are already MCP servers and what you need is federation, virtual servers and a registry |
-| **[Docker MCP Gateway](https://github.com/docker/mcp-gateway)** | Runs catalog MCP servers as containers behind one endpoint, with secret handling | You want vendor-published MCP servers sandboxed in Docker and the published catalog covers you |
-| **[MetaMCP](https://github.com/metatool-ai/metamcp)** | Aggregates MCP servers into namespaced endpoints with a middleware layer | You mainly need to group and re-scope existing MCP servers per client |
-| **[Composio](https://github.com/ComposioHQ/composio)** | A hosted catalog of managed integrations with auth handled for you | A fixed managed catalog is enough and you never need to add your own SOAP service, in-house API or database |
-| **AnythingMCP** | Turns the APIs, SOAP services and databases you already run into MCP tools | Your systems are **not** MCP servers yet, and you want the choice of holding the credentials yourself |
-
-Side-by-side pages with the full feature tables: [anythingmcp.com/vs](https://anythingmcp.com/vs).
 
 ## FAQ
 
-**How do I connect my ERP (SAP Business One, Odoo, Xentral…) to Claude or ChatGPT?**
-Install the ERP's adapter from the [catalog](#erp-connectors), enter the API credentials, and add your MCP server URL to Claude as a custom connector or to ChatGPT as an app. If your ERP has no adapter, connect its REST or SOAP API or its SQL database directly. Start with a role that can only read.
+### What is an MCP gateway?
+A single MCP endpoint in front of many tools, which handles authentication, access control and audit for all of them. AI clients such as Claude and ChatGPT connect to the gateway instead of to each system. AnythingMCP is a gateway that also generates the tools, from APIs and databases that have no MCP server of their own.
 
-**How do I turn an OpenAPI spec into an MCP server?**
-Create a REST connector and import the spec by URL or by pasting it; every operation becomes an MCP tool on your server's `/mcp` endpoint, with no code. [How it works](docs/connectors/rest.md#from-openapi--swagger).
+### How do I connect my ERP (SAP, Odoo, Xentral…) to Claude or ChatGPT?
+Install the ERP's adapter from the [catalog](#connector-catalog), enter the API credentials, and add your MCP server URL to Claude as a custom connector or to ChatGPT as an app. If your ERP has no adapter, connect its REST or SOAP API or its SQL database directly. Start with a role that can only read.
 
-**Can I connect a SOAP/WSDL service to Claude?**
-Yes. AnythingMCP parses the WSDL, turns each operation into a tool and builds the SOAP envelope on every call, WCF services included. It authenticates with HTTP Basic, Bearer or an API-key header; WS-Security headers are not implemented yet. [SOAP connector docs](docs/connectors/soap.md).
+### How do I turn an OpenAPI spec into an MCP server?
+Create a REST connector and import the spec by URL or by pasting it. Every operation becomes an MCP tool on your server's `/mcp` endpoint, with no code. [How it works](docs/connectors/rest.md#from-openapi--swagger)
 
-**Can Claude query my SQL Server, Oracle or PostgreSQL database safely?**
-Database connectors are read-only by default: AnythingMCP only runs a single SELECT (or `WITH … SELECT`) and blocks writes and stacked statements. On top of that, use a database user with SELECT rights only, prefer static queries where the model supplies just the parameters, and whitelist the tools per role. Response mapping drops the columns that must not reach the model, and every query lands in the audit log in your own database.
+### Can I connect a SOAP/WSDL service to Claude?
+Yes. AnythingMCP parses the WSDL, turns each operation into a tool and builds the SOAP envelope on every call, WCF services included. It authenticates with HTTP Basic, Bearer or an API-key header; WS-Security headers are not implemented yet. [SOAP connector docs](docs/connectors/soap.md)
 
-**How do I connect Shopware, WooCommerce or Amazon Seller Central to Claude?**
+### Can Claude query my SQL Server, Oracle or PostgreSQL database safely?
+Query tools are read-only by default. On top of that, use a database user with SELECT rights only, prefer static queries where the model supplies just the parameters, and whitelist the tools per role. Response mapping drops the columns that must not reach the model, and every query lands in your audit log.
+
+### How do I connect Shopware, WooCommerce or Amazon Seller Central to Claude?
 Install the [e-commerce adapter](#e-commerce--marketplace-connectors) for your shop or marketplace and authorise it. WooCommerce comes with 49 tools, Amazon Seller Central uses the official Selling Partner API, and the Shopware 6 adapter reads the storefront catalog through the Store API.
 
-**Is AnythingMCP an MCP gateway? Is it self-hosted and free?**
-Yes on all three: one MCP endpoint in front of every connector, with OAuth2, RBAC, SSO and audit. It runs on your own servers under AGPL-3.0, commercial use included; [AnythingMCP Cloud](https://cloud.anythingmcp.com) is the optional hosted version.
-
-**How is it different from Composio?**
-Composio is a hosted catalog of managed integrations. AnythingMCP also turns your own in-house APIs, SOAP services and databases into tools, and can keep every credential on your infrastructure. [Full comparison](https://anythingmcp.com/vs/alternatives-to-composio).
+### Is AnythingMCP free, and can I self-host it?
+Yes. It runs on your own servers under AGPL-3.0, commercial use included. [AnythingMCP Cloud](https://cloud.anythingmcp.com/login?mode=register) is the optional hosted version, operated in Frankfurt, with a 7-day free trial.
 
 ---
 
-## Community &amp; support
+## Community and support
 
-- 💬 **Questions &amp; discussions** — [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions) — vote on the next adapter, share what you've built
-- 🐛 **Bugs / 💡 features** — [Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · 🆘 [SUPPORT.md](SUPPORT.md)
-- 👥 **Adopters** — [ADOPTERS.md](ADOPTERS.md) — who runs AnythingMCP in production, and how to add yourself
-- 🔐 **Security** — please do not open a public issue; follow [SECURITY.md](SECURITY.md)
-- 🏢 Built by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany. AI-assisted development, human-reviewed — [AUTHORS.md](AUTHORS.md) says which parts and how.
+- 💬 **Questions and ideas:** [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions). Vote on the next adapter, share what you've built.
+- 🐛 **Bugs and features:** [Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · [Support](.github/SUPPORT.md)
+- 👥 **Adopters:** [who runs AnythingMCP in production](docs/ADOPTERS.md), and how to add yourself
+- 🔐 **Security:** please do not open a public issue; follow the [security policy](.github/SECURITY.md)
+- 🤖 **For AI agents and crawlers:** [anythingmcp.com/llms.txt](https://anythingmcp.com/llms.txt)
+- 🏢 Built by [helpcode.ai](https://helpcode.ai) in Freiburg, Germany. AI-assisted development, human-reviewed: [AUTHORS.md](docs/AUTHORS.md) says which parts and how.
 
 ## Contributing
 
-Read the [Contributing guide](CONTRIBUTING.md) before opening a PR. The easiest useful contribution is an adapter: one JSON file, and there is a [walkthrough issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) for it.
+Read the [Contributing guide](.github/CONTRIBUTING.md) before opening a PR. The easiest useful contribution is an adapter: one JSON file, and there is a [walkthrough issue](https://github.com/HelpCode-ai/anythingmcp/issues/150) for it.
 
 ## License
 
-**Open source** under the [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Commercial use inside your own company is included and always was; the copyleft obligation only starts if you modify AnythingMCP and offer the modified version to others over a network. Cloud-operator code under `ee/` is separately licensed and is not required for self-hosting — see the [License FAQ](docs/license-faq.md).
+**Open source** under the [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Commercial use inside your own company is included and always was; the copyleft obligation only starts if you modify AnythingMCP and offer the modified version to others over a network. Cloud-operator code under `ee/` is separately licensed and is not required for self-hosting; see the [License FAQ](docs/license-faq.md).
 
 ---
 
 <p align="center">
   <strong>⭐ If this saved you a week of writing MCP servers, star it.</strong><br/>
-  <em>Stars are how the next person finds it — and how we decide which adapter to build next.</em>
+  <em>Stars are how the next person finds it, and how we decide which adapter to build next.</em>
 </p>
 
 <p align="center">

@@ -5,7 +5,7 @@
  * tools the real cloud connectors have.
  *
  * Run from packages/backend (uses its tsconfig and node_modules):
- *   npx tsx ../../video/demo/director/mock-backend/snapshot-tools.ts
+ *   npx tsx ../../scripts/demo-video/director/mock-backend/snapshot-tools.ts
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

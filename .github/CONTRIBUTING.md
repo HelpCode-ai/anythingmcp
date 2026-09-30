@@ -20,12 +20,12 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 ## License
 
-AnythingMCP is open source under the [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Code under `ee/` directories is licensed separately under the [AnythingMCP Commercial License](packages/backend/src/ee/LICENSE). See the [License FAQ](docs/license-faq.md) for a plain-language explanation.
+AnythingMCP is open source under the [GNU Affero General Public License v3](../LICENSE) (AGPL-3.0-only). Code under `ee/` directories is licensed separately under the [AnythingMCP Commercial License](../packages/backend/src/ee/LICENSE). See the [License FAQ](../docs/license-faq.md) for a plain-language explanation.
 
 ### Contributor License Agreement (CLA)
 
 Before we can merge your first pull request, you must sign our
-[Contributor License Agreement](CLA.md). An automated check on your PR
+[Contributor License Agreement](../CLA.md). An automated check on your PR
 will ask you to sign by posting a comment — it takes one click and
 only needs to be done once.
 
@@ -40,10 +40,10 @@ We use AI assistants (Claude Code, GitHub Copilot, etc.) in our own development 
 
 - You take responsibility for the code you submit — review every line before opening a PR.
 - The catalog test suite (`npm test`) must pass.
-- Adapter JSON must validate against [`docs/tool-definition.md`](docs/tool-definition.md).
+- Adapter JSON must validate against [`docs/tool-definition.md`](../docs/tool-definition.md).
 - Don't paste AI output blindly into the PR description; write the *why* in your own words.
 
-We will not refuse a PR because it was AI-assisted, and we will not single it out either. See [AUTHORS.md](AUTHORS.md) for how we use AI ourselves.
+We will not refuse a PR because it was AI-assisted, and we will not single it out either. See [AUTHORS.md](../docs/AUTHORS.md) for how we use AI ourselves.
 
 ## Getting Started
 
@@ -139,7 +139,7 @@ An adapter is one JSON file; the rest is generated and checked.
 
 1. Write `packages/backend/src/adapters/<region>/<slug>.json`. Filename must
    equal `slug`; prefix every tool `<slug_with_underscores>_`; see
-   [docs/tool-definition.md](docs/tool-definition.md) for the envelope.
+   [docs/tool-definition.md](../docs/tool-definition.md) for the envelope.
    To start from a valid skeleton, run
    `npm run adapter:new -- <slug> --region <region> --auth <type>`. It refuses
    to overwrite an existing adapter unless you pass `--force`, and every spot

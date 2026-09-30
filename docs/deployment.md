@@ -430,4 +430,4 @@ With both of these in place, AnythingMCP makes no outbound connections to `anyth
 
 ---
 
-[Back to README](../README.md) | [API Reference](api-reference.md) | [Integration Guides](../README.md#connect-your-ai-client)
+[Back to README](../README.md) | [API Reference](api-reference.md) | [Integration Guides](../README.md#use-it-from-claude-chatgpt-copilot-and-gemini)
