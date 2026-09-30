@@ -33,9 +33,13 @@ describe('EnvInterpolation', () => {
     });
 
     it('should return a non-string template unchanged (no throw)', () => {
-      // Static tools omit `path`; interpolating undefined must not crash.
       expect(interpolateString(undefined as unknown as string, envVars))
         .toBeUndefined();
+    });
+
+    it('should handle {{ VAR }} with spaces', () => {
+      expect(interpolateString('{{ API_BASE }}/users', envVars))
+        .toBe('https://api.example.com/users');
     });
   });
 
@@ -91,9 +95,6 @@ describe('EnvInterpolation', () => {
     });
 
     it('should not throw for a static tool with no path', () => {
-      // Regression: a `static` tool endpointMapping has no `path`; with a
-      // connector that HAS env vars, interpolation used to crash on
-      // interpolateString(undefined).
       const config = { baseUrl: 'https://v3.football.api-sports.io' };
       const mapping = {
         method: 'static',
@@ -102,6 +103,24 @@ describe('EnvInterpolation', () => {
       const result = interpolateConnectorConfig(config, mapping, envVars);
       expect(result.endpointMapping.path).toBeUndefined();
       expect(result.config.baseUrl).toBe('https://v3.football.api-sports.io');
+    });
+  });
+
+  // ── ReDoS regression ──────────────────────────────────────────────────────
+
+  describe('ReDoS regression', () => {
+    it('should handle a long brace run in under 100ms', () => {
+      const hostile = 'https://api.example.com/' + '{{'.repeat(50000);
+      const start = Date.now();
+      interpolateString(hostile, envVars);
+      expect(Date.now() - start).toBeLessThan(100);
+    });
+
+    it('should handle {{ followed by a long whitespace run in under 100ms', () => {
+      const hostile = 'https://api.example.com/{{' + ' '.repeat(50000);
+      const start = Date.now();
+      interpolateString(hostile, envVars);
+      expect(Date.now() - start).toBeLessThan(100);
     });
   });
 });

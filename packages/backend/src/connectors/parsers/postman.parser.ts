@@ -167,9 +167,9 @@ export class PostmanParser {
     const headerMapping: Record<string, string> = {};
 
     // Path parameters (from {{param}} in URL path)
-    const pathVarMatches = url.path.match(/\{\{\s*([^{}\s]+)\s*\}\}/g) || [];
+    const pathVarMatches = url.path.match(/\{\{([^{}]+)\}\}/g) || [];
     for (const match of pathVarMatches) {
-      const varName = match.replace(/\{\{|\}\}/g, '');
+      const varName = match.replace(/\{\{|\}\}/g, '').trim();
       if (!variables[varName]) {
         // It's a dynamic path parameter, not a static env var
         properties[varName] = { type: 'string', description: `Path variable: ${varName}` };
@@ -178,7 +178,7 @@ export class PostmanParser {
     }
 
     // Also detect {param} style path params (but not {{param}} which are handled above)
-    const pathWithoutDoubles = url.path.replace(/\{\{\s*[^{}]+\s*\}\}/g, '');
+    const pathWithoutDoubles = url.path.replace(/\{\{[^{}]+\}\}/g, '');
     const pathParamMatches = pathWithoutDoubles.match(/\{([^{}]+)\}/g) || [];
     for (const match of pathParamMatches) {
       const varName = match.replace(/[{}]/g, '');
@@ -239,7 +239,7 @@ export class PostmanParser {
     }
 
     // Normalize path: replace {{var}} with {var} for engine interpolation
-    const normalizedPath = url.path.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, '{$1}');
+    const normalizedPath = url.path.replace(/\{\{([^{}]+)\}\}/g, '{$1}');
 
     const endpointMapping: ParsedTool['endpointMapping'] = {
       method,
@@ -287,7 +287,7 @@ export class PostmanParser {
 
     if (typeof url === 'string') {
       try {
-        const parsed = new URL(url.replace(/\{\{\s*[^{}]+\s*\}\}/g, 'placeholder'));
+        const parsed = new URL(url.replace(/\{\{[^{}]+\}\}/g, 'placeholder'));
         return {
           raw: url,
           path: url.replace(/^https?:\/\/[^/]+/, ''),
@@ -322,8 +322,8 @@ export class PostmanParser {
             // Replace {{var}} with sentinel values for JSON parsing.
             // Handle "{{var}}" (quoted) first to avoid producing ""var_placeholder"".
             const cleanBody = body.raw
-              .replace(/"\{\{\s*([^{}\s]+)\s*\}\}"/g, '"__var_$1__"')   // "{{var}}" → "__var_var__"
-              .replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, '"__var_$1__"');     // remaining bare {{var}}
+              .replace(/"\{\{([^{}]+)\}\}"/g, '"__var_$1__"')   // "{{var}}" → "__var_var__"
+              .replace(/\{\{([^{}]+)\}\}/g, '"__var_$1__"');     // remaining bare {{var}}
             const parsed = JSON.parse(cleanBody);
 
             // If parsed result is not an object, treat as raw body

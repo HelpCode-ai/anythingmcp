@@ -105,9 +105,9 @@ export class CurlParser {
     const headerMapping: Record<string, string> = {};
 
     // Extract variables from URL path
-    const pathVars = path.match(/\{\{\s*([^{}\s]+)\s*\}\}/g) || [];
+    const pathVars = path.match(/\{\{([^{}]+)\}\}/g) || [];
     for (const match of pathVars) {
-      const varName = match.replace(/\{\{|\}\}/g, '');
+      const varName = match.replace(/\{\{|\}\}/g, '').trim();
       properties[varName] = { type: 'string', description: `Path variable: ${varName}` };
       required.push(varName);
     }
@@ -138,7 +138,7 @@ export class CurlParser {
       if (lowerKey === 'authorization') continue; // Handle separately
 
       if (value.includes('{{')) {
-        const varName = value.match(/\{\{\s*([^{}\s]+)\s*\}\}/)?.[1] ?? value;
+        const varName = value.match(/\{\{([^{}]+)\}\}/)?.[1]?.trim() ?? value;
         properties[varName] = { type: 'string', description: `Header value for ${key}` };
         headerMapping[key] = `$${varName}`;
       } else {
@@ -152,8 +152,8 @@ export class CurlParser {
         // Try JSON parse — replace {{var}} placeholders with sentinel values.
         // Handle "{{var}}" (quoted) first to avoid producing ""__var_var__"".
         const cleanBody = dataBody
-          .replace(/"\{\{\s*([^{}\s]+)\s*\}\}"/g, '"__var_$1__"')   // "{{var}}" → "__var_var__"
-          .replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, '"__var_$1__"');     // remaining bare {{var}}
+          .replace(/"\{\{([^{}]+)\}\}"/g, '"__var_$1__"')   // "{{var}}" → "__var_var__"
+          .replace(/\{\{([^{}]+)\}\}/g, '"__var_$1__"');     // remaining bare {{var}}
         const parsed = JSON.parse(cleanBody);
 
         // If parsed result is not an object (e.g. bare "{{var}}" parses as string), treat as raw body
@@ -180,7 +180,7 @@ export class CurlParser {
       } catch {
         // Not JSON — treat as raw body parameter
         if (dataBody.includes('{{')) {
-          const varMatches = [...dataBody.matchAll(/\{\{\s*([^{}\s]+)\s*\}\}/g)];
+          const varMatches = [...dataBody.matchAll(/\{\{([^{}]+)\}\}/g)];
           if (varMatches.length === 1) {
             const varName = varMatches[0][1];
             properties[varName] = { type: 'string', description: 'Request body' };
@@ -222,7 +222,7 @@ export class CurlParser {
     }
 
     // Normalize path: replace {{var}} with {var}
-    const normalizedPath = path.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, '{$1}');
+    const normalizedPath = path.replace(/\{\{([^{}]+)\}\}/g, '{$1}');
 
     const endpointMapping: ParsedTool['endpointMapping'] = {
       method,
@@ -277,7 +277,7 @@ export class CurlParser {
     const queryParams: Record<string, string> = {};
 
     // Handle {{variable}} in URL by temporary replacement
-    const safeUrl = url.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, 'PLACEHOLDER_$1');
+    const safeUrl = url.replace(/\{\{([^{}]+)\}\}/g, 'PLACEHOLDER_$1');
 
     try {
       const parsed = new URL(safeUrl);
@@ -317,7 +317,7 @@ export class CurlParser {
 
   private generateToolName(method: string, path: string): string {
     const cleanPath = path
-      .replace(/\{\{\s*[^{}]+\s*\}\}/g, '')
+      .replace(/\{\{[^{}]+\}\}/g, '')
       .replace(/\{[^{}]+\}/g, '')
       .replace(/[^a-zA-Z0-9]/g, '_')
       .replace(/_+/g, '_')

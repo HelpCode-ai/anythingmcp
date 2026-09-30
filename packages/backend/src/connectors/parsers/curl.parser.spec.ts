@@ -431,4 +431,29 @@ curl -X DELETE https://api.example.com/users/1`;
     expect(params.required).toContain('org_id');
     expect(params.required).toContain('project_id');
   });
+
+  // ── ReDoS regression ──────────────────────────────────────────────────────
+
+  describe('ReDoS regression', () => {
+    it('should handle a long brace run in the URL in under 100ms', () => {
+      const hostile = `curl https://api.example.com/${'{{'.repeat(50000)}`;
+      const start = Date.now();
+      parser.parse(hostile);
+      expect(Date.now() - start).toBeLessThan(100);
+    });
+
+    it('should handle {{ followed by a long whitespace run in under 100ms', () => {
+      const hostile = `curl https://api.example.com/{{${' '.repeat(50000)}`;
+      const start = Date.now();
+      parser.parse(hostile);
+      expect(Date.now() - start).toBeLessThan(100);
+    });
+
+    it('should handle a long brace run in the body in under 100ms', () => {
+      const hostile = `curl -X POST https://api.example.com/ -d '${'{{'.repeat(50000)}'`;
+      const start = Date.now();
+      parser.parse(hostile);
+      expect(Date.now() - start).toBeLessThan(100);
+    });
+  });
 });
