@@ -1,0 +1,19 @@
+{
+  "name": "lumen-clay-director",
+  "private": true,
+  "type": "module",
+  "description": "Drives the AnythingMCP demo recordings with human-like input on the real cursor",
+  "scripts": {
+    "build:native": "swiftc -O native/humanio.swift -o native/humanio",
+    "mock-backend": "tsx mock-backend/server.ts",
+    "scene": "tsx run.ts"
+  },
+  "dependencies": {
+    "playwright-core": "^1.55.0",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
+  }
+}

@@ -20,11 +20,13 @@
   <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/docker/pulls/helpcodeai/anythingmcp?logo=docker&logoColor=white&color=2563eb&labelColor=0b1220" alt="Docker pulls"></a>
 </p>
 
-**これまでチャットボットでは答えられなかった質問に、Claude が回答します。** 必要なデータが、MCP ではなく REST を使うフィールドサービスシステムに保存されている場合でも対応できます。
+**Claude への 1 つの質問に、Etsy、SAP、物流 API のデータで回答します。** AnythingMCP はマーケットプレイスから Etsy を、OData で SAP S/4HANA を、OpenAPI 仕様から REST API を接続し、Claude は 3 つのシステムをまたいで作業します。
 
 <p align="center">
-  <img src="docs/assets/demo-claude.gif" alt="Claude で動く AnythingMCP：技術者が先週訪問した会社を尋ねられた Claude が、フィールドサービスの REST API から AnythingMCP が生成した MCP ツールを呼び出している様子。" width="100%" />
+  <a href="https://anythingmcp.com/video-promo"><img src="docs/assets/demo-lumen-clay.gif" alt="AnythingMCP のデモ：マーケットプレイスから Etsy をインストールし、SAP S/4HANA を OData コネクタとして追加し、物流 API を OpenAPI 仕様から取り込んだ後、Claude が配送で止まっている Etsy の注文と、SAP に再送用の在庫があるかを答える様子。" width="100%" /></a>
 </p>
+
+<p align="center"><a href="https://anythingmcp.com/video-promo">▶ デモ全編を見る（2:40、音声付き）</a></p>
 
 **自分で動かす** — 3 行のコマンドで、リポジトリのクローンは不要です。[詳しい手順はこちら](#run-it-yourself)。
 
