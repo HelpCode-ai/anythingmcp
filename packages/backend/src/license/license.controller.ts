@@ -218,8 +218,10 @@ export class LicenseController {
 
     const current = await this.licenseService.getCurrentLicense(organizationId);
     // A paying workspace changes plan in the billing portal. A second checkout
-    // would add a second subscription beside the first and bill both.
-    if (current && current.plan !== 'trial') {
+    // would add a second subscription beside the first and bill both. A paid
+    // licence that was revoked or expired (a customer coming back) does not
+    // block a new purchase.
+    if (current && current.plan !== 'trial' && current.status === 'active') {
       throw new ConflictException(
         'This workspace already has a subscription. Change your plan in the billing portal.',
       );

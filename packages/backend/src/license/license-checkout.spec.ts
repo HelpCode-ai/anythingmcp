@@ -322,6 +322,21 @@ describe('LicenseController.checkoutLink', () => {
     expect(licenseService.createCheckoutIntent).not.toHaveBeenCalled();
   });
 
+  it('lets a customer whose paid licence ended subscribe again', async () => {
+    for (const status of ['revoked', 'expired']) {
+      const { controller, licenseService } = makeController({
+        license: trialLicense({ plan: 'starter', status, expiresAt: null }),
+      });
+      await expect(
+        controller.checkoutLink(adminReq, { plan: 'starter', billingPeriod: 'monthly', trial: true }),
+      ).resolves.toEqual({ url: expect.any(String) });
+      // No live trial, so no trial end: a returning customer pays now.
+      expect(licenseService.createCheckoutIntent).toHaveBeenCalledWith(
+        expect.not.objectContaining({ trialEnd: expect.anything() }),
+      );
+    }
+  });
+
   it('maps any licence-site failure to a generic 502', async () => {
     const { controller } = makeController({ fail: true });
     const err = await controller
