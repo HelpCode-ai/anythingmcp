@@ -85,7 +85,10 @@ function LicenseActivateInner() {
         sessionStore.remove(PENDING_KEY);
         setPhase('success');
         setMessage(res.message || 'License activated successfully.');
-        setTimeout(() => router.replace('/settings/license'), 1500);
+        // A full load rather than a client-side route change: the app shell
+        // (trial banner, licence wall) read the licence before activation and
+        // would keep showing the trial until the next reload.
+        setTimeout(() => window.location.replace('/settings/license'), 1500);
       })
       .catch((err: any) => {
         setPhase('error');

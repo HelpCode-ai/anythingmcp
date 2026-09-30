@@ -94,6 +94,26 @@ export class LicenseController {
 
     const license = await this.licenseService.getCurrentLicense(organizationId);
     if (!license) {
+      // Cloud: a workspace whose trial ran out (or whose paid licence lapsed)
+      // has no active licence, but it is not a workspace that never had one.
+      // Report the latest licence's plan and status so the app can say "your
+      // trial has ended" and offer the plans, instead of "start a free trial"
+      // (a trial the licence site will not grant a second time). Reporting
+      // only: no features, and gating still uses the active licence alone.
+      const last =
+        this.deployment.isCloud() && organizationId
+          ? await this.licenseService.getLatestInactiveLicense(organizationId)
+          : null;
+      if (last) {
+        return {
+          plan: last.plan,
+          status: last.status,
+          features: null,
+          expiresAt: last.expiresAt,
+          instanceId: null,
+          ...(last.plan === 'trial' && { trialDaysLeft: 0 }),
+        };
+      }
       return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
     }
 

@@ -6,10 +6,11 @@ import { OrgSettingsService } from './org-settings.service';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
 
+// LICENSE_API_URL overrides both defaults (the cloud compose file sets it;
+// local end-to-end runs point it at a local licence site).
 const LICENSE_API_URL =
-  process.env.NODE_ENV === 'production'
-    ? 'https://anythingmcp.com'
-    : 'http://localhost:3100';
+  process.env.LICENSE_API_URL?.replace(/\/+$/, '') ||
+  (process.env.NODE_ENV === 'production' ? 'https://anythingmcp.com' : 'http://localhost:3100');
 
 @Injectable()
 export class EmailService {

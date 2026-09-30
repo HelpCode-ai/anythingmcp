@@ -41,7 +41,9 @@ export function TrialBanner() {
       .catch(() => {});
   }, [token]);
 
-  if (plan !== 'trial' || daysLeft === null) return null;
+  // An ended trial is reported too (status 'expired'); the licence wall
+  // covers that case, so the countdown banner stays out of the way.
+  if (plan !== 'trial' || daysLeft === null || status !== 'active') return null;
 
   const isUrgent = daysLeft <= 1;
   const isWarning = daysLeft <= 3;

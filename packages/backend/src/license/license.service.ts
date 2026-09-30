@@ -6,10 +6,11 @@ import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
 
+// LICENSE_API_URL overrides both defaults (the cloud compose file sets it;
+// local end-to-end runs point it at a local licence site).
 const LICENSE_API_URL =
-  process.env.NODE_ENV === 'production'
-    ? 'https://anythingmcp.com'
-    : 'http://localhost:3100';
+  process.env.LICENSE_API_URL?.replace(/\/+$/, '') ||
+  (process.env.NODE_ENV === 'production' ? 'https://anythingmcp.com' : 'http://localhost:3100');
 
 /**
  * How hard we chase a trial licence before giving up. The licence API is a
@@ -691,6 +692,22 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ── Get Current License ────────────────────────────────────────────────────
+
+  /**
+   * The workspace's most recent licence that is no longer active (expired,
+   * revoked, invalid), for status reporting only — never for gating. Null
+   * when the workspace has none.
+   */
+  async getLatestInactiveLicense(
+    organizationId: string,
+  ): Promise<{ plan: string; status: string; expiresAt: Date | null } | null> {
+    const license = await this.prisma.license.findFirst({
+      where: { organizationId, status: { not: 'active' } },
+      orderBy: { createdAt: 'desc' },
+      select: { plan: true, status: true, expiresAt: true },
+    });
+    return license ?? null;
+  }
 
   async getCurrentLicense(organizationId?: string): Promise<LicenseInfo | null> {
     // 1. Per-org: find license directly assigned to this organization

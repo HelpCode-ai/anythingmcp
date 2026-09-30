@@ -76,3 +76,54 @@ describe('LicenseController — activate-trial is idempotent', () => {
     expect(result.trialDaysLeft).toBe(0);
   });
 });
+
+/**
+ * A Cloud workspace whose trial ran out used to get `plan: null` from
+ * /status, the same answer as a workspace that never had a licence. The app
+ * then offered "Start 7-Day Free Trial" (which the licence site will not grant
+ * twice) instead of "your trial has ended, choose a plan".
+ */
+describe('LicenseController — status reports an ended licence', () => {
+  const req = { headers: { authorization: 'Bearer t' } };
+
+  function makeController(opts: { active?: any; inactive?: any; cloud?: boolean }) {
+    const licenseService = {
+      getCurrentLicense: jest.fn(async () => opts.active ?? null),
+      getLatestInactiveLicense: jest.fn(async () => opts.inactive ?? null),
+    };
+    const controller = new LicenseController(
+      licenseService as any,
+      {} as any,
+      { verifyToken: () => ({ organizationId: 'org-1' }) } as any,
+      {} as any,
+      { isCloud: () => opts.cloud ?? true } as any,
+      {} as any,
+    );
+    return { controller, licenseService };
+  }
+
+  it('reports an expired trial as a trial with no days left, without features', async () => {
+    const expiresAt = new Date(Date.now() - 3600_000);
+    const { controller } = makeController({ inactive: { plan: 'trial', status: 'expired', expiresAt } });
+    const status: any = await controller.getStatus(req);
+    expect(status).toMatchObject({ plan: 'trial', status: 'expired', trialDaysLeft: 0, features: null });
+  });
+
+  it('reports a lapsed paid licence with its status and no trial countdown', async () => {
+    const { controller } = makeController({ inactive: { plan: 'starter', status: 'expired', expiresAt: null } });
+    const status: any = await controller.getStatus(req);
+    expect(status).toMatchObject({ plan: 'starter', status: 'expired', features: null });
+    expect(status.trialDaysLeft).toBeUndefined();
+  });
+
+  it('still answers "none" for a workspace that never had a licence', async () => {
+    const { controller } = makeController({});
+    expect(await controller.getStatus(req)).toMatchObject({ plan: null, status: 'none' });
+  });
+
+  it('does not look up inactive licences on self-hosted', async () => {
+    const { controller, licenseService } = makeController({ cloud: false });
+    await controller.getStatus(req);
+    expect(licenseService.getLatestInactiveLicense).not.toHaveBeenCalled();
+  });
+});
