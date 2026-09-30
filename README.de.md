@@ -141,6 +141,8 @@ Fertige Adapter für die ERP-Systeme, in denen die meisten Fragen zu Aufträgen,
 |---|---|---|---|
 | [SAP Business One](https://anythingmcp.com/de/guides/connect-sap-business-one-to-claude) | Weltweit | 12 | Geschäftspartner, Artikel, Aufträge, Rechnungen, Angebote, Lieferungen; Kundenaufträge anlegen |
 | [SAP S/4HANA Cloud](https://anythingmcp.com/de/guides/connect-sap-s4hana-cloud-to-claude) | Weltweit | 15 | Geschäftspartner, Kundenaufträge und Bestellungen, Fakturen, Lieferungen, Buchungsbelege |
+| [SAP S/4HANA (HANA SQL)](https://anythingmcp.com/de/guides/connect-sap-hana-to-claude) | Weltweit | 10 | S/4HANA On-Premise und Private Cloud direkt aus HANA gelesen, mit SAPs Data Dictionary und CDS-Views als Tools; nur lesend |
+| [SAP S/4HANA (OData)](https://anythingmcp.com/de/guides/odata-to-mcp) † | Weltweit | 7 | OData-Services des Gateways mit SAPs Bezeichnungen: Buchungszeilen, Fakturen, Kundenaufträge, Geschäftspartner, Bestand, Produkte |
 | [Odoo](https://anythingmcp.com/de/guides/connect-odoo-to-claude) | Weltweit | 11 | Jedes Modell: Partner, Kundenaufträge, Rechnungen, Produkte; anlegen und ändern |
 | [Microsoft Dynamics NAV](https://anythingmcp.com/de/guides/connect-dynamics-nav-to-claude) | Weltweit | 6 | Jede veröffentlichte OData-Seite: Kunden, Artikel, Kundenaufträge; anlegen und ändern |
 | [ERPNext](https://anythingmcp.com/de/guides/connect-erpnext-to-claude) | Weltweit | 11 | Jeder DocType: Kunden, Kundenaufträge, Rechnungen, Artikel, Lagerbestand |
@@ -158,7 +160,7 @@ Fertige Adapter für die ERP-Systeme, in denen die meisten Fragen zu Aufträgen,
 
 † Auf Basis der veröffentlichten API-Dokumentation des Herstellers erstellt und noch nicht mit einem echten Mandanten getestet. Wenn du eines dieser Systeme einsetzt, freuen wir uns sehr über einen Erfahrungsbericht oder einen Fix.
 
-**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
+**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 **Dein ERP ist nicht dabei, oder es ist eine Eigenentwicklung bzw. läuft on-premises?** Binde es über seine [REST-API](#openapi--rest-api-to-mcp), seine [SOAP-Dienste](#soap--wsdl-to-mcp) oder direkt über seine [SQL-Datenbank](#sql-database-to-mcp) an, mit reinem Lesezugriff. So betreibt [KOCH Freiburg](https://www.kochfreiburg.de/) sein ERP im Produktivbetrieb.
 
