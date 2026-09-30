@@ -1,1 +1,1 @@
-Turn any REST, SOAP, GraphQL, OData or SQL API into MCP tools for Claude & ChatGPT. Self-hosted. {adapters} connectors: SAP S/4HANA & Business One, ERP, e-commerce.
+Open-source, self-hosted MCP gateway: turn any REST/OpenAPI, SOAP, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT & Copilot. {adapters} connectors incl. SAP S/4HANA & Business One, ERP, e-commerce.
