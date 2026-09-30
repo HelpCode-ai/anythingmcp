@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
+import { AuthService } from './auth.service';
 
 /**
  * In cloud mode, users must verify their email before they can access any
@@ -8,6 +9,11 @@ import { PrismaService } from '../common/prisma.service';
  *
  * Applied globally via APP_GUARD. The allowlist below covers the endpoints
  * needed to *complete* the verification flow (and to log out).
+ *
+ * Global guards run before a route's own AuthGuard('jwt'), so `req.user` is
+ * not set yet when this one runs. It used to return early on that and never
+ * checked anything: an unverified cloud account could call every endpoint.
+ * It now reads the session token itself.
  */
 @Injectable()
 export class EmailVerifiedGuard implements CanActivate {
@@ -27,15 +33,30 @@ export class EmailVerifiedGuard implements CanActivate {
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly authService: AuthService,
   ) {}
+
+  /** The session's user id: from req.user when set, else from the bearer JWT. */
+  private userIdOf(req: any): string | undefined {
+    if (req?.user?.sub) return req.user.sub;
+    const header = req?.headers?.authorization;
+    if (typeof header !== 'string' || !header.startsWith('Bearer ')) return undefined;
+    try {
+      return this.authService.verifyToken(header.slice(7)).sub || undefined;
+    } catch {
+      // Not a session token of ours (an MCP OAuth token, an expired JWT):
+      // the route's own authentication deals with it.
+      return undefined;
+    }
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
     if (!isCloud) return true;
 
     const req = context.switchToHttp().getRequest();
-    const user = req?.user;
-    if (!user?.sub) return true;
+    const userId = this.userIdOf(req);
+    if (!userId) return true;
 
     const path: string = req.path || req.url || '';
     if (EmailVerifiedGuard.PATH_ALLOWLIST.some((p) => path.startsWith(p))) {
@@ -43,7 +64,7 @@ export class EmailVerifiedGuard implements CanActivate {
     }
 
     const dbUser = await this.prisma.user.findUnique({
-      where: { id: user.sub },
+      where: { id: userId },
       select: { emailVerified: true },
     });
     if (!dbUser?.emailVerified) {

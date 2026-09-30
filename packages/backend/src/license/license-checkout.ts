@@ -12,6 +12,9 @@ import type { AttributionClickId } from '../audit/signup-attribution';
  */
 
 export const CHECKOUT_PLANS = ['starter', 'team', 'business'] as const;
+
+/** A card trial needs at least this much of the free trial left (Stripe: 48 h). */
+export const CARD_TRIAL_MIN_LEAD_MS = 48 * 60 * 60 * 1000;
 export type CheckoutPlan = (typeof CHECKOUT_PLANS)[number];
 
 export const CHECKOUT_BILLING_PERIODS = ['monthly', 'yearly'] as const;
@@ -44,7 +47,9 @@ export function cardTrialEnd(license: LicenseInfo | null, now: Date = new Date()
   if (!license || license.plan !== 'trial' || license.status !== 'active') return null;
   if (!license.expiresAt) return null;
   const end = new Date(license.expiresAt);
-  if (Number.isNaN(end.getTime()) || end.getTime() <= now.getTime()) return null;
+  // Stripe needs a trial end at least 48 hours out; the licence site sells
+  // without a trial when it is nearer, rather than lengthening the trial.
+  if (Number.isNaN(end.getTime()) || end.getTime() < now.getTime() + CARD_TRIAL_MIN_LEAD_MS) return null;
   return end;
 }
 

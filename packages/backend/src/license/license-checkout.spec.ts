@@ -57,6 +57,11 @@ describe('cardTrialEnd', () => {
     expect(cardTrialEnd(trialLicense({ expiresAt: NOW }), NOW)).toBeNull();
   });
 
+  it('answers null (pay now) with under 48 hours of the free trial left, rather than lengthening it', () => {
+    expect(cardTrialEnd(trialLicense({ expiresAt: new Date(NOW.getTime() + 47 * 3_600_000) }), NOW)).toBeNull();
+    expect(cardTrialEnd(trialLicense({ expiresAt: new Date(NOW.getTime() + 49 * 3_600_000) }), NOW)).not.toBeNull();
+  });
+
   it('answers null for anything that is not a live trial', () => {
     expect(cardTrialEnd(null, NOW)).toBeNull();
     expect(cardTrialEnd(trialLicense({ plan: 'cloud_team' }) as any, NOW)).toBeNull();

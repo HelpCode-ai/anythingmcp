@@ -45,7 +45,7 @@ test.describe('card-trial helpers', () => {
 
   test('offers the card trial to cloud admins on a running trial only', () => {
     const now = Date.UTC(2026, 9, 1);
-    const trial = { plan: 'trial', status: 'active', expiresAt: new Date(now + 86_400_000).toISOString() };
+    const trial = { plan: 'trial', status: 'active', expiresAt: new Date(now + 3 * 86_400_000).toISOString() };
     expect(cardTrialEligible({ isCloud: true, role: 'ADMIN', license: trial, now })).toBe(true);
     expect(cardTrialEligible({ isCloud: false, role: 'ADMIN', license: trial, now })).toBe(false);
     expect(cardTrialEligible({ isCloud: true, role: 'EDITOR', license: trial, now })).toBe(false);
@@ -54,15 +54,17 @@ test.describe('card-trial helpers', () => {
     ).toBe(false);
     expect(cardTrialEligible({ isCloud: true, role: 'ADMIN', license: { ...trial, plan: 'cloud_team' }, now })).toBe(false);
     expect(cardTrialEligible({ isCloud: true, role: 'ADMIN', license: null, now })).toBe(false);
+    // Under 48 hours left: no card trial (it would have to be lengthened).
+    expect(
+      cardTrialEligible({ isCloud: true, role: 'ADMIN', license: { ...trial, expiresAt: new Date(now + 86_400_000).toISOString() }, now }),
+    ).toBe(false);
   });
 
-  test('shows the date Stripe will use, at least 49 hours out', () => {
+  test('the card trial ends with the free trial, and needs 48 hours of it left', () => {
     const now = Date.UTC(2026, 9, 1, 12);
     const inFiveDays = new Date(now + 5 * 86_400_000).toISOString();
     expect(cardTrialDisplayEnd(inFiveDays, now)).toBe(inFiveDays);
-    expect(cardTrialDisplayEnd(new Date(now + 3_600_000).toISOString(), now)).toBe(
-      new Date(now + 49 * 3_600_000).toISOString(),
-    );
+    expect(cardTrialDisplayEnd(new Date(now + 3_600_000).toISOString(), now)).toBeNull();
     expect(cardTrialDisplayEnd(null, now)).toBeNull();
   });
 
@@ -153,7 +155,7 @@ test.describe('card-trial offer (cloud)', () => {
     await cloudSession(page);
     await page.goto('/');
     await expect(page).toHaveURL(/\/start-trial$/, { timeout: 15_000 });
-    await expect(page.getByRole('heading', { name: 'Start your 7-day free trial' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Your 7-day free trial' })).toBeVisible();
     await expect(page.getByText('€0 today.')).toBeVisible();
     // Team is preselected without an intent from the pricing page.
     await expect(page.getByRole('radio', { name: /Team/ })).toHaveAttribute('aria-checked', 'true');

@@ -155,7 +155,24 @@ export class UsersController {
   async updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
     const data: any = {};
     if (dto.name) data.name = dto.name;
-    if (dto.email) data.email = dto.email;
+    if (dto.email) {
+      // Cloud: the address is the verified identity (sign-in, password reset,
+      // billing), and this endpoint neither re-verifies nor asks for the
+      // password. A stolen session could otherwise move the account to
+      // another address and take it over through a reset. The app never
+      // changes it from here; support does, on request. Self-hosted operators
+      // keep the old behaviour.
+      if (process.env.DEPLOYMENT_MODE === 'cloud') {
+        const current = await this.usersService.findById(req.user.sub);
+        if (dto.email.trim().toLowerCase() !== current?.email?.trim().toLowerCase()) {
+          throw new BadRequestException(
+            'Your email address cannot be changed here. Contact support@anythingmcp.com to change it.',
+          );
+        }
+      } else {
+        data.email = dto.email;
+      }
+    }
 
     const user = await this.usersService.update(req.user.sub, data);
     const { passwordHash, ...profile } = user;

@@ -163,11 +163,13 @@ export function cardTrialEligible(input: {
   const { isCloud, role, license } = input;
   if (!isCloud || role !== 'ADMIN' || !license) return false;
   if (license.plan !== 'trial' || license.status !== 'active') return false;
+  // Stripe needs the trial end at least 48 hours out. With less left, the
+  // trial is not stretched to fit: the regular upgrade (pay now) applies.
   if (license.expiresAt) {
     const end = new Date(license.expiresAt).getTime();
-    return Number.isFinite(end) && end > (input.now ?? Date.now());
+    return Number.isFinite(end) && end >= (input.now ?? Date.now()) + MIN_CARD_TRIAL_MS;
   }
-  return typeof license.trialDaysLeft === 'number' && license.trialDaysLeft > 0;
+  return typeof license.trialDaysLeft === 'number' && license.trialDaysLeft > 2;
 }
 
 /** 'shown': sent to /start-trial once; 'skipped' / 'checkout': chose. */
@@ -187,20 +189,22 @@ export function writeCardTrialPrompt(userId: string, value: CardTrialPrompt): vo
 }
 
 /**
- * Stripe wants a trial to end at least 48 hours out, so the licence site moves
- * a sooner end to 49 hours from now. Mirrored here so the date we promise is
- * the date Checkout shows. Null when there is no usable end.
+ * Stripe wants a trial to end at least 48 hours out. The card trial ends when
+ * the free trial does, and is only offered while that is at least this far
+ * away (the licence site sells without a trial otherwise, rather than
+ * lengthening it). Mirrors the licence site's rule.
  */
-export const MIN_CARD_TRIAL_MS = 49 * 60 * 60 * 1000;
+export const MIN_CARD_TRIAL_MS = 48 * 60 * 60 * 1000;
 
+/** The date the card trial would end (the free trial's end), or null if none is possible. */
 export function cardTrialDisplayEnd(
   expiresAt: string | null | undefined,
   now: number = Date.now(),
 ): string | null {
   if (!expiresAt) return null;
   const end = new Date(expiresAt).getTime();
-  if (!Number.isFinite(end)) return null;
-  return new Date(Math.max(end, now + MIN_CARD_TRIAL_MS)).toISOString();
+  if (!Number.isFinite(end) || end < now + MIN_CARD_TRIAL_MS) return null;
+  return new Date(end).toISOString();
 }
 
 /**
