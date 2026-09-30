@@ -1,0 +1,4 @@
+name = "lumen-clay-demo-api"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+workers_dev = true

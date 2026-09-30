@@ -23,11 +23,13 @@
   <a href="#the-adapter-catalog"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FHelpCode-ai%2Fanythingmcp%2Fbadges%2Fkeyless.json" alt="Adapters that need no API key"></a>
 </p>
 
-**Claude answering a question no chatbot could answer**, because the data lives in a field-service system that speaks REST, not MCP:
+**One question in Claude, answered from Etsy, SAP and a logistics API.** AnythingMCP connects the shop from the marketplace, SAP S/4HANA over OData and a REST API from its OpenAPI spec, then Claude works across all three:
 
 <p align="center">
-  <img src="docs/assets/demo-claude.gif" alt="AnythingMCP in Claude: asked which companies a technician visited last week, Claude calls MCP tools that AnythingMCP generated from a field-service REST API" width="100%" />
+  <a href="https://anythingmcp.com/video-promo"><img src="docs/assets/demo-lumen-clay.gif" alt="AnythingMCP demo: Etsy installed from the marketplace, SAP S/4HANA added as an OData connector, a logistics API imported from its OpenAPI spec, then Claude answers which Etsy orders are stuck and whether SAP has stock to resend them" width="100%" /></a>
 </p>
+
+<p align="center"><a href="https://anythingmcp.com/video-promo">▶ Watch the full demo (2:40, with sound)</a></p>
 
 **Run it yourself** — three lines, no clone, [details below](#run-it-yourself):
 

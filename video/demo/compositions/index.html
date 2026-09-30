@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>AnythingMCP demo: Lumen &amp; Clay</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/CustomEase.min.js"></script>
+    <style>
+@font-face{font-family:'Fraunces';font-style:italic;font-weight:300 700;font-display:block;src:url('assets/fonts/Fraunces-italic.woff2') format('woff2');}
+@font-face{font-family:'Fraunces';font-style:normal;font-weight:300 700;font-display:block;src:url('assets/fonts/Fraunces-normal.woff2') format('woff2');}
+@font-face{font-family:'Geist';font-style:normal;font-weight:400 700;font-display:block;src:url('assets/fonts/Geist-normal.woff2') format('woff2');}
+@font-face{font-family:'Geist Mono';font-style:normal;font-weight:400 500;font-display:block;src:url('assets/fonts/GeistMono-normal.woff2') format('woff2');}
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { margin: 0; background: #0b1220; -webkit-font-smoothing: antialiased; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: 'Geist', sans-serif; color: #0b1220;
+        background: radial-gradient(1200px 700px at 50% 38%, #16233d 0%, #0b1220 70%); }
+      #space { position: absolute; inset: 0; opacity: .5;
+        background-image: radial-gradient(rgba(148,160,184,.22) 1px, transparent 1.4px); background-size: 36px 36px;
+        -webkit-mask-image: radial-gradient(900px 560px at 50% 45%, #000 20%, transparent 80%); mask-image: radial-gradient(900px 560px at 50% 45%, #000 20%, transparent 80%); }
+      #stage { position: absolute; inset: 0; perspective: 1800px; perspective-origin: 50% 45%; }
+      .cam { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
+      .clip { position: absolute; inset: 0; }
+      .footage { width: 100%; height: 100%; object-fit: cover; }
+      .overlay { overflow: hidden; }
+      .stage3d { perspective: 1400px; }
+      em { font-style: italic; color: #2563eb; }
+
+      #open-world { position: absolute; inset: 0; transform-style: preserve-3d; }
+      .headline { position: absolute; left: 0; right: 0; top: 150px; text-align: center; transform-origin: 50% 100%;
+        font-family: 'Fraunces', serif; font-weight: 400; font-size: 104px; line-height: 1.05; letter-spacing: -0.02em; }
+      #open-wires { position: absolute; left: 0; top: 0; }
+      .wire { stroke: #2563eb; stroke-width: 2; opacity: 0.55; stroke-dasharray: 1; stroke-dashoffset: 1; }
+      .chip-slot { position: absolute; }
+      .chip { width: 340px; height: 84px; background: #ffffff; border: 1px solid #e3dfd5; border-radius: 16px;
+        display: flex; align-items: center; gap: 18px; padding: 0 24px;
+        box-shadow: 0 1px 2px rgba(11,18,32,.05), 0 8px 24px -8px rgba(11,18,32,.12); }
+      .chip-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+      .chip-icon img { width: 26px; height: 26px; }
+      .chip-icon.mono { font-family: 'Geist Mono', monospace; font-weight: 500; font-size: 15px; }
+      #open-hub { position: absolute; left: 876px; top: 556px; width: 168px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+      .hub { width: 168px; height: 168px; border-radius: 32px; background: #0b1220; display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 0 0 6px rgba(37,99,235,.12), 0 24px 48px -16px rgba(11,18,32,.45); }
+      .hub-name { font-size: 26px; font-weight: 500; white-space: nowrap; }
+
+      .dim { position: absolute; inset: 0; background: rgba(11,18,32,.62); opacity: 0; }
+      .section-card { position: absolute; left: 192px; top: 96px; display: flex; align-items: center; gap: 28px; transform-origin: 50% 100%;
+        background: #f6f4ef; border-radius: 20px; padding: 30px 44px 30px 30px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.6); }
+      .badge { width: 64px; height: 64px; border-radius: 32px; background: #2563eb; color: #ffffff; display: flex; align-items: center;
+        justify-content: center; font-family: 'Geist Mono', monospace; font-weight: 500; font-size: 28px; flex-shrink: 0; }
+      .section-copy { display: flex; flex-direction: column; gap: 6px; }
+      .section-title { font-family: 'Fraunces', serif; font-size: 48px; line-height: 1.1; letter-spacing: -0.01em; white-space: nowrap; }
+      .section-sub { font-size: 28px; color: #5b6475; white-space: nowrap; }
+
+      .callout { position: absolute; left: 120px; top: 392px; width: 520px; background: #f6f4ef; border-radius: 16px; padding: 24px 28px;
+        transform-origin: 0% 50%; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 30px 60px -16px rgba(0,0,0,.6); }
+      .callout-head { display: flex; align-items: center; gap: 12px; font-weight: 500; font-size: 24px; }
+      .callout-head .chip-icon { width: 36px; height: 36px; border-radius: 8px; }
+      .callout-head .chip-icon img { width: 22px; height: 22px; }
+      .callout-tool { font-family: 'Geist Mono', monospace; font-size: 28px; letter-spacing: -0.01em; }
+      .callout-via { display: flex; align-items: center; gap: 8px; font-size: 24px; color: #5b6475; }
+      .callout-via b { color: #0b1220; font-weight: 500; }
+      .speed { position: absolute; right: 96px; top: 44px; font-family: 'Geist Mono', monospace; font-size: 24px; color: #f6f4ef;
+        background: rgba(11,18,32,.8); border: 1px solid #2a3753; border-radius: 999px; padding: 10px 20px; }
+
+      .caption { position: absolute; left: 50%; bottom: 20px; transform-origin: 50% 100%; translate: -50% 0; white-space: nowrap;
+        font-size: 32px; font-weight: 500; color: #f6f4ef; letter-spacing: -0.005em;
+        background: rgba(17,26,44,.92); border: 1px solid #2a3753; border-radius: 999px; padding: 12px 30px;
+        box-shadow: 0 16px 40px -16px rgba(0,0,0,.7); }
+
+      .inter { position: absolute; left: 192px; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; gap: 36px;
+        color: #f6f4ef; transform-style: preserve-3d; }
+      .inter-kicker { font-family: 'Geist Mono', monospace; font-size: 24px; letter-spacing: .08em; color: #94a0b8; }
+      .inter-title { font-family: 'Fraunces', serif; font-weight: 400; font-size: 120px; line-height: 1; letter-spacing: -0.025em; transform-style: preserve-3d; }
+      .inter-title .w { display: inline-block; }
+      .inter-title em { color: #60a5fa; }
+      .tool-stack { position: absolute; left: 980px; top: 280px; width: 748px; display: flex; flex-direction: column; gap: 12px; color: #f6f4ef; }
+      .kicker { font-family: 'Geist Mono', monospace; font-size: 24px; letter-spacing: .08em; color: #94a0b8; margin-bottom: 12px; }
+      .tool-row { height: 72px; background: #111a2c; border: 1px solid #1f2b42; border-radius: 14px; display: flex; align-items: center; gap: 18px;
+        padding: 0 24px; transform-origin: 50% 0%; }
+      .tool-row .dot { width: 12px; height: 12px; border-radius: 6px; background: #60a5fa; flex-shrink: 0; }
+      .tool-row .sys { width: 190px; font-weight: 500; white-space: nowrap; font-size: 24px; }
+      .tool-row .fn { flex: 1; font-family: 'Geist Mono', monospace; font-size: 24px; color: #cfd6e4; }
+
+      .proof { position: absolute; left: 192px; right: 192px; top: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, minmax(0,1fr));
+        gap: 48px; align-content: center; transform-style: preserve-3d; }
+      .proof-item { border-top: 2px solid #0b1220; padding-top: 28px; display: flex; flex-direction: column; gap: 20px; transform-origin: 50% 0%; }
+      .proof-item .num { font-family: 'Geist Mono', monospace; font-size: 24px; color: #2563eb; }
+      .proof-item .big { font-family: 'Fraunces', serif; font-size: 52px; line-height: 1.08; letter-spacing: -0.015em; }
+      .lockup { position: absolute; left: 0; right: 0; top: 0; bottom: 120px; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 40px; transform-style: preserve-3d; }
+      .lockup-row { display: flex; align-items: center; gap: 28px; }
+      .wordmark { font-weight: 600; font-size: 104px; letter-spacing: -0.03em; }
+      .url { font-family: 'Geist Mono', monospace; font-size: 34px; }
+      .star { border: 1.5px solid #0b1220; border-radius: 999px; padding: 14px 28px; font-weight: 500; font-size: 28px; }
+      .footer { position: absolute; left: 192px; right: 192px; bottom: 108px; display: flex; justify-content: center; gap: 56px;
+        font-size: 26px; color: #5b6475; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="160.426" data-width="1920" data-height="1080">
+      <div id="space"></div>
+      <div id="stage">
+      <div class="cam" id="cam-etsy">
+        <video id="v01" class="clip footage" src="assets/footage/01-etsy-ui.mp4" data-start="7.6" data-duration="6.5" data-media-start="2.5" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+        <video id="v02" class="clip footage" src="assets/footage/01-etsy-ui.mp4" data-start="14.1" data-duration="5.0" data-media-start="9.0" data-playback-rate="1.2" data-track-index="0" muted playsinline></video>
+        <video id="v03" class="clip footage" src="assets/footage/01-etsy-ui.mp4" data-start="19.1" data-duration="5.1" data-media-start="15.0" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+        <video id="v04" class="clip footage" src="assets/footage/01-etsy-ui.mp4" data-start="24.2" data-duration="4.267" data-media-start="23.333" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+        <video id="v05" class="clip footage" src="assets/footage/01-etsy-ui.mp4" data-start="28.467" data-duration="3.233" data-media-start="27.6" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+      </div>
+      <div class="cam" id="cam-sap">
+        <video id="v06" class="clip footage" src="assets/footage/03-sap-ui.mp4" data-start="31.7" data-duration="2.167" data-media-start="0.333" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+        <video id="v07" class="clip footage" src="assets/footage/03-sap-ui.mp4" data-start="33.867" data-duration="10.917" data-media-start="2.5" data-playback-rate="1.2" data-track-index="0" muted playsinline></video>
+        <video id="v08" class="clip footage" src="assets/footage/03-sap-ui.mp4" data-start="44.784" data-duration="3.2" data-media-start="15.6" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+        <video id="v09" class="clip footage" src="assets/footage/03-sap-ui.mp4" data-start="47.984" data-duration="3.6" data-media-start="18.8" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+      </div>
+      <div class="cam" id="cam-openapi">
+        <video id="v10" class="clip footage" src="assets/footage/05-openapi-ui.mp4" data-start="51.584" data-duration="3.3" data-media-start="1.2" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+        <video id="v11" class="clip footage" src="assets/footage/05-openapi-ui.mp4" data-start="54.884" data-duration="8.417" data-media-start="4.5" data-playback-rate="1.2" data-track-index="0" muted playsinline></video>
+        <video id="v12" class="clip footage" src="assets/footage/05-openapi-ui.mp4" data-start="63.301" data-duration="4.6" data-media-start="14.6" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+      </div>
+      <div class="cam" id="cam-connect">
+        <video id="v13" class="clip footage" src="assets/footage/07-connect-claude.mp4" data-start="67.901" data-duration="10.0" data-media-start="9.4" data-playback-rate="1.5" data-track-index="0" muted playsinline></video>
+        <video id="v14" class="clip footage" src="assets/footage/07-connect-claude.mp4" data-start="77.901" data-duration="3.5" data-media-start="27.0" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+        <video id="v15" class="clip footage" src="assets/footage/07-connect-claude.mp4" data-start="81.401" data-duration="3.867" data-media-start="32.8" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+      </div>
+      <div class="cam" id="cam-ask-etsy">
+        <video id="v16" class="clip footage" src="assets/footage/02-etsy-claude.mp4" data-start="85.268" data-duration="6.35" data-media-start="4.167" data-playback-rate="2.0" data-track-index="0" muted playsinline></video>
+        <video id="v17" class="clip footage" src="assets/footage/02-etsy-claude.mp4" data-start="91.618" data-duration="4.776" data-media-start="18.167" data-playback-rate="7.0" data-track-index="0" muted playsinline></video>
+        <video id="v18" class="clip footage" src="assets/footage/02-etsy-claude.mp4" data-start="96.394" data-duration="6.2" data-media-start="51.6" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+        <video id="v19" class="clip footage" src="assets/footage/02-etsy-claude.mp4" data-start="102.594" data-duration="4.667" data-media-start="57.8" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+      </div>
+      <div class="cam" id="cam-ask-sap">
+        <video id="v20" class="clip footage" src="assets/footage/04-sap-claude.mp4" data-start="107.261" data-duration="5.083" data-media-start="4.567" data-playback-rate="2.0" data-track-index="0" muted playsinline></video>
+        <video id="v21" class="clip footage" src="assets/footage/04-sap-claude.mp4" data-start="112.344" data-duration="2.943" data-media-start="16.0" data-playback-rate="7.0" data-track-index="0" muted playsinline></video>
+        <video id="v22" class="clip footage" src="assets/footage/04-sap-claude.mp4" data-start="115.287" data-duration="5.8" data-media-start="36.6" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+        <video id="v23" class="clip footage" src="assets/footage/04-sap-claude.mp4" data-start="121.087" data-duration="4.034" data-media-start="44.533" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+      </div>
+      <div class="cam" id="cam-finale">
+        <video id="v24" class="clip footage" src="assets/footage/06b-finale-claude.mp4" data-start="128.121" data-duration="8.022" data-media-start="4.333" data-playback-rate="3.0" data-track-index="0" muted playsinline></video>
+        <video id="v25" class="clip footage" src="assets/footage/06b-finale-claude.mp4" data-start="136.143" data-duration="3.483" data-media-start="29.7" data-playback-rate="6.0" data-track-index="0" muted playsinline></video>
+        <video id="v26" class="clip footage" src="assets/footage/06b-finale-claude.mp4" data-start="139.626" data-duration="7.9" data-media-start="50.6" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+        <video id="v27" class="clip footage" src="assets/footage/06b-finale-claude.mp4" data-start="147.526" data-duration="3.9" data-media-start="58.5" data-playback-rate="1.0" data-track-index="0" muted playsinline></video>
+      </div>
+      </div>
+      <audio id="music-1" src=".media/audio/bgm/bgm_008.wav" data-start="0.0" data-duration="64.0" data-media-start="0" data-track-index="10" data-automation='{"version": 1, "lanes": [{"target": "volume", "points": [{"t": 0, "v": 0}, {"t": 1.0, "v": 0.6}, {"t": 61.5, "v": 0.6}, {"t": 64.0, "v": 0}]}]}'></audio>
+      <audio id="music-2" src=".media/audio/bgm/bgm_008.wav" data-start="61.5" data-duration="64.0" data-media-start="0" data-track-index="11" data-automation='{"version": 1, "lanes": [{"target": "volume", "points": [{"t": 0, "v": 0}, {"t": 2.5, "v": 0.6}, {"t": 61.5, "v": 0.6}, {"t": 64.0, "v": 0}]}]}'></audio>
+      <audio id="music-3" src=".media/audio/bgm/bgm_008.wav" data-start="123.0" data-duration="37.426" data-media-start="0" data-track-index="12" data-automation='{"version": 1, "lanes": [{"target": "volume", "points": [{"t": 0, "v": 0}, {"t": 2.5, "v": 0.6}, {"t": 34.226, "v": 0.6}, {"t": 37.426, "v": 0}]}]}'></audio>
+
+    <div id="open" class="clip overlay stage3d" data-start="0" data-duration="7.6" data-track-index="1" style="background:#f6f4ef">
+      <div id="open-world">
+        <div class="headline" id="open-line-a">Claude can&rsquo;t <em>see</em> your business.</div>
+        <div class="headline" id="open-line-b">Connect <em>anything.</em> In minutes.</div>
+        <svg id="open-wires" width="1920" height="1080" viewBox="0 0 1920 1080" fill="none">
+          <path class="wire" pathLength="1" d="M740 520 C 810 520, 810 640, 876 640"/>
+          <path class="wire" pathLength="1" d="M740 640 L 876 640"/>
+          <path class="wire" pathLength="1" d="M740 760 C 810 760, 810 640, 876 640"/>
+          <path class="wire" pathLength="1" d="M1044 640 L 1180 640"/>
+        </svg>
+        <div class="chip-slot" id="open-etsy" style="left:400px;top:478px"><div class="chip"><div class="chip-icon" style="background:#fdf1ea"><img src="assets/brand/etsy.svg" alt="Etsy"></div><span style="font-weight:500;font-size:28px;white-space:nowrap">Etsy</span></div></div>
+        <div class="chip-slot" id="open-sap" style="left:400px;top:598px"><div class="chip"><div class="chip-icon mono" style="background:#eef3fe;color:#2563eb">S/4</div><span style="font-weight:500;font-size:28px;white-space:nowrap">SAP S/4HANA</span></div></div>
+        <div class="chip-slot" id="open-api" style="left:400px;top:718px"><div class="chip"><div class="chip-icon mono" style="background:#edf7f0;color:#15803d">API</div><span style="font-family:'Geist Mono',monospace;font-size:24px;white-space:nowrap">{ Logistics API }</span></div></div>
+        <div id="open-hub">
+          <div class="hub"><svg viewBox="0 0 52 52" width="96" height="96" fill="none"><line x1="26" y1="26" x2="26" y2="9" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/><line x1="26" y1="26" x2="10" y2="40" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/><line x1="26" y1="26" x2="42" y2="40" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/><circle cx="26" cy="9" r="5" fill="#60a5fa" opacity="0.8"/><circle cx="10" cy="40" r="5" fill="#60a5fa" opacity="0.8"/><circle cx="42" cy="40" r="5" fill="#60a5fa" opacity="0.8"/><circle cx="26" cy="26" r="10" fill="#2563eb"/><circle cx="26" cy="26" r="5.5" fill="#ffffff"/></svg></div>
+          <div class="hub-name" id="open-hub-name">Anything<span style="color:#2563eb">MCP</span></div>
+        </div>
+        <div class="chip-slot" id="open-claude" style="left:1180px;top:598px">
+          <div class="chip" style="width:300px;justify-content:space-between"><span style="font-weight:500;font-size:28px">Claude</span><span style="font-family:'Geist Mono',monospace;font-size:24px;color:#5b6475">/mcp</span></div>
+        </div>
+      </div>
+    </div>
+    <div id="card-etsy" class="clip overlay stage3d" data-start="8.1" data-duration="3.4" data-track-index="2">
+      <div class="section-card" id="card-etsy-box">
+        <div class="badge">1</div>
+        <div class="section-copy">
+          <div class="section-title">From the marketplace</div>
+          <div class="section-sub">Etsy, installed in 30 seconds.</div>
+        </div>
+      </div>
+    </div>
+    <div id="card-sap" class="clip overlay stage3d" data-start="32.2" data-duration="3.4" data-track-index="2">
+      <div class="section-card" id="card-sap-box">
+        <div class="badge">2</div>
+        <div class="section-copy">
+          <div class="section-title">Your SAP, your rules</div>
+          <div class="section-sub">A custom OData connector.</div>
+        </div>
+      </div>
+    </div>
+    <div id="card-openapi" class="clip overlay stage3d" data-start="52.084" data-duration="3.4" data-track-index="2">
+      <div class="section-card" id="card-openapi-box">
+        <div class="badge">3</div>
+        <div class="section-copy">
+          <div class="section-title">Any REST API</div>
+          <div class="section-sub">From its OpenAPI spec.</div>
+        </div>
+      </div>
+    </div>
+    <div id="card-connect" class="clip overlay stage3d" data-start="68.401" data-duration="3.4" data-track-index="2">
+      <div class="section-card" id="card-connect-box">
+        <div class="badge"><svg viewBox="0 0 52 52" width="40" height="40" fill="none"><line x1="26" y1="26" x2="26" y2="9" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/><line x1="26" y1="26" x2="10" y2="40" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/><line x1="26" y1="26" x2="42" y2="40" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/><circle cx="26" cy="9" r="5" fill="#ffffff" opacity="0.9"/><circle cx="10" cy="40" r="5" fill="#ffffff" opacity="0.9"/><circle cx="42" cy="40" r="5" fill="#ffffff" opacity="0.9"/><circle cx="26" cy="26" r="10" fill="#2563eb"/><circle cx="26" cy="26" r="5.5" fill="#ffffff"/></svg></div>
+        <div class="section-copy">
+          <div class="section-title">One URL in Claude</div>
+          <div class="section-sub">Add it as a custom connector.</div>
+        </div>
+      </div>
+    </div>
+    <div id="call-sap-test" class="clip overlay stage3d" data-start="45.384" data-duration="2.4" data-track-index="3">
+      <div class="callout" id="call-sap-test-box">
+        <div class="callout-head"><div class="chip-icon mono" style="background:#eef3fe;color:#2563eb">S/4</div><span>SAP S/4HANA</span></div>
+        <div class="callout-tool">Test connection: 42 services</div>
+        <div class="callout-via"><span>via</span><svg viewBox="0 0 52 52" width="22" height="22" fill="none"><line x1="26" y1="26" x2="26" y2="9" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/><line x1="26" y1="26" x2="10" y2="40" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/><line x1="26" y1="26" x2="42" y2="40" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/><circle cx="26" cy="9" r="5" fill="#2563eb" opacity="0.65"/><circle cx="10" cy="40" r="5" fill="#2563eb" opacity="0.65"/><circle cx="42" cy="40" r="5" fill="#2563eb" opacity="0.65"/><circle cx="26" cy="26" r="10" fill="#2563eb"/><circle cx="26" cy="26" r="5.5" fill="#ffffff"/></svg><b>Anything<span style="color:#2563eb">MCP</span></b></div>
+      </div>
+    </div>
+    <div id="call-ask-etsy" class="clip overlay stage3d" data-start="91.618" data-duration="5.376" data-track-index="3">
+      <div class="callout" id="call-ask-etsy-box">
+        <div class="callout-head"><div class="chip-icon" style="background:#fdf1ea"><img src="assets/brand/etsy.svg" alt="Etsy"></div><span>Etsy</span></div>
+        <div class="callout-tool">etsy_get_shop_receipts</div>
+        <div class="callout-via"><span>via</span><svg viewBox="0 0 52 52" width="22" height="22" fill="none"><line x1="26" y1="26" x2="26" y2="9" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/><line x1="26" y1="26" x2="10" y2="40" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/><line x1="26" y1="26" x2="42" y2="40" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/><circle cx="26" cy="9" r="5" fill="#2563eb" opacity="0.65"/><circle cx="10" cy="40" r="5" fill="#2563eb" opacity="0.65"/><circle cx="42" cy="40" r="5" fill="#2563eb" opacity="0.65"/><circle cx="26" cy="26" r="10" fill="#2563eb"/><circle cx="26" cy="26" r="5.5" fill="#ffffff"/></svg><b>Anything<span style="color:#2563eb">MCP</span></b></div>
+      </div>
+    </div>
+    <div id="speed-ask-etsy" class="clip overlay" data-start="91.618" data-duration="4.776" data-track-index="4">
+      <div class="speed" id="speed-ask-etsy-pill">7&times; speed</div>
+    </div>
+    <div id="call-ask-sap" class="clip overlay stage3d" data-start="112.344" data-duration="3.543" data-track-index="3">
+      <div class="callout" id="call-ask-sap-box">
+        <div class="callout-head"><div class="chip-icon mono" style="background:#eef3fe;color:#2563eb">S/4</div><span>SAP S/4HANA</span></div>
+        <div class="callout-tool">s4_query</div>
+        <div class="callout-via"><span>via</span><svg viewBox="0 0 52 52" width="22" height="22" fill="none"><line x1="26" y1="26" x2="26" y2="9" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/><line x1="26" y1="26" x2="10" y2="40" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/><line x1="26" y1="26" x2="42" y2="40" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/><circle cx="26" cy="9" r="5" fill="#2563eb" opacity="0.65"/><circle cx="10" cy="40" r="5" fill="#2563eb" opacity="0.65"/><circle cx="42" cy="40" r="5" fill="#2563eb" opacity="0.65"/><circle cx="26" cy="26" r="10" fill="#2563eb"/><circle cx="26" cy="26" r="5.5" fill="#ffffff"/></svg><b>Anything<span style="color:#2563eb">MCP</span></b></div>
+      </div>
+    </div>
+    <div id="speed-ask-sap" class="clip overlay" data-start="112.344" data-duration="2.943" data-track-index="4">
+      <div class="speed" id="speed-ask-sap-pill">7&times; speed</div>
+    </div>
+    <div id="finale-card" class="clip overlay stage3d" data-start="125.121" data-duration="3.0" data-track-index="1">
+      <div class="inter" id="finale-inter">
+        <div class="inter-kicker" id="finale-kicker">ETSY &middot; LOGISTICS API &middot; SAP S/4HANA</div>
+        <div class="inter-title"><span class="w">Now</span> <span class="w">ask</span> <span class="w">across</span> <span class="w"><em>all</em></span> <span class="w">of</span> <span class="w">them.</span></div>
+      </div>
+    </div>
+    <div id="finale-chips" class="clip overlay stage3d" data-start="136.143" data-duration="3.983" data-track-index="3">
+      <div class="dim" id="finale-dim"></div>
+      <div class="tool-stack" id="tool-stack">
+        <div class="kicker">ASKED IN CLAUDE</div>
+        <div class="tool-row" id="tr-1"><span class="dot" id="tr-1-dot"></span><span class="sys">Etsy</span><span class="fn">etsy_get_shop_receipts</span></div>
+        <div class="tool-row" id="tr-2"><span class="dot" id="tr-2-dot"></span><span class="sys">Logistics</span><span class="fn">logistics_list_shipments</span></div>
+        <div class="tool-row" id="tr-3"><span class="dot" id="tr-3-dot"></span><span class="sys">SAP S/4HANA</span><span class="fn">s4_query</span></div>
+      </div>
+    </div>
+    <div id="speed-finale" class="clip overlay" data-start="136.143" data-duration="3.483" data-track-index="4">
+      <div class="speed" id="speed-finale-pill">6&times; speed</div>
+    </div>
+    <div id="end" class="clip overlay stage3d" data-start="151.426" data-duration="9.0" data-track-index="1" style="background:#f6f4ef">
+      <div class="proof" id="end-proof">
+        <div class="proof-item" id="pf-1"><span class="num">01</span><span class="big">Cloud or self-hosted</span></div>
+        <div class="proof-item" id="pf-2"><span class="num">02</span><span class="big">SSO &amp; SCIM</span></div>
+        <div class="proof-item" id="pf-3"><span class="num">03</span><span class="big">Roles &amp; audit log</span></div>
+        <div class="proof-item" id="pf-4"><span class="num">04</span><span class="big">Open source (AGPL)</span></div>
+      </div>
+      <div class="lockup" id="end-lockup">
+        <div class="lockup-row" id="end-logo"><svg viewBox="0 0 52 52" width="120" height="120" fill="none"><line x1="26" y1="26" x2="26" y2="9" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/><line x1="26" y1="26" x2="10" y2="40" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/><line x1="26" y1="26" x2="42" y2="40" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/><circle cx="26" cy="9" r="5" fill="#2563eb" opacity="0.65"/><circle cx="10" cy="40" r="5" fill="#2563eb" opacity="0.65"/><circle cx="42" cy="40" r="5" fill="#2563eb" opacity="0.65"/><circle cx="26" cy="26" r="10" fill="#2563eb"/><circle cx="26" cy="26" r="5.5" fill="#ffffff"/></svg><span class="wordmark">Anything<span style="color:#2563eb">MCP</span></span></div>
+        <div class="lockup-row" id="end-cta"><span class="url">anythingmcp.com</span><span class="star">&#9733; Star on GitHub</span></div>
+      </div>
+      <div class="footer" id="end-footer"><span>Cloud or self-hosted</span><span>SSO &amp; SCIM</span><span>Roles &amp; audit log</span><span>Open source (AGPL)</span></div>
+    </div>
+    <div id="cap-etsy-0" class="clip overlay stage3d" data-start="11.5" data-duration="2.6" data-track-index="5">
+      <div class="caption" id="cap-etsy-0-pill">Open the Marketplace and search for Etsy</div>
+    </div>
+    <div id="cap-etsy-1" class="clip overlay stage3d" data-start="14.1" data-duration="5.0" data-track-index="5">
+      <div class="caption" id="cap-etsy-1-pill">Paste the Etsy app keys and import</div>
+    </div>
+    <div id="cap-etsy-2" class="clip overlay stage3d" data-start="19.1" data-duration="5.1" data-track-index="5">
+      <div class="caption" id="cap-etsy-2-pill">Put it on your MCP server</div>
+    </div>
+    <div id="cap-etsy-3" class="clip overlay stage3d" data-start="24.2" data-duration="4.267" data-track-index="5">
+      <div class="caption" id="cap-etsy-3-pill">Sign in to Etsy once</div>
+    </div>
+    <div id="cap-etsy-4" class="clip overlay stage3d" data-start="28.467" data-duration="3.233" data-track-index="5">
+      <div class="caption" id="cap-etsy-4-pill">9 Etsy tools, ready for Claude</div>
+    </div>
+    <div id="cap-sap-1" class="clip overlay stage3d" data-start="33.867" data-duration="10.917" data-track-index="5">
+      <div class="caption" id="cap-sap-1-pill">SAP Gateway URL, client, language and a read-only user</div>
+    </div>
+    <div id="cap-sap-2" class="clip overlay stage3d" data-start="44.784" data-duration="3.2" data-track-index="5">
+      <div class="caption" id="cap-sap-2-pill">Test connection: SAP answers with its service catalog</div>
+    </div>
+    <div id="cap-sap-3" class="clip overlay stage3d" data-start="47.984" data-duration="3.6" data-track-index="5">
+      <div class="caption" id="cap-sap-3-pill">SAP S/4HANA joins the same server</div>
+    </div>
+    <div id="cap-openapi-1" class="clip overlay stage3d" data-start="54.884" data-duration="8.417" data-track-index="5">
+      <div class="caption" id="cap-openapi-1-pill">Base URL, OpenAPI spec URL and an API key</div>
+    </div>
+    <div id="cap-openapi-2" class="clip overlay stage3d" data-start="63.301" data-duration="4.6" data-track-index="5">
+      <div class="caption" id="cap-openapi-2-pill">12 tools generated from the spec</div>
+    </div>
+    <div id="cap-connect-0" class="clip overlay stage3d" data-start="71.801" data-duration="6.1" data-track-index="5">
+      <div class="caption" id="cap-connect-0-pill">In Claude: add a custom connector with the server URL</div>
+    </div>
+    <div id="cap-connect-1" class="clip overlay stage3d" data-start="77.901" data-duration="3.5" data-track-index="5">
+      <div class="caption" id="cap-connect-1-pill">Approve access in AnythingMCP</div>
+    </div>
+    <div id="cap-connect-2" class="clip overlay stage3d" data-start="81.401" data-duration="3.867" data-track-index="5">
+      <div class="caption" id="cap-connect-2-pill">Claude now sees every tool on the server</div>
+    </div>
+    <div id="cap-ask-etsy-0" class="clip overlay stage3d" data-start="85.268" data-duration="6.35" data-track-index="5">
+      <div class="caption" id="cap-ask-etsy-0-pill">Ask in plain English</div>
+    </div>
+    <div id="cap-ask-etsy-1" class="clip overlay stage3d" data-start="91.618" data-duration="4.776" data-track-index="5">
+      <div class="caption" id="cap-ask-etsy-1-pill">Claude calls the Etsy tools through AnythingMCP</div>
+    </div>
+    <div id="cap-ask-etsy-2" class="clip overlay stage3d" data-start="96.394" data-duration="6.2" data-track-index="5">
+      <div class="caption" id="cap-ask-etsy-2-pill">Real numbers from the shop</div>
+    </div>
+    <div id="cap-ask-etsy-3" class="clip overlay stage3d" data-start="102.594" data-duration="4.667" data-track-index="5">
+      <div class="caption" id="cap-ask-etsy-3-pill">Units, revenue and what stands out</div>
+    </div>
+    <div id="cap-ask-sap-0" class="clip overlay stage3d" data-start="107.261" data-duration="5.083" data-track-index="5">
+      <div class="caption" id="cap-ask-sap-0-pill">Same chat, now about stock</div>
+    </div>
+    <div id="cap-ask-sap-1" class="clip overlay stage3d" data-start="112.344" data-duration="2.943" data-track-index="5">
+      <div class="caption" id="cap-ask-sap-1-pill">Claude queries SAP over OData</div>
+    </div>
+    <div id="cap-ask-sap-2" class="clip overlay stage3d" data-start="115.287" data-duration="5.8" data-track-index="5">
+      <div class="caption" id="cap-ask-sap-2-pill">Three products below safety stock in Lisbon</div>
+    </div>
+    <div id="cap-ask-sap-3" class="clip overlay stage3d" data-start="121.087" data-duration="4.034" data-track-index="5">
+      <div class="caption" id="cap-ask-sap-3-pill">With what is already in the kiln</div>
+    </div>
+    <div id="cap-finale-0" class="clip overlay stage3d" data-start="128.121" data-duration="8.022" data-track-index="5">
+      <div class="caption" id="cap-finale-0-pill">One question across all three systems</div>
+    </div>
+    <div id="cap-finale-1" class="clip overlay stage3d" data-start="136.143" data-duration="3.483" data-track-index="5">
+      <div class="caption" id="cap-finale-1-pill">Etsy orders, then shipments, then SAP stock</div>
+    </div>
+    <div id="cap-finale-2" class="clip overlay stage3d" data-start="139.626" data-duration="7.9" data-track-index="5">
+      <div class="caption" id="cap-finale-2-pill">Three stuck orders, and where to resend from</div>
+    </div>
+    <div id="cap-finale-3" class="clip overlay stage3d" data-start="147.526" data-duration="3.9" data-track-index="5">
+      <div class="caption" id="cap-finale-3-pill">Ready to act on it</div>
+    </div>
+    </div>
+    <script>
+      gsap.registerPlugin(CustomEase);
+      CustomEase.create("settle", ".16,1,.3,1");
+      CustomEase.create("move", ".65,0,.35,1");
+      CustomEase.create("leave", ".5,0,.75,0");
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#open-world", {rotationX:14, rotationY:-18, z:-260, scale:0.96}, {rotationX:6, rotationY:-8, z:-80, scale:1, duration:3.0, ease:"none"}, 0);
+      tl.to("#open-world", {rotationX:0, rotationY:0, z:0, duration:1.4, ease:"settle"}, 3.0);
+      tl.fromTo("#open-line-a", {opacity:0, y:30, rotationX:-60}, {opacity:1, y:0, rotationX:0, duration:0.9, ease:"settle"}, 0.15);
+      tl.fromTo("#open-etsy", {opacity:0, x:-180, y:112, z:-160, rotation:-5, rotationY:30}, {opacity:1, y:82, z:240, duration:0.9, ease:"settle"}, 0.45);
+      tl.fromTo("#open-sap", {opacity:0, x:980, y:-148, z:-720, rotation:4, rotationY:-24}, {opacity:1, y:-178, z:-320, duration:0.9, ease:"settle"}, 0.5700000000000001);
+      tl.fromTo("#open-api", {opacity:0, x:840, y:132, z:-280, rotation:-3, rotationY:18}, {opacity:1, y:102, z:120, duration:0.9, ease:"settle"}, 0.69);
+      tl.fromTo("#open-hub", {opacity:0, scale:0.6, z:-300}, {opacity:1, scale:1, z:0, duration:0.9, ease:"settle"}, 0.8);
+      tl.set("#open-hub-name", {opacity:0}, 0);
+      tl.to("#open-line-a", {opacity:0, y:-20, rotationX:50, duration:0.4, ease:"leave"}, 2.9);
+      tl.to("#open-etsy", {x:0, y:0, z:0, rotation:0, rotationY:0, duration:1.0, ease:"settle"}, 3.0);
+      tl.to("#open-sap", {x:0, y:0, z:0, rotation:0, rotationY:0, duration:1.0, ease:"settle"}, 3.08);
+      tl.to("#open-api", {x:0, y:0, z:0, rotation:0, rotationY:0, duration:1.0, ease:"settle"}, 3.16);
+      tl.fromTo("#open-wires .wire", {strokeDashoffset:1}, {strokeDashoffset:0, duration:0.45, ease:"move", stagger:0.08}, 3.8);
+      tl.to("#open-hub-name", {opacity:1, duration:0.4}, 4.0);
+      tl.fromTo("#open-claude", {opacity:0, x:80, z:-300, rotationY:-40}, {opacity:1, x:0, z:0, rotationY:0, duration:0.9, ease:"settle"}, 4.2);
+      tl.fromTo("#open-line-b", {opacity:0, y:30, rotationX:-60}, {opacity:1, y:0, rotationX:0, duration:0.9, ease:"settle"}, 3.9);
+      tl.to("#open-world", {z:900, duration:0.65, ease:"leave"}, 6.8999999999999995);
+      tl.to("#open", {opacity:0, duration:0.45, ease:"leave"}, 7.1499999999999995);
+      tl.fromTo("#cam-etsy", {opacity:0, z:-900, rotationX:18, rotationY:-22, y:116, scale:0.9}, {opacity:1, z:0, rotationX:0, rotationY:0, y:-44, scale:0.9, duration:1.0, ease:"settle"}, 7.6);
+      tl.to("#cam-etsy", {rotationY:2.2, rotationX:-1.2, duration:22.5, ease:"none"}, 8.6);
+      tl.to("#cam-etsy", {opacity:0, z:-700, rotationX:-14, rotationY:24, y:-184, duration:0.6, ease:"leave"}, 31.1);
+      tl.fromTo("#cam-sap", {opacity:0, z:-900, rotationX:18, rotationY:22, y:116, scale:0.9}, {opacity:1, z:0, rotationX:0, rotationY:0, y:-44, scale:0.9, duration:1.0, ease:"settle"}, 31.7);
+      tl.to("#cam-sap", {rotationY:-2.2, rotationX:-1.2, duration:18.284, ease:"none"}, 32.7);
+      tl.to("#cam-sap", {opacity:0, z:-700, rotationX:-14, rotationY:-24, y:-184, duration:0.6, ease:"leave"}, 50.984);
+      tl.fromTo("#cam-openapi", {opacity:0, z:-900, rotationX:18, rotationY:-22, y:116, scale:0.9}, {opacity:1, z:0, rotationX:0, rotationY:0, y:-44, scale:0.9, duration:1.0, ease:"settle"}, 51.584);
+      tl.to("#cam-openapi", {rotationY:2.2, rotationX:-1.2, duration:14.717, ease:"none"}, 52.584);
+      tl.to("#cam-openapi", {opacity:0, z:-700, rotationX:-14, rotationY:24, y:-184, duration:0.6, ease:"leave"}, 67.301);
+      tl.fromTo("#cam-connect", {opacity:0, z:-900, rotationX:18, rotationY:22, y:116, scale:0.9}, {opacity:1, z:0, rotationX:0, rotationY:0, y:-44, scale:0.9, duration:1.0, ease:"settle"}, 67.901);
+      tl.to("#cam-connect", {rotationY:-2.2, rotationX:-1.2, duration:15.767, ease:"none"}, 68.901);
+      tl.to("#cam-connect", {opacity:0, z:-700, rotationX:-14, rotationY:-24, y:-184, duration:0.6, ease:"leave"}, 84.668);
+      tl.fromTo("#cam-ask-etsy", {opacity:0, z:-900, rotationX:18, rotationY:-22, y:116, scale:0.9}, {opacity:1, z:0, rotationX:0, rotationY:0, y:-44, scale:0.9, duration:1.0, ease:"settle"}, 85.268);
+      tl.to("#cam-ask-etsy", {rotationY:2.2, rotationX:-1.2, duration:20.393, ease:"none"}, 86.268);
+      tl.to("#cam-ask-etsy", {opacity:0, z:-700, rotationX:-14, rotationY:24, y:-184, duration:0.6, ease:"leave"}, 106.661);
+      tl.fromTo("#cam-ask-sap", {opacity:0, z:-900, rotationX:18, rotationY:22, y:116, scale:0.9}, {opacity:1, z:0, rotationX:0, rotationY:0, y:-44, scale:0.9, duration:1.0, ease:"settle"}, 107.261);
+      tl.to("#cam-ask-sap", {rotationY:-2.2, rotationX:-1.2, duration:16.26, ease:"none"}, 108.261);
+      tl.to("#cam-ask-sap", {opacity:0, z:-700, rotationX:-14, rotationY:-24, y:-184, duration:0.6, ease:"leave"}, 124.521);
+      tl.fromTo("#cam-finale", {opacity:0, z:-900, rotationX:18, rotationY:-22, y:116, scale:0.9}, {opacity:1, z:0, rotationX:0, rotationY:0, y:-44, scale:0.9, duration:1.0, ease:"settle"}, 128.121);
+      tl.to("#cam-finale", {rotationY:2.2, rotationX:-1.2, duration:21.705, ease:"none"}, 129.121);
+      tl.to("#cam-finale", {opacity:0, z:-700, rotationX:-14, rotationY:24, y:-184, duration:0.6, ease:"leave"}, 150.826);
+      tl.fromTo("#card-etsy-box", {opacity:0, rotationX:-75, z:-200, y:40}, {opacity:1, rotationX:0, z:0, y:0, duration:0.9, ease:"settle"}, 8.1);
+      tl.to("#card-etsy-box", {opacity:0, rotationX:60, z:-160, duration:0.4, ease:"leave"}, 11.05);
+      tl.fromTo("#card-sap-box", {opacity:0, rotationX:-75, z:-200, y:40}, {opacity:1, rotationX:0, z:0, y:0, duration:0.9, ease:"settle"}, 32.2);
+      tl.to("#card-sap-box", {opacity:0, rotationX:60, z:-160, duration:0.4, ease:"leave"}, 35.15);
+      tl.fromTo("#card-openapi-box", {opacity:0, rotationX:-75, z:-200, y:40}, {opacity:1, rotationX:0, z:0, y:0, duration:0.9, ease:"settle"}, 52.084);
+      tl.to("#card-openapi-box", {opacity:0, rotationX:60, z:-160, duration:0.4, ease:"leave"}, 55.034);
+      tl.fromTo("#card-connect-box", {opacity:0, rotationX:-75, z:-200, y:40}, {opacity:1, rotationX:0, z:0, y:0, duration:0.9, ease:"settle"}, 68.401);
+      tl.to("#card-connect-box", {opacity:0, rotationX:60, z:-160, duration:0.4, ease:"leave"}, 71.351);
+      tl.fromTo("#call-sap-test-box", {opacity:0, rotationY:-70, x:-80, z:-200}, {opacity:1, rotationY:0, x:0, z:0, duration:0.8, ease:"settle"}, 45.484);
+      tl.to("#call-sap-test-box", {opacity:0, rotationY:40, z:-150, duration:0.35, ease:"leave"}, 47.384);
+      tl.fromTo("#call-ask-etsy-box", {opacity:0, rotationY:-70, x:-80, z:-200}, {opacity:1, rotationY:0, x:0, z:0, duration:0.8, ease:"settle"}, 91.718);
+      tl.to("#call-ask-etsy-box", {opacity:0, rotationY:40, z:-150, duration:0.35, ease:"leave"}, 96.594);
+      tl.fromTo("#call-ask-sap-box", {opacity:0, rotationY:-70, x:-80, z:-200}, {opacity:1, rotationY:0, x:0, z:0, duration:0.8, ease:"settle"}, 112.444);
+      tl.to("#call-ask-sap-box", {opacity:0, rotationY:40, z:-150, duration:0.35, ease:"leave"}, 115.487);
+      tl.fromTo("#speed-ask-etsy-pill", {opacity:0, y:-10}, {opacity:1, y:0, duration:0.3}, 91.618);
+      tl.to("#speed-ask-etsy-pill", {opacity:0, duration:0.25}, 96.094);
+      tl.fromTo("#speed-ask-sap-pill", {opacity:0, y:-10}, {opacity:1, y:0, duration:0.3}, 112.344);
+      tl.to("#speed-ask-sap-pill", {opacity:0, duration:0.25}, 114.987);
+      tl.fromTo("#speed-finale-pill", {opacity:0, y:-10}, {opacity:1, y:0, duration:0.3}, 136.143);
+      tl.to("#speed-finale-pill", {opacity:0, duration:0.25}, 139.326);
+      tl.fromTo("#cap-etsy-0-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 11.55);
+      tl.to("#cap-etsy-0-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 13.78);
+      tl.fromTo("#cap-etsy-1-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 14.15);
+      tl.to("#cap-etsy-1-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 18.78);
+      tl.fromTo("#cap-etsy-2-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 19.15);
+      tl.to("#cap-etsy-2-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 23.88);
+      tl.fromTo("#cap-etsy-3-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 24.25);
+      tl.to("#cap-etsy-3-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 28.147);
+      tl.fromTo("#cap-etsy-4-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 28.517);
+      tl.to("#cap-etsy-4-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 31.38);
+      tl.fromTo("#cap-sap-1-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 33.917);
+      tl.to("#cap-sap-1-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 44.464);
+      tl.fromTo("#cap-sap-2-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 44.834);
+      tl.to("#cap-sap-2-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 47.664);
+      tl.fromTo("#cap-sap-3-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 48.034);
+      tl.to("#cap-sap-3-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 51.264);
+      tl.fromTo("#cap-openapi-1-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 54.934);
+      tl.to("#cap-openapi-1-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 62.981);
+      tl.fromTo("#cap-openapi-2-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 63.351);
+      tl.to("#cap-openapi-2-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 67.581);
+      tl.fromTo("#cap-connect-0-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 71.851);
+      tl.to("#cap-connect-0-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 77.581);
+      tl.fromTo("#cap-connect-1-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 77.951);
+      tl.to("#cap-connect-1-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 81.081);
+      tl.fromTo("#cap-connect-2-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 81.451);
+      tl.to("#cap-connect-2-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 84.948);
+      tl.fromTo("#cap-ask-etsy-0-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 85.318);
+      tl.to("#cap-ask-etsy-0-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 91.298);
+      tl.fromTo("#cap-ask-etsy-1-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 91.668);
+      tl.to("#cap-ask-etsy-1-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 96.074);
+      tl.fromTo("#cap-ask-etsy-2-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 96.444);
+      tl.to("#cap-ask-etsy-2-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 102.274);
+      tl.fromTo("#cap-ask-etsy-3-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 102.644);
+      tl.to("#cap-ask-etsy-3-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 106.941);
+      tl.fromTo("#cap-ask-sap-0-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 107.311);
+      tl.to("#cap-ask-sap-0-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 112.024);
+      tl.fromTo("#cap-ask-sap-1-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 112.394);
+      tl.to("#cap-ask-sap-1-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 114.967);
+      tl.fromTo("#cap-ask-sap-2-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 115.337);
+      tl.to("#cap-ask-sap-2-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 120.767);
+      tl.fromTo("#cap-ask-sap-3-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 121.137);
+      tl.to("#cap-ask-sap-3-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 124.801);
+      tl.fromTo("#cap-finale-0-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 128.171);
+      tl.to("#cap-finale-0-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 135.823);
+      tl.fromTo("#cap-finale-1-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 136.193);
+      tl.to("#cap-finale-1-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 139.306);
+      tl.fromTo("#cap-finale-2-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 139.676);
+      tl.to("#cap-finale-2-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 147.206);
+      tl.fromTo("#cap-finale-3-pill", {opacity:0, y:24, rotationX:-70}, {opacity:1, y:0, rotationX:0, duration:0.55, ease:"settle"}, 147.576);
+      tl.to("#cap-finale-3-pill", {opacity:0, y:-10, rotationX:50, duration:0.3, ease:"leave"}, 151.106);
+      tl.fromTo("#finale-kicker", {opacity:0, y:24}, {opacity:1, y:0, duration:0.7, ease:"settle"}, 125.221);
+      tl.fromTo("#finale-inter .w", {opacity:0, z:-600, rotationX:-50, y:40}, {opacity:1, z:0, rotationX:0, y:0, duration:0.8, ease:"settle", stagger:0.09}, 125.321);
+      tl.to("#finale-inter", {opacity:0, z:500, duration:0.5, ease:"leave"}, 127.621);
+      tl.fromTo("#finale-dim", {opacity:0}, {opacity:1, duration:0.5}, 136.143);
+      tl.fromTo("#tr-1", {opacity:0, rotationX:-85, z:-200}, {opacity:1, rotationX:0, z:0, duration:0.7, ease:"settle"}, 136.343);
+      tl.fromTo("#tr-1", {borderColor:"#2563eb", boxShadow:"0 0 0 4px rgba(37,99,235,.18)"}, {borderColor:"#1f2b42", boxShadow:"0 0 0 0px rgba(37,99,235,0)", duration:0.4}, 137.237);
+      tl.fromTo("#tr-1-dot", {backgroundColor:"#60a5fa"}, {backgroundColor:"#16a34a", duration:0.3}, 137.237);
+      tl.fromTo("#tr-2", {opacity:0, rotationX:-85, z:-200}, {opacity:1, rotationX:0, z:0, duration:0.7, ease:"settle"}, 137.237);
+      tl.fromTo("#tr-2", {borderColor:"#2563eb", boxShadow:"0 0 0 4px rgba(37,99,235,.18)"}, {borderColor:"#1f2b42", boxShadow:"0 0 0 0px rgba(37,99,235,0)", duration:0.4}, 138.131);
+      tl.fromTo("#tr-2-dot", {backgroundColor:"#60a5fa"}, {backgroundColor:"#16a34a", duration:0.3}, 138.131);
+      tl.fromTo("#tr-3", {opacity:0, rotationX:-85, z:-200}, {opacity:1, rotationX:0, z:0, duration:0.7, ease:"settle"}, 138.132);
+      tl.fromTo("#tr-3", {borderColor:"#2563eb", boxShadow:"0 0 0 4px rgba(37,99,235,.18)"}, {borderColor:"#1f2b42", boxShadow:"0 0 0 0px rgba(37,99,235,0)", duration:0.4}, 139.026);
+      tl.fromTo("#tr-3-dot", {backgroundColor:"#60a5fa"}, {backgroundColor:"#16a34a", duration:0.3}, 139.026);
+      tl.to(["#finale-dim", "#tool-stack"], {opacity:0, duration:0.35, ease:"leave"}, 139.726);
+      tl.fromTo(".proof-item", {opacity:0, rotationX:-95, z:-100}, {opacity:1, rotationX:0, z:0, duration:0.8, ease:"settle", stagger:0.13}, 151.576);
+      tl.to("#end-proof", {opacity:0, z:-500, duration:0.45, ease:"leave"}, 154.826);
+      tl.fromTo("#end-logo", {opacity:0, z:-700, rotationX:30, y:40}, {opacity:1, z:0, rotationX:0, y:0, duration:1.0, ease:"settle"}, 155.276);
+      tl.fromTo("#end-cta", {opacity:0, y:30, rotationX:-60}, {opacity:1, y:0, rotationX:0, duration:0.8, ease:"settle"}, 155.576);
+      tl.fromTo("#end-footer", {opacity:0}, {opacity:1, duration:0.6}, 155.826);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "lumen-clay-demo-api",
+  "private": true,
+  "description": "Mock Etsy, SAP OData and logistics backend for the AnythingMCP demo video",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "build:node": "esbuild src/node.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/server.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260926.1",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.0.0",
+    "esbuild": "^0.25.0"
+  }
+}

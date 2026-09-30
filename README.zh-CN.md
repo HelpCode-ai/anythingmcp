@@ -20,11 +20,13 @@
   <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/docker/pulls/helpcodeai/anythingmcp?logo=docker&logoColor=white&color=2563eb&labelColor=0b1220" alt="Docker pulls"></a>
 </p>
 
-**Claude 回答了一个此前聊天机器人无法回答的问题**，因为相关数据位于使用 REST 而非 MCP 的现场服务系统中：
+**在 Claude 中提一个问题，答案来自 Etsy、SAP 和一个物流 API。** AnythingMCP 从市场接入 Etsy，通过 OData 接入 SAP S/4HANA，并根据 OpenAPI 规范导入 REST API，随后 Claude 即可跨三个系统工作：
 
 <p align="center">
-  <img src="docs/assets/demo-claude.gif" alt="AnythingMCP 在 Claude 中的效果：被问到某位技术人员上周走访了哪些公司时，Claude 调用 AnythingMCP 根据现场服务 REST API 生成的 MCP 工具。" width="100%" />
+  <a href="https://anythingmcp.com/video-promo"><img src="docs/assets/demo-lumen-clay.gif" alt="AnythingMCP 演示：从市场安装 Etsy，将 SAP S/4HANA 添加为 OData 连接器，根据 OpenAPI 规范导入物流 API，然后 Claude 回答哪些 Etsy 订单卡在运输中，以及 SAP 是否有库存可以补发。" width="100%" /></a>
 </p>
+
+<p align="center"><a href="https://anythingmcp.com/video-promo">▶ 观看完整演示（2:40，有声音）</a></p>
 
 **自己运行试试** — 三行命令，无需克隆仓库，[详细说明见下文](#run-it-yourself)：
 

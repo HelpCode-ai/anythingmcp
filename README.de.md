@@ -20,11 +20,13 @@
   <a href="https://hub.docker.com/r/helpcodeai/anythingmcp"><img src="https://img.shields.io/docker/pulls/helpcodeai/anythingmcp?logo=docker&logoColor=white&color=2563eb&labelColor=0b1220" alt="Docker pulls"></a>
 </p>
 
-**Claude beantwortet eine Frage, die zuvor kein Chatbot beantworten konnte**, weil die Daten in einem Außendienstsystem liegen, das REST statt MCP spricht:
+**Eine Frage in Claude, beantwortet aus Etsy, SAP und einer Logistik-API.** AnythingMCP bindet den Shop aus dem Marktplatz an, SAP S/4HANA über OData und eine REST-API über ihre OpenAPI-Spezifikation. Danach arbeitet Claude mit allen drei Systemen:
 
 <p align="center">
-  <img src="docs/assets/demo-claude.gif" alt="AnythingMCP in Claude: Auf die Frage, welche Firmen ein Techniker letzte Woche besucht hat, ruft Claude MCP-Tools auf, die AnythingMCP aus der REST-API eines Außendienstsystems erzeugt hat." width="100%" />
+  <a href="https://anythingmcp.com/video-promo"><img src="docs/assets/demo-lumen-clay.gif" alt="AnythingMCP-Demo: Etsy aus dem Marktplatz installiert, SAP S/4HANA als OData-Connector angelegt, eine Logistik-API aus ihrer OpenAPI-Spezifikation importiert. Danach beantwortet Claude, welche Etsy-Bestellungen hängen und ob SAP genug Bestand für einen Ersatzversand hat" width="100%" /></a>
 </p>
+
+<p align="center"><a href="https://anythingmcp.com/video-promo">▶ Die ganze Demo ansehen (2:40, mit Ton)</a></p>
 
 **Selbst ausprobieren** — drei Zeilen, ohne das Repository zu klonen, [Details weiter unten](#run-it-yourself):
 
