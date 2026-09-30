@@ -35,7 +35,7 @@
     "@nestjs/microservices": "^11.2.6",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.2.6",
-    "@nestjs/swagger": "^11.4.7",
+    "@nestjs/swagger": "^12.0.2",
     "@nestjs/terminus": "^11.0.0",
     "@nestjs/throttler": "^6.7.1",
     "@opentelemetry/auto-instrumentations-node": "^0.80.0",
