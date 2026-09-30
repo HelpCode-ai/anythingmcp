@@ -24,6 +24,12 @@ export const ProductEvents = {
   API_KEY_GENERATED: 'api_key_generated',
   /** Left the post-attach page having copied nothing at all. */
   LEFT_WITHOUT_COPY: 'left_page_without_copy',
+  /**
+   * Watched the first MCP request arrive live on the connect page (the
+   * connection check turned green). Answers: does the live check help people
+   * finish connecting, read against post_attach_viewed.
+   */
+  FIRST_CALL_SEEN: 'first_call_seen',
   /** Saw the starter pack on /welcome. Read against the next one: how many take it. */
   STARTER_PACK_VIEWED: 'starter_pack_viewed',
   /** Installed connectors from the starter pack. metadata.adapterSlug = comma list. */

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, audit, knowledgeGraph } from '@/lib/api';
+import { connectors, audit, knowledgeGraph, mcpServers } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
@@ -28,6 +28,8 @@ export default function DashboardPage() {
   const [checkingHealth, setCheckingHealth] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [kgStats, setKgStats] = useState<{ nodes: number; edges: number } | null>(null);
+  // Where "connect your AI client" leads: the first MCP server's connect page.
+  const [connectHref, setConnectHref] = useState('/mcp-server');
 
   useEffect(() => {
     if (!token) return;
@@ -49,6 +51,14 @@ export default function DashboardPage() {
         if (analyticsData) setAnalytics(analyticsData);
         if (connList.length > 0) {
           connectors.healthCheck(token).then(setHealthResult).catch(() => {});
+          if (!analyticsData?.totalInvocations && !auditStats.invocations24h) {
+            mcpServers
+              .list(token)
+              .then((servers) => {
+                if (servers[0]?.id) setConnectHref(`/mcp-server/${servers[0].id}`);
+              })
+              .catch(() => {});
+          }
           // Knowledge-graph teaser counts (free static/observational layers; no AI).
           knowledgeGraph.stats(token)
             .then((s) => setKgStats({ nodes: s.nodes, edges: s.edges }))
@@ -110,6 +120,23 @@ export default function DashboardPage() {
             </div>
             <Link href="/welcome" className="shrink-0">
               <Button>Connect your first tool →</Button>
+            </Link>
+          </div>
+        )}
+
+        {/* Connectors built, but no AI client has called them yet: the step
+            most workspaces never take. Send them to the connect page, which
+            shows live when the first request arrives. */}
+        {!dataLoading && stats.connectors > 0 && analytics && !analytics.totalInvocations && !stats.invocations24h && (
+          <div className="flex flex-col gap-3 rounded-[14px] border border-[var(--brand)]/30 bg-[var(--brand-tint)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-semibold">Next step: connect your AI client</div>
+              <div className="mt-0.5 text-xs text-[var(--text-2)]">
+                Your connectors are ready. Add your MCP server to Claude, ChatGPT or Cursor and make the first call.
+              </div>
+            </div>
+            <Link href={connectHref} className="shrink-0">
+              <Button>Connect your AI client →</Button>
             </Link>
           </div>
         )}

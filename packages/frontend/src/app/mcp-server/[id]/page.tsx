@@ -9,6 +9,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { ConnectionCheck } from '@/components/connection-check';
 
 // Opens claude.ai straight on its "Add custom connector" dialog. Connectors
 // moved from Settings to Customize → Connectors; the old settings URL now only
@@ -640,6 +641,7 @@ export default function McpServerDetailPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         {/* Connect a client — sticky right column on desktop, shown first on mobile */}
         <aside className="order-1 flex flex-col gap-4 lg:order-2 lg:sticky lg:top-4">
+        {token && <ConnectionCheck serverId={id} token={token} />}
         <Card className="p-[22px]">
           <div className="mb-[14px] text-sm font-semibold">Connect your MCP client</div>
           <div className="mb-1.5 text-[11px] text-[var(--text-3)]">MCP endpoint</div>

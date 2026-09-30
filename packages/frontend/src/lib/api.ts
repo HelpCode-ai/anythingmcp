@@ -1253,6 +1253,9 @@ export const mcpServers = {
     request<any[]>('/api/mcp-servers', { token }),
   get: (id: string, token: string) =>
     request<any>(`/api/mcp-servers/${id}`, { token }),
+  /** Calls in the last 30 days and the last one's time (the connect page's live check). */
+  activity: (id: string, token: string) =>
+    request<{ calls30d: number; lastCallAt: string | null }>(`/api/mcp-servers/${id}/activity`, { token }),
   create: (data: { name: string; slug?: string; description?: string; instructions?: string }, token: string) =>
     request<any>('/api/mcp-servers', { method: 'POST', body: data, token }),
   update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean }, token: string) =>

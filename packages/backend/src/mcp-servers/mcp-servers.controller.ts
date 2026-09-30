@@ -149,6 +149,19 @@ export class McpServersController {
     return server;
   }
 
+  @Get(':id/activity')
+  @ApiOperation({
+    summary:
+      'Calls in the last 30 days and the time of the last one. Polled by the connect page to show when the first request from an AI client arrives.',
+  })
+  async activity(@Req() req: any, @Param('id') id: string) {
+    const server = await this.mcpServersService.findById(id);
+    if (!server) throw new NotFoundException('MCP server not found');
+    this.assertOrgMatch(server, req);
+    const usage = await this.mcpServersService.usageByServer([id]);
+    return usage.get(id) ?? { calls30d: 0, lastCallAt: null };
+  }
+
   @Put(':id')
   @ApiOperation({ summary: 'Update MCP server' })
   async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateMcpServerDto) {
