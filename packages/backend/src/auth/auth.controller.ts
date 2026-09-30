@@ -399,12 +399,24 @@ export class AuthController {
     // Check if ADMIN needs to complete license setup
     let needsLicenseSetup = false;
     if (user.role === 'ADMIN') {
-      const licenseKey = await this.siteSettings.get('license_key');
-      // Self-hosted: once the Business trial has been started the choice has
-      // been made, and the chooser would only offer a trial that cannot start.
       const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
-      if (!licenseKey && (isCloud || (await this.edition.getState()).trialAvailable)) {
-        needsLicenseSetup = true;
+      if (isCloud) {
+        // Cloud licences belong to the workspace; the instance-wide
+        // `license_key` setting is never written there. Reading it made every
+        // cloud admin "need licence setup" at every sign-in, and the app then
+        // showed "Trial Activated!" to paying customers ("0 days") and again
+        // to users mid-trial. Only a workspace with no licence at all needs it.
+        const orgId = user.organizationId ?? undefined;
+        const current = orgId ? await this.licenseService.getCurrentLicense(orgId) : null;
+        const ended = !current && orgId ? await this.licenseService.getLatestInactiveLicense(orgId) : null;
+        needsLicenseSetup = !current && !ended;
+      } else {
+        const licenseKey = await this.siteSettings.get('license_key');
+        // Self-hosted: once the Business trial has been started the choice has
+        // been made, and the chooser would only offer a trial that cannot start.
+        if (!licenseKey && (await this.edition.getState()).trialAvailable) {
+          needsLicenseSetup = true;
+        }
       }
     }
 

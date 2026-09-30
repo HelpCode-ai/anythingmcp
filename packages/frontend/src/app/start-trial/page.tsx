@@ -119,18 +119,13 @@ export default function StartTrialPage() {
             7-day free trial
           </p>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
-            Start your 7-day free trial
+            Your 7-day free trial
           </h1>
           <p className="text-[var(--text-2)] max-w-xl mx-auto">
-            €0 today.{' '}
-            {endLong ? (
-              <>
-                Your plan starts on <strong className="text-[var(--text)]">{endLong}</strong> unless you cancel.
-              </>
-            ) : (
-              'Your plan starts when the trial ends unless you cancel.'
-            )}{' '}
-            Cancel anytime.
+            Every feature, free for 7 days. Add a card now and your plan simply carries on after the
+            trial, with nothing charged before{' '}
+            {endLong ? <strong className="text-[var(--text)]">{endLong}</strong> : 'the trial ends'}. Or
+            try it without payment details and decide later.
           </p>
         </div>
 
@@ -144,7 +139,7 @@ export default function StartTrialPage() {
               onClick={handleStart}
               disabled={checkout.loading}
             >
-              {checkout.loading ? 'Opening checkout…' : checkout.error ? 'Try again' : 'Start free trial'}
+              {checkout.loading ? 'Opening checkout…' : checkout.error ? 'Try again' : 'Start free trial with card'}
             </Button>
             {checkout.error && (
               <p role="alert" className="text-sm text-[var(--danger)] text-center">
@@ -152,9 +147,19 @@ export default function StartTrialPage() {
               </p>
             )}
             <p className="text-xs text-[var(--text-3)] text-center max-w-md">
-              {plan.name}, billed {selection.period === 'yearly' ? 'yearly' : 'monthly'} from{' '}
+              €0 today. {plan.name}, billed {selection.period === 'yearly' ? 'yearly' : 'monthly'} from{' '}
               {endLong ?? 'the end of your trial'}. Secure checkout by Stripe. Cancel before then and
               you pay nothing.
+            </p>
+            <p className="text-xs text-[var(--text-2)] text-center">
+              Not ready to add a card?{' '}
+              <button
+                type="button"
+                onClick={handleSkip}
+                className="font-medium text-[var(--brand)] underline-offset-2 hover:underline"
+              >
+                Try free without payment details
+              </button>
             </p>
           </div>
         </Card>

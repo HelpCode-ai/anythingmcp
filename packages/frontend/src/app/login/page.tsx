@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError, auth, license, server, sso, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { useToast } from '@/components/toast';
 import { buildPricingUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/logo-icon';
 import { ProviderMark } from '@/components/provider-mark';
@@ -74,6 +75,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
+  const toast = useToast();
 
   const redirectTo = safeRedirect(searchParams.get('redirect'));
   const emailVerifiedParam = searchParams.get('emailVerified');
@@ -234,6 +236,18 @@ function LoginForm() {
             const loginResult = await auth.login(email, password);
             result = loginResult;
             needsLicenseSetup = !!loginResult.needsLicenseSetup;
+            // A verified account can only be one that existed before this
+            // sign-up: say so, rather than silently landing in a workspace
+            // the person thought they were creating. Only someone who typed
+            // the account's password sees this, so it reveals nothing.
+            if (loginResult.user?.emailVerified) {
+              toast.show({
+                title: 'You already have an account',
+                description: 'This address was already registered, so we signed you in to your existing workspace.',
+                tone: 'info',
+                durationMs: 9000,
+              });
+            }
           } catch {
             setUserEmail(email);
             setSetupStep('check-inbox');
@@ -264,6 +278,13 @@ function LoginForm() {
           try {
             const trialResult = await license.activateTrial(result.accessToken);
             if (offerCardTrial(result.user, trialResult)) return;
+            // "Trial Activated!" only for a trial started just now. A workspace
+            // that already holds a licence (a running trial, a paid plan) goes
+            // straight in, instead of being told it has "0 days" left.
+            if (!trialResult.trialStarted) {
+              router.push(redirectTo);
+              return;
+            }
             setTrialDaysLeft(trialResult.trialDaysLeft);
             setSetupStep('trial-activated');
           } catch {

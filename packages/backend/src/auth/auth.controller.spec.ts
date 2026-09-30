@@ -23,10 +23,16 @@ function makeController({
   mode,
   accounts = [],
   openRegistration = true,
+  orgLicense = null,
+  orgEndedLicense = null,
 }: {
   mode: 'cloud' | 'self-hosted';
   accounts?: Account[];
   openRegistration?: boolean;
+  /** The workspace's active licence (cloud), if any. */
+  orgLicense?: { plan: string } | null;
+  /** Its latest ended licence (cloud), if any. */
+  orgEndedLicense?: { plan: string; status: string } | null;
 }) {
   const users = [...accounts];
   const sent: string[] = [];
@@ -118,7 +124,10 @@ function makeController({
     configService as any,
     siteSettings as any,
     organizationsService as any,
-    {} as any, // licenseService
+    {
+      getCurrentLicense: jest.fn(async () => orgLicense),
+      getLatestInactiveLicense: jest.fn(async () => orgEndedLicense),
+    } as any, // licenseService
     {} as any, // securityEvents
     {} as any, // rolesService
     {} as any, // recoveryCodes
@@ -309,5 +318,35 @@ describe('AuthController — answers that do not reveal accounts', () => {
       ).rejects.toThrow('Invalid email or password');
       expect(authService.comparePassword).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+/**
+ * Every cloud admin used to be told they "need licence setup" at each sign-in
+ * (the check read an instance-wide key that cloud never writes), and the app
+ * showed "Trial Activated!" to paying workspaces. Only a workspace without any
+ * licence needs setup now.
+ */
+describe('AuthController.login — cloud licence setup', () => {
+  const login = (controller: any) =>
+    controller.login({}, { email: 'taken@example.com', password: 'Correct#Horse1' });
+
+  it('does not ask a workspace with an active licence to set one up', async () => {
+    const { controller } = makeController({ mode: 'cloud', accounts: [EXISTING], orgLicense: { plan: 'team' } });
+    expect((await login(controller)).needsLicenseSetup).toBeUndefined();
+  });
+
+  it('does not ask a workspace whose trial ended (the licence wall offers the plans)', async () => {
+    const { controller } = makeController({
+      mode: 'cloud',
+      accounts: [EXISTING],
+      orgEndedLicense: { plan: 'trial', status: 'expired' },
+    });
+    expect((await login(controller)).needsLicenseSetup).toBeUndefined();
+  });
+
+  it('asks a workspace that never had a licence', async () => {
+    const { controller } = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    expect((await login(controller)).needsLicenseSetup).toBe(true);
   });
 });

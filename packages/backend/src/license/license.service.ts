@@ -6,11 +6,15 @@ import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
 
-// LICENSE_API_URL overrides both defaults (the cloud compose file sets it;
-// local end-to-end runs point it at a local licence site).
+// Production always talks to anythingmcp.com. The licence site decides
+// which plan an installation runs; a URL taken from the environment would let
+// any self-hosted operator point verification at a server of their own and
+// unlock paid features. LICENSE_API_URL applies outside production only (local
+// end-to-end runs against a local licence site).
 const LICENSE_API_URL =
-  process.env.LICENSE_API_URL?.replace(/\/+$/, '') ||
-  (process.env.NODE_ENV === 'production' ? 'https://anythingmcp.com' : 'http://localhost:3100');
+  process.env.NODE_ENV === 'production'
+    ? 'https://anythingmcp.com'
+    : process.env.LICENSE_API_URL?.replace(/\/+$/, '') || 'http://localhost:3100';
 
 /**
  * How hard we chase a trial licence before giving up. The licence API is a
