@@ -9,6 +9,9 @@ password, and keep their AnythingMCP roles in step with your directory groups.
 > in a shared, multi-tenant deployment it would let any customer point a
 > workspace at an arbitrary directory and provision accounts from it. Run your
 > own instance (Docker) to use it — see [deployment.md](deployment.md).
+>
+> Setting up SSO and SCIM needs **AnythingMCP Business**: a licence key, or
+> the 30-day trial an administrator can start under **Settings → License**.
 
 ---
 

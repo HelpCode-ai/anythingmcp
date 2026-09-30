@@ -7,6 +7,7 @@ import {
 } from '../audit/security-event.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { LastAdminConflictException } from '../organizations/last-admin.exception';
+import { EditionService } from '../ee/licensing/edition.service';
 
 export type LifecycleReason = 'admin' | 'scim' | 'system';
 
@@ -38,7 +39,9 @@ export type DeactivateResult =
 export type ReactivateResult =
   | { status: 'reactivated'; role: UserRole }
   | { status: 'already_active' }
-  | { status: 'not_a_member' };
+  | { status: 'not_a_member' }
+  /** The instance has no free user seat for someone not active elsewhere. */
+  | { status: 'seat_limit'; limit: number };
 
 /**
  * The one place that removes a person's access to a workspace.
@@ -57,6 +60,7 @@ export class UserLifecycleService {
     private readonly prisma: PrismaService,
     private readonly organizations: OrganizationsService,
     private readonly securityEvents: SecurityEventService,
+    private readonly edition: EditionService,
   ) {}
 
   async deactivateInOrganization(
@@ -207,6 +211,9 @@ export class UserLifecycleService {
     });
     if (!membership) return { status: 'not_a_member' };
     if (!membership.deactivatedAt) return { status: 'already_active' };
+
+    const seat = await this.edition.seatAvailable(userId);
+    if (!seat.ok) return { status: 'seat_limit', limit: seat.limit! };
 
     await this.prisma.$transaction(async (tx) => {
       await tx.organizationMember.update({

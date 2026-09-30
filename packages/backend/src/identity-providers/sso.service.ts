@@ -13,6 +13,7 @@ import {
 } from '../audit/security-event.service';
 import { IdentityProvidersService } from './identity-providers.service';
 import { assertIssuerAllowed, MSA_TENANT_ID } from './provider-config';
+import { EditionService } from '../ee/licensing/edition.service';
 
 /**
  * Thrown for every rejection. The `reason` is audited; the message is generic.
@@ -70,6 +71,7 @@ export class SsoService {
     private readonly authService: AuthService,
     private readonly securityEvents: SecurityEventService,
     private readonly roleSync: RoleSyncService,
+    private readonly edition: EditionService,
   ) {}
 
   /**
@@ -884,6 +886,17 @@ export class SsoService {
       where: { email },
       select: { id: true },
     });
+    if (!collision) {
+      // Creating accounts on first sign-in needs Business and a free seat.
+      // People who already have an identity here never reach this point, so
+      // their sign-in is unaffected.
+      if (!(await this.edition.hasBusiness())) {
+        throw new SsoError('edition_required', 'Automatic account creation is not available');
+      }
+      if (!(await this.edition.seatAvailable()).ok) {
+        throw new SsoError('seat_limit', 'No free user seat');
+      }
+    }
     if (collision) {
       // A local account already owns this address. Auto-linking here is the
       // takeover we refuse; the user must link it deliberately while signed in.

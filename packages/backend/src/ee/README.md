@@ -4,11 +4,11 @@ Everything under this directory is licensed under the [AnythingMCP
 Commercial License](LICENSE), **not** the AGPL that covers the rest of
 the repository.
 
-EE code contains operator-only functionality used by the AnythingMCP
-Cloud offering (e.g. onboarding lifecycle emails). It is inert in
-self-hosted deployments: EE modules are only loaded when
-`DEPLOYMENT_MODE=cloud`, and a community deployment works fully
-without them.
+- `cloud/` — operator-only functionality of AnythingMCP Cloud (e.g.
+  onboarding lifecycle emails). Loaded only when `DEPLOYMENT_MODE=cloud`.
+- `licensing/` — which edition a self-hosted instance runs (Community
+  or Business) and what each allows. Loaded everywhere; Business
+  capabilities are active only with a licence key, during the trial, or
+  during the transition period of an upgraded instance.
 
-If you are self-hosting, you don't need anything in here. If you want
-to use EE features commercially, contact info@helpcode.ai.
+For licensing questions, contact info@helpcode.ai.

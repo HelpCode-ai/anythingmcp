@@ -60,6 +60,7 @@ const T = {
       '**SSO, RBAC and SCIM** are included in the self-hosted build.',
     ],
     faq: 'FAQ',
+    guides: 'Guides',
     trouble: 'Troubleshooting',
     troubleRows: [
       ['`401` / `403` from the vendor', 'The credentials are wrong or lack rights. Re-enter them on the connector page; the import runs a test call and shows the result.'],
@@ -118,6 +119,7 @@ const T = {
       '**SSO, RBAC und SCIM** sind in der selbst gehosteten Version enthalten.',
     ],
     faq: 'FAQ',
+    guides: 'Anleitungen',
     trouble: 'Fehlerbehebung',
     troubleRows: [
       ['`401` / `403` vom Hersteller', 'Zugangsdaten falsch oder ohne Rechte. Auf der Connector-Seite neu eintragen; der Import macht einen Testaufruf und zeigt das Ergebnis.'],
@@ -192,6 +194,24 @@ function header(sat, ctx, t, title, taglineText) {
   ].join('\n');
 }
 
+/** The satellite's docs/<name>.md pages (content/<repo>/doc-<name>.md), as a list. */
+function docsList(content, lang) {
+  // Readers want the use cases first; anything not listed keeps file order.
+  const ORDER = ['doc-use-cases', 'doc-architecture', 'doc-security', 'doc-comparison'];
+  const rank = (n) => (ORDER.includes(n) ? ORDER.indexOf(n) : ORDER.length);
+  const docs = Object.entries(content.en ?? {})
+    .filter(([n]) => n.startsWith('doc-'))
+    .sort(([a], [b]) => rank(a) - rank(b));
+  if (!docs.length) return null;
+  const prefix = lang === 'en' ? '' : '../';
+  return docs
+    .map(([n, body]) => {
+      const title = (body.match(/^#\s+(.+)$/m)?.[1] ?? n.slice(4)).trim();
+      return `- [${title}](${prefix}docs/${n.slice(4)}.md)`;
+    })
+    .join('\n');
+}
+
 function connectorReadme(sat, ctx) {
   const { adapters, content, lang, config } = ctx;
   const t = T[lang];
@@ -260,6 +280,7 @@ function connectorReadme(sat, ctx) {
     '',
     t.securityItems(tools.length - writes.length, writes).map((s) => `- ${s}`).join('\n'),
     '',
+    ...(docsList(content, lang) ? [`## ${t.guides}`, '', docsList(content, lang), ''] : []),
     `## ${t.faq}`,
     '',
     faq,

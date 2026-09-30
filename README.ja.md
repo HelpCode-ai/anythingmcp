@@ -141,6 +141,8 @@ Postman v2.1 のコレクションをインポートすると、フォルダー�
 |---|---|---|---|
 | [SAP Business One](https://anythingmcp.com/ja/guides/connect-sap-business-one-to-claude) | グローバル | 12 | 取引先、品目、注文、請求書、見積、納品。受注の作成 |
 | [SAP S/4HANA Cloud](https://anythingmcp.com/ja/guides/connect-sap-s4hana-cloud-to-claude) | グローバル | 15 | 取引先、受注と発注、請求伝票、出荷、仕訳 |
+| [SAP S/4HANA (HANA SQL)](https://anythingmcp.com/guides/connect-sap-hana-to-claude) | グローバル | 10 | オンプレミスと Private Cloud の S/4HANA を HANA から直接読み取り、SAP のデータディクショナリと CDS ビューをツールとして提供。読み取り専用 |
+| [SAP S/4HANA (OData)](https://anythingmcp.com/guides/odata-to-mcp) † | グローバル | 7 | SAP のラベル付きの Gateway OData サービス: 仕訳明細、請求伝票、受注、取引先、在庫、品目 |
 | [Odoo](https://anythingmcp.com/ja/guides/connect-odoo-to-claude) | グローバル | 11 | 任意のモデル（取引先、受注、請求書、製品）。作成と更新 |
 | [Microsoft Dynamics NAV](https://anythingmcp.com/ja/guides/connect-dynamics-nav-to-claude) | グローバル | 6 | 公開済みの任意の OData ページ（顧客、品目、受注）。作成と更新 |
 | [ERPNext](https://anythingmcp.com/ja/guides/connect-erpnext-to-claude) | グローバル | 11 | 任意の DocType（顧客、受注、請求書、品目、在庫） |
@@ -158,7 +160,7 @@ Postman v2.1 のコレクションをインポートすると、フォルダー�
 
 † ベンダーが公開している API ドキュメントを基に作成しており、実際のテナントではまだ検証していません。これらのシステムをお使いの方からの報告や修正を歓迎します。
 
-**リポジトリ:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
+**リポジトリ:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 **お使いの ERP が一覧にない場合や、独自開発・オンプレミスの ERP の場合は？** その [REST API](#openapi--rest-api-to-mcp) や [SOAP サービス](#soap--wsdl-to-mcp)を通じて、または [SQL データベース](#sql-database-to-mcp)に直接、読み取り専用で接続できます。[KOCH Freiburg](https://www.kochfreiburg.de/) は、この方法で自社の ERP を本番環境で接続しています。
 

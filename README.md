@@ -128,6 +128,8 @@ Ready adapters for the ERPs behind most order, stock and invoice questions. Inst
 |---|---|---|---|
 | [SAP Business One](https://anythingmcp.com/guides/connect-sap-business-one-to-claude) | Global | 12 | Business partners, items, orders, invoices, quotations, deliveries; create sales orders |
 | [SAP S/4HANA Cloud](https://anythingmcp.com/guides/connect-sap-s4hana-cloud-to-claude) | Global | 15 | Business partners, sales and purchase orders, billing documents, deliveries, journal entries |
+| [SAP S/4HANA (HANA SQL)](https://anythingmcp.com/guides/connect-sap-hana-to-claude) | Global | 10 | S/4HANA on-premise and Private Cloud read straight from HANA, with SAP's data dictionary and CDS views as tools; read-only |
+| [SAP S/4HANA (OData)](https://anythingmcp.com/guides/odata-to-mcp) † | Global | 7 | Gateway OData services with SAP's labels: journal entry items, billing documents, sales orders, business partners, stock, products |
 | [Odoo](https://anythingmcp.com/guides/connect-odoo-to-claude) | Global | 11 | Any model: partners, sales orders, invoices, products; create and update |
 | [Microsoft Dynamics NAV](https://anythingmcp.com/guides/connect-dynamics-nav-to-claude) | Global | 6 | Any published OData page: customers, items, sales orders; create and update |
 | [ERPNext](https://anythingmcp.com/guides/connect-erpnext-to-claude) | Global | 11 | Any DocType: customers, sales orders, invoices, items, stock |
@@ -145,7 +147,7 @@ Ready adapters for the ERPs behind most order, stock and invoice questions. Inst
 
 † Built from the vendor's published API documentation and not yet exercised against a live tenant. If you run one of these, a report or a fix is very welcome.
 
-**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
+**Repositories:** [erp-mcp-server](https://github.com/HelpCode-ai/erp-mcp-server) · [weclapp-mcp-server](https://github.com/kochfreiburg/weclapp-mcp-server) · [odoo-mcp-server](https://github.com/keysersoft/odoo-mcp-server) · [sap-mcp-server](https://github.com/HelpCode-ai/sap-mcp-server) · [sap-hana-mcp-server](https://github.com/HelpCode-ai/sap-hana-mcp-server) · [sap-business-one-mcp-server](https://github.com/HelpCode-ai/sap-business-one-mcp-server) · [xentral-mcp-server](https://github.com/kochfreiburg/xentral-mcp-server)
 
 **Your ERP isn't listed, or it's a custom or on-prem build?** Connect it through its [REST API](#openapi--rest-api-to-mcp), [SOAP services](#soap--wsdl-to-mcp) or straight to its [SQL database](#sql-database-to-mcp), read-only. That is how [KOCH Freiburg](https://www.kochfreiburg.de/) runs its ERP in production.
 

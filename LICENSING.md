@@ -16,9 +16,8 @@ All content that resides under any directory named `ee` (e.g.
 [`packages/backend/src/ee/`](packages/backend/src/ee/)) is **not**
 licensed under the AGPL. It is licensed under the AnythingMCP
 Commercial License — see the [LICENSE](packages/backend/src/ee/LICENSE)
-file inside that directory. EE code contains operator-only
-functionality for the AnythingMCP Cloud offering and is inert in
-self-hosted deployments.
+file inside that directory. EE code contains the AnythingMCP Cloud
+operation and the licensing of the Business edition.
 
 ## Earlier releases
 

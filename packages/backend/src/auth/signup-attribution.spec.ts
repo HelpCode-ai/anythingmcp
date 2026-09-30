@@ -176,6 +176,7 @@ function makeController(mode: 'cloud' | 'self-hosted', existingEmails: string[] 
     {} as any,
     {} as any,
     new ProductEventService(prisma as any),
+    { assertSeatAvailable: jest.fn(async () => undefined), getState: jest.fn(async () => ({ trialAvailable: true })) } as any, // edition
   );
   return { controller, events, usersService };
 }

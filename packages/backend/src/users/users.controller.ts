@@ -14,6 +14,7 @@ import {
   UnauthorizedException,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -24,6 +25,7 @@ import { AuthService } from '../auth/auth.service';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { UserLifecycleService, LifecycleContext } from './user-lifecycle.service';
+import { SEAT_LIMIT, seatLimitMessage } from '../ee/licensing/edition.service';
 
 class RevokeSessionsDto {
   @ApiPropertyOptional({
@@ -355,6 +357,9 @@ export class UsersController {
     );
     if (result.status === 'not_a_member') throw new NotFoundException('User not found');
     if (result.status === 'already_active') return { message: 'User is already active' };
+    if (result.status === 'seat_limit') {
+      throw new ForbiddenException({ statusCode: 403, code: SEAT_LIMIT, message: seatLimitMessage(result.limit) });
+    }
     return { message: 'User reactivated' };
   }
 

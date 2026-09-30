@@ -13,6 +13,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { authTypeLabel, cn } from '@/lib/utils';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
+import { matchesSearch } from '@/lib/marketplace-search';
 
 const REGION_LABELS: Record<string, string> = {
   de: 'Germany',
@@ -243,6 +244,16 @@ function seedOptionalCredentials(adapter: {
   );
 }
 
+/**
+ * Env vars the connector's base URL is built from (e.g. SAP_HANA_HOST in
+ * hana://{{SAP_HANA_HOST}}:{{SAP_HANA_PORT}}/). The connector cannot be
+ * created without them, so they cannot be skipped like an API key.
+ */
+function addressVars(adapter: { connector?: { baseUrl?: string } }): string[] {
+  const url = adapter.connector?.baseUrl ?? '';
+  return [...new Set([...url.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g)].map((m) => m[1]))];
+}
+
 interface AdapterDetail extends AdapterItem {
   // Long-form, Markdown-formatted help authored on the adapter JSON.
   // Rendered inside the install modal so users see "where to find your
@@ -285,6 +296,9 @@ function AdapterStoreContent() {
   // toggles only its own field. Reset together with credentialValues.
   const [revealedCredentials, setRevealedCredentials] = useState<Record<string, boolean>>({});
   const [configLoading, setConfigLoading] = useState(false);
+  // An import that fails from the modal keeps the modal open and shows why
+  // there, instead of closing it and leaving a banner at the top of the page.
+  const [configError, setConfigError] = useState('');
 
   // MCP assignment modal state
   const [importedConnector, setImportedConnector] = useState<{ id: string; name: string } | null>(null);
@@ -305,17 +319,19 @@ function AdapterStoreContent() {
     if (!token) return;
     setImporting(slug);
     setMsg('');
-    setConfigAdapter(null);
+    setConfigError('');
     try {
       const adapter = list.find((a) => a.slug === slug);
       const result = await adapters.import(slug, token, credentials);
+      setConfigAdapter(null);
       setMsg(describeImport(result.message, result.probe));
       setImporting(null);
       // Show MCP assignment modal
       setImportedConnector({ id: result.connectorId, name: adapter?.name || slug });
     } catch (err: any) {
-      setMsg(`Import failed: ${err.message}`);
       setImporting(null);
+      if (configAdapter) setConfigError(err.message);
+      else setMsg(`Import failed: ${err.message}`);
     }
   };
 
@@ -335,6 +351,7 @@ function AdapterStoreContent() {
     }
 
     // Fetch full adapter detail to show in modal
+    setConfigError('');
     setConfigLoading(true);
     try {
       const detail = await adapters.get(adapter.slug, token);
@@ -407,18 +424,20 @@ function AdapterStoreContent() {
 
   const filtered = list.filter((a) => {
     if (activeCategory && a.category !== activeCategory) return false;
-    if (!search) return true;
-    const q = search.toLowerCase();
+    if (!search.trim()) return true;
     // Match what the card actually says, not just the stored slug: the card
     // reads "GERMANY" and "E-commerce", so those are the words people type.
-    return (
-      a.name.toLowerCase().includes(q) ||
-      a.description.toLowerCase().includes(q) ||
-      a.slug.toLowerCase().includes(q) ||
-      a.category?.toLowerCase().includes(q) ||
-      categoryLabel(a.category ?? '').toLowerCase().includes(q) ||
-      a.region?.toLowerCase().includes(q) ||
-      (REGION_LABELS[a.region] ?? '').toLowerCase().includes(q)
+    return matchesSearch(
+      [
+        a.name,
+        a.description,
+        a.slug,
+        a.category ?? '',
+        categoryLabel(a.category ?? ''),
+        a.region ?? '',
+        REGION_LABELS[a.region] ?? '',
+      ],
+      search,
     );
   });
 
@@ -705,7 +724,9 @@ function AdapterStoreContent() {
               Configure {configAdapter.name}
             </h3>
             <p className="mb-4 text-sm text-[var(--text-2)]">
-              This adapter requires credentials to work. Enter them now or skip and configure later.
+              {addressVars(configAdapter).length > 0
+                ? `${addressVars(configAdapter).map(formatEnvVarLabel).join(', ')} ${addressVars(configAdapter).length === 1 ? 'is' : 'are'} part of this connector's address, so enter ${addressVars(configAdapter).length === 1 ? 'it' : 'them'} now. The rest can wait.`
+                : 'This adapter requires credentials to work. Enter them now or skip and configure later.'}
             </p>
 
             <div className="mb-3 flex items-center gap-2 text-xs text-[var(--text-3)]">
@@ -722,7 +743,7 @@ function AdapterStoreContent() {
                 <summary className="cursor-pointer select-none rounded-[9px] px-3 py-2 text-sm font-medium hover:bg-[var(--surface-3)]">
                   📖 How to get these credentials
                 </summary>
-                <div className="prose prose-sm max-w-none px-3 pb-3 pt-1 text-[13px] leading-relaxed dark:prose-invert max-h-[40vh] overflow-y-auto">
+                <div className="prose prose-sm max-w-none px-3 pb-3 pt-1 text-[13px] leading-relaxed dark:prose-invert max-h-[40vh] overflow-y-auto [&_pre]:whitespace-pre-wrap [&_pre]:break-words">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {configAdapter.instructions}
                   </ReactMarkdown>
@@ -796,19 +817,33 @@ function AdapterStoreContent() {
             </div>
             </div>
 
+            {configError && (
+              <p role="alert" className="mx-6 mb-3 rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">
+                {configError}
+              </p>
+            )}
+
             {/* Pinned footer — always visible, never scrolls out of reach. */}
             <div className="flex shrink-0 justify-end gap-3 border-t border-[var(--border)] p-6 py-4">
-              <Button
-                variant="secondary"
-                onClick={() => doImport(configAdapter.slug)}
-              >
-                Skip for now
-              </Button>
+              {/* Skipping only works when the address has no variables: the
+                  backend cannot create a connector whose URL is still
+                  {{SAP_HANA_HOST}}, and used to answer 400 after the modal
+                  had already closed. */}
+              {addressVars(configAdapter).length === 0 && (
+                <Button
+                  variant="secondary"
+                  disabled={importing === configAdapter.slug}
+                  onClick={() => doImport(configAdapter.slug)}
+                >
+                  Skip for now
+                </Button>
+              )}
               <Button
                 onClick={handleConfigSubmit}
-                disabled={configAdapter.requiredEnvVars.some(
-                  (v) => !credentialValues[v]?.trim(),
-                )}
+                disabled={
+                  importing === configAdapter.slug ||
+                  configAdapter.requiredEnvVars.some((v) => !credentialValues[v]?.trim())
+                }
               >
                 Import with credentials
               </Button>

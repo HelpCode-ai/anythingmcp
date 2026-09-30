@@ -318,6 +318,86 @@ export class McpServersService {
    * resources, all narrowed to `visibleConnectorIds` AND to the server's own
    * organization. Fails closed: an unknown server yields nothing.
    */
+  /**
+   * Name of each connector, and whether it carries notes for the model. For
+   * the shared endpoint's tool set; the ids come from the caller's already
+   * scoped tools.
+   */
+  async getConnectorSummaries(
+    connectorIds: string[],
+  ): Promise<Array<{ id: string; name: string; hasGuide: boolean }>> {
+    const ids = [...new Set(connectorIds)];
+    if (ids.length === 0) return [];
+    const rows = await this.prisma.connector.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true, instructions: true },
+    });
+    return rows.map((r) => ({ id: r.id, name: r.name, hasGuide: !!r.instructions }));
+  }
+
+  /**
+   * What the shared endpoint returns as the workspace guide: the instructions
+   * of the granted servers (none when the connection covers a whole
+   * workspace), of the given connectors, and the applied skills of both.
+   * Served as tool output on request, never as initialize instructions, so
+   * the shared endpoint's instructions stay the same for every user.
+   */
+  async getSharedGuide(opts: {
+    connectorIds: string[];
+    serverIds: string[];
+  }): Promise<string | undefined> {
+    const connectorIds = [...new Set(opts.connectorIds)];
+    const serverIds = [...new Set(opts.serverIds)];
+    if (connectorIds.length === 0) return undefined;
+
+    const [servers, connectors] = await Promise.all([
+      serverIds.length
+        ? this.prisma.mcpServerConfig.findMany({
+            where: { id: { in: serverIds } },
+            select: { name: true, instructions: true },
+            orderBy: { createdAt: 'asc' },
+          })
+        : Promise.resolve([]),
+      this.prisma.connector.findMany({
+        where: { id: { in: connectorIds } },
+        select: { name: true, instructions: true },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    const parts: string[] = [];
+    for (const s of servers) {
+      if (s.instructions) parts.push(`## ${s.name}\n${s.instructions}`);
+    }
+    for (const c of connectors) {
+      if (c.instructions) parts.push(`## ${c.name}\n${c.instructions}`);
+    }
+    const skillsText = await this.kgSkills.activeSkillsText(serverIds, connectorIds);
+    if (skillsText) parts.push(skillsText);
+    return parts.length > 0 ? parts.join('\n\n') : undefined;
+  }
+
+  /** Active servers among `serverIds`, for links handed to the model. */
+  async getServerNames(serverIds: string[]): Promise<Array<{ id: string; name: string }>> {
+    if (serverIds.length === 0) return [];
+    return this.prisma.mcpServerConfig.findMany({
+      where: { id: { in: [...new Set(serverIds)] }, isActive: true },
+      select: { id: true, name: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /** Active servers of one workspace, for links handed to the model. */
+  async getServerNamesByOrg(
+    organizationId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    return this.prisma.mcpServerConfig.findMany({
+      where: { organizationId, isActive: true },
+      select: { id: true, name: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   async getVisibleContent(
     serverId: string,
     visibleConnectorIds: string[],

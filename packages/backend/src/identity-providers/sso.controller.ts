@@ -74,6 +74,21 @@ const LINK_FAILURE_REASONS = new Map<string, string>([
  * distinguishing "unknown provider" from "you are not a member" would turn
  * these endpoints into an enumeration oracle for workspaces and accounts.
  */
+/**
+ * Sign-in failures that name their cause. Both describe the instance, not the
+ * person signing in, so they reveal nothing about which accounts exist.
+ */
+const INSTANCE_FAILURE_REASONS = new Map<string, string>([
+  [
+    'edition_required',
+    'Your account has not been set up on this workspace yet. Ask your administrator to invite you.',
+  ],
+  [
+    'seat_limit',
+    'This workspace has no free user seats. Ask your administrator.',
+  ],
+]);
+
 @ApiTags('SSO')
 // Whole surface, not only the admin API: the sign-in entry point, the callback
 // and the identity-linking routes are all part of the same self-hosted-only
@@ -194,9 +209,10 @@ export class SsoController {
           `${frontend}/settings?linkError=${encodeURIComponent(LINK_FAILURE_REASONS.get(reason)!)}`,
         );
       }
-      return res.redirect(
-        `${frontend}/login?error=${encodeURIComponent('Sign-in failed. Please try again or contact your administrator.')}`,
-      );
+      const message =
+        INSTANCE_FAILURE_REASONS.get(reason) ??
+        'Sign-in failed. Please try again or contact your administrator.';
+      return res.redirect(`${frontend}/login?error=${encodeURIComponent(message)}`);
     }
   }
 

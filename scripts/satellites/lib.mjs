@@ -445,6 +445,10 @@ export function buildSatellite(sat, ctx) {
   }
   const prompts = content.en?.prompts;
   if (prompts) files['examples/prompts.md'] = `# Example prompts: ${sat.system}\n\n${prompts}\n`;
+  // content/<repo>/doc-<name>.md → docs/<name>.md, listed in the README.
+  for (const [name, body] of Object.entries(content.en ?? {})) {
+    if (name.startsWith('doc-')) files[`docs/${name.slice(4)}.md`] = `${body}\n`;
+  }
 
   for (const e of entries) files[`adapter/${e.adapter.slug}.json`] = pretty(e.adapter);
   files['docker-compose.yml'] = buildCompose(readFileSync(join(root, 'docker-compose.quickstart.yml'), 'utf8'), sat);

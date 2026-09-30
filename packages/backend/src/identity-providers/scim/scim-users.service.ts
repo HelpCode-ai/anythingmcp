@@ -6,6 +6,7 @@ import {
 } from '../../audit/security-event.service';
 import { UserLifecycleService } from '../../users/user-lifecycle.service';
 import { RoleSyncService } from '../role-sync.service';
+import { seatLimitMessage } from '../../ee/licensing/edition.service';
 import { ScimError } from './scim.errors';
 import {
   coerceActive,
@@ -409,7 +410,8 @@ export class ScimUsersService {
     }
 
     if (changes.active === true && membership && !isActive) {
-      await this.lifecycle.reactivateInOrganization(row.userId, orgId, this.lifecycleCtx(provider, ctx));
+      const result = await this.lifecycle.reactivateInOrganization(row.userId, orgId, this.lifecycleCtx(provider, ctx));
+      if (result.status === 'seat_limit') throw new ScimError(403, seatLimitMessage(result.limit));
       await this.securityEvents.log({
         event: SecurityEvents.SCIM_USER_REACTIVATED,
         actorType: 'SYSTEM',

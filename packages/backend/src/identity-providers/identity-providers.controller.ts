@@ -34,6 +34,8 @@ import { Type } from 'class-transformer';
 import { IdentityProviderType } from '../generated/prisma/client';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
+import { BusinessCapability, BusinessEditionGuard } from '../ee/licensing/business-edition.guard';
+import { EditionService } from '../ee/licensing/edition.service';
 import {
   IdentityProvidersService,
   IdentityProviderError,
@@ -209,6 +211,7 @@ export class IdentityProvidersController {
     private readonly securityEvents: SecurityEventService,
     private readonly recoveryCodes: RecoveryCodesService,
     private readonly roleSync: RoleSyncService,
+    private readonly edition: EditionService,
   ) {}
 
   @Get()
@@ -230,6 +233,8 @@ export class IdentityProvidersController {
 
   @Post()
   @ApiOperation({ summary: 'Create an identity provider (ADMIN)' })
+  @UseGuards(BusinessEditionGuard)
+  @BusinessCapability('Single sign-on')
   async create(@Req() req: any, @Body() dto: UpsertProviderDto) {
     const created = await this.run(() =>
       this.service.create(req.user.organizationId, dto),
@@ -245,6 +250,8 @@ export class IdentityProvidersController {
 
   @Put(':id')
   @ApiOperation({ summary: 'Update an identity provider (ADMIN)' })
+  @UseGuards(BusinessEditionGuard)
+  @BusinessCapability('Single sign-on')
   async update(
     @Req() req: any,
     @Param('id') id: string,
@@ -333,6 +340,8 @@ export class IdentityProvidersController {
   }
 
   @Put(':id/role-mappings')
+  @UseGuards(BusinessEditionGuard)
+  @BusinessCapability('Role sync from directory groups')
   @ApiOperation({
     summary: 'Replace this provider\'s group/app-role mappings (ADMIN)',
   })
@@ -374,6 +383,8 @@ export class IdentityProvidersController {
     @Param('id') id: string,
     @Body() dto: EnforceSsoDto,
   ) {
+    // Turning the policy off is always allowed.
+    if (dto.enforce) await this.edition.assertBusiness('Requiring single sign-on');
     const hasRecoveryCodes = await this.recoveryCodes.hasUnused(req.user.sub);
     const updated = await this.run(() =>
       this.service.setEnforceSso(id, req.user.organizationId, dto.enforce, {
@@ -390,6 +401,8 @@ export class IdentityProvidersController {
   }
 
   @Post(':id/resync-roles')
+  @UseGuards(BusinessEditionGuard)
+  @BusinessCapability('Role sync from directory groups')
   @ApiOperation({ summary: 'Re-derive every SCIM-managed member\'s roles from stored group membership (ADMIN)' })
   async resyncRoles(@Req() req: any, @Param('id') id: string) {
     const provider = await this.service.findByIdForOrg(id, req.user.organizationId);
@@ -412,6 +425,8 @@ export class IdentityProvidersController {
   @Put(':id/scim')
   @ApiOperation({ summary: 'Enable or disable SCIM provisioning (ADMIN). First enable returns the bearer token once.' })
   async setScim(@Req() req: any, @Param('id') id: string, @Body() dto: ScimSettingsDto) {
+    // Disabling is always allowed.
+    if (dto.enabled) await this.edition.assertBusiness('SCIM provisioning');
     const result = await this.run(() =>
       this.service.setScimEnabled(id, req.user.organizationId, dto.enabled, this.publicBaseUrl(req)),
     );

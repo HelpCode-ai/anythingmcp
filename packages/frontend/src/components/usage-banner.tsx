@@ -20,7 +20,7 @@ const NEXT_TIER: Record<string, string> = {
  * advisory by product decision (May 2026).
  */
 export function UsageBanner() {
-  const { token } = useAuth();
+  const { token, deploymentMode } = useAuth();
   const [usage, setUsage] = useState<Usage | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const managePlan = useManagePlan({
@@ -29,10 +29,12 @@ export function UsageBanner() {
     utm_campaign: 'usage-cap',
   });
 
+  // Cloud only: these are the Cloud plans' limits. A self-hosted instance has
+  // its own (EditionBanner).
   useEffect(() => {
-    if (!token) return;
+    if (!token || deploymentMode !== 'cloud') return;
     license.getUsage(token).then(setUsage).catch(() => {});
-  }, [token]);
+  }, [token, deploymentMode]);
 
   if (!usage || !usage.plan || !usage.isOverAny || dismissed) return null;
   const next = NEXT_TIER[usage.plan];

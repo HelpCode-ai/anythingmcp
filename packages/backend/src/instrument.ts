@@ -12,6 +12,7 @@
  */
 import * as Sentry from '@sentry/nestjs';
 import { scrubBreadcrumb, scrubEvent } from './common/sentry-scrub';
+import { sampleRateFor } from './common/sentry-sampler';
 
 const dsn = process.env.SENTRY_DSN;
 
@@ -30,7 +31,14 @@ if (dsn) {
     release: process.env.SENTRY_RELEASE || process.env.npm_package_version,
 
     // Tracing is opt-in on top of error reporting because it adds overhead.
-    tracesSampleRate: sample(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.0),
+    // SENTRY_TRACES_SAMPLE_RATE applies to HTTP requests; MCP calls take
+    // SENTRY_MCP_TRACES_SAMPLE_RATE (default: a fifth of it); background work
+    // and health probes are not traced. See ./common/sentry-sampler.ts.
+    tracesSampler: (() => {
+      const base = sample(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.0);
+      const rates = { base, mcp: sample(process.env.SENTRY_MCP_TRACES_SAMPLE_RATE, base / 5) };
+      return (ctx: Parameters<typeof sampleRateFor>[0]) => sampleRateFor(ctx, rates);
+    })(),
     profilesSampleRate: sample(process.env.SENTRY_PROFILES_SAMPLE_RATE, 0.0),
 
     sendDefaultPii: false,

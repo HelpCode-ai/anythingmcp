@@ -38,7 +38,7 @@ User and password go in the connector's credentials (encrypted), not in the URL.
 
 ## SAP S/4HANA (HANA SQL) adapter
 
-Install it from the catalog (Connectors → Store → *SAP S/4HANA (HANA SQL)*). Its tools:
+Install it from the catalog (Connectors → Marketplace → *SAP S/4HANA (HANA SQL)*). Its tools:
 
 | Tool | What it gives the model |
 |------|------------------------|
@@ -91,6 +91,43 @@ Before you connect a production system, check two things with your SAP account t
 
 - **Licence.** Direct SQL access to the ABAP schema by a third-party application is governed by your SAP HANA licence. A runtime licence bundled with S/4HANA usually does not cover it; a full-use licence does. In SAP's private cloud offerings the database user and network path must be requested from SAP.
 - **Network.** The HANA SQL port is normally reachable only inside the company network or the SAP private cloud landing zone. Run AnythingMCP there, or reach it through a VPN, and add the host to `SSRF_ALLOWED_HOSTS` (the outbound guard blocks private addresses by default).
+
+### Example questions
+
+Three questions end to end, with the SQL from the `recipes` chapter of `sap_guide` (client `100`, company code `1010`, fiscal year 2025). The model states the assumptions it made, such as the revenue account range, and asks to confirm them. The step-by-step guide with screenshots is at [anythingmcp.com/guides/connect-sap-hana-to-claude](https://anythingmcp.com/guides/connect-sap-hana-to-claude).
+
+**"What was our revenue per posting period in 2025?"** `sap_guide` → `sap_org_structure` → `sap_query` on the Universal Journal. Revenue is a credit, so the sum is negated:
+
+```sql
+SELECT POPER, RHCUR AS CURRENCY, -SUM(HSL) AS REVENUE
+FROM ACDOCA
+WHERE RCLNT = '100' AND RLDNR = '0L' AND RBUKRS = '1010' AND GJAHR = '2025'
+  AND RACCT BETWEEN '0040000000' AND '0049999999'  -- revenue accounts: confirm the range
+GROUP BY POPER, RHCUR ORDER BY POPER;
+```
+
+**"Which customers have invoices more than 60 days overdue?"** Open customer items at the key date, aged by net due date:
+
+```sql
+SELECT KUNNR, RHCUR AS CURRENCY,
+       SUM(HSL) AS OPEN_AMOUNT,
+       SUM(CASE WHEN NETDT < '20251101' THEN HSL ELSE 0 END) AS OVERDUE_OVER_60
+FROM ACDOCA
+WHERE RCLNT = '100' AND RLDNR = '0L' AND RBUKRS = '1010' AND KOART = 'D' AND POPER <> '000'
+  AND BUDAT <= '20251231' AND (AUGDT = '00000000' OR AUGDT > '20251231')
+GROUP BY KUNNR, RHCUR ORDER BY OVERDUE_OVER_60 DESC LIMIT 20;
+```
+
+**"Who were our top 10 customers by net sales in 2025?"** From billing documents, not from the journal, where the customer sits on the receivable line. `sap_field_values('VBRK', 'VBTYP')` first, to tell invoices from credit memos:
+
+```sql
+SELECT k.KUNAG, c.NAME1, k.WAERK, SUM(p.NETWR) AS NET_SALES
+FROM VBRK k JOIN VBRP p ON p.MANDT = k.MANDT AND p.VBELN = k.VBELN
+LEFT JOIN KNA1 c ON c.MANDT = k.MANDT AND c.KUNNR = k.KUNAG
+WHERE k.MANDT = '100' AND k.FKDAT BETWEEN '20250101' AND '20251231'
+  AND k.FKSTO = '' AND k.VBTYP = 'M'
+GROUP BY k.KUNAG, c.NAME1, k.WAERK ORDER BY NET_SALES DESC LIMIT 10;
+```
 
 ### Live check
 

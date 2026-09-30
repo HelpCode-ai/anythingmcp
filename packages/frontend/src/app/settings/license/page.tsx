@@ -8,6 +8,8 @@ import { useManagePlan } from '@/lib/use-manage-plan';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { useEdition, notifyEditionChanged } from '@/lib/use-edition';
+import { EditionCard } from '@/components/edition-card';
 
 interface LicenseStatus {
   plan: string | null;
@@ -30,6 +32,7 @@ export default function LicenseSettingsPage() {
   const [openingPortal, setOpeningPortal] = useState(false);
   const managePlan = useManagePlan();
   const pricingUrl = usePricingUrl();
+  const { edition } = useEdition();
 
   const isCloud = deploymentMode === 'cloud';
   // The Stripe billing portal only applies to a real paid subscription —
@@ -63,6 +66,7 @@ export default function LicenseSettingsPage() {
       setMessage(result.message);
       setLicenseKey('');
       await loadStatus();
+      notifyEditionChanged();
     } catch (err: any) {
       setError(err.message || 'Failed to activate license');
     } finally {
@@ -83,6 +87,7 @@ export default function LicenseSettingsPage() {
         setError(result.error || 'License is invalid');
       }
       await loadStatus();
+      notifyEditionChanged();
     } catch (err: any) {
       setError(err.message || 'Verification failed');
     } finally {
@@ -194,9 +199,11 @@ export default function LicenseSettingsPage() {
         </div>
       )}
 
+      {edition && <EditionCard edition={edition} />}
+
       {/* Current Plan */}
       <Card className="p-5">
-        <h2 className="text-sm font-semibold text-[var(--text)] mb-4">Current Plan</h2>
+        <h2 className="text-sm font-semibold text-[var(--text)] mb-4">{isCloud ? 'Current Plan' : 'License key'}</h2>
 
         {!status || !status.plan ? (
           <div className="space-y-3">
@@ -208,9 +215,14 @@ export default function LicenseSettingsPage() {
                 {loading ? 'Activating...' : 'Start 7-Day Free Trial'}
               </Button>
             ) : (
-              <Button onClick={handleRegisterCommunity} disabled={loading}>
-                {loading ? 'Registering...' : 'Register Free Community License'}
-              </Button>
+              <>
+                <p className="text-xs text-[var(--text-3)]">
+                  Optional for Community: a free key by email gets you security and release notices.
+                </p>
+                <Button variant="secondary" onClick={handleRegisterCommunity} disabled={loading}>
+                  {loading ? 'Registering...' : 'Register Free Community License'}
+                </Button>
+              </>
             )}
           </div>
         ) : (
@@ -265,7 +277,7 @@ export default function LicenseSettingsPage() {
       </Card>
 
       {/* Features */}
-      {status?.features && Object.keys(status.features).length > 0 && (
+      {isCloud && status?.features && Object.keys(status.features).length > 0 && (
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-[var(--text)] mb-4">Features</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
