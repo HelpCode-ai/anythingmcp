@@ -23,6 +23,8 @@ http
     const response = await worker.fetch(request);
     res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
     res.end(Buffer.from(await response.arrayBuffer()));
-    console.log(`${new Date().toISOString()} ${req.method} ${req.url} ${response.status}`);
+    // Request line only, with control characters stripped so a request cannot forge log lines.
+    const line = `${req.method} ${req.url}`.replace(/[\r\n\t\x00-\x1f\x7f]/g, ' ').slice(0, 300);
+    console.log(`${new Date().toISOString()} ${line} ${response.status}`);
   })
   .listen(PORT, () => console.log(`Lumen & Clay demo API on :${PORT}`));

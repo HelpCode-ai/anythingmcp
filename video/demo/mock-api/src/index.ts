@@ -45,7 +45,8 @@ export default {
       if (path.startsWith('/sap/')) return sap(req, url, path, now);
       if (path.startsWith('/logistics')) return logistics(req, url, path.slice('/logistics'.length) || '/', now);
     } catch (err) {
-      return json({ error: err instanceof Error ? err.message : String(err) }, 500);
+      console.error(err);
+      return json({ error: 'Internal error' }, 500);
     }
     return notFound();
   },
