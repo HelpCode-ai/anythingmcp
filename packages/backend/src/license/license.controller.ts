@@ -7,18 +7,33 @@ import {
   Req,
   UseGuards,
   BadRequestException,
+  BadGatewayException,
+  ConflictException,
   ForbiddenException,
+  NotFoundException,
+  HttpCode,
   Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { IsString, IsOptional, Matches } from 'class-validator';
+import { Throttle } from '@nestjs/throttler';
+import { IsBoolean, IsIn, IsString, IsOptional, Matches } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { LicenseService } from './license.service';
 import { LicenseGuardService } from './license-guard.service';
 import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
 import { DeploymentService } from '../common/deployment.service';
+import { ProductEventService } from '../audit/product-event.service';
+import {
+  CHECKOUT_BILLING_PERIODS,
+  CHECKOUT_PLANS,
+  CheckoutBillingPeriod,
+  CheckoutPlan,
+  cardTrialEnd,
+  checkoutAdMetadata,
+  cloudFrontendOrigin,
+} from './license-checkout';
 
 class SetLicenseKeyDto {
   @IsString()
@@ -26,6 +41,17 @@ class SetLicenseKeyDto {
     message: 'Invalid license key format. Expected: AMCP-XXXX-XXXX-XXXX-XXXX',
   })
   licenseKey: string;
+}
+
+class CheckoutLinkDto {
+  @IsIn(CHECKOUT_PLANS as unknown as string[])
+  plan: CheckoutPlan;
+
+  @IsIn(CHECKOUT_BILLING_PERIODS as unknown as string[])
+  billingPeriod: CheckoutBillingPeriod;
+
+  @IsBoolean()
+  trial: boolean;
 }
 
 class BillingPortalDto {
@@ -45,6 +71,7 @@ export class LicenseController {
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
     private readonly deployment: DeploymentService,
+    private readonly productEvents: ProductEventService,
   ) {}
 
   @Get('status')
@@ -154,6 +181,72 @@ export class LicenseController {
       );
     } catch (err: any) {
       throw new BadRequestException(err.message || 'Failed to open billing portal');
+    }
+  }
+
+  @Post('checkout-link')
+  @HttpCode(200)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  // Each call mints a checkout intent on the licence site: a person clicks
+  // this a few times at most, a loop should not be able to do more.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Stripe Checkout link for a cloud plan, optionally as a card trial ending with the free trial (cloud, ADMIN)',
+  })
+  async checkoutLink(@Req() req: any, @Body() dto: CheckoutLinkDto): Promise<{ url: string }> {
+    // Cloud only. Self-hosted buys its licence on the pricing page and has no
+    // workspace billing here; answer as if the route did not exist.
+    if (!this.deployment.isCloud()) {
+      throw new NotFoundException();
+    }
+    // RolesGuard already refuses other roles; checked again because a
+    // checkout binds the workspace's billing to this person's email.
+    if (req.user?.role !== 'ADMIN') {
+      throw new ForbiddenException('Only workspace administrators can start a subscription');
+    }
+
+    // Who pays and for which workspace comes from the session, never from the
+    // body (the DTO has no such fields and the global pipe rejects extras).
+    const email: string | undefined = req.user?.email;
+    const organizationId: string | undefined = req.user?.organizationId;
+    if (!email || !organizationId) {
+      throw new BadRequestException('No workspace to subscribe');
+    }
+
+    const current = await this.licenseService.getCurrentLicense(organizationId);
+    // A paying workspace changes plan in the billing portal. A second checkout
+    // would add a second subscription beside the first and bill both.
+    if (current && current.plan !== 'trial') {
+      throw new ConflictException(
+        'This workspace already has a subscription. Change your plan in the billing portal.',
+      );
+    }
+
+    // A card trial ends when the free trial would have. Asked for after the
+    // trial is over, it is a plain purchase: no trialEnd means pay now.
+    const trialEnd = dto.trial ? cardTrialEnd(current) : null;
+    const adMetadata = checkoutAdMetadata(
+      await this.productEvents.clickIdForUser(req.user.sub).catch(() => null),
+    );
+
+    try {
+      return await this.licenseService.createCheckoutIntent({
+        email,
+        plan: `cloud_${dto.plan}`,
+        billingPeriod: dto.billingPeriod,
+        ...(trialEnd && { trialEnd: trialEnd.toISOString() }),
+        returnUrl: `${cloudFrontendOrigin()}/settings/license/activate`,
+        organizationId,
+        ...(adMetadata && { adMetadata }),
+      });
+    } catch (err: any) {
+      this.logger.warn(`Checkout link for org ${organizationId} failed: ${err?.message ?? err}`);
+      throw new BadGatewayException(
+        'The checkout could not be opened right now. Please try again in a moment.',
+      );
     }
   }
 

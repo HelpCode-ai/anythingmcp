@@ -28,6 +28,7 @@ describe('LicenseController — activate-trial is idempotent', () => {
       {} as any,
       { findById: jest.fn(async () => user) } as any,
       { isCloud: () => true } as any,
+      {} as any,
     );
     return { controller, licenseService };
   }

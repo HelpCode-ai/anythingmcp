@@ -1,0 +1,224 @@
+import { storage } from './storage';
+
+/**
+ * The card trial on AnythingMCP Cloud: right after sign-up an admin is offered
+ * Stripe Checkout with a 7-day trial (card required, nothing charged today),
+ * ending when their free trial would have. Everything here is Cloud only;
+ * self-hosted builds never call it.
+ *
+ * Pure helpers live here so they can be tested without a browser; the pieces
+ * that touch storage go through `storage`, which never throws.
+ */
+
+export type CloudPlanId = 'starter' | 'team' | 'business';
+export type BillingPeriod = 'monthly' | 'yearly';
+
+export interface PlanSelection {
+  plan: CloudPlanId;
+  period: BillingPeriod;
+}
+
+export interface CloudPlan {
+  id: CloudPlanId;
+  name: string;
+  /** EUR incl. VAT per month, on monthly billing. */
+  monthly: number;
+  /** EUR incl. VAT per year, on yearly billing. */
+  yearly: number;
+  summary: string;
+  popular?: boolean;
+}
+
+/**
+ * Mirrors anythingmcp.com/pricing and the live Stripe prices (Cloud plans,
+ * EUR incl. VAT). Keep in step with the marketing site when a price changes:
+ * the checkout charges what Stripe says, this only describes it.
+ */
+export const CLOUD_PLANS: readonly CloudPlan[] = [
+  {
+    id: 'starter',
+    name: 'Starter',
+    monthly: 19,
+    yearly: 190,
+    summary: '5 connectors · 3 MCP servers · 1 user',
+  },
+  {
+    id: 'team',
+    name: 'Team',
+    monthly: 49,
+    yearly: 490,
+    summary: '15 connectors · 10 MCP servers · up to 3 users',
+    popular: true,
+  },
+  {
+    id: 'business',
+    name: 'Business',
+    monthly: 99,
+    yearly: 990,
+    summary: 'Unlimited connectors and MCP servers · up to 10 users',
+  },
+];
+
+export const DEFAULT_SELECTION: PlanSelection = { plan: 'team', period: 'monthly' };
+
+export function planById(id: CloudPlanId): CloudPlan {
+  return CLOUD_PLANS.find((p) => p.id === id) ?? CLOUD_PLANS[1];
+}
+
+/** "19 €", "15.83 €" (non-breaking space, as on the invoice). */
+export function formatEur(amount: number): string {
+  const text = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  return `${text} €`;
+}
+
+/** The price line for a plan: "49 €/month" or "490 €/year". */
+export function formatPlanPrice(plan: CloudPlan, period: BillingPeriod): string {
+  return period === 'yearly' ? `${formatEur(plan.yearly)}/year` : `${formatEur(plan.monthly)}/month`;
+}
+
+/** The monthly equivalent of a yearly price, rounded to the cent: 190 → 15.83. */
+export function yearlyPerMonth(plan: CloudPlan): number {
+  return Math.round((plan.yearly / 12) * 100) / 100;
+}
+
+/** What yearly billing saves over twelve months of monthly billing. */
+export function yearlySaving(plan: CloudPlan): number {
+  return plan.monthly * 12 - plan.yearly;
+}
+
+// ── Plan intent from the pricing page ───────────────────────────────────────
+
+/**
+ * The pricing page opens sign-up as `?mode=register&plan=cloud_team&period=yearly`.
+ * Accepts `cloud_<tier>` or the bare tier; anything else is no intent at all.
+ * A missing or unknown period falls back to monthly.
+ */
+export function parsePlanIntent(
+  plan: string | null | undefined,
+  period: string | null | undefined,
+): PlanSelection | null {
+  if (!plan) return null;
+  const tier = plan.trim().toLowerCase().replace(/^cloud_/, '');
+  if (tier !== 'starter' && tier !== 'team' && tier !== 'business') return null;
+  const p = (period ?? '').trim().toLowerCase();
+  return { plan: tier, period: p === 'yearly' || p === 'annual' ? 'yearly' : 'monthly' };
+}
+
+const INTENT_KEY = 'amcp_plan_intent';
+/**
+ * Long enough to survive email verification, which may happen days later and
+ * in another tab (hence localStorage, not sessionStorage).
+ */
+export const INTENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function encodePlanIntent(sel: PlanSelection, now: number = Date.now()): string {
+  return JSON.stringify({ plan: sel.plan, period: sel.period, savedAt: now });
+}
+
+/** A stored intent, or null when missing, malformed or older than the TTL. */
+export function decodePlanIntent(raw: string | null, now: number = Date.now()): PlanSelection | null {
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return null;
+    const savedAt = Number(data.savedAt);
+    if (!Number.isFinite(savedAt) || savedAt > now || now - savedAt > INTENT_TTL_MS) return null;
+    return parsePlanIntent(String(data.plan ?? ''), String(data.period ?? ''));
+  } catch {
+    return null;
+  }
+}
+
+export function savePlanIntent(sel: PlanSelection): void {
+  storage.set(INTENT_KEY, encodePlanIntent(sel));
+}
+
+export function readPlanIntent(): PlanSelection | null {
+  const raw = storage.get(INTENT_KEY);
+  const sel = decodePlanIntent(raw);
+  if (raw && !sel) storage.remove(INTENT_KEY);
+  return sel;
+}
+
+// ── Eligibility and the one-time prompt ─────────────────────────────────────
+
+export interface TrialStatusLike {
+  plan: string | null;
+  status: string;
+  expiresAt?: string | null;
+  trialDaysLeft?: number;
+}
+
+/**
+ * Whether the card trial is on offer: Cloud, an admin, and a free trial that
+ * is still running. Other roles cannot start a subscription, and after the
+ * trial there is nothing left to trial (the licence wall sells the plan).
+ */
+export function cardTrialEligible(input: {
+  isCloud: boolean;
+  role: string | null | undefined;
+  license: TrialStatusLike | null | undefined;
+  now?: number;
+}): boolean {
+  const { isCloud, role, license } = input;
+  if (!isCloud || role !== 'ADMIN' || !license) return false;
+  if (license.plan !== 'trial' || license.status !== 'active') return false;
+  if (license.expiresAt) {
+    const end = new Date(license.expiresAt).getTime();
+    return Number.isFinite(end) && end > (input.now ?? Date.now());
+  }
+  return typeof license.trialDaysLeft === 'number' && license.trialDaysLeft > 0;
+}
+
+/** 'shown': sent to /start-trial once; 'skipped' / 'checkout': chose. */
+export type CardTrialPrompt = 'shown' | 'skipped' | 'checkout';
+
+export function cardTrialPromptKey(userId: string): string {
+  return `amcp_card_trial_prompt:${userId}`;
+}
+
+export function readCardTrialPrompt(userId: string): CardTrialPrompt | null {
+  const v = storage.get(cardTrialPromptKey(userId));
+  return v === 'shown' || v === 'skipped' || v === 'checkout' ? v : null;
+}
+
+export function writeCardTrialPrompt(userId: string, value: CardTrialPrompt): void {
+  storage.set(cardTrialPromptKey(userId), value);
+}
+
+/**
+ * Stripe wants a trial to end at least 48 hours out, so the licence site moves
+ * a sooner end to 49 hours from now. Mirrored here so the date we promise is
+ * the date Checkout shows. Null when there is no usable end.
+ */
+export const MIN_CARD_TRIAL_MS = 49 * 60 * 60 * 1000;
+
+export function cardTrialDisplayEnd(
+  expiresAt: string | null | undefined,
+  now: number = Date.now(),
+): string | null {
+  if (!expiresAt) return null;
+  const end = new Date(expiresAt).getTime();
+  if (!Number.isFinite(end)) return null;
+  return new Date(Math.max(end, now + MIN_CARD_TRIAL_MS)).toISOString();
+}
+
+/**
+ * The trial end as shown to the user: "7 October 2026" (long) or "7 Oct"
+ * (short), in their own time zone. English, like the rest of the UI.
+ */
+export function formatTrialEnd(
+  iso: string | null | undefined,
+  style: 'long' | 'short' = 'long',
+  timeZone?: string,
+): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: style === 'long' ? 'long' : 'short',
+    ...(style === 'long' && { year: 'numeric' }),
+    ...(timeZone && { timeZone }),
+  });
+}

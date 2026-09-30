@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { connectors, license, users } from '@/lib/api';
+import { cardTrialEligible, readCardTrialPrompt, writeCardTrialPrompt } from '@/lib/card-trial';
 
 // Routes where we MUST NOT redirect, even if the wizard hasn't been
 // completed yet. Login + token-bound flows handle their own redirects,
@@ -18,6 +19,7 @@ const EXCLUDED_ROUTES = [
   '/accept-invite',
   '/settings/license',
   '/welcome',
+  '/start-trial',
 ];
 
 function isExcluded(pathname: string | null): boolean {
@@ -42,9 +44,13 @@ function isExcluded(pathname: string | null): boolean {
  * If all 4 hold and we're on the dashboard, redirect to /welcome.
  * If 1-3 hold but they already have a connector, fire-and-forget the
  * PATCH so we don't pester them again.
+ *
+ * Cloud only, ahead of the wizard: an admin on a running free trial who has
+ * not yet been offered the card trial is sent to /start-trial, once per user
+ * (remembered in localStorage). Self-hosted never gets there.
  */
 export function OnboardingRedirect() {
-  const { token, user, isLoading, deploymentMode } = useAuth();
+  const { token, user, isLoading, deploymentMode, deploymentModeLoaded } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   // Avoid duplicate evaluations on rapid route changes / re-renders.
@@ -52,6 +58,11 @@ export function OnboardingRedirect() {
 
   useEffect(() => {
     if (isLoading || !token || !user) return;
+    // Both gates below depend on the deployment mode, which is only a guess
+    // ('self-hosted') until /health/server-info answers. Evaluating on the
+    // guess recorded the path as done and never looked again with the real
+    // mode, so a cloud admin could miss the card-trial offer.
+    if (!deploymentModeLoaded) return;
     if (isExcluded(pathname)) return;
 
     // Dedupe per (path, userId) to avoid hammering the API on every render.
@@ -93,6 +104,22 @@ export function OnboardingRedirect() {
         const licenseBlocking = isCloud && (noPlan || trialEnded || expired);
         if (licenseBlocking) return;
 
+        // The card-trial offer, once, before the wizard. Marked as shown
+        // before navigating so a failure on that page can never loop back.
+        if (
+          isCloud &&
+          pathname === '/' &&
+          cardTrialEligible({ isCloud, role: me?.role ?? user.role, license: lic }) &&
+          readCardTrialPrompt(user.id) === null
+        ) {
+          writeCardTrialPrompt(user.id, 'shown');
+          // Coming back to the dashboard must be evaluated afresh (for the
+          // wizard), not skipped as already seen.
+          lastRun.current = null;
+          router.replace('/start-trial');
+          return;
+        }
+
         const hasConnector = (connList?.length ?? 0) > 0;
         const wizardDone = onboarding.onboardingCompletedAt !== null;
 
@@ -119,7 +146,7 @@ export function OnboardingRedirect() {
     return () => {
       cancelled = true;
     };
-  }, [isLoading, token, user, pathname, deploymentMode, router]);
+  }, [isLoading, token, user, pathname, deploymentMode, deploymentModeLoaded, router]);
 
   return null;
 }

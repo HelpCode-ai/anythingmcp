@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { license } from '@/lib/api';
 import { usePricingUrl } from '@/lib/use-pricing-url';
@@ -10,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { useEdition, notifyEditionChanged } from '@/lib/use-edition';
 import { EditionCard } from '@/components/edition-card';
+import { cardTrialDisplayEnd, cardTrialEligible, formatTrialEnd } from '@/lib/card-trial';
 
 interface LicenseStatus {
   plan: string | null;
@@ -42,6 +44,11 @@ export default function LicenseSettingsPage() {
     !!status?.plan &&
     status.plan !== 'trial' &&
     status.plan !== 'community';
+  // Cloud admin on a running free trial: offer the card trial (/start-trial).
+  const cardTrialOffer = cardTrialEligible({ isCloud, role: user?.role, license: status });
+  const cardTrialDate = cardTrialOffer
+    ? formatTrialEnd(cardTrialDisplayEnd(status?.expiresAt), 'long')
+    : null;
 
   const loadStatus = async () => {
     try {
@@ -348,17 +355,41 @@ export default function LicenseSettingsPage() {
       {isCloud && status?.plan === 'trial' && (
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-[var(--text)] mb-4">Upgrade Plan</h2>
-          <p className="text-sm text-[var(--text-2)] mb-4">
-            Upgrade to a paid plan to continue using AnythingMCP Cloud after your trial ends.
-          </p>
-          <a
-            href={pricingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(buttonVariants({ variant: 'primary' }))}
-          >
-            View Plans
-          </a>
+          {cardTrialOffer ? (
+            <>
+              <p className="text-sm text-[var(--text-2)] mb-4">
+                Add a payment method to keep AnythingMCP Cloud running after your trial. Nothing is
+                charged before {cardTrialDate ?? 'your trial ends'}, and you can cancel anytime.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Link href="/start-trial" className={cn(buttonVariants({ variant: 'primary' }))}>
+                  Add payment method
+                </Link>
+                <a
+                  href={pricingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(buttonVariants({ variant: 'secondary' }))}
+                >
+                  Compare plans
+                </a>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-[var(--text-2)] mb-4">
+                Upgrade to a paid plan to continue using AnythingMCP Cloud after your trial ends.
+              </p>
+              <a
+                href={pricingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(buttonVariants({ variant: 'primary' }))}
+              >
+                View Plans
+              </a>
+            </>
+          )}
         </Card>
       )}
     </div>

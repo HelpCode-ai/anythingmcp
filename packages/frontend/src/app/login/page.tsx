@@ -14,6 +14,13 @@ import { cn } from '@/lib/utils';
 import { safeRedirect } from '@/lib/safe-redirect';
 import { captureSignupAttribution, clearSignupAttribution, getSignupAttribution } from '@/lib/attribution';
 import { pushSignUpVerified } from '@/lib/conversion';
+import {
+  cardTrialEligible,
+  parsePlanIntent,
+  readCardTrialPrompt,
+  savePlanIntent,
+  writeCardTrialPrompt,
+} from '@/lib/card-trial';
 
 type SetupStep = 'auth' | 'verify-email' | 'check-inbox' | 'license-choice' | 'license-email-sent' | 'license-key' | 'trial-activated';
 
@@ -73,6 +80,8 @@ function LoginForm() {
   const modeParam = searchParams.get('mode'); // 'register' or 'login'
   const ssoCode = searchParams.get('sso');
   const errorParam = searchParams.get('error');
+  const planParam = searchParams.get('plan');
+  const periodParam = searchParams.get('period');
   const [ssoProviders, setSsoProviders] = useState<SsoProviderButton[]>([]);
   const [ssoExchanging, setSsoExchanging] = useState(Boolean(ssoCode));
 
@@ -97,6 +106,43 @@ function LoginForm() {
   useEffect(() => {
     if (isCloudMode) captureSignupAttribution();
   }, [isCloudMode]);
+
+  // Cloud only: the pricing page opens sign-up with the plan the visitor
+  // picked (`?plan=cloud_team&period=yearly`). Kept in localStorage so it
+  // survives email verification, which may happen days later in another tab,
+  // and preselects that plan on the card-trial offer.
+  useEffect(() => {
+    if (!isCloudMode) return;
+    const intent = parsePlanIntent(planParam, periodParam);
+    if (intent) savePlanIntent(intent);
+  }, [isCloudMode, planParam, periodParam]);
+
+  /**
+   * Cloud only: right after the trial starts, an admin headed for the
+   * dashboard is offered the card trial (/start-trial) instead of the
+   * "Trial activated" card, once. A sign-in on its way somewhere specific
+   * (an OAuth consent, an install link) is left alone.
+   */
+  const offerCardTrial = (
+    u: { id?: string; role?: string } | null | undefined,
+    trial: { plan: string; expiresAt: string | null; trialDaysLeft: number },
+  ): boolean => {
+    if (!isCloudMode || redirectTo !== '/' || !u?.id) return false;
+    const eligible = cardTrialEligible({
+      isCloud: true,
+      role: u.role,
+      license: {
+        plan: trial.plan,
+        status: 'active',
+        expiresAt: trial.expiresAt,
+        trialDaysLeft: trial.trialDaysLeft,
+      },
+    });
+    if (!eligible || readCardTrialPrompt(u.id) !== null) return false;
+    writeCardTrialPrompt(u.id, 'shown');
+    router.push('/start-trial');
+    return true;
+  };
 
   // Surface a failure the SSO callback redirected back with.
   useEffect(() => {
@@ -217,6 +263,7 @@ function LoginForm() {
           setAuthToken(result.accessToken);
           try {
             const trialResult = await license.activateTrial(result.accessToken);
+            if (offerCardTrial(result.user, trialResult)) return;
             setTrialDaysLeft(trialResult.trialDaysLeft);
             setSetupStep('trial-activated');
           } catch {
@@ -252,6 +299,7 @@ function LoginForm() {
         // Cloud mode: auto-activate trial
         try {
           const trialResult = await license.activateTrial(authToken);
+          if (offerCardTrial(storedUser, trialResult)) return;
           setTrialDaysLeft(trialResult.trialDaysLeft);
           setSetupStep('trial-activated');
         } catch (trialErr: any) {

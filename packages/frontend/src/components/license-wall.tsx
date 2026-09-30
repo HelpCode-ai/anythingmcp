@@ -7,6 +7,9 @@ import { license } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { usePricingUrl } from '@/lib/use-pricing-url';
 import { useManagePlan } from '@/lib/use-manage-plan';
+import { useCardCheckout } from '@/lib/use-card-checkout';
+import { DEFAULT_SELECTION, planById, readPlanIntent, type PlanSelection } from '@/lib/card-trial';
+import { PlanPicker } from '@/components/plan-picker';
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -17,7 +20,7 @@ import { cn } from '@/lib/utils';
 type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed';
 
 export function LicenseWall() {
-  const { token, deploymentMode } = useAuth();
+  const { token, user, deploymentMode } = useAuth();
   const managePlan = useManagePlan();
   const pricingUrl = usePricingUrl();
   const [reason, setReason] = useState<BlockReason | null>(null);
@@ -25,6 +28,16 @@ export function LicenseWall() {
   const [startErr, setStartErr] = useState<string | null>(null);
   const pathname = usePathname();
   const isCloud = deploymentMode === 'cloud';
+  const checkout = useCardCheckout();
+  const [selection, setSelection] = useState<PlanSelection>(DEFAULT_SELECTION);
+  // Cloud admins whose trial ended pick a plan and pay right here (Stripe
+  // Checkout, no trial left). Other roles cannot subscribe the workspace and
+  // keep the pricing link.
+  const buyInPlace = isCloud && reason === 'trial-ended' && user?.role === 'ADMIN';
+
+  useEffect(() => {
+    if (buyInPlace) setSelection(readPlanIntent() ?? DEFAULT_SELECTION);
+  }, [buyInPlace]);
 
   // Start the trial in place (no navigation) so a failed auto-activation on
   // signup doesn't strand the user on this wall. On success the block clears.
@@ -120,7 +133,7 @@ export function LicenseWall() {
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[14px] p-8 max-w-md w-full mx-4 text-center shadow-[var(--shadow)]">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[14px] p-8 max-w-md w-full mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto text-center shadow-[var(--shadow)]">
         <div className="flex justify-center mb-4">
           <LogoIcon size={48} />
         </div>
@@ -149,6 +162,28 @@ export function LicenseWall() {
                 className={cn(buttonVariants({ variant: 'secondary', size: 'lg' }), 'w-full')}
               >
                 View Plans &amp; Purchase License
+              </a>
+            </>
+          ) : buyInPlace ? (
+            <>
+              <div className="text-left">
+                <PlanPicker value={selection} onChange={setSelection} compact disabled={checkout.loading} />
+              </div>
+              <button
+                onClick={() => checkout.start(selection, false)}
+                disabled={checkout.loading}
+                className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
+              >
+                {checkout.loading ? 'Opening checkout…' : `Subscribe to ${planById(selection.plan).name}`}
+              </button>
+              {checkout.error && <p role="alert" className="text-xs text-[var(--danger)]">{checkout.error}</p>}
+              <a
+                href={pricingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs text-[var(--brand)] hover:underline"
+              >
+                Compare plans
               </a>
             </>
           ) : reason === 'lapsed' ? (

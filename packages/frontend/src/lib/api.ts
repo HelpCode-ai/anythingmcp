@@ -1221,6 +1221,20 @@ export const license = {
       body: { returnUrl },
       token,
     }),
+  /**
+   * Cloud only (ADMIN): a one-time Stripe Checkout URL for a plan. `trial`
+   * asks for a card trial ending with the free trial; after the trial it is
+   * a plain purchase. The buyer and workspace come from the session.
+   */
+  checkoutLink: (
+    token: string,
+    body: { plan: 'starter' | 'team' | 'business'; billingPeriod: 'monthly' | 'yearly'; trial: boolean },
+  ) =>
+    request<{ url: string }>('/api/license/checkout-link', {
+      method: 'POST',
+      body,
+      token,
+    }),
   getInstanceId: () =>
     request<{ instanceId: string }>('/api/license/instance-id'),
   getUsage: (token?: string) =>
