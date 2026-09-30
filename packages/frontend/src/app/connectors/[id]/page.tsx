@@ -1663,7 +1663,7 @@ export default function ConnectorDetailPage() {
                           {/* Show mapping summary */}
                           <div className="flex gap-3 mt-1.5 text-[10px] text-[var(--text-3)] flex-wrap">
                             {tool.endpointMapping?.path && (
-                              <span className="font-mono break-all">{tool.endpointMapping.path}</span>
+                              <ToolPathSummary path={tool.endpointMapping.path} />
                             )}
                             {tool.parameters?.properties && (() => {
                               const allParams = Object.keys(tool.parameters.properties);
@@ -1943,4 +1943,39 @@ function normalizeTokenAuthMethod(method: string | undefined): string {
   if (method === 'basic') return 'client_secret_basic';
   if (!method || method === 'post') return 'client_secret_post';
   return method;
+}
+
+/**
+ * The endpoint line on a tool card. For REST it is a short path; for database
+ * tools it is the whole SQL statement, which printed in full, wrapped mid-word
+ * at `break-all`, made one card as tall as the screen (the SAP HANA tools run
+ * to 40 lines). Long ones show their first line and open on request.
+ */
+function ToolPathSummary({ path }: { path: string }) {
+  const [open, setOpen] = useState(false);
+  const oneLine = path.replace(/\s+/g, ' ').trim();
+  if (oneLine.length <= 120 && !path.includes('\n')) {
+    return <span className="font-mono break-all">{path}</span>;
+  }
+  return (
+    <span className="flex min-w-0 max-w-full basis-full flex-col gap-1">
+      {open ? (
+        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[8px] bg-[var(--surface)] p-2 font-mono text-[11px] leading-relaxed text-[var(--text-2)]">
+          {path.trim()}
+        </pre>
+      ) : (
+        <span className="truncate font-mono" title={oneLine}>
+          {oneLine}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="self-start text-[var(--brand)] hover:underline"
+        aria-expanded={open}
+      >
+        {open ? 'Hide' : 'Show full'} {/^\s*(select|with)\b/i.test(path) ? 'SQL' : 'path'}
+      </button>
+    </span>
+  );
 }

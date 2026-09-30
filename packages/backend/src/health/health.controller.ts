@@ -130,8 +130,15 @@ export class HealthController {
     if (this.redis.isConnected) {
       return { redis: { status: 'up' } };
     }
-    // Redis is optional — report as up with a message so the health check
-    // does not fail when Redis is simply not configured.
-    return { redis: { status: 'up', message: 'Not configured (optional)' } };
+    // Redis is optional: report up with a message so the health check does
+    // not fail, but tell "not configured" apart from "configured and down".
+    return {
+      redis: {
+        status: 'up',
+        message: this.redis.isConfigured
+          ? 'Configured but not reachable (caching disabled)'
+          : 'Not configured (optional)',
+      },
+    };
   }
 }

@@ -649,4 +649,54 @@ describe('PostmanParser', () => {
     expect(tools[0].outputSchema).toBeUndefined();
   });
 
+  // ── ReDoS regression ──────────────────────────────────────────────────────
+
+  describe('ReDoS regression', () => {
+    it('should handle a long brace run in the URL in under 100ms', async () => {
+      const hostile = 'https://api.example.com/' + '{{'.repeat(50000);
+      const collection = {
+        info: { name: 'c', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+        item: [
+          { name: 'X', request: { method: 'GET', url: { raw: hostile, path: ['x'] } } },
+        ],
+      };
+      const start = Date.now();
+      await parser.parse(collection);
+      expect(Date.now() - start).toBeLessThan(250);
+    });
+
+    it('should handle {{ followed by a long whitespace run in under 100ms', async () => {
+      const hostile = 'https://api.example.com/{{' + ' '.repeat(50000);
+      const collection = {
+        info: { name: 'c', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+        item: [
+          { name: 'X', request: { method: 'GET', url: { raw: hostile, path: ['x'] } } },
+        ],
+      };
+      const start = Date.now();
+      await parser.parse(collection);
+      expect(Date.now() - start).toBeLessThan(250);
+    });
+
+    it('should handle a long brace run in the body in under 100ms', async () => {
+      const hostile = '{{'.repeat(50000);
+      const collection = {
+        info: { name: 'c', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+        item: [
+          {
+            name: 'X',
+            request: {
+              method: 'POST',
+              url: { raw: 'https://api.example.com/x', path: ['x'] },
+              body: { mode: 'raw', raw: hostile },
+            },
+          },
+        ],
+      };
+      const start = Date.now();
+      await parser.parse(collection);
+      expect(Date.now() - start).toBeLessThan(250);
+    });
+  });
+
 });

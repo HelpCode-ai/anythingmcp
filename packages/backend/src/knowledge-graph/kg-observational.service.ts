@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { PrismaService } from '../common/prisma.service';
 import { extractEntity } from './static/entity-extraction';
 import { fkCandidate } from './static/fk-inference';
@@ -44,6 +45,18 @@ interface PageRow {
   createdAt: Date;
   intent: string | null;
   tool: { name: string } | null;
+}
+
+/** Observations of one edge within a correlate pass, written once at the end. */
+interface EdgeBump {
+  src: string;
+  tgt: string;
+  kind: string;
+  times: number;
+  matchKey?: string;
+  base: number;
+  cap: number;
+  status: string;
 }
 
 interface ValueRow {
@@ -91,7 +104,10 @@ export class KgObservationalService {
     }
     this.inFlight.add(organizationId);
     try {
-      return await this.ingest(organizationId);
+      // Not traced. The ingest is scheduled from inside an MCP tool call, so
+      // its hundreds of queries became spans of that call's trace: most of
+      // the cloud's Sentry volume in September 2026. Errors are still reported.
+      return await Sentry.suppressTracing(() => this.ingest(organizationId));
     } finally {
       this.inFlight.delete(organizationId);
     }
@@ -280,7 +296,11 @@ export class KgObservationalService {
       const src = await this.nodeId(refCache, organizationId, b.connectorId, b.from);
       const tgt = await this.nodeId(refCache, organizationId, b.connectorId, b.to);
       if (src && tgt && src !== tgt) {
-        await this.bumpEdge(organizationId, src, tgt, 'references', {
+        await this.bumpEdge(organizationId, {
+          src,
+          tgt,
+          kind: 'references',
+          times: 1,
           matchKey: b.field,
           base: 0.6,
           cap: 0.9,
@@ -306,7 +326,11 @@ export class KgObservationalService {
           const nb = await this.nodeId(coCache, organizationId, cb, eb);
           if (!na || !nb || na === nb) continue;
           const [src, tgt] = na < nb ? [na, nb] : [nb, na];
-          await this.bumpEdge(organizationId, src, tgt, 'related', {
+          await this.bumpEdge(organizationId, {
+            src,
+            tgt,
+            kind: 'related',
+            times: 1,
             base: 0.3,
             cap: 0.7,
             status: 'suggested',
@@ -464,6 +488,23 @@ export class KgObservationalService {
     }
 
     const nodeCache = new Map<string, string>(); // `${connectorId}::${entity}` -> nodeId
+    // Many values link the same two nodes, so one pass used to write the same
+    // edge again for every one of them: a read and an update per value, most
+    // of the database work behind an MCP call. The bumps are counted here and
+    // each distinct edge is written once, with the same end state.
+    const bumps = new Map<string, EdgeBump>();
+    const confirmedRefs = new Map<string, [string, string]>();
+    const bump = (src: string, tgt: string, kind: string, b: Omit<EdgeBump, 'src' | 'tgt' | 'kind' | 'times'>) => {
+      const key = `${src}|${tgt}|${kind}`;
+      const prev = bumps.get(key);
+      if (prev) {
+        prev.times++;
+        // Sequential updates left the last matchKey that was set.
+        if (b.matchKey !== undefined) prev.matchKey = b.matchKey;
+      } else {
+        bumps.set(key, { src, tgt, kind, times: 1, ...b });
+      }
+    };
     let edgeCount = 0;
 
     for (const occ of byHash.values()) {
@@ -477,17 +518,14 @@ export class KgObservationalService {
           const src = await this.nodeId(nodeCache, organizationId, p.connectorId, p.entity);
           const tgt = await this.nodeId(nodeCache, organizationId, c.connectorId, c.entity);
           if (!src || !tgt || src === tgt) continue;
-          await this.bumpEdge(organizationId, src, tgt, 'produces_consumes', {
+          bump(src, tgt, 'produces_consumes', {
             matchKey: c.field,
             base: 0.55,
             cap: 0.95,
             status: 'active',
           });
           // The data confirms any static FK guess between the same nodes.
-          await this.prisma.kgEdge.updateMany({
-            where: { organizationId, sourceNodeId: src, targetNodeId: tgt, kind: 'references', source: 'STATIC' },
-            data: { source: 'OBSERVED', confidence: 0.8, lastSeenAt: new Date() },
-          });
+          confirmedRefs.set(`${src}|${tgt}`, [src, tgt]);
           edgeCount++;
         }
       }
@@ -505,7 +543,7 @@ export class KgObservationalService {
             const nb = await this.nodeId(nodeCache, organizationId, b.connectorId, b.entity);
             if (!na || !nb || na === nb) continue;
             const [src, tgt] = na < nb ? [na, nb] : [nb, na];
-            await this.bumpEdge(organizationId, src, tgt, 'same_identity', {
+            bump(src, tgt, 'same_identity', {
               matchKey: a.field === b.field ? a.field : undefined,
               base: 0.2,
               cap: 0.6,
@@ -516,6 +554,16 @@ export class KgObservationalService {
           }
         }
       }
+    }
+
+    for (const b of bumps.values()) {
+      await this.bumpEdge(organizationId, b);
+    }
+    for (const [src, tgt] of confirmedRefs.values()) {
+      await this.prisma.kgEdge.updateMany({
+        where: { organizationId, sourceNodeId: src, targetNodeId: tgt, kind: 'references', source: 'STATIC' },
+        data: { source: 'OBSERVED', confidence: 0.8, lastSeenAt: new Date() },
+      });
     }
     return edgeCount;
   }
@@ -546,13 +594,9 @@ export class KgObservationalService {
     return node.id;
   }
 
-  private async bumpEdge(
-    organizationId: string,
-    sourceNodeId: string,
-    targetNodeId: string,
-    kind: string,
-    opts: { matchKey?: string; base: number; cap: number; status: string },
-  ): Promise<void> {
+  /** Add `times` observations to an edge, creating it if it is new. */
+  private async bumpEdge(organizationId: string, b: EdgeBump): Promise<void> {
+    const { src: sourceNodeId, tgt: targetNodeId, kind, times } = b;
     const existing = await this.prisma.kgEdge.findUnique({
       where: {
         organizationId_sourceNodeId_targetNodeId_kind: {
@@ -564,6 +608,8 @@ export class KgObservationalService {
       },
       select: { id: true, observations: true, isManual: true, status: true },
     });
+    const observations = (existing?.observations ?? 0) + times;
+    const confidence = Math.min(b.cap, b.base + 0.05 * (observations - 1));
     if (!existing) {
       await this.prisma.kgEdge.create({
         data: {
@@ -571,28 +617,27 @@ export class KgObservationalService {
           sourceNodeId,
           targetNodeId,
           kind,
-          matchKey: opts.matchKey,
+          matchKey: b.matchKey,
           source: 'OBSERVED',
-          confidence: Math.min(opts.cap, opts.base),
-          observations: 1,
-          status: opts.status,
+          confidence,
+          observations,
+          status: b.status,
         },
       });
       return;
     }
-    const observations = existing.observations + 1;
     await this.prisma.kgEdge.update({
       where: { id: existing.id },
       data: {
         observations,
-        confidence: Math.min(opts.cap, opts.base + 0.05 * (observations - 1)),
+        confidence,
         source: 'OBSERVED',
-        matchKey: opts.matchKey,
+        matchKey: b.matchKey,
         lastSeenAt: new Date(),
         // Never silently re-open a link the user rejected, nor downgrade a confirmed one.
         ...(existing.isManual || existing.status === 'rejected'
           ? {}
-          : { status: opts.status }),
+          : { status: b.status }),
       },
     });
   }

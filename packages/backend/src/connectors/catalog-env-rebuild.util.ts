@@ -29,7 +29,7 @@ import { CALLER_CONTEXT_PREFIX } from '../common/caller-context.util';
  * name when the new one is not set.
  */
 
-const VAR_PATTERN = /\{\{([^}]+)\}\}/g;
+const VAR_PATTERN = /\{\{([^{}]+)\}\}/g;
 
 export interface CatalogTemplate {
   connector: {

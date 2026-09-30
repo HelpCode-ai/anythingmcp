@@ -1,6 +1,6 @@
 {
   "name": "@anythingmcp/backend",
-  "version": "0.15.0",
+  "version": "0.16.1",
   "description": "AnythingMCP — NestJS Backend + Dynamic MCP Server",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -67,7 +67,7 @@
     "mssql": "^12.7.2",
     "mysql2": "^3.24.4",
     "nestjs-pino": "^4.6.1",
-    "nodemailer": "^9.1.1",
+    "nodemailer": "^10.0.2",
     "openid-client": "^6.8.8",
     "oracledb": "^6.10.0",
     "passport": "^0.7.0",
