@@ -5,12 +5,21 @@
 <h1 align="center">AnythingMCP：セルフホスト型 MCP ゲートウェイ</h1>
 
 <p align="center">
+  <a href="https://www.star-history.com/helpcode-ai/anythingmcp">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending&theme=dark" />
+      <img src="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending" alt="GitHub Trending Repository of the Day" height="64" />
+    </picture>
+  </a>
+</p>
+
+<p align="center">
   <a href="README.md">English</a> · <a href="README.de.md">Deutsch</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a>
 </p>
 
 <p align="center">
   <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、REST/OpenAPI、SOAP、GraphQL、OData、SQL のあらゆるシステムを Claude、ChatGPT、Copilot 用の MCP ツールに変換します。</strong><br/>
-  SAP、Odoo、Xentral、weclapp、Shopware、WooCommerce、Amazon Seller などを含む 265 種類の既製アダプターを同梱しており、うち 21 は API キー不要です。
+  SAP、Etsy、weclapp、Amazon Seller などを含む 265 種類の既製アダプターを同梱しており、うち 21 は API キー不要です。
 </p>
 
 <p align="center">
@@ -24,13 +33,11 @@
   <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>クラウド版を 7 日間無料で試す</strong></a> · <a href="#run-it-yourself">自分で動かす</a> · <a href="docs/guides.md">ドキュメント</a> · <a href="https://anythingmcp.com/ja/guides">コネクターガイド</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
-**Claude への 1 つの質問に、Etsy、SAP、物流 API のデータで答えます。** デモでは、カタログから Etsy をインストールし、SAP S/4HANA を OData で追加し、物流 API を OpenAPI 仕様からインポートします。その後、Claude が 3 つのシステムをまたいで作業します（2:40、音声あり、英語）。
+**Claude への 1 つの質問に、Etsy、SAP、物流 API のデータで答えます。**
 
-https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
-
-<p align="center"><sub>動画が再生されない場合は <a href="https://anythingmcp.com/ja/video-promo">anythingmcp.com でデモを見る</a></sub></p>
-
-**[KOCH Freiburg GmbH](https://www.kochfreiburg.de/) で本番稼働しています。** 同社では AI アシスタントを ERP、CRM、SOAP サービス、オンプレミスのデータベースなど、15 以上の社内システムに接続しています。[helpcode.ai](https://helpcode.ai) がこのシステムから切り出してオープンソース化しました。アダプターカタログは、単一の製品としてよりもコミュニティで育てるほうが速く成長するからです。
+<p align="center">
+  <a href="https://anythingmcp.com/ja/video-promo"><img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo-poster.jpg" alt="AnythingMCP のデモ（2:40）：Claude が、配送が止まっている Etsy の注文と、SAP に再送用の在庫があるかを答えます。クリックして再生。" width="100%" /></a>
+</p>
 
 ---
 
@@ -266,12 +273,11 @@ REST コネクターを作成し、仕様を URL か貼り付けでインポー�
 ### Shopware、WooCommerce、Amazon Seller Central を Claude に接続するには？
 お使いのショップやマーケットプレイスの [E コマースアダプター](#e-commerce--marketplace-connectors)をインストールして認可します。WooCommerce には 49 のツールがあり、Amazon Seller Central は公式の Selling Partner API を使い、Shopware 6 アダプターは Store API でストアフロントのカタログを読み取ります。
 
-### AnythingMCP は無料ですか？セルフホストできますか？
-はい。AGPL-3.0 のもと、自社のサーバーで動かせます。商用利用も含まれます。[AnythingMCP Cloud](https://cloud.anythingmcp.com/login?mode=register) はフランクフルトで運用するオプションのホスト版で、7 日間の無料トライアルがあります。
-
 ---
 
 ## コミュニティとサポート
+
+**[KOCH Freiburg GmbH](https://www.kochfreiburg.de/) で本番稼働しています。** 同社では AI アシスタントを ERP、CRM、SOAP サービス、オンプレミスのデータベースなど、15 以上の社内システムに接続しています。[helpcode.ai](https://helpcode.ai) がこのシステムから切り出してオープンソース化しました。アダプターカタログは、単一の製品としてよりもコミュニティで育てるほうが速く成長するからです。
 
 - 💬 **質問とアイデア：**[GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions)。次のアダプターに投票したり、作ったものを共有したりできます。
 - 🐛 **バグと機能要望：**[Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · [サポート](.github/SUPPORT.md)

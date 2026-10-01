@@ -5,12 +5,21 @@
 <h1 align="center">AnythingMCP: selbst gehostetes MCP-Gateway</h1>
 
 <p align="center">
+  <a href="https://www.star-history.com/helpcode-ai/anythingmcp">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending&theme=dark" />
+      <img src="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending" alt="GitHub Trending Repository of the Day" height="64" />
+    </picture>
+  </a>
+</p>
+
+<p align="center">
   <a href="README.md">English</a> · <a href="README.de.md">Deutsch</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a>
 </p>
 
 <p align="center">
   <strong>AnythingMCP ist ein quelloffenes, selbst gehostetes MCP-Gateway, das jedes REST-/OpenAPI-, SOAP-, GraphQL-, OData- oder SQL-System in MCP-Tools für Claude, ChatGPT und Copilot verwandelt, ohne dass du einen MCP-Server programmierst.</strong><br/>
-  Es bringt 265 fertige Adapter mit, darunter SAP, Odoo, Xentral, weclapp, Shopware, WooCommerce und Amazon Seller; 21 davon kommen ohne API-Schlüssel aus.
+  Es bringt 265 fertige Adapter mit, darunter SAP, Etsy, weclapp und Amazon Seller; 21 davon kommen ohne API-Schlüssel aus.
 </p>
 
 <p align="center">
@@ -24,13 +33,11 @@
   <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>Die Cloud 7 Tage kostenlos testen</strong></a> · <a href="#run-it-yourself">Selbst betreiben</a> · <a href="docs/guides.md">Doku</a> · <a href="https://anythingmcp.com/de/guides">Connector-Anleitungen</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
-**Eine Frage in Claude, beantwortet aus Etsy, SAP und einer Logistik-API.** Die Demo installiert Etsy aus dem Katalog, bindet SAP S/4HANA über OData an und importiert eine Logistik-API aus ihrer OpenAPI-Spezifikation. Danach arbeitet Claude mit allen drei Systemen (2:40, mit Ton, auf Englisch):
+**Eine Frage in Claude, beantwortet aus Etsy, SAP und einer Logistik-API.**
 
-https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
-
-<p align="center"><sub>Das Video startet nicht? <a href="https://anythingmcp.com/de/video-promo">Die Demo auf anythingmcp.com ansehen</a></sub></p>
-
-**Im produktiven Einsatz bei [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**: Dort verbindet AnythingMCP KI-Assistenten mit mehr als 15 internen Systemen, von ERP und CRM bis zu SOAP-Diensten und lokalen Datenbanken. [helpcode.ai](https://helpcode.ai) hat es aus diesem System herausgelöst und als Open Source veröffentlicht, weil ein Adapterkatalog in einer Community schneller wächst als im Alleingang.
+<p align="center">
+  <a href="https://anythingmcp.com/de/video-promo"><img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo-poster.jpg" alt="AnythingMCP-Demo (2:40): Claude beantwortet, welche Etsy-Bestellungen hängen und ob SAP genug Bestand für einen Ersatzversand hat. Zum Ansehen klicken." width="100%" /></a>
+</p>
 
 ---
 
@@ -266,12 +273,11 @@ Abfrage-Tools sind standardmäßig nur lesend. Zusätzlich: einen Datenbankbenut
 ### Wie verbinde ich Shopware, WooCommerce oder Amazon Seller Central mit Claude?
 Installiere den [E-Commerce-Adapter](#e-commerce--marketplace-connectors) für deinen Shop oder Marktplatz und autorisiere ihn. WooCommerce bringt 49 Tools mit, Amazon Seller Central nutzt die offizielle Selling Partner API, und der Shopware-6-Adapter liest den Storefront-Katalog über die Store API.
 
-### Ist AnythingMCP kostenlos, und kann ich es selbst hosten?
-Ja. Es läuft unter AGPL-3.0 auf deinen eigenen Servern, auch für kommerzielle Nutzung. [AnythingMCP Cloud](https://cloud.anythingmcp.com/login?mode=register) ist die optionale gehostete Version, betrieben in Frankfurt, mit 7 Tagen kostenlosem Test.
-
 ---
 
 ## Community und Unterstützung
+
+**Im produktiven Einsatz bei [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**: Dort verbindet AnythingMCP KI-Assistenten mit mehr als 15 internen Systemen, von ERP und CRM bis zu SOAP-Diensten und lokalen Datenbanken. [helpcode.ai](https://helpcode.ai) hat es aus diesem System herausgelöst und als Open Source veröffentlicht, weil ein Adapterkatalog in einer Community schneller wächst als im Alleingang.
 
 - 💬 **Fragen und Ideen:** [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions). Stimm über den nächsten Adapter ab und zeig, was du gebaut hast.
 - 🐛 **Fehler und Wünsche:** [Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · [Support](.github/SUPPORT.md)

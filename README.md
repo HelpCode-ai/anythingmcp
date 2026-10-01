@@ -5,12 +5,21 @@
 <h1 align="center">AnythingMCP: self-hosted MCP gateway</h1>
 
 <p align="center">
+  <a href="https://www.star-history.com/helpcode-ai/anythingmcp">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending&theme=dark" />
+      <img src="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending" alt="GitHub Trending Repository of the Day" height="64" />
+    </picture>
+  </a>
+</p>
+
+<p align="center">
   <a href="README.md">English</a> · <a href="README.de.md">Deutsch</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a>
 </p>
 
 <p align="center">
   <strong>AnythingMCP is an open-source, self-hosted MCP gateway that turns any REST/OpenAPI, SOAP, GraphQL, OData or SQL system into MCP tools for Claude, ChatGPT and Copilot, without writing an MCP server.</strong><br/>
-  It ships 265 ready connectors, among them SAP, Odoo, Xentral, weclapp, Shopware, WooCommerce and Amazon Seller, and 21 of them need no API key.
+  It ships 265 ready connectors, among them SAP, Etsy, weclapp and Amazon Seller, and 21 of them need no API key.
 </p>
 
 <p align="center">
@@ -24,13 +33,11 @@
   <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>Try the Cloud free for 7 days</strong></a> · <a href="#run-it-yourself">Run it yourself</a> · <a href="docs/guides.md">Docs</a> · <a href="https://anythingmcp.com/guides">Connector guides</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
-**One question in Claude, answered from Etsy, SAP and a logistics API.** The demo installs Etsy from the catalog, adds SAP S/4HANA over OData and imports a logistics API from its OpenAPI spec, then Claude works across all three (2:40, with sound):
+**One question in Claude, answered from Etsy, SAP and a logistics API.**
 
-https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
-
-<p align="center"><sub>Video not playing? <a href="https://anythingmcp.com/video-promo">Watch the demo on anythingmcp.com</a></sub></p>
-
-**In production at [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**, where it connects AI assistants to 15+ internal systems: ERP, CRM, SOAP services and on-prem databases. [helpcode.ai](https://helpcode.ai) extracted it from that system and open-sourced it, because an adapter catalog grows faster as a community than as a product.
+<p align="center">
+  <a href="https://anythingmcp.com/video-promo"><img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo-poster.jpg" alt="AnythingMCP demo (2:40): Claude answers which Etsy orders are stuck and whether SAP has stock to resend them. Click to watch." width="100%" /></a>
+</p>
 
 ---
 
@@ -248,12 +255,11 @@ Query tools are read-only by default. On top of that, use a database user with S
 ### How do I connect Shopware, WooCommerce or Amazon Seller Central to Claude?
 Install the [e-commerce adapter](#e-commerce--marketplace-connectors) for your shop or marketplace and authorise it. WooCommerce comes with 49 tools, Amazon Seller Central uses the official Selling Partner API, and the Shopware 6 adapter reads the storefront catalog through the Store API.
 
-### Is AnythingMCP free, and can I self-host it?
-Yes. It runs on your own servers under AGPL-3.0, commercial use included. [AnythingMCP Cloud](https://cloud.anythingmcp.com/login?mode=register) is the optional hosted version, operated in Frankfurt, with a 7-day free trial.
-
 ---
 
 ## Community and support
+
+**In production at [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**, where it connects AI assistants to 15+ internal systems: ERP, CRM, SOAP services and on-prem databases. [helpcode.ai](https://helpcode.ai) extracted it from that system and open-sourced it, because an adapter catalog grows faster as a community than as a product.
 
 - 💬 **Questions and ideas:** [GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions). Vote on the next adapter, share what you've built.
 - 🐛 **Bugs and features:** [Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · [Support](.github/SUPPORT.md)
