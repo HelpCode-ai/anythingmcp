@@ -125,9 +125,9 @@ export default function StartTrialPage() {
             Every feature, free for 7 days. Add a card now and your plan simply carries on after the
             trial, with nothing charged before{' '}
             {endLong ? <strong className="text-[var(--text)]">{endLong}</strong> : 'the trial ends'}. Or
-            try it without payment details — that free trial is limited to{' '}
-            <strong className="text-[var(--text)]">2 connectors and 2 MCP servers</strong>, and you can
-            add a card any time to unlock your full plan.
+            try it without payment details — the no-card trial has a{' '}
+            <strong className="text-[var(--text)]">lower connector limit</strong>, and you can add a card
+            any time to unlock your full plan.
           </p>
         </div>
 
