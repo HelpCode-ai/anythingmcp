@@ -231,6 +231,10 @@ model License {
   organizationId String?       @map("organization_id")
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   lastVerifiedAt DateTime?     @map("last_verified_at")
+  /// The Stripe subscription's state as last reported by the licence site
+  /// (card trial end, cancelled at period end, next renewal, price). Cloud
+  /// only; null for trials, self-hosted and licences without a subscription.
+  billing        Json?
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 

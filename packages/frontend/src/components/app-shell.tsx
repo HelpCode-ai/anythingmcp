@@ -6,6 +6,7 @@ import { useTheme } from '@/lib/theme-context';
 import { AppSidebar } from '@/components/app-sidebar';
 import { Footer } from '@/components/footer';
 import { TrialBanner } from '@/components/trial-banner';
+import { SubscriptionBanner } from '@/components/subscription-banner';
 import { UsageBanner } from '@/components/usage-banner';
 import { EditionBanner } from '@/components/edition-banner';
 import { cn } from '@/lib/utils';
@@ -89,6 +90,7 @@ export function AppShell({
         {/* Global banners (in-flow, above the header) */}
         <div className="flex-shrink-0">
           <TrialBanner />
+          <SubscriptionBanner />
           <UsageBanner />
           <EditionBanner />
         </div>

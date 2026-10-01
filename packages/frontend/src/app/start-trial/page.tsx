@@ -15,6 +15,7 @@ import {
   formatTrialEnd,
   planById,
   readPlanIntent,
+  readPromoCode,
   writeCardTrialPrompt,
   type PlanSelection,
 } from '@/lib/card-trial';
@@ -37,6 +38,7 @@ export default function StartTrialPage() {
   const [trialEnd, setTrialEnd] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [selection, setSelection] = useState<PlanSelection>(DEFAULT_SELECTION);
+  const [promo, setPromo] = useState<string | null>(null);
 
   useEffect(() => {
     if (isLoading || !deploymentModeLoaded) return;
@@ -59,6 +61,7 @@ export default function StartTrialPage() {
         }
         setTrialEnd(cardTrialDisplayEnd(lic.expiresAt));
         setSelection(readPlanIntent() ?? DEFAULT_SELECTION);
+        setPromo(readPromoCode());
         setReady(true);
       })
       .catch(() => {
@@ -143,6 +146,11 @@ export default function StartTrialPage() {
             >
               {checkout.loading ? 'Opening checkout…' : checkout.error ? 'Try again' : 'Start free trial with card'}
             </Button>
+            {promo && (
+              <p className="text-xs font-medium text-[var(--ok)] text-center">
+                Code {promo} will be applied at checkout.
+              </p>
+            )}
             {checkout.error && (
               <p role="alert" className="text-sm text-[var(--danger)] text-center">
                 {checkout.error}

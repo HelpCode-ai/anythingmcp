@@ -140,6 +140,40 @@ export function readPlanIntent(): PlanSelection | null {
   return sel;
 }
 
+// ── Promotion code from the pricing page ────────────────────────────────────
+
+const PROMO_KEY = 'amcp_promo_code';
+
+/** A Stripe promotion code as the site passes it (`&promo=START30`), or null. */
+export function parsePromoCode(raw: string | null | undefined): string | null {
+  const code = (raw ?? '').trim();
+  return /^[A-Za-z0-9_-]{1,64}$/.test(code) ? code.toUpperCase() : null;
+}
+
+/**
+ * Kept beside the plan intent, with the same lifetime, so a visitor who came
+ * through the promo bar still gets the discount on the card trial they start
+ * after verifying their email.
+ */
+export function savePromoCode(code: string): void {
+  storage.set(PROMO_KEY, JSON.stringify({ code, savedAt: Date.now() }));
+}
+
+export function readPromoCode(now: number = Date.now()): string | null {
+  const raw = storage.get(PROMO_KEY);
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    const savedAt = Number(data?.savedAt);
+    const code = parsePromoCode(data?.code);
+    if (code && Number.isFinite(savedAt) && savedAt <= now && now - savedAt <= INTENT_TTL_MS) return code;
+  } catch {
+    /* fall through */
+  }
+  storage.remove(PROMO_KEY);
+  return null;
+}
+
 // ── Eligibility and the one-time prompt ─────────────────────────────────────
 
 export interface TrialStatusLike {

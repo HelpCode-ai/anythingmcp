@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react';
 import { ApiError, license } from './api';
 import { useAuth } from './auth-context';
-import type { PlanSelection } from './card-trial';
+import { readPromoCode, type PlanSelection } from './card-trial';
 
 const GENERIC_ERROR = 'We could not open the checkout. Please try again in a moment.';
 
@@ -25,10 +25,12 @@ export function useCardCheckout() {
       setLoading(true);
       setError(null);
       try {
+        const promo = readPromoCode();
         const { url } = await license.checkoutLink(token, {
           plan: selection.plan,
           billingPeriod: selection.period,
           trial,
+          ...(promo && { promo }),
         });
         // Stays "loading" on purpose: the page is being left.
         window.location.assign(url);

@@ -403,3 +403,105 @@ describe('LicenseService — paid licences are re-verified', () => {
     expect(prisma.license.findMany).not.toHaveBeenCalled();
   });
 });
+
+describe('LicenseService — the subscription state reaches the app', () => {
+  // The app only knew "active" or not, so a card-trial customer never saw when
+  // the first charge comes, and a customer who cancelled never saw when the
+  // plan ends. The licence site now reports the subscription's state.
+  const axios = require('axios');
+  let get: jest.SpyInstance;
+  beforeEach(() => {
+    get = jest.spyOn(axios, 'get');
+  });
+  afterEach(() => get.mockRestore());
+
+  const BILLING = {
+    status: 'active',
+    cancelling: true,
+    endsAt: '2026-11-01T00:00:00.000Z',
+    currentPeriodEnd: '2026-11-01T00:00:00.000Z',
+    trialEnd: null,
+    amount: 4900,
+    currency: 'eur',
+    interval: 'month',
+  };
+
+  function make(isCloud = true) {
+    const updates: any[] = [];
+    const rows = [{ licenseKey: 'AMCP-EEEE-0000-0000-0005' }];
+    const prisma = {
+      license: {
+        findFirst: jest.fn().mockResolvedValue(rows[0]),
+        update: jest.fn(async (args: any) => {
+          updates.push(args);
+          return {};
+        }),
+      },
+    };
+    const deployment = { isCloud: () => isCloud };
+    const svc = new LicenseService(prisma as any, {} as any, deployment as any);
+    return { svc, prisma, updates };
+  }
+
+  it('asks the licence site for billing on cloud and stores it', async () => {
+    const { svc, updates } = make();
+    get.mockResolvedValueOnce({ data: { valid: true, plan: 'team', billing: BILLING } });
+    await svc.verifyLicense('AMCP-EEEE-0000-0000-0005');
+    expect(get.mock.calls[0][1].params).toEqual({ key: 'AMCP-EEEE-0000-0000-0005', billing: '1' });
+    expect(updates[0].data.billing).toEqual(BILLING);
+  });
+
+  it('does not ask for billing on self-hosted', async () => {
+    const { svc } = make(false);
+    get.mockResolvedValueOnce({ data: { valid: true, plan: 'team' } });
+    await svc.verifyLicense('AMCP-EEEE-0000-0000-0005');
+    expect(get.mock.calls[0][1].params).toEqual({ key: 'AMCP-EEEE-0000-0000-0005' });
+  });
+
+  it('stores nothing usable from a malformed billing block', async () => {
+    const { svc, updates } = make();
+    get.mockResolvedValueOnce({ data: { valid: true, plan: 'team', billing: { status: 42 } } });
+    await svc.verifyLicense('AMCP-EEEE-0000-0000-0005');
+    expect(updates[0].data.billing).not.toEqual(expect.objectContaining({ status: 42 }));
+  });
+
+  it('refreshes at most once a minute per workspace', async () => {
+    const { svc } = make();
+    get.mockResolvedValue({ data: { valid: true, plan: 'team', billing: BILLING } });
+    await expect(svc.refreshLicense('org-1')).resolves.toBe(true);
+    await expect(svc.refreshLicense('org-1')).resolves.toBe(false);
+    await expect(svc.refreshLicense('org-2')).resolves.toBe(true);
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('parseLicenseBilling', () => {
+  const { parseLicenseBilling } = require('./license.service');
+  it('keeps a well-formed block and drops junk fields', () => {
+    expect(
+      parseLicenseBilling({
+        status: 'trialing',
+        cancelling: false,
+        trialEnd: '2026-10-08T09:00:00.000Z',
+        endsAt: 'not a date',
+        amount: 1900,
+        currency: 'eur',
+        interval: 'fortnight',
+        extra: 'x',
+      }),
+    ).toEqual({
+      status: 'trialing',
+      cancelling: false,
+      endsAt: null,
+      currentPeriodEnd: null,
+      trialEnd: '2026-10-08T09:00:00.000Z',
+      amount: 1900,
+      currency: 'eur',
+      interval: null,
+    });
+  });
+  it('returns null without a status', () => {
+    expect(parseLicenseBilling({ cancelling: true })).toBeNull();
+    expect(parseLicenseBilling(null)).toBeNull();
+  });
+});

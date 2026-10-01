@@ -20,6 +20,8 @@ import {
   parsePlanIntent,
   readCardTrialPrompt,
   savePlanIntent,
+  parsePromoCode,
+  savePromoCode,
   writeCardTrialPrompt,
 } from '@/lib/card-trial';
 
@@ -84,6 +86,7 @@ function LoginForm() {
   const errorParam = searchParams.get('error');
   const planParam = searchParams.get('plan');
   const periodParam = searchParams.get('period');
+  const promoParam = searchParams.get('promo');
   const [ssoProviders, setSsoProviders] = useState<SsoProviderButton[]>([]);
   const [ssoExchanging, setSsoExchanging] = useState(Boolean(ssoCode));
 
@@ -117,7 +120,11 @@ function LoginForm() {
     if (!isCloudMode) return;
     const intent = parsePlanIntent(planParam, periodParam);
     if (intent) savePlanIntent(intent);
-  }, [isCloudMode, planParam, periodParam]);
+    // A promotion code from the pricing page (promo bar) rides along so the
+    // card trial's checkout applies it.
+    const promo = parsePromoCode(promoParam);
+    if (promo) savePromoCode(promo);
+  }, [isCloudMode, planParam, periodParam, promoParam]);
 
   /**
    * Cloud only: right after the trial starts, an admin headed for the
