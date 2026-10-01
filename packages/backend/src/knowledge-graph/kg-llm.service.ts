@@ -27,7 +27,8 @@ Rules:
 
 /**
  * Optional LLM-assisted KG enrichment. Opt-in twice: a global env flag
- * (KG_LLM_ENABLED + an API key) AND a per-workspace switch (kg_llm_enabled,
+ * (KG_LLM_ENABLED + a resolvable LLM config — an API key, or KG_LLM_BASE_URL
+ * for local models which need no key) AND a per-workspace switch (kg_llm_enabled,
  * default off, because it costs money). PII-safe: only entity + field NAMES are
  * sent to the model — never values. Results are stored as suggested LLM edges
  * for a human to confirm. Cached by a content hash so unchanged graphs don't
@@ -42,7 +43,7 @@ export class KgLlmService {
     private readonly kgStatic: KgStaticService,
   ) {}
 
-  /** Globally available (env flag + a configured API key). */
+  /** Globally available (env flag + a resolvable LLM config). */
   globallyAvailable(): boolean {
     return process.env.KG_LLM_ENABLED === 'true' && !!resolveLlmConfig();
   }

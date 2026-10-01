@@ -1,17 +1,37 @@
 /**
  * Minimal provider-agnostic LLM client for KG enrichment.
- * Supports OpenAI, OpenRouter (OpenAI-compatible) and Anthropic. No SDK — just
- * fetch — so it adds no dependencies. JSON-only responses.
+ * Supports OpenAI, OpenRouter (OpenAI-compatible), Anthropic, and a custom
+ * OpenAI-compatible base URL for local models (Ollama, LM Studio, ...).
+ * No SDK — just fetch — so it adds no dependencies. JSON-only responses.
  */
+import { Logger } from '@nestjs/common';
+
+const logger = new Logger('KgLlmClient');
 
 export interface LlmConfig {
-  provider: 'openai' | 'openrouter' | 'anthropic';
+  provider: 'openai' | 'openrouter' | 'anthropic' | 'custom';
   model: string;
+  /** Empty on the custom path: Ollama/LM Studio need no key. */
   apiKey: string;
+  /** Set on the custom path from KG_LLM_BASE_URL (trailing slashes trimmed). */
+  baseUrl?: string;
 }
 
-/** Resolve provider/model/key from env, or null when no key is configured. */
+/**
+ * Resolve provider/model/key from env, or null when nothing is configured.
+ * KG_LLM_BASE_URL takes precedence and selects the custom OpenAI-compatible
+ * path: no API key is required, KG_LLM_API_KEY is optional.
+ */
 export function resolveLlmConfig(): LlmConfig | null {
+  const customBase = (process.env.KG_LLM_BASE_URL || '').trim().replace(/\/+$/, '');
+  if (customBase) {
+    return {
+      provider: 'custom',
+      model: process.env.KG_LLM_MODEL || 'qwen2.5',
+      apiKey: process.env.KG_LLM_API_KEY || '',
+      baseUrl: customBase,
+    };
+  }
   const provider = (process.env.KG_LLM_PROVIDER || 'openai').toLowerCase() as LlmConfig['provider'];
   const apiKey =
     provider === 'openrouter'
@@ -40,7 +60,10 @@ export interface LlmResult {
  */
 export const KG_LLM_MAX_OUTPUT_TOKENS = 4000;
 
-/** Call the model and parse its reply as JSON. Throws on transport/parse error. */
+/** Call the model and parse its reply as JSON. Throws on transport/parse error,
+ *  except on the custom path where unusable JSON is logged (model + endpoint)
+ *  and answered as an empty result so the enrichment/skill flow is skipped
+ *  rather than crashed. */
 export async function chatJson(
   cfg: LlmConfig,
   system: string,
@@ -85,17 +108,35 @@ export async function chatJson(
   const base =
     cfg.provider === 'openrouter'
       ? 'https://openrouter.ai/api/v1'
-      : 'https://api.openai.com/v1';
+      : cfg.provider === 'custom'
+        ? (cfg.baseUrl ?? '').replace(/\/+$/, '')
+        : 'https://api.openai.com/v1';
+  // Local models often lack JSON mode: never send response_format there and
+  // rely on the prompt plus the shared parsing instead. The Authorization
+  // header stays unconditional on the hosted paths and is only omitted on
+  // the custom path when no key is configured (Ollama/LM Studio need none).
+  const headers: Record<string, string> =
+    cfg.provider === 'custom' && !cfg.apiKey
+      ? { 'Content-Type': 'application/json' }
+      : { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json' };
   const r = await fetch(`${base}/chat/completions`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       model: cfg.model,
       temperature: 0,
       max_tokens: maxTokens,
-      response_format: { type: 'json_object' },
+      ...(cfg.provider === 'custom'
+        ? {}
+        : { response_format: { type: 'json_object' } }),
       messages: [
-        { role: 'system', content: system },
+        {
+          role: 'system',
+          content:
+            cfg.provider === 'custom'
+              ? system + '\nRespond with a single JSON object and nothing else.'
+              : system,
+        },
         { role: 'user', content: user },
       ],
     }),
@@ -103,10 +144,18 @@ export async function chatJson(
   if (!r.ok) throw new Error(`LLM ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const j = await r.json();
   const text = j.choices?.[0]?.message?.content ?? '{}';
-  return {
-    json: JSON.parse(stripFences(text)),
-    usage: { inputTokens: j.usage?.prompt_tokens, outputTokens: j.usage?.completion_tokens },
-  };
+  try {
+    return {
+      json: JSON.parse(stripFences(text)),
+      usage: { inputTokens: j.usage?.prompt_tokens, outputTokens: j.usage?.completion_tokens },
+    };
+  } catch {
+    if (cfg.provider !== 'custom') throw new Error(`LLM returned unusable JSON: ${String(text).slice(0, 200)}`);
+    logger.warn(
+      `KG LLM custom endpoint returned unusable JSON (model=${cfg.model} endpoint=${base}); skipping this pass.`,
+    );
+    return { json: {} };
+  }
 }
 
 export interface BatchRequest {

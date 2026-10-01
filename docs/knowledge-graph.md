@@ -179,6 +179,16 @@ KG_LLM_PROVIDER=openai          # openai | openrouter | anthropic
 KG_LLM_MODEL=gpt-4o-mini        # anthropic default: claude-haiku-4-5
 OPENAI_API_KEY=                 # or OPENROUTER_API_KEY / ANTHROPIC_API_KEY
 
+# Local / OpenAI-compatible endpoint (Ollama, LM Studio, ...). When set, the
+# KG LLM path talks here instead of the hosted providers, still using
+# KG_LLM_MODEL. No key needed: KG_LLM_API_KEY is optional and only sent as an
+# Authorization header when set. No response_format is sent on this path, so
+# the model answers from the JSON instruction; unparsable replies are logged
+# (model + endpoint) and that pass is skipped. Validated against a local
+# qwen2.5 (Qwen2.5-0.5B-Instruct via an OpenAI-compatible front).
+KG_LLM_BASE_URL=http://localhost:11434/v1
+KG_LLM_API_KEY=
+
 # Scheduled extension (cloud cron) — all must align: this flag, the cron call,
 # and the per-workspace "Scheduled AI extension" switch
 KG_LLM_CRON_ENABLED=false
