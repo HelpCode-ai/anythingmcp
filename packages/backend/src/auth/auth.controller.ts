@@ -189,15 +189,19 @@ class AcceptInviteDto {
   @IsString()
   token: string;
 
-  @ApiProperty({ description: 'Account password.', format: 'password' })
+  // Optional: a brand-new account needs a password to be created with; an
+  // existing account proves control with its *current* password (or a live
+  // session), so strength is enforced per-branch in the handler rather than
+  // here — an old, still-valid password must not be rejected by today's rules.
+  @ApiPropertyOptional({ description: 'Password (new account) or the existing account password to prove ownership.', format: 'password' })
+  @IsOptional()
   @IsString()
-  @MinLength(8)
-  @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
-  password: string;
+  password?: string;
 
-  @ApiProperty({ description: 'Display name for the new account.' })
+  @ApiPropertyOptional({ description: 'Display name for a new account.' })
+  @IsOptional()
   @IsString()
-  name: string;
+  name?: string;
 }
 
 @ApiTags('Auth')
@@ -237,6 +241,24 @@ export class AuthController {
       this.configService.get<string>('SERVER_URL') ||
       'http://localhost:3000'
     );
+  }
+
+  /**
+   * The verified dashboard-session email on a request, or null. Used to let an
+   * already-signed-in owner accept an invitation to one of their other
+   * addresses without re-typing a password. Never throws: a missing, malformed
+   * or expired token is simply "no session".
+   */
+  private sessionEmailFromRequest(req: any): string | null {
+    const header: string | undefined = req?.headers?.authorization;
+    if (!header?.startsWith('Bearer ')) return null;
+    try {
+      const payload = this.authService.verifyToken(header.slice(7).trim());
+      const email = (payload as any)?.email;
+      return typeof email === 'string' ? email.toLowerCase() : null;
+    } catch {
+      return null;
+    }
   }
 
   private async createAndSendVerificationCode(
@@ -839,16 +861,26 @@ export class AuthController {
     if (invite.usedAt) throw new BadRequestException('This invitation has already been used');
     if (invite.expiresAt < new Date()) throw new BadRequestException('This invitation has expired');
 
+    // Tell the page whether this address already has an account, so it can ask
+    // the existing owner to prove control (sign in / existing password) rather
+    // than offer to "create an account" and silently ignore what they type.
+    // No enumeration risk: the token is 32 unguessable bytes bound to the one
+    // address the admin chose, so whoever holds it is already the invitee.
+    const existing = await this.usersService.findByEmail(invite.email);
     return {
       email: invite.email,
       role: invite.role,
       valid: true,
+      exists: !!existing,
+      // A password can only be verified for a local account; SSO-only accounts
+      // (no password hash) must sign in through their provider.
+      ssoOnly: !!existing && !existing.passwordHash,
     };
   }
 
   @Post('accept-invite')
   @ApiOperation({ summary: 'Accept an invitation and create account' })
-  async acceptInvite(@Body() dto: AcceptInviteDto) {
+  async acceptInvite(@Req() req: any, @Body() dto: AcceptInviteDto) {
     const invite = await this.prisma.invitationToken.findUnique({
       where: { token: dto.token },
     });
@@ -862,6 +894,33 @@ export class AuthController {
 
     let user: any;
     if (existing) {
+      // SECURITY: an invitation link is not proof that the holder controls the
+      // invited address. Before attaching an *existing* account to the new org
+      // (and handing back a session for it), the caller must prove they are
+      // that account's owner — either a live session for the same address, or
+      // its current password. Otherwise anyone who can create an invite (every
+      // workspace admin, i.e. every signed-up user) could take over an
+      // arbitrary account by inviting it and accepting the invite themselves.
+      const sessionEmail = this.sessionEmailFromRequest(req);
+      const provenBySession =
+        !!sessionEmail && sessionEmail === invite.email.toLowerCase();
+      if (!provenBySession) {
+        if (!existing.passwordHash) {
+          throw new UnauthorizedException(
+            'This email already has an account that signs in with single sign-on. ' +
+              'Sign in first, then open this invitation again to join the workspace.',
+          );
+        }
+        const ok =
+          !!dto.password &&
+          (await this.authService.comparePassword(dto.password, existing.passwordHash));
+        if (!ok) {
+          throw new UnauthorizedException(
+            'Enter the current password for this account to accept the invitation.',
+          );
+        }
+      }
+
       // Existing user — add to the new organization (multi-org)
       const alreadyMember = await this.organizationsService.getMembership(existing.id, invite.organizationId);
       if (alreadyMember) {
@@ -878,7 +937,15 @@ export class AuthController {
       // Switch their active org to the newly joined one
       user = await this.organizationsService.switchOrg(existing.id, invite.organizationId);
     } else {
-      // New user — create account and join the organization
+      // New user — create account and join the organization. A password that
+      // meets today's rules and a name are required here (the DTO allows them
+      // to be absent for the existing-account path above).
+      if (!dto.password || !PASSWORD_REGEX.test(dto.password)) {
+        throw new BadRequestException(PASSWORD_MESSAGE);
+      }
+      if (!dto.name || !dto.name.trim()) {
+        throw new BadRequestException('A display name is required.');
+      }
       await this.edition.assertSeatAvailable();
       const passwordHash = await this.authService.hashPassword(dto.password);
       user = await this.usersService.create({

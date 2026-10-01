@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { authTypeLabel, cn } from '@/lib/utils';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
 import { matchesSearch } from '@/lib/marketplace-search';
+import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 
 const REGION_LABELS: Record<string, string> = {
   de: 'Germany',
@@ -456,7 +457,9 @@ function AdapterStoreContent() {
       }
     >
       <div className="flex flex-col gap-[18px]">
-        {msg && (
+        {msg && isTrialLimitMessage(msg) ? (
+          <TrialLimitNotice message={msg.replace(/^Import failed:\s*/, '')} />
+        ) : msg ? (
           <div
             className="flex items-center justify-between rounded-[11px] border px-4 py-3 text-sm"
             style={{ background: 'var(--t-info-bg)', color: 'var(--t-info-fg)', borderColor: 'color-mix(in srgb, var(--t-info-fg) 25%, transparent)' }}
@@ -469,7 +472,7 @@ function AdapterStoreContent() {
               dismiss
             </button>
           </div>
-        )}
+        ) : null}
 
         {/* Search + Category Filters */}
         <div className="flex flex-col gap-3">

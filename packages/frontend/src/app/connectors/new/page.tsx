@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
 import { AppSelect } from '@/components/ui/select';
 import { HeadersEditor, headerRowsToObject, type HeaderRow } from '@/components/headers-editor';
+import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { cn } from '@/lib/utils';
 
 const DEFAULT_LOGIN_BODY = '{\n  "username": "${username}",\n  "password": "${password}"\n}';
@@ -291,9 +292,13 @@ export default function NewConnectorPage() {
               Configure {CONNECTOR_TYPES.find((t) => t.id === selectedType)?.name}
             </h3>
 
-            {error && (
+            {error && isTrialLimitMessage(error) ? (
+              <div className="mb-4">
+                <TrialLimitNotice message={error} />
+              </div>
+            ) : error ? (
               <div className="mb-4 rounded-[9px] border border-[var(--danger)]/30 bg-[var(--t-danger-bg)] p-3 text-sm text-[var(--t-danger-fg)]">{error}</div>
-            )}
+            ) : null}
             {testResult && (
               <div
                 className={cn(

@@ -9,6 +9,13 @@ function buildController() {
   };
   const licenseGuard = {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
+    getUsage: jest.fn().mockResolvedValue({
+      plan: 'trial',
+      connectors: { current: 0, max: 2, isOver: false },
+      mcpServers: { current: 0, max: 2, isOver: false },
+      users: { current: 1, max: 1, isOver: false },
+      isOverAny: false,
+    }),
   };
   const mcpServers = {
     attachToDefaultServer: jest
@@ -98,10 +105,26 @@ describe('AdaptersController — starter pack', () => {
     return built;
   }
 
-  it('serves the pack for the caller workspace', async () => {
+  it('serves the pack plus the plan connector allowance for the caller workspace', async () => {
     const { controller, adaptersService } = withPack();
-    await expect(controller.starterPack(req('ADMIN'))).resolves.toEqual(pack);
+    await expect(controller.starterPack(req('ADMIN'))).resolves.toEqual({
+      items: pack,
+      connectors: { current: 0, max: 2, remaining: 2 },
+    });
     expect((adaptersService as any).starterPack).toHaveBeenCalledWith('org1');
+  });
+
+  it('reports an uncapped plan as unlimited remaining', async () => {
+    const { controller, licenseGuard } = withPack();
+    licenseGuard.getUsage.mockResolvedValueOnce({
+      plan: 'business',
+      connectors: { current: 3, max: null, isOver: false },
+      mcpServers: { current: 1, max: null, isOver: false },
+      users: { current: 1, max: 10, isOver: false },
+      isOverAny: false,
+    });
+    const res = await controller.starterPack(req('ADMIN'));
+    expect(res.connectors).toEqual({ current: 3, max: null, remaining: null });
   });
 
   it('rejects a VIEWER before installing anything', async () => {

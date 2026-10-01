@@ -32,7 +32,11 @@ type InstallReply = { status: number; body: unknown };
 
 async function openWelcome(
   page: Page,
-  opts: { pack?: unknown; install?: (slugs: string[]) => InstallReply } = {},
+  opts: {
+    pack?: unknown;
+    connectors?: { current: number; max: number | null; remaining: number | null };
+    install?: (slugs: string[]) => InstallReply;
+  } = {},
 ) {
   const posted: string[][] = [];
   await page.context().addCookies([
@@ -63,7 +67,13 @@ async function openWelcome(
           };
       return json(reply.body, reply.status);
     }
-    if (p.endsWith('/adapters/starter-pack')) return json(opts.pack ?? PACK);
+    if (p.endsWith('/adapters/starter-pack')) {
+      const items = opts.pack ?? PACK;
+      return json({
+        items,
+        connectors: opts.connectors ?? { current: 0, max: null, remaining: null },
+      });
+    }
     if (p.endsWith('/adapters')) return json([]);
     if (p.endsWith('/users/me/onboarding-state')) return json({ onboardingCompletedAt: null });
     if (p.endsWith('/users/me')) return json(USER);
@@ -177,6 +187,23 @@ test.describe('starter pack on /welcome', () => {
     await openWelcome(page, { pack: [] });
     await expect(page.getByText('Browse the marketplace')).toBeVisible();
     await expect(page.getByText('Starter pack')).toHaveCount(0);
+  });
+
+  test('on a 2-connector trial, preselects only 2 and never offers to install 3', async ({ page }) => {
+    const posted = await openWelcome(page, {
+      connectors: { current: 0, max: 2, remaining: 2 },
+    });
+    const region = page.getByRole('region', { name: 'Start with connectors that need no keys' });
+
+    // Three are preselected by the catalogue, but only two fit, so the button
+    // says "Add 2" and a third, unticked card is disabled.
+    await expect(region.getByRole('button', { name: 'Add 2 connectors' })).toBeEnabled();
+    await expect(region.getByText('Your current plan includes')).toBeVisible();
+    await expect(region.getByRole('checkbox', { name: /Nominatim/ })).toBeDisabled();
+
+    await region.getByRole('button', { name: 'Add 2 connectors' }).click();
+    await expect(region.getByRole('status')).toContainText('Added 2 connectors');
+    expect(posted).toEqual([['agent-skills', 'hackernews']]);
   });
 });
 

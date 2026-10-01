@@ -107,11 +107,17 @@ export const auth = {
       token,
     }),
   verifyInvite: (token: string) =>
-    request<{ email: string; role: string; valid: boolean }>(`/api/auth/invite/verify?token=${token}`),
-  acceptInvite: (data: { token: string; password: string; name: string }) =>
+    request<{ email: string; role: string; valid: boolean; exists?: boolean; ssoOnly?: boolean }>(
+      `/api/auth/invite/verify?token=${token}`,
+    ),
+  acceptInvite: (data: { token: string; password?: string; name?: string }, token?: string) =>
     request<{ accessToken: string; user: any }>('/api/auth/accept-invite', {
       method: 'POST',
       body: data,
+      // When the invitee is already signed in (accepting an invite to another
+      // of their addresses), send the session so the server can skip the
+      // password challenge.
+      token,
     }),
   verifyEmail: (code: string, token: string) =>
     request<{ message: string; emailVerified: boolean }>('/api/auth/verify-email', {
@@ -447,7 +453,7 @@ export const adapters = {
       { method: 'POST', token, body: credentials ? { credentials } : undefined },
     ),
   starterPack: (token: string) =>
-    request<StarterPackItem[]>('/api/adapters/starter-pack', { token }),
+    request<StarterPackResponse>('/api/adapters/starter-pack', { token }),
   installStarterPack: (slugs: string[], token: string) =>
     request<{
       results: StarterPackInstallResult[];
@@ -465,6 +471,12 @@ export interface StarterPackItem {
   toolCount: number;
   preselected: boolean;
   installed: boolean;
+}
+
+export interface StarterPackResponse {
+  items: StarterPackItem[];
+  /** The plan's connector allowance; `max`/`remaining` are null when uncapped. */
+  connectors: { current: number; max: number | null; remaining: number | null };
 }
 
 export interface StarterPackInstallResult {

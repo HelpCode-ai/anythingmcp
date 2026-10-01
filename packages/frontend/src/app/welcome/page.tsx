@@ -114,7 +114,9 @@ export default function WelcomePage() {
             click and put on the user's MCP server. It replaces the old
             single-connector demo, and offers the same live "Try it" call
             for each connector once it is added. */}
-        {token && <StarterPack token={token} />}
+        {/* Viewers can't add connectors (the install endpoint rejects them),
+            so don't offer the pack only to fail. */}
+        {token && user.role !== 'VIEWER' && <StarterPack token={token} />}
 
         {/* Two big paths — marketplace vs custom */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
