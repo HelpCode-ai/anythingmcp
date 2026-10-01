@@ -37,10 +37,6 @@
 
 https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
 
-<p align="center">
-  <a href="https://anythingmcp.com/ja/video-promo"><img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo-poster.jpg" alt="AnythingMCP のデモ（2:40）：Claude が、配送が止まっている Etsy の注文と、SAP に再送用の在庫があるかを答えます。クリックして再生。" width="100%" /></a>
-</p>
-
 ---
 
 <a id="run-it-yourself"></a>
