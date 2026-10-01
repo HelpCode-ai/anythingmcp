@@ -462,12 +462,21 @@ function LoginForm() {
             </button>
           </p>
 
-          {isFirstUserFlag && !isCloudMode && (
+          {/* Self-hosted does not enforce email verification server-side, so a
+              verify step with no way past it (no SMTP configured) would be a
+              dead end. Always let a self-hosted user skip: the first user goes
+              on to set up the licence, everyone else straight into the app.
+              Cloud still requires verification, so no skip there. */}
+          {!isCloudMode && (
             <div className="text-center mt-3">
               <button
                 onClick={() => {
                   login(authToken, storedUser);
-                  setSetupStep('license-choice');
+                  if (isFirstUserFlag) {
+                    setSetupStep('license-choice');
+                  } else {
+                    router.push(redirectTo);
+                  }
                 }}
                 className="text-sm text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
               >
