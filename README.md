@@ -35,6 +35,8 @@
 
 **One question in Claude, answered from Etsy, SAP and a logistics API.**
 
+https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
+
 <p align="center">
   <a href="https://anythingmcp.com/video-promo"><img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo-poster.jpg" alt="AnythingMCP demo (2:40): Claude answers which Etsy orders are stuck and whether SAP has stock to resend them. Click to watch." width="100%" /></a>
 </p>

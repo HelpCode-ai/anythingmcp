@@ -35,6 +35,8 @@
 
 **Eine Frage in Claude, beantwortet aus Etsy, SAP und einer Logistik-API.**
 
+https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
+
 <p align="center">
   <a href="https://anythingmcp.com/de/video-promo"><img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo-poster.jpg" alt="AnythingMCP-Demo (2:40): Claude beantwortet, welche Etsy-Bestellungen hängen und ob SAP genug Bestand für einen Ersatzversand hat. Zum Ansehen klicken." width="100%" /></a>
 </p>

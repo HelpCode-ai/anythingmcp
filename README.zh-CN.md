@@ -35,6 +35,8 @@
 
 **在 Claude 中提一个问题，答案来自 Etsy、SAP 和一个物流 API。**
 
+https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
+
 <p align="center">
   <a href="https://anythingmcp.com/zh/video-promo"><img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/assets/demo-poster.jpg" alt="AnythingMCP 演示（2:40）：Claude 回答哪些 Etsy 订单卡住了，以及 SAP 是否有库存补发。点击观看。" width="100%" /></a>
 </p>
