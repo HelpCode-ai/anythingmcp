@@ -28,6 +28,8 @@
 
 https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
 
+<p align="center"><sub>视频无法播放？<a href="https://anythingmcp.com/zh/video-promo">在 anythingmcp.com 上观看演示</a></sub></p>
+
 **[KOCH Freiburg GmbH](https://www.kochfreiburg.de/) 已在生产环境使用 AnythingMCP**，将 AI 助手连接到 15 个以上的内部系统，包括 ERP、CRM、SOAP 服务和本地数据库。[helpcode.ai](https://helpcode.ai) 将它从该系统中提取出来并开源，因为适配器目录由社区共同建设，比作为单一产品发展得更快。
 
 ---

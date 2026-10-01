@@ -28,6 +28,8 @@
 
 https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
 
+<p align="center"><sub>動画が再生されない場合は <a href="https://anythingmcp.com/ja/video-promo">anythingmcp.com でデモを見る</a></sub></p>
+
 **[KOCH Freiburg GmbH](https://www.kochfreiburg.de/) で本番稼働しています。** 同社では AI アシスタントを ERP、CRM、SOAP サービス、オンプレミスのデータベースなど、15 以上の社内システムに接続しています。[helpcode.ai](https://helpcode.ai) がこのシステムから切り出してオープンソース化しました。アダプターカタログは、単一の製品としてよりもコミュニティで育てるほうが速く成長するからです。
 
 ---

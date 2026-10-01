@@ -28,6 +28,8 @@
 
 https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
 
+<p align="center"><sub>Das Video startet nicht? <a href="https://anythingmcp.com/de/video-promo">Die Demo auf anythingmcp.com ansehen</a></sub></p>
+
 **Im produktiven Einsatz bei [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**: Dort verbindet AnythingMCP KI-Assistenten mit mehr als 15 internen Systemen, von ERP und CRM bis zu SOAP-Diensten und lokalen Datenbanken. [helpcode.ai](https://helpcode.ai) hat es aus diesem System herausgelöst und als Open Source veröffentlicht, weil ein Adapterkatalog in einer Community schneller wächst als im Alleingang.
 
 ---

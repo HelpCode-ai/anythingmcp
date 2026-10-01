@@ -28,6 +28,8 @@
 
 https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
 
+<p align="center"><sub>Video not playing? <a href="https://anythingmcp.com/video-promo">Watch the demo on anythingmcp.com</a></sub></p>
+
 **In production at [KOCH Freiburg GmbH](https://www.kochfreiburg.de/)**, where it connects AI assistants to 15+ internal systems: ERP, CRM, SOAP services and on-prem databases. [helpcode.ai](https://helpcode.ai) extracted it from that system and open-sourced it, because an adapter catalog grows faster as a community than as a product.
 
 ---
