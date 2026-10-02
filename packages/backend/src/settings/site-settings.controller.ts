@@ -18,6 +18,7 @@ import { SiteSettingsService } from './site-settings.service';
 import { OrgSettingsService } from './org-settings.service';
 import { EmailService } from './email.service';
 import { SsrfPolicyService } from '../common/ssrf-policy.service';
+import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
 
 class SmtpConfigDto {
   @ApiProperty({ description: 'SMTP server hostname.', example: 'smtp.sendgrid.net' })
@@ -193,7 +194,13 @@ export class SiteSettingsAdminController {
     return { message: 'Footer links saved' };
   }
 
+  // The allowlist is instance-wide: a host added here is reachable by every
+  // connector of every workspace. That is the operator's call, and on a
+  // self-hosted instance the workspace ADMIN is the operator. In cloud every
+  // sign-up is the ADMIN of its own workspace, so the list is set through
+  // SSRF_ALLOWED_HOSTS on the server instead and these routes answer 404.
   @Get('ssrf-allowed-hosts')
+  @UseGuards(SelfHostedOnlyGuard)
   @ApiOperation({
     summary: 'Get the admin-editable SSRF allowlist (ADMIN)',
     description:
@@ -209,6 +216,7 @@ export class SiteSettingsAdminController {
   }
 
   @Put('ssrf-allowed-hosts')
+  @UseGuards(SelfHostedOnlyGuard)
   @ApiOperation({
     summary: 'Replace the admin-editable SSRF allowlist (ADMIN)',
     description:

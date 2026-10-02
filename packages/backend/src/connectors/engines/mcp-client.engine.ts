@@ -4,6 +4,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { DEFAULT_MCP_PATH, resolveMcpEndpointUrl } from '../../common/url.util';
+import { ssrfGuardedFetch } from '../../common/guarded-http.util';
 
 @Injectable()
 export class McpClientEngine {
@@ -43,6 +44,7 @@ export class McpClientEngine {
     await this.injectAuth(headers, config.authType, config.authConfig, config.connectorId);
 
     const transport = new StreamableHTTPClientTransport(mcpUrl, {
+      fetch: ssrfGuardedFetch,
       requestInit: { headers },
     });
 
@@ -78,6 +80,7 @@ export class McpClientEngine {
           retryHeaders['Authorization'] = `Bearer ${newToken}`;
 
           const retryTransport = new StreamableHTTPClientTransport(mcpUrl, {
+            fetch: ssrfGuardedFetch,
             requestInit: { headers: retryHeaders },
           });
           const retryClient = new Client({
@@ -137,6 +140,7 @@ export class McpClientEngine {
     await this.injectAuth(headers, config.authType, config.authConfig, config.connectorId);
 
     const transport = new StreamableHTTPClientTransport(mcpUrl, {
+      fetch: ssrfGuardedFetch,
       requestInit: { headers },
     });
 

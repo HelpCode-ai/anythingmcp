@@ -395,7 +395,10 @@ export class ConnectorsService {
     // blocked-host variant, not just the DNS one — a private IP, 'localhost'
     // and an unresolvable Docker service name are all fixed by allowlisting,
     // and MCP bridges to a server on the local network hit exactly those.
-    const ssrfHostname = extractSsrfBlockedHostname(msg);
+    // Not in cloud: the allowlist there belongs to the operator (see
+    // SiteSettingsController), so the hint would point at a page that is gone.
+    const ssrfHostname =
+      process.env.DEPLOYMENT_MODE === 'cloud' ? undefined : extractSsrfBlockedHostname(msg);
     if (ssrfHostname) {
       return {
         ok: false,

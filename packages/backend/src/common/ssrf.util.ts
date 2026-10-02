@@ -65,6 +65,8 @@ function readPolicy(env: NodeJS.ProcessEnv = process.env): SsrfPolicy {
  * no-op when the service isn't wired (unit tests, scripts).
  */
 let dbAllowedHostsProvider: (() => Promise<string[]>) | null = null;
+/** Last list the DB provider returned, for the synchronous redirect check. */
+let lastDbAllowedHosts: string[] = [];
 
 /**
  * Wire a DB-backed list provider into the guard. Called once by
@@ -204,6 +206,7 @@ async function vetHost(
   if (dbAllowedHostsProvider) {
     try {
       const dbHosts = await dbAllowedHostsProvider();
+      lastDbAllowedHosts = dbHosts;
       if (hostMatchesAllowlist(hostname, dbHosts)) return null;
     } catch {
       // Provider failure: fall through to IP-based checks rather than
@@ -273,9 +276,12 @@ export function ssrfGuardedLookup(
 ): LookupFunction {
   return (hostname, options, callback) => {
     const policy = readPolicy(env);
-    const vetted = policy.enabled
-      ? vetHost(hostname, policy)
-      : Promise.resolve(null);
+    // The operator's own HTTP(S)_PROXY usually sits on a private address;
+    // when it is in use the proxy resolves the target, not us.
+    const vetted =
+      policy.enabled && !envProxyHosts(env).has(hostname.toLowerCase())
+        ? vetHost(hostname, policy)
+        : Promise.resolve(null);
     vetted
       .then((addrs) => addrs ?? dns.lookup(hostname, { all: true }))
       .then((addrs) => {
@@ -302,6 +308,52 @@ export function ssrfGuardedLookup(
   };
 }
 
+function envProxyHosts(env: NodeJS.ProcessEnv): Set<string> {
+  const hosts = new Set<string>();
+  for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']) {
+    const value = env[key];
+    if (!value) continue;
+    try {
+      hosts.add(new URL(value).hostname.toLowerCase());
+    } catch {
+      /* not a URL: axios ignores it too */
+    }
+  }
+  return hosts;
+}
+
+/**
+ * Synchronous check for a redirect target, for HTTP clients whose redirect
+ * hook cannot wait (axios' `beforeRedirect`). Covers what a guarded lookup
+ * cannot see: the scheme, and literal IPs, which Node connects to without
+ * calling `lookup`. Hostnames are left to the lookup at connect time.
+ */
+export function assertSafeRedirectTarget(
+  target: { protocol?: string | null; hostname?: string | null },
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const policy = readPolicy(env);
+  if (!policy.enabled) return;
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+    throw new SsrfBlockedError(
+      `SSRF guard: protocol '${target.protocol}' is not allowed`,
+    );
+  }
+  const hostname = (target.hostname ?? '').replace(/^\[|\]$/g, '');
+  if (!isIP(hostname)) return;
+  if (
+    hostMatchesAllowlist(hostname, policy.allowedHosts) ||
+    hostMatchesAllowlist(hostname, lastDbAllowedHosts)
+  ) {
+    return;
+  }
+  if (!isPublicIp(hostname, policy)) {
+    throw new SsrfBlockedError(
+      `SSRF guard: address '${hostname}' is not a public IP`,
+    );
+  }
+}
+
 /**
  * http and https agents whose connections go through {@link ssrfGuardedLookup}.
  * Pass both to axios (`httpAgent`, `httpsAgent`) together with `proxy: false`:
@@ -312,9 +364,11 @@ export function createSsrfGuardedAgents(env: NodeJS.ProcessEnv = process.env): {
   httpsAgent: https.Agent;
 } {
   const lookup = ssrfGuardedLookup(env);
+  // Same socket reuse as Node's global agents, which these replace.
+  const options = { lookup, keepAlive: true, scheduling: 'lifo' as const, timeout: 5000 };
   return {
-    httpAgent: new http.Agent({ lookup }),
-    httpsAgent: new https.Agent({ lookup }),
+    httpAgent: new http.Agent(options),
+    httpsAgent: new https.Agent(options),
   };
 }
 
