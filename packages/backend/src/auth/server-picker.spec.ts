@@ -167,8 +167,11 @@ describe('choosing what a client may reach', () => {
     expect(pending).toBeDefined();
     expect(pending[1]).toBe('u1');
     expect(pending[2]).toMatchObject({ httpOnly: true, signed: true });
-    // The rendered form must not carry the user id anywhere.
-    expect(res.send.mock.calls[0][0]).not.toContain('u1');
+    // The rendered form must not carry the user id anywhere. The CSRF token
+    // is random base64url and contains "u1" in about 1 run out of 100, so
+    // leave it out of the search.
+    const html: string = res.send.mock.calls[0][0];
+    expect(html.replace(/name="csrf" value="[^"]*"/g, '')).not.toContain('u1');
   });
 
   it('escapes a workspace name instead of interpolating it raw', async () => {
