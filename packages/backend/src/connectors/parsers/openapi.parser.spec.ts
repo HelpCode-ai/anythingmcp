@@ -25,6 +25,33 @@ describe('OpenApiParser', () => {
     expect(tools).toHaveLength(0);
   });
 
+  it('should parse a YAML spec with anchors and merge keys', async () => {
+    const yamlSpec = [
+      'openapi: 3.0.0',
+      'info: { title: Test API, version: 1.0.0 }',
+      'x-common: &paging',
+      '  in: query',
+      '  schema: { type: integer }',
+      'paths:',
+      '  /points:',
+      '    get:',
+      '      operationId: listPoints',
+      '      parameters:',
+      '        - <<: *paging',
+      '          name: y',
+      '          description: Vertical offset',
+      '      responses:',
+      "        '200': { description: OK }",
+    ].join('\n');
+    const tools = await parser.parse(yamlSpec);
+    expect(tools).toHaveLength(1);
+    const params = tools[0].parameters as any;
+    // The merged keys land on the parameter, and `y` stays a name, not `true`.
+    expect(params.properties.y).toBeDefined();
+    expect(params.properties.y.type).toBe('integer');
+    expect(tools[0].endpointMapping.queryParams).toEqual(expect.objectContaining({ y: '$y' }));
+  });
+
   // ── GET endpoints ──────────────────────────────────────────────────────
 
   it('should parse a simple GET endpoint', async () => {

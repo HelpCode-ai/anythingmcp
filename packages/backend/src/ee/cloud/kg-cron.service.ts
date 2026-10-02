@@ -31,6 +31,9 @@ function intEnv(name: string, fallback: number): number {
  *  2. Prune kg_value_seen rows past their TTL (hashes are short-lived).
  *  3. Retention: delete tool_invocations older than INVOCATION_RETENTION_DAYS —
  *     AFTER observational ingest, so the graph consumes rows before they're purged.
+ *  4. Payload trim: rows older than INVOCATION_PAYLOAD_RETENTION_DAYS keep their
+ *     metadata (status, timing, tool, org: what analytics count) but their large
+ *     input/output is replaced by a short excerpt. Long since ingested by then.
  */
 @Injectable()
 export class KgCronService {
@@ -52,6 +55,7 @@ export class KgCronService {
     invocations: number;
     prunedValueSeen: number;
     prunedInvocations: number;
+    trimmedPayloads: number;
   }> {
     const maxOrgs = intEnv('KG_CRON_MAX_ORGS', 50);
 
@@ -105,6 +109,7 @@ export class KgCronService {
 
     const prunedValueSeen = await this.pruneValueSeen();
     const prunedInvocations = await this.retention();
+    const trimmedPayloads = await this.trimOldPayloads();
 
     return {
       orgsProcessed: batch.length,
@@ -115,6 +120,7 @@ export class KgCronService {
       ...llm,
       prunedValueSeen,
       prunedInvocations,
+      trimmedPayloads,
     };
   }
 
@@ -355,6 +361,45 @@ export class KgCronService {
       where: { seenAt: { lt: cutoff } },
     });
     return count;
+  }
+
+  /**
+   * Replace the large payloads of old audit rows with a short excerpt, in
+   * batches so the table is never locked for long. Up to TRIM_MAX_BATCHES
+   * batches per run; the next run continues where this one stopped.
+   */
+  async trimOldPayloads(): Promise<number> {
+    const days = intEnv('INVOCATION_PAYLOAD_RETENTION_DAYS', 14);
+    if (days <= 0) return 0;
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const batchSize = intEnv('INVOCATION_TRIM_BATCH', 5000);
+    const maxBatches = intEnv('INVOCATION_TRIM_MAX_BATCHES', 40);
+    let total = 0;
+    for (let i = 0; i < maxBatches; i++) {
+      const updated = await this.prisma.$executeRaw`
+        UPDATE tool_invocations AS t SET
+          output = CASE WHEN pg_column_size(t.output) > 2048
+            THEN jsonb_build_object('_amcp_truncated',
+                   jsonb_build_object('originalBytes', octet_length(t.output::text), 'trimmed', 'age'),
+                   'excerpt', left(t.output::text, 1000))
+            ELSE t.output END,
+          input = CASE WHEN pg_column_size(t.input) > 8192
+            THEN jsonb_build_object('_amcp_truncated',
+                   jsonb_build_object('originalBytes', octet_length(t.input::text), 'trimmed', 'age'),
+                   'excerpt', left(t.input::text, 1000))
+            ELSE t.input END
+        WHERE t.id IN (
+          SELECT id FROM tool_invocations
+          WHERE created_at < ${cutoff}
+            AND (pg_column_size(output) > 2048 OR pg_column_size(input) > 8192)
+          LIMIT ${batchSize}
+        )`;
+      total += updated;
+      if (updated < batchSize) break;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    if (total > 0) this.logger.log(`Payload trim: shortened ${total} tool_invocations older than ${days}d.`);
+    return total;
   }
 
   /** Delete audit rows older than the retention window (cloud-only). */

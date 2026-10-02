@@ -24,7 +24,7 @@
       "X-Odoo-Database": "{{ODOO_DB}}",
       "Content-Type": "application/json"
     },
-    "healthcheckPath": "/res.users/search_count"
+    "healthcheckPath": "/../../doc-bearer/res.country.state.json"
   },
   "probe": {
     "tool": "odoo_list_partners"
@@ -134,14 +134,15 @@
           },
           "domain": {
             "type": "array",
-            "description": "Odoo domain as a list of triples.",
+            "description": "Odoo domain as a list of triples. Required by Odoo; pass [] to count every record.",
             "items": {
               "type": "array"
             }
           }
         },
         "required": [
-          "model"
+          "model",
+          "domain"
         ]
       },
       "endpointMapping": {
@@ -363,7 +364,7 @@
     },
     {
       "name": "odoo_create",
-      "description": "Create a record in any Odoo model. Writes to the live database and fires Odoo's automations — mail, stock moves and accounting entries all behave as if a person had done it.",
+      "description": "Create a record in any Odoo model and return its id (as a one-element list). Writes to the live database and fires Odoo's automations — mail, stock moves and accounting entries all behave as if a person had done it.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -385,7 +386,9 @@
         "method": "POST",
         "path": "/{model}/create",
         "bodyMapping": {
-          "values": "$values"
+          "vals_list": [
+            "$values"
+          ]
         }
       }
     },
@@ -422,7 +425,7 @@
         "path": "/{model}/write",
         "bodyMapping": {
           "ids": "$ids",
-          "values": "$values"
+          "vals": "$values"
         }
       }
     },
@@ -442,14 +445,14 @@
           },
           "ids": {
             "type": "array",
-            "description": "Record ids the method operates on.",
+            "description": "Record ids the method operates on. Use [] for model-level methods such as name_search or create.",
             "items": {
               "type": "number"
             }
           },
           "kwargs": {
             "type": "object",
-            "description": "Keyword arguments for the method, when it takes any."
+            "description": "The method's keyword arguments, by name; they are sent as top-level keys of the request, which is how Odoo binds them. E.g. {\"summary\": \"Call back\", \"date_deadline\": \"2026-10-16\", \"activity_type_id\": 2} for activity_schedule on crm.lead. Omit for methods that take only the records, such as action_confirm."
           }
         },
         "required": [
@@ -463,7 +466,7 @@
         "path": "/{model}/{method}",
         "bodyMapping": {
           "ids": "$ids",
-          "kwargs": "$kwargs"
+          "__merge": "$kwargs"
         }
       }
     }

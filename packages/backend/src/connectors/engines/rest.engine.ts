@@ -712,9 +712,28 @@ export class RestEngine {
     }
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(mapping)) {
+      if (key === '__merge') continue;
       const resolved = this.resolveValue(value, params);
       if (resolved !== undefined) {
         result[key] = resolved;
+      }
+    }
+    // `__merge`: an object argument whose keys become top-level keys of the
+    // body. Some APIs take a method's arguments as the body itself (Odoo's
+    // JSON-2 `/json/2/<model>/<method>` binds every top-level key to a
+    // parameter of the method), so a generic "call a method" tool cannot know
+    // the keys in advance. Keys mapped explicitly win over merged ones.
+    if ('__merge' in mapping) {
+      const extra = this.resolveValue(mapping['__merge'], params);
+      if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
+        assertNoPrototypePollution(extra);
+        // fromEntries creates own data properties only, as in safeEntries.
+        const merged = Object.fromEntries(
+          Object.entries(extra as Record<string, unknown>).filter(
+            ([key]) => !isUnsafeKey(key) && !Object.hasOwn(result, key),
+          ),
+        );
+        return { ...merged, ...result };
       }
     }
     return result;

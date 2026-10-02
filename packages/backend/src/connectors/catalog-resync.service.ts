@@ -56,6 +56,11 @@ export interface CatalogDiff {
   updated: Array<{ name: string; kind: ToolChangeKind }>;
   added: string[];
   removed: string[];
+  /**
+   * The user's own tools on this connector (not from the catalog). Never
+   * changed or retired by an update; listed so the UI can say they stay.
+   */
+  custom: string[];
   /** instructions changed upstream AND the user has not edited theirs. */
   instructionsRefreshable: boolean;
   /**
@@ -91,6 +96,27 @@ export class CatalogResyncService {
       cfg && typeof cfg.adapterSlug === 'string' ? cfg.adapterSlug : null;
     if (explicit && getAdapter(explicit)) return explicit;
     return null;
+  }
+
+  /**
+   * Whether a connector's tool came from the catalog (and so may be retired
+   * when the catalog drops it) or was written by the user (and is never
+   * touched by an update). Rows from before the `origin` column are decided
+   * here: a name the adapter has today, or a tool created with the install,
+   * is the catalog's; anything added later under another name is the user's.
+   */
+  static isCatalogTool(
+    tool: { name: string; origin?: string | null; createdAt?: Date | null },
+    connectorCreatedAt: Date | null | undefined,
+    catalogNames: Set<string>,
+  ): boolean {
+    if (tool.origin === 'catalog') return true;
+    if (tool.origin === 'user') return false;
+    if (catalogNames.has(tool.name)) return true;
+    if (tool.createdAt && connectorCreatedAt) {
+      return tool.createdAt.getTime() - connectorCreatedAt.getTime() <= 10 * 60 * 1000;
+    }
+    return false;
   }
 
   /**
@@ -135,11 +161,19 @@ export class CatalogResyncService {
       }
     }
 
-    // Existing, non-deprecated tools no longer present upstream.
+    // Existing, non-deprecated CATALOG tools no longer present upstream. The
+    // user's own tools are listed apart and never retired by an update.
+    const catalogNames = new Set(catalogByName.keys());
     const removed: string[] = [];
+    const custom: string[] = [];
     for (const et of connector.tools) {
+      if (catalogByName.has(et.name)) continue;
+      if (!CatalogResyncService.isCatalogTool(et, connector.createdAt, catalogNames)) {
+        if (!et.deprecatedAt) custom.push(et.name);
+        continue;
+      }
       if (et.deprecatedAt) continue;
-      if (!catalogByName.has(et.name)) removed.push(et.name);
+      removed.push(et.name);
     }
 
     const cfg = (connector.config ?? {}) as Record<string, unknown>;
@@ -187,6 +221,7 @@ export class CatalogResyncService {
       updated,
       added,
       removed,
+      custom,
       instructionsRefreshable,
       baseUrl,
       isUpToDate,
@@ -211,6 +246,11 @@ export class CatalogResyncService {
    * sandbox it was deliberately set to. So the diff proposes and the caller
    * decides, per connector.
    */
+  /** Something a safe-mode resync would actually change. */
+  static hasSafeWork(diff: CatalogDiff): boolean {
+    return diff.updated.some((u) => u.kind === 'safe') || diff.instructionsRefreshable;
+  }
+
   async resync(
     connectorId: string,
     mode: 'safe' | 'full' = 'full',
@@ -223,8 +263,13 @@ export class CatalogResyncService {
     if (diff.isUpToDate) {
       return { applied: false, diff, snapshot: null };
     }
-    if (mode === 'safe' && !diff.isSafeClass) {
-      // Safe-mode caller must not apply structural changes.
+    // Safe mode applies the safe part of any diff (descriptions, parameters,
+    // untouched instructions) and leaves the structural part (endpoints, new
+    // or retired tools, base URL) for an explicit update. It used to refuse
+    // the whole diff as soon as it held one structural change, so a catalog
+    // fix to a description never arrived on a connector that was also
+    // offered a new tool.
+    if (mode === 'safe' && !CatalogResyncService.hasSafeWork(diff)) {
       return { applied: false, diff, snapshot: null };
     }
 
@@ -314,18 +359,22 @@ export class CatalogResyncService {
               // Only on create: on an existing tool this column may hold the
               // operator's own override.
               annotations: (ct.annotations as any) ?? undefined,
+              origin: 'catalog',
             },
           });
           createdCount++;
         }
       }
 
-      // Soft-deprecate tools no longer in the catalog (full mode only).
+      // Soft-deprecate CATALOG tools no longer in the catalog (full mode
+      // only). The user's own tools on this connector are never retired.
       if (mode === 'full') {
         const now = new Date();
+        const catalogNames = new Set(catalogByName.keys());
         for (const et of connector.tools) {
           if (et.deprecatedAt) continue;
           if (catalogByName.has(et.name)) continue;
+          if (!CatalogResyncService.isCatalogTool(et, connector.createdAt, catalogNames)) continue;
           await tx.mcpTool.update({
             where: { id: et.id },
             data: { deprecatedAt: now, isEnabled: false },
