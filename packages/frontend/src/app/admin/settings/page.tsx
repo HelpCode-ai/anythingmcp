@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
 export default function AdminSettingsPage() {
-  const { token, user } = useAuth();
+  const { token, user, deploymentMode, deploymentModeLoaded } = useAuth();
+  // Instance-wide setting: the cloud operator manages it on the server.
+  const showSsrf = deploymentModeLoaded && deploymentMode !== 'cloud';
 
   // SMTP
   const [smtpHost, setSmtpHost] = useState('');
@@ -44,12 +46,14 @@ export default function AdminSettingsPage() {
 
     adminSettings.getFooterLinks(token).then(setFooterLinks).catch(() => {});
 
-    adminSettings.getSsrfAllowedHosts(token).then((data) => {
-      setSsrfHosts(data.hosts);
-      setSsrfEnvHosts(data.envHosts);
-      setSsrfDraft(data.hosts.join('\n'));
-    }).catch(() => {});
-  }, [token]);
+    if (showSsrf) {
+      adminSettings.getSsrfAllowedHosts(token).then((data) => {
+        setSsrfHosts(data.hosts);
+        setSsrfEnvHosts(data.envHosts);
+        setSsrfDraft(data.hosts.join('\n'));
+      }).catch(() => {});
+    }
+  }, [token, showSsrf]);
 
   const handleSaveSsrfHosts = async () => {
     if (!token) return;
@@ -303,6 +307,7 @@ export default function AdminSettingsPage() {
         </Card>
 
         {/* SSRF Allowlist */}
+        {showSsrf && (
         <Card id="ssrf" className="p-6">
           <h3 className="text-[15px] font-semibold mb-2 text-[var(--text)]">SSRF allowlist</h3>
           <p className="text-sm text-[var(--text-3)] mb-2">
@@ -353,6 +358,7 @@ export default function AdminSettingsPage() {
             </p>
           )}
         </Card>
+        )}
       </div>
     </AppShell>
   );

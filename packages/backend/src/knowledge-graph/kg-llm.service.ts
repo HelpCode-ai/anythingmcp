@@ -27,7 +27,8 @@ Rules:
 
 /**
  * Optional LLM-assisted KG enrichment. Opt-in twice: a global env flag
- * (KG_LLM_ENABLED + an API key) AND a per-workspace switch (kg_llm_enabled,
+ * (KG_LLM_ENABLED + a resolvable LLM config — an API key, or KG_LLM_BASE_URL
+ * for local models which need no key) AND a per-workspace switch (kg_llm_enabled,
  * default off, because it costs money). PII-safe: only entity + field NAMES are
  * sent to the model — never values. Results are stored as suggested LLM edges
  * for a human to confirm. Cached by a content hash so unchanged graphs don't
@@ -42,7 +43,7 @@ export class KgLlmService {
     private readonly kgStatic: KgStaticService,
   ) {}
 
-  /** Globally available (env flag + a configured API key). */
+  /** Globally available (env flag + a resolvable LLM config). */
   globallyAvailable(): boolean {
     return process.env.KG_LLM_ENABLED === 'true' && !!resolveLlmConfig();
   }
@@ -66,7 +67,11 @@ export class KgLlmService {
     if (!built) return { suggested: 0, model: cfg.model };
     if ('skipped' in built) return { suggested: 0, skipped: true, model: cfg.model };
 
-    const { json, usage } = await chatJson(cfg, built.system, built.user);
+    const { json, skipped, usage } = await chatJson(cfg, built.system, built.user);
+    // Custom endpoint with an unusable reply: return early before
+    // applyEnrichResult so kg_llm_hash is NOT stored and the next run retries
+    // normally instead of seeing an unchanged graph and reporting `skipped`.
+    if (skipped) return { suggested: 0, skipped: true, model: cfg.model };
     const suggested = await this.applyEnrichResult(organizationId, json, built);
     this.logger.log(
       `KG LLM enrich ${organizationId}: ${suggested} suggested (${cfg.model}, in=${usage?.inputTokens ?? '?'} out=${usage?.outputTokens ?? '?'})`,

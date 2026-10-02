@@ -3,6 +3,7 @@ import axios from 'axios';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { ParsedTool } from './openapi.parser';
 import { inferJsonSchema } from '../output-schema.util';
+import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
 
 /**
  * Postman Collection v2.1 Parser.
@@ -58,7 +59,10 @@ export class PostmanParser {
       this.logger.debug(`Detected Postman Documenter URL. Trying API: ${apiUrl}`);
       try {
         await assertSafeOutboundUrl(apiUrl);
-        const apiResp = await axios.get(apiUrl, { timeout: 15000 });
+        const apiResp = await axios.get(apiUrl, {
+          timeout: 15000,
+          ...ssrfGuardedAxiosOptions(),
+        });
         if (apiResp.data && typeof apiResp.data === 'object') {
           return this.parse(apiResp.data);
         }
@@ -72,7 +76,10 @@ export class PostmanParser {
     }
 
     await assertSafeOutboundUrl(url);
-    const response = await axios.get(url, { timeout: 15000 });
+    const response = await axios.get(url, {
+      timeout: 15000,
+      ...ssrfGuardedAxiosOptions(),
+    });
 
     // Validate response is JSON, not HTML
     const contentType = (response.headers?.['content-type'] || '') as string;

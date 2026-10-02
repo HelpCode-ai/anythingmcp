@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as soap from 'soap';
 import { XMLParser } from 'fast-xml-parser';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { ssrfGuardedAxiosOptions, ssrfGuardedAxios } from '../../common/guarded-http.util';
 
 /**
  * SoapEngine — executes SOAP calls using raw HTTP via axios.
@@ -114,6 +115,7 @@ export class SoapEngine {
         timeout: 30000,
         // SOAP responses may have non-2xx status (SOAP faults return 500)
         validateStatus: (status) => status < 600,
+        ...ssrfGuardedAxiosOptions(),
       });
 
       // Parse the SOAP response
@@ -246,7 +248,9 @@ ${paramXml}
   }> {
     try {
       await assertSafeOutboundUrl(wsdlUrl);
-      const client = await soap.createClientAsync(wsdlUrl);
+      const client = await soap.createClientAsync(wsdlUrl, {
+        request: ssrfGuardedAxios() as any,
+      });
       const wsdl = client.wsdl;
 
       const targetNamespace =

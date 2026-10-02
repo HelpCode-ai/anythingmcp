@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
 
 const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
 
@@ -54,6 +55,7 @@ export class GraphqlSchemaService {
       timeout: 30000,
       responseType: 'text',
       transformResponse: (v: unknown) => String(v),
+      ...ssrfGuardedAxiosOptions(),
     });
     const sdl = String(res.data);
     this.cache.set(url, { sdl, fetchedAt: Date.now() });
