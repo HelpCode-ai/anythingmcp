@@ -47,8 +47,8 @@ describe('McpPrincipalRateLimitGuard', () => {
   it('refuses over the limit with 429 and Retry-After, per API key', async () => {
     const redis = makeRedis();
     const guard = new McpPrincipalRateLimitGuard(redis as any, config('2'));
-    const a = { method: 'POST', headers: { 'x-api-key': 'mcp_a' }, user: { authMethod: 'mcp_api_key', sub: 'u1' } };
-    const b = { method: 'POST', headers: { 'x-api-key': 'mcp_b' }, user: { authMethod: 'mcp_api_key', sub: 'u1' } };
+    const a = { method: 'POST', headers: { 'x-api-key': 'mcp_a' }, user: { authMethod: 'mcp_api_key', sub: 'u1', apiKeyName: 'Backend' } };
+    const b = { method: 'POST', headers: { 'x-api-key': 'mcp_b' }, user: { authMethod: 'mcp_api_key', sub: 'u1', apiKeyName: 'Laptop' } };
     await guard.canActivate(ctx(a).context);
     await guard.canActivate(ctx(a).context);
     const third = ctx(a);
@@ -58,16 +58,13 @@ describe('McpPrincipalRateLimitGuard', () => {
     await expect(guard.canActivate(ctx(b).context)).resolves.toBe(true);
   });
 
-  it('never stores the raw API key', async () => {
+  it('never puts the API key into the bucket name', async () => {
     const redis = makeRedis();
     const guard = new McpPrincipalRateLimitGuard(redis as any, config('5'));
     await guard.canActivate(
-      ctx({ method: 'POST', headers: { 'x-api-key': 'mcp_secret_value' }, user: { authMethod: 'mcp_api_key', sub: 'u1' } }).context,
+      ctx({ method: 'POST', headers: { 'x-api-key': 'mcp_secret_value' }, user: { authMethod: 'mcp_api_key', sub: 'u1', apiKeyName: 'Backend' } }).context,
     );
-    const keys = [...redis.counts.keys()];
-    expect(keys).toHaveLength(1);
-    expect(keys[0]).not.toContain('mcp_secret_value');
-    expect(keys[0]).toMatch(/^mcp:prl:key:[0-9a-f]{24}$/);
+    expect([...redis.counts.keys()]).toEqual(['mcp:prl:key:u1:Backend']);
   });
 
   it('buckets sessions by user and anonymous callers by IP', () => {

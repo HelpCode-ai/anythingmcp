@@ -7,7 +7,6 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'crypto';
 import { RedisService } from '../common/redis.service';
 
 /** Default ceiling per authenticated caller and minute. */
@@ -20,7 +19,7 @@ export const DEFAULT_MCP_PRINCIPAL_LIMIT_PER_MINUTE = 1000;
  * Runs after McpCombinedAuthGuard, so it can count per *who* is calling rather
  * than per IP (every customer behind one NAT, or every Claude user behind
  * Anthropic's egress, would otherwise share one bucket):
- *   - an MCP API key → its own bucket (keyed by a hash, never the raw key);
+ *   - an MCP API key → its own bucket (user + key name, never the key itself);
  *   - a dashboard/OAuth session → the user;
  *   - anything else → the client IP.
  *
@@ -54,9 +53,10 @@ export class McpPrincipalRateLimitGuard implements CanActivate {
   /** The bucket for this request, from what the auth guard established. */
   static bucketFor(req: any): string {
     const user = req?.user ?? {};
-    const apiKey = req?.headers?.['x-api-key'];
-    if (user.authMethod === 'mcp_api_key' && typeof apiKey === 'string' && apiKey) {
-      return `key:${createHash('sha256').update(apiKey).digest('hex').slice(0, 24)}`;
+    // No key material in the bucket name: the auth guard already resolved
+    // which user and which of their keys this is.
+    if (user.authMethod === 'mcp_api_key' && user.sub) {
+      return `key:${user.sub}:${String(user.apiKeyName ?? 'key').slice(0, 80)}`;
     }
     if (user.sub && (user.authMethod === 'jwt' || user.authMethod === 'mcp_api_key')) {
       return `user:${user.sub}`;
