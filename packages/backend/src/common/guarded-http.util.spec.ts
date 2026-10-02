@@ -142,6 +142,21 @@ describe('guarded HTTP clients', () => {
       expect(other.hits[0].headers.accept).toBe('application/json');
     });
 
+    it('does not re-check the starting URL (the caller does, once per call)', async () => {
+      const s = await serve((_q, _b, res) => res.end('ok'));
+      const spy = jest.spyOn(dns.promises, 'lookup');
+      process.env.SSRF_ALLOW_LOCALHOST = 'true';
+      delete process.env.SSRF_ALLOWED_HOSTS;
+      try {
+        for (let i = 0; i < 5; i++) {
+          await (await ssrfGuardedFetch(`http://localhost:${s.port}/mcp`, { method: 'POST', body: '{}' })).text();
+        }
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        delete process.env.SSRF_ALLOW_LOCALHOST;
+      }
+    });
+
     it('stops after five redirects', async () => {
       const loop = await serve(redirectTo('/again'));
       await expect(ssrfGuardedFetch(`http://localhost:${loop.port}/`)).rejects.toThrow(
