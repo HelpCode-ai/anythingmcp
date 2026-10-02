@@ -302,6 +302,8 @@ export interface CatalogDiff {
   updated?: Array<{ name: string; kind: 'safe' | 'structural' }>;
   added?: string[];
   removed?: string[];
+  /** The user's own tools on this connector: never changed by an update. */
+  custom?: string[];
   instructionsRefreshable?: boolean;
   baseUrl?: CatalogBaseUrlChange | null;
   isUpToDate?: boolean;

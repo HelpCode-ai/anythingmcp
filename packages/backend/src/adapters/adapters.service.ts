@@ -241,6 +241,8 @@ export class AdaptersService {
             responseMapping: tool.responseMapping as any,
             outputSchema: ((tool as any).outputSchema ?? null) as any,
             annotations: (tool.annotations ?? undefined) as any,
+            // A catalog tool: catalog updates may change or retire it.
+            origin: 'catalog',
           },
         });
         toolsCreated++;

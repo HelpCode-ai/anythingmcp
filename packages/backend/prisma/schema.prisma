@@ -485,6 +485,13 @@ model McpTool {
   // but is shown with a "deprecated" badge in the UI.
   deprecatedAt DateTime? @map("deprecated_at")
 
+  // Who owns the definition: "catalog" (installed or synced from a catalog
+  // adapter) or "user" (written by hand). A catalog update only ever changes or
+  // retires "catalog" tools; a user's own tools on a catalog connector are
+  // left alone. Null on rows from before the column existed (decided at
+  // runtime, see catalog-resync.service.ts).
+  origin String? @default("user")
+
   // Parameter schema (JSON Schema / Zod-compatible)
   parameters Json
 
