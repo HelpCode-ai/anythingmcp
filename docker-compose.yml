@@ -92,6 +92,9 @@ services:
       - KG_LLM_MODEL=${KG_LLM_MODEL:-}
       - KG_LLM_BASE_URL=${KG_LLM_BASE_URL:-}
       - KG_LLM_API_KEY=${KG_LLM_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 
     depends_on:
       postgres:

@@ -188,16 +188,6 @@ OPENAI_API_KEY=                 # or OPENROUTER_API_KEY / ANTHROPIC_API_KEY
 # qwen2.5 (Qwen2.5-0.5B-Instruct via an OpenAI-compatible front).
 # KG_LLM_BASE_URL=http://localhost:11434/v1
 # KG_LLM_API_KEY=
-```
-
-Docker note: `localhost` inside the app container means the AnythingMCP
-container itself, not your host. To reach an Ollama running on the host, use
-`http://host.docker.internal:11434/v1` — on Linux that name needs an explicit
-mapping (`extra_hosts: ["host.docker.internal:host-gateway"]`). When Ollama
-runs as a service in the same Compose project/network, use its service name
-instead (e.g. `http://ollama:11434/v1`). The five `KG_LLM_*` variables are
-passed through to the app container in `docker-compose.yml` with empty
-defaults, so setting them in `.env` is enough.
 
 # Scheduled extension (cloud cron) — all must align: this flag, the cron call,
 # and the per-workspace "Scheduled AI extension" switch
@@ -209,6 +199,15 @@ KG_LLM_BATCH=false              # Anthropic Message Batches (~50% cheaper)
 # Privacy: scrub PII from captured intents before skill generation
 KG_LLM_REDACT_INTENTS=true
 ```
+
+Docker note: `localhost` inside the app container means the AnythingMCP
+container itself, not your host. To reach an Ollama running on the host, use
+`http://host.docker.internal:11434/v1` — on Linux that name needs an explicit
+mapping (`extra_hosts: ["host.docker.internal:host-gateway"]`). When Ollama
+runs as a service in the same Compose project/network, use its service name
+instead (e.g. `http://ollama:11434/v1`). The `KG_LLM_*` variables and the
+provider keys are passed through to the app container in `docker-compose.yml`
+with empty defaults, so setting them in `.env` is enough.
 
 The graph itself (static + observational layers, manual editing, the
 `kg_how_to_obtain` tool) works with **no LLM key** — the AI flags only add the
