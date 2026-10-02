@@ -56,9 +56,13 @@ const MAX_FETCH_REDIRECTS = 5;
 
 /**
  * A `fetch` that follows redirects itself and runs assertSafeOutboundUrl on
- * every target. Same semantics as fetch otherwise: 307/308 keep method and
- * body, 301/302/303 turn a non-GET into a body-less GET, and Authorization
- * and Cookie are dropped when the redirect leaves the origin.
+ * every redirect target. Same semantics as fetch otherwise: 307/308 keep
+ * method and body, 301/302/303 turn a non-GET into a body-less GET, and
+ * Authorization and Cookie are dropped when the redirect leaves the origin.
+ *
+ * The URL passed in is NOT checked here: the caller checks it once, as every
+ * caller already does. An MCP transport calls this for each message of a
+ * session, and a DNS lookup per message would be pure overhead.
  */
 export async function ssrfGuardedFetch(
   input: string | URL,
@@ -66,7 +70,6 @@ export async function ssrfGuardedFetch(
 ): Promise<Response> {
   let url = typeof input === 'string' ? input : input.toString();
   let current: RequestInit = { ...init };
-  await assertSafeOutboundUrl(url);
   for (let hop = 0; ; hop++) {
     const res = await fetch(url, { ...current, redirect: 'manual' });
     const location = res.headers.get('location');
