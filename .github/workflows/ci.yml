@@ -57,6 +57,13 @@ jobs:
       - name: Verify the quoted adapter count and license wording
         run: node scripts/adapter-count.mjs --check
 
+      # The Docker image ships only hoisted dependencies; a nested one passes
+      # every test here and then crashes the container (see the script).
+      - name: Verify no backend dependency is nested out of the image
+        run: |
+          node --test scripts/check-runtime-deps.test.mjs
+          node scripts/check-runtime-deps.mjs
+
       - name: Verify catalog.ts is up-to-date with adapter JSONs
         run: |
           node scripts/regenerate-catalog.mjs
@@ -150,12 +157,36 @@ jobs:
     name: Docker build
     runs-on: ubuntu-latest
     needs: [backend, frontend]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Every push to main, and the pull requests that can break the image
+    # without breaking a unit test (decided in the first step). js-yaml 5
+    # (#809) passed every PR check and only failed here, after the merge.
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'pull_request'
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether this change can break the image
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          if echo "$changed" | grep -qE '(^|/)package(-lock)?\.json$|^Dockerfile$|^\.dockerignore$|^start\.sh$|^packages/backend/prisma/|^packages/backend/prisma\.config\.ts$'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No dependency, Dockerfile or startup change: skipping the image boot."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build unified image
+        if: steps.scope.outputs.run == 'true'
         run: docker build -t anythingmcp:ci .
 
       # Building proves the image assembles, not that it runs. v0.8.0 shipped a
@@ -163,6 +194,7 @@ jobs:
       # require resolved differently under dist/ than under src/: the image
       # built clean, every test passed, and the container crash-looped. Boot it.
       - name: Boot the image and wait for /health
+        if: steps.scope.outputs.run == 'true'
         run: |
           set -euo pipefail
           docker network create amcp-ci

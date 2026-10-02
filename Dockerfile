@@ -47,6 +47,19 @@ RUN mkdir -p packages/frontend && \
 RUN npm install --omit=dev --network-timeout=600000 && \
     rm -rf node_modules/typescript node_modules/react-dom node_modules/react
 
+# The runner stage ships only this stage's hoisted node_modules. A package npm
+# had to nest under packages/backend/node_modules (a second version of
+# something the root also needs) would be missing there, and the backend would
+# load the root's version at runtime: js-yaml 5 crash-looped the image that way
+# (#809). Fail the build here instead. scripts/check-runtime-deps.mjs runs the
+# same check on the lockfile in CI.
+RUN nested=$(ls -A packages/backend/node_modules 2>/dev/null | grep -v '^\.bin$' || true); \
+    if [ -n "$nested" ]; then \
+      echo "Nested backend dependencies would be missing from the image:" >&2; \
+      echo "$nested" >&2; \
+      exit 1; \
+    fi
+
 # ── Stage 2: Build Backend ──────────────────────────────────────────────────
 FROM node:${NODE_VERSION} AS backend-builder
 WORKDIR /app
