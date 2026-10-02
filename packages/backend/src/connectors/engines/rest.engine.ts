@@ -727,9 +727,13 @@ export class RestEngine {
       const extra = this.resolveValue(mapping['__merge'], params);
       if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
         assertNoPrototypePollution(extra);
-        for (const [key, value] of Object.entries(extra as Record<string, unknown>)) {
-          if (!(key in result)) result[key] = value;
-        }
+        // fromEntries creates own data properties only, as in safeEntries.
+        const merged = Object.fromEntries(
+          Object.entries(extra as Record<string, unknown>).filter(
+            ([key]) => !isUnsafeKey(key) && !Object.hasOwn(result, key),
+          ),
+        );
+        return { ...merged, ...result };
       }
     }
     return result;
