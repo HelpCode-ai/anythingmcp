@@ -8,6 +8,7 @@ import {
 } from './login-token.service';
 import { GraphqlSchemaService } from './graphql-schema.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
 
 /**
  * GraphqlEngine — executes GraphQL queries/mutations.
@@ -170,7 +171,11 @@ export class GraphqlEngine {
     // request (incl. the 401-refresh retries below) through the
     // proxy / web-unblocker. The unblocker agent disables upstream TLS
     // verification (e.g. Zyte intercepts TLS) — see createUnblockerProxyAgent.
-    const axiosOpts: Record<string, unknown> = { headers, timeout: 30000 };
+    const axiosOpts: Record<string, unknown> = {
+      headers,
+      timeout: 30000,
+      ...ssrfGuardedAxiosOptions(),
+    };
     if (config.proxyUrl) {
       const agent = createUnblockerProxyAgent(config.proxyUrl);
       axiosOpts.httpsAgent = agent;

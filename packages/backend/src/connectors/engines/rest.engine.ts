@@ -18,6 +18,7 @@ import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
+import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -176,6 +177,7 @@ export class RestEngine {
         ...resolvedEndpointHeaders,
       },
       timeout: 30000,
+      ...ssrfGuardedAxiosOptions(),
     };
 
     // Inject authentication

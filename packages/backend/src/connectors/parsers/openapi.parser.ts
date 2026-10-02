@@ -7,6 +7,7 @@ import axios from 'axios';
 const yaml = require('js-yaml') as { load: (s: string) => unknown };
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { normalizeOpenApi31 } from './openapi-3.1-normalizer';
+import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
 
 export interface ParsedTool {
   name: string;
@@ -191,7 +192,7 @@ export class OpenApiParser {
     this.logger.debug(`Fetching OpenAPI spec from: ${url}`);
 
     await assertSafeOutboundUrl(url);
-    const response = await axios.get(url, { timeout: 15000 });
+    const response = await axios.get(url, { timeout: 15000, ...ssrfGuardedAxiosOptions() });
 
     // If the response is already a valid spec object, parse directly
     if (typeof response.data === 'object' && response.data !== null) {
@@ -241,7 +242,10 @@ export class OpenApiParser {
       this.logger.debug(`Found spec URL in HTML: ${specUrl}`);
       try {
         await assertSafeOutboundUrl(specUrl);
-        const specResp = await axios.get(specUrl, { timeout: 15000 });
+        const specResp = await axios.get(specUrl, {
+          timeout: 15000,
+          ...ssrfGuardedAxiosOptions(),
+        });
         return specResp.data;
       } catch {
         this.logger.debug(`Failed to fetch spec from extracted URL: ${specUrl}`);
@@ -252,7 +256,10 @@ export class OpenApiParser {
     const initJsUrl = new URL('swagger-ui-init.js', pageUrl.endsWith('/') ? pageUrl : pageUrl + '/').href;
     try {
       await assertSafeOutboundUrl(initJsUrl);
-      const initResp = await axios.get(initJsUrl, { timeout: 15000 });
+      const initResp = await axios.get(initJsUrl, {
+        timeout: 15000,
+        ...ssrfGuardedAxiosOptions(),
+      });
       const initJs = typeof initResp.data === 'string' ? initResp.data : '';
       // The spec is embedded as: let defined = { ... "swaggerDoc": { <the spec> }, ... }
       const docMatch = initJs.match(/"swaggerDoc"\s*:\s*(\{[\s\S]+\})\s*,\s*"customOptions"/);
@@ -290,7 +297,10 @@ export class OpenApiParser {
       try {
         const candidate = `${origin}${path}`;
         await assertSafeOutboundUrl(candidate);
-        const resp = await axios.get(candidate, { timeout: 5000 });
+        const resp = await axios.get(candidate, {
+          timeout: 5000,
+          ...ssrfGuardedAxiosOptions(),
+        });
         if (
           typeof resp.data === 'object' &&
           resp.data !== null &&

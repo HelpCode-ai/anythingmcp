@@ -6,6 +6,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { encrypt, decrypt } from '../../common/crypto/encryption.util';
 import { getRequiredSecret } from '../../common/secrets.util';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
 
 const DEFAULT_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const DEFAULT_PROACTIVE_REFRESH_SECONDS = 24 * 60 * 60; // 1 day
@@ -207,6 +208,7 @@ export class LoginTokenService {
       params: method === 'GET' ? data : undefined,
       headers,
       timeout: 15000,
+      ...ssrfGuardedAxiosOptions(),
     });
 
     let token: unknown;
@@ -307,6 +309,7 @@ export class LoginTokenService {
       url,
       headers: src.headers,
       timeout: 10000,
+      ...ssrfGuardedAxiosOptions(),
     });
 
     const path = src.responsePath || 'salt';

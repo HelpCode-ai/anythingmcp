@@ -5,6 +5,7 @@ import { generateKeyPairSync, verify } from 'crypto';
 jest.mock('axios');
 // assertSafeOutboundUrl performs DNS/SSRF checks — stub it out for unit tests.
 jest.mock('../common/ssrf.util', () => ({
+  ...jest.requireActual('../common/ssrf.util'),
   assertSafeOutboundUrl: jest.fn().mockResolvedValue(undefined),
 }));
 
