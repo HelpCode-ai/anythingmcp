@@ -29,6 +29,8 @@ export interface CheckoutIntentPayload {
   trialEnd?: string;
   returnUrl: string;
   organizationId?: string;
+  /** A Stripe promotion code the user arrived with; the site pre-applies it. */
+  promoCode?: string;
   adMetadata?: {
     ad_consent: 'granted';
     gclid?: string;

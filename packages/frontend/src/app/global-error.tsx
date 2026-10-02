@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import * as Sentry from '@sentry/nextjs';
+import { isNetworkError, reloadWhenOnline } from '@/lib/network-error';
 
 /**
  * Last-resort boundary: renders when the root layout itself throws, where
@@ -13,9 +14,17 @@ export default function GlobalError({
 }: {
   error: Error & { digest?: string };
 }) {
+  const offline = isNetworkError(error);
+
   useEffect(() => {
-    Sentry.captureException(error, { tags: { boundary: 'global' } });
-  }, [error]);
+    // A dropped connection is not a bug in the page: keep counting it, as a
+    // warning, and reload by ourselves once the network is back.
+    Sentry.captureException(error, {
+      level: offline ? 'warning' : 'error',
+      tags: { boundary: 'global', network: offline ? 'yes' : 'no' },
+    });
+    return offline ? reloadWhenOnline() : undefined;
+  }, [error, offline]);
 
   return (
     <html lang="en">
@@ -31,9 +40,13 @@ export default function GlobalError({
         }}
       >
         <div role="alert" style={{ maxWidth: 480 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Something went wrong</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>
+            {offline ? 'Connection lost' : 'Something went wrong'}
+          </h1>
           <p style={{ color: '#6b7280', marginBottom: 16 }}>
-            AnythingMCP could not load this page. Reload to try again.
+            {offline
+              ? 'AnythingMCP could not reach the server. The page reloads by itself when your connection is back.'
+              : 'AnythingMCP could not load this page. Reload to try again.'}
           </p>
           {error?.digest ? (
             <p style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, color: '#6b7280', marginBottom: 16 }}>

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import * as Sentry from '@sentry/nextjs';
+import { isNetworkError, reloadWhenOnline } from '@/lib/network-error';
 
 /**
  * Global error boundary. Renders for any uncaught exception inside an App
@@ -19,16 +20,23 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const offline = isNetworkError(error);
+
   useEffect(() => {
-    // Reported with its stack; a no-op when Sentry is not configured.
-    Sentry.captureException(error, { tags: { boundary: 'segment' } });
+    // Reported with its stack; a no-op when Sentry is not configured. A
+    // dropped connection is counted as a warning and retried by itself.
+    Sentry.captureException(error, {
+      level: offline ? 'warning' : 'error',
+      tags: { boundary: 'segment', network: offline ? 'yes' : 'no' },
+    });
     // Avoid leaking stack traces; just record that something tripped.
     if (typeof window !== 'undefined' && error?.digest) {
       console.error(`[error.tsx] uncaught error (digest=${error.digest})`);
     } else {
       console.error('[error.tsx] uncaught error', error);
     }
-  }, [error]);
+    return offline ? reloadWhenOnline() : undefined;
+  }, [error, offline]);
 
   return (
     <div
@@ -54,11 +62,12 @@ export default function GlobalError({
         }}
       >
         <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>
-          Something went wrong
+          {offline ? 'Connection lost' : 'Something went wrong'}
         </h1>
         <p style={{ color: 'var(--muted-foreground, #6b7280)', marginBottom: 16 }}>
-          The page hit an unexpected error. You can retry, or go back to the
-          dashboard.
+          {offline
+            ? 'The page could not reach the server. It reloads by itself when your connection is back.'
+            : 'The page hit an unexpected error. You can retry, or go back to the dashboard.'}
         </p>
 
         {error?.digest ? (

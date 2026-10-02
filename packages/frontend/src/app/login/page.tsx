@@ -20,6 +20,8 @@ import {
   parsePlanIntent,
   readCardTrialPrompt,
   savePlanIntent,
+  parsePromoCode,
+  savePromoCode,
   writeCardTrialPrompt,
 } from '@/lib/card-trial';
 
@@ -72,18 +74,43 @@ function LoginForm() {
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [isCloudMode, setIsCloudMode] = useState(false);
   const [trialDaysLeft, setTrialDaysLeft] = useState(0);
+  // What the trial actually grants, read from the licence once it exists, so
+  // this card cannot drift from the plan (it said "2 connectors" after the
+  // trial moved to 5).
+  const [trialLimits, setTrialLimits] = useState<{ connectors: number; servers: number; users: number } | null>(null);
+  useEffect(() => {
+    if (setupStep !== 'trial-activated' || !authToken) return;
+    license
+      .getStatus(authToken)
+      .then((st) => {
+        const f = st?.features ?? {};
+        if (typeof f.maxConnectors === 'number' && typeof f.maxMcpServers === 'number') {
+          setTrialLimits({ connectors: f.maxConnectors, servers: f.maxMcpServers, users: f.maxUsers ?? 1 });
+        }
+      })
+      .catch(() => {});
+  }, [setupStep, authToken]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
   const toast = useToast();
 
   const redirectTo = safeRedirect(searchParams.get('redirect'));
+  // Back into an AI client's pending authorization (/auth/login, served by the
+  // backend): someone who came from "Connect" in Claude and had to create an
+  // account first. Not a Next route, so it needs a full navigation.
+  const returningToAuthorization = redirectTo.startsWith('/auth/');
+  const goTo = (target: string) => {
+    if (target.startsWith('/auth/')) window.location.assign(target);
+    else router.push(target);
+  };
   const emailVerifiedParam = searchParams.get('emailVerified');
   const modeParam = searchParams.get('mode'); // 'register' or 'login'
   const ssoCode = searchParams.get('sso');
   const errorParam = searchParams.get('error');
   const planParam = searchParams.get('plan');
   const periodParam = searchParams.get('period');
+  const promoParam = searchParams.get('promo');
   const [ssoProviders, setSsoProviders] = useState<SsoProviderButton[]>([]);
   const [ssoExchanging, setSsoExchanging] = useState(Boolean(ssoCode));
 
@@ -117,7 +144,11 @@ function LoginForm() {
     if (!isCloudMode) return;
     const intent = parsePlanIntent(planParam, periodParam);
     if (intent) savePlanIntent(intent);
-  }, [isCloudMode, planParam, periodParam]);
+    // A promotion code from the pricing page (promo bar) rides along so the
+    // card trial's checkout applies it.
+    const promo = parsePromoCode(promoParam);
+    if (promo) savePromoCode(promo);
+  }, [isCloudMode, planParam, periodParam, promoParam]);
 
   /**
    * Cloud only: right after the trial starts, an admin headed for the
@@ -272,7 +303,10 @@ function LoginForm() {
         setSetupStep('verify-email');
       } else {
         login(result.accessToken, result.user);
-        if (isCloudMode && needsLicenseSetup) {
+        if (isCloudMode && needsLicenseSetup && returningToAuthorization) {
+          await license.activateTrial(result.accessToken).catch(() => undefined);
+          goTo(redirectTo);
+        } else if (isCloudMode && needsLicenseSetup) {
           // Cloud mode: auto-activate trial for verified users
           setAuthToken(result.accessToken);
           try {
@@ -282,19 +316,19 @@ function LoginForm() {
             // that already holds a licence (a running trial, a paid plan) goes
             // straight in, instead of being told it has "0 days" left.
             if (!trialResult.trialStarted) {
-              router.push(redirectTo);
+              goTo(redirectTo);
               return;
             }
             setTrialDaysLeft(trialResult.trialDaysLeft);
             setSetupStep('trial-activated');
           } catch {
-            router.push(redirectTo);
+            goTo(redirectTo);
           }
         } else if (needsLicenseSetup) {
           setAuthToken(result.accessToken);
           setSetupStep('license-choice');
         } else {
-          router.push(redirectTo);
+          goTo(redirectTo);
         }
       }
     } catch (err: any) {
@@ -316,7 +350,11 @@ function LoginForm() {
       const verifiedUser = { ...storedUser, emailVerified: true };
       login(authToken, verifiedUser);
 
-      if (isCloudMode) {
+      if (isCloudMode && returningToAuthorization) {
+        // Verification already created the trial; the user is in the middle
+        // of connecting an AI client, so take them straight back to approve.
+        goTo(redirectTo);
+      } else if (isCloudMode) {
         // Cloud mode: auto-activate trial
         try {
           const trialResult = await license.activateTrial(authToken);
@@ -325,12 +363,12 @@ function LoginForm() {
           setSetupStep('trial-activated');
         } catch (trialErr: any) {
           // Trial may already exist (e.g. returning user) — go to dashboard
-          router.push(redirectTo);
+          goTo(redirectTo);
         }
       } else if (isFirstUserFlag) {
         setSetupStep('license-choice');
       } else {
-        router.push(redirectTo);
+        goTo(redirectTo);
       }
     } catch (err: any) {
       setError(err.message || 'Invalid verification code');
@@ -379,7 +417,7 @@ function LoginForm() {
     setLoading(true);
     try {
       await license.startBusinessTrial(authToken);
-      router.push(redirectTo);
+      goTo(redirectTo);
     } catch (err: any) {
       setError(err.message || 'Could not start the trial');
       setLoading(false);
@@ -395,7 +433,7 @@ function LoginForm() {
     setLoading(true);
     try {
       await license.setKey(licenseKey, authToken);
-      router.push(redirectTo);
+      goTo(redirectTo);
     } catch (err: any) {
       setError(err.message || 'Failed to activate license');
       setLoading(false);
@@ -403,7 +441,7 @@ function LoginForm() {
   };
 
   const handleSkip = () => {
-    router.push(redirectTo);
+    goTo(redirectTo);
   };
 
   // ── Email Verification Step ─────────────────────────────────────────────
@@ -462,12 +500,21 @@ function LoginForm() {
             </button>
           </p>
 
-          {isFirstUserFlag && !isCloudMode && (
+          {/* Self-hosted does not enforce email verification server-side, so a
+              verify step with no way past it (no SMTP configured) would be a
+              dead end. Always let a self-hosted user skip: the first user goes
+              on to set up the licence, everyone else straight into the app.
+              Cloud still requires verification, so no skip there. */}
+          {!isCloudMode && (
             <div className="text-center mt-3">
               <button
                 onClick={() => {
                   login(authToken, storedUser);
-                  setSetupStep('license-choice');
+                  if (isFirstUserFlag) {
+                    setSetupStep('license-choice');
+                  } else {
+                    goTo(redirectTo);
+                  }
                 }}
                 className="text-sm text-[var(--text-2)] hover:text-[var(--brand)] hover:underline"
               >
@@ -552,13 +599,16 @@ function LoginForm() {
             <p className="text-xs font-medium text-[var(--text-3)] mb-2">YOUR TRIAL INCLUDES</p>
             <ul className="space-y-1.5 text-sm text-[var(--text-2)]">
               <li className="flex items-center gap-2">
-                <span className="text-[var(--ok)]">&#10003;</span> Up to 2 connectors
+                <span className="text-[var(--ok)]">&#10003;</span>{' '}
+                {trialLimits ? `Up to ${trialLimits.connectors} connectors` : 'Connectors from the marketplace or your own API'}
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-[var(--ok)]">&#10003;</span> Up to 2 MCP servers
+                <span className="text-[var(--ok)]">&#10003;</span>{' '}
+                {trialLimits ? `Up to ${trialLimits.servers} MCP servers` : 'Your own MCP servers'}
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-[var(--ok)]">&#10003;</span> 1 user seat
+                <span className="text-[var(--ok)]">&#10003;</span>{' '}
+                {trialLimits ? `${trialLimits.users} user seat${trialLimits.users === 1 ? '' : 's'}` : '1 user seat'}
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-[var(--ok)]">&#10003;</span> Full audit log
@@ -566,7 +616,7 @@ function LoginForm() {
             </ul>
           </div>
 
-          <Button onClick={() => router.push(redirectTo)} className="w-full" size="lg">
+          <Button onClick={() => goTo(redirectTo)} className="w-full" size="lg">
             Get Started
           </Button>
         </Card>

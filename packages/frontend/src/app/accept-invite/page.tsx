@@ -30,11 +30,13 @@ const inputClass =
 function AcceptInviteContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, token: sessionToken, user: sessionUser } = useAuth();
   const token = searchParams.get('token') || '';
 
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('');
+  const [exists, setExists] = useState(false);
+  const [ssoOnly, setSsoOnly] = useState(false);
   const [valid, setValid] = useState<boolean | null>(null);
   const [error, setError] = useState('');
   const [name, setName] = useState('');
@@ -53,6 +55,8 @@ function AcceptInviteContent() {
       .then((data) => {
         setEmail(data.email);
         setRole(data.role);
+        setExists(!!data.exists);
+        setSsoOnly(!!data.ssoOnly);
         setValid(true);
       })
       .catch((err) => {
@@ -61,16 +65,19 @@ function AcceptInviteContent() {
       });
   }, [token]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
+  // True when the person viewing this page is already signed in as exactly the
+  // invited address: they can accept in one click, no password needed.
+  const signedInAsInvitee =
+    !!sessionUser && !!email && sessionUser.email?.toLowerCase() === email.toLowerCase();
+
+  const accept = async (payload: { password?: string; name?: string }) => {
     setSubmitting(true);
     setError('');
     try {
-      const result = await auth.acceptInvite({ token, password, name });
+      const result = await auth.acceptInvite(
+        { token, ...payload },
+        signedInAsInvitee ? sessionToken ?? undefined : undefined,
+      );
       login(result.accessToken, result.user);
       router.push('/');
     } catch (err: any) {
@@ -78,6 +85,22 @@ function AcceptInviteContent() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    await accept({ password, name });
+  };
+
+  const handleJoinExisting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // When signed in as the invitee, no password is sent — the session proves
+    // ownership server-side.
+    await accept(signedInAsInvitee ? {} : { password });
   };
 
   return (
@@ -103,7 +126,9 @@ function AcceptInviteContent() {
             </div>
             <h1 className="text-xl font-semibold text-[var(--text)]">Accept Invitation</h1>
             <p className="text-[var(--text-2)] text-sm mt-1">
-              Create your Anything<span className="text-[var(--brand)]">MCP</span> account
+              {exists
+                ? 'Join this workspace with your existing account'
+                : 'Create your account to join this workspace'}
             </p>
           </div>
 
@@ -112,74 +137,136 @@ function AcceptInviteContent() {
           )}
 
           {valid === true && (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="rounded-[9px] px-3 py-2.5 bg-[var(--t-info-bg)] text-[var(--t-info-fg)]">
+            <>
+              <div className="rounded-[9px] px-3 py-2.5 bg-[var(--t-info-bg)] text-[var(--t-info-fg)] mb-4">
                 <p className="text-sm">
-                  You've been invited as <strong>{role}</strong> for <strong>{email}</strong>
+                  You&apos;ve been invited as <strong>{role}</strong> for <strong>{email}</strong>
                 </p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1 text-[var(--text)]">Your Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  className={inputClass}
-                  placeholder="Full name"
-                />
-              </div>
+              {/* SSO-only account that the viewer is not signed into: they must
+                  authenticate with their provider before joining. */}
+              {exists && ssoOnly && !signedInAsInvitee ? (
+                <div className="space-y-4">
+                  <p className="text-sm text-[var(--text-2)]">
+                    This email already has an account that signs in with single sign-on. Sign in
+                    first, then open this invitation link again to join the workspace.
+                  </p>
+                  <a href="/login">
+                    <Button className="w-full" size="lg">
+                      Go to sign in
+                    </Button>
+                  </a>
+                </div>
+              ) : exists ? (
+                // Existing local account: prove ownership (or one click when
+                // already signed in as this address).
+                <form onSubmit={handleJoinExisting} className="space-y-4">
+                  {!signedInAsInvitee && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-[var(--text)]">
+                        Your password
+                      </label>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        autoFocus
+                        placeholder="Enter your existing password"
+                        className={inputClass}
+                      />
+                      <p className="mt-1.5 text-xs text-[var(--text-3)]">
+                        Confirm it&apos;s you before we add this account to the workspace.
+                      </p>
+                    </div>
+                  )}
+                  {signedInAsInvitee && (
+                    <p className="text-sm text-[var(--text-2)]">
+                      You&apos;re signed in as <strong>{email}</strong>. Accept to join this
+                      workspace.
+                    </p>
+                  )}
+                  {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
+                  <Button
+                    type="submit"
+                    disabled={submitting || (!signedInAsInvitee && !password)}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {submitting ? 'Joining…' : 'Accept & join workspace'}
+                  </Button>
+                </form>
+              ) : (
+                // Brand-new account.
+                <form onSubmit={handleCreate} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-[var(--text)]">
+                      Your Name
+                    </label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                      className={inputClass}
+                      placeholder="Full name"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1 text-[var(--text)]">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  disabled
-                  className="w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] px-3 text-sm text-[var(--text)] opacity-70"
-                />
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-[var(--text)]">Email</label>
+                    <input
+                      type="email"
+                      value={email}
+                      disabled
+                      className="w-full h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] px-3 text-sm text-[var(--text)] opacity-70"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1 text-[var(--text)]">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  placeholder="Min. 8 characters"
-                  className={inputClass}
-                />
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-[var(--text)]">
+                      Password
+                    </label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      placeholder="Min. 8 characters"
+                      className={inputClass}
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1 text-[var(--text)]">Confirm Password</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  placeholder="Repeat password"
-                  className={inputClass}
-                />
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-[var(--text)]">
+                      Confirm Password
+                    </label>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      placeholder="Repeat password"
+                      className={inputClass}
+                    />
+                  </div>
 
-              {error && (
-                <p className="text-sm text-[var(--danger)]">{error}</p>
+                  {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
+
+                  <Button
+                    type="submit"
+                    disabled={submitting || !name || !password || password.length < 8}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {submitting ? 'Creating account...' : 'Create Account'}
+                  </Button>
+                </form>
               )}
-
-              <Button
-                type="submit"
-                disabled={submitting || !name || !password || password.length < 8}
-                className="w-full"
-                size="lg"
-              >
-                {submitting ? 'Creating account...' : 'Create Account'}
-              </Button>
-            </form>
+            </>
           )}
         </Card>
       )}

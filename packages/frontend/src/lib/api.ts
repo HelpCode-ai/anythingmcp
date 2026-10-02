@@ -107,11 +107,17 @@ export const auth = {
       token,
     }),
   verifyInvite: (token: string) =>
-    request<{ email: string; role: string; valid: boolean }>(`/api/auth/invite/verify?token=${token}`),
-  acceptInvite: (data: { token: string; password: string; name: string }) =>
+    request<{ email: string; role: string; valid: boolean; exists?: boolean; ssoOnly?: boolean }>(
+      `/api/auth/invite/verify?token=${token}`,
+    ),
+  acceptInvite: (data: { token: string; password?: string; name?: string }, token?: string) =>
     request<{ accessToken: string; user: any }>('/api/auth/accept-invite', {
       method: 'POST',
       body: data,
+      // When the invitee is already signed in (accepting an invite to another
+      // of their addresses), send the session so the server can skip the
+      // password challenge.
+      token,
     }),
   verifyEmail: (code: string, token: string) =>
     request<{ message: string; emailVerified: boolean }>('/api/auth/verify-email', {
@@ -447,13 +453,28 @@ export const adapters = {
       { method: 'POST', token, body: credentials ? { credentials } : undefined },
     ),
   starterPack: (token: string) =>
-    request<StarterPackItem[]>('/api/adapters/starter-pack', { token }),
+    request<StarterPackResponse>('/api/adapters/starter-pack', { token }),
   installStarterPack: (slugs: string[], token: string) =>
     request<{
       results: StarterPackInstallResult[];
       server: { id: string; name: string } | null;
     }>('/api/adapters/starter-pack/install', { method: 'POST', token, body: { slugs } }),
 };
+
+/** A paid Cloud licence's Stripe subscription, as the server last saw it. */
+export interface LicenseBilling {
+  status: string;
+  /** Set to end at the period end instead of renewing. */
+  cancelling: boolean;
+  endsAt: string | null;
+  currentPeriodEnd: string | null;
+  /** End of a card trial, while trialing. */
+  trialEnd: string | null;
+  /** Price per period in the currency's smallest unit. */
+  amount: number | null;
+  currency: string | null;
+  interval: 'day' | 'week' | 'month' | 'year' | null;
+}
 
 /** A keyless connector offered to a new workspace (see /welcome). */
 export interface StarterPackItem {
@@ -465,6 +486,12 @@ export interface StarterPackItem {
   toolCount: number;
   preselected: boolean;
   installed: boolean;
+}
+
+export interface StarterPackResponse {
+  items: StarterPackItem[];
+  /** The plan's connector allowance; `max`/`remaining` are null when uncapped. */
+  connectors: { current: number; max: number | null; remaining: number | null };
 }
 
 export interface StarterPackInstallResult {
@@ -1193,7 +1220,20 @@ export const license = {
   startBusinessTrial: (token: string) =>
     request<EditionState>('/api/license/business-trial', { method: 'POST', token }),
   getStatus: (token?: string) =>
-    request<{ plan: string | null; status: string; features: any; expiresAt: string | null; lastVerifiedAt: string | null; instanceId: string | null; trialDaysLeft?: number }>('/api/license/status', { token }),
+    request<{
+      plan: string | null;
+      status: string;
+      features: any;
+      expiresAt: string | null;
+      lastVerifiedAt: string | null;
+      instanceId: string | null;
+      trialDaysLeft?: number;
+      /** Cloud, paid licences: the Stripe subscription's state. */
+      billing?: LicenseBilling;
+    }>('/api/license/status', { token }),
+  /** Re-verify now (cloud, admin); at most once a minute per workspace. */
+  refresh: (token: string) =>
+    request<{ refreshed: boolean }>('/api/license/refresh', { method: 'POST', token }),
   activateTrial: (token: string) =>
     request<{ message: string; trialStarted: boolean; licenseKey: string; plan: string; expiresAt: string; trialDaysLeft: number }>('/api/license/activate-trial', {
       method: 'POST',
@@ -1215,10 +1255,10 @@ export const license = {
       method: 'POST',
       token,
     }),
-  billingPortal: (token: string, returnUrl?: string) =>
+  billingPortal: (token: string, returnUrl?: string, flow?: 'cancel') =>
     request<{ url: string }>('/api/license/billing-portal', {
       method: 'POST',
-      body: { returnUrl },
+      body: { returnUrl, ...(flow && { flow }) },
       token,
     }),
   /**
@@ -1228,7 +1268,12 @@ export const license = {
    */
   checkoutLink: (
     token: string,
-    body: { plan: 'starter' | 'team' | 'business'; billingPeriod: 'monthly' | 'yearly'; trial: boolean },
+    body: {
+      plan: 'starter' | 'team' | 'business';
+      billingPeriod: 'monthly' | 'yearly';
+      trial: boolean;
+      promo?: string;
+    },
   ) =>
     request<{ url: string }>('/api/license/checkout-link', {
       method: 'POST',

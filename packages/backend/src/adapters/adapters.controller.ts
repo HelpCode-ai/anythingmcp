@@ -53,10 +53,29 @@ export class AdaptersController {
   @ApiOperation({
     summary: 'Connectors offered to a new workspace',
     description:
-      'Keyless connectors that install in one click, with whether this workspace already has each one.',
+      'Keyless connectors that install in one click, with whether this workspace already has each one, ' +
+      'plus the connector allowance of the current plan so the page never preselects more than will fit.',
   })
-  starterPack(@Req() req: any) {
-    return this.adaptersService.starterPack(req.user.organizationId);
+  async starterPack(@Req() req: any) {
+    const [items, usage] = await Promise.all([
+      this.adaptersService.starterPack(req.user.organizationId),
+      // Usage is cloud/licence-specific; on a plan with no cap `max` is null.
+      this.licenseGuard
+        .getUsage(req.user.sub, req.user.organizationId)
+        .catch(() => null),
+    ]);
+    const current = usage?.connectors.current ?? 0;
+    const max = usage?.connectors.max ?? null;
+    return {
+      items,
+      // `remaining` is null when the plan is uncapped; otherwise how many more
+      // connectors this workspace can add right now (never negative).
+      connectors: {
+        current,
+        max,
+        remaining: max == null ? null : Math.max(0, max - current),
+      },
+    };
   }
 
   @Post('starter-pack/install')

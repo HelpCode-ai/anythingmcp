@@ -267,6 +267,23 @@ describe('LicenseController.checkoutLink', () => {
     expect(licenseService.getCurrentLicense).toHaveBeenCalledWith('org-1');
   });
 
+  it('passes a promotion code through, upper-cased, and omits it when absent', async () => {
+    const { controller, licenseService } = makeController();
+    await controller.checkoutLink(adminReq, {
+      plan: 'team',
+      billingPeriod: 'monthly',
+      trial: true,
+      promo: 'start30',
+    });
+    const [payload] = licenseService.createCheckoutIntent.mock.calls[0] as any[];
+    expect(payload.promoCode).toBe('START30');
+
+    const plain = makeController();
+    await plain.controller.checkoutLink(adminReq, { plan: 'team', billingPeriod: 'monthly', trial: true });
+    const [plainPayload] = plain.licenseService.createCheckoutIntent.mock.calls[0] as any[];
+    expect(plainPayload).not.toHaveProperty('promoCode');
+  });
+
   it('asks to pay now when no trial is requested', async () => {
     const { controller, licenseService } = makeController();
     await controller.checkoutLink(adminReq, { plan: 'business', billingPeriod: 'monthly', trial: false });

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { users, server, organizations, AUTH_EXPIRED_EVENT } from './api';
+import { users, server, organizations, AUTH_EXPIRED_EVENT, ApiError } from './api';
 import { storage } from './storage';
 
 interface User {
@@ -95,19 +95,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
 
-      users.me(savedToken).then((freshUser) => {
-        setUser(freshUser);
-        storage.set('amcp_user', JSON.stringify(freshUser));
-        fetchOrgData(savedToken);
-        setIsLoading(false);
-      }).catch(() => {
-        setToken(null);
-        setUser(null);
-        storage.remove('amcp_token');
-        storage.remove('amcp_user');
-        document.cookie = 'amcp_token=; path=/; max-age=0';
-        setIsLoading(false);
-      });
+      const refresh = () =>
+        users.me(savedToken).then((freshUser) => {
+          setUser(freshUser);
+          storage.set('amcp_user', JSON.stringify(freshUser));
+          fetchOrgData(savedToken);
+        });
+
+      refresh().catch((err) => {
+        if (err instanceof ApiError && err.status < 500) {
+          // The backend answered and rejected the session.
+          setToken(null);
+          setUser(null);
+          storage.remove('amcp_token');
+          storage.remove('amcp_user');
+          document.cookie = 'amcp_token=; path=/; max-age=0';
+          return;
+        }
+        // No answer (offline, a laptop waking before its network) or a 5xx
+        // during a deploy says nothing about the session. Signing out here
+        // sent people to /login, offline, for a token that was still valid
+        // (ANYTHINGMCP-CLOUD-FRONTEND-7). Keep the saved session and check
+        // it again once the connection is back; a real 401 still signs out
+        // through AUTH_EXPIRED_EVENT.
+        window.addEventListener('online', () => void refresh().catch(() => {}), { once: true });
+      }).finally(() => setIsLoading(false));
     } else {
       setIsLoading(false);
     }

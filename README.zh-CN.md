@@ -5,12 +5,21 @@
 <h1 align="center">AnythingMCP：自行托管的 MCP 网关</h1>
 
 <p align="center">
+  <a href="https://www.star-history.com/helpcode-ai/anythingmcp">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending&theme=dark" />
+      <img src="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending" alt="GitHub Trending Repository of the Day" height="64" />
+    </picture>
+  </a>
+</p>
+
+<p align="center">
   <a href="README.md">English</a> · <a href="README.de.md">Deutsch</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a>
 </p>
 
 <p align="center">
   <strong>AnythingMCP 是一个开源、可自行托管的 MCP 网关，无需编写 MCP 服务器，即可将任意 REST/OpenAPI、SOAP、GraphQL、OData 或 SQL 系统转化为 Claude、ChatGPT 和 Copilot 可用的 MCP 工具。</strong><br/>
-  它自带 265 个现成适配器，涵盖 SAP、Odoo、Xentral、weclapp、Shopware、WooCommerce 和 Amazon Seller 等，其中 21 个无需 API 密钥。
+  它自带 265 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 21 个无需 API 密钥。
 </p>
 
 <p align="center">
@@ -24,11 +33,9 @@
   <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>免费试用云版 7 天</strong></a> · <a href="#run-it-yourself">自己运行</a> · <a href="docs/guides.md">文档</a> · <a href="https://anythingmcp.com/zh/guides">连接器指南</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
-**在 Claude 中提一个问题，答案来自 Etsy、SAP 和一个物流 API。** 演示中，先从目录安装 Etsy，再通过 OData 添加 SAP S/4HANA，并根据 OpenAPI 规范导入一个物流 API，随后 Claude 同时使用这三个系统（2:40，有声音，英文）：
+**在 Claude 中提一个问题，答案来自 Etsy、SAP 和一个物流 API。**
 
 https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
-
-**[KOCH Freiburg GmbH](https://www.kochfreiburg.de/) 已在生产环境使用 AnythingMCP**，将 AI 助手连接到 15 个以上的内部系统，包括 ERP、CRM、SOAP 服务和本地数据库。[helpcode.ai](https://helpcode.ai) 将它从该系统中提取出来并开源，因为适配器目录由社区共同建设，比作为单一产品发展得更快。
 
 ---
 
@@ -264,12 +271,11 @@ AI 处理默认关闭，使用你自己的 OpenAI、OpenRouter 或 Anthropic 密
 ### 如何把 Shopware、WooCommerce 或 Amazon Seller Central 连接到 Claude？
 为你的商店或平台安装对应的[电子商务适配器](#e-commerce--marketplace-connectors)并完成授权。WooCommerce 提供 49 个工具，Amazon Seller Central 使用官方 Selling Partner API，Shopware 6 适配器通过 Store API 读取店面目录。
 
-### AnythingMCP 免费吗？可以自行托管吗？
-可以。它以 AGPL-3.0 许可在你自己的服务器上运行，包括商业用途。[AnythingMCP Cloud](https://cloud.anythingmcp.com/login?mode=register) 是可选的托管版本，在法兰克福运营，可免费试用 7 天。
-
 ---
 
 ## 社区与支持
+
+**[KOCH Freiburg GmbH](https://www.kochfreiburg.de/) 已在生产环境使用 AnythingMCP**，将 AI 助手连接到 15 个以上的内部系统，包括 ERP、CRM、SOAP 服务和本地数据库。[helpcode.ai](https://helpcode.ai) 将它从该系统中提取出来并开源，因为适配器目录由社区共同建设，比作为单一产品发展得更快。
 
 - 💬 **问题与想法：**[GitHub Discussions](https://github.com/HelpCode-ai/anythingmcp/discussions)。为下一个适配器投票，分享你的成果。
 - 🐛 **缺陷与功能请求：**[Issues](https://github.com/HelpCode-ai/anythingmcp/issues) · [支持](.github/SUPPORT.md)
