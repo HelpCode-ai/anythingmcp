@@ -52,12 +52,24 @@ class CheckoutLinkDto {
 
   @IsBoolean()
   trial: boolean;
+
+  // A Stripe promotion code the user arrived with (promo bar → sign-up). The
+  // licence site pre-applies it when it is a live code and ignores it if not.
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,64}$/)
+  promo?: string;
 }
 
 class BillingPortalDto {
   @IsOptional()
   @IsString()
   returnUrl?: string;
+
+  /** 'cancel': open Stripe's cancellation page directly. */
+  @IsOptional()
+  @IsIn(['cancel'])
+  flow?: 'cancel';
 }
 
 @ApiTags('License')
@@ -130,7 +142,28 @@ export class LicenseController {
       lastVerifiedAt: license.lastVerifiedAt,
       instanceId: license.instanceId,
       ...(trialDaysLeft !== undefined && { trialDaysLeft }),
+      // Cloud, paid licences: the subscription's state (card trial end, set
+      // to cancel at period end, next renewal and price).
+      ...(license.billing && { billing: license.billing }),
     };
+  }
+
+  @Post('refresh')
+  @HttpCode(200)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Re-verify the workspace licence now, e.g. after returning from the billing portal (cloud, ADMIN)',
+  })
+  async refresh(@Req() req: any): Promise<{ refreshed: boolean }> {
+    if (!this.deployment.isCloud()) throw new NotFoundException();
+    const refreshed = await this.licenseService
+      .refreshLicense(req.user.organizationId)
+      .catch(() => false);
+    return { refreshed };
   }
 
   @Get('instance-id')
@@ -198,6 +231,7 @@ export class LicenseController {
       return await this.licenseService.createBillingPortalSession(
         req.user.organizationId,
         dto?.returnUrl,
+        dto?.flow,
       );
     } catch (err: any) {
       throw new BadRequestException(err.message || 'Failed to open billing portal');
@@ -262,6 +296,7 @@ export class LicenseController {
         ...(trialEnd && { trialEnd: trialEnd.toISOString() }),
         returnUrl: `${cloudFrontendOrigin()}/settings/license/activate`,
         organizationId,
+        ...(dto.promo && { promoCode: dto.promo.toUpperCase() }),
         ...(adMetadata && { adMetadata }),
       });
     } catch (err: any) {

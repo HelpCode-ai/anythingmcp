@@ -92,6 +92,11 @@ if (useOAuth) {
       // always mounts cookie-parser (see the regression test in
       // main-cookie-parser.spec.ts), so the check is skipped only then.
       skipCookieParserCheck: Sentry.isInitialized(),
+      // How long a pending authorization (an AI client's "Connect" click)
+      // waits for the user. The default 10 minutes is too short for someone
+      // without an account: from the login page they create one, verify their
+      // email and come back to approve. 30 minutes covers that comfortably.
+      oauthSessionExpiresIn: 30 * 60 * 1000,
     }),
   );
 }

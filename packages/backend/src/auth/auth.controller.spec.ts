@@ -38,11 +38,18 @@ function makeController({
   const sent: string[] = [];
   const tokens: { userId: string; createdAt: Date; usedAt: Date | null }[] = [];
   const events: any[] = [];
+  const invites: any[] = [];
 
   const authService = {
     hashPassword: jest.fn(async (p: string) => `hash:${p}`),
     comparePassword: jest.fn(async (p: string, h: string) => h === `hash:${p}`),
     generateToken: jest.fn(() => 'jwt'),
+    // Test sessions are the literal string `sess:<email>`; anything else is an
+    // invalid token.
+    verifyToken: jest.fn((t: string) => {
+      if (typeof t === 'string' && t.startsWith('sess:')) return { email: t.slice(5) };
+      throw new Error('invalid token');
+    }),
   };
   const usersService = {
     findByEmail: jest.fn(async (email: string) => users.find((u) => u.email === email) ?? null),
@@ -62,6 +69,11 @@ function makeController({
       users.push(u);
       return u;
     }),
+    update: jest.fn(async (id: string, data: any) => {
+      const u = users.find((x) => x.id === id);
+      if (u) Object.assign(u, data);
+      return u;
+    }),
   };
   const prisma = {
     organization: { findFirst: jest.fn(async () => ({ id: 'org-first' })) },
@@ -78,6 +90,19 @@ function makeController({
       ),
     },
     passwordResetToken: { create: jest.fn(async ({ data }: any) => data) },
+    invitationToken: {
+      findUnique: jest.fn(async ({ where }: any) => invites.find((i) => i.token === where.token) ?? null),
+      findFirst: jest.fn(async () => null),
+      create: jest.fn(async ({ data }: any) => {
+        invites.push({ ...data });
+        return data;
+      }),
+      update: jest.fn(async ({ where, data }: any) => {
+        const inv = invites.find((i) => i.token === where.token || i.id === where.id);
+        if (inv) Object.assign(inv, data);
+        return inv;
+      }),
+    },
     productEvent: {
       create: jest.fn(async ({ data }: any) => {
         events.push(data);
@@ -111,8 +136,14 @@ function makeController({
   const organizationsService = {
     create: jest.fn(async () => ({ id: `org-${users.length + 1}` })),
     addMember: jest.fn(async () => undefined),
+    getMembership: jest.fn(async () => null),
+    switchOrg: jest.fn(async (userId: string, organizationId: string) => {
+      const u = users.find((x) => x.id === userId);
+      return { ...(u ?? {}), organizationId };
+    }),
   };
   const mcpServersService = { createDefaultForUser: jest.fn(async () => undefined) };
+  const rolesService = { setUserRoles: jest.fn(async () => undefined) };
   const ssoEnforcement = { isPasswordLoginBlocked: jest.fn(async () => false) };
 
   const controller = new AuthController(
@@ -129,14 +160,25 @@ function makeController({
       getLatestInactiveLicense: jest.fn(async () => orgEndedLicense),
     } as any, // licenseService
     {} as any, // securityEvents
-    {} as any, // rolesService
+    rolesService as any, // rolesService
     {} as any, // recoveryCodes
     ssoEnforcement as any,
     // The real service, so the test sees what would actually be stored.
     new ProductEventService(prisma as any),
     { assertSeatAvailable: jest.fn(async () => undefined), getState: jest.fn(async () => ({ trialAvailable: true })) } as any, // edition
   );
-  return { controller, users, sent, events, authService, usersService, emailService, prisma };
+  return {
+    controller,
+    users,
+    sent,
+    events,
+    invites,
+    authService,
+    usersService,
+    emailService,
+    organizationsService,
+    prisma,
+  };
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -348,5 +390,122 @@ describe('AuthController.login — cloud licence setup', () => {
   it('asks a workspace that never had a licence', async () => {
     const { controller } = makeController({ mode: 'cloud', accounts: [EXISTING] });
     expect((await login(controller)).needsLicenseSetup).toBe(true);
+  });
+});
+
+/**
+ * An invitation link is not proof that whoever holds it controls the invited
+ * address. Accepting an invite for an address that ALREADY has an account must
+ * require that account's password (or a live session for it) — otherwise any
+ * admin (i.e. any signed-up user) could invite an arbitrary address and take
+ * the account over by accepting the invite themselves.
+ */
+describe('AuthController — accept-invite ownership check', () => {
+  const makeInvite = (over: Partial<any> = {}) => ({
+    id: 'inv1',
+    token: 'invite-token',
+    email: 'taken@example.com',
+    role: 'EDITOR',
+    mcpRoleId: null,
+    mcpRoleIds: [],
+    organizationId: 'org-new',
+    expiresAt: new Date(Date.now() + 3600_000),
+    usedAt: null,
+    ...over,
+  });
+
+  it('refuses to attach an existing account without the right password', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite({ headers: {} }, { token: 'invite-token', password: 'Wrong#Pass9' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('refuses with no password at all', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite({ headers: {} }, { token: 'invite-token' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('accepts an existing account with its correct password', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    a.invites.push(makeInvite());
+    const res = await a.controller.acceptInvite(
+      { headers: {} },
+      { token: 'invite-token', password: 'Correct#Horse1' },
+    );
+    expect(res.accessToken).toBe('jwt');
+    expect(a.organizationsService.addMember).toHaveBeenCalledWith(
+      'u-existing',
+      'org-new',
+      'EDITOR',
+    );
+  });
+
+  it('accepts an existing account with a live session for the same address, no password', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    a.invites.push(makeInvite());
+    const res = await a.controller.acceptInvite(
+      { headers: { authorization: 'Bearer sess:taken@example.com' } },
+      { token: 'invite-token' },
+    );
+    expect(res.accessToken).toBe('jwt');
+    expect(a.organizationsService.addMember).toHaveBeenCalled();
+  });
+
+  it('ignores a session that belongs to a different address', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite(
+        { headers: { authorization: 'Bearer sess:attacker@example.com' } },
+        { token: 'invite-token' },
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('tells an SSO-only existing account to sign in first (password cannot prove it)', async () => {
+    const sso: Account = { ...EXISTING, passwordHash: null };
+    const a = makeController({ mode: 'cloud', accounts: [sso] });
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite({ headers: {} }, { token: 'invite-token', password: 'anything' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('creates a brand-new account from an invite (no ownership check needed)', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [] });
+    a.invites.push(makeInvite({ email: 'fresh@example.com' }));
+    const res = await a.controller.acceptInvite(
+      { headers: {} },
+      { token: 'invite-token', password: 'Brand#New123', name: 'Fresh' },
+    );
+    expect(res.accessToken).toBe('jwt');
+    expect(a.users.map((u) => u.email)).toContain('fresh@example.com');
+  });
+
+  it('rejects a weak password for a brand-new account', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [] });
+    a.invites.push(makeInvite({ email: 'fresh@example.com' }));
+    await expect(
+      a.controller.acceptInvite(
+        { headers: {} },
+        { token: 'invite-token', password: 'weak', name: 'Fresh' },
+      ),
+    ).rejects.toBeTruthy();
+  });
+
+  it('verifyInvite reports whether the address already exists', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    a.invites.push(makeInvite());
+    a.invites.push(makeInvite({ id: 'inv2', token: 't2', email: 'fresh@example.com' }));
+    expect(await a.controller.verifyInvite('invite-token')).toMatchObject({ exists: true });
+    expect(await a.controller.verifyInvite('t2')).toMatchObject({ exists: false });
   });
 });

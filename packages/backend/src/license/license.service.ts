@@ -5,6 +5,7 @@ import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
+import { Prisma } from '../generated/prisma/client';
 
 // Production always talks to anythingmcp.com. The licence site decides
 // which plan an installation runs; a URL taken from the environment would let
@@ -28,6 +29,24 @@ const trialRetryBaseMs = () => Number(process.env.TRIAL_RETRY_BASE_MS ?? 600);
 /** A checkout link is asked for by someone waiting on a spinner: one retry, no more. */
 const CHECKOUT_RETRY_ATTEMPTS = 2;
 
+/**
+ * A paid Cloud licence's Stripe subscription as the licence site reports it
+ * (GET /api/license/verify?billing=1 with the service token). Dates are ISO
+ * strings, amount is in the currency's smallest unit.
+ */
+export interface LicenseBilling {
+  status: string;
+  /** Set to end at the period end (or a cancel_at date) instead of renewing. */
+  cancelling: boolean;
+  endsAt: string | null;
+  currentPeriodEnd: string | null;
+  /** End of a card trial, while trialing. */
+  trialEnd: string | null;
+  amount: number | null;
+  currency: string | null;
+  interval: 'day' | 'week' | 'month' | 'year' | null;
+}
+
 export interface LicenseInfo {
   licenseKey: string;
   plan: string;
@@ -36,6 +55,33 @@ export interface LicenseInfo {
   expiresAt: Date | null;
   lastVerifiedAt: Date | null;
   instanceId: string | null;
+  billing?: LicenseBilling | null;
+}
+
+/** Shape check on what the licence site sent, so a bad payload stores nothing. */
+export function parseLicenseBilling(raw: unknown): LicenseBilling | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const b = raw as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === 'string' && v.length <= 64 ? v : null);
+  const date = (v: unknown) => {
+    const s = str(v);
+    return s && Number.isFinite(Date.parse(s)) ? s : null;
+  };
+  const status = str(b.status);
+  if (!status) return null;
+  const interval = ['day', 'week', 'month', 'year'].includes(b.interval as string)
+    ? (b.interval as LicenseBilling['interval'])
+    : null;
+  return {
+    status,
+    cancelling: b.cancelling === true,
+    endsAt: date(b.endsAt),
+    currentPeriodEnd: date(b.currentPeriodEnd),
+    trialEnd: date(b.trialEnd),
+    amount: typeof b.amount === 'number' && Number.isFinite(b.amount) ? b.amount : null,
+    currency: str(b.currency),
+    interval,
+  };
 }
 
 export interface RemoteVerifyResponse {
@@ -48,6 +94,8 @@ export interface RemoteVerifyResponse {
   paymentIssue?: boolean;
   /** End of the payment grace period (also returned as expiresAt). */
   graceUntil?: string;
+  /** The subscription's state (Cloud, service token, paid licences only). */
+  billing?: unknown;
 }
 
 @Injectable()
@@ -105,6 +153,8 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
   async createBillingPortalSession(
     organizationId: string,
     returnUrl?: string,
+    /** 'cancel' opens Stripe's cancellation page directly. */
+    flow?: 'cancel',
   ): Promise<{ url: string }> {
     const license = await this.getCurrentLicense(organizationId);
     if (!license?.licenseKey) {
@@ -117,7 +167,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       // signed-in admin's own workspace.
       const { data } = await axios.post(
         `${this.apiBase}/api/billing/portal`,
-        { licenseKey: license.licenseKey, returnUrl },
+        { licenseKey: license.licenseKey, returnUrl, ...(flow && { flow }) },
         { timeout: 15000, headers: this.serviceHeaders() },
       );
       if (!data?.url) throw new Error('No portal URL returned.');
@@ -523,7 +573,13 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     try {
       const { data } = await axios.get<RemoteVerifyResponse>(
         `${this.apiBase}/api/license/verify`,
-        { params: { key: licenseKey }, timeout: 10000, headers: this.serviceHeaders() },
+        {
+          // Cloud also asks for the subscription's state (trial end, set to
+          // cancel, renewal date) so the app can tell the customer.
+          params: { key: licenseKey, ...(this.deployment.isCloud() && { billing: '1' }) },
+          timeout: 10000,
+          headers: this.serviceHeaders(),
+        },
       );
 
       // Update local record
@@ -538,6 +594,8 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
           ? new Date(data.expiresAt)
           : null;
         updateData.status = 'active';
+        const billing = parseLicenseBilling(data.billing);
+        updateData.billing = billing ?? Prisma.DbNull;
       } else {
         updateData.status = data.error?.includes('revoked')
           ? 'revoked'
@@ -792,6 +850,35 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       expiresAt: license.expiresAt,
       lastVerifiedAt: license.lastVerifiedAt,
       instanceId: license.instanceId,
+      billing: parseLicenseBilling(license.billing),
     };
+  }
+
+  /** Last refresh per workspace, so the licence page cannot hammer the site. */
+  private readonly lastRefresh = new Map<string, number>();
+
+  /**
+   * Re-verify a workspace's licence now (Cloud, from the licence page), so a
+   * plan change, cancellation or card trial made in Stripe shows up right away
+   * instead of at the next daily re-verification. At most once a minute per
+   * workspace; a call inside that window does nothing.
+   */
+  async refreshLicense(organizationId: string): Promise<boolean> {
+    if (!this.deployment.isCloud()) return false;
+    const last = this.lastRefresh.get(organizationId) ?? 0;
+    if (Date.now() - last < 60_000) return false;
+    this.lastRefresh.set(organizationId, Date.now());
+    if (this.lastRefresh.size > 5000) {
+      // Bounded: drop the oldest half rather than grow forever.
+      for (const k of [...this.lastRefresh.keys()].slice(0, 2500)) this.lastRefresh.delete(k);
+    }
+    const license = await this.prisma.license.findFirst({
+      where: { organizationId, status: 'active', plan: { not: 'trial' } },
+      orderBy: { createdAt: 'desc' },
+      select: { licenseKey: true },
+    });
+    if (!license) return false;
+    await this.verifyLicense(license.licenseKey);
+    return true;
   }
 }

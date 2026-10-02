@@ -787,6 +787,24 @@ export class LoginController {
 
     const submitLabel = consent ? 'Sign In &amp; Authorize' : 'Sign In';
 
+    // Someone arriving here from an AI client (e.g. the Claude directory)
+    // without an account would otherwise hit a dead end: the only way off this
+    // page was "Use a different account". Give them the way in. The links point
+    // at the dashboard app on the same origin; sign-up is cloud-only (on
+    // self-hosted, registration is closed or invite-based). Sign-up carries
+    // `redirect=/auth/login`, so after verifying their email the new user
+    // lands back here, still inside the pending authorization (its cookie
+    // outlives the detour), and approves with one click instead of starting
+    // over from their AI client.
+    const preAuthLinks = sessionUser
+      ? ''
+      : `
+      <p class="switch"><a href="/forgot-password">Forgot your password?</a></p>` +
+        (this.deployment.isCloud()
+          ? `
+      <p class="switch">New to AnythingMCP? <a href="/login?mode=register&amp;redirect=%2Fauth%2Flogin">Create an account</a></p>`
+          : '');
+
     // Signed in to the dashboard already: approve as that account, or switch.
     // `switch=1` keeps the pending OAuth session (it lives in a cookie) and
     // shows the password form instead.
@@ -803,7 +821,8 @@ export class LoginController {
       <label for="password">Password</label>
       <input type="password" id="password" name="password" required placeholder="Your password">
       <button type="submit" name="action" value="approve">${submitLabel}</button>
-      ${denyButton}`;
+      ${denyButton}
+      ${preAuthLinks}`;
 
     return `<!DOCTYPE html>
 <html lang="en">

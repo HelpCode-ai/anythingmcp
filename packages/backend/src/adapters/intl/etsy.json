@@ -48,13 +48,14 @@
     },
     {
       "name": "etsy_get_user_shops",
-      "description": "List shops owned by the user. Returns shop_id, shop_name, currency_code, languages, login_name, last_updated_tsz, listing_active_count.",
+      "description": "List shops owned by a user. Returns shop_id, shop_name, currency_code, languages, login_name, last_updated_tsz, listing_active_count. For the connected account, take user_id from etsy_get_authenticated_user first.",
       "parameters": {
         "type": "object",
         "properties": {
           "user_id": {
             "type": "integer",
-            "description": "User ID."
+            "description": "Etsy user ID (a positive number): use the user_id returned by etsy_get_authenticated_user.",
+            "minimum": 1
           }
         },
         "required": [
@@ -88,7 +89,7 @@
     },
     {
       "name": "etsy_get_shop_listings_active",
-      "description": "List active listings in a shop.",
+      "description": "Public list of a shop's active listings, as any visitor sees them. Etsy caps how far this public view can page (large offsets are refused); to go through all of your own shop's listings, or drafts and inactive ones, use etsy_get_listings_by_shop.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -98,11 +99,14 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Per page (max 100)."
+            "description": "Per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100
           },
           "offset": {
             "type": "integer",
-            "description": "Pagination offset."
+            "description": "Pagination offset (0 = first page). Keep it small: Etsy refuses large offsets on this public endpoint.",
+            "minimum": 0
           },
           "sort_on": {
             "type": "string",
@@ -134,6 +138,80 @@
       }
     },
     {
+      "name": "etsy_get_listings_by_shop",
+      "description": "Listings of your own shop by state (active, inactive, sold_out, draft, removed, expired), as the shop owner sees them. Authenticated, so it pages through the whole catalogue, and it can include Inventory and Shipping. Use it rather than etsy_get_shop_listings_active for your own shop.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "sold_out",
+              "draft",
+              "removed",
+              "expired"
+            ],
+            "description": "Listing state. Default: active."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Per page, 1 to 100 (default 25)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Pagination offset (0 = first page)."
+          },
+          "sort_on": {
+            "type": "string",
+            "enum": [
+              "created",
+              "price",
+              "updated",
+              "score"
+            ],
+            "description": "Sort field."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "includes": {
+            "type": "string",
+            "description": "Optional extra data, comma-separated, any of: Shipping, Images, Shop, User, Translations, Inventory, Videos, Personalization, BuyerPrice."
+          }
+        },
+        "required": [
+          "shop_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/listings",
+        "queryParams": {
+          "state": "$state",
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort_on": "$sort_on",
+          "sort_order": "$sort_order",
+          "includes": "$includes"
+        }
+      }
+    },
+    {
       "name": "etsy_get_listing",
       "description": "Fetch one listing by listing_id with full details.",
       "parameters": {
@@ -145,7 +223,7 @@
           },
           "includes": {
             "type": "string",
-            "description": "Comma-separated: Shipping, Images, Shop, User, Translations, Inventory, Videos."
+            "description": "Optional extra data, comma-separated, any of: Images, Shop, User, Translations, Videos, Personalization, BuyerPrice. Etsy rejects anything else: inventory (SKUs, quantities, prices per variation) is not available here, and shipping comes with the shop's shipping profiles, not with the listing."
           }
         },
         "required": [

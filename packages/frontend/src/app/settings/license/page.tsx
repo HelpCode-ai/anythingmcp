@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { license } from '@/lib/api';
+import { license, type LicenseBilling } from '@/lib/api';
 import { usePricingUrl } from '@/lib/use-pricing-url';
 import { useManagePlan } from '@/lib/use-manage-plan';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { useEdition, notifyEditionChanged } from '@/lib/use-edition';
 import { EditionCard } from '@/components/edition-card';
 import { cardTrialDisplayEnd, cardTrialEligible, formatTrialEnd } from '@/lib/card-trial';
+import { describeBilling } from '@/lib/billing-summary';
 
 interface LicenseStatus {
   plan: string | null;
@@ -21,6 +22,7 @@ interface LicenseStatus {
   lastVerifiedAt: string | null;
   instanceId: string | null;
   trialDaysLeft?: number;
+  billing?: LicenseBilling;
 }
 
 export default function LicenseSettingsPage() {
@@ -46,6 +48,7 @@ export default function LicenseSettingsPage() {
     status.plan !== 'community';
   // Cloud admin on a running free trial: offer the card trial (/start-trial).
   const cardTrialOffer = cardTrialEligible({ isCloud, role: user?.role, license: status });
+  const billingSummary = isCloud ? describeBilling(status?.billing) : null;
   const cardTrialDate = cardTrialOffer
     ? formatTrialEnd(cardTrialDisplayEnd(status?.expiresAt), 'long')
     : null;
@@ -61,7 +64,17 @@ export default function LicenseSettingsPage() {
 
   useEffect(() => {
     loadStatus();
-  }, [token]);
+    // Cloud admins land here from the billing portal and from Checkout: ask the
+    // server to re-verify now, so a cancellation, plan change or new card
+    // trial shows immediately instead of after the daily re-verification.
+    // The server throttles this to once a minute per workspace.
+    if (token && isCloud && user?.role === 'ADMIN') {
+      license
+        .refresh(token)
+        .then((r) => (r.refreshed ? loadStatus() : undefined))
+        .catch(() => {});
+    }
+  }, [token, isCloud, user?.role]);
 
   const handleActivate = async () => {
     if (!token || !licenseKey) return;
@@ -118,7 +131,7 @@ export default function LicenseSettingsPage() {
     }
   };
 
-  const handleBillingPortal = async () => {
+  const handleBillingPortal = async (flow?: 'cancel') => {
     if (!token) return;
     setError('');
     setMessage('');
@@ -127,6 +140,7 @@ export default function LicenseSettingsPage() {
       const { url } = await license.billingPortal(
         token,
         typeof window !== 'undefined' ? window.location.href : undefined,
+        flow,
       );
       window.location.href = url;
     } catch (err: any) {
@@ -269,15 +283,61 @@ export default function LicenseSettingsPage() {
           </div>
         )}
 
+        {billingSummary && (
+          <div
+            role="status"
+            className="mt-4 rounded-[9px] p-3 text-sm"
+            style={{
+              background:
+                billingSummary.tone === 'danger'
+                  ? 'var(--t-danger-bg)'
+                  : billingSummary.tone === 'warn'
+                    ? 'var(--t-warn-bg)'
+                    : billingSummary.tone === 'info'
+                      ? 'var(--t-info-bg)'
+                      : 'var(--surface-2)',
+              color:
+                billingSummary.tone === 'danger'
+                  ? 'var(--t-danger-fg)'
+                  : billingSummary.tone === 'warn'
+                    ? 'var(--t-warn-fg)'
+                    : billingSummary.tone === 'info'
+                      ? 'var(--t-info-fg)'
+                      : 'var(--text-2)',
+            }}
+          >
+            {billingSummary.text}
+          </div>
+        )}
+
         {status?.plan && (
-          <div className="mt-4 pt-4 border-t border-[var(--border)] flex flex-wrap gap-3">
+          <div className="mt-4 pt-4 border-t border-[var(--border)] flex flex-wrap items-center gap-3">
             <Button variant="secondary" onClick={handleVerify} disabled={verifying}>
               {verifying ? 'Verifying...' : 'Verify Now'}
             </Button>
             {hasBillableSubscription && (
-              <Button onClick={handleBillingPortal} disabled={openingPortal}>
-                {openingPortal ? 'Opening…' : 'Manage subscription & billing'}
+              <Button onClick={() => handleBillingPortal()} disabled={openingPortal}>
+                {openingPortal
+                  ? 'Opening…'
+                  : billingSummary?.paymentIssue
+                    ? 'Update payment method'
+                    : billingSummary?.cancelling
+                      ? 'Keep my plan'
+                      : 'Manage subscription & billing'}
               </Button>
+            )}
+            {/* A clearly labelled way out, in the app itself: opens Stripe's
+                cancellation page directly. Hidden once the plan is already set
+                to end ("Keep my plan" above undoes that). */}
+            {hasBillableSubscription && !billingSummary?.cancelling && (
+              <button
+                type="button"
+                onClick={() => handleBillingPortal('cancel')}
+                disabled={openingPortal}
+                className="text-sm text-[var(--text-3)] underline underline-offset-2 hover:text-[var(--text-2)] disabled:opacity-50"
+              >
+                Cancel subscription
+              </button>
             )}
           </div>
         )}

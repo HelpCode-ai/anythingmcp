@@ -21,6 +21,9 @@ import { ConnectorLogo } from '@/components/connector-logo';
 export function StarterPack({ token }: { token: string }) {
   const [items, setItems] = useState<StarterPackItem[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // How many more connectors the plan allows right now; null means uncapped.
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [maxConnectors, setMaxConnectors] = useState<number | null>(null);
   const [installing, setInstalling] = useState(false);
   const [error, setError] = useState('');
   const [outcome, setOutcome] = useState<{
@@ -33,9 +36,16 @@ export function StarterPack({ token }: { token: string }) {
     adapters
       .starterPack(token)
       .then((res) => {
-        const list = Array.isArray(res) ? res : [];
+        const list = res?.items ?? [];
+        const rem = res?.connectors?.remaining ?? null;
         setItems(list);
-        setSelected(new Set(list.filter((i) => i.preselected && !i.installed).map((i) => i.slug)));
+        setRemaining(rem);
+        setMaxConnectors(res?.connectors?.max ?? null);
+        // Never preselect more than the plan can fit, so the one-click install
+        // can't fail its last item on the trial's 2-connector cap.
+        const preselectable = list.filter((i) => i.preselected && !i.installed).map((i) => i.slug);
+        const capped = rem == null ? preselectable : preselectable.slice(0, Math.max(0, rem));
+        setSelected(new Set(capped));
         if (list.length > 0 && !viewed.current) {
           viewed.current = true;
           productEvents.track('starter_pack_viewed', token);
@@ -50,12 +60,19 @@ export function StarterPack({ token }: { token: string }) {
 
   const offered = items.filter((i) => !i.installed);
   const allInstalled = offered.length === 0;
+  const atCap = remaining != null && selected.size >= remaining;
 
   const toggle = (slug: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(slug)) next.delete(slug);
-      else next.add(slug);
+      if (next.has(slug)) {
+        next.delete(slug);
+      } else {
+        // Respect the plan's connector allowance: don't let the user pick more
+        // than will install.
+        if (remaining != null && next.size >= remaining) return prev;
+        next.add(slug);
+      }
       return next;
     });
   };
@@ -86,10 +103,24 @@ export function StarterPack({ token }: { token: string }) {
       <h2 id="starter-pack-title" className="text-lg font-semibold text-[var(--text)]">
         Start with connectors that need no keys
       </h2>
-      <p className="mt-1 mb-4 text-sm text-[var(--text-2)]">
+      <p className="mt-1 mb-2 text-sm text-[var(--text-2)]">
         We add them to your MCP server, so your AI can use them as soon as you connect it. Untick
         what you don&apos;t need; you can remove any of them later.
       </p>
+      {maxConnectors != null && !outcome && !allInstalled && (
+        <p className="mt-1 mb-4 text-xs text-[var(--text-3)]">
+          Your current plan includes <strong className="text-[var(--text-2)]">{maxConnectors}</strong>{' '}
+          connector{maxConnectors === 1 ? '' : 's'}. Pick the ones you want now — you can add your own
+          next.{' '}
+          <Link
+            href="/start-trial"
+            className="font-medium text-[var(--brand)] hover:underline"
+          >
+            Add a card for more
+          </Link>
+          .
+        </p>
+      )}
 
       {outcome ? (
         <StarterPackOutcome outcome={outcome} bySlug={bySlug} />
@@ -114,14 +145,20 @@ export function StarterPack({ token }: { token: string }) {
                         ? 'cursor-default border-[var(--border)] bg-[var(--surface-2)] opacity-80'
                         : checked
                           ? 'cursor-pointer border-[var(--brand)] bg-[var(--brand-tint)]'
-                          : 'cursor-pointer border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]')
+                          : atCap
+                            ? 'cursor-not-allowed border-[var(--border)] bg-[var(--surface)] opacity-50'
+                            : 'cursor-pointer border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]')
                     }
                   >
                     <input
                       type="checkbox"
                       className="sr-only"
                       checked={checked}
-                      disabled={item.installed || installing}
+                      // At the plan's cap, unchecked items can't be added until
+                      // the user unticks another one.
+                      disabled={
+                        item.installed || installing || (!checked && atCap)
+                      }
                       onChange={() => toggle(item.slug)}
                       aria-describedby={`starter-${item.slug}-pitch`}
                     />
@@ -162,9 +199,14 @@ export function StarterPack({ token }: { token: string }) {
 
           <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-[var(--text-3)]" aria-live="polite">
-              {selected.size === 0
+              {(selected.size === 0
                 ? 'Nothing selected.'
-                : `${selected.size} of ${offered.length} selected.`}
+                : `${selected.size} of ${offered.length} selected.`) +
+                (remaining != null
+                  ? ` ${remaining - selected.size} connector slot${
+                      remaining - selected.size === 1 ? '' : 's'
+                    } left on your plan.`
+                  : '')}
             </p>
             <Button
               variant="primary"

@@ -17,8 +17,8 @@ const CLOUD_INFO = {
 
 const NEUTRAL = { verificationRequired: true, message: 'Check your inbox.' };
 
-async function fillSignup(page: Page, email: string) {
-  await page.goto('/login?mode=register');
+async function fillSignup(page: Page, email: string, query = '') {
+  await page.goto(`/login?mode=register${query}`);
   await expect(page.locator('#auth-name')).toBeVisible();
   await page.locator('#auth-name').fill('Jane');
   await page.locator('#auth-email').fill(email);
@@ -76,6 +76,62 @@ test.describe('cloud sign-up', () => {
     await expect(page.getByRole('heading', { name: 'Verify Your Email' })).toBeVisible();
     await expect(page.getByText('new@example.test')).toBeVisible();
     expect(calls.filter((c) => c.startsWith('/api/auth/'))).toEqual(['/api/auth/register', '/api/auth/login']);
+  });
+});
+
+test.describe('sign-up from an AI client (Claude "Connect")', () => {
+  // The MCP authorization page links "Create an account" with
+  // redirect=/auth/login. After verifying, the new user must land back on that
+  // page (still inside the pending authorization) to approve with one click,
+  // not on the trial offer or the welcome wizard, which used to strand the
+  // connection half way.
+  test('after verifying the email, goes straight back to the authorization page', async ({ page }) => {
+    const calls: string[] = [];
+    await page.route(/\/(api|health)\//, async (route) => {
+      const p = new URL(route.request().url()).pathname;
+      calls.push(p);
+      if (p === '/health/server-info') return route.fulfill({ json: CLOUD_INFO });
+      if (p === '/api/auth/register') return route.fulfill({ status: 201, json: NEUTRAL });
+      if (p === '/api/auth/login') {
+        return route.fulfill({
+          json: {
+            accessToken: 't',
+            user: { id: 'u1', email: 'claude@example.test', name: 'Jane', role: 'ADMIN', organizationId: 'o1', emailVerified: false },
+            needsLicenseSetup: true,
+          },
+        });
+      }
+      if (p === '/api/auth/verify-email') return route.fulfill({ json: { message: 'ok', emailVerified: true } });
+      if (p === '/api/license/activate-trial') {
+        return route.fulfill({ json: { trialStarted: false, trialDaysLeft: 7, plan: 'trial', expiresAt: null, licenseKey: 'k', message: '' } });
+      }
+      return route.fulfill({ json: {} });
+    });
+    // The backend-served authorization page, stubbed.
+    await page.route((url) => url.pathname === '/auth/login', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Authorize AnythingMCP</h1>' }),
+    );
+
+    await fillSignup(page, 'claude@example.test', '&redirect=%2Fauth%2Flogin');
+    await expect(page.getByRole('heading', { name: 'Verify Your Email' })).toBeVisible();
+    await page.locator('input[inputmode="numeric"]').fill('123456');
+    await page.getByRole('button', { name: 'Verify Email' }).click();
+
+    await expect(page).toHaveURL(/\/auth\/login$/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Authorize AnythingMCP' })).toBeVisible();
+    expect(calls).toContain('/api/auth/verify-email');
+    // Not detoured through the trial offer or the welcome wizard.
+    expect(calls.some((c) => c.includes('checkout-link'))).toBe(false);
+  });
+
+  test('an off-site redirect is ignored', async ({ page }) => {
+    await page.route(/\/(api|health)\//, (route) => {
+      const p = new URL(route.request().url()).pathname;
+      if (p === '/health/server-info') return route.fulfill({ json: CLOUD_INFO });
+      return route.fulfill({ json: {} });
+    });
+    await page.goto('/login?mode=register&redirect=https%3A%2F%2Fevil.example%2Fauth%2Flogin');
+    await expect(page.locator('#auth-name')).toBeVisible();
   });
 });
 
