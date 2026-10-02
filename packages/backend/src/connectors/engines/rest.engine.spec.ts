@@ -2,6 +2,8 @@ import { RestEngine, serializeRepeatedParams } from './rest.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { LoginTokenService } from './login-token.service';
 import axios, { AxiosError } from 'axios';
+import FormData from 'form-data';
+import { Readable } from 'stream';
 
 // Mock the callable default export but keep the real AxiosError class so the
 // engine's `instanceof AxiosError` checks (used by the retry logic) work.
@@ -1402,6 +1404,198 @@ describe('RestEngine', () => {
       const retried = mockedAxios.mock.calls[1][0] as any;
       expect(retried.headers['x-amz-access-token']).toBe('new-access-token');
       expect(retried.headers.Authorization).toBeUndefined();
+    });
+  });
+
+  describe('form-data file upload (__file)', () => {
+    function fileResponse(opts: {
+      status?: number;
+      chunks: Buffer[];
+      headers?: Record<string, string>;
+    }) {
+      return {
+        status: opts.status ?? 200,
+        headers: opts.headers ?? { 'content-type': 'image/jpeg' },
+        data: Readable.from(opts.chunks),
+      };
+    }
+
+    it('fetches the __file URL and attaches it as a real multipart part, with no connector credentials on the download', async () => {
+      const bytes = Buffer.from('fake-image-bytes');
+      mockedAxios
+        .mockResolvedValueOnce(fileResponse({ chunks: [bytes] }))
+        .mockResolvedValueOnce({ data: { ok: true } });
+      const appendSpy = jest.spyOn(FormData.prototype, 'append');
+
+      const result = await engine.execute(
+        {
+          baseUrl: 'https://openapi.etsy.com',
+          authType: 'BEARER_TOKEN',
+          authConfig: { token: 'etsy-token' },
+        },
+        {
+          method: 'POST',
+          path: '/v3/application/shops/1/listings/2/images',
+          bodyEncoding: 'form-data',
+          bodyMapping: { image: { __file: '$image' } },
+        },
+        { image: 'https://cdn.example.com/photos/mug-123.jpg' },
+      );
+
+      expect(result).toEqual({ ok: true });
+
+      // Call 0: the bare file download — no connector auth or headers attached.
+      const downloadCall = mockedAxios.mock.calls[0][0] as any;
+      expect(downloadCall.url).toBe(
+        'https://cdn.example.com/photos/mug-123.jpg',
+      );
+      expect(downloadCall.headers?.Authorization).toBeUndefined();
+
+      // Call 1: the real Etsy request, carrying its own auth and the file part.
+      const mainCall = mockedAxios.mock.calls[1][0] as any;
+      expect(mainCall.headers.Authorization).toBe('Bearer etsy-token');
+      expect(appendSpy).toHaveBeenCalledWith(
+        'image',
+        expect.any(Buffer),
+        expect.objectContaining({
+          filename: 'mug-123.jpg',
+          contentType: 'image/jpeg',
+        }),
+      );
+
+      appendSpy.mockRestore();
+    });
+
+    it('aborts the download once it crosses the size cap, without sending the real request', async () => {
+      const saved = process.env.MAX_FILE_UPLOAD_BYTES;
+      process.env.MAX_FILE_UPLOAD_BYTES = '10';
+      try {
+        mockedAxios.mockResolvedValueOnce(
+          fileResponse({ chunks: [Buffer.alloc(20, 'a')] }),
+        );
+
+        await expect(
+          engine.execute(
+            { baseUrl: 'https://openapi.etsy.com', authType: 'NONE' },
+            {
+              method: 'POST',
+              path: '/images',
+              bodyEncoding: 'form-data',
+              bodyMapping: { image: { __file: '$image' } },
+            },
+            { image: 'https://cdn.example.com/big.jpg' },
+          ),
+        ).rejects.toThrow(/exceeds the \d+ MB upload limit/);
+
+        // The real request never went out — only the aborted download did.
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+      } finally {
+        if (saved === undefined) delete process.env.MAX_FILE_UPLOAD_BYTES;
+        else process.env.MAX_FILE_UPLOAD_BYTES = saved;
+      }
+    });
+
+    it('fails the tool call when the file URL answers with a non-2xx status', async () => {
+      mockedAxios.mockResolvedValueOnce(
+        fileResponse({ status: 404, chunks: [Buffer.from('not found')] }),
+      );
+
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://openapi.etsy.com', authType: 'NONE' },
+          {
+            method: 'POST',
+            path: '/images',
+            bodyEncoding: 'form-data',
+            bodyMapping: { image: { __file: '$image' } },
+          },
+          { image: 'https://cdn.example.com/missing.jpg' },
+        ),
+      ).rejects.toThrow(/HTTP 404/);
+
+      expect(mockedAxios).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a __file marker when encoding is form-urlencoded (it cannot carry a file)', async () => {
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          {
+            method: 'POST',
+            path: '/x',
+            bodyEncoding: 'form-urlencoded',
+            bodyMapping: { image: { __file: '$image' } },
+          },
+          { image: 'https://cdn.example.com/photo.jpg' },
+        ),
+      ).rejects.toThrow(/form-urlencoded cannot carry a file/);
+
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+
+    describe('blocked host', () => {
+      const saved = process.env.SSRF_GUARD;
+      beforeEach(() => {
+        process.env.SSRF_GUARD = 'enabled';
+      });
+      afterEach(() => {
+        if (saved === undefined) delete process.env.SSRF_GUARD;
+        else process.env.SSRF_GUARD = saved;
+      });
+
+      it('refuses to download a __file URL that resolves to a blocked address', async () => {
+        await expect(
+          engine.execute(
+            { baseUrl: 'https://openapi.etsy.com', authType: 'NONE' },
+            {
+              method: 'POST',
+              path: '/images',
+              bodyEncoding: 'form-data',
+              bodyMapping: { image: { __file: '$image' } },
+            },
+            { image: 'http://127.0.0.1/secret.jpg' },
+          ),
+        ).rejects.toThrow(/SSRF guard/);
+
+        expect(mockedAxios).not.toHaveBeenCalled();
+      });
+    });
+
+    it('rebuilds the multipart body with the same file on a 401 retry, fetching the file only once', async () => {
+      const bytes = Buffer.from('fake-image-bytes');
+      const err = new AxiosError('Unauthorized');
+      (err as any).response = { status: 401, data: {} };
+
+      mockedAxios
+        .mockResolvedValueOnce(fileResponse({ chunks: [bytes] })) // download
+        .mockRejectedValueOnce(err) // first attempt on Etsy -> 401
+        .mockResolvedValueOnce({ data: { ok: true } }); // retry succeeds
+
+      const result = await engine.execute(
+        {
+          baseUrl: 'https://openapi.etsy.com',
+          authType: 'OAUTH2',
+          authConfig: {
+            refreshToken: 'rt',
+            tokenUrl: 'https://openapi.etsy.com/token',
+          },
+        },
+        {
+          method: 'POST',
+          path: '/images',
+          bodyEncoding: 'form-data',
+          bodyMapping: { image: { __file: '$image' } },
+        },
+        { image: 'https://cdn.example.com/photos/mug-123.jpg' },
+      );
+
+      expect(result).toEqual({ ok: true });
+      // download(0) + first attempt(1) + retry(2) — the file itself was only fetched once.
+      expect(mockedAxios).toHaveBeenCalledTimes(3);
+
+      const retryCall = mockedAxios.mock.calls[2][0] as any;
+      expect(retryCall.data).toBeInstanceOf(FormData);
+      expect(retryCall.headers.Authorization).toBe('Bearer new-access-token');
     });
   });
 });

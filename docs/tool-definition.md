@@ -235,6 +235,28 @@ the identifier is itself a URL (a Search Console property such as `https://www.e
 URL), set `"encodePathParams": true` on the mapping and every substituted value is percent-encoded
 (`https%3A%2F%2Fwww.example.com%2F`). The model then passes the value raw, as the API returned it.
 
+### File uploads (multipart/form-data)
+
+A `bodyMapping` entry can carry a `__file` marker instead of a plain `"$param"` string.
+Only valid when `bodyEncoding` is `"form-data"`:
+
+```json
+{
+  "bodyEncoding": "form-data",
+  "bodyMapping": {
+    "image": { "__file": "$image_url" }
+  }
+}
+```
+
+The tool input parameter (`image_url` here) is a **URL**, not file content — there is no way
+for an MCP tool call to carry raw bytes. The connector fetches that URL server-side (through the
+same SSRF guard as every other outbound request, capped by `MAX_FILE_UPLOAD_BYTES`, 10 MB by
+default) and attaches the response as a real multipart part, with a filename and content-type
+instead of a text field containing the URL. Declare the parameter with `"type": "string",
+"format": "uri"` so the model knows to pass a link. `__file` in a `form-urlencoded` body is a
+configuration error — that encoding cannot carry a file at all.
+
 ### Response headers and pagination (`exposeHeaders`)
 
 By default a tool receives the response **body** and nothing else. Some APIs put

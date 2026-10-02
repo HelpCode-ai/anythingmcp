@@ -19,7 +19,13 @@ import type { ResponseTransform } from '@/lib/api';
 
 export interface ToolParam {
   name: string;
-  type: 'string' | 'number' | 'boolean' | 'integer' | 'array' | 'object';
+  /**
+   * 'file': a public URL the connector fetches server-side and attaches as
+   * a real multipart part — only valid when target is 'body' and the body
+   * encoding is 'form-data'. There is no JSON Schema "file" type, so this
+   * is exposed to the model as `{ type: 'string', format: 'uri' }`.
+   */
+  type: 'string' | 'number' | 'boolean' | 'integer' | 'array' | 'object' | 'file';
   description: string;
   required: boolean;
   /** Where this param is injected into the API request */
@@ -227,18 +233,33 @@ function parseExistingTool(
   }
 
   // Parse bodyMapping. The field editor can only express a flat
-  // "param -> $param" mapping; anything else (nested objects, arrays, literal
-  // values, {{variables}}) is kept as raw JSON so saving from the GUI cannot
-  // silently discard it.
+  // "param -> $param" mapping — plus the `{ __file: "$param" }` wrapper a
+  // 'file' param produces — so anything else (nested objects, arrays,
+  // literal values, {{variables}}) is kept as raw JSON instead, so saving
+  // from the GUI cannot silently discard it.
   let detectedBodyMappingJson: string | undefined;
+  const fileMapped = new Set<string>();
   if (em.bodyMapping) {
     const entries = Object.entries(em.bodyMapping as Record<string, unknown>);
+    const isFileEntry = (value: unknown): value is { __file: string } =>
+      !!value &&
+      typeof value === 'object' &&
+      typeof (value as { __file?: unknown }).__file === 'string' &&
+      (value as { __file: string }).__file.startsWith('$');
     const isSimple = entries.every(
-      ([, value]) => typeof value === 'string' && value.startsWith('$'),
+      ([, value]) =>
+        (typeof value === 'string' && value.startsWith('$')) ||
+        isFileEntry(value),
     );
     if (isSimple) {
       for (const [, value] of entries) {
-        bodyMapped.add((value as string).substring(1));
+        if (isFileEntry(value)) {
+          const paramName = value.__file.substring(1);
+          bodyMapped.add(paramName);
+          fileMapped.add(paramName);
+        } else {
+          bodyMapped.add((value as string).substring(1));
+        }
       }
     } else if (entries.length > 0) {
       detectedBodyMappingJson = JSON.stringify(em.bodyMapping, null, 2);
@@ -293,7 +314,7 @@ function parseExistingTool(
 
     params.push({
       name,
-      type: p.type || 'string',
+      type: fileMapped.has(name) ? 'file' : p.type || 'string',
       description: p.description || '',
       required: required.includes(name),
       target,
@@ -354,10 +375,21 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
   const required: string[] = [];
 
   for (const p of data.params) {
-    properties[p.name] = {
-      type: p.type,
-      ...(p.description ? { description: p.description } : {}),
-    };
+    // JSON Schema has no "file" type — a 'file' param is exposed to the
+    // model as a URL string it must link to, not inline content.
+    properties[p.name] =
+      p.type === 'file'
+        ? {
+            type: 'string',
+            format: 'uri',
+            description:
+              p.description ||
+              "A public URL to the file to upload (a link, not the file's raw content).",
+          }
+        : {
+            type: p.type,
+            ...(p.description ? { description: p.description } : {}),
+          };
     if (p.required) {
       required.push(p.name);
     }
@@ -371,7 +403,7 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
 
   // Build endpointMapping based on connector type
   const queryParams: Record<string, string> = {};
-  const bodyMapping: Record<string, string> = {};
+  const bodyMapping: Record<string, unknown> = {};
   const headers: Record<string, string> = {};
 
   for (const p of data.params) {
@@ -383,7 +415,8 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
       case 'body':
       case 'soap':
         if (!(data.useBodyTemplate && data.bodyTemplate)) {
-          bodyMapping[p.name] = `$${p.name}`;
+          bodyMapping[p.name] =
+            p.type === 'file' ? { __file: `$${p.name}` } : `$${p.name}`;
         }
         break;
       case 'header':
@@ -1036,6 +1069,11 @@ export function ToolEditor({
                         { value: 'boolean', label: 'boolean' },
                         { value: 'array', label: 'array' },
                         { value: 'object', label: 'object' },
+                        // A file part only makes sense in a multipart body —
+                        // form-urlencoded and JSON can't carry one.
+                        ...(param.target === 'body' && bodyEncoding === 'form-data'
+                          ? [{ value: 'file', label: 'file (from URL)' }]
+                          : []),
                       ]}
                     />
                   </div>

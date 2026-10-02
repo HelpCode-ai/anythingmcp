@@ -250,6 +250,13 @@ export class RestEngine {
           if (encoding === 'form-urlencoded') {
             const urlParams = new URLSearchParams();
             for (const [k, v] of spreadFormEntries(mapped)) {
+              if (isFileMarker(v)) {
+                throw new Error(
+                  `bodyMapping.${k} uses the __file marker, but this tool's ` +
+                    `encoding is 'form-urlencoded'. A file part needs ` +
+                    `'multipart/form-data' — form-urlencoded cannot carry a file.`,
+                );
+              }
               appendFormParam((key, val) => urlParams.append(key, val), k, v);
             }
             axiosConfig.data = urlParams.toString();
@@ -266,15 +273,47 @@ export class RestEngine {
               };
             }
           } else if (encoding === 'form-data') {
-            const form = new FormData();
+            const plainEntries: Array<[string, unknown]> = [];
+            const fileEntries: Array<{ key: string; file: FetchedFile }> = [];
             for (const [k, v] of spreadFormEntries(mapped)) {
-              appendFormParam((key, val) => form.append(key, val), k, v);
+              if (isFileMarker(v)) {
+                fileEntries.push({
+                  key: k,
+                  file: await fetchFileForUpload(String(v.__file)),
+                });
+              } else {
+                plainEntries.push([k, v]);
+              }
             }
+            // A FormData's underlying stream can only be read once. Rebuilding
+            // it from these already-resolved entries — instead of reusing the
+            // same instance — is what lets a 401 retry (OAuth2 refresh,
+            // LOGIN_TOKEN relogin) resend a complete body instead of an empty
+            // one. See rebuildRetriableBody.
+            const buildForm = (): FormData => {
+              const form = new FormData();
+              for (const [k, v] of plainEntries) {
+                appendFormParam((key, val) => form.append(key, val), k, v);
+              }
+              for (const { key, file } of fileEntries) {
+                form.append(key, file.buffer, {
+                  filename: file.filename,
+                  contentType: file.contentType,
+                  knownLength: file.buffer.length,
+                });
+              }
+              return form;
+            };
+            const form = buildForm();
             axiosConfig.data = form;
             axiosConfig.headers = {
               ...axiosConfig.headers,
               ...form.getHeaders(),
             };
+            if (fileEntries.length > 0) {
+              (axiosConfig as AxiosConfigWithFormRebuild).__rebuildFormData =
+                buildForm;
+            }
           } else {
             axiosConfig.data = mapped;
           }
@@ -330,6 +369,7 @@ export class RestEngine {
             ...axiosConfig.headers,
             ...buildOauth2TokenHeader(config.authConfig, newToken),
           };
+          this.rebuildRetriableBody(axiosConfig);
           const retryResponse = await axios(axiosConfig);
           return withMeta(retryResponse);
         }
@@ -348,6 +388,7 @@ export class RestEngine {
           config.connectorId,
         );
         injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
+        this.rebuildRetriableBody(axiosConfig);
         const retryResponse = await axios(axiosConfig);
         return withMeta(retryResponse);
       }
@@ -461,6 +502,23 @@ export class RestEngine {
         await new Promise((resolve) => setTimeout(resolve, delaysMs[attempt]));
       }
     }
+  }
+
+  /**
+   * A form-data body built with a file part carries a Buffer-backed stream
+   * that is drained the first time it is sent. Without rebuilding it, the
+   * OAuth2/LOGIN_TOKEN 401 auto-retry would resend an empty body instead of
+   * the file. Only set when the body actually contains a `__file` part (see
+   * the form-data branch in executeWithMeta) — every other body keeps
+   * reusing axiosConfig.data exactly as before.
+   */
+  private rebuildRetriableBody(axiosConfig: AxiosRequestConfig): void {
+    const rebuild = (axiosConfig as AxiosConfigWithFormRebuild)
+      .__rebuildFormData;
+    if (!rebuild) return;
+    const form = rebuild();
+    axiosConfig.data = form;
+    axiosConfig.headers = { ...axiosConfig.headers, ...form.getHeaders() };
   }
 
   private async injectAuth(
@@ -942,6 +1000,188 @@ function appendFormParam(
     return;
   }
   sink(key, String(value));
+}
+
+/**
+ * A `{ __file: "<url>" }` wrapper in a form-data bodyMapping entry — the
+ * signal that this field must be fetched and attached as a real file part
+ * instead of stringified, mirroring the existing __raw/__spread convention.
+ */
+function isFileMarker(value: unknown): value is { __file: unknown } {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    '__file' in (value as Record<string, unknown>)
+  );
+}
+
+interface FetchedFile {
+  buffer: Buffer;
+  filename: string;
+  contentType: string;
+}
+
+/** Carries the retry-rebuild hook introduced for form-data file parts. */
+type AxiosConfigWithFormRebuild = AxiosRequestConfig & {
+  __rebuildFormData?: () => FormData;
+};
+
+const DEFAULT_MAX_FILE_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+function getMaxFileUploadBytes(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.MAX_FILE_UPLOAD_BYTES);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_MAX_FILE_UPLOAD_BYTES;
+}
+
+const fileFetchLogger = new Logger('RestEngine:file-upload');
+
+/**
+ * Fetch a `__file` URL and return it as a ready-to-attach multipart part.
+ *
+ * This is a plain, bare request to a third party the connector has no
+ * relationship with — none of the connector's auth, headers or proxy config
+ * are attached, and the URL's query string (which a presigned link uses to
+ * carry its credentials) is never logged.
+ */
+async function fetchFileForUpload(url: string): Promise<FetchedFile> {
+  await assertSafeOutboundUrl(url);
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`__file value is not a valid URL: '${url}'`);
+  }
+  fileFetchLogger.debug(
+    `Fetching file for upload: ${parsed.origin}${parsed.pathname}`,
+  );
+
+  const response = await axios({
+    method: 'GET',
+    url,
+    responseType: 'stream',
+    timeout: 30000,
+    validateStatus: () => true,
+  });
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(
+      `Could not download the file for upload: the URL answered with HTTP ${response.status}.`,
+    );
+  }
+
+  const maxBytes = getMaxFileUploadBytes();
+  const buffer = await readStreamWithLimit(
+    response.data as NodeJS.ReadableStream,
+    maxBytes,
+  );
+  const headers = (response.headers ?? {}) as Record<string, unknown>;
+  const contentType = String(
+    headers['content-type'] ?? 'application/octet-stream',
+  );
+  const filename = resolveUploadFilename(url, headers);
+
+  return { buffer, filename, contentType };
+}
+
+/** Buffers a stream, aborting as soon as `maxBytes` is crossed. */
+function readStreamWithLimit(
+  stream: NodeJS.ReadableStream,
+  maxBytes: number,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
+
+    const cleanup = () => {
+      stream.removeListener('data', onData);
+      stream.removeListener('end', onEnd);
+      stream.removeListener('error', onError);
+    };
+    const finish = (err: Error | null, buffer?: Buffer) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (err) reject(err);
+      else resolve(buffer as Buffer);
+    };
+    const onData = (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        const mb = Math.floor(maxBytes / (1024 * 1024));
+        (stream as unknown as { destroy?: () => void }).destroy?.();
+        finish(
+          new Error(
+            `The file exceeds the ${mb} MB upload limit (set MAX_FILE_UPLOAD_BYTES to raise it).`,
+          ),
+        );
+        return;
+      }
+      chunks.push(chunk);
+    };
+    const onEnd = () => finish(null, Buffer.concat(chunks));
+    const onError = (err: Error) => finish(err);
+
+    stream.on('data', onData);
+    stream.on('end', onEnd);
+    stream.on('error', onError);
+  });
+}
+
+/**
+ * Filename for the attached part: the response's own Content-Disposition
+ * wins when present, otherwise the URL's last path segment. Both go through
+ * the same sanitizing so neither can inject a path separator or an unsafe
+ * character into the multipart part.
+ */
+function resolveUploadFilename(
+  url: string,
+  headers: Record<string, unknown>,
+): string {
+  const fromDisposition = filenameFromContentDisposition(
+    String(headers['content-disposition'] ?? ''),
+  );
+  return fromDisposition ?? filenameFromUrl(url);
+}
+
+function sanitizeFilename(name: string): string {
+  const cleaned = name.trim().replace(/[^A-Za-z0-9._-]/g, '_');
+  return cleaned || 'file';
+}
+
+function filenameFromUrl(url: string): string {
+  let pathname: string;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    return 'file';
+  }
+  const last = pathname.split('/').filter(Boolean).pop() ?? '';
+  let decoded = last;
+  try {
+    decoded = decodeURIComponent(last);
+  } catch {
+    /* not validly percent-encoded — sanitize the raw segment instead */
+  }
+  return sanitizeFilename(decoded);
+}
+
+function filenameFromContentDisposition(value: string): string | undefined {
+  const match = /filename\*?=(?:"([^"]+)"|([^;]+))/i.exec(value);
+  const raw = match?.[1] ?? match?.[2];
+  if (!raw) return undefined;
+  const stripped = raw.replace(/^UTF-8''/i, '');
+  let decoded = stripped;
+  try {
+    decoded = decodeURIComponent(stripped);
+  } catch {
+    /* not validly percent-encoded — sanitize the raw value instead */
+  }
+  return sanitizeFilename(decoded);
 }
 
 /**
