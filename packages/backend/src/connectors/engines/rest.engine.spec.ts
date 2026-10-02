@@ -481,6 +481,40 @@ describe('RestEngine', () => {
     );
   });
 
+  it('spreads a __merge object into the top level of the body, explicit keys first', async () => {
+    mockedAxios.mockResolvedValue({ data: [] });
+    const mapping = {
+      method: 'POST',
+      path: '/json/2/{model}/{method}',
+      bodyMapping: { ids: '$ids', __merge: '$kwargs' },
+    };
+
+    await engine.execute(
+      { baseUrl: 'https://odoo.example.com', authType: 'NONE' },
+      mapping,
+      { model: 'crm.lead', method: 'activity_schedule', ids: [529], kwargs: { summary: 'Call', ids: [1] } },
+    );
+    expect(mockedAxios).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: { ids: [529], summary: 'Call' } }),
+    );
+
+    // Absent: nothing merged, no stray key.
+    await engine.execute(
+      { baseUrl: 'https://odoo.example.com', authType: 'NONE' },
+      mapping,
+      { model: 'sale.order', method: 'action_confirm', ids: [4] },
+    );
+    expect(mockedAxios).toHaveBeenLastCalledWith(expect.objectContaining({ data: { ids: [4] } }));
+
+    await expect(
+      engine.execute(
+        { baseUrl: 'https://odoo.example.com', authType: 'NONE' },
+        mapping,
+        { model: 'x', method: 'y', ids: [], kwargs: JSON.parse('{"__proto__": {"polluted": true}}') },
+      ),
+    ).rejects.toThrow(/prototype pollution/);
+  });
+
   it('should drop missing params from nested bodyMapping instead of sending "$TERM" literals', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
 
