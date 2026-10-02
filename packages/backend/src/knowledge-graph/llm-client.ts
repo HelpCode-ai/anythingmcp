@@ -49,6 +49,9 @@ export function resolveLlmConfig(): LlmConfig | null {
 
 export interface LlmResult {
   json: any;
+  /** Custom path only: the reply was not usable JSON, so there is nothing to
+   *  apply. Callers must return early without persisting anything. */
+  skipped?: boolean;
   usage?: { inputTokens?: number; outputTokens?: number };
 }
 
@@ -61,9 +64,9 @@ export interface LlmResult {
 export const KG_LLM_MAX_OUTPUT_TOKENS = 4000;
 
 /** Call the model and parse its reply as JSON. Throws on transport/parse error,
- *  except on the custom path where unusable JSON is logged (model + endpoint)
- *  and answered as an empty result so the enrichment/skill flow is skipped
- *  rather than crashed. */
+ *  except on the custom path where an unusable reply resolves
+ *  `{ json: null, skipped: true }` so callers can return early without
+ *  persisting anything (no hash update, no suggestion replacement). */
 export async function chatJson(
   cfg: LlmConfig,
   system: string,
@@ -152,9 +155,20 @@ export async function chatJson(
   } catch {
     if (cfg.provider !== 'custom') throw new Error(`LLM returned unusable JSON: ${String(text).slice(0, 200)}`);
     logger.warn(
-      `KG LLM custom endpoint returned unusable JSON (model=${cfg.model} endpoint=${base}); skipping this pass.`,
+      `KG LLM custom endpoint returned unusable JSON (model=${cfg.model} endpoint=${endpointOrigin(base)}); skipping this pass.`,
     );
-    return { json: {} };
+    return { json: null, skipped: true };
+  }
+}
+
+/** Origin only (scheme + host + port) so credentials, paths and query data
+ *  in a custom base URL can never leak into the logs. Falls back to a fixed
+ *  marker when the base is not a parseable URL. */
+function endpointOrigin(base: string): string {
+  try {
+    return new URL(base).origin;
+  } catch {
+    return '(unparseable endpoint)';
   }
 }
 

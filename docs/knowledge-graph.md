@@ -184,10 +184,20 @@ OPENAI_API_KEY=                 # or OPENROUTER_API_KEY / ANTHROPIC_API_KEY
 # KG_LLM_MODEL. No key needed: KG_LLM_API_KEY is optional and only sent as an
 # Authorization header when set. No response_format is sent on this path, so
 # the model answers from the JSON instruction; unparsable replies are logged
-# (model + endpoint) and that pass is skipped. Validated against a local
+# (model + endpoint origin) and that pass is skipped. Validated against a local
 # qwen2.5 (Qwen2.5-0.5B-Instruct via an OpenAI-compatible front).
-KG_LLM_BASE_URL=http://localhost:11434/v1
-KG_LLM_API_KEY=
+# KG_LLM_BASE_URL=http://localhost:11434/v1
+# KG_LLM_API_KEY=
+```
+
+Docker note: `localhost` inside the app container means the AnythingMCP
+container itself, not your host. To reach an Ollama running on the host, use
+`http://host.docker.internal:11434/v1` — on Linux that name needs an explicit
+mapping (`extra_hosts: ["host.docker.internal:host-gateway"]`). When Ollama
+runs as a service in the same Compose project/network, use its service name
+instead (e.g. `http://ollama:11434/v1`). The five `KG_LLM_*` variables are
+passed through to the app container in `docker-compose.yml` with empty
+defaults, so setting them in `.env` is enough.
 
 # Scheduled extension (cloud cron) — all must align: this flag, the cron call,
 # and the per-workspace "Scheduled AI extension" switch

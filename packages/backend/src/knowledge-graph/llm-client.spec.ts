@@ -103,7 +103,7 @@ describe('chatJson', () => {
     expect(JSON.parse(init.body).response_format).toBeUndefined();
   });
 
-  it('custom endpoint: unusable JSON is skipped, not thrown', async () => {
+  it('custom endpoint: unusable JSON resolves an explicit skip, not an empty answer', async () => {
     (global.fetch as jest.Mock).mockResolvedValue(
       okJson({ choices: [{ message: { content: 'Sure, here are some thoughts...' } }], usage: {} }),
     );
@@ -112,7 +112,7 @@ describe('chatJson', () => {
       'sys',
       'user',
     );
-    expect(res).toEqual({ json: {} });
+    expect(res).toEqual({ json: null, skipped: true });
   });
 
   it('openai path still sends response_format and Authorization', async () => {

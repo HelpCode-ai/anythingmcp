@@ -67,7 +67,11 @@ export class KgLlmService {
     if (!built) return { suggested: 0, model: cfg.model };
     if ('skipped' in built) return { suggested: 0, skipped: true, model: cfg.model };
 
-    const { json, usage } = await chatJson(cfg, built.system, built.user);
+    const { json, skipped, usage } = await chatJson(cfg, built.system, built.user);
+    // Custom endpoint with an unusable reply: return early before
+    // applyEnrichResult so kg_llm_hash is NOT stored and the next run retries
+    // normally instead of seeing an unchanged graph and reporting `skipped`.
+    if (skipped) return { suggested: 0, skipped: true, model: cfg.model };
     const suggested = await this.applyEnrichResult(organizationId, json, built);
     this.logger.log(
       `KG LLM enrich ${organizationId}: ${suggested} suggested (${cfg.model}, in=${usage?.inputTokens ?? '?'} out=${usage?.outputTokens ?? '?'})`,
