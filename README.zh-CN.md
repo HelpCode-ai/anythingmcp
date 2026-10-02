@@ -23,6 +23,7 @@
 </p>
 
 <p align="center">
+  <a href="https://claude.ai/directory/anythingmcp"><img src="https://img.shields.io/badge/Claude-%E5%AE%98%E6%96%B9%E7%9B%AE%E5%BD%95%E6%94%B6%E5%BD%95-D97757?logo=claude&logoColor=white&labelColor=0b1220" alt="已收录于 Claude 官方目录"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=flat&logo=github&logoColor=white&color=2563eb&labelColor=0b1220" alt="GitHub Stars"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/open%20source-AGPL--3.0-2563eb?labelColor=0b1220" alt="Open source, AGPL-3.0"></a>
@@ -30,7 +31,7 @@
 </p>
 
 <p align="center">
-  <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>免费试用云版 7 天</strong></a> · <a href="#run-it-yourself">自己运行</a> · <a href="docs/guides.md">文档</a> · <a href="https://anythingmcp.com/zh/guides">连接器指南</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
+  <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>免费试用云版 7 天</strong></a> · <a href="https://claude.ai/directory/anythingmcp">添加到 Claude</a> · <a href="#run-it-yourself">自己运行</a> · <a href="docs/guides.md">文档</a> · <a href="https://anythingmcp.com/zh/guides">连接器指南</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
 **在 Claude 中提一个问题，答案来自 Etsy、SAP 和一个物流 API。**
