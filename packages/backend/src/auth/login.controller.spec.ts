@@ -170,6 +170,39 @@ describe('LoginController', () => {
       expect(res._sent).not.toContain('<script>x</script>');
     });
 
+    it('offers sign-up on cloud, returning to this page after verification', async () => {
+      const cloud = new LoginController(
+        authService as unknown as AuthService,
+        prisma as unknown as PrismaService,
+        config as unknown as ConfigService,
+        store as unknown as PrismaOAuthStore,
+        sso as unknown as SsoService,
+        { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false } as any,
+        grants as any,
+      );
+      const res = makeRes();
+      await cloud.showLoginPage(
+        undefined as unknown as string,
+        undefined as unknown as string,
+        makeReq({ cookies: {} }),
+        res,
+      );
+      expect(res._sent).toContain('href="/login?mode=register&amp;redirect=%2Fauth%2Flogin"');
+      expect(res._sent).toContain('href="/forgot-password"');
+    });
+
+    it('offers no sign-up on self-hosted (registration is invite-based there)', async () => {
+      const res = makeRes();
+      await controller.showLoginPage(
+        undefined as unknown as string,
+        undefined as unknown as string,
+        makeReq({ cookies: {} }),
+        res,
+      );
+      expect(res._sent).not.toContain('mode=register');
+      expect(res._sent).toContain('href="/forgot-password"');
+    });
+
     it('falls back to a generic form (no consent block) without a session', async () => {
       const res = makeRes();
       await controller.showLoginPage(
