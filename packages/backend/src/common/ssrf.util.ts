@@ -1,5 +1,7 @@
-import { promises as dns } from 'dns';
-import { isIP } from 'net';
+import { promises as dns, LookupAddress } from 'dns';
+import * as http from 'http';
+import * as https from 'https';
+import { isIP, LookupFunction } from 'net';
 
 /**
  * SSRF guard for outbound HTTP/S calls performed on behalf of users.
@@ -178,20 +180,31 @@ export async function assertSafeOutboundHost(
 ): Promise<void> {
   const policy = readPolicy(env);
   if (!policy.enabled) return;
+  await vetHost(hostname, policy);
+}
 
+/**
+ * Apply the policy to `hostname`. Returns null when the host is allowlisted
+ * (env or DB), otherwise the addresses it resolves to, every one of them
+ * checked. Throws SsrfBlockedError when the host is not allowed.
+ */
+async function vetHost(
+  hostname: string,
+  policy: SsrfPolicy,
+): Promise<LookupAddress[] | null> {
   if (!hostname) {
     throw new SsrfBlockedError('SSRF guard: empty hostname');
   }
 
   // Env-driven allowlist (synchronous).
-  if (hostMatchesAllowlist(hostname, policy.allowedHosts)) return;
+  if (hostMatchesAllowlist(hostname, policy.allowedHosts)) return null;
 
   // DB-driven allowlist (admin-configured, async). The provider caches
   // internally so this is effectively a Map lookup after the first call.
   if (dbAllowedHostsProvider) {
     try {
       const dbHosts = await dbAllowedHostsProvider();
-      if (hostMatchesAllowlist(hostname, dbHosts)) return;
+      if (hostMatchesAllowlist(hostname, dbHosts)) return null;
     } catch {
       // Provider failure: fall through to IP-based checks rather than
       // hard-failing every outbound call.
@@ -199,13 +212,14 @@ export async function assertSafeOutboundHost(
   }
 
   // If the host is already a literal IP, check it directly.
-  if (isIP(hostname)) {
+  const literalFamily = isIP(hostname);
+  if (literalFamily) {
     if (!isPublicIp(hostname, policy)) {
       throw new SsrfBlockedError(
         `SSRF guard: address '${hostname}' is not a public IP`,
       );
     }
-    return;
+    return [{ address: hostname, family: literalFamily }];
   }
 
   // Block 'localhost' and friends explicitly — DNS may not resolve them
@@ -222,7 +236,7 @@ export async function assertSafeOutboundHost(
     );
   }
 
-  let resolved: { address: string; family: number }[];
+  let resolved: LookupAddress[];
   try {
     resolved = await dns.lookup(hostname, { all: true });
   } catch (e: any) {
@@ -238,6 +252,70 @@ export async function assertSafeOutboundHost(
       );
     }
   }
+  return resolved;
+}
+
+/**
+ * A `lookup` for http(s).Agent that applies the guard when the socket
+ * connects, and connects only to the addresses it checked.
+ *
+ * {@link assertSafeOutboundUrl} on its own checks the URL once, before the
+ * request: the HTTP client then resolves the name again (a DNS answer can
+ * change in between) and follows redirects to hosts nobody checked. With this
+ * lookup the check and the connection use the same answer, on every hop.
+ *
+ * Node does not call `lookup` for a literal IP, so callers must still run
+ * {@link assertSafeOutboundUrl} on each URL they request (including every
+ * redirect target): that is what covers `http://169.254.169.254/`.
+ */
+export function ssrfGuardedLookup(
+  env: NodeJS.ProcessEnv = process.env,
+): LookupFunction {
+  return (hostname, options, callback) => {
+    const policy = readPolicy(env);
+    const vetted = policy.enabled
+      ? vetHost(hostname, policy)
+      : Promise.resolve(null);
+    vetted
+      .then((addrs) => addrs ?? dns.lookup(hostname, { all: true }))
+      .then((addrs) => {
+        const wanted =
+          options?.family === 4 || options?.family === 'IPv4'
+            ? 4
+            : options?.family === 6 || options?.family === 'IPv6'
+              ? 6
+              : 0;
+        const usable = wanted
+          ? addrs.filter((a) => a.family === wanted)
+          : addrs;
+        if (usable.length === 0) {
+          const err: NodeJS.ErrnoException = new Error(
+            `getaddrinfo ENOTFOUND ${hostname}`,
+          );
+          err.code = 'ENOTFOUND';
+          throw err;
+        }
+        if (options?.all) callback(null, usable);
+        else callback(null, usable[0].address, usable[0].family);
+      })
+      .catch((err) => callback(err, '', 0));
+  };
+}
+
+/**
+ * http and https agents whose connections go through {@link ssrfGuardedLookup}.
+ * Pass both to axios (`httpAgent`, `httpsAgent`) together with `proxy: false`:
+ * an env proxy would make the agent resolve the proxy, not the target.
+ */
+export function createSsrfGuardedAgents(env: NodeJS.ProcessEnv = process.env): {
+  httpAgent: http.Agent;
+  httpsAgent: https.Agent;
+} {
+  const lookup = ssrfGuardedLookup(env);
+  return {
+    httpAgent: new http.Agent({ lookup }),
+    httpsAgent: new https.Agent({ lookup }),
+  };
 }
 
 /**
