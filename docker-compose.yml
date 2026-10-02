@@ -81,6 +81,20 @@ services:
       # address. Needed for the bundled MOTIS (`motis`) and any other API you
       # run on the same Docker network.
       - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-}
+      # Knowledge Graph LLM (optional): hosted providers need their API key,
+      # a local OpenAI-compatible endpoint needs KG_LLM_BASE_URL and no key
+      # (KG_LLM_API_KEY is only sent when set). From inside this container
+      # `localhost` is the app itself — point at the host or a sibling
+      # service instead, e.g. http://host.docker.internal:11434/v1
+      # (Linux: extra_hosts: ["host.docker.internal:host-gateway"]).
+      - KG_LLM_ENABLED=${KG_LLM_ENABLED:-}
+      - KG_LLM_PROVIDER=${KG_LLM_PROVIDER:-}
+      - KG_LLM_MODEL=${KG_LLM_MODEL:-}
+      - KG_LLM_BASE_URL=${KG_LLM_BASE_URL:-}
+      - KG_LLM_API_KEY=${KG_LLM_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 
     depends_on:
       postgres:

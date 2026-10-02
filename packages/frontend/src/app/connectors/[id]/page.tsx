@@ -883,25 +883,42 @@ export default function ConnectorDetailPage() {
               <Badge tone="neutral">{catalogDiff.catalogVersion?.slice(0, 7)}</Badge>
             </div>
 
-            <ul className="text-sm space-y-1 mb-4">
+            {/* What "Apply update" will do, tool by tool, before it does it.
+                The user's own tools are listed too, so it is plain they stay. */}
+            <ul className="text-sm space-y-2 mb-4">
               {!!catalogDiff.updated?.length && (
                 <li>
-                  {catalogDiff.updated.length} tool
-                  {catalogDiff.updated.length === 1 ? '' : 's'} updated
-                  {catalogDiff.updated.some((u) => u.kind === 'structural') &&
-                    ' (including endpoint changes)'}
+                  <span className="font-medium">Updated</span>
+                  {catalogDiff.updated.some((u) => u.kind === 'structural') && (
+                    <span className="text-muted-foreground"> (endpoint changes marked ●)</span>
+                  )}
+                  :{' '}
+                  <span className="text-muted-foreground break-words">
+                    {catalogDiff.updated
+                      .map((u) => (u.kind === 'structural' ? `${u.name} ●` : u.name))
+                      .join(', ')}
+                  </span>
                 </li>
               )}
               {!!catalogDiff.added?.length && (
-                <li>{catalogDiff.added.length} new tool(s): {catalogDiff.added.join(', ')}</li>
+                <li>
+                  <span className="font-medium">New</span>:{' '}
+                  <span className="text-muted-foreground break-words">{catalogDiff.added.join(', ')}</span>
+                </li>
               )}
               {!!catalogDiff.removed?.length && (
                 <li>
-                  {catalogDiff.removed.length} tool(s) no longer in the catalog:{' '}
-                  {catalogDiff.removed.join(', ')}
+                  <span className="font-medium">Switched off</span> (no longer in the catalog):{' '}
+                  <span className="text-muted-foreground break-words">{catalogDiff.removed.join(', ')}</span>
                 </li>
               )}
               {catalogDiff.instructionsRefreshable && <li>Instructions refreshed</li>}
+              {!!catalogDiff.custom?.length && (
+                <li className="rounded-md bg-[var(--surface-2)] px-2 py-1.5">
+                  <span className="font-medium">Yours, kept as they are</span>:{' '}
+                  <span className="text-muted-foreground break-words">{catalogDiff.custom.join(', ')}</span>
+                </li>
+              )}
             </ul>
 
             {catalogDiff.baseUrl && (

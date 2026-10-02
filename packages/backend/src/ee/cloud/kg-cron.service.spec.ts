@@ -91,3 +91,39 @@ describe('KgCronService.runLlmExtend (AI cron)', () => {
     expect(r).toEqual({ llmOrgs: 1, llmGraphSuggested: 2, llmSkillsCreated: 1 });
   });
 });
+
+describe('KgCronService.trimOldPayloads', () => {
+  const OLD = { ...process.env };
+  afterEach(() => {
+    process.env = { ...OLD };
+  });
+
+  function build(results: number[]) {
+    const prisma = { $executeRaw: jest.fn() };
+    for (const r of results) prisma.$executeRaw.mockResolvedValueOnce(r);
+    const svc = new KgCronService(prisma as any, {} as any, {} as any, {} as any, {} as any);
+    return { svc, prisma };
+  }
+
+  it('works in batches until a batch comes back short', async () => {
+    process.env.INVOCATION_TRIM_BATCH = '100';
+    const { svc, prisma } = build([100, 100, 37]);
+    await expect(svc.trimOldPayloads()).resolves.toBe(237);
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops at the per-run batch cap', async () => {
+    process.env.INVOCATION_TRIM_BATCH = '10';
+    process.env.INVOCATION_TRIM_MAX_BATCHES = '2';
+    const { svc, prisma } = build([10, 10, 10]);
+    await expect(svc.trimOldPayloads()).resolves.toBe(20);
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('can be switched off', async () => {
+    process.env.INVOCATION_PAYLOAD_RETENTION_DAYS = '0';
+    const { svc, prisma } = build([]);
+    await expect(svc.trimOldPayloads()).resolves.toBe(0);
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+});

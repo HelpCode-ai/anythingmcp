@@ -1,4 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { boundPayload, boundText } from './bound-payload';
+
+/** Bytes of a call's input / output kept in tool_invocations, and error chars. */
+const envInt = (name: string, fallback: number) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+};
+const INVOCATION_LOG_INPUT_BYTES = envInt('INVOCATION_LOG_INPUT_BYTES', 8 * 1024);
+const INVOCATION_LOG_OUTPUT_BYTES = envInt('INVOCATION_LOG_OUTPUT_BYTES', 16 * 1024);
+const INVOCATION_LOG_ERROR_CHARS = envInt('INVOCATION_LOG_ERROR_CHARS', 4000);
 import { PrismaService } from '../common/prisma.service';
 import { InvocationStatus } from '../generated/prisma/client';
 
@@ -37,6 +47,11 @@ export class AuditService {
     clientInfo?: string;
   }): Promise<void> {
     const resolvedUserId = await this.resolveUserId(data.userId, data.userEmail);
+    // Store an excerpt, not the whole payload (see bound-payload.ts). The
+    // caller already has the full response; this is only the log.
+    const input = boundPayload(data.input, { maxBytes: INVOCATION_LOG_INPUT_BYTES });
+    const output = boundPayload(data.output, { maxBytes: INVOCATION_LOG_OUTPUT_BYTES });
+    const error = boundText(data.error, INVOCATION_LOG_ERROR_CHARS);
 
     try {
       await this.prisma.toolInvocation.create({
@@ -48,11 +63,11 @@ export class AuditService {
           connectorId: data.connectorId,
           usedProxy: data.usedProxy ?? false,
           intent: data.intent,
-          input: data.input as any,
-          output: data.output as any,
+          input: input as any,
+          output: output as any,
           status: data.status as InvocationStatus,
           durationMs: data.durationMs,
-          error: data.error,
+          error,
           clientInfo: data.clientInfo,
         },
       });
@@ -75,11 +90,11 @@ export class AuditService {
               organizationId: data.organizationId,
               connectorId: data.connectorId,
               usedProxy: data.usedProxy ?? false,
-              input: data.input as any,
-              output: data.output as any,
+              input: input as any,
+              output: output as any,
               status: data.status as InvocationStatus,
               durationMs: data.durationMs,
-              error: data.error,
+              error,
               clientInfo: data.clientInfo,
             },
           });

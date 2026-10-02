@@ -68,12 +68,14 @@ export class CatalogReconciler implements OnApplicationBootstrap {
           await this.stampVersion(connector.id, adapter.version, cfg);
           continue;
         }
-        if (diff.isSafeClass) {
+        // Apply the safe part (descriptions, parameters, instructions)
+        // whatever else the diff holds; the structural part (endpoints, new
+        // or retired tools, base URL) waits for the user's "Apply update".
+        if (CatalogResyncService.hasSafeWork(diff)) {
           await this.resync.resync(connector.id, 'safe');
           autoSynced++;
-        } else {
-          structuralPending++;
         }
+        if (!diff.isSafeClass) structuralPending++;
       } catch (err: any) {
         this.logger.warn(
           `Catalog auto-sync skipped connector ${connector.id}: ${err?.message ?? err}`,

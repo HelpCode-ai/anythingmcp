@@ -20,6 +20,7 @@ import {
   toNodeHandler,
 } from '@modelcontextprotocol/node';
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
+import { McpPrincipalRateLimitGuard } from '../auth/mcp-principal-rate-limit.guard';
 import { mcpHttpTransport } from './mcp-strategy';
 import { toolVisibilityRole } from './mcp-server.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
@@ -174,7 +175,8 @@ const SKILL_INSTRUCTION_MAX = 1800;
  */
 @Controller('mcp')
 @SkipThrottle()
-@UseGuards(McpCombinedAuthGuard)
+// Auth first, then the per-caller ceiling (it needs to know who is calling).
+@UseGuards(McpCombinedAuthGuard, McpPrincipalRateLimitGuard)
 export class McpEndpointController {
   private readonly logger = new Logger(McpEndpointController.name);
 

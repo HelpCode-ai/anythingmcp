@@ -63,7 +63,7 @@ export class KgSkillService {
   async generate(
     organizationId: string,
     opts?: { mcpServerId?: string },
-  ): Promise<{ created: number; model?: string; usage?: any }> {
+  ): Promise<{ created: number; skipped?: boolean; model?: string; usage?: any }> {
     if (!(await this.llm.isEnabled(organizationId))) {
       throw new ConflictException('AI features are disabled for this workspace.');
     }
@@ -85,7 +85,10 @@ export class KgSkillService {
     const cfg = resolveLlmConfig()!;
     const built = await this.buildConnectorRequest(organizationId);
     if (!built) return { created: 0, model: cfg.model };
-    const { json, usage } = await chatJson(cfg, built.system, built.user);
+    const { json, skipped, usage } = await chatJson(cfg, built.system, built.user);
+    // Custom endpoint with an unusable reply: return early before
+    // applyConnectorResult so pending suggestions are left untouched.
+    if (skipped) return { created: 0, skipped: true, model: cfg.model };
     const created = await this.applyConnectorResult(organizationId, json);
     this.logger.log(`KG skills (connectors) ${organizationId}: ${created}`);
     return { created, model: cfg.model, usage };
@@ -182,11 +185,14 @@ export class KgSkillService {
       ok: i.status === 'SUCCESS',
     }));
 
-    const { json, usage } = await chatJson(
+    const { json, skipped, usage } = await chatJson(
       cfg,
       SERVER_PROMPT,
       JSON.stringify({ server: server.name, connectors: connectorsContext, calls }),
     );
+    // Custom endpoint with an unusable reply: return early before the
+    // deleteMany below so pending suggestions are left untouched.
+    if (skipped) return { created: 0, skipped: true, model: cfg.model };
     const skills: any[] = Array.isArray(json?.skills) ? json.skills : [];
 
     await this.prisma.kgSkillSuggestion.deleteMany({

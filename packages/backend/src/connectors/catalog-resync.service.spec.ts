@@ -130,6 +130,7 @@ describe('CatalogResyncService.computeDiff', () => {
           useProxy: false,
           isEnabled: true,
           deprecatedAt: null,
+          origin: 'catalog',
         });
       }),
     );
@@ -342,5 +343,90 @@ describe('CatalogResyncService.resync — baseUrl is never applied unasked', () 
     const { service, connectorUpdate } = setup();
     await service.resync('c-nina', 'safe', { applyBaseUrl: true });
     expect(connectorUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('CatalogResyncService — the user\'s own tools are never touched', () => {
+  const userTool = (over: Record<string, unknown> = {}) => ({
+    id: 'mine',
+    name: 'weclapp_my_custom_report',
+    description: 'mine',
+    parameters: {},
+    endpointMapping: { method: 'GET', path: '/mine' },
+    responseMapping: null,
+    useProxy: false,
+    isEnabled: true,
+    deprecatedAt: null,
+    ...over,
+  });
+
+  it('lists a tool the user added as custom, not as removed', async () => {
+    const svc = serviceFor(connectorFromCatalog((tools) => tools.push(userTool({ origin: 'user' }))));
+    const diff = await svc.computeDiff('c1');
+    expect(diff!.removed).toEqual([]);
+    expect(diff!.custom).toEqual(['weclapp_my_custom_report']);
+    // Nothing else changed: still up to date.
+    expect(diff!.isUpToDate).toBe(true);
+  });
+
+  it('decides rows from before the origin column by age', async () => {
+    const created = new Date('2026-09-01T10:00:00Z');
+    const c: any = connectorFromCatalog((tools) => {
+      tools.push(userTool({ origin: null, createdAt: new Date('2026-09-20T10:00:00Z') }));
+      tools.push(userTool({ id: 'old', name: 'weclapp_dropped_upstream', origin: null, createdAt: new Date('2026-09-01T10:01:00Z') }));
+    });
+    c.createdAt = created;
+    const diff = await serviceFor(c).computeDiff('c1');
+    expect(diff!.custom).toEqual(['weclapp_my_custom_report']);
+    expect(diff!.removed).toEqual(['weclapp_dropped_upstream']);
+  });
+
+  function applySetup(mutate: (tools: any[]) => void) {
+    const connector: any = connectorFromCatalog(mutate);
+    connector.config = { ...connector.config, adapterVersion: 'old-version' };
+    const tx = {
+      connector: { findUnique: jest.fn().mockResolvedValue(connector), update: jest.fn().mockResolvedValue({}) },
+      mcpTool: { update: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      connector: { findUnique: jest.fn().mockResolvedValue(connector) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    } as any;
+    return { service: new CatalogResyncService(prisma), tx };
+  }
+
+  it('a full update never retires the user\'s tool, and marks new tools as catalog', async () => {
+    const { service, tx } = applySetup((tools) => {
+      tools.push(userTool({ origin: 'user' }));
+      tools.splice(0, 1); // a catalog tool missing → will be added
+    });
+    await service.resync('c1', 'full');
+    const retired = tx.mcpTool.update.mock.calls.filter((c: any) => c[0].data.deprecatedAt instanceof Date);
+    expect(retired.map((c: any) => c[0].where.id)).not.toContain('mine');
+    expect(tx.mcpTool.create).toHaveBeenCalledTimes(1);
+    expect(tx.mcpTool.create.mock.calls[0][0].data.origin).toBe('catalog');
+  });
+
+  it('safe mode applies description fixes even when a new tool is also pending', async () => {
+    const { service, tx } = applySetup((tools) => {
+      tools[1] = { ...tools[1], description: 'stale description' };
+      tools.splice(0, 1); // structural: a tool to add
+    });
+    const { applied, diff } = await service.resync('c1', 'safe');
+    expect(diff.isSafeClass).toBe(false);
+    expect(applied).toBe(true);
+    expect(tx.mcpTool.create).not.toHaveBeenCalled();
+    const fixed = tx.mcpTool.update.mock.calls.find((c: any) => c[0].data.description !== 'stale description');
+    expect(fixed).toBeDefined();
+    // Not stamped as in sync: the structural part is still pending.
+    const cfg = tx.connector.update.mock.calls[0][0].data.config;
+    expect(cfg.adapterVersion).toBe('old-version');
+  });
+
+  it('safe mode does nothing when only structural changes are pending', async () => {
+    const { service, tx } = applySetup((tools) => tools.splice(0, 1));
+    const { applied } = await service.resync('c1', 'safe');
+    expect(applied).toBe(false);
+    expect(tx.connector.update).not.toHaveBeenCalled();
   });
 });
