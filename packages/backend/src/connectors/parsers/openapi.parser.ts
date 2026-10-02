@@ -4,15 +4,9 @@ import { capToolName } from './tool-name.util';
 const SwaggerParser = require('swagger-parser');
 import axios from 'axios';
  
-import { CORE_SCHEMA, load as loadYaml, mergeTag, timestampTag } from 'js-yaml';
+const yaml = require('js-yaml') as { load: (s: string) => unknown };
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { normalizeOpenApi31 } from './openapi-3.1-normalizer';
-
-// js-yaml 5 loads with the bare YAML 1.2 core schema. Real-world specs use
-// `<<: *anchor` merge keys, which it would keep as a literal "<<" property,
-// so add merge (and timestamps) back: the same result js-yaml 4 gave. Not
-// YAML11_SCHEMA: its 1.1 booleans turn a property named `y` or `on` into `true`.
-const SPEC_YAML_SCHEMA = CORE_SCHEMA.withTags(mergeTag, timestampTag);
 
 export interface ParsedTool {
   name: string;
@@ -175,7 +169,7 @@ export class OpenApiParser {
       return JSON.parse(input);
     }
     try {
-      return loadYaml(input, { schema: SPEC_YAML_SCHEMA });
+      return yaml.load(input);
     } catch (yamlErr) {
       // Last-resort: try JSON anyway so the original error surfaces if the
       // input is genuinely malformed.
