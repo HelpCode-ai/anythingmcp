@@ -60,6 +60,12 @@ export const ProductEvents = {
    * add a connector (read against the connectors table).
    */
   AI_CLIENT_CONNECTED: 'ai_client_connected',
+  /**
+   * Cloud: after approving an AI client, the user was told their workspace
+   * is empty and shown how to add an app (chat or dashboard). Server-only.
+   * Read against setup_completed: does the prompt lead to a first connector.
+   */
+  EMPTY_WORKSPACE_PROMPT: 'empty_workspace_prompt',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -71,6 +77,7 @@ export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents
 const SERVER_ONLY = new Set<string>([
   ProductEvents.SIGNUP_ATTRIBUTED,
   ProductEvents.AI_CLIENT_CONNECTED,
+  ProductEvents.EMPTY_WORKSPACE_PROMPT,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),

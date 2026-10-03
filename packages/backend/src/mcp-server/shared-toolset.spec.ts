@@ -350,3 +350,64 @@ describe('connectors that are not set up yet', () => {
     expect(list.body.needsSetup).toHaveLength(1);
   });
 });
+
+describe('connector setup from the chat (AnythingMCP Setup)', () => {
+  function withSetup(run: jest.Mock = jest.fn(async () => ({ body: { results: [] } }))) {
+    return makeDeps({ setup: { organizationId: 'org-A', run } } as any);
+  }
+
+  it('is offered on an empty workspace, and the hint points the model at it', async () => {
+    const { client } = await connect([], withSetup());
+    const list = await call(client, 'anythingmcp_list_connectors');
+    expect(list.body.connectors).toEqual([
+      expect.objectContaining({ id: 'anythingmcp-setup', name: 'AnythingMCP Setup', readTools: 2, writeTools: 1 }),
+    ]);
+    expect(list.body.hint).toContain('setup_find_connectors');
+  });
+
+  it('is found by search and run through the generic run tools', async () => {
+    const run = jest.fn(async () => ({ body: { results: [{ adapter: 'etsy' }] } }));
+    const { client } = await connect([CRM_READ], withSetup(run));
+    const search = await call(client, 'anythingmcp_search_tools', { query: 'connect etsy app' });
+    expect(JSON.stringify(search.body)).toContain('setup_find_connectors');
+    const out = await call(client, 'anythingmcp_run_read_tool', { tool: 'setup_find_connectors', arguments: { query: 'etsy' } });
+    expect(out.isError).toBe(false);
+    expect(run).toHaveBeenCalledWith('setup_find_connectors', { query: 'etsy' });
+  });
+
+  it('installs only through the write tool, so the client asks the user first', async () => {
+    const run = jest.fn(async () => ({ body: { installed: 'Etsy' } }));
+    const { client } = await connect([], withSetup(run));
+    const viaRead = await call(client, 'anythingmcp_run_read_tool', { tool: 'setup_install_connector', arguments: { adapter: 'etsy' } });
+    expect(viaRead.isError).toBe(true);
+    expect(run).not.toHaveBeenCalled();
+    const viaWrite = await call(client, 'anythingmcp_run_write_tool', { tool: 'setup_install_connector', arguments: { adapter: 'etsy' } });
+    expect(viaWrite.body).toEqual({ installed: 'Etsy' });
+  });
+
+  it('passes an error from the setup service through as an error result', async () => {
+    const run = jest.fn(async () => ({ isError: true, body: { error: 'secret' } }));
+    const { client } = await connect([], withSetup(run));
+    const out = await call(client, 'anythingmcp_run_write_tool', { tool: 'setup_install_connector', arguments: { adapter: 'x' } });
+    expect(out).toEqual({ isError: true, body: { error: 'secret' } });
+  });
+
+  it('documents itself in the workspace guide', async () => {
+    const { client } = await connect([], withSetup());
+    const guide = await call(client, 'anythingmcp_get_workspace_guide', { connector: 'AnythingMCP Setup' });
+    expect(String(guide.body)).toContain('Never ask the user for passwords, API keys or tokens');
+  });
+
+  it('is absent for a caller who may not install connectors', async () => {
+    const { client } = await connect([], makeDeps());
+    const list = await call(client, 'anythingmcp_list_connectors');
+    expect(list.body.connectors).toEqual([]);
+    expect(list.body.hint).toContain('anythingmcp_get_configuration_url');
+  });
+
+  it('keeps the eight tools the directory reviewed', async () => {
+    const { client } = await connect([], withSetup());
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual([...SHARED_TOOL_NAMES].sort());
+  });
+});

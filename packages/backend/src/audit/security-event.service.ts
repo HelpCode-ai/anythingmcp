@@ -79,6 +79,8 @@ export const SecurityEvents = {
   CONSENT_GRANTED: 'CONSENT_GRANTED',
   CONSENT_DENIED: 'CONSENT_DENIED',
   DCR_CLIENT_REGISTERED: 'DCR_CLIENT_REGISTERED',
+  /** An AI client installed a catalog connector through the shared /mcp setup tools. */
+  CONNECTOR_INSTALLED_VIA_MCP: 'CONNECTOR_INSTALLED_VIA_MCP',
 } as const;
 
 export type SecurityEventName =

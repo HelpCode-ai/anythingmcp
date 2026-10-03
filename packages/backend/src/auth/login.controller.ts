@@ -7,6 +7,7 @@ import {
   Req,
   Res,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
@@ -25,6 +26,7 @@ import { SsoService } from '../identity-providers/sso.service';
 import { MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
 import { providerMarkSvg } from './provider-marks';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
+import { ProductEvents, ProductEventService } from '../audit/product-event.service';
 
 /**
  * Carries the VERIFIED identity across the second step of the authorize flow.
@@ -74,6 +76,7 @@ export class LoginController {
     private readonly sso: SsoService,
     private readonly deployment: DeploymentService,
     private readonly grants: McpConnectionGrantService,
+    @Optional() private readonly productEvents?: ProductEventService,
   ) {}
 
   @Get('login')
@@ -299,7 +302,118 @@ export class LoginController {
 
     // Derive callback URL from the request origin (works behind proxy/tunnel)
     const baseUrl = this.getBaseUrl(req);
+    if (await this.maybeOfferFirstConnector(req, res, user.id, encoded, `${baseUrl}/callback`)) return;
     res.redirect(`${baseUrl}/callback`);
+  }
+
+  /**
+   * Cloud only: a user who connects an AI client to a workspace with no
+   * connectors lands back in the chat with nothing to use. 146 of the first
+   * 428 sign-ups from the Claude directory did exactly that. Before handing
+   * back, say so once, and show both ways forward: ask the client to set an
+   * app up (the shared endpoint's setup tools), or add one in a new tab.
+   *
+   * The OAuth flow is only paused: "Continue" goes to the same callback, and
+   * the short-lived login cookie is renewed so a detour does not expire it.
+   * Returns true when it has rendered the page.
+   */
+  private async maybeOfferFirstConnector(
+    req: Request,
+    res: Response,
+    userId: string,
+    encodedProfile: string,
+    callbackUrl: string,
+  ): Promise<boolean> {
+    if (!this.deployment.isCloud()) return false;
+    const consent = await this.loadConsentContext(req);
+    if (!consent) return false;
+    // A client connecting one server's own URL does not get the setup tools
+    // (they live on the shared endpoint), so the advice would not hold.
+    const requestedServerId = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[MCP_RESOURCE_COOKIE];
+    if (typeof requestedServerId === 'string' && requestedServerId) return false;
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizationId: true },
+    });
+    const organizationId = account?.organizationId;
+    if (!organizationId) return false;
+    const [member, connectors] = await Promise.all([
+      this.prisma.organizationMember.findFirst({
+        where: { userId, organizationId, deactivatedAt: null },
+        select: { role: true },
+      }),
+      this.prisma.connector.count({ where: { organizationId } }),
+    ]);
+    if (connectors > 0 || (member?.role !== 'ADMIN' && member?.role !== 'EDITOR')) return false;
+
+    const isSecure = this.isSecureRequest(req);
+    res.cookie('login_user', encodedProfile, {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: 15 * 60 * 1000,
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+    await this.productEvents
+      ?.log({
+        event: ProductEvents.EMPTY_WORKSPACE_PROMPT,
+        userId,
+        organizationId,
+        metadata: { client: consent.clientName },
+      })
+      .catch(() => undefined);
+
+    const dashboard = (this.configService.get<string>('FRONTEND_URL') || '').replace(/\/+$/, '');
+    res.setHeader('Content-Type', 'text/html');
+    res.send(
+      this.renderFirstConnectorOffer({
+        clientName: consent.clientName,
+        callbackUrl,
+        welcomeUrl: `${dashboard}/welcome`,
+      }),
+    );
+    return true;
+  }
+
+  private renderFirstConnectorOffer(params: {
+    clientName: string;
+    callbackUrl: string;
+    welcomeUrl: string;
+  }): string {
+    const client = this.escapeHtml(params.clientName);
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>${client} is connected</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           background: #f5f6f8; margin: 0; padding: 40px 16px; color: #111; }
+    .card { max-width: 460px; margin: 0 auto; background: #fff; border-radius: 12px;
+            padding: 28px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    h1 { font-size: 19px; margin: 0 0 6px; }
+    p { color: #444; font-size: 14px; line-height: 1.5; margin: 0 0 14px; }
+    .example { background: #f5f6f8; border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #111; }
+    a.button { display: block; text-align: center; padding: 11px; font-size: 15px; font-weight: 600;
+               color: #fff; background: #2563eb; border-radius: 8px; text-decoration: none; margin-top: 18px; }
+    a.button:hover { background: #1d4ed8; }
+    a.secondary { display: block; text-align: center; font-size: 14px; color: #2563eb; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${client} is connected</h1>
+    <p>Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
+    <p class="example">“Connect my Etsy shop to AnythingMCP.”</p>
+    <p>${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>
+    <a class="button" href="${this.escapeHtml(params.callbackUrl)}">Continue to ${client}</a>
+    <a class="secondary" href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a>
+  </div>
+</body>
+</html>`;
   }
 
   /**

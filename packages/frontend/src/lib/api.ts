@@ -445,6 +445,16 @@ export const connectors = {
     ),
 };
 
+/** One-time links an AI client hands out to finish a connector's setup. */
+export const setupLinks = {
+  resolve: (token: string, authToken: string) =>
+    request<{ redirect: string }>('/api/setup-links/resolve', {
+      method: 'POST',
+      token: authToken,
+      body: { token },
+    }),
+};
+
 // Adapters (built-in connector recipes)
 export type SetupKind = 'none' | 'credentials' | 'oauth_browser';
 
