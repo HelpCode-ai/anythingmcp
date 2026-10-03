@@ -245,6 +245,26 @@ export function validateAdapter(adapter, file, region) {
     }
   }
 
+  if (adapter.envVarMeta !== undefined) {
+    const meta = adapter.envVarMeta;
+    const declared = [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
+    const KINDS = new Set(['address', 'credential', 'setting']);
+    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'link', 'advanced']);
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+      errors.push(error('env-meta-shape', 'envVarMeta', 'envVarMeta must map a variable name to its description', 'Use { "MY_VAR": { "label": "…", "help": "…" } }.', 'adapter-fields'));
+    } else {
+      for (const [envVar, m] of Object.entries(meta)) {
+        const path = `envVarMeta.${envVar}`;
+        if (!declared.includes(envVar)) errors.push(error('env-meta-unknown', path, `envVarMeta describes "${envVar}", which is not in requiredEnvVars or optionalEnvVars`, 'Describe only variables the adapter declares.', 'adapter-fields'));
+        if (!m || typeof m !== 'object' || Array.isArray(m)) { errors.push(error('env-meta-shape', path, 'Each envVarMeta entry must be an object', 'Use { "label": "…" }.', 'adapter-fields')); continue; }
+        for (const k of Object.keys(m)) if (!FIELDS.has(k)) errors.push(error('env-meta-field', `${path}.${k}`, `Unknown envVarMeta field "${k}"`, `Use one of: ${[...FIELDS].join(', ')}.`, 'adapter-fields'));
+        if (m.kind !== undefined && !KINDS.has(m.kind)) errors.push(error('env-meta-kind', `${path}.kind`, `kind must be address, credential or setting, not "${m.kind}"`, 'Pick the kind that matches what the value is.', 'adapter-fields'));
+        if (m.pattern !== undefined) { try { new RegExp(m.pattern); } catch { errors.push(error('env-meta-pattern', `${path}.pattern`, 'pattern is not a valid regular expression', 'Fix or remove the pattern.', 'adapter-fields')); } }
+        if (m.link !== undefined && !/^https:\/\//.test(String(m.link))) errors.push(error('env-meta-link', `${path}.link`, 'link must be an https URL', 'Use the provider page where the value is created.', 'adapter-fields'));
+      }
+    }
+  }
+
   if (adapter.envVarAliases !== undefined) {
     const aliases = adapter.envVarAliases;
     const declared = [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];

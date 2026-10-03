@@ -9,6 +9,7 @@ import {
   Body,
   UseGuards,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
@@ -26,7 +27,8 @@ import { toolVisibilityRole } from './mcp-server.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { processGauges } from '../common/process-vitals';
-import { ToolRegistry, RegisteredTool } from './tool-registry';
+import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
+import { SharedSetupRegistry } from './shared-setup';
 import {
   McpConnectionGrantService,
   ResolvedGrant,
@@ -189,6 +191,7 @@ export class McpEndpointController {
     private readonly sessionManager: McpSessionManager,
     private readonly grants: McpConnectionGrantService,
     private readonly kgSkills: KgSkillService,
+    @Optional() private readonly sharedSetup?: SharedSetupRegistry,
   ) {}
 
   // Streamable-HTTP response framing. Default: SSE-framed responses
@@ -287,6 +290,24 @@ export class McpEndpointController {
     const dashboardBase = trimSlash(process.env.FRONTEND_URL) || requestBase;
     const mcpBase = trimSlash(process.env.SERVER_URL) || requestBase;
 
+    // Connector setup from the chat, for those who may install connectors in
+    // the workspace this connection reaches. Not offered to a credential
+    // pinned to one server (an API key), which is not a person setting up.
+    const setupOrg =
+      grant?.mode === 'organization'
+        ? grant.organizationId
+        : grant?.mode === 'servers'
+          ? grant.servers[0]?.organizationId
+          : user.organizationId;
+    const setupProvider = this.sharedSetup?.get() ?? null;
+    const setupCtx = setupOrg
+      ? { userId: user.sub, organizationId: setupOrg, serverIds, dashboardBase }
+      : null;
+    const canSetUp =
+      !!setupProvider && !!setupCtx && !user.mcpServerId && grant?.mode !== 'none'
+        ? await setupProvider.canSetUp(setupCtx)
+        : false;
+
     const deps: SharedToolsetDeps = {
       execute: async (tool, args) => {
         const { structured: _structured, ...result } =
@@ -305,6 +326,20 @@ export class McpEndpointController {
         return result;
       },
       connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
+      connectorUrl: (id) => `${dashboardBase}/connectors/${encodeURIComponent(id)}`,
+      ...(canSetUp && setupProvider && setupCtx
+        ? {
+            setup: {
+              organizationId: setupCtx.organizationId,
+              run: (name: string, args: Record<string, unknown>) =>
+                name === 'setup_find_connectors'
+                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number })
+                  : name === 'setup_install_connector'
+                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> })
+                    : setupProvider.status(setupCtx),
+            },
+          }
+        : {}),
       guide: (ids, wholeScope) =>
         this.mcpServersService.getSharedGuide({
           connectorIds: ids,
@@ -559,6 +594,7 @@ export class McpEndpointController {
     const seen = new Set<string>();
     const listed: Array<Record<string, unknown>> = [];
     for (const tool of tools) {
+      if (!isListable(tool)) continue;
       // Two reachable connectors may expose the same name (a grant spanning
       // two configs of one provider). One entry per name, like the per-server
       // endpoint; the call path resolves within the same connector scope.
@@ -1296,6 +1332,8 @@ export class McpEndpointController {
     const registeredNames = new Set<string>();
 
     for (const tool of serverTools) {
+      // A connector that is not set up yet would only produce errors.
+      if (!isListable(tool)) continue;
       // Skip tools not allowed by role
       if (allowedToolIds !== null && !allowedToolIds.includes(tool.id)) continue;
       // Dedupe by tool name. Two connectors can expose the same name (same

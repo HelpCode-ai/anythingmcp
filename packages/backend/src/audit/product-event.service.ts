@@ -35,12 +35,37 @@ export const ProductEvents = {
   /** Installed connectors from the starter pack. metadata.adapterSlug = comma list. */
   STARTER_PACK_INSTALLED: 'starter_pack_installed',
   /**
+   * The guided connector setup (/connectors/setup/<slug>). metadata.adapterSlug
+   * on all of them; read in order they answer where a setup is abandoned:
+   * opened, credentials refused (metadata.kind = auth_failed, invalid_input…),
+   * sent to the provider's sign-in, finished, or kept as a draft / unverified.
+   */
+  SETUP_STARTED: 'setup_started',
+  SETUP_VERIFY_FAILED: 'setup_verify_failed',
+  OAUTH_STARTED: 'oauth_started',
+  SETUP_COMPLETED: 'setup_completed',
+  SETUP_SAVED_DRAFT: 'setup_saved_draft',
+  SETUP_SAVED_UNVERIFIED: 'setup_saved_unverified',
+  /**
    * A new cloud account was created; metadata = the first and last touch the
    * visitor arrived through (see signup-attribution.ts). Written by the
    * server on sign-up, never accepted from a client. Answers: which channel
    * brings sign-ups, verified sign-ups and paying customers.
    */
   SIGNUP_ATTRIBUTED: 'signup_attributed',
+  /**
+   * A user connected an AI client (Claude, ChatGPT…) through the OAuth flow
+   * for the first time; metadata.client = the client's name. Server-only.
+   * Answers: how many sign-ups reach the client, and how many of those then
+   * add a connector (read against the connectors table).
+   */
+  AI_CLIENT_CONNECTED: 'ai_client_connected',
+  /**
+   * Cloud: after approving an AI client, the user was told their workspace
+   * is empty and shown how to add an app (chat or dashboard). Server-only.
+   * Read against setup_completed: does the prompt lead to a first connector.
+   */
+  EMPTY_WORKSPACE_PROMPT: 'empty_workspace_prompt',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -49,7 +74,11 @@ export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents
  * Events only the server writes. A signed-in user could otherwise post a
  * `signup_attributed` of their own and skew the channel report.
  */
-const SERVER_ONLY = new Set<string>([ProductEvents.SIGNUP_ATTRIBUTED]);
+const SERVER_ONLY = new Set<string>([
+  ProductEvents.SIGNUP_ATTRIBUTED,
+  ProductEvents.AI_CLIENT_CONNECTED,
+  ProductEvents.EMPTY_WORKSPACE_PROMPT,
+]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
 );
@@ -119,7 +148,9 @@ export class ProductEventService {
  * a client name or a server id, nothing that should ever be a secret, and a
  * fixed key set is what keeps an untrusted body from choosing property names.
  */
-const METADATA_KEYS = ['client', 'serverId', 'connectorId', 'adapterSlug'] as const;
+// `kind`: what a setup involved or why its check failed ('credentials',
+// 'auth'); `via`: where a connector was set up ('mcp' when from the chat).
+const METADATA_KEYS = ['client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via'] as const;
 
 function boundMetadata(
   metadata: Record<string, unknown> | null | undefined,

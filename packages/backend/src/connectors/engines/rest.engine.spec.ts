@@ -1,4 +1,4 @@
-import { RestEngine, serializeRepeatedParams } from './rest.engine';
+import { RestEngine, parseRetryAfterMs, serializeRepeatedParams } from './rest.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { LoginTokenService } from './login-token.service';
 import axios, { AxiosError } from 'axios';
@@ -758,6 +758,49 @@ describe('RestEngine', () => {
       expect(mockedAxios).toHaveBeenCalledTimes(1);
     });
 
+    // A rate limit is not an outage: at most one more attempt, and only when
+    // the API's Retry-After fits inside a tool call.
+    describe('rate limits', () => {
+      const limited = (status: number, retryAfter?: string) =>
+        new AxiosError('limited', undefined, undefined, {}, {
+          status,
+          data: {},
+          headers: retryAfter === undefined ? {} : { 'retry-after': retryAfter },
+        } as any);
+      const call = () =>
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          { method: 'GET', path: '/' },
+          {},
+        );
+
+      it('tries a 429 without Retry-After only once more', async () => {
+        mockedAxios.mockRejectedValue(limited(429));
+        await expect(call()).rejects.toBeInstanceOf(AxiosError);
+        expect(mockedAxios).toHaveBeenCalledTimes(2);
+      });
+
+      it('honours a short Retry-After and returns the success', async () => {
+        mockedAxios
+          .mockRejectedValueOnce(limited(429, '0'))
+          .mockResolvedValueOnce({ data: { ok: true } });
+        await expect(call()).resolves.toEqual({ ok: true });
+        expect(mockedAxios).toHaveBeenCalledTimes(2);
+      });
+
+      it('does not retry when Retry-After is longer than a tool call can wait', async () => {
+        mockedAxios.mockRejectedValue(limited(429, '60'));
+        await expect(call()).rejects.toBeInstanceOf(AxiosError);
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+      });
+
+      it('treats a 503 with a long Retry-After the same way', async () => {
+        mockedAxios.mockRejectedValue(limited(503, '120'));
+        await expect(call()).rejects.toBeInstanceOf(AxiosError);
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+      });
+    });
+
     it('gives up after exhausting retries on persistent 503', async () => {
       mockedAxios.mockRejectedValue(err(503));
 
@@ -1097,7 +1140,7 @@ describe('RestEngine', () => {
         tools: Array<{ name: string; endpointMapping: Record<string, unknown> }>;
       };
       const tool = checkmk.tools.find(
-        (t) => t.name === 'checkmk_list_host_states',
+        (t) => t.name === 'checkmk_list_hosts',
       )!;
 
       await engine.execute(
@@ -1107,7 +1150,7 @@ describe('RestEngine', () => {
           authConfig: { headerName: 'Authorization', apiKey: 'Bearer u s' },
         },
         tool.endpointMapping as never,
-        {},
+        { hostnames: ['web01', 'db01'] },
       );
 
       const cfg = mockedAxios.mock.calls[0][0] as unknown as {
@@ -1118,8 +1161,8 @@ describe('RestEngine', () => {
         p: Record<string, unknown>,
       ) => string;
       const serialized = query(cfg.params);
-      expect(serialized).toContain('columns=name&columns=state');
-      expect(serialized).not.toContain('columns%5B%5D');
+      expect(serialized).toContain('hostnames=web01&hostnames=db01');
+      expect(serialized).not.toContain('hostnames%5B%5D');
     });
   });
 
@@ -1703,5 +1746,22 @@ describe('RestEngine — bodyTemplate that will not parse', () => {
       token: 'super-secret',
     }).catch((e) => e);
     expect(err.message).not.toMatch(/super-secret/);
+  });
+});
+
+describe('parseRetryAfterMs', () => {
+  it('reads delay-seconds', () => {
+    expect(parseRetryAfterMs('2')).toBe(2000);
+    expect(parseRetryAfterMs(['5'])).toBe(5000);
+  });
+  it('reads an HTTP date relative to now', () => {
+    const now = Date.parse('Sat, 03 Oct 2026 10:00:00 GMT');
+    expect(parseRetryAfterMs('Sat, 03 Oct 2026 10:00:02 GMT', now)).toBe(2000);
+    expect(parseRetryAfterMs('Sat, 03 Oct 2026 09:00:00 GMT', now)).toBe(0);
+  });
+  it('returns null for missing or unreadable values', () => {
+    expect(parseRetryAfterMs(undefined)).toBeNull();
+    expect(parseRetryAfterMs('')).toBeNull();
+    expect(parseRetryAfterMs('soon')).toBeNull();
   });
 });

@@ -39,6 +39,18 @@ describe('ebay-sell adapter — static spec conformance', () => {
   it("warns that pre-Inventory-API listings will not appear", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('Trading API');
   });
+
+  it("calls payment disputes on apiz.ebay.com, where eBay serves them", () => {
+    const t = a.tools.find((x) => x.name === 'ebay_sell_list_payment_disputes')!;
+    expect(t.endpointMapping.path).toBe('https://apiz.ebay.com/sell/fulfillment/v1/payment_dispute_summary');
+  });
+
+  it("updates a price through bulk_update_price_quantity with an offers array", () => {
+    const t = a.tools.find((x) => x.name === 'ebay_sell_update_offer_price')!;
+    expect(`${String(t.endpointMapping.method)} ${String(t.endpointMapping.path)}`).toBe('POST /sell/inventory/v1/bulk_update_price_quantity');
+    const body = t.endpointMapping.bodyMapping as { requests: Array<{ offers: Array<Record<string, unknown>> }> };
+    expect(body.requests[0].offers[0].offerId).toBe('$offerId');
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

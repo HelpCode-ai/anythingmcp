@@ -1,30 +1,30 @@
 {
   "slug": "timetac",
   "name": "TimeTac",
-  "description": "TimeTac time and attendance for DACH teams: time trackings, users, projects, tasks, absences and the live clock-in state. REST API v3 on the customer's own timetac.com subdomain, OAuth 2.0.",
+  "description": "TimeTac time and attendance for DACH teams: time trackings, users, projects, tasks, absences, departments and the live attendance overview. REST API v4 at api.timetac.com, OAuth 2.0 client credentials.",
   "region": "de",
   "category": "time-tracking",
   "icon": "timetac",
-  "docsUrl": "https://www.timetac.com/en/api-documentation/",
-  "instructions": "**Your account name is part of every URL.** TimeTac gives each customer a subdomain *and* repeats the account name in the path: `https://<account>.timetac.com/<account>/api/v3/`. Set `TIMETAC_ACCOUNT` to that name (the part before `.timetac.com`) and the adapter builds both halves.\n\n**Getting OAuth credentials**\n1. Ask TimeTac support to enable API access and issue an OAuth 2.0 client for your account — it is not self-service in the web UI.\n2. You receive a **client id** and **client secret**. Complete the authorization-code flow once against `https://<account>.timetac.com/<account>/oauth2/authorize` and keep the **refresh token**.\n3. Set `TIMETAC_ACCOUNT`, `TIMETAC_CLIENT_ID`, `TIMETAC_CLIENT_SECRET` and `TIMETAC_REFRESH_TOKEN`. AnythingMCP refreshes the access token on its own from then on.\n\n**Reads end in `/read`.** TimeTac's v3 API is not REST-shaped: the list endpoint for a resource is `<resource>/read`, and filters go in query parameters like `filter=[{\"field\":\"date\",\"comparison\":\"gt\",\"value\":\"2026-09-01\"}]`. The tools below pass a `filter` string through verbatim so the agent can express whatever the docs allow.\n\n**Responses are wrapped** in `{\"Success\": true, \"Results\": [...], \"NumResults\": n}`. An empty `Results` with `Success: true` means the filter matched nothing, not that the call failed.\n\n**Unverified**: these paths follow TimeTac's published v3 documentation and have not been run against a live account. Check the docs before concluding a credential is wrong.\n\n**Cloud reachability**: `<account>.timetac.com` is public with a valid certificate.",
+  "docsUrl": "https://docs.timetac.com/",
+  "instructions": "**Your account name is part of every URL.** TimeTac's API lives at `https://api.timetac.com/<account>/v4/<resource>/<action>/`. Set `TIMETAC_ACCOUNT` to your company account name (the name you log in with); the adapter builds the URL from it.\n\n**Getting API credentials**\n1. API access is not open by default: contact TimeTac support (support@timetac.com) to have it enabled for your account.\n2. In TimeTac open your account settings → **API Credentials** and create a client. You receive a **client id** and a **client secret**.\n3. Set `TIMETAC_ACCOUNT`, `TIMETAC_CLIENT_ID` and `TIMETAC_CLIENT_SECRET`. The adapter uses the OAuth 2.0 *client credentials* grant against `https://api.timetac.com/<account>/auth/oauth2/token` and fetches a new access token on its own whenever the old one expires. No browser authorization step is needed.\n\n**Reads end in `/read/`.** TimeTac's API is not REST-shaped: the list endpoint for a resource is `<resource>/read/`. Filters are plain query parameters named after the resource's fields, with an optional operator: `active=1`, `department_id=3`, or `_op__start_time=gteq&start_time=2026-09-01 00:00:00`. Operators are `eq` (default), `gt`, `gteq`, `lt`, `lteq`, `in` (pipe-separated list, e.g. `_op__id=in&id=1|2|3`), `betw` (pipe-separated range) and `like`. The tools' `filter` argument takes that query-string fragment verbatim.\n\n**Paging and sorting** use `_limit` (default 100), `_offset`, `_order_by` (a field name) and `_sort_direction` (`ASC` or `DESC`); the tools expose them as `limit`, `offset`, `order_by` and `sort_direction`.\n\n**Responses are wrapped** in `{\"Success\": true, \"NumResults\": n, \"Results\": [...]}`. An empty `Results` with `Success: true` means the filter matched nothing, not that the call failed; on an error `Success` is false and `Error` / `ErrorMessage` explain why.\n\n**Not run against a live account.** The URL, token endpoint and parameters follow TimeTac's API documentation (docs.timetac.com) and its v4 OpenAPI file; the per-resource field names come from that documentation too. Check the docs before concluding a credential is wrong.\n\n**Cloud reachability**: `api.timetac.com` is public with a valid certificate.",
   "requiredEnvVars": [
     "TIMETAC_ACCOUNT",
     "TIMETAC_CLIENT_ID",
-    "TIMETAC_CLIENT_SECRET",
-    "TIMETAC_REFRESH_TOKEN"
+    "TIMETAC_CLIENT_SECRET"
   ],
   "connector": {
-    "name": "TimeTac API v3",
+    "name": "TimeTac API v4",
     "type": "REST",
-    "baseUrl": "https://{{TIMETAC_ACCOUNT}}.timetac.com/{{TIMETAC_ACCOUNT}}/api/v3",
+    "baseUrl": "https://api.timetac.com/{{TIMETAC_ACCOUNT}}/v4",
     "authType": "OAUTH2",
     "authConfig": {
+      "grant": "client_credentials",
       "clientId": "{{TIMETAC_CLIENT_ID}}",
       "clientSecret": "{{TIMETAC_CLIENT_SECRET}}",
-      "refreshToken": "{{TIMETAC_REFRESH_TOKEN}}",
-      "tokenUrl": "https://{{TIMETAC_ACCOUNT}}.timetac.com/{{TIMETAC_ACCOUNT}}/oauth2/token"
+      "tokenUrl": "https://api.timetac.com/{{TIMETAC_ACCOUNT}}/auth/oauth2/token",
+      "tokenAuthMethod": "client_secret_post"
     },
-    "healthcheckPath": "/users/read"
+    "healthcheckPath": "/users/read/?_limit=1"
   },
   "probe": {
     "tool": "timetac_list_users"
@@ -32,26 +32,45 @@
   "tools": [
     {
       "name": "timetac_list_users",
-      "description": "List the users in the TimeTac account with their name, employee number, department and active state. No parameters — the quickest check that the OAuth client works.",
+      "description": "List the users in the TimeTac account with their name, personnel number, department and active state. The quickest check that the OAuth client works.",
       "parameters": {
         "type": "object",
         "properties": {
           "filter": {
             "type": "string",
-            "description": "TimeTac filter JSON, e.g. [{\"field\":\"status\",\"comparison\":\"eq\",\"value\":\"active\"}]."
+            "description": "Query-string filter on the resource's fields, passed verbatim, e.g. `active=1&department_id=3`. Operators via _op__<field>: eq, gt, gteq, lt, lteq, in (pipe list), betw (pipe range), like."
           },
           "limit": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field name to sort by."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/users/read",
+        "path": "/users/read/",
         "queryParams": {
-          "filter": "$filter",
-          "limit": "$limit"
+          "__rawquery": "$filter",
+          "_limit": "$limit",
+          "_offset": "$offset",
+          "_order_by": "$order_by",
+          "_sort_direction": "$sort_direction"
         }
       }
     },
@@ -63,80 +82,127 @@
         "properties": {
           "filter": {
             "type": "string",
-            "description": "TimeTac filter JSON, e.g. [{\"field\":\"start_time\",\"comparison\":\"gt\",\"value\":\"2026-09-01 00:00:00\"}]."
+            "description": "Query-string filter on the resource's fields, passed verbatim, e.g. `_op__start_time=betw&start_time=2026-09-01 00:00:00|2026-09-30 23:59:59&user_id=5`. Operators via _op__<field>: eq, gt, gteq, lt, lteq, in (pipe list), betw (pipe range), like."
           },
           "limit": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Maximum rows to return (default 100)."
           },
-          "start": {
+          "offset": {
             "type": "number",
             "description": "Rows to skip, for paging."
           },
-          "sort": {
+          "order_by": {
             "type": "string",
-            "description": "Sort JSON, e.g. [{\"property\":\"start_time\",\"direction\":\"DESC\"}]."
+            "description": "Field name to sort by."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/timeTrackings/read",
+        "path": "/timeTrackings/read/",
         "queryParams": {
-          "filter": "$filter",
-          "limit": "$limit",
-          "start": "$start",
-          "sort": "$sort"
+          "__rawquery": "$filter",
+          "_limit": "$limit",
+          "_offset": "$offset",
+          "_order_by": "$order_by",
+          "_sort_direction": "$sort_direction"
         }
       }
     },
     {
       "name": "timetac_list_projects",
-      "description": "List projects with their client, budget and status, so a time tracking can be attributed to a piece of work.",
+      "description": "List projects with their client, target duration and done state, so a time tracking can be attributed to a piece of work.",
       "parameters": {
         "type": "object",
         "properties": {
           "filter": {
             "type": "string",
-            "description": "TimeTac filter JSON."
+            "description": "Query-string filter on the resource's fields, passed verbatim, e.g. `is_done=0&client_id=4`. Operators via _op__<field>: eq, gt, gteq, lt, lteq, in (pipe list), betw (pipe range), like."
           },
           "limit": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field name to sort by."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/projects/read",
+        "path": "/projects/read/",
         "queryParams": {
-          "filter": "$filter",
-          "limit": "$limit"
+          "__rawquery": "$filter",
+          "_limit": "$limit",
+          "_offset": "$offset",
+          "_order_by": "$order_by",
+          "_sort_direction": "$sort_direction"
         }
       }
     },
     {
       "name": "timetac_list_tasks",
-      "description": "List tasks — the things users actually clock onto — with the project they belong to and whether they are still open.",
+      "description": "List tasks — the things users actually clock onto — with the project they belong to (mother_id) and whether they are done.",
       "parameters": {
         "type": "object",
         "properties": {
           "filter": {
             "type": "string",
-            "description": "TimeTac filter JSON, e.g. by project_id."
+            "description": "Query-string filter on the resource's fields, passed verbatim, e.g. `mother_id=12&is_done=0`. Operators via _op__<field>: eq, gt, gteq, lt, lteq, in (pipe list), betw (pipe range), like."
           },
           "limit": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field name to sort by."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/tasks/read",
+        "path": "/tasks/read/",
         "queryParams": {
-          "filter": "$filter",
-          "limit": "$limit"
+          "__rawquery": "$filter",
+          "_limit": "$limit",
+          "_offset": "$offset",
+          "_order_by": "$order_by",
+          "_sort_direction": "$sort_direction"
         }
       }
     },
@@ -148,20 +214,39 @@
         "properties": {
           "filter": {
             "type": "string",
-            "description": "TimeTac filter JSON, e.g. by user_id or date range."
+            "description": "Query-string filter on the resource's fields, passed verbatim, e.g. `user_id=5&_op__from_date=gteq&from_date=2026-09-01`. Operators via _op__<field>: eq, gt, gteq, lt, lteq, in (pipe list), betw (pipe range), like."
           },
           "limit": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field name to sort by."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/absences/read",
+        "path": "/absences/read/",
         "queryParams": {
-          "filter": "$filter",
-          "limit": "$limit"
+          "__rawquery": "$filter",
+          "_limit": "$limit",
+          "_offset": "$offset",
+          "_order_by": "$order_by",
+          "_sort_direction": "$sort_direction"
         }
       }
     },
@@ -171,37 +256,85 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Query-string filter on the resource's fields, passed verbatim, e.g. `active=1`. Operators via _op__<field>: eq, gt, gteq, lt, lteq, in (pipe list), betw (pipe range), like."
+          },
           "limit": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field name to sort by."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/departments/read",
+        "path": "/departments/read/",
         "queryParams": {
-          "limit": "$limit"
+          "__rawquery": "$filter",
+          "_limit": "$limit",
+          "_offset": "$offset",
+          "_order_by": "$order_by",
+          "_sort_direction": "$sort_direction"
         }
       }
     },
     {
       "name": "timetac_get_live_status",
-      "description": "Read who is currently clocked in and on what — the live attendance board, answering 'who is working right now'.",
+      "description": "Read the live attendance overview (userStatusOverview): per user whether a time tracking is running, on which task and project, and current absences. Answers 'who is working right now'.",
       "parameters": {
         "type": "object",
         "properties": {
           "filter": {
             "type": "string",
-            "description": "TimeTac filter JSON, e.g. restrict to one department."
+            "description": "Query-string filter on the resource's fields, passed verbatim, e.g. `department_id=3&is_running=1`. Operators via _op__<field>: eq, gt, gteq, lt, lteq, in (pipe list), betw (pipe range), like."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field name to sort by."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/timeTrackings/readLive",
+        "path": "/userStatusOverview/read/",
         "queryParams": {
-          "filter": "$filter"
+          "__rawquery": "$filter",
+          "_limit": "$limit",
+          "_offset": "$offset",
+          "_order_by": "$order_by",
+          "_sort_direction": "$sort_direction"
         }
       }
     }

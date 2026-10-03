@@ -494,4 +494,147 @@ describe('LoginController', () => {
       expect(res._cookies['login_user']).toBeUndefined();
     });
   });
+
+  describe('cloud: approving into an empty workspace', () => {
+    let cloud: LoginController;
+    let productEvents: { log: jest.Mock };
+    let cloudPrisma: {
+      user: { findUnique: jest.Mock };
+      organizationMember: { findFirst: jest.Mock };
+      connector: { count: jest.Mock };
+    };
+
+    const arrange = (opts: { connectors?: number; role?: string; session?: boolean } = {}) => {
+      if (opts.session !== false) {
+        store.getOAuthSession.mockResolvedValue({
+          sessionId: 's1',
+          state: 'x',
+          clientId: 'client-abc',
+          redirectUri: 'https://claude.ai/api/mcp/auth_callback',
+          expiresAt: Date.now() + 60_000,
+        } as any);
+        store.getClient.mockResolvedValue({ client_id: 'client-abc', client_name: 'Claude' } as any);
+      }
+      cloudPrisma.user.findUnique.mockImplementation(({ select }: any) =>
+        select?.organizationId
+          ? { organizationId: 'org-1' }
+          : { id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'hash' },
+      );
+      cloudPrisma.organizationMember.findFirst.mockResolvedValue({ role: opts.role ?? 'ADMIN' });
+      cloudPrisma.connector.count.mockResolvedValue(opts.connectors ?? 0);
+      authService.comparePassword.mockResolvedValue(true);
+    };
+
+    const login = async (signedCookies: Record<string, string> = {}) => {
+      const res = makeRes();
+      await cloud.handleLogin(
+        makeReq({
+          cookies: { oauth_session: 's1' },
+          signedCookies: { login_csrf: 'tok', ...signedCookies },
+          headers: { host: 'mcp.test' },
+        } as any),
+        { email: 'a@b.com', password: 'pw', csrf: 'tok', action: 'approve' },
+        res,
+      );
+      return res;
+    };
+
+    beforeEach(() => {
+      cloudPrisma = {
+        user: { findUnique: jest.fn() },
+        organizationMember: { findFirst: jest.fn() },
+        connector: { count: jest.fn() },
+      };
+      productEvents = { log: jest.fn().mockResolvedValue(undefined) };
+      config.get.mockImplementation((key: string) =>
+        key === 'FRONTEND_URL' ? 'https://cloud.example/' : undefined,
+      );
+      cloud = new LoginController(
+        authService as unknown as AuthService,
+        cloudPrisma as unknown as PrismaService,
+        config as unknown as ConfigService,
+        store as unknown as PrismaOAuthStore,
+        sso as unknown as SsoService,
+        { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false } as any,
+        grants as any,
+        productEvents as any,
+      );
+    });
+
+    it('explains how to add an app before handing back to the client', async () => {
+      arrange();
+      const res = await login();
+
+      expect(res._redirect).toBeUndefined();
+      expect(res._sent).toContain('Claude is connected');
+      expect(res._sent).toContain('href="http://mcp.test/callback"');
+      expect(res._sent).toContain('href="https://cloud.example/welcome"');
+      expect(res._sent).toContain('target="_blank"');
+      // The detour must not outlive the 60-second login cookie.
+      expect(res._cookies['login_user'].options.maxAge).toBe(15 * 60 * 1000);
+      expect(res._cookies['login_user'].options.signed).toBe(true);
+      expect(productEvents.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'empty_workspace_prompt',
+          userId: 'u1',
+          organizationId: 'org-1',
+        }),
+      );
+    });
+
+    it('escapes the client name the client registered itself', async () => {
+      arrange();
+      store.getClient.mockResolvedValue({ client_id: 'c', client_name: '<img src=x>' } as any);
+      const res = await login();
+
+      expect(res._sent).toContain('&lt;img src=x&gt; is connected');
+      expect(res._sent).not.toContain('<img src=x>');
+    });
+
+    it.each([
+      ['the workspace has connectors', { connectors: 2 }],
+      ['the user cannot add connectors', { role: 'VIEWER' }],
+    ])('goes straight to /callback when %s', async (_label, opts) => {
+      arrange(opts);
+      const res = await login();
+
+      expect(res._redirect).toBe('http://mcp.test/callback');
+      expect(res._cookies['login_user'].options.maxAge).toBe(60 * 1000);
+      expect(productEvents.log).not.toHaveBeenCalled();
+    });
+
+    it('goes straight to /callback when the client connects one server URL', async () => {
+      arrange();
+      const res = await login({ mcp_resource: 'srv-1' });
+
+      expect(res._redirect).toBe('http://mcp.test/callback');
+    });
+
+    it('never shows on self-hosted', async () => {
+      arrange();
+      const selfHosted = new LoginController(
+        authService as unknown as AuthService,
+        cloudPrisma as unknown as PrismaService,
+        config as unknown as ConfigService,
+        store as unknown as PrismaOAuthStore,
+        sso as unknown as SsoService,
+        { mode: 'self-hosted', isCloud: () => false, isSelfHosted: () => true } as any,
+        grants as any,
+        productEvents as any,
+      );
+      const res = makeRes();
+      await selfHosted.handleLogin(
+        makeReq({
+          cookies: { oauth_session: 's1' },
+          signedCookies: { login_csrf: 'tok' },
+          headers: { host: 'mcp.test' },
+        } as any),
+        { email: 'a@b.com', password: 'pw', csrf: 'tok', action: 'approve' },
+        res,
+      );
+
+      expect(res._redirect).toBe('http://mcp.test/callback');
+      expect(cloudPrisma.connector.count).not.toHaveBeenCalled();
+    });
+  });
 });

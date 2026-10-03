@@ -1,12 +1,12 @@
 {
   "slug": "quipu",
   "name": "Quipu",
-  "description": "Quipu — Spanish invoicing and bookkeeping for autónomos and small companies: issued and received invoices, contacts, items, expenses and bank accounts. REST API, OAuth 2.0 client credentials.",
+  "description": "Quipu — Spanish invoicing and bookkeeping for autónomos and small companies: issued and received invoices, contacts, book entries and accounting categories. REST API, OAuth 2.0 client credentials.",
   "region": "es",
   "category": "accounting",
   "icon": "quipu",
-  "docsUrl": "https://developers.getquipu.com/",
-  "instructions": "**Getting credentials**\n1. Sign in to Quipu and open the developer area (developers.getquipu.com) to register an application against your account.\n2. You receive a **client id** (`app_id`) and **client secret**. Quipu's API uses the client-credentials grant, so there is no browser consent step for your own account's data.\n3. Set `QUIPU_CLIENT_ID` and `QUIPU_CLIENT_SECRET`. AnythingMCP fetches and refreshes the access token on its own.\n\n**JSON:API, not plain JSON.** Quipu follows the JSON:API specification: rows arrive as `{\"data\": [{\"id\": …, \"type\": \"invoices\", \"attributes\": {…}, \"relationships\": {…}}]}`. The interesting fields are inside `attributes`, and relationships are ids that need an `include` to resolve. This is why `include` appears on the tools below.\n\n**The Accept header is `application/vnd.api+json`**, which Quipu requires; a plain `application/json` gets a 406. The adapter sends it.\n\n**Issued vs received.** `invoices` are what you issue; `expenses` are what you receive and record. A revenue question wants invoices; a cost question wants expenses. Both carry the Spanish tax fields — IVA and IRPF retention — separately from the totals.\n\n**Paging** is `page[number]` and `page[size]`, JSON:API style, with the totals in the response's `meta`.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: getquipu.com is public with a valid certificate.",
+  "docsUrl": "https://quipuapp.github.io/api-v1-docs/",
+  "instructions": "**Getting credentials**\n1. In Quipu, create the API credentials for your account (see the API reference at quipuapp.github.io/api-v1-docs).\n2. You receive a **client id** and **client secret**. Quipu's API uses the client-credentials grant, so there is no browser consent step for your own account's data. The token request is sent with HTTP Basic credentials and the fixed scope `ecommerce`, which Quipu requires on every token request (without it: `400 invalid_scope`); the adapter sends both. Tokens last 2 hours.\n3. Set `QUIPU_CLIENT_ID` and `QUIPU_CLIENT_SECRET`. AnythingMCP fetches and refreshes the access token on its own.\n\n**JSON:API, not plain JSON.** Quipu follows the JSON:API specification: rows arrive as `{\"data\": [{\"id\": …, \"type\": \"invoices\", \"attributes\": {…}, \"relationships\": {…}}]}`. The interesting fields are inside `attributes`, and relationships are ids that need an `include` to resolve. This is why `include` appears on the tools below.\n\n**The Accept header is `application/vnd.quipu.v1+json`**, Quipu's versioned media type, required on every call; with the generic JSON:API type `application/vnd.api+json` every path answers 404. The adapter sends it.\n\n**Issued vs received.** Quipu keeps both in `/invoices`, told apart by `filter[kind]`: `quipu_list_invoices` asks for `income` (what you issue), `quipu_list_expenses` for `expenses` (supplier invoices you record). Tickets, paysheets and additional incomes are separate book entries; `quipu_list_book_entries` lists everything together. Dates are filtered by `period` (`2026Q1`, `2026-09`), not by a from/to range. Invoices and expenses both carry the Spanish tax fields — IVA and IRPF retention — separately from the totals.\n\n**Paging** is `page[number]` and `page[size]` (max 100, default 25), with `total_pages`, `current_page` and `total_results` in the response's `meta.pagination_info`. The API allows 5 requests per 5 seconds.\n\n**Checked against the published spec, not yet a live tenant.** Paths, headers and filter names follow Quipu's OpenAPI document, and every route used here answers 401 (exists) without a token. The reference writes paths with an account prefix (`/{owner_slug}/contacts`); the adapter uses the unprefixed form, which Quipu also routes. If a live token gets 404 where the docs say the resource exists, the account prefix is the first thing to try.\n\n**Cloud reachability**: getquipu.com is public with a valid certificate.",
   "requiredEnvVars": [
     "QUIPU_CLIENT_ID",
     "QUIPU_CLIENT_SECRET"
@@ -20,10 +20,11 @@
       "grant": "client_credentials",
       "clientId": "{{QUIPU_CLIENT_ID}}",
       "clientSecret": "{{QUIPU_CLIENT_SECRET}}",
-      "tokenUrl": "https://getquipu.com/oauth/token"
+      "tokenUrl": "https://getquipu.com/oauth/token",
+      "scope": "ecommerce"
     },
     "headers": {
-      "Accept": "application/vnd.api+json"
+      "Accept": "application/vnd.quipu.v1+json"
     },
     "healthcheckPath": "/contacts"
   },
@@ -43,11 +44,20 @@
           },
           "page_size": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1 to 100 (default 25)."
           },
-          "filter_name": {
+          "q": {
             "type": "string",
-            "description": "Name fragment to filter by."
+            "description": "Free-text search across contact fields (name, NIF, e-mail…)."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "client",
+              "supplier",
+              "employee"
+            ],
+            "description": "Only contacts of this kind."
           }
         }
       },
@@ -57,7 +67,8 @@
         "queryParams": {
           "page[number]": "$page_number",
           "page[size]": "$page_size",
-          "filter[name]": "$filter_name"
+          "filter[q]": "$q",
+          "filter[kind]": "$kind"
         }
       }
     },
@@ -93,19 +104,33 @@
           },
           "page_size": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1 to 100 (default 25)."
           },
-          "filter_since": {
+          "period": {
             "type": "string",
-            "description": "Earliest invoice date, YYYY-MM-DD."
+            "description": "Period to filter by: a quarter like 2026Q1 or a month like 2026-09."
           },
-          "filter_until": {
+          "payment_status": {
             "type": "string",
-            "description": "Latest invoice date, YYYY-MM-DD."
+            "enum": [
+              "paid",
+              "unpaid",
+              "due",
+              "pending"
+            ],
+            "description": "Payment state. `unpaid` covers both pending and overdue."
+          },
+          "q": {
+            "type": "string",
+            "description": "Free-text search."
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "Only entries of this contact id."
           },
           "include": {
             "type": "string",
-            "description": "Relationships to resolve inline, e.g. contact,items."
+            "description": "Relationships to resolve inline, comma-separated. Allowed: items, contact, accounting_category, accounting_subcategory, items.accounting_category, items.accounting_subcategory."
           }
         }
       },
@@ -113,10 +138,13 @@
         "method": "GET",
         "path": "/invoices",
         "queryParams": {
+          "filter[kind]": "income",
           "page[number]": "$page_number",
           "page[size]": "$page_size",
-          "filter[since]": "$filter_since",
-          "filter[until]": "$filter_until",
+          "filter[period]": "$period",
+          "filter[payment_status]": "$payment_status",
+          "filter[q]": "$q",
+          "filter[contact_id]": "$contact_id",
           "include": "$include"
         }
       }
@@ -133,7 +161,7 @@
           },
           "include": {
             "type": "string",
-            "description": "Relationships to resolve inline, e.g. contact,items,payments."
+            "description": "Relationships to resolve inline, comma-separated. Allowed: items, contact, accounting_category, accounting_subcategory, items.accounting_category, items.accounting_subcategory."
           }
         },
         "required": [
@@ -150,7 +178,7 @@
     },
     {
       "name": "quipu_list_expenses",
-      "description": "List received expenses and supplier invoices with their date, supplier, category, IVA and total — the cost side of the ledger.",
+      "description": "List received supplier invoices (Quipu's invoices of kind `expenses`) with their date, supplier, category, IVA and total — the cost side of the ledger. Tickets and paysheets are in quipu_list_book_entries.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -160,37 +188,54 @@
           },
           "page_size": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1 to 100 (default 25)."
           },
-          "filter_since": {
+          "period": {
             "type": "string",
-            "description": "Earliest expense date, YYYY-MM-DD."
+            "description": "Period to filter by: a quarter like 2026Q1 or a month like 2026-09."
           },
-          "filter_until": {
+          "payment_status": {
             "type": "string",
-            "description": "Latest expense date, YYYY-MM-DD."
+            "enum": [
+              "paid",
+              "unpaid",
+              "due",
+              "pending"
+            ],
+            "description": "Payment state. `unpaid` covers both pending and overdue."
+          },
+          "q": {
+            "type": "string",
+            "description": "Free-text search."
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "Only entries of this contact id."
           },
           "include": {
             "type": "string",
-            "description": "Relationships to resolve inline, e.g. contact,items."
+            "description": "Relationships to resolve inline, comma-separated. Allowed: items, contact, accounting_category, accounting_subcategory, items.accounting_category, items.accounting_subcategory."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/expenses",
+        "path": "/invoices",
         "queryParams": {
+          "filter[kind]": "expenses",
           "page[number]": "$page_number",
           "page[size]": "$page_size",
-          "filter[since]": "$filter_since",
-          "filter[until]": "$filter_until",
+          "filter[period]": "$period",
+          "filter[payment_status]": "$payment_status",
+          "filter[q]": "$q",
+          "filter[contact_id]": "$contact_id",
           "include": "$include"
         }
       }
     },
     {
-      "name": "quipu_list_items",
-      "description": "List the items and services in the catalogue with their code, description, unit price and default IVA rate.",
+      "name": "quipu_list_book_entries",
+      "description": "List all book entries in one place — invoices, tickets (simplified receipts), paysheets and additional incomes — with number, date, counterpart and totals. Use it when a question spans more than full invoices, e.g. every cost of a quarter.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -200,16 +245,84 @@
           },
           "page_size": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1 to 100 (default 25)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "invoices",
+              "tickets",
+              "paysheets",
+              "additional_incomes"
+            ],
+            "description": "Only entries of this type."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "income",
+              "expenses"
+            ],
+            "description": "Income or expenses."
+          },
+          "period": {
+            "type": "string",
+            "description": "Period to filter by: a quarter like 2026Q1 or a month like 2026-09."
+          },
+          "payment_status": {
+            "type": "string",
+            "enum": [
+              "paid",
+              "unpaid",
+              "due",
+              "pending"
+            ],
+            "description": "Payment state. `unpaid` covers both pending and overdue."
+          },
+          "q": {
+            "type": "string",
+            "description": "Free-text search."
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "Only entries of this contact id."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "number",
+              "-number",
+              "issue_date",
+              "-issue_date",
+              "counterpart_name",
+              "-counterpart_name",
+              "total_amount",
+              "-total_amount",
+              "total_amount_without_taxes",
+              "-total_amount_without_taxes"
+            ],
+            "description": "Sort field; `-` prefix for descending."
+          },
+          "include": {
+            "type": "string",
+            "description": "Relationships to resolve inline, comma-separated. Allowed: items, contact, accounting_category, accounting_subcategory, items.accounting_category, items.accounting_subcategory."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/items",
+        "path": "/book_entries",
         "queryParams": {
           "page[number]": "$page_number",
-          "page[size]": "$page_size"
+          "page[size]": "$page_size",
+          "filter[type]": "$type",
+          "filter[kind]": "$kind",
+          "filter[period]": "$period",
+          "filter[payment_status]": "$payment_status",
+          "filter[q]": "$q",
+          "filter[contact_id]": "$contact_id",
+          "sort": "$sort",
+          "include": "$include"
         }
       }
     },
@@ -218,11 +331,29 @@
       "description": "List the accounting categories expenses are filed under, so a cost breakdown uses the categories the bookkeeper actually uses.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "page_number": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "number",
+            "description": "Rows per page, 1 to 100 (default 25)."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Comma-separated kinds: expenses, income, assets, capital, creditor_debitor, financial."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/accounting_categories"
+        "path": "/accounting_categories",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size",
+          "filter[kind]": "$kind"
+        }
       }
     }
   ]

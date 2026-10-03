@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -45,6 +45,15 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
 
 export default function NewConnectorPage() {
   const { token } = useAuth();
+  // What to register in the provider's app, as the server will send it.
+  const [oauthRedirectUri, setOauthRedirectUri] = useState<string | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    connectors
+      .oauthRedirectUri(token)
+      .then((r) => setOauthRedirectUri(r.redirectUri))
+      .catch(() => setOauthRedirectUri(null));
+  }, [token]);
   const router = useRouter();
   const [selectedType, setSelectedType] = useState<string | null>(null);
   // OData: SAP Gateway mode (catalog, sap-client) and its settings.
@@ -569,7 +578,7 @@ export default function NewConnectorPage() {
                   <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-sm text-[var(--t-info-fg)]">
                     <p>After creating the connector, you will be redirected to authorize via OAuth2. Tokens will be stored securely.</p>
                     <p className="mt-1.5 text-xs opacity-90">
-                      Set the <strong>Redirect / Callback URI</strong> in your OAuth provider to: <code className="rounded bg-[var(--surface-2)] px-1 py-0.5 font-mono">{typeof window !== 'undefined' ? (window.location.hostname === 'localhost' ? window.location.origin.replace(':3000', ':4000') : window.location.origin) : 'http://localhost:4000'}/api/mcp-oauth/callback</code>
+                      Set the <strong>Redirect / Callback URI</strong> in your OAuth provider to: <code className="rounded bg-[var(--surface-2)] px-1 py-0.5 font-mono">{oauthRedirectUri ?? '…'}</code>
                     </p>
                   </div>
                 </div>

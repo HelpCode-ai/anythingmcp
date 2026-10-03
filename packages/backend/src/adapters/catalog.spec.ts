@@ -296,6 +296,15 @@ describe('adapter catalog', () => {
       (_name, tool) => {
         const em = tool.endpointMapping as Record<string, unknown>;
 
+        // A tool of a vendor's MCP server is called by name on the remote
+        // server: `method` is that name and `path` the MCP endpoint, not an
+        // HTTP verb and URL.
+        if (adapter.connector.type === 'MCP') {
+          expect(em.method).toBe(tool.name);
+          expect(typeof em.path).toBe('string');
+          return;
+        }
+
         const isDatabase = adapter.connector.type === 'DATABASE';
         const allowed = isDatabase
           ? VALID_DATABASE_METHODS

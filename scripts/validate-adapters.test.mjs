@@ -287,3 +287,13 @@ test('graphqlVariableDefinitions reads required-ness, defaults and anonymous doc
   assert.deepEqual(validatorModule.graphqlVariableDefinitions('{ me { id } }'), []);
   assert.deepEqual(validatorModule.graphqlVariableDefinitions('mutation($in: X!) { a }'), [{ name: 'in', required: true }]);
 });
+
+test('envVarMeta describes declared variables with known fields only', () => {
+  const ok = validateAdapter(adapter({ envVarMeta: { GOOD_KEY: { label: 'API key', kind: 'credential', secret: true, help: 'Settings > API', link: 'https://example.test/keys', pattern: '^[a-z0-9]+$' } } }), 'good.json', 'de');
+  assert.deepEqual(ok.errors, []);
+  const unknown = validateAdapter(adapter({ envVarMeta: { OTHER: { label: 'x' } } }), 'good.json', 'de');
+  assert.ok(unknown.errors.some((e) => e.rule === 'env-meta-unknown'));
+  const bad = validateAdapter(adapter({ envVarMeta: { GOOD_KEY: { kind: 'password', pattern: '(', link: 'http://x', colour: 'red' } } }), 'good.json', 'de');
+  const rules = bad.errors.map((e) => e.rule).sort();
+  assert.deepEqual(rules, ['env-meta-field', 'env-meta-kind', 'env-meta-link', 'env-meta-pattern']);
+});

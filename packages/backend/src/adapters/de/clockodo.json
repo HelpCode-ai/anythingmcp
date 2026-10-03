@@ -6,7 +6,7 @@
   "category": "time-tracking",
   "icon": "clockodo",
   "docsUrl": "https://www.clockodo.com/en/api/",
-  "instructions": "**Getting credentials** — clockodo needs two values.\n1. Sign in and open **Mein Bereich → Mein Benutzerkonto**; the **API-Schlüssel** is at the bottom of the page. Put it in `CLOCKODO_API_KEY`.\n2. Put the e-mail address of that same account in `CLOCKODO_API_USER`. clockodo sends it in the `X-ClockodoApiUser` header and rejects a key without it.\n3. clockodo also asks every API client to identify itself in a `X-Clockodo-External-Application` header; this adapter sends `AnythingMCP;support@anythingmcp.com` automatically.\n\n**Permissions follow the user.** The key inherits the clockodo role of the account it belongs to. A regular employee only sees their own entries; to read the whole company's time the key must belong to a user with the *Verwaltung* or *Inhaber* role.\n\n**API version**: time entries moved to `/v2/entries` with a different response envelope (`{entries, paging}`) from the v1 shape. Customers, projects, services and users are still served from the unversioned root — the paths below reflect that split.\n\n**Time ranges are mandatory and ISO 8601 with a zone**, e.g. `2026-09-01T00:00:00Z`. clockodo rejects a bare date. Ranges are limited server-side; a full year of a large team may need paging via `page`.\n\n**Billability**: `billable` is 0 (not billable), 1 (billable) or 2 (already billed). 'Unbilled work' means `billable=1`, not 'billable is true'.\n\n**Cloud reachability**: my.clockodo.com is public with a valid certificate.",
+  "instructions": "**Getting credentials** — clockodo needs two values.\n1. Sign in and open **Mein Bereich → Mein Benutzerkonto**; the **API-Schlüssel** is at the bottom of the page. Put it in `CLOCKODO_API_KEY`.\n2. Put the e-mail address of that same account in `CLOCKODO_API_USER`. clockodo sends it in the `X-ClockodoApiUser` header and rejects a key without it.\n3. clockodo also asks every API client to identify itself in a `X-Clockodo-External-Application` header; this adapter sends `AnythingMCP;support@anythingmcp.com` automatically.\n\n**Permissions follow the user.** The key inherits the clockodo role of the account it belongs to. A regular employee only sees their own entries; to read the whole company's time the key must belong to a user with the *Verwaltung* or *Inhaber* role.\n\n**API versions**: clockodo versions each resource on its own, and on 1 May 2026 it retired the old unversioned routes (`/api/users`, `/api/customers`, `/api/services`, `/api/absences`, `/api/v2/projects` …). This adapter uses the current ones: time entries and the clock at `/v2/entries` and `/v2/clock` (envelope `{entries, paging}`), users and customers at `/v3/users` and `/v3/customers`, projects, services and absences at `/v4/projects`, `/v4/services` and `/v4/absences` (envelope `{data, paging}`).\n\n**Time ranges are mandatory and ISO 8601 in UTC**, e.g. `2026-09-01T00:00:00Z`. clockodo rejects a bare date. Ranges are limited server-side; a full year of a large team may need paging via `page`.\n\n**Billability**: `billable` is 0 (not billable), 1 (billable) or 2 (already billed). 'Unbilled work' means `billable=1`, not 'billable is true'.\n\n**Cloud reachability**: my.clockodo.com is public with a valid certificate.",
   "requiredEnvVars": [
     "CLOCKODO_API_KEY",
     "CLOCKODO_API_USER"
@@ -26,7 +26,7 @@
     "headers": {
       "X-Clockodo-External-Application": "AnythingMCP;support@anythingmcp.com"
     },
-    "healthcheckPath": "/users"
+    "healthcheckPath": "/v3/users"
   },
   "probe": {
     "tool": "clockodo_list_users"
@@ -41,7 +41,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/users"
+        "path": "/v3/users"
       }
     },
     {
@@ -62,7 +62,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/customers",
+        "path": "/v3/customers",
         "queryParams": {
           "filter[active]": "$filter_active",
           "page": "$page"
@@ -91,7 +91,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/projects",
+        "path": "/v4/projects",
         "queryParams": {
           "filter[customers_id]": "$filter_customers_id",
           "filter[active]": "$filter_active",
@@ -108,7 +108,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/services"
+        "path": "/v4/services"
       }
     },
     {
@@ -119,11 +119,11 @@
         "properties": {
           "time_since": {
             "type": "string",
-            "description": "Start of the range, ISO 8601 with a zone, e.g. 2026-09-01T00:00:00Z."
+            "description": "Start of the range, ISO 8601 in UTC, e.g. 2026-09-01T00:00:00Z."
           },
           "time_until": {
             "type": "string",
-            "description": "End of the range, ISO 8601 with a zone, e.g. 2026-09-30T23:59:59Z."
+            "description": "End of the range, ISO 8601 in UTC, e.g. 2026-09-30T23:59:59Z."
           },
           "filter_users_id": {
             "type": "number",
@@ -198,10 +198,10 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/absences",
+        "path": "/v4/absences",
         "queryParams": {
-          "year": "$year",
-          "users_id": "$users_id"
+          "filter[year][]": "$year",
+          "filter[users_id][]": "$users_id"
         }
       }
     },
@@ -222,7 +222,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/v2/entry/{id}"
+        "path": "/v2/entries/{id}"
       }
     },
     {
@@ -245,11 +245,11 @@
           },
           "time_since": {
             "type": "string",
-            "description": "Entry start, ISO 8601 with a zone."
+            "description": "Entry start, ISO 8601 in UTC, e.g. 2026-09-17T08:00:00Z."
           },
           "time_until": {
             "type": "string",
-            "description": "Entry end, ISO 8601 with a zone."
+            "description": "Entry end, ISO 8601 in UTC, e.g. 2026-09-17T12:30:00Z."
           },
           "projects_id": {
             "type": "number",
@@ -274,7 +274,7 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/v2/entry",
+        "path": "/v2/entries",
         "bodyMapping": {
           "customers_id": "$customers_id",
           "projects_id": "$projects_id",

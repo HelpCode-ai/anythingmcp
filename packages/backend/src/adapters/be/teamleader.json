@@ -311,13 +311,16 @@
     },
     {
       "name": "teamleader_list_quotations",
-      "description": "List quotations with their deal, total, status and validity date, to see what is out with prospects and not yet accepted.",
+      "description": "List quotations with their deal, total, status and validity date, optionally limited to given quotation ids. Teamleader has no deal filter here: read a deal with teamleader_get_deal, take the ids of its quotations and pass them as `ids`.",
       "parameters": {
         "type": "object",
         "properties": {
-          "deal_id": {
-            "type": "string",
-            "description": "Restrict to one deal's quotations."
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Quotation UUIDs to return. Omit for all quotations."
           },
           "page_size": {
             "type": "number",
@@ -334,7 +337,7 @@
         "path": "/quotations.list",
         "bodyMapping": {
           "filter": {
-            "deal_id": "$deal_id"
+            "ids": "$ids"
           },
           "page": {
             "size": "$page_size",

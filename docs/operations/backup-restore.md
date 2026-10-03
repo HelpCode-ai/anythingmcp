@@ -6,8 +6,8 @@ AnythingMCP stores all state in PostgreSQL. Encrypted secrets, audit logs, MCP s
 
 | Where | What | How often |
 |---|---|---|
-| PostgreSQL | every table including `Connector.authConfig` (encrypted blob), audit log, OAuth state | continuously / nightly |
-| `ENCRYPTION_KEY` | the AES-256-GCM key that decrypts `authConfig` | once, immutably |
+| PostgreSQL | every table including `Connector.authConfig` and `Connector.envVars` (encrypted), audit log, OAuth state | continuously / nightly |
+| `ENCRYPTION_KEY` | the AES-256-GCM key that decrypts `authConfig` and the connector variables | once, immutably |
 | `JWT_SECRET` | rotate-able, but losing it logs every user out | once, immutably |
 | `.env` (or your secret manager) | DB connection string, SMTP creds, OAuth IDs | on change |
 
@@ -69,7 +69,7 @@ What you still need to back up yourself:
 
 ## Restoring to a different host
 
-If the new host has a different `ENCRYPTION_KEY`, every encrypted `authConfig` blob in the database becomes unreadable. The connectors will continue to exist as rows, but every API call that needs a credential will fail with a decryption error.
+If the new host has a different `ENCRYPTION_KEY`, every encrypted `authConfig` blob and every connector's variables become unreadable. The connectors will continue to exist as rows, but every API call that needs a credential will fail: a decryption error for `authConfig`, "still empty" for the variables.
 
 Always migrate the encryption key together with the database. If you've lost the original key, the connectors must be re-created with fresh credentials.
 
@@ -83,3 +83,11 @@ A backup that has never been restored is not a backup. Once a quarter:
 4. Tear it down.
 
 This is also the cheapest way to discover that retention has silently been broken for two months.
+
+## Connector variables at rest
+
+A connector's variables (`connectors.env_vars`: API keys, passwords, tenants) are stored as `{"$enc": "<AES-256-GCM>"}` with the same `ENCRYPTION_KEY`. Rows written by an older version are encrypted automatically when the backend starts; the log says `Encrypted the variables of N connectors`.
+
+- **Reading them with SQL** shows the ciphertext only. Use the dashboard or the API, which decrypt them.
+- **Adding a variable with SQL** still works: `UPDATE connectors SET env_vars = env_vars || '{"X":"y"}'::jsonb` stores `X` in clear next to `$enc`; it is read (and wins over an encrypted `X`) and folded into the ciphertext at the next start.
+- **Rolling back** to a version older than this needs the variables in clear first: set `ENV_VARS_AT_REST=plaintext`, restart once (the log says `Decrypted the variables of N connectors`), then switch the image. Remove the variable again to go back to encrypted storage. `docker-compose.yml` passes it through; with `docker-compose.quickstart.yml`, add `- ENV_VARS_AT_REST=plaintext` under the app's `environment` for that restart.

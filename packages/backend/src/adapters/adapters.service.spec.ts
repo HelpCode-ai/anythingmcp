@@ -347,3 +347,104 @@ describe('AdaptersService starter pack', () => {
     );
   });
 });
+
+describe('AdaptersService.verifyCredentials', () => {
+  function build(execute: jest.Mock) {
+    const prisma = { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, prisma };
+  }
+
+  it('runs the probe with the given key in memory and writes nothing', async () => {
+    const execute = jest.fn().mockResolvedValue({ companyName: 'Acme GmbH' });
+    const { service, prisma } = build(execute);
+    const out = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: ' key-1 ' });
+    expect(out).toMatchObject({ ok: true, sample: expect.stringContaining('Acme GmbH') });
+    const [connector] = execute.mock.calls[0];
+    // No id: OAuth and login-token caches stay in memory.
+    expect(connector.id).toBe('');
+    expect(connector.envVars).toEqual({ LEXWARE_API_KEY: 'key-1' });
+    expect(prisma.connector.create).not.toHaveBeenCalled();
+  });
+
+  it('reports a refused key as auth_failed, with the provider message', async () => {
+    const err: any = new Error('401 Unauthorized: invalid token');
+    err.status = 401;
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: 'bad' });
+    expect(out).toMatchObject({ ok: false, kind: 'auth_failed', status: 401 });
+  });
+
+  it('names what is still empty without calling the API', async () => {
+    const execute = jest.fn();
+    const { service } = build(execute);
+    const out = await service.verifyCredentials('weclapp', 'org1', { WECLAPP_API_TOKEN: 't' });
+    expect(out).toMatchObject({ ok: false, kind: 'invalid_input', missing: ['WECLAPP_TENANT'] });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('refuses an address variable that is not one', async () => {
+    const execute = jest.fn();
+    const { service } = build(execute);
+    const out = await service.verifyCredentials('substack', 'org1', { SUBSTACK_PUBLICATION_URL: 'not a url at all' });
+    expect(out).toMatchObject({ ok: false, kind: 'invalid_input' });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('has nothing to try for Etsy before the sign-in at Etsy', async () => {
+    const execute = jest.fn();
+    const { service } = build(execute);
+    const out = await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' });
+    expect(out).toEqual({ ok: null, skipped: 'authorization' });
+    expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('AdaptersService.verifyCredentials on an existing connector', () => {
+  it('fills a field left empty from what the connector stores, only within the organization', async () => {
+    const execute = jest.fn().mockResolvedValue({ ok: 1 });
+    const findFirst = jest.fn().mockResolvedValue({ envVars: { LEXWARE_API_KEY: 'stored-key' } });
+    const service = new AdaptersService(
+      { connector: { findFirst } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    const out = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: '' }, 'c1');
+    expect(out.ok).toBe(true);
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'c1', organizationId: 'org1' } }));
+    expect(execute.mock.calls[0][0].envVars).toEqual({ LEXWARE_API_KEY: 'stored-key' });
+  });
+});
+
+describe('AdaptersService unlisted adapters', () => {
+  const { getAdapter } = jest.requireActual('./catalog');
+
+  function service(mode?: string) {
+    const svc = Object.create(AdaptersService.prototype) as AdaptersService;
+    (svc as any).configService = { get: (k: string) => (k === 'DEPLOYMENT_MODE' ? mode : undefined) };
+    return svc;
+  }
+
+  // Did not match the vendor's API and could not be verified (Oct 2026 audit).
+  const unlisted = ['teamsystem', 'sage-100', 'elo', 'cas-genesisworld', 'haufe-x360', 'zucchetti'];
+
+  it('are neither listed nor installable, on the cloud or on self-host', () => {
+    for (const mode of ['cloud', undefined]) {
+      const listed = service(mode).listAll().map((a) => a.slug);
+      for (const slug of unlisted) {
+        expect({ mode, slug, listed: listed.includes(slug) }).toEqual({ mode, slug, listed: false });
+        expect(() => service(mode).getBySlug(slug)).toThrow(/not found/);
+      }
+    }
+  });
+
+  it('stay resolvable by slug, so connectors installed earlier keep their icon and re-sync', () => {
+    for (const slug of unlisted) expect(getAdapter(slug)?.unlisted).toBe(true);
+  });
+});

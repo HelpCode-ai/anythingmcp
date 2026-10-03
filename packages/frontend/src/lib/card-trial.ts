@@ -1,4 +1,5 @@
 import { storage } from './storage';
+import { safeRedirect } from './safe-redirect';
 
 /**
  * The card trial on AnythingMCP Cloud: right after sign-up an admin is offered
@@ -259,4 +260,65 @@ export function formatTrialEnd(
     ...(style === 'long' && { year: 'numeric' }),
     ...(timeZone && { timeZone }),
   });
+}
+
+// ── Back to an AI client's authorization ────────────────────────────────────
+
+/**
+ * Someone who signs up from "Connect" in Claude is offered the card trial
+ * before approving the connection. The authorization waits for them (the
+ * backend keeps it 30 minutes), so the way back is remembered across the
+ * detour: skipping, a cancelled checkout (Stripe returns to /start-trial) and
+ * a completed one (the licence site returns to /settings/license/activate)
+ * all end on the same consent page.
+ *
+ * localStorage, not sessionStorage: Stripe can open in another tab on some
+ * mobile browsers. Only the backend's own /auth/ pages qualify.
+ */
+const AUTH_RETURN_KEY = 'amcp_card_trial_return';
+export const AUTH_RETURN_TTL_MS = 30 * 60 * 1000;
+
+export function isAuthorizationPath(path: string | null | undefined): path is string {
+  return typeof path === 'string' && path.startsWith('/auth/') && safeRedirect(path, '') === path;
+}
+
+export function saveAuthorizationReturn(path: string, now: number = Date.now()): void {
+  if (!isAuthorizationPath(path)) return;
+  storage.set(AUTH_RETURN_KEY, JSON.stringify({ path, savedAt: now }));
+}
+
+/** The consent page to go back to, or null when none is waiting (or it expired). */
+export function readAuthorizationReturn(now: number = Date.now()): string | null {
+  const raw = storage.get(AUTH_RETURN_KEY);
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    const savedAt = Number(data?.savedAt);
+    if (
+      isAuthorizationPath(data?.path) &&
+      Number.isFinite(savedAt) &&
+      savedAt <= now &&
+      now - savedAt <= AUTH_RETURN_TTL_MS
+    ) {
+      return data.path;
+    }
+  } catch {
+    /* fall through */
+  }
+  storage.remove(AUTH_RETURN_KEY);
+  return null;
+}
+
+export function clearAuthorizationReturn(): void {
+  storage.remove(AUTH_RETURN_KEY);
+}
+
+/**
+ * Where to go after the card-trial offer: the waiting authorization if there
+ * is one (spent here, so it is followed once), otherwise `fallback`.
+ */
+export function takeAuthorizationReturn(fallback: string): string {
+  const path = readAuthorizationReturn();
+  clearAuthorizationReturn();
+  return path ?? fallback;
 }

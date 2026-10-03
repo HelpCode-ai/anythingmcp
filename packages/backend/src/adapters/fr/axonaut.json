@@ -6,7 +6,7 @@
   "category": "erp",
   "icon": "axonaut",
   "docsUrl": "https://axonaut.com/api/v2/doc",
-  "instructions": "**Getting a key**\n1. Sign in to Axonaut and open **Paramètres → API** (Settings → API).\n2. Copy the key into `AXONAUT_API_KEY`. It is account-wide and carries full access; treat it as a password.\n\n**The header is `userApiKey`.** Not `Authorization`, not `X-API-Key` — Axonaut's own spelling, camel-cased, is what the server checks.\n\n**Axonaut calls customers 'companies' and people 'employees'.** A `company` is a client or prospect organisation; an `employee` is a person attached to one. This trips people up, because 'employee' sounds like your own staff and is not.\n\n**Paging is `page`, 1-based, fixed at 100 rows.** There is no page-size parameter. The response carries the total in the `X-Total-Count` header, so you can tell when to stop.\n\n**Dates are `DD/MM/YYYY`** on most filters — French format, not ISO. This is the single most common source of a filter that silently matches nothing.\n\n**Amounts are floats in euros**, pre-tax (`preTaxAmount`) and inclusive (`totalAmount`) side by side.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: axonaut.com is public with a valid certificate.",
+  "instructions": "**Getting a key**\n1. Sign in to Axonaut and open **Paramètres → API** (Settings → API).\n2. Copy the key into `AXONAUT_API_KEY`. It is account-wide and carries full access; treat it as a password.\n\n**The header is `userApiKey`.** Not `Authorization`, not `X-API-Key` — Axonaut's own spelling, camel-cased, is what the server checks.\n\n**Axonaut calls customers 'companies' and people 'employees'.** A `company` is a client or prospect organisation; an `employee` is a person attached to one. This trips people up, because 'employee' sounds like your own staff and is not.\n\n**Paging is `page`, 1-based, fixed at 100 rows, and it travels as an HTTP header, not in the query string.** Axonaut's OpenAPI spec declares `page` with `in: header` on every list endpoint; a `page` query parameter is not part of the API. The list tools here send it as a header for you. There is no page-size parameter. The response carries the total in the `X-Total-Count` header, so you can tell when to stop.\n\n**Dates are `DD/MM/YYYY`** on most filters — French format, not ISO. This is the single most common source of a filter that silently matches nothing. The exception is the quotations list, whose `date_after` takes `YYYY-MM-DD`.\n\n**Amounts are floats in euros**, pre-tax (`preTaxAmount`) and inclusive (`totalAmount`) side by side.\n\n**Checked against the spec, not a live tenant.** Every path, query parameter and the `page` header below match Axonaut's OpenAPI document (https://axonaut.com/api/v2/doc.json), and each route answers without a key with a 400/403 rather than a 404. The response fields have not been exercised against a live tenant; a correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: axonaut.com is public with a valid certificate.",
   "requiredEnvVars": [
     "AXONAUT_API_KEY"
   ],
@@ -36,11 +36,11 @@
         "properties": {
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1. Pages are fixed at 100 rows."
+            "description": "Page number, starting at 1 (100 rows per page). Sent as the `page` HTTP header, which is where Axonaut reads it."
           },
           "name": {
             "type": "string",
-            "description": "Name fragment to filter by."
+            "description": "Name fragment: returns companies whose name contains this text (sent as Axonaut's `search` filter)."
           }
         }
       },
@@ -48,8 +48,10 @@
         "method": "GET",
         "path": "/companies",
         "queryParams": {
-          "page": "$page",
-          "name": "$name"
+          "search": "$name"
+        },
+        "headers": {
+          "page": "$page"
         }
       }
     },
@@ -81,14 +83,14 @@
         "properties": {
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
+            "description": "Page number, starting at 1 (100 rows per page). Sent as the `page` HTTP header, which is where Axonaut reads it."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/employees",
-        "queryParams": {
+        "headers": {
           "page": "$page"
         }
       }
@@ -101,7 +103,7 @@
         "properties": {
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
+            "description": "Page number, starting at 1 (100 rows per page). Sent as the `page` HTTP header, which is where Axonaut reads it."
           },
           "date_before": {
             "type": "string",
@@ -117,9 +119,11 @@
         "method": "GET",
         "path": "/invoices",
         "queryParams": {
-          "page": "$page",
           "date_before": "$date_before",
           "date_after": "$date_after"
+        },
+        "headers": {
+          "page": "$page"
         }
       }
     },
@@ -151,11 +155,11 @@
         "properties": {
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
+            "description": "Page number, starting at 1 (100 rows per page). Sent as the `page` HTTP header, which is where Axonaut reads it."
           },
           "date_after": {
             "type": "string",
-            "description": "Earliest quotation date, DD/MM/YYYY."
+            "description": "Earliest quotation date, YYYY-MM-DD — unlike invoices and expenses, Axonaut's quotations filter takes ISO dates."
           }
         }
       },
@@ -163,8 +167,10 @@
         "method": "GET",
         "path": "/quotations",
         "queryParams": {
-          "page": "$page",
           "date_after": "$date_after"
+        },
+        "headers": {
+          "page": "$page"
         }
       }
     },
@@ -176,7 +182,7 @@
         "properties": {
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
+            "description": "Page number, starting at 1 (100 rows per page). Sent as the `page` HTTP header, which is where Axonaut reads it."
           },
           "date_after": {
             "type": "string",
@@ -188,8 +194,10 @@
         "method": "GET",
         "path": "/expenses",
         "queryParams": {
-          "page": "$page",
           "date_after": "$date_after"
+        },
+        "headers": {
+          "page": "$page"
         }
       }
     },
@@ -201,14 +209,14 @@
         "properties": {
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
+            "description": "Page number, starting at 1 (100 rows per page). Sent as the `page` HTTP header, which is where Axonaut reads it."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/products",
-        "queryParams": {
+        "headers": {
           "page": "$page"
         }
       }
@@ -221,14 +229,14 @@
         "properties": {
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
+            "description": "Page number, starting at 1 (100 rows per page). Sent as the `page` HTTP header, which is where Axonaut reads it."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/projects",
-        "queryParams": {
+        "headers": {
           "page": "$page"
         }
       }

@@ -8,6 +8,8 @@ import {
   UseGuards,
   ForbiddenException,
   BadRequestException,
+  HttpCode,
+  HttpException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -156,8 +158,38 @@ export class AdaptersController {
       'Returns the full adapter definition with connector config and all tool mappings.',
   })
   getBySlug(@Param('slug') slug: string) {
-    return this.adaptersService.getBySlug(slug);
+    return this.adaptersService.describe(slug);
   }
+
+  @Post(':slug/verify')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Try an adapter with credentials before saving it',
+    description:
+      'Runs the adapter\'s safe read call against an in-memory connector. Nothing is stored. ' +
+      'ok=true: it worked; ok=false: a value is missing or the API refused; ok=null: nothing to try yet (needs a sign-in at the provider, or no safe call).',
+  })
+  async verify(
+    @Req() req: any,
+    @Param('slug') slug: string,
+    @Body() body: { credentials?: Record<string, string>; connectorId?: string },
+  ) {
+    if (req.user.role === 'VIEWER') {
+      throw new ForbiddenException('Viewers cannot modify connectors');
+    }
+    // Each try is a real call to the provider; a form does not need more.
+    if (!this.verifyLimiter.take(req.user.sub)) {
+      throw new HttpException('Too many attempts. Wait a minute and try again.', 429);
+    }
+    return this.adaptersService.verifyCredentials(
+      slug,
+      req.user.organizationId,
+      body?.credentials,
+      body?.connectorId,
+    );
+  }
+
+  private readonly verifyLimiter = new PerKeyWindowLimiter(20, 60_000);
 
   @Post(':slug/import')
   @ApiOperation({
@@ -209,4 +241,27 @@ export interface StarterPackInstallResult {
   /** Outcome of the test call made at install; null when none was made. */
   probeOk?: boolean | null;
   error?: string;
+}
+
+/** At most `max` events per key within a sliding window of `windowMs`. In memory, per instance. */
+export class PerKeyWindowLimiter {
+  private readonly hits = new Map<string, number[]>();
+  constructor(
+    private readonly max: number,
+    private readonly windowMs: number,
+  ) {}
+
+  take(key: string, now = Date.now()): boolean {
+    const recent = (this.hits.get(key) ?? []).filter((t) => now - t < this.windowMs);
+    if (recent.length >= this.max) {
+      this.hits.set(key, recent);
+      return false;
+    }
+    recent.push(now);
+    this.hits.set(key, recent);
+    if (this.hits.size > 10_000) {
+      for (const [k, v] of this.hits) if (v.every((t) => now - t >= this.windowMs)) this.hits.delete(k);
+    }
+    return true;
+  }
 }

@@ -6,7 +6,7 @@
   "category": "monitoring",
   "icon": "zabbix",
   "docsUrl": "https://www.zabbix.com/documentation/current/en/manual/api",
-  "instructions": "**Getting a token** (Zabbix 5.4 and newer)\n1. Sign in to the Zabbix frontend as a Super admin and open **Users → API tokens**.\n2. Create a token for a user with read permission on the host groups the agent should see, and copy the value — Zabbix shows it once.\n3. Set `ZABBIX_URL` to your frontend root (no trailing slash, no `/api_jsonrpc.php`) and `ZABBIX_API_TOKEN` to the token. The adapter sends it as `Authorization: Bearer …`, which Zabbix 6.0+ accepts; on 5.4 the token also works in the JSON-RPC `auth` field, which this adapter does not use.\n\n**One endpoint, many methods.** Zabbix is JSON-RPC: every call is a POST to `/api_jsonrpc.php` with `{\"jsonrpc\":\"2.0\",\"method\":\"host.get\",\"params\":{…},\"id\":1}`. That is why every tool here has the same path, and why the *method* is what distinguishes them.\n\n**Permissions are per host group, and Zabbix reports a denial as an empty array.** A token whose user cannot see a host group gets `{\"result\": []}` rather than an error — so an agent that reports 'no problems' may simply be looking through an account with no visibility.\n\n**Severity is an integer.** 0 not classified, 1 information, 2 warning, 3 average, 4 high, 5 disaster. 'Critical alerts' usually means severity ≥ 4.\n\n**`problem.get` is the live board, `event.get` is the history.** A problem that has since resolved is gone from `problem.get` and still in `event.get`. Ask the right one.\n\n**Timestamps are Unix seconds**, in the server's timezone configuration.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch, and a homelab's default certificate is exactly the case that breaks.\n- On an internal host (`zabbix.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "instructions": "**Getting a token** (requires Zabbix 6.4 or newer)\n1. Sign in to the Zabbix frontend as a Super admin and open **Users → API tokens**.\n2. Create a token for a user with read permission on the host groups the agent should see, and copy the value — Zabbix shows it once.\n3. Set `ZABBIX_URL` to your frontend root (no trailing slash, no `/api_jsonrpc.php`) and `ZABBIX_API_TOKEN` to the token. The adapter sends it as `Authorization: Bearer …`, which Zabbix accepts from 6.4 on. Zabbix 5.4–6.2 only take the token in the JSON-RPC `auth` field, which this adapter does not use, so every call there fails with \"Not authorised\".\n\n**Errors.** Zabbix's JSON-RPC reports a failure inside an HTTP 200, as `{\"error\": {\"code\": …, \"message\": …, \"data\": …}}`. AnythingMCP turns that into an error carrying Zabbix's own message, e.g. `JSON-RPC error -32602: Invalid params.: Not authorised.` The *Test connection* button only proves the frontend answers at that URL; `zabbix_get_api_version` is the real check of URL plus token.\n\n**One endpoint, many methods.** Zabbix is JSON-RPC: every call is a POST to `/api_jsonrpc.php` with `{\"jsonrpc\":\"2.0\",\"method\":\"host.get\",\"params\":{…},\"id\":1}`. That is why every tool here has the same path, and why the *method* is what distinguishes them.\n\n**Permissions are per host group, and Zabbix reports a denial as an empty array.** A token whose user cannot see a host group gets `{\"result\": []}` rather than an error — so an agent that reports 'no problems' may simply be looking through an account with no visibility.\n\n**Severity is an integer.** 0 not classified, 1 information, 2 warning, 3 average, 4 high, 5 disaster. 'Critical alerts' usually means severity ≥ 4.\n\n**`problem.get` is the live board, `event.get` is the history.** A problem that has since resolved is gone from `problem.get` and still in `event.get`. Ask the right one.\n\n**Timestamps are Unix seconds**, in the server's timezone configuration.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch, and a homelab's default certificate is exactly the case that breaks.\n- On an internal host (`zabbix.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
   "requiredEnvVars": [
     "ZABBIX_URL",
     "ZABBIX_API_TOKEN"
@@ -22,7 +22,7 @@
     "headers": {
       "Content-Type": "application/json-rpc"
     },
-    "healthcheckPath": "/api_jsonrpc.php"
+    "healthcheckPath": "/"
   },
   "probe": {
     "tool": "zabbix_get_api_version"
@@ -30,7 +30,7 @@
   "tools": [
     {
       "name": "zabbix_get_api_version",
-      "description": "Read the Zabbix API version. The one method that needs no authentication at all — use it to separate a URL problem from a token problem.",
+      "description": "Check URL and token in one call: returns how many host groups this token can see. An error means the URL or the token is wrong; 0 means the token's user has no host-group visibility. (Zabbix's own apiinfo.version cannot be used here: it refuses any call that carries an Authorization header.)",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -40,15 +40,17 @@
         "path": "/api_jsonrpc.php",
         "bodyMapping": {
           "jsonrpc": "2.0",
-          "method": "apiinfo.version",
+          "method": "hostgroup.get",
           "id": 1,
-          "params": {}
+          "params": {
+            "countOutput": true
+          }
         }
       }
     },
     {
       "name": "zabbix_list_hosts",
-      "description": "List monitored hosts with their name, status, interfaces and host groups. The map of what Zabbix is actually watching.",
+      "description": "List monitored hosts with their name, status, interfaces and host groups. The map of what Zabbix is actually watching. Host groups come back as `hostgroups` (Zabbix 6.2+) and/or `groups` (up to 7.0).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -92,6 +94,10 @@
               "type"
             ],
             "selectGroups": [
+              "groupid",
+              "name"
+            ],
+            "selectHostGroups": [
               "groupid",
               "name"
             ],
@@ -489,6 +495,7 @@
           "params": {
             "output": "extend",
             "selectGroups": "extend",
+            "selectHostGroups": "extend",
             "selectHosts": "extend",
             "selectTimeperiods": "extend",
             "limit": "$limit"

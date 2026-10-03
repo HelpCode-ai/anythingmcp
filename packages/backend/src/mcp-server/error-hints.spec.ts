@@ -127,4 +127,34 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
   it('still says nothing about an error it does not recognise', () => {
     expect(deriveErrorHint({ status: 500, body: { message: 'boom' } })).toBeUndefined();
   });
+
+  describe('Telegram', () => {
+    const host = 'api.telegram.org';
+    it('points at the bot token on a 404 Not Found', () => {
+      expect(
+        deriveErrorHint({ host, status: 404, body: { ok: false, error_code: 404, description: 'Not Found' } }),
+      ).toMatch(/TELEGRAM_BOT_TOKEN/);
+    });
+    it('explains how a bot reaches a chat', () => {
+      expect(
+        deriveErrorHint({ host, status: 400, body: { description: 'Bad Request: chat not found' } }),
+      ).toMatch(/pressed Start/);
+      expect(
+        deriveErrorHint({ host, status: 403, body: { description: "Forbidden: bot can't initiate conversation with a user" } }),
+      ).toMatch(/pressed Start/);
+    });
+    it('stays quiet for another host answering Not Found', () => {
+      expect(deriveErrorHint({ host: 'api.example.com', status: 404, body: '"Not Found"' })).toBeUndefined();
+    });
+  });
+
+  it('tells the model to split Lexware overdue from other statuses', () => {
+    expect(
+      deriveErrorHint({
+        host: 'api.lexware.io',
+        status: 400,
+        body: { message: "voucherStatus filter 'overdue' cannot be used in combination with other states" },
+      }),
+    ).toMatch(/one call with voucherStatus=overdue/);
+  });
 });

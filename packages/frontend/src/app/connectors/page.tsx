@@ -9,6 +9,7 @@ import { AppSelect } from '@/components/ui/select';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
+import { SetupStatusPill } from '@/components/setup-status';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ActionMenu } from '@/components/ui/action-menu';
 import { authTypeLabel, cn } from '@/lib/utils';
@@ -403,7 +404,7 @@ export default function ConnectorsPage() {
           <p className="mb-6 text-xs text-[var(--text-3)]">
             Supports {SUPPORTED_TYPES.map((t) => t.label).join(', ')}
           </p>
-          <div className="flex items-center justify-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
               <PlusIcon />
               Add Connector
@@ -488,6 +489,7 @@ export default function ConnectorsPage() {
                     >
                       {c.isActive ? 'Active' : 'Inactive'}
                     </StatusPill>
+                    <SetupStatusPill status={c.setupStatus} />
                   </div>
                   {/* Hover actions (above the full-card link) */}
                   <div className="relative z-10 mt-[14px] flex gap-2 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">

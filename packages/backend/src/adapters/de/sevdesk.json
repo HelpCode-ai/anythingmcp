@@ -52,8 +52,12 @@
             "description": "Rows to skip, for paging."
           },
           "depth": {
-            "type": "boolean",
-            "description": "When true, include contact persons attached to organisations."
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "`1` also returns the persons (contact persons and private customers); `0` (default) returns organisations only."
           },
           "customerNumber": {
             "type": "string",
@@ -120,7 +124,7 @@
           },
           "status": {
             "type": "number",
-            "description": "Invoice status: 50 draft, 100 open draft, 200 delivered/open, 750 partially paid, 1000 paid."
+            "description": "Invoice status: 100 draft, 200 open/due, 750 partially paid, 1000 paid, 50 deactivated recurring invoice."
           },
           "startDate": {
             "type": "number",
@@ -194,7 +198,7 @@
           },
           "status": {
             "type": "number",
-            "description": "Voucher status: 50 draft, 100 unpaid, 1000 paid."
+            "description": "Voucher status: 50 draft, 100 unpaid/due, 150 transferred, 750 partially paid, 1000 paid."
           },
           "creditDebit": {
             "type": "string",
@@ -244,7 +248,7 @@
           },
           "status": {
             "type": "number",
-            "description": "Order status: 100 draft, 200 delivered, 300 partly calculated, 500 calculated, 750 partly accepted, 1000 accepted."
+            "description": "Order status: 100 draft, 200 delivered, 300 rejected/cancelled, 500 accepted, 750 partially calculated, 1000 calculated."
           },
           "embed": {
             "type": "string",
@@ -331,9 +335,9 @@
             "type": "number",
             "description": "Rows to skip, for paging."
           },
-          "status": {
-            "type": "number",
-            "description": "Transaction status: 100 created, 200 linked, 300 private, 350 auto-booked, 400 booked."
+          "isBooked": {
+            "type": "boolean",
+            "description": "true for booked transactions only, false for transactions not yet booked (still to be matched)."
           }
         },
         "required": [
@@ -348,23 +352,23 @@
           "checkAccount[objectName]": "CheckAccount",
           "limit": "$limit",
           "offset": "$offset",
-          "status": "$status"
+          "isBooked": "$isBooked"
         }
       }
     },
     {
       "name": "sevdesk_create_contact",
-      "description": "Create a new contact. Writes to the live client — search with sevdesk_list_contacts first so a duplicate customer number is not created.",
+      "description": "Create a new contact (organisation or person). Writes to the live client — search with sevdesk_list_contacts first so a duplicate customer number is not created. Category ids: 3 customer, 2 supplier, 4 partner, 28 prospect.",
       "parameters": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
-            "description": "Organisation name, or the family name for a private person."
+            "description": "Organisation name. Setting it makes the contact an organisation; for a private person leave it empty and use surename and familyname instead."
           },
           "categoryId": {
             "type": "number",
-            "description": "Contact category id: 3 = supplier, 2 = customer, 4 = partner. Required by sevDesk."
+            "description": "Contact category id: 3 = customer, 2 = supplier, 4 = partner, 28 = prospect customer. Required by sevDesk."
           },
           "customerNumber": {
             "type": "string",
@@ -388,7 +392,6 @@
           }
         },
         "required": [
-          "name",
           "categoryId"
         ]
       },

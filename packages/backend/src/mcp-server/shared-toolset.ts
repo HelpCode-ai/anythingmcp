@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/server';
 import { listAdapters } from '../adapters/catalog';
-import { RegisteredTool } from './tool-registry';
+import { RegisteredTool, isListable } from './tool-registry';
 import { deriveToolAnnotations } from './tool-annotations';
 import { jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
 
@@ -74,10 +74,106 @@ function excludedAdapterSlugs(): Set<string> {
   return excludedSlugs;
 }
 
+/** True for a catalog adapter the shared endpoint does not serve (payments, banking, trading). */
+export function isExcludedAdapterSlug(slug: string): boolean {
+  return excludedAdapterSlugs().has(slug);
+}
+
 /** True for a tool of a catalog connector the shared endpoint does not serve. */
 export function excludedOnSharedEndpoint(tool: RegisteredTool): boolean {
   const slug = tool.connectorConfig?.config?.adapterSlug;
   return typeof slug === 'string' && excludedAdapterSlugs().has(slug);
+}
+
+function describeSetupStatus(status: RegisteredTool['setupStatus']): string {
+  return status === 'needs_authorization'
+    ? 'it has to be authorized with the provider'
+    : 'a credential or setting is still empty';
+}
+
+/**
+ * The virtual "AnythingMCP Setup" connector: installing catalog connectors
+ * from the chat, reached through the same search / describe / run tools as a
+ * workspace's own (see shared-setup.ts). Offered to ADMINs and EDITORs.
+ */
+export const SETUP_CONNECTOR_ID = 'anythingmcp-setup';
+export const SETUP_CONNECTOR_NAME = 'AnythingMCP Setup';
+
+const SETUP_GUIDE = [
+  `## ${SETUP_CONNECTOR_NAME}`,
+  'Adds connectors to this workspace from the chat. Use it when the user wants to work with an app that is not connected yet, or when the workspace has no connectors.',
+  '1. setup_find_connectors with the app or topic. Show the user what you found and confirm which one to install.',
+  '2. setup_install_connector with the connector id, plus only the non-secret settings the search listed (a tenant name, a shop or instance URL). Never ask the user for passwords, API keys or tokens in the chat.',
+  '3. If the answer has finishSetupUrl, give the user that link: they enter the secrets or sign in to the provider there. It works once, for them, for 30 minutes.',
+  '4. When they say they are done, setup_get_status confirms it; the new tools then appear in anythingmcp_search_tools.',
+].join('\n');
+
+const SETUP_TOOL_SPECS: Array<{
+  name: 'setup_find_connectors' | 'setup_install_connector' | 'setup_get_status';
+  title: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  readOnly: boolean;
+}> = [
+  {
+    name: 'setup_find_connectors',
+    title: 'Find a connector to add',
+    description:
+      'Search the AnythingMCP catalog (265 ready connectors: ERPs, online shops, accounting, CRM, messaging, data APIs) for an app the user wants to connect. Returns each connector id, what setting it up involves, and which non-secret settings may be passed when installing.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'App name or topic, e.g. "etsy", "odoo", "invoices".' },
+        limit: { type: 'number', description: 'Maximum results, 1 to 10. Default 5.' },
+      },
+      required: ['query'],
+    },
+    readOnly: true,
+  },
+  {
+    name: 'setup_install_connector',
+    title: 'Add a connector',
+    description:
+      "Install a catalog connector in the user's workspace. Ask the user first. Pass only settings that setup_find_connectors listed as settingsYouMayPass (such as a tenant name or a shop URL), never passwords, API keys or tokens: when those are needed, the answer contains a one-time link where the user enters them or signs in to the provider.",
+    parameters: {
+      type: 'object',
+      properties: {
+        adapter: { type: 'string', description: 'Connector id from setup_find_connectors, e.g. "etsy".' },
+        settings: { type: 'object', description: 'Non-secret settings by name, e.g. {"WECLAPP_TENANT": "acme"}.' },
+      },
+      required: ['adapter'],
+    },
+    readOnly: false,
+  },
+  {
+    name: 'setup_get_status',
+    title: 'Setup status',
+    description:
+      "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. Call it after the user says they completed a setup link.",
+    parameters: { type: 'object', properties: {} },
+    readOnly: true,
+  },
+];
+
+function setupTools(organizationId: string): RegisteredTool[] {
+  return SETUP_TOOL_SPECS.map((spec) => ({
+    id: `${SETUP_CONNECTOR_ID}:${spec.name}`,
+    connectorId: SETUP_CONNECTOR_ID,
+    organizationId,
+    name: spec.name,
+    description: spec.description,
+    parameters: spec.parameters,
+    connectorType: 'SETUP',
+    connectorConfig: { baseUrl: '', authType: 'NONE' },
+    endpointMapping: { method: spec.readOnly ? 'GET' : 'POST', path: '/' },
+    annotations: {
+      title: spec.title,
+      readOnlyHint: spec.readOnly,
+      destructiveHint: false,
+      idempotentHint: spec.readOnly,
+      openWorldHint: false,
+    },
+  }));
 }
 
 type TextResult = {
@@ -100,6 +196,16 @@ export interface SharedToolsetDeps {
   guide(connectorIds: string[], wholeScope: boolean): Promise<string | undefined>;
   /** Knowledge-graph answer, or null when the graph is off for the workspace. */
   kgLookup(query: string, connectorIds: string[]): Promise<unknown | null>;
+  /** Dashboard page of one connector, where the user finishes its setup. */
+  connectorUrl(connectorId: string): string;
+  /**
+   * Connector setup from the chat, already bound to this caller; absent when
+   * the caller may not install connectors (or the instance does not offer it).
+   */
+  setup?: {
+    organizationId: string;
+    run(name: string, args: Record<string, unknown>): Promise<{ body: unknown; isError?: boolean }>;
+  };
   /** Where the user configures connectors, plus their servers' direct URLs. */
   configuration(): Promise<{
     dashboardUrl: string;
@@ -176,15 +282,28 @@ export function registerSharedToolset(
   scopeTools: RegisteredTool[],
   deps: SharedToolsetDeps,
 ): void {
-  const tools = scopeTools.filter((t) => !excludedOnSharedEndpoint(t));
+  const served = scopeTools.filter((t) => !excludedOnSharedEndpoint(t));
   const withheld = scopeTools.filter((t) => excludedOnSharedEndpoint(t));
+  // Connectors still missing a credential or an authorization: not offered to
+  // the model, but named in list_connectors with where to finish them.
+  const tools = [
+    ...served.filter(isListable),
+    ...(deps.setup ? setupTools(deps.setup.organizationId) : []),
+  ];
+  const pending = served.filter((t) => !isListable(t));
   const connectorIds = [...new Set(tools.map((t) => t.connectorId))];
 
   let summaries: Promise<Map<string, ConnectorSummary>> | null = null;
   const connectorsById = () => {
     summaries ??= deps
       .connectors([...new Set(scopeTools.map((t) => t.connectorId))])
-      .then((list) => new Map(list.map((c) => [c.id, c])));
+      .then((list) => {
+        const byId = new Map(list.map((c) => [c.id, c]));
+        if (deps.setup) {
+          byId.set(SETUP_CONNECTOR_ID, { id: SETUP_CONNECTOR_ID, name: SETUP_CONNECTOR_NAME, hasGuide: true });
+        }
+        return byId;
+      });
     return summaries;
   };
   const connectorName = (byId: Map<string, ConnectorSummary>, id: string) =>
@@ -229,6 +348,18 @@ export function registerSharedToolset(
               id: t.connectorId,
               name: connectorName(byId, t.connectorId),
             })),
+          },
+          true,
+        ),
+      };
+    }
+    const unfinished = pending.find((t) => t.name === name);
+    if (unfinished) {
+      const byId = await connectorsById();
+      return {
+        error: json(
+          {
+            error: `'${name}' belongs to the connector '${connectorName(byId, unfinished.connectorId)}', which is not set up yet (${describeSetupStatus(unfinished.setupStatus)}). Give the user this link to finish it: ${deps.connectorUrl(unfinished.connectorId)}`,
           },
           true,
         ),
@@ -291,6 +422,10 @@ export function registerSharedToolset(
         true,
       );
     }
+    if (tool.connectorId === SETUP_CONNECTOR_ID && deps.setup) {
+      const out = await deps.setup.run(tool.name, parsed.data as Record<string, unknown>);
+      return json(out.body, !!out.isError);
+    }
     return deps.execute(tool, parsed.data as Record<string, unknown>);
   };
 
@@ -325,8 +460,23 @@ export function registerSharedToolset(
       const notServedHere = [...new Set(withheld.map((t) => t.connectorId))].map(
         (id) => connectorName(byId, id),
       );
+      const needsSetup = [...new Map(pending.map((t) => [t.connectorId, t])).values()]
+        .map((t) => ({
+          name: connectorName(byId, t.connectorId),
+          status: t.setupStatus,
+          whatIsMissing: describeSetupStatus(t.setupStatus),
+          finishSetupUrl: deps.connectorUrl(t.connectorId),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
       return json({
         connectors,
+        ...(needsSetup.length
+          ? {
+              needsSetup,
+              needsSetupHint:
+                'These connectors are installed but not usable yet. Give the user the finishSetupUrl; their tools appear here as soon as the setup is done.',
+            }
+          : {}),
         ...(notServedHere.length
           ? {
               notServedHere,
@@ -334,9 +484,11 @@ export function registerSharedToolset(
                 'Payment, banking and trading connectors are only served on their server\'s own URL.',
             }
           : {}),
-        ...(connectors.length === 0
+        ...(connectors.every((c) => c.id === SETUP_CONNECTOR_ID) && needsSetup.length === 0
           ? {
-              hint: 'No connectors yet. The user adds them in the dashboard: call anythingmcp_get_configuration_url.',
+              hint: deps.setup
+                ? `No apps are connected yet. Ask the user which app they want to work with, then add it with the ${SETUP_CONNECTOR_NAME} tools (setup_find_connectors, then setup_install_connector).`
+                : 'No connectors yet. The user adds them in the dashboard: call anythingmcp_get_configuration_url.',
             }
           : {}),
       });
@@ -512,7 +664,12 @@ export function registerSharedToolset(
       if (args.connector && ids.length === 0) {
         return json({ error: `No connector '${args.connector}' on this connection.` }, true);
       }
-      const guide = ids.length ? await deps.guide(ids, !args.connector) : undefined;
+      const own = ids.filter((id) => id !== SETUP_CONNECTOR_ID);
+      const workspaceGuide = own.length ? await deps.guide(own, !args.connector) : undefined;
+      const guide =
+        [workspaceGuide, ids.includes(SETUP_CONNECTOR_ID) ? SETUP_GUIDE : undefined]
+          .filter(Boolean)
+          .join('\n\n') || undefined;
       if (!guide) return json({ guide: null, note: 'The workspace has no notes for these connectors.' });
       const text =
         guide.length > GUIDE_MAX_CHARS

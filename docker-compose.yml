@@ -54,6 +54,8 @@ services:
       - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD:-amcp}@postgres:5432/anythingmcp
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production-min-32-chars}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-in-production-exactly-32}
+      # `plaintext` only to roll back past encrypted connector variables (docs/operations/backup-restore.md)
+      - ENV_VARS_AT_REST=${ENV_VARS_AT_REST:-}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
       - SERVER_URL=${SERVER_URL:-http://localhost:4000}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}

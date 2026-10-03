@@ -10,6 +10,12 @@
   "requiredEnvVars": [
     "LEXWARE_API_KEY"
   ],
+  "envVarMeta": {
+    "LEXWARE_API_KEY": {
+      "label": "API key",
+      "help": "In Lexware Office (paid plan): Einstellungen → Erweiterungen → Öffentliche API → create a new access token. It is shown once."
+    }
+  },
   "connector": {
     "name": "Lexware Office API v1",
     "type": "REST",
@@ -109,11 +115,11 @@
         "properties": {
           "voucherType": {
             "type": "string",
-            "description": "Comma-separated types: salesinvoice, salescreditnote, purchaseinvoice, purchasecreditnote, invoice, creditnote, orderconfirmation, quotation, deliverynote, downpaymentinvoice."
+            "description": "Required by Lexware. Comma-separated list, or `any` for all types: salesinvoice, salescreditnote, purchaseinvoice, purchasecreditnote (bookkeeping vouchers: read one with lexware_office_get_voucher), invoice (lexware_office_get_invoice), creditnote (lexware_office_get_credit_note), quotation (lexware_office_get_quotation), downpaymentinvoice, orderconfirmation, deliverynote (lexware_office_get_sales_document)."
           },
           "voucherStatus": {
             "type": "string",
-            "description": "Comma-separated statuses: draft, open, paid, paidoff, voided, transferred, sepadebit, overdue, accepted, rejected."
+            "description": "Required by Lexware. Comma-separated list, or `any`: draft, open, paid, paidoff, voided, transferred, sepadebit, accepted/rejected (quotations only), unchecked (bookkeeping vouchers only), overdue. `overdue` must be sent ALONE (voucherStatus=overdue), never combined with other statuses: Lexware answers 400 otherwise. Overdue vouchers are already included in `open`, so for 'everything unpaid' use `open,sepadebit,transferred`."
           },
           "archived": {
             "type": "boolean",
@@ -137,9 +143,37 @@
           },
           "size": {
             "type": "number",
-            "description": "Page size, 1–250 (default 25)."
+            "description": "Page size, 1-250 (default 25). Lexware returns at most 10,000 results in total; narrow by date beyond that."
+          },
+          "voucherNumber": {
+            "type": "string",
+            "description": "Exact voucher number, e.g. RE0042."
+          },
+          "createdDateFrom": {
+            "type": "string",
+            "description": "Created on or after, YYYY-MM-DD."
+          },
+          "createdDateTo": {
+            "type": "string",
+            "description": "Created on or before, YYYY-MM-DD."
+          },
+          "updatedDateFrom": {
+            "type": "string",
+            "description": "Updated on or after, YYYY-MM-DD."
+          },
+          "updatedDateTo": {
+            "type": "string",
+            "description": "Updated on or before, YYYY-MM-DD."
+          },
+          "sort": {
+            "type": "string",
+            "description": "voucherDate, voucherNumber, createdDate or updatedDate, optionally followed by ,ASC or ,DESC, e.g. voucherDate,DESC."
           }
-        }
+        },
+        "required": [
+          "voucherType",
+          "voucherStatus"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
@@ -152,7 +186,13 @@
           "voucherDateFrom": "$voucherDateFrom",
           "voucherDateTo": "$voucherDateTo",
           "page": "$page",
-          "size": "$size"
+          "size": "$size",
+          "voucherNumber": "$voucherNumber",
+          "createdDateFrom": "$createdDateFrom",
+          "createdDateTo": "$createdDateTo",
+          "updatedDateFrom": "$updatedDateFrom",
+          "updatedDateTo": "$updatedDateTo",
+          "sort": "$sort"
         }
       }
     },
@@ -164,7 +204,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Invoice UUID, as returned in the voucher list's `id` field."
+            "description": "Invoice UUID. Only for voucher-list rows whose voucherType is `invoice`. For salesinvoice, purchaseinvoice, salescreditnote or purchasecreditnote use lexware_office_get_voucher; for downpaymentinvoice, orderconfirmation or deliverynote use lexware_office_get_sales_document. A wrong pairing answers 404."
           }
         },
         "required": [
@@ -217,6 +257,57 @@
       }
     },
     {
+      "name": "lexware_office_get_voucher",
+      "description": "Read one bookkeeping voucher (voucher-list voucherType salesinvoice, salescreditnote, purchaseinvoice or purchasecreditnote): contact, voucher items grouped by tax rate, totals, due date and attached file ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Voucher UUID from lexware_office_list_vouchers whose voucherType is salesinvoice, salescreditnote, purchaseinvoice or purchasecreditnote."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vouchers/{id}"
+      }
+    },
+    {
+      "name": "lexware_office_get_sales_document",
+      "description": "Read one down payment invoice, order confirmation, delivery note or dunning by id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string",
+            "enum": [
+              "down-payment-invoices",
+              "order-confirmations",
+              "delivery-notes",
+              "dunnings"
+            ],
+            "description": "downpaymentinvoice → down-payment-invoices, orderconfirmation → order-confirmations, deliverynote → delivery-notes."
+          },
+          "id": {
+            "type": "string",
+            "description": "UUID from the voucher list."
+          }
+        },
+        "required": [
+          "resource",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{resource}/{id}"
+      }
+    },
+    {
       "name": "lexware_office_list_articles",
       "description": "List articles (Artikel) from the product catalogue, optionally narrowed by article number or type, so an invoice line can reference a real product.",
       "parameters": {
@@ -265,29 +356,24 @@
     },
     {
       "name": "lexware_office_create_contact",
-      "description": "Create a new contact with the customer and/or vendor role. Writes to the live company — check with lexware_office_list_contacts first that the party does not already exist.",
+      "description": "Create a new company contact with the customer and/or vendor role. Writes to the live company: check with lexware_office_list_contacts first that the party does not already exist.",
       "parameters": {
         "type": "object",
         "properties": {
           "companyName": {
             "type": "string",
-            "description": "Company name. Provide this OR firstName+lastName, not both."
+            "description": "Company name."
           },
-          "firstName": {
-            "type": "string",
-            "description": "Given name, for a private person."
+          "roles": {
+            "type": "object",
+            "default": {
+              "customer": {}
+            },
+            "description": "Roles as an object: {\"customer\":{}} (default), {\"vendor\":{}}, or both {\"customer\":{},\"vendor\":{}}."
           },
-          "lastName": {
-            "type": "string",
-            "description": "Family name, for a private person."
-          },
-          "isCustomer": {
-            "type": "boolean",
-            "description": "Give the contact the customer role (default true)."
-          },
-          "isVendor": {
-            "type": "boolean",
-            "description": "Give the contact the vendor role."
+          "billingAddress": {
+            "type": "object",
+            "description": "Billing address: {\"street\":\"Musterstr. 1\",\"zip\":\"79098\",\"city\":\"Freiburg\",\"countryCode\":\"DE\"}. countryCode (ISO 3166-1 alpha-2) is required when an address is given. Omit for no address."
           },
           "email": {
             "type": "string",
@@ -296,22 +382,6 @@
           "phone": {
             "type": "string",
             "description": "Primary business phone number."
-          },
-          "street": {
-            "type": "string",
-            "description": "Street and house number of the billing address."
-          },
-          "zip": {
-            "type": "string",
-            "description": "Postal code of the billing address."
-          },
-          "city": {
-            "type": "string",
-            "description": "City of the billing address."
-          },
-          "countryCode": {
-            "type": "string",
-            "description": "ISO 3166-1 alpha-2 country code, e.g. DE."
           }
         },
         "required": [
@@ -323,25 +393,13 @@
         "path": "/contacts",
         "bodyMapping": {
           "version": 0,
-          "roles": {
-            "customer": {},
-            "vendor": {}
-          },
+          "roles": "$roles",
           "company": {
             "name": "$companyName"
           },
-          "person": {
-            "firstName": "$firstName",
-            "lastName": "$lastName"
-          },
           "addresses": {
             "billing": [
-              {
-                "street": "$street",
-                "zip": "$zip",
-                "city": "$city",
-                "countryCode": "$countryCode"
-              }
+              "$billingAddress"
             ]
           },
           "emailAddresses": {

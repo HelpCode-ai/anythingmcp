@@ -6,7 +6,7 @@
   "category": "support",
   "icon": "znuny",
   "docsUrl": "https://doc.znuny.org/znuny/api/",
-  "instructions": "**A Znuny web service has to be created before any of this works.** Znuny does not expose a REST API by default; you build one in the admin UI.\n1. Go to **Admin → Web Services → Add web service** and import Znuny's bundled `GenericTicketConnectorREST.yml` (it ships in `scripts/examples/webservices/`). That file defines exactly the four operations this adapter calls, and the routes below are its routes: `GET /Ticket` is TicketSearch, `POST /Ticket` is TicketCreate, `GET /Ticket/:TicketID` is TicketGet and `PATCH /Ticket/:TicketID` is TicketUpdate. If you wrote your own web service with different routes, change them here to match.\n2. Note the **web service name** you gave it — it is part of every URL. Set it in `ZNUNY_WEBSERVICE`; the bundled file's default is `GenericTicketConnectorREST`.\n3. Create a Znuny agent for the integration with the queue permissions the agent should have, and put its login in `ZNUNY_USERNAME` and password in `ZNUNY_PASSWORD`. Set `ZNUNY_URL` to your instance root, no trailing slash.\n\n**Credentials travel in the request itself, not in a header.** The GenericInterface expects `UserLogin` and `Password` as parameters on every call — that is Znuny's design, not an oversight here. AnythingMCP appends them automatically so they never reach a prompt or a tool parameter. They do end up in the query string, and therefore in the web server's access log: give this agent its own Znuny account and rotate its password like any other.\n\n**OTOBO is the same API.** OTOBO forked from OTRS alongside Znuny and kept the GenericInterface unchanged. Point this adapter at an OTOBO instance and it works — set `ZNUNY_SCRIPT_PATH` to `otobo/nph-genericinterface.pl` instead of the Znuny default.\n\n**Search returns ids only.** `znuny_search_tickets` gives you `TicketID`s; `znuny_get_ticket` turns one into a full record. Articles are omitted unless you ask for them, because a long thread is large.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`znuny.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "instructions": "**A Znuny web service has to be created before any of this works.** Znuny does not expose a REST API by default; you build one in the admin UI.\n1. Go to **Admin → Web Services → Add web service** and import Znuny's sample `GenericTicketConnectorREST.yml` (in the Znuny source it is `development/webservices/GenericTicketConnectorREST.yml`). That file defines exactly the four operations this adapter calls, and the routes below are its routes: `GET /Ticket` is TicketSearch, `POST /Ticket` is TicketCreate, `GET /Ticket/:TicketID` is TicketGet and `PATCH /Ticket/:TicketID` is TicketUpdate. If you wrote your own web service with different routes, change them here to match.\n2. Note the **web service name** you gave it — it is part of every URL. Set it in `ZNUNY_WEBSERVICE`; the bundled file's default is `GenericTicketConnectorREST`.\n3. Create a Znuny agent for the integration with the queue permissions the agent should have, and put its login in `ZNUNY_USERNAME` and password in `ZNUNY_PASSWORD`. Set `ZNUNY_URL` to your instance root, no trailing slash.\n\n**Credentials travel in the request itself, not in a header.** The GenericInterface expects `UserLogin` and `Password` as parameters on every call — that is Znuny's design, not an oversight here. AnythingMCP appends them automatically so they never reach a prompt or a tool parameter. They do end up in the query string, and therefore in the web server's access log: give this agent its own Znuny account and rotate its password like any other.\n\n**Znuny 7 path.** The connector calls `ZNUNY_URL` + `/znuny/nph-genericinterface.pl/Webservice/<name>`, the script alias of Znuny 7.x. Znuny 6.5 and older serve the same GenericInterface under `/otrs/` (`/otrs/nph-genericinterface.pl/...`), and OTOBO under `/otobo/`; there the URL above answers 404. On those versions, after installing, change the connector's base URL to `https://<host>/otrs/nph-genericinterface.pl/Webservice/<name>` (or `/otobo/...`), or add a `ScriptAlias /znuny/` to the web server pointing at the same `cgi-bin` directory. `ZNUNY_SCRIPT_PATH` is not read by this connector.\n\n**Creating a ticket needs State and Priority.** TicketCreate has no defaults for them and rejects the call without them (\"Ticket->StateID or Ticket->State parameter is required!\"). When ticket types are enabled (SysConfig `Ticket::Type`), Type is required too.\n\n**Search returns ids only.** `znuny_search_tickets` gives you `TicketID`s; `znuny_get_ticket` turns one into a full record. Articles are omitted unless you ask for them, because a long thread is large.\n\n**Checked against the source, not a live system.** The routes match Znuny's sample `GenericTicketConnectorREST.yml` and the required fields match Znuny's `TicketCreate`/`TicketUpdate` operations, but this adapter has not been run against a live instance. A web service with different routes than the sample needs the tool paths changed to match. A correction from anyone running this against a real system is genuinely welcome.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`znuny.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
   "requiredEnvVars": [
     "ZNUNY_URL",
     "ZNUNY_WEBSERVICE",
@@ -43,7 +43,7 @@
         "properties": {
           "Title": {
             "type": "string",
-            "description": "Title fragment; Znuny matches with a wildcard on both sides."
+            "description": "Title to match. Use `*` as a wildcard for a fragment, e.g. `*Drucker*`: Znuny adds the wildcards itself only when the web service's ExtendedSearchCondition setting is on."
           },
           "Queues": {
             "type": "string",
@@ -144,7 +144,7 @@
     },
     {
       "name": "znuny_create_ticket",
-      "description": "Open a real ticket with its first article (TicketCreate). Znuny applies the queue's notification rules, so the customer may be e-mailed immediately.",
+      "description": "Open a real ticket with its first article (TicketCreate). Znuny applies the queue's notification rules, so the customer may be e-mailed immediately. State and Priority are required; Type too when ticket types are enabled.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -158,11 +158,15 @@
           },
           "State": {
             "type": "string",
-            "description": "Initial state name, e.g. new."
+            "description": "Initial state name, e.g. `new` or `open`. Required: Znuny has no default."
           },
           "Priority": {
             "type": "string",
-            "description": "Priority name, e.g. `3 normal`."
+            "description": "Priority name, e.g. `3 normal`. Required: Znuny has no default."
+          },
+          "Type": {
+            "type": "string",
+            "description": "Ticket type name, e.g. `Unclassified`. Required only when ticket types are enabled (SysConfig Ticket::Type); otherwise omit."
           },
           "CustomerUser": {
             "type": "string",
@@ -188,6 +192,8 @@
         "required": [
           "Title",
           "Queue",
+          "State",
+          "Priority",
           "CustomerUser",
           "Subject",
           "Body"
@@ -202,6 +208,7 @@
             "Queue": "$Queue",
             "State": "$State",
             "Priority": "$Priority",
+            "Type": "$Type",
             "CustomerUser": "$CustomerUser"
           },
           "Article": {

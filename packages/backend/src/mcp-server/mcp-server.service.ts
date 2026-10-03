@@ -17,6 +17,7 @@ import {
   ToolAnnotations,
   deriveToolAnnotations,
 } from './tool-annotations';
+import { computeSetupState } from '../connectors/connector-setup-status.util';
 
 /**
  * The synthetic role that makes one tool visible in the GLOBAL `/mcp`
@@ -131,6 +132,17 @@ export class McpServerService implements OnModuleInit {
   private registerConnectorTools(
     connector: Connector & { tools: McpTool[] },
   ): void {
+    const authConfig = this.decryptAuthConfig(connector.authConfig);
+    // Computed once per connector: a connector that cannot serve calls yet is
+    // registered (calls by name still get a precise error) but not listed.
+    const setupStatus = computeSetupState({
+      authType: connector.authType,
+      authConfig,
+      baseUrl: connector.baseUrl,
+      headers: connector.headers,
+      envVars: connector.envVars,
+      config: connector.config,
+    }).status;
     for (const tool of connector.tools) {
       const toolDef = {
         id: tool.id,
@@ -144,12 +156,13 @@ export class McpServerService implements OnModuleInit {
         connectorConfig: {
           baseUrl: connector.baseUrl,
           authType: connector.authType,
-          authConfig: this.decryptAuthConfig(connector.authConfig),
+          authConfig,
           headers: connector.headers as Record<string, string> | undefined,
           envVars: connector.envVars as Record<string, string> | undefined,
           specUrl: connector.specUrl ?? undefined,
           config: connector.config as Record<string, unknown> | undefined,
         },
+        setupStatus,
         endpointMapping: tool.endpointMapping as any,
         responseMapping: tool.responseMapping as
           | Record<string, unknown>

@@ -62,6 +62,8 @@ export function assertNoUnresolvedPlaceholders(
   request: RequestShape,
   /** How to name the thing in the error, e.g. `the connector behind etsy_get_shop`. */
   subject?: string,
+  /** The connector's page in the dashboard, so the reader can go straight there. */
+  fixUrl?: string,
 ): void {
   const missing = findUnresolvedPlaceholders({
     baseUrl: request.baseUrl,
@@ -78,7 +80,7 @@ export function assertNoUnresolvedPlaceholders(
     `${which} is missing ${missing.length === 1 ? 'a value' : 'values'} for ${names}. ` +
       'The request was not sent, because it would have carried the placeholder text ' +
       'instead of the credential and the upstream API would have rejected it with a ' +
-      'misleading error. Open the connector and set ' +
+      `misleading error. Open the connector${fixUrl ? ` (${fixUrl})` : ''} and set ` +
       `${missing.length === 1 ? 'that variable' : 'those variables'}, then try again.`,
   );
 }

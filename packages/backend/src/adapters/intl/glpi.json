@@ -67,8 +67,8 @@
             "description": "Row range as start-end, e.g. `0-49`. GLPI has no page number."
           },
           "sort": {
-            "type": "number",
-            "description": "Search-option field number to sort by."
+            "type": "string",
+            "description": "Name of the ticket field (column) to sort by, e.g. date_mod, date or id. Not a search-option number; that is only for glpi_search."
           },
           "order": {
             "type": "string",
@@ -172,8 +172,11 @@
             "description": "Row range as start-end, e.g. `0-49`."
           },
           "forcedisplay": {
-            "type": "string",
-            "description": "Comma-separated field numbers to include in the output."
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "description": "Search-option field numbers to include in the output, as an array, e.g. [2, 12, 15]. One number per entry; do not pass a comma-separated string."
           }
         },
         "required": [
@@ -191,7 +194,7 @@
           "criteria[0][searchtype]": "$searchtype0",
           "criteria[0][value]": "$value0",
           "range": "$range",
-          "forcedisplay[0]": "$forcedisplay"
+          "forcedisplay[]": "$forcedisplay"
         }
       }
     },

@@ -6,7 +6,7 @@
   "category": "accounting",
   "icon": "visma-eaccounting",
   "docsUrl": "https://developer.vismaonline.com/",
-  "instructions": "**Getting a token**\n1. Register at **developer.vismaonline.com** and create an application. You receive a client id and client secret.\n2. Run the authorization-code flow once for the customer's company, asking for the scopes you need — `ea:api`, `ea:sales`, `ea:purchase`, `ea:accounting`. Keep the **refresh token**.\n3. Set `VISMA_CLIENT_ID`, `VISMA_CLIENT_SECRET` and `VISMA_REFRESH_TOKEN`.\n\n**Sandbox and production are different hosts.** This adapter targets production at `eaccountingapi.vismaonline.com`. The sandbox lives at `eaccountingapi-sandbox.vismaonline.com` with its own client registration; a production token there fails in a way that looks like a bad secret. If you want to test first, register a sandbox app and build a custom connector against that host.\n\n**One connector, one company.** The token is bound to the company it was authorised for. A bookkeeper with several clients needs one connector per client.\n\n**Filtering is OData-flavoured** on most collections: `$filter`, `$top`, `$skip`, `$orderby`. Dates are ISO 8601. `$top` is capped server-side around 1000.\n\n**Vocabulary is Nordic.** `CustomerInvoiceDraft` is an unposted invoice; `CustomerInvoice` is posted and immutable. A draft is not revenue, and an agent summing both will over-report.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: eaccountingapi.vismaonline.com is public with a valid certificate.",
+  "instructions": "**Getting a token**\n1. Register at **developer.vismaonline.com** and create an application. You receive a client id and client secret.\n2. Run the authorization-code flow once for the customer's company, asking for the scopes you need — `ea:api`, `ea:sales`, `ea:purchase`, `ea:accounting`. Keep the **refresh token**.\n3. Set `VISMA_CLIENT_ID`, `VISMA_CLIENT_SECRET` and `VISMA_REFRESH_TOKEN`.\n\n**Sandbox and production are different hosts.** This adapter targets production at `eaccountingapi.vismaonline.com`. The sandbox lives at `eaccountingapi-sandbox.vismaonline.com` with its own client registration; a production token there fails in a way that looks like a bad secret. If you want to test first, register a sandbox app and build a custom connector against that host.\n\n**One connector, one company.** The token is bound to the company it was authorised for. A bookkeeper with several clients needs one connector per client.\n\n**Filtering is OData-flavoured** on most collections: `$filter` (operators `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `and`, `or`, `startswith()`, `contains()`; strings in single quotes, dates as full timestamps such as `2026-01-01T00:00:00Z`) and `$orderby`. **Paging** uses `$page` (1-based) and `$pagesize` (default 50, max 1000); the response's `Meta` block carries `TotalNumberOfPages` and `TotalNumberOfResults`.\n\n**Vocabulary is Nordic.** `CustomerInvoiceDraft` is an unposted invoice; `CustomerInvoice` is posted and immutable. A draft is not revenue, and an agent summing both will over-report.\n\n**Checked against the published API, not a live company.** Every path exists in Visma's OpenAPI document and answers an unauthenticated request with 401 (not 404); the query options follow the developer docs. The tools have not been run against a real company yet. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: eaccountingapi.vismaonline.com is public with a valid certificate.",
   "requiredEnvVars": [
     "VISMA_CLIENT_ID",
     "VISMA_CLIENT_SECRET",
@@ -55,13 +55,13 @@
             "type": "string",
             "description": "OData $filter expression, e.g. IsActive eq true."
           },
-          "top": {
+          "pagesize": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Rows per page (default 50, max 1000)."
           },
-          "skip": {
+          "page": {
             "type": "number",
-            "description": "Rows to skip, for paging."
+            "description": "Page number, 1-based (default 1)."
           },
           "orderby": {
             "type": "string",
@@ -74,8 +74,8 @@
         "path": "/customers",
         "queryParams": {
           "$filter": "$filter",
-          "$top": "$top",
-          "$skip": "$skip",
+          "$pagesize": "$pagesize",
+          "$page": "$page",
           "$orderby": "$orderby"
         }
       }
@@ -108,15 +108,15 @@
         "properties": {
           "filter": {
             "type": "string",
-            "description": "OData $filter expression, e.g. InvoiceDate ge 2026-01-01."
+            "description": "OData $filter expression, e.g. InvoiceDate ge 2026-01-01T00:00:00Z."
           },
-          "top": {
+          "pagesize": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Rows per page (default 50, max 1000)."
           },
-          "skip": {
+          "page": {
             "type": "number",
-            "description": "Rows to skip, for paging."
+            "description": "Page number, 1-based (default 1)."
           },
           "orderby": {
             "type": "string",
@@ -129,8 +129,8 @@
         "path": "/customerinvoices",
         "queryParams": {
           "$filter": "$filter",
-          "$top": "$top",
-          "$skip": "$skip",
+          "$pagesize": "$pagesize",
+          "$page": "$page",
           "$orderby": "$orderby"
         }
       }
@@ -165,13 +165,13 @@
             "type": "string",
             "description": "OData $filter expression."
           },
-          "top": {
+          "pagesize": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Rows per page (default 50, max 1000)."
           },
-          "skip": {
+          "page": {
             "type": "number",
-            "description": "Rows to skip, for paging."
+            "description": "Page number, 1-based (default 1)."
           }
         }
       },
@@ -180,8 +180,8 @@
         "path": "/customerinvoicedrafts",
         "queryParams": {
           "$filter": "$filter",
-          "$top": "$top",
-          "$skip": "$skip"
+          "$pagesize": "$pagesize",
+          "$page": "$page"
         }
       }
     },
@@ -195,13 +195,13 @@
             "type": "string",
             "description": "OData $filter expression."
           },
-          "top": {
+          "pagesize": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Rows per page (default 50, max 1000)."
           },
-          "skip": {
+          "page": {
             "type": "number",
-            "description": "Rows to skip, for paging."
+            "description": "Page number, 1-based (default 1)."
           },
           "orderby": {
             "type": "string",
@@ -214,8 +214,8 @@
         "path": "/supplierinvoices",
         "queryParams": {
           "$filter": "$filter",
-          "$top": "$top",
-          "$skip": "$skip",
+          "$pagesize": "$pagesize",
+          "$page": "$page",
           "$orderby": "$orderby"
         }
       }
@@ -230,13 +230,13 @@
             "type": "string",
             "description": "OData $filter expression."
           },
-          "top": {
+          "pagesize": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Rows per page (default 50, max 1000)."
           },
-          "skip": {
+          "page": {
             "type": "number",
-            "description": "Rows to skip, for paging."
+            "description": "Page number, 1-based (default 1)."
           }
         }
       },
@@ -245,8 +245,8 @@
         "path": "/suppliers",
         "queryParams": {
           "$filter": "$filter",
-          "$top": "$top",
-          "$skip": "$skip"
+          "$pagesize": "$pagesize",
+          "$page": "$page"
         }
       }
     },
@@ -260,13 +260,13 @@
             "type": "string",
             "description": "OData $filter expression, e.g. IsActive eq true."
           },
-          "top": {
+          "pagesize": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Rows per page (default 50, max 1000)."
           },
-          "skip": {
+          "page": {
             "type": "number",
-            "description": "Rows to skip, for paging."
+            "description": "Page number, 1-based (default 1)."
           }
         }
       },
@@ -275,8 +275,8 @@
         "path": "/articles",
         "queryParams": {
           "$filter": "$filter",
-          "$top": "$top",
-          "$skip": "$skip"
+          "$pagesize": "$pagesize",
+          "$page": "$page"
         }
       }
     },
@@ -290,9 +290,13 @@
             "type": "string",
             "description": "OData $filter expression."
           },
-          "top": {
+          "pagesize": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Rows per page (default 50, max 1000)."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based (default 1)."
           }
         }
       },
@@ -301,7 +305,8 @@
         "path": "/accounts",
         "queryParams": {
           "$filter": "$filter",
-          "$top": "$top"
+          "$pagesize": "$pagesize",
+          "$page": "$page"
         }
       }
     }

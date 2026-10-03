@@ -425,11 +425,19 @@ export const connectors = {
     request<{ message: string; created: number; skipped: number; tools: number; errors?: string[] }>('/api/connectors/import-all', { method: 'POST', body: data, token }),
   healthCheck: (token: string) =>
     request<{ total: number; healthy: number; unhealthy: number; connectors: any[] }>('/api/connectors/health-check', { token }),
-  oauthAuthorize: (id: string, token: string) =>
+  oauthAuthorize: (id: string, token: string, returnTo?: string) =>
     request<{ authorizationUrl?: string; error?: string }>(
       `/api/connectors/${id}/oauth/authorize`,
-      { method: 'POST', token },
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
     ),
+  /** Second half of "Authorize with Provider": exchange the code the provider sent back. */
+  oauthComplete: (state: string, code: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
+      '/api/mcp-oauth/complete',
+      { method: 'POST', token, body: { state, code } },
+    ),
+  oauthRedirectUri: (token: string) =>
+    request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>
     request<{ message: string; tools: any[]; skipped?: string[]; error?: string }>(
       `/api/connectors/${id}/discover-tools`,
@@ -437,7 +445,51 @@ export const connectors = {
     ),
 };
 
+/** One-time links an AI client hands out to finish a connector's setup. */
+export const setupLinks = {
+  resolve: (token: string, authToken: string) =>
+    request<{ redirect: string }>('/api/setup-links/resolve', {
+      method: 'POST',
+      token: authToken,
+      body: { token },
+    }),
+};
+
 // Adapters (built-in connector recipes)
+export type SetupKind = 'none' | 'credentials' | 'oauth_browser';
+
+export interface EnvVarDescriptor {
+  name: string;
+  required: boolean;
+  label: string;
+  kind: 'address' | 'credential' | 'setting';
+  secret: boolean;
+  help?: string;
+  example?: string;
+  pattern?: string;
+  link?: string;
+  advanced?: boolean;
+}
+
+export interface AdapterSetupInfo {
+  slug: string;
+  name: string;
+  description: string;
+  instructions?: string;
+  icon: string;
+  docsUrl?: string;
+  connector: { name: string; type: string; baseUrl: string; authType: string };
+  envVars: EnvVarDescriptor[];
+  setupKind: SetupKind;
+}
+
+export type VerifyResult =
+  | { ok: true; toolName: string; durationMs: number; sample: string }
+  | { ok: false; kind: string; message: string; missing?: string[]; status?: number | null }
+  | { ok: null; skipped: 'authorization' | 'no_probe' };
+
+export type ConnectorSetupStatus = 'ready' | 'needs_input' | 'needs_authorization';
+
 export const adapters = {
   list: (token: string) =>
     request<any[]>('/api/adapters', { token }),
@@ -454,6 +506,16 @@ export const adapters = {
       `/api/adapters/${slug}/import`,
       { method: 'POST', token, body: credentials ? { credentials } : undefined },
     ),
+  /** Full adapter with each variable described, for the guided setup. */
+  describe: (slug: string, token: string) =>
+    request<AdapterSetupInfo>(`/api/adapters/${slug}`, { token }),
+  /** Try credentials before saving: nothing is stored. */
+  verify: (slug: string, token: string, credentials: Record<string, string>, connectorId?: string) =>
+    request<VerifyResult>(`/api/adapters/${slug}/verify`, {
+      method: 'POST',
+      token,
+      body: { credentials, ...(connectorId ? { connectorId } : {}) },
+    }),
   starterPack: (token: string) =>
     request<StarterPackResponse>('/api/adapters/starter-pack', { token }),
   installStarterPack: (slugs: string[], token: string) =>

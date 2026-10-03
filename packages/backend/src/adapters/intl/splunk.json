@@ -1,0 +1,595 @@
+{
+  "slug": "splunk",
+  "name": "Splunk",
+  "description": "Search Splunk logs and metrics from Claude, ChatGPT or Copilot through Splunk's official MCP Server: run SPL and saved searches, list indexes, hosts and sources, read knowledge objects, and draft SPL with Splunk AI Assistant.",
+  "instructions": "This connector bridges the **Splunk MCP Server**, the official app by Splunk (Splunkbase app 7931), on your Splunk Cloud Platform or Splunk Enterprise search head. Splunk's own server provides the tools: SPL searches, saved searches, indexes, hosts and sources, knowledge objects, KV Store, users and, where Splunk AI Assistant is available, the `saia_*` tools that write, explain and optimise SPL. AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**The tools come from your server.** At install AnythingMCP asks your Splunk MCP Server which tools it has, so you get exactly the set of the app version you run. After upgrading the app in Splunk, open the connector and click **Discover tools** to pick up new ones.\n\n**Setup (about 10 minutes, needs a Splunk admin)**:\n1. Install **Splunk MCP Server** from Splunkbase on the search head (or search head cluster). Make sure REST API access and token authentication are enabled.\n2. Give the role that will run the tools the `mcp_tool_execute` capability, and restrict that role to the indexes the AI may read. The role is the real boundary: the agent sees whatever this user sees.\n3. In the Splunk MCP Server app, generate an **encrypted MCP token** for that user and copy it (Splunk shows it once). An ordinary Splunk user or service token does not work: Splunk refuses it with \"invalid token audience\" (HTTP 403).\n4. Fill in the variables and install:\n   - `SPLUNK_HOST`: the search head's host name, without `https://` and without a port, for example `yourstack.splunkcloud.com`. The connector calls `https://SPLUNK_HOST:8089/services/mcp`, the address the app shows. If yours uses another port or path, change the base URL in the connector editor after installing.\n   - `SPLUNK_MCP_TOKEN`: the encrypted token from step 3. It is stored encrypted.\n\n**Network**: AnythingMCP connects to the management port (8089). On Splunk Cloud Platform that port only answers addresses on your stack's IP allow list for the search API (Admin Config Service), so add the address AnythingMCP calls from (on AnythingMCP Cloud, ask support for the current egress IP). Splunk Enterprise needs a certificate on 8089 that the AnythingMCP server trusts.\n\n**Safety**: Splunk marks `splunk_run_query` and `splunk_run_saved_search` as able to change data, because SPL can write (`collect`, `outputlookup`, `delete`). Give the token's user a role that cannot write to indexes or lookups. The two dashboard tools install switched off; turn them on per tool if the AI should create or change dashboards. Splunk admins can also disable tools for everyone in the app, and **Invalidate all MCP access tokens** there revokes every token at once.\n\n**Working with it**: start with `splunk_get_indexes` or `splunk_get_metadata` to see what data exists, always give searches a time range (`earliest`/`latest`) and a row limit, and let `saia_generate_spl` draft SPL you are unsure about. A 403 on install means the token is not an MCP token or the role lacks `mcp_tool_execute`; a timeout usually means the allow list or a firewall blocks port 8089.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "splunk",
+  "docsUrl": "https://help.splunk.com/en/splunk-enterprise/mcp-server-for-splunk-platform/1.1/connecting-to-the-mcp-server-and-settings",
+  "requiredEnvVars": [
+    "SPLUNK_HOST",
+    "SPLUNK_MCP_TOKEN"
+  ],
+  "connector": {
+    "name": "Splunk",
+    "type": "MCP",
+    "baseUrl": "https://{{SPLUNK_HOST}}:8089/services/mcp",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SPLUNK_MCP_TOKEN}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "saia_ask_splunk_question",
+      "description": "Ask natural language questions about Splunk using Splunk AI Assistant. Get explanations about Splunk commands, concepts, features, and best practices.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "pattern": "^[\\s\\S]{1,10000}$",
+            "description": "Natural language question about Splunk\nValidation: Prompt is required and must be between 1 and 10000 characters (submitted: {length})"
+          },
+          "chat_history": {
+            "type": "string",
+            "pattern": "^[\\s\\S]{1,5000}$",
+            "description": "Chat history for context\nValidation: Chat history is required and limited to 5000 characters"
+          },
+          "additional_context": {
+            "type": "string",
+            "description": "Additional context to include in generated SPL"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "saia_ask_splunk_question",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "saia_explain_spl",
+      "description": "Explain SPL queries in natural language using Splunk AI Assistant. Converts complex SPL commands into human-readable explanations.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "spl"
+        ],
+        "properties": {
+          "spl": {
+            "type": "string",
+            "pattern": "^[\\s\\S]{1,10000}$",
+            "description": "SPL query to explain in natural language\nValidation: SPL query is required and must be between 1 and 10000 characters (submitted: {length})"
+          },
+          "chat_history": {
+            "type": "string",
+            "pattern": "^[\\s\\S]{1,5000}$",
+            "description": "Chat history for context\nValidation: Chat history is required and limited to 5000 characters"
+          },
+          "additional_context": {
+            "type": "string",
+            "description": "Additional context to include in generated SPL"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "saia_explain_spl",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "saia_generate_spl",
+      "description": "Generate SPL from natural language queries using Splunk AI Assistant.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "pattern": "^[\\s\\S]{1,10000}$",
+            "description": "Natural language query for generating SPL\nValidation: Prompt is required and must be between 1 and 10000 characters (submitted: {length})"
+          },
+          "spl_only": {
+            "type": "boolean",
+            "default": false,
+            "description": "If set to true, returns only generated SPL with no additional explanation"
+          },
+          "chat_history": {
+            "type": "string",
+            "pattern": "^[\\s\\S]{1,5000}$",
+            "description": "Chat history for context\nValidation: Chat history is required and limited to 5000 characters"
+          },
+          "additional_context": {
+            "type": "string",
+            "description": "Additional context to include in generated SPL"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "saia_generate_spl",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "saia_optimize_spl",
+      "description": "Optimize SPL (Search Processing Language) queries using Splunk AI Assistant. Improves query performance, efficiency, and follows best practices.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "spl"
+        ],
+        "properties": {
+          "spl": {
+            "type": "string",
+            "pattern": "^[\\s\\S]{1,10000}$",
+            "description": "SPL query to optimize for better performance\nValidation: SPL query is required and must be between 1 and 10000 characters (submitted: {length})"
+          },
+          "chat_history": {
+            "type": "string",
+            "pattern": "^[\\s\\S]{1,5000}$",
+            "description": "Chat history for context\nValidation: Chat history is required and limited to 5000 characters"
+          },
+          "additional_context": {
+            "type": "string",
+            "description": "Additional context to include in generated SPL"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "saia_optimize_spl",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "splunk_create_dashboard",
+      "description": "Creates a new Splunk dashboard using Dashboard Studio JSON in the specified app namespace.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "eai_data",
+          "dashboard_name"
+        ],
+        "properties": {
+          "app": {
+            "type": "string",
+            "default": "search",
+            "description": "App namespace to create the dashboard in"
+          },
+          "eai_data": {
+            "type": "string",
+            "description": "The full Dashboard Studio JSON definition"
+          },
+          "dashboard_name": {
+            "type": "string",
+            "description": "Internal name/ID for the dashboard"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "splunk_create_dashboard",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "splunk_get_index_info",
+      "description": "Get detailed information about a specific Splunk index. Returns comprehensive configuration and status information for the specified index.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "index_name"
+        ],
+        "properties": {
+          "index_name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Name of the index to get information about\nValidation: Index name can only contain alphanumeric characters, underscores (_), and hyphens (-)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "splunk_get_index_info",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "splunk_get_indexes",
+      "description": "Get a list of indexes from Splunk. Indexes are data repositories where machine data is stored and organized.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum number of results to return in this page. Omit this argument to use the server's configured default row limit. If you provide a value greater than the server's configured maximum row limit, the server uses the maximum instead."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Zero-based index of the first result to return. Defaults to 0."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "splunk_get_indexes",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "splunk_get_info",
+      "description": "Get comprehensive information about the Splunk instance. Retrieves system information including version, hardware specs, and operational status.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "splunk_get_info",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "splunk_get_knowledge_objects",
+      "description": "Retrieve Splunk knowledge objects by type. Supports various knowledge object types including saved searches, alerts, field extractions, lookups, macros, data models, and more.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "saved_searches",
+              "alerts",
+              "field_extractions",
+              "field_aliases",
+              "calculated_fields",
+              "lookups",
+              "automatic_lookups",
+              "lookup_transforms",
+              "macros",
+              "tags",
+              "data_models",
+              "workflow_actions",
+              "views",
+              "panels",
+              "apps",
+              "mltk_algorithms",
+              "mltk_models"
+            ],
+            "type": "string",
+            "description": "Type of knowledge object to retrieve"
+          },
+          "row_limit": {
+            "type": "integer",
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1,
+            "description": "Maximum number of rows to return"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "splunk_get_knowledge_objects",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "splunk_get_kv_store_collections",
+      "description": "Get KV Store collection statistics including size, count, and storage information. Retrieves comprehensive metrics about all KV Store collections in the Splunk instance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "row_limit": {
+            "type": "integer",
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1,
+            "description": "Maximum number of rows to return"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "splunk_get_kv_store_collections",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "splunk_get_metadata",
+      "description": "Retrieve metadata about hosts or sources across one or more indexes in the selected time window.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "hosts",
+              "sources"
+            ],
+            "type": "string",
+            "description": "Metadata category to list (hosts or sources)."
+          },
+          "index": {
+            "type": "string",
+            "default": "*",
+            "pattern": "^[A-Za-z0-9_*-]+$",
+            "description": "Index name or wildcard pattern (e.g. main, app_*, *).\nValidation: Index pattern may contain letters, numbers, underscore, dash, and * wildcard"
+          },
+          "row_limit": {
+            "type": "integer",
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1,
+            "description": "Maximum number of rows to return"
+          },
+          "latest_time": {
+            "type": "string",
+            "default": "now",
+            "examples": [
+              "now"
+            ],
+            "description": "End time for search (e.g., now, -1h)"
+          },
+          "earliest_time": {
+            "type": "string",
+            "default": "-24h",
+            "examples": [
+              "-24h"
+            ],
+            "description": "Start time for search (e.g., -24h, -1d)"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "splunk_get_metadata",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "splunk_get_user_info",
+      "description": "Retrieves detailed information about the currently authenticated user including roles and permissions. Returns comprehensive user profile data for the current session.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "splunk_get_user_info",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "splunk_get_user_list",
+      "description": "Get a list of users from Splunk. Retrieves information about all users including authentication details, roles, and account status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "row_limit": {
+            "type": "integer",
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1,
+            "description": "Maximum number of rows to return"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "splunk_get_user_list",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "splunk_run_query",
+      "description": "Execute a Splunk search query and return the results. Use this to retrieve log data, perform aggregations, analyze events, and extract insights. Always set the 'app' parameter when the user specifies an app context — omitting it means app-scoped field extractions will not be applied.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "app": {
+            "type": "string",
+            "pattern": "^(?!\\.{1,2}$)(?!-$)[A-Za-z0-9_.-]+$",
+            "description": "Splunk app context to run the SPL query in (e.g., 'search', 'enterprise_security'). Set this when the user specifies an app — omitting it means app-scoped field extractions and lookups will not be applied.\nValidation: App name may only contain letters, numbers, underscores, hyphens, and dots."
+          },
+          "query": {
+            "type": "string",
+            "pattern": "^[\\s\\S]{1,10000}$",
+            "description": "Valid SPL query to execute\nValidation: SPL query must be between 1 and 10000 characters (submitted: {length})"
+          },
+          "row_limit": {
+            "type": "integer",
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1,
+            "description": "Maximum number of rows to return"
+          },
+          "latest_time": {
+            "type": "string",
+            "default": "now",
+            "description": "End time for search (e.g., now, -1h)"
+          },
+          "earliest_time": {
+            "type": "string",
+            "default": "-6h",
+            "description": "Start time for search (e.g., -6h, -1d)"
+          },
+          "workload_pool": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "description": "Splunk workload pool to run this search in.\nValidation: Workload pool name may only contain letters, numbers, underscores, hyphens, and dots."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "splunk_run_query",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "splunk_run_saved_search",
+      "description": "Execute a Splunk saved search by name and return its results. Saved searches are pre-defined SPL queries stored in Splunk. Use get_knowledge_objects with type='saved_searches' to discover available saved searches and their app context. If the saved search name is unique across apps, the app is resolved automatically. If the same name exists in multiple apps, the alphabetically first app is used; pass the 'app' parameter to target a specific app. If the saved search contains placeholder tokens like $token_name$, pass replacement values as key=value pairs in the args parameter.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "saved_search_name"
+        ],
+        "properties": {
+          "app": {
+            "type": "string",
+            "pattern": "^(?!\\.{1,2}$)(?!-$)[A-Za-z0-9_.-]+$",
+            "description": "Splunk app context to run the saved search in (e.g., 'search', 'enterprise_security'). If omitted, the app is auto-resolved; when the name exists in multiple apps the alphabetically first app is used.\nValidation: App name may only contain letters, numbers, underscores, hyphens, and dots."
+          },
+          "args": {
+            "type": "string",
+            "default": "",
+            "pattern": "^(\\s*[A-Za-z_][A-Za-z0-9_.]*\\s*=\\s*\"(\\\\\"|[^\"\\|\\[\\]`\\n\\r;])*\"(\\s+|$))*$",
+            "description": "Optional replacement arguments for saved search tokens\nValidation: args must be space-separated key=\"value\" token assignments only (e.g. host=\"web01\" sourcetype=\"syslog\"). Pipe operators, brackets, backticks, semicolons, and newlines are not allowed in values."
+          },
+          "row_limit": {
+            "type": "integer",
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1,
+            "description": "Maximum number of rows to return"
+          },
+          "latest_time": {
+            "type": "string",
+            "description": "Override the saved search's default end time (e.g., now, -1h). If omitted, uses the time range configured in the saved search."
+          },
+          "earliest_time": {
+            "type": "string",
+            "description": "Override the saved search's default start time (e.g., -24h, -7d, 2024-01-01T00:00:00). If omitted, uses the time range configured in the saved search."
+          },
+          "saved_search_name": {
+            "type": "string",
+            "pattern": "^(?=.*\\S)[\\s\\S]{1,500}$",
+            "description": "Name of the saved search to execute\nValidation: Saved search name is required, it cannot be blank and is limited to 500 characters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "splunk_run_saved_search",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "splunk_update_dashboard",
+      "description": "Updates an existing Splunk dashboard's definition using Dashboard Studio JSON.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "eai_data",
+          "dashboard_name"
+        ],
+        "properties": {
+          "app": {
+            "type": "string",
+            "default": "search",
+            "description": "App namespace the dashboard lives in"
+          },
+          "eai_data": {
+            "type": "string",
+            "description": "The new/updated Dashboard Studio JSON definition"
+          },
+          "dashboard_name": {
+            "type": "string",
+            "description": "The exact name/ID of the existing dashboard to update"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "splunk_update_dashboard",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

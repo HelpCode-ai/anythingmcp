@@ -6,6 +6,16 @@ import { OrgSettingsService } from './org-settings.service';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
 
+/** Escape text placed into an email's HTML (names and client names are user-chosen). */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Production always talks to anythingmcp.com. The licence site decides
 // which plan an installation runs; a URL taken from the environment would let
 // any self-hosted operator point verification at a server of their own and
@@ -382,7 +392,9 @@ export class EmailService {
         await transport.transporter.sendMail({
           from: transport.from,
           to,
-          subject: 'Verify Your Email — AnythingMCP',
+          // Code first: it is what the inbox preview shows, and what iOS
+          // reads to offer it above the keyboard (autocomplete one-time-code).
+          subject: `${code} is your AnythingMCP verification code`,
           html: `
             <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
               <h2 style="color: #2563eb;">Verify Your Email</h2>
@@ -471,6 +483,8 @@ export class EmailService {
     to: string,
     name: string,
     dayNumber: 1 | 2,
+    /** Set when the user already connected an AI client to the empty workspace. */
+    opts?: { aiClient?: string },
   ): Promise<boolean> {
     const transport = await this.createTransporter();
     if (!transport) {
@@ -483,20 +497,28 @@ export class EmailService {
     const cloudUrl =
       process.env.CLOUD_PUBLIC_URL || 'https://cloud.anythingmcp.com';
     const welcomeUrl = `${cloudUrl}/welcome`;
+    const storeUrl = `${cloudUrl}/connectors/store`;
     const unsubUrl = `${cloudUrl}/settings/profile`;
+    const client = opts?.aiClient ? escapeHtml(opts.aiClient) : undefined;
+    const safeName = escapeHtml(name);
 
-    const subject =
-      dayNumber === 1
+    const subject = client
+      ? `${opts!.aiClient} is connected. Now give it something to work with`
+      : dayNumber === 1
         ? 'Connect your first tool in 60 seconds — AnythingMCP'
         : 'Still here? Pick a tool to try — AnythingMCP';
 
-    const body =
-      dayNumber === 1
-        ? `<p>Hi ${name},</p>
-           <p>You signed up for AnythingMCP yesterday but haven't connected anything yet. The fastest path to your first AI superpower is picking a ready-made connector from the marketplace — Sendcloud, Stripe, GitHub, Slack, Help Scout… 180+ are pre-wired.</p>
+    const body = client
+      ? `<p>Hi ${safeName},</p>
+           <p>You connected ${client} to AnythingMCP, but your workspace has no connectors yet, so ${client} has nothing to reach.</p>
+           <p>Add the app you want it to work with: Etsy, Odoo, weclapp, Lexware, Telegram, Shopify and 260 more are ready to install. As soon as one is in, ask ${client} about it in the same chat.</p>
+           <p><a href="${storeUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Add your first connector →</a></p>`
+      : dayNumber === 1
+        ? `<p>Hi ${safeName},</p>
+           <p>You signed up for AnythingMCP yesterday but haven't connected anything yet. The fastest path to your first AI superpower is picking a ready-made connector from the marketplace: Etsy, Odoo, weclapp, Lexware, Sendcloud, GitHub… 265 are pre-wired.</p>
            <p><a href="${welcomeUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Open the welcome wizard →</a></p>
            <p style="font-size:13px;color:#666;">Should take about a minute.</p>`
-        : `<p>Hi ${name},</p>
+        : `<p>Hi ${safeName},</p>
            <p>Just checking in — your AnythingMCP account is still waiting for its first connector. If anything got in your way, hit reply and tell us what; we read every reply.</p>
            <p><a href="${welcomeUrl}" style="display:inline-block;background:#d97757;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:600;">Pick a connector →</a></p>`;
 
@@ -516,13 +538,17 @@ export class EmailService {
           </div>
         `,
         text: `Hi ${name},\n\n${
-          dayNumber === 1
-            ? "You signed up for AnythingMCP yesterday but haven't connected anything yet."
-            : 'Your AnythingMCP account is still waiting for its first connector.'
-        }\n\nOpen the wizard: ${welcomeUrl}\n\nUnsubscribe: ${unsubUrl}`,
+          opts?.aiClient
+            ? `You connected ${opts.aiClient} to AnythingMCP, but your workspace has no connectors yet.\n\nAdd your first connector: ${storeUrl}`
+            : `${
+                dayNumber === 1
+                  ? "You signed up for AnythingMCP yesterday but haven't connected anything yet."
+                  : 'Your AnythingMCP account is still waiting for its first connector.'
+              }\n\nOpen the wizard: ${welcomeUrl}`
+        }\n\nUnsubscribe: ${unsubUrl}`,
       });
       this.logger.log(
-        `Onboarding-reminder email (day ${dayNumber}) sent to ${to}`,
+        `Onboarding-reminder email (day ${dayNumber}${opts?.aiClient ? ', AI client connected' : ''}) sent to ${to}`,
       );
       return true;
     } catch (err) {

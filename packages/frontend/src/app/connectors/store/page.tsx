@@ -3,16 +3,13 @@
 import Link from 'next/link';
 import { Suspense, useEffect, useMemo, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { useAuth } from '@/lib/auth-context';
 import { adapters } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { authTypeLabel, cn } from '@/lib/utils';
-import { McpAssignModal } from '@/components/mcp-assign-modal';
+import { adapterAuthLabel, adapterNeedsCredentials, cn } from '@/lib/utils';
 import { matchesSearch } from '@/lib/marketplace-search';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 
@@ -231,44 +228,6 @@ interface AdapterItem {
   authType?: string;
 }
 
-/**
- * Pre-fill every optional env var with an empty string. An optional var the
- * user never touches must still reach the backend as '' — otherwise the
- * {{VAR}} placeholder survives resolution and is sent to the target API as a
- * literal string (e.g. a Destatis password header of "{{DESTATIS_PASSWORD}}").
- */
-function seedOptionalCredentials(adapter: {
-  optionalEnvVars?: string[];
-}): Record<string, string> {
-  return Object.fromEntries(
-    (adapter.optionalEnvVars || []).map((v) => [v, '']),
-  );
-}
-
-/**
- * Env vars the connector's base URL is built from (e.g. SAP_HANA_HOST in
- * hana://{{SAP_HANA_HOST}}:{{SAP_HANA_PORT}}/). The connector cannot be
- * created without them, so they cannot be skipped like an API key.
- */
-function addressVars(adapter: { connector?: { baseUrl?: string } }): string[] {
-  const url = adapter.connector?.baseUrl ?? '';
-  return [...new Set([...url.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g)].map((m) => m[1]))];
-}
-
-interface AdapterDetail extends AdapterItem {
-  // Long-form, Markdown-formatted help authored on the adapter JSON.
-  // Rendered inside the install modal so users see "where to find your
-  // refresh_token", auth-flow gotchas, etc. without leaving the page.
-  instructions?: string;
-  connector: {
-    name: string;
-    type: string;
-    baseUrl: string;
-    authType: string;
-    authConfig?: Record<string, unknown>;
-  };
-}
-
 export default function AdapterStorePage() {
   return (
     <Suspense>
@@ -286,23 +245,7 @@ function AdapterStoreContent() {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [showAllCategories, setShowAllCategories] = useState(false);
-  const [importing, setImporting] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
-
-  // Credential modal state
-  const [configAdapter, setConfigAdapter] = useState<AdapterDetail | null>(null);
-  const [credentialValues, setCredentialValues] = useState<Record<string, string>>({});
-  // Per-field reveal toggle for password-masked credential inputs in the
-  // install modal. Keyed by env var name so each "Show/Hide" button
-  // toggles only its own field. Reset together with credentialValues.
-  const [revealedCredentials, setRevealedCredentials] = useState<Record<string, boolean>>({});
-  const [configLoading, setConfigLoading] = useState(false);
-  // An import that fails from the modal keeps the modal open and shows why
-  // there, instead of closing it and leaving a banner at the top of the page.
-  const [configError, setConfigError] = useState('');
-
-  // MCP assignment modal state
-  const [importedConnector, setImportedConnector] = useState<{ id: string; name: string } | null>(null);
 
   // Track whether auto-install from ?install= param has been triggered
   const autoInstallTriggered = useRef(false);
@@ -316,63 +259,12 @@ function AdapterStoreContent() {
       .finally(() => setLoading(false));
   }, [token]);
 
-  const doImport = async (slug: string, credentials?: Record<string, string>) => {
-    if (!token) return;
-    setImporting(slug);
-    setMsg('');
-    setConfigError('');
-    try {
-      const adapter = list.find((a) => a.slug === slug);
-      const result = await adapters.import(slug, token, credentials);
-      setConfigAdapter(null);
-      setMsg(describeImport(result.message, result.probe));
-      setImporting(null);
-      // Show MCP assignment modal
-      setImportedConnector({ id: result.connectorId, name: adapter?.name || slug });
-    } catch (err: any) {
-      setImporting(null);
-      if (configAdapter) setConfigError(err.message);
-      else setMsg(`Import failed: ${err.message}`);
-    }
-  };
-
-  const handleImportClick = async (adapter: AdapterItem) => {
-    if (!token) return;
-
-    // If nothing at all is prompted for, import directly. Optional vars count:
-    // skipping the modal would leave them unset, and an unset {{VAR}} survives
-    // resolution and is sent to the API as a literal string.
-    const promptedVars = [
-      ...(adapter.requiredEnvVars || []),
-      ...(adapter.optionalEnvVars || []),
-    ];
-    if (promptedVars.length === 0) {
-      await doImport(adapter.slug);
-      return;
-    }
-
-    // Fetch full adapter detail to show in modal
-    setConfigError('');
-    setConfigLoading(true);
-    try {
-      const detail = await adapters.get(adapter.slug, token);
-      setConfigAdapter(detail);
-      // Seed optional vars to '' so leaving one blank still submits an empty
-      // value. Without the key the backend keeps the literal {{VAR}}
-      // placeholder and sends it to the API verbatim.
-      setCredentialValues(seedOptionalCredentials(detail));
-      setRevealedCredentials({});
-    } catch {
-      // Fallback: use list data
-      setConfigAdapter({
-        ...adapter,
-        connector: { name: adapter.name, type: 'REST', baseUrl: '', authType: 'API_KEY' },
-      } as AdapterDetail);
-      setCredentialValues(seedOptionalCredentials(adapter));
-      setRevealedCredentials({});
-    } finally {
-      setConfigLoading(false);
-    }
+  // Every install goes through the guided setup: it asks for what the
+  // connector needs, checks it against the API before saving, and runs the
+  // provider sign-in for OAuth connectors. The old dialog's "Skip for now"
+  // created connectors that failed every call.
+  const handleImportClick = (adapter: AdapterItem) => {
+    router.push(`/connectors/setup/${encodeURIComponent(adapter.slug)}`);
   };
 
   // Auto-import when ?install=<slug> is present (e.g. from website marketplace)
@@ -383,14 +275,8 @@ function AdapterStoreContent() {
     const adapter = list.find((a) => a.slug === installSlug);
     if (!adapter) return;
     autoInstallTriggered.current = true;
-    handleImportClick(adapter);
-  }, [loading, list, token, searchParams]);
-
-  const handleConfigSubmit = () => {
-    if (!configAdapter) return;
-    const creds = Object.keys(credentialValues).length > 0 ? credentialValues : undefined;
-    doImport(configAdapter.slug, creds);
-  };
+    router.replace(`/connectors/setup/${encodeURIComponent(adapter.slug)}`);
+  }, [loading, list, token, searchParams, router]);
 
   /**
    * Categories ranked by how much of the catalog each one holds, so the first
@@ -606,8 +492,7 @@ function AdapterStoreContent() {
         ) : (
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((adapter) => {
-              const isPublic = adapter.authType === 'NONE';
-              const isImporting = importing === adapter.slug;
+              const isPublic = !adapterNeedsCredentials(adapter);
               /* log-ish 1..10 segment scale, same as the marketing-site card */
               const fillCount = Math.max(
                 1,
@@ -666,7 +551,7 @@ function AdapterStoreContent() {
                           className="max-w-full min-w-0 gap-1 truncate font-mono uppercase tracking-wider"
                         >
                           {isPublic ? <SparklesIcon /> : <LockIcon />}
-                          {authTypeLabel(adapter.authType)}
+                          {adapterAuthLabel(adapter)}
                         </Badge>
                       )}
                       {adapter.docsUrl && (
@@ -684,15 +569,10 @@ function AdapterStoreContent() {
                       <Button
                         size="sm"
                         onClick={() => handleImportClick(adapter)}
-                        disabled={isImporting || configLoading}
                         className="h-7 gap-1 px-2.5"
                       >
-                        {isImporting ? 'Importing…' : (
-                          <>
-                            Install
-                            <ArrowRightIcon />
-                          </>
-                        )}
+                        Install
+                        <ArrowRightIcon />
                       </Button>
                     </div>
                   </div>
@@ -703,203 +583,8 @@ function AdapterStoreContent() {
         )}
       </div>
 
-      {/* Credential Configuration Modal */}
-      {configAdapter && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setConfigAdapter(null)}
-          />
-          <div className="relative mx-4 flex max-h-[90vh] w-full max-w-md flex-col rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">
-            <button
-              onClick={() => setConfigAdapter(null)}
-              className="absolute right-3 top-3 z-10 text-[var(--text-3)] hover:text-[var(--text)]"
-              aria-label="Close"
-            >
-              <CloseIcon />
-            </button>
-
-            {/* Scrollable content region. Keeps the footer actions pinned and
-                reachable even when an adapter has many env vars (the modal is
-                capped at 90vh instead of growing past the viewport). */}
-            <div className="flex-1 overflow-y-auto p-6">
-            <h3 className="mb-1 text-lg font-semibold tracking-[-0.01em]">
-              Configure {configAdapter.name}
-            </h3>
-            <p className="mb-4 text-sm text-[var(--text-2)]">
-              {addressVars(configAdapter).length > 0
-                ? `${addressVars(configAdapter).map(formatEnvVarLabel).join(', ')} ${addressVars(configAdapter).length === 1 ? 'is' : 'are'} part of this connector's address, so enter ${addressVars(configAdapter).length === 1 ? 'it' : 'them'} now. The rest can wait.`
-                : 'This adapter requires credentials to work. Enter them now or skip and configure later.'}
-            </p>
-
-            <div className="mb-3 flex items-center gap-2 text-xs text-[var(--text-3)]">
-              <LockIcon />
-              <span>Auth type: {authTypeLabel(configAdapter.connector?.authType)}</span>
-            </div>
-
-            {/* Setup instructions — collapsible details block, default open
-                so first-time users see how to obtain each credential. The
-                content is the same Markdown stored on the adapter JSON's
-                `instructions` field. */}
-            {configAdapter.instructions && (
-              <details className="mb-4 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)]" open>
-                <summary className="cursor-pointer select-none rounded-[9px] px-3 py-2 text-sm font-medium hover:bg-[var(--surface-3)]">
-                  📖 How to get these credentials
-                </summary>
-                <div className="prose prose-sm max-w-none px-3 pb-3 pt-1 text-[13px] leading-relaxed dark:prose-invert max-h-[40vh] overflow-y-auto [&_pre]:whitespace-pre-wrap [&_pre]:break-words">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {configAdapter.instructions}
-                  </ReactMarkdown>
-                </div>
-              </details>
-            )}
-
-            <div className="space-y-3">
-              {[
-                ...configAdapter.requiredEnvVars,
-                ...(configAdapter.optionalEnvVars || []),
-              ].map((envVar) => {
-                const isOptional = (
-                  configAdapter.optionalEnvVars || []
-                ).includes(envVar);
-                const isSecret =
-                  envVar.toLowerCase().includes('secret') ||
-                  envVar.toLowerCase().includes('password') ||
-                  envVar.toLowerCase().includes('token') ||
-                  envVar.toLowerCase().includes('key');
-                const visible = revealedCredentials[envVar] === true;
-                return (
-                  <div key={envVar}>
-                    <label
-                      htmlFor={`cred-${envVar}`}
-                      className="mb-1 block text-sm font-medium"
-                    >
-                      {formatEnvVarLabel(envVar)}
-                      {isOptional && (
-                        <span className="ml-1 font-normal text-[var(--text-3)]">
-                          (optional)
-                        </span>
-                      )}
-                    </label>
-                    <div className="relative">
-                      <input
-                        id={`cred-${envVar}`}
-                        type={isSecret && !visible ? 'password' : 'text'}
-                        value={credentialValues[envVar] || ''}
-                        onChange={(e) =>
-                          setCredentialValues((prev) => ({
-                            ...prev,
-                            [envVar]: e.target.value,
-                          }))
-                        }
-                        placeholder={envVar}
-                        className={cn(
-                          'w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--border-strong)] focus:outline-none',
-                          isSecret && 'pr-16'
-                        )}
-                      />
-                      {isSecret && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setRevealedCredentials((prev) => ({
-                              ...prev,
-                              [envVar]: !visible,
-                            }))
-                          }
-                          className="absolute inset-y-0 right-0 px-2 text-xs text-[var(--text-3)] hover:text-[var(--text)]"
-                          aria-label={visible ? 'Hide value' : 'Show value'}
-                        >
-                          {visible ? 'Hide' : 'Show'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            </div>
-
-            {configError && (
-              <p role="alert" className="mx-6 mb-3 rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">
-                {configError}
-              </p>
-            )}
-
-            {/* Pinned footer — always visible, never scrolls out of reach. */}
-            <div className="flex shrink-0 justify-end gap-3 border-t border-[var(--border)] p-6 py-4">
-              {/* Skipping only works when the address has no variables: the
-                  backend cannot create a connector whose URL is still
-                  {{SAP_HANA_HOST}}, and used to answer 400 after the modal
-                  had already closed. */}
-              {addressVars(configAdapter).length === 0 && (
-                <Button
-                  variant="secondary"
-                  disabled={importing === configAdapter.slug}
-                  onClick={() => doImport(configAdapter.slug)}
-                >
-                  Skip for now
-                </Button>
-              )}
-              <Button
-                onClick={handleConfigSubmit}
-                disabled={
-                  importing === configAdapter.slug ||
-                  configAdapter.requiredEnvVars.some((v) => !credentialValues[v]?.trim())
-                }
-              >
-                Import with credentials
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MCP Server Assignment Modal */}
-      {importedConnector && token && (
-        <McpAssignModal
-          connectorId={importedConnector.id}
-          connectorName={importedConnector.name}
-          token={token}
-          onDone={(mcpServerId) => {
-            setImportedConnector(null);
-            if (mcpServerId) {
-              router.push(`/mcp-server/${mcpServerId}`);
-            } else {
-              router.push(`/connectors/${importedConnector.id}`);
-            }
-          }}
-          onClose={() => {
-            setImportedConnector(null);
-            router.push(`/connectors/${importedConnector.id}`);
-          }}
-        />
-      )}
     </AppShell>
   );
-}
-
-/**
- * One line for the banner: the import message, plus what the backend's
- * test call found. A wrong token used to surface days later, from the agent;
- * now it is on screen while the value is still in the form.
- */
-function describeImport(
-  message: string,
-  probe: { ok: boolean; toolName: string; status?: number | null; message?: string } | null | undefined,
-): string {
-  if (!probe) return message;
-  if (probe.ok) return `${message} Test call ${probe.toolName} succeeded — the connector works.`;
-  const status = probe.status ? ` (HTTP ${probe.status})` : '';
-  return `${message} But the test call ${probe.toolName} failed${status}: ${probe.message ?? 'no details'}. Check the credentials in the connector editor.`;
-}
-
-/** Convert ENV_VAR_NAME to a human-readable label */
-function formatEnvVarLabel(envVar: string): string {
-  return envVar
-    .replace(/^(PAYONE_|DHL_|IS24_|WECLAPP_|DESTATIS_|TEAMVIEWER_|MFR_|FASTBILL_|BILLOMAT_|DATEV_|SCOPEVISIO_|KENJO_)/, '')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function PlusIcon() {
@@ -926,15 +611,6 @@ function DownloadIcon() {
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" x2="12" y1="15" y2="3" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
     </svg>
   );
 }
