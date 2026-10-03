@@ -351,7 +351,8 @@ export class AdaptersService {
         kind,
         toolName: call.toolName,
         status: status ?? null,
-        message: `${upstream} ${hint}`.trim(),
+        // The hint is what the user acts on; the provider's own words follow.
+        message: hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream,
       };
     }
   }
@@ -534,7 +535,8 @@ export class AdaptersService {
         toolName: call.toolName,
         durationMs: Date.now() - started,
         status: status ?? null,
-        message: `${upstream} ${hint}`.trim(),
+        // The hint is what the user acts on; the provider's own words follow.
+        message: hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream,
       };
     }
   }

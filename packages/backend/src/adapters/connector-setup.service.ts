@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AdaptersService } from './adapters.service';
-import { describeAdapterEnvVars } from './env-var-meta';
+import { describeAdapterEnvVars, needsBrowserAuthorization } from './env-var-meta';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { SecurityEvents, SecurityEventService } from '../audit/security-event.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
@@ -215,7 +215,11 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         whatTheUserDoes:
           state.status === 'needs_authorization'
             ? `Open the link, then sign in to ${definition.name} and approve. It takes a minute.`
-            : `Open the link and enter ${state.missing.map((m) => descriptors.get(m)?.label ?? m).join(', ')}.`,
+            : `Open the link and enter ${state.missing.map((m) => descriptors.get(m)?.label ?? m).join(', ')}${
+                needsBrowserAuthorization(definition)
+                  ? `, then sign in to ${definition.name} and approve`
+                  : ''
+              }.`,
         finishSetupUrl: link,
         linkValidFor: '30 minutes, for this user only',
         next: 'Give the user the link. When they say they are done, call setup_get_status.',

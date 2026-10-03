@@ -148,7 +148,9 @@ export class ProductEventService {
  * a client name or a server id, nothing that should ever be a secret, and a
  * fixed key set is what keeps an untrusted body from choosing property names.
  */
-const METADATA_KEYS = ['client', 'serverId', 'connectorId', 'adapterSlug'] as const;
+// `kind`: what a setup involved or why its check failed ('credentials',
+// 'auth'); `via`: where a connector was set up ('mcp' when from the chat).
+const METADATA_KEYS = ['client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via'] as const;
 
 function boundMetadata(
   metadata: Record<string, unknown> | null | undefined,

@@ -126,6 +126,7 @@ describe('ConnectorSetupService — install', () => {
     const { service, ctx } = build();
     const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'ks' } });
     expect(out.body.status).toBe('needs_input'); // the shared secret still has to be entered on the page
+    expect(out.body.whatTheUserDoes).toMatch(/enter Shared secret, then sign in to .+ and approve\./);
     expect(out.body.finishSetupUrl).toBeDefined();
   });
 
