@@ -34,6 +34,26 @@ describe('sellsy adapter — static spec conformance', () => {
     expect(toolNames).toContain('sellsy_search_invoices');
     expect(toolNames).toContain('sellsy_list_invoices');
   });
+
+  it("only offers the sort fields Sellsy's spec accepts", () => {
+    const props = (name: string) =>
+      (a.tools.find((t) => t.name === name) as unknown as {
+        parameters: { properties: Record<string, { enum?: string[] }> };
+      }).parameters.properties;
+    expect(props('sellsy_list_companies').order.enum).toEqual(['name', 'id', 'created_at', 'updated_at']);
+    expect(props('sellsy_list_contacts').order.enum).toEqual(['id', 'name', 'created_at']);
+    expect(props('sellsy_list_companies').direction.enum).toEqual(['asc', 'desc']);
+  });
+
+  it("tells the model the company filter keys Sellsy accepts", () => {
+    const t = a.tools.find((x) => x.name === 'sellsy_search_companies') as unknown as {
+      parameters: { properties: { filters: { description: string } } };
+    };
+    const d = t.parameters.properties.filters.description;
+    expect(d).toContain('updated_at');
+    expect(d).toContain('date-time');
+    expect(d).not.toContain('"2026-01-01"}');
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

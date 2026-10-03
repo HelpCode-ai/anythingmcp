@@ -30,10 +30,25 @@ describe('clockodo adapter — static spec conformance', () => {
     expect(a.connector.headers?.['X-Clockodo-External-Application']).toMatch(/^AnythingMCP;/);
   });
 
-  it("reads entries from v2 and master data from the root", () => {
+  it("uses the current versioned routes, not the ones retired on 1 May 2026", () => {
     const byName = Object.fromEntries(a.tools.map((t) => [t.name, t.endpointMapping.path]));
     expect(byName.clockodo_list_entries).toBe('/v2/entries');
-    expect(byName.clockodo_list_customers).toBe('/customers');
+    expect(byName.clockodo_get_entry).toBe('/v2/entries/{id}');
+    expect(byName.clockodo_create_entry).toBe('/v2/entries');
+    expect(byName.clockodo_list_users).toBe('/v3/users');
+    expect(byName.clockodo_list_customers).toBe('/v3/customers');
+    expect(byName.clockodo_list_projects).toBe('/v4/projects');
+    expect(byName.clockodo_list_services).toBe('/v4/services');
+    expect(byName.clockodo_list_absences).toBe('/v4/absences');
+    expect(a.connector.healthcheckPath).toBe('/v3/users');
+  });
+
+  it("filters v4 absences with the bracketed array filters", () => {
+    const t = a.tools.find((x) => x.name === 'clockodo_list_absences');
+    expect(t?.endpointMapping.queryParams).toEqual({
+      'filter[year][]': '$year',
+      'filter[users_id][]': '$users_id',
+    });
   });
 
   it("requires both credentials", () => {

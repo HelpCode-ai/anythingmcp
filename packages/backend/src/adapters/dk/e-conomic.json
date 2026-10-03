@@ -119,7 +119,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with `-` for descending."
+            "description": "Sort field, prefix with `-` for descending, e.g. -date, bookedInvoiceNumber or customer.customerNumber. dueDate is not sortable (e-conomic answers 400)."
           }
         }
       },
@@ -170,7 +170,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, e.g. dueDate."
+            "description": "Sort field, prefix with `-` for descending, e.g. date, -date, bookedInvoiceNumber or customer.customerNumber. dueDate is not sortable (e-conomic answers 400)."
           }
         }
       },

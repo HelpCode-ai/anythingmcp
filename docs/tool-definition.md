@@ -37,7 +37,8 @@ leaving an unresolved `{{IS24_CONSUMER_KEY}}` in the credentials.
 
 Each entry in `tools` needs a string `name`, a useful `description`, and its
 JSON-Schema `parameters` when it accepts input. Parameter properties should
-include descriptions for the model.
+include descriptions for the model. `"enabled": false` installs a tool switched
+off, for writes a workspace should turn on deliberately.
 
 See [connector configuration](#connector)
 and [authentication](#authentication) for the nested connector fields.
@@ -94,6 +95,26 @@ recompute it.
 The body is signed exactly as it will be sent — signing a different rendering
 of the same object is the usual way an HMAC integration fails with an error
 that blames the key.
+
+### MCP adapters (a vendor's own MCP server)
+
+When a vendor already runs an official MCP server, the adapter bridges it
+instead of describing its API again. `connector.type` is `MCP`, `baseUrl` is
+the server's MCP endpoint (variables allowed, e.g.
+`https://{{SPLUNK_HOST}}:8089/services/mcp`), and authentication is whatever
+the server accepts (usually `BEARER_TOKEN`).
+
+At install AnythingMCP asks that server for its tools (`tools/list`) and
+installs what it lists, so a workspace gets exactly the tools of the server
+version it runs. The adapter's `tools` array is a snapshot: it is what the
+catalog shows, the fallback installed when the server cannot be reached at
+install, and the place for policy. A snapshot tool with `"enabled": false`
+installs switched off, and `annotations` set there fill the hints the server
+leaves out (the server's own hints win).
+Each tool's `endpointMapping` is `{ "method": "<tool name>", "path": "/mcp" }`.
+Listing the tools is also the install check, so no `probe` is needed, and a
+catalog update never rewrites or retires the tools of an MCP adapter: the
+server owns them. See `intl/splunk.json`.
 
 ### DATABASE adapters
 

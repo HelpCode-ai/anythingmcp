@@ -6,7 +6,7 @@
   "category": "real-estate",
   "icon": "propstack",
   "docsUrl": "https://docs.propstack.de/",
-  "instructions": "**Getting a key**\n1. Sign in to Propstack as an administrator and open **Einstellungen → API**.\n2. Generate an **API-Key** and put it in `PROPSTACK_API_KEY`. The key is account-wide and carries the permissions of the account it belongs to — treat it as a password, because whoever holds it can read the whole customer base.\n\n**The key travels in an `X-API-KEY` header.** No Bearer, no query parameter.\n\n**Properties are the centre of this API.** A Propstack `property` is a listing — flat, house, commercial unit — carrying its address, price, area, room count, marketing type (sale or rent) and status. `propstack_list_properties` filters by those; `propstack_get_property` returns the full record with images and documents.\n\n**Contacts and enquiries are separate objects.** A *contact* is a person; an *enquiry* (Anfrage) is that person asking about a specific property. A question about interest in a listing wants enquiries, not contacts.\n\n**Expand what you need.** Many list responses return related objects only as ids. Pass `expand=1` where the tool offers it to get readable nested objects instead of a second round of calls.\n\n**Paging** is `page` (1-based) and `per` (default 20, larger values allowed). The response carries the total count in the `X-Total-Count` header.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: api.propstack.de is public with a valid certificate.",
+  "instructions": "**Getting a key**\n1. Sign in to Propstack as an administrator and open **Verwaltung → API-Schlüssel** (crm.propstack.de/app/admin/api_keys).\n2. Create an **API V1** key, give it the read permissions the agent needs, and put it in `PROPSTACK_API_KEY`. The key carries the permissions set there — treat it as a password, because whoever holds it can read the whole customer base.\n\n**The key travels in an `X-API-KEY` header.** No Bearer. (Propstack also accepts an `api_key` query parameter; this adapter does not use it, so the key stays out of URLs and logs.)\n\n**Properties are the centre of this API.** Propstack's API calls a listing a *unit* (`/v1/units`, Objekte in the UI) — flat, house, commercial unit — carrying its address, price, area, room count, marketing type (`BUY` or `RENT`) and status. `propstack_list_properties` filters by those (`status` takes the account's own status ids, `q` is a full-text search); `propstack_get_property` returns the full record with images and documents.\n\n**Contacts and enquiries are separate.** A *contact* is a person; an *enquiry* (Anfrage) is that person asking about a specific property, stored by Propstack as an activity of type enquiry. A question about interest in a listing wants enquiries, not contacts.\n\n**Expand what you need.** Many list responses return related objects only as ids. Pass `expand=1` where the tool offers it to get readable nested objects instead of a second round of calls.\n\n**Paging** is `page` (1-based) and `per` (default 20; stay at or below 500 to avoid timeouts). Listings and contacts are requested with `with_meta=1` and activities carry it anyway, so those responses report the total in `meta.total_count`. Projects and brokers are returned in one list without paging.\n\n**Checked against the docs, not a live account.** Paths and parameters follow docs.propstack.de (API v1), and every path answers on api.propstack.de, but no call has been made with a real key. An unknown path makes Propstack redirect to its web app instead of returning a 404.\n\n**Cloud reachability**: api.propstack.de is public with a valid certificate.",
   "requiredEnvVars": [
     "PROPSTACK_API_KEY"
   ],
@@ -22,7 +22,7 @@
     "headers": {
       "Accept": "application/json"
     },
-    "healthcheckPath": "/properties?per=1"
+    "healthcheckPath": "/units?per=1"
   },
   "probe": {
     "tool": "propstack_list_properties"
@@ -30,7 +30,7 @@
   "tools": [
     {
       "name": "propstack_list_properties",
-      "description": "List property listings with their address, price, living area, room count, marketing type and status. The main query for 'what do we have on the market'.",
+      "description": "List property listings (Propstack calls them units/Objekte) with their address, price, living area, room count, marketing type and status. The main query for 'what do we have on the market'.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -40,31 +40,46 @@
           },
           "per": {
             "type": "number",
-            "description": "Rows per page (default 20)."
+            "description": "Rows per page (default 20; keep it at 500 or below to avoid timeouts)."
           },
-          "status_id": {
-            "type": "number",
-            "description": "Restrict to one status id, e.g. active or reserved."
+          "status": {
+            "type": "string",
+            "description": "Status id the listing must be in; several ids comma-separated. Status ids are account-specific (Propstack: Objekt-Stati)."
           },
           "marketing_type": {
             "type": "string",
+            "enum": [
+              "BUY",
+              "RENT"
+            ],
             "description": "`BUY` for sale listings or `RENT` for rentals."
+          },
+          "q": {
+            "type": "string",
+            "description": "Full-text search over unit_id, street, zip_code, city, district and exposee_id."
+          },
+          "project_id": {
+            "type": "number",
+            "description": "Only the units of one project."
           },
           "expand": {
             "type": "number",
-            "description": "Pass 1 to expand related objects instead of returning bare ids."
+            "description": "Pass 1 for the detailed JSON, custom fields included."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/properties",
+        "path": "/units",
         "queryParams": {
           "page": "$page",
           "per": "$per",
-          "status_id": "$status_id",
+          "status": "$status",
           "marketing_type": "$marketing_type",
-          "expand": "$expand"
+          "q": "$q",
+          "project_id": "$project_id",
+          "expand": "$expand",
+          "with_meta": "1"
         }
       }
     },
@@ -85,7 +100,10 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/properties/{id}"
+        "path": "/units/{id}",
+        "queryParams": {
+          "new": "1"
+        }
       }
     },
     {
@@ -102,9 +120,9 @@
             "type": "number",
             "description": "Rows per page (default 20)."
           },
-          "search": {
+          "q": {
             "type": "string",
-            "description": "Search fragment matched against name and e-mail."
+            "description": "Search term matched against first name, last name, e-mails, address and phone numbers."
           },
           "expand": {
             "type": "number",
@@ -118,8 +136,9 @@
         "queryParams": {
           "page": "$page",
           "per": "$per",
-          "search": "$search",
-          "expand": "$expand"
+          "q": "$q",
+          "expand": "$expand",
+          "with_meta": "1"
         }
       }
     },
@@ -145,7 +164,7 @@
     },
     {
       "name": "propstack_list_enquiries",
-      "description": "List enquiries (Anfragen) — a person asking about a specific listing — with their date, source, status and the property and contact involved.",
+      "description": "List enquiries (Anfragen) — a person asking about a specific listing. Propstack stores them as activities of type enquiry; each row carries its date, source and the linked contact and property.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -169,8 +188,9 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/property_requests",
+        "path": "/activities",
         "queryParams": {
+          "only_inquiries": "1",
           "page": "$page",
           "per": "$per",
           "property_id": "$property_id",

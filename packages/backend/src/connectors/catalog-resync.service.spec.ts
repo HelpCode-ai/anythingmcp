@@ -430,3 +430,49 @@ describe('CatalogResyncService — the user\'s own tools are never touched', () 
     expect(tx.connector.update).not.toHaveBeenCalled();
   });
 });
+
+describe('CatalogResyncService.computeDiff for an MCP adapter', () => {
+  // The workspace's own MCP server owns the tool list: a catalog snapshot that
+  // differs from it (another server version) must not be offered as an update,
+  // and tools the server added must not be retired.
+  it('never adds, rewrites or retires the tools of an MCP adapter', async () => {
+    const adapter = getAdapter('splunk')!;
+    const connector = {
+      id: 'c1',
+      name: adapter.connector.name,
+      baseUrl: 'https://acme.splunkcloud.com:8089/services/mcp',
+      instructions: adapter.instructions ?? null,
+      createdAt: new Date('2026-10-01T00:00:00Z'),
+      config: {
+        adapterSlug: 'splunk',
+        adapterVersion: adapter.version,
+        instructionsBaseline: hashInstructions(adapter.instructions),
+      },
+      tools: [
+        {
+          id: 't1',
+          name: 'splunk_run_query',
+          description: 'what this server version says',
+          parameters: { type: 'object', properties: { query: { type: 'string' } } },
+          endpointMapping: { method: 'splunk_run_query', path: '/mcp' },
+          origin: 'catalog',
+          deprecatedAt: null,
+        },
+        {
+          id: 't2',
+          name: 'splunk_tool_from_a_newer_server',
+          description: 'new upstream tool',
+          parameters: {},
+          endpointMapping: { method: 'splunk_tool_from_a_newer_server', path: '/mcp' },
+          origin: 'catalog',
+          deprecatedAt: null,
+        },
+      ],
+    };
+    const diff = await serviceFor(connector).computeDiff('c1');
+    expect(diff!.updated).toEqual([]);
+    expect(diff!.added).toEqual([]);
+    expect(diff!.removed).toEqual([]);
+    expect(diff!.isUpToDate).toBe(true);
+  });
+});

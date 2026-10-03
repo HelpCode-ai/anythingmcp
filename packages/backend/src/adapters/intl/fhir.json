@@ -6,7 +6,7 @@
   "category": "healthcare",
   "icon": "fhir",
   "docsUrl": "https://hl7.org/fhir/R4/",
-  "instructions": "**This is a generic FHIR R4 client, not a vendor connector.** Point it at any R4 server — a hospital's HAPI instance, a national test server, a vendor's sandbox — and it speaks the standard.\n1. Set `FHIR_BASE_URL` to the server's base, the URL that answers `/metadata`. No trailing slash.\n2. Set `FHIR_ACCESS_TOKEN` to a bearer token. Most real deployments use SMART on FHIR, whose authorisation flow issues short-lived tokens; obtain one and paste it here, or use a long-lived service token if the server offers one. A server that needs no auth still needs a placeholder here — put anything.\n\n**Start with `fhir_get_capability_statement`.** FHIR servers differ enormously in which resource types they hold and which search parameters they support, and `/metadata` is the machine-readable answer. Guessing produces a lot of confident 400s.\n\n**Search parameters are per resource type**, and modifiers matter: `name:contains=smith`, `birthdate=ge1980-01-01`, `code=http://loinc.org|85354-9`, `_lastUpdated=gt2026-09-01`. Prefixes on numbers and dates are `eq`, `ne`, `gt`, `lt`, `ge`, `le`. A token search takes `system|code`, and the pipe is significant.\n\n**Results are a Bundle.** The rows live in `entry[].resource`, the count in `total` (which some servers omit), and paging in `link[]` with `relation: \"next\"` — follow that URL rather than computing an offset. `_count` requests a page size; servers are free to ignore it.\n\n**`_include` and `_revinclude` fetch related resources in the same Bundle**: `_include=Observation:patient` brings each observation's Patient along.\n\n**This is patient data.** Anything read here is almost certainly health information under GDPR Article 9 or HIPAA. Whether an LLM may see it is a question about your legal basis and your processor agreements, not about this connector — decide it before installing, not after.\n\n**Read-only by design**: no create, no update, no delete. A clinical record is not a thing an agent should write into by accident.",
+  "instructions": "**This is a generic FHIR R4 client, not a vendor connector.** Point it at any R4 server — a hospital's HAPI instance, a national test server, a vendor's sandbox — and it speaks the standard.\n1. Set `FHIR_BASE_URL` to the server's base, the URL that answers `/metadata`. No trailing slash.\n2. Set `FHIR_ACCESS_TOKEN` to a bearer token. Most real deployments use SMART on FHIR, whose authorisation flow issues short-lived tokens; obtain one and paste it here, or use a long-lived service token if the server offers one. A server that needs no auth still needs a placeholder here — put anything.\n\n**Start with `fhir_get_capability_statement`.** FHIR servers differ enormously in which resource types they hold and which search parameters they support, and `/metadata` is the machine-readable answer. Guessing produces a lot of confident 400s.\n\n**Search parameters are per resource type**, and modifiers matter: `name:contains=smith`, `birthdate=ge1980-01-01`, `code=http://loinc.org|85354-9`, `_lastUpdated=gt2026-09-01`. Prefixes on numbers and dates are `eq`, `ne`, `gt`, `lt`, `ge`, `le`. A token search takes `system|code`, and the pipe is significant.\n\n**Results are a Bundle.** The rows live in `entry[].resource`, the count in `total` (which some servers omit), and paging in `link[]` with `relation: \"next\"` — follow that link rather than computing an offset: pass its query string to `fhir_next_page` when it points at the server base (HAPI's `?_getpages=…`), or to `fhir_search` with the same resource type when it points at a resource path. `_count` requests a page size; servers are free to ignore it.\n\n**`_include` and `_revinclude` fetch related resources in the same Bundle**: `_include=Observation:patient` brings each observation's Patient along.\n\n**This is patient data.** Anything read here is almost certainly health information under GDPR Article 9 or HIPAA. Whether an LLM may see it is a question about your legal basis and your processor agreements, not about this connector — decide it before installing, not after.\n\n**Read-only by design**: no create, no update, no delete. A clinical record is not a thing an agent should write into by accident.",
   "requiredEnvVars": [
     "FHIR_BASE_URL",
     "FHIR_ACCESS_TOKEN"
@@ -79,6 +79,29 @@
           "_count": "$count",
           "_sort": "$sort",
           "_include": "$include"
+        }
+      }
+    },
+    {
+      "name": "fhir_next_page",
+      "description": "Fetch the next page of a search result. Take the Bundle's `link` entry with `relation: \"next\"` and pass the part of its URL after `?`. Use this when that URL points at the server base with no resource type (HAPI's `…/baseR4?_getpages=…&_getpagesoffset=…`). When the next URL is on a resource path (`…/Observation?…`), call fhir_search with that resourceType and the same query instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Query string of the next link without the leading `?`, copied unchanged, e.g. `_getpages=43a7…&_getpagesoffset=20&_count=20&_bundletype=searchset`."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "__rawquery": "$query"
         }
       }
     },

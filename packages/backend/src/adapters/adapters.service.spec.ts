@@ -421,3 +421,30 @@ describe('AdaptersService.verifyCredentials on an existing connector', () => {
     expect(execute.mock.calls[0][0].envVars).toEqual({ LEXWARE_API_KEY: 'stored-key' });
   });
 });
+
+describe('AdaptersService unlisted adapters', () => {
+  const { getAdapter } = jest.requireActual('./catalog');
+
+  function service(mode?: string) {
+    const svc = Object.create(AdaptersService.prototype) as AdaptersService;
+    (svc as any).configService = { get: (k: string) => (k === 'DEPLOYMENT_MODE' ? mode : undefined) };
+    return svc;
+  }
+
+  // Did not match the vendor's API and could not be verified (Oct 2026 audit).
+  const unlisted = ['teamsystem', 'sage-100', 'elo', 'cas-genesisworld', 'haufe-x360', 'zucchetti'];
+
+  it('are neither listed nor installable, on the cloud or on self-host', () => {
+    for (const mode of ['cloud', undefined]) {
+      const listed = service(mode).listAll().map((a) => a.slug);
+      for (const slug of unlisted) {
+        expect({ mode, slug, listed: listed.includes(slug) }).toEqual({ mode, slug, listed: false });
+        expect(() => service(mode).getBySlug(slug)).toThrow(/not found/);
+      }
+    }
+  });
+
+  it('stay resolvable by slug, so connectors installed earlier keep their icon and re-sync', () => {
+    for (const slug of unlisted) expect(getAdapter(slug)?.unlisted).toBe(true);
+  });
+});

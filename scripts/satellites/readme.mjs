@@ -220,7 +220,9 @@ function connectorReadme(sat, ctx) {
   const vars = a.requiredEnvVars ?? [];
   const writes = tools.filter((x) => access(x, a.connector?.type) === 'write').map((x) => x.name);
   const objects = sat.objects?.[lang] ?? sat.objects?.en ?? sat.about.split('. ').pop().replace(/\.$/, '');
-  const title = `${sat.system} MCP Server`;
+  // `title` for a satellite in front of a vendor's own MCP server, so the repo
+  // is not named like the vendor's product (Splunk's app is "Splunk MCP Server").
+  const title = sat.title ?? `${sat.system} MCP Server`;
   const introText = t.intro(title, tools.length, sat.system, lcFirst(objects), writes.length);
   const c = content[lang] ?? {};
   const cEn = content.en ?? {};
@@ -707,9 +709,12 @@ function odataReadme(sat, ctx) {
 
 function parseRows(md) {
   if (!md) return [];
-  return md
-    .split('\n')
-    .filter((l) => l.startsWith('|') && !/^\|\s*-/.test(l) && !/^\|\s*Problem/.test(l))
+  const lines = md.split('\n');
+  const isSeparator = (l) => /^\|\s*:?-/.test(l ?? '');
+  return lines
+    // Body rows only: not the separator, and not the header row above it,
+    // whatever it is called ("Problem", "Symptom", …).
+    .filter((l, i) => l.startsWith('|') && !isSeparator(l) && !isSeparator(lines[i + 1]))
     .map((l) => l.split('|').slice(1, -1).map((x) => x.trim()));
 }
 

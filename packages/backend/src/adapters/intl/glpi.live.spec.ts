@@ -46,6 +46,13 @@ describe('glpi adapter — static spec conformance', () => {
     expect(a.connector.authConfig?.loginBody).toEqual({});
   });
 
+  it("sends forcedisplay as a repeated array parameter, one field per entry", () => {
+    const t = a.tools.find((x) => x.name === 'glpi_search');
+    const qp = t?.endpointMapping.queryParams as Record<string, string>;
+    expect(qp['forcedisplay[]']).toBe('$forcedisplay');
+    expect(qp).not.toHaveProperty('forcedisplay[0]');
+  });
+
   it("ships the search-option map, without which glpi_search is unusable", () => {
     expect(toolNames).toContain('glpi_list_search_options');
   });

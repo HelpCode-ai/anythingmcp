@@ -111,7 +111,8 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/resource/{doctype}/{name}"
+        "path": "/resource/{doctype}/{name}",
+        "encodePathParams": true
       }
     },
     {
@@ -144,7 +145,7 @@
     },
     {
       "name": "erpnext_get_doctype_meta",
-      "description": "Describe a DocType: every field with its type, label, options and whether it is required. Read this before composing a filter against an unfamiliar DocType.",
+      "description": "Describe a DocType: every field (standard and custom) with its type, label, options and whether it is required, under docs[0].fields. Read this before composing a filter against an unfamiliar DocType.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -159,7 +160,10 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/resource/DocType/{doctype}"
+        "path": "/method/frappe.desk.form.load.getdoctype",
+        "queryParams": {
+          "doctype": "$doctype"
+        }
       }
     },
     {
@@ -186,7 +190,7 @@
         "method": "GET",
         "path": "/resource/Customer",
         "queryParams": {
-          "fields": "[\"name\",\"customer_name\",\"customer_group\",\"territory\",\"default_currency\",\"tax_id\"]",
+          "fields": "[\"name\",\"customer_name\",\"customer_group\",\"territory\",\"default_currency\",\"tax_id\",\"payment_terms\"]",
           "filters": "$filters",
           "limit_page_length": "$limit_page_length",
           "limit_start": "$limit_start"
@@ -259,7 +263,7 @@
     },
     {
       "name": "erpnext_list_items",
-      "description": "List items from the catalogue with their code, name, group, stock UOM and default rate.",
+      "description": "List items from the catalogue with their code, name, group, stock UOM, stock flag and disabled flag. `standard_rate` is only the rate entered when the item was created, not the current price: selling and buying prices live in the Item Price DocType (erpnext_list_documents with doctype Item Price).",
       "parameters": {
         "type": "object",
         "properties": {

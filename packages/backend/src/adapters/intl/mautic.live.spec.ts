@@ -39,6 +39,16 @@ describe('mautic adapter — static spec conformance', () => {
   it("exposes no write tool", () => {
     expect(a.tools.every((t) => t.endpointMapping.method === 'GET')).toBe(true);
   });
+
+  it("searches a segment by alias with an embedded placeholder", () => {
+    const t = a.tools.find((x) => x.name === 'mautic_list_segment_contacts')!;
+    expect((t.endpointMapping.queryParams as Record<string, string>).search).toBe('segment:${segmentAlias}');
+  });
+
+  it("filters the activity timeline with filters[search]", () => {
+    const t = a.tools.find((x) => x.name === 'mautic_get_contact_activity')!;
+    expect(t.endpointMapping.queryParams).toHaveProperty(['filters[search]'], '$search');
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

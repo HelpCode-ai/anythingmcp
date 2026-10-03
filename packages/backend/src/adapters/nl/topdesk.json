@@ -6,7 +6,7 @@
   "category": "itsm",
   "icon": "topdesk",
   "docsUrl": "https://developers.topdesk.com/",
-  "instructions": "**Use an application password, never the operator's own.**\n1. In TOPdesk open **Modules → Supporting Files → Operator Management**, pick the operator the integration should act as, and on its card create an **Application Password**. TOPdesk shows it once.\n2. Give that operator exactly the permission groups the agent needs — TOPdesk enforces them per module, and a missing one produces a 403 rather than an empty list, which is at least honest.\n3. Set `TOPDESK_URL` to your instance root (e.g. `https://mycompany.topdesk.net`, no trailing slash), `TOPDESK_USERNAME` to the operator login name and `TOPDESK_APP_PASSWORD` to the generated value.\n\n**FIQL is the query language, and it is worth learning.** `query=status==firstLine;caller.branch.name==Berlin` filters server-side. `;` is AND, `,` is OR, `==` is equals, `=lt=`/`=gt=` compare, `=in=` takes a list. The tools below pass a `query` string through verbatim.\n\n**Paging** is `start` and `page_size` (max 100 on most endpoints), not page numbers. TOPdesk returns 206 Partial Content when more rows exist and 204 No Content when the result is empty — a 204 with no body is a successful search that matched nothing.\n\n**`fields` cuts the response down.** Incident records are large; `fields=id,number,briefDescription,status,caller.dynamicName` keeps the answer readable.\n\n**Writes**: `topdesk_create_incident` opens a real incident, which notifies whoever the process assigns it to.",
+  "instructions": "**Use an application password, never the operator's own.**\n1. In TOPdesk open **Modules → Supporting Files → Operator Management**, pick the operator the integration should act as, and on its card create an **Application Password**. TOPdesk shows it once.\n2. Give that operator exactly the permission groups the agent needs — TOPdesk enforces them per module, and a missing one produces a 403 rather than an empty list, which is at least honest.\n3. Set `TOPDESK_URL` to your instance root (e.g. `https://mycompany.topdesk.net`, no trailing slash), `TOPDESK_USERNAME` to the operator login name and `TOPDESK_APP_PASSWORD` to the generated value.\n\n**FIQL is the query language, and it is worth learning.** `query=status==firstLine;caller.branch.name==Berlin` filters server-side. `;` is AND, `,` is OR, `==` is equals, `=lt=`/`=gt=` compare, `=in=` takes a list. The tools below pass a `query` string through verbatim.\n\n**Paging is an offset, not a page number, and the parameter names differ by endpoint**: incidents and changes take `pageStart` and `pageSize`; persons, operators and an incident's progress trail take `start` and `page_size` (max 100); branches are not paged; assets take `pageSize`. TOPdesk returns 206 Partial Content when more rows exist and 204 No Content when the result is empty — a 204 with no body is a successful search that matched nothing.\n\n**`fields` cuts the response down.** Incident records are large; `fields=id,number,briefDescription,status,caller.dynamicName` keeps the answer readable.\n\n**Writes**: `topdesk_create_incident` opens a real incident, which notifies whoever the process assigns it to.",
   "requiredEnvVars": [
     "TOPDESK_URL",
     "TOPDESK_USERNAME",
@@ -56,17 +56,17 @@
             "type": "string",
             "description": "Comma-separated fields to return, e.g. id,number,briefDescription,status."
           },
-          "page_size": {
+          "pageSize": {
             "type": "number",
-            "description": "Rows per page, max 100."
+            "description": "Rows per page, 1-10000 (default 10)."
           },
-          "start": {
+          "pageStart": {
             "type": "number",
-            "description": "Rows to skip, for paging."
+            "description": "Rows to skip, for paging (default 0)."
           },
-          "order_by": {
+          "sort": {
             "type": "string",
-            "description": "Sort expression, e.g. `creationDate:desc`."
+            "description": "Sort expression, field plus :asc or :desc, e.g. `creationDate:desc` or `targetDate:asc,creationDate:desc`."
           }
         }
       },
@@ -76,21 +76,21 @@
         "queryParams": {
           "query": "$query",
           "fields": "$fields",
-          "page_size": "$page_size",
-          "start": "$start",
-          "order_by": "$order_by"
+          "pageSize": "$pageSize",
+          "pageStart": "$pageStart",
+          "sort": "$sort"
         }
       }
     },
     {
       "name": "topdesk_get_incident",
-      "description": "Read one incident by its TOPdesk number or UUID, with its caller, category, status, operator group, SLA target dates and request text.",
+      "description": "Read one incident by its TOPdesk number, with its caller, category, status, operator group, SLA target dates and request text.",
       "parameters": {
         "type": "object",
         "properties": {
           "number": {
             "type": "string",
-            "description": "Incident number (e.g. I 2609 123) or the incident UUID."
+            "description": "Incident number as TOPdesk shows it, e.g. I 2609 123 (not the UUID)."
           }
         },
         "required": [
@@ -144,13 +144,13 @@
             "type": "string",
             "description": "FIQL query over change fields."
           },
-          "page_size": {
+          "pageSize": {
             "type": "number",
-            "description": "Rows per page, max 100."
+            "description": "Rows per page (default 1000, max 5000)."
           },
-          "start": {
+          "pageStart": {
             "type": "number",
-            "description": "Rows to skip, for paging."
+            "description": "Rows to skip, for paging (default 0)."
           }
         }
       },
@@ -159,8 +159,8 @@
         "path": "/operatorChanges",
         "queryParams": {
           "query": "$query",
-          "page_size": "$page_size",
-          "start": "$start"
+          "pageSize": "$pageSize",
+          "pageStart": "$pageStart"
         }
       }
     },
@@ -193,7 +193,7 @@
         "path": "/persons",
         "queryParams": {
           "query": "$query",
-          "fields": "$fields",
+          "$fields": "$fields",
           "page_size": "$page_size",
           "start": "$start"
         }
@@ -231,21 +231,13 @@
     },
     {
       "name": "topdesk_list_branches",
-      "description": "List branches — the sites or client organisations TOPdesk groups people and assets under — with their name, address and client reference number.",
+      "description": "List branches — the sites or client organisations TOPdesk groups people and assets under — with their name, address and client reference number. Not paged: filter with `query` to narrow it down.",
       "parameters": {
         "type": "object",
         "properties": {
           "query": {
             "type": "string",
             "description": "FIQL query over branch fields."
-          },
-          "page_size": {
-            "type": "number",
-            "description": "Rows per page, max 100."
-          },
-          "start": {
-            "type": "number",
-            "description": "Rows to skip, for paging."
           }
         }
       },
@@ -253,9 +245,7 @@
         "method": "GET",
         "path": "/branches",
         "queryParams": {
-          "query": "$query",
-          "page_size": "$page_size",
-          "start": "$start"
+          "query": "$query"
         }
       }
     },
@@ -297,27 +287,28 @@
         "properties": {
           "briefDescription": {
             "type": "string",
-            "description": "One-line summary — the incident's title."
+            "description": "One-line summary, the incident's title (max 80 characters).",
+            "maxLength": 80
           },
           "callerId": {
             "type": "string",
-            "description": "UUID of the person the incident is raised for, from topdesk_list_persons."
+            "description": "UUID of a registered person (with the Caller box ticked on their card), from topdesk_list_persons."
           },
           "request": {
             "type": "string",
             "description": "Full request text. HTML is accepted."
           },
-          "operatorGroupId": {
-            "type": "string",
-            "description": "UUID of the operator group to route the incident to."
+          "operatorGroup": {
+            "type": "object",
+            "description": "Operator group to route the incident to, as an object with its UUID: {\"id\": \"<UUID>\"}. Omit to let TOPdesk decide."
           },
-          "categoryName": {
-            "type": "string",
-            "description": "Category name, as configured in this instance."
+          "category": {
+            "type": "object",
+            "description": "Category, as {\"name\": \"<name as configured>\"} or {\"id\": \"<UUID>\"} — one of the two, never both."
           },
-          "entryTypeName": {
-            "type": "string",
-            "description": "Entry type name, e.g. Telefoon, E-mail, Self Service Desk."
+          "entryType": {
+            "type": "object",
+            "description": "Entry type, as {\"name\": \"E-mail\"} (or Telefoon, Self Service Desk, …) or {\"id\": \"<UUID>\"} — one of the two, never both."
           }
         },
         "required": [
@@ -330,19 +321,13 @@
         "path": "/incidents",
         "bodyMapping": {
           "briefDescription": "$briefDescription",
-          "caller": {
+          "callerLookup": {
             "id": "$callerId"
           },
           "request": "$request",
-          "operatorGroup": {
-            "id": "$operatorGroupId"
-          },
-          "category": {
-            "name": "$categoryName"
-          },
-          "entryType": {
-            "name": "$entryTypeName"
-          }
+          "operatorGroup": "$operatorGroup",
+          "category": "$category",
+          "entryType": "$entryType"
         }
       }
     }

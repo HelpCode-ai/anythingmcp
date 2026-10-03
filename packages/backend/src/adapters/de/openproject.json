@@ -175,21 +175,13 @@
     },
     {
       "name": "openproject_list_work_package_activities",
-      "description": "Read the activity stream of one work package: every comment and field change in order, with author and timestamp.",
+      "description": "Read the activity stream of one work package: every comment and field change in order, with author and timestamp. Returned in one response; this collection is not paginated.",
       "parameters": {
         "type": "object",
         "properties": {
           "id": {
             "type": "number",
             "description": "Numeric work package id."
-          },
-          "pageSize": {
-            "type": "number",
-            "description": "Entries per page."
-          },
-          "offset": {
-            "type": "number",
-            "description": "Page number, starting at 1."
           }
         },
         "required": [
@@ -198,11 +190,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/work_packages/{id}/activities",
-        "queryParams": {
-          "pageSize": "$pageSize",
-          "offset": "$offset"
-        }
+        "path": "/work_packages/{id}/activities"
       }
     },
     {
@@ -237,27 +225,14 @@
     },
     {
       "name": "openproject_list_versions",
-      "description": "List versions (releases and sprints) with their name, status, due date and the project they belong to.",
+      "description": "List versions (releases and sprints) with their name, status, due date and the project they belong to. Returned in one response; this collection is not paginated.",
       "parameters": {
         "type": "object",
-        "properties": {
-          "pageSize": {
-            "type": "number",
-            "description": "Rows per page."
-          },
-          "offset": {
-            "type": "number",
-            "description": "Page number, starting at 1."
-          }
-        }
+        "properties": {}
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/versions",
-        "queryParams": {
-          "pageSize": "$pageSize",
-          "offset": "$offset"
-        }
+        "path": "/versions"
       }
     },
     {

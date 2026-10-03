@@ -6,7 +6,7 @@
   "category": "marketing-automation",
   "icon": "mautic",
   "docsUrl": "https://docs.mautic.org/en/5.x/rest_api/",
-  "instructions": "**Turn the API on first.** Mautic ships with it disabled.\n1. As an administrator go to **Settings → Configuration → API Settings** and set *API enabled* to Yes, and *Enable HTTP basic auth* to Yes.\n2. Create a Mautic user for the integration with a role that grants view permissions on contacts, segments, campaigns and e-mails.\n3. Set `MAUTIC_URL` to your instance root (no trailing slash), plus `MAUTIC_USERNAME` and `MAUTIC_PASSWORD`. The adapter appends `/api`.\n\n**Basic auth is the simple path; OAuth 2 is the safer one.** Mautic supports both. Basic auth sends the user's real password on every request, so give the integration its own account and rotate it like any other credential — do not reuse an admin login.\n\n**Search is one string with a small grammar.** `search=email:*@example.com` matches contacts by e-mail; `is:anonymous`, `!is:anonymous`, `segment:my-segment-alias`, `ids:1,2,3` and `gt:date_added:2026-01-01` all work, joined by spaces for AND. Bare words match names and e-mail addresses.\n\n**Contacts default to including anonymous visitors**, which on a busy site outnumber the real ones by an order of magnitude. `search=!is:anonymous` is almost always what a question about 'contacts' actually means.\n\n**Responses key the rows by id.** `{\"total\": \"42\", \"contacts\": {\"17\": {…}, \"18\": {…}}}` — an object, not an array. `total` is a string.\n\n**Paging** is `limit` and `start` (an offset, not a page number).\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`mautic.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "instructions": "**Turn the API on first.** Mautic ships with it disabled.\n1. As an administrator go to **Settings → Configuration → API Settings** and set *API enabled* to Yes, and *Enable HTTP basic auth* to Yes.\n2. Create a Mautic user for the integration with a role that grants view permissions on contacts, segments, campaigns and e-mails.\n3. Set `MAUTIC_URL` to your instance root (no trailing slash), plus `MAUTIC_USERNAME` and `MAUTIC_PASSWORD`. The adapter appends `/api`.\n\n**Basic auth is the simple path; OAuth 2 is the safer one.** Mautic supports both. Basic auth sends the user's real password on every request, so give the integration its own account and rotate it like any other credential — do not reuse an admin login.\n\n**Search is one string with a small grammar.** `search=email:*@example.com` matches contacts by e-mail; `is:anonymous`, `!is:anonymous`, `segment:my-segment-alias` (the alias, not the id), `ids:1,2,3` and `gt:date_added:2026-01-01` all work, joined by spaces for AND. Bare words match names and e-mail addresses.\n\n**Contacts default to including anonymous visitors**, which on a busy site outnumber the real ones by an order of magnitude. `search=!is:anonymous` is almost always what a question about 'contacts' actually means.\n\n**Responses key the rows by id.** `{\"total\": \"42\", \"contacts\": {\"17\": {…}, \"18\": {…}}}` — an object, not an array. `total` is a string.\n\n**Paging** is `limit` and `start` (an offset, not a page number).\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`mautic.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
   "requiredEnvVars": [
     "MAUTIC_URL",
     "MAUTIC_USERNAME",
@@ -110,7 +110,7 @@
           },
           "search": {
             "type": "string",
-            "description": "Filter the timeline, e.g. by event type."
+            "description": "Search string to filter the timeline events by."
           }
         },
         "required": [
@@ -121,9 +121,9 @@
         "method": "GET",
         "path": "/contacts/{contactId}/activity",
         "queryParams": {
+          "filters[search]": "$search",
           "limit": "$limit",
-          "page": "$page",
-          "search": "$search"
+          "page": "$page"
         }
       }
     },
@@ -154,13 +154,13 @@
     },
     {
       "name": "mautic_list_segment_contacts",
-      "description": "List the contacts in one segment — who would actually receive a send to that segment.",
+      "description": "List the contacts in one segment — who would actually receive a send to that segment. Takes the segment's alias, not its id (Mautic's `segment:` search command matches aliases).",
       "parameters": {
         "type": "object",
         "properties": {
-          "segmentId": {
-            "type": "number",
-            "description": "Numeric segment id."
+          "segmentAlias": {
+            "type": "string",
+            "description": "Segment alias, the `alias` field returned by mautic_list_segments (e.g. newsletter-de), not the numeric id."
           },
           "limit": {
             "type": "number",
@@ -172,14 +172,14 @@
           }
         },
         "required": [
-          "segmentId"
+          "segmentAlias"
         ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/contacts",
         "queryParams": {
-          "search": "segment:$segmentId",
+          "search": "segment:${segmentAlias}",
           "limit": "$limit",
           "start": "$start"
         }

@@ -39,6 +39,21 @@ describe('fatture-in-cloud adapter — static spec conformance', () => {
   it("explains the Sistema di Interscambio status field", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('Sistema di Interscambio');
   });
+
+  it("sends list filters as `q`, the only filter parameter the API reads", () => {
+    const lists = a.tools.filter((t) => t.name.startsWith('fatture_in_cloud_list_') && t.endpointMapping.queryParams);
+    expect(lists.length).toBe(6);
+    for (const t of lists) {
+      const q = t.endpointMapping.queryParams as Record<string, unknown>;
+      expect(q.q).toBe('$filter');
+      expect(q).not.toHaveProperty('filter');
+    }
+  });
+
+  it("requires the type on received documents", () => {
+    const t = a.tools.find((x) => x.name === 'fatture_in_cloud_list_received_documents') as unknown as { parameters: { required?: string[] } };
+    expect(t.parameters.required).toContain('type');
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

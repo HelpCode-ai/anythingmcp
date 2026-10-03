@@ -47,6 +47,21 @@ describe('synology adapter — static spec conformance', () => {
     };
   });
 
+  it("reads search results with a second call, and sends v2 File Station values JSON-encoded", () => {
+    const byName = Object.fromEntries(a.tools.map((t) => [t.name, t.endpointMapping]));
+    const results = byName.synology_get_search_results.queryParams as Record<string, string>;
+    expect(results.api).toBe('SYNO.FileStation.Search');
+    expect(results.method).toBe('list');
+    expect(results.taskid).toBe('"${taskid}"');
+    expect((byName.synology_search_files.queryParams as Record<string, string>).folder_path).toBe('["${folder_path}"]');
+    expect((byName.synology_list_files.queryParams as Record<string, string>).folder_path).toBe('"${folder_path}"');
+  });
+
+  it("calls Download Station at the CGI path its guide gives", () => {
+    const t = a.tools.find((x) => x.name === 'synology_list_download_tasks');
+    expect(t?.endpointMapping.path).toBe('/DownloadStation/task.cgi');
+  });
+
   it("warns that DSM reports failure inside an HTTP 200", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('A 200 is not a result');
   });
