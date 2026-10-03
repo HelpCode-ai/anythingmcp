@@ -6,7 +6,7 @@
   "category": "accounting",
   "icon": "bexio",
   "docsUrl": "https://docs.bexio.com/",
-  "instructions": "**Getting a token**\n1. Sign in to bexio and open **Einstellungen → Apps & Tools → API-Zugriff**.\n2. Create an **API token** (for a single company) and copy it into `BEXIO_API_TOKEN`. The token inherits the permissions of the user it was created under, so a read-only agent should get a read-only bexio user.\n3. For a multi-tenant integration bexio also offers OAuth 2.0 with per-scope consent; this adapter uses the simpler API token, which is what a single company needs.\n\n**Mixed API versions.** bexio has migrated its resources one at a time, so the path segment differs per object: contacts and articles live under `/2.0/`, invoices under `/2.0/kb_invoice`, and newer resources under `/3.0/` or `/4.0/`. The tools below carry the correct version in each path — do not assume one prefix works for everything.\n\n**Searching**: bexio's list endpoints accept `order_by`, `limit` and `offset`, and each resource has a sibling `/search` endpoint that takes a POST body of `[{field, value, criteria}]`. This adapter exposes the list endpoints; for a precise field match use `bexio_search_contacts`.\n\n**Currency**: bexio is Swiss and most companies book in CHF. Amounts come back as decimal strings — parse, do not round in the prompt.\n\n**Writes**: `bexio_create_contact` writes to the live company. Invoices are not creatable here: bexio requires positions to be posted separately and a half-created invoice is worse than none.\n\n**Cloud reachability**: api.bexio.com is public with a valid certificate; AnythingMCP Cloud reaches it directly.",
+  "instructions": "**Getting a token**\n1. Sign in at **https://developer.bexio.com/pat** with the bexio user the agent should act as, and create a **Personal Access Token (PAT)**. (bexio replaced the old in-app \"API tokens\" with PATs in October 2024.)\n2. Copy it into `BEXIO_API_TOKEN`.\n3. **A PAT expires 60 days after creation.** When calls start failing with 401, create a new PAT and paste it into the connector. Deleting a PAT on developer.bexio.com revokes it (bexio says this can take up to an hour).\n4. For a multi-tenant integration bexio also offers OAuth 2.0 with per-scope consent; this adapter uses the PAT, which is what a single company needs.\n\n**403 \"not allowed to access this resource\" means missing rights, not a wrong endpoint.** A PAT carries all default API scopes, but bexio also applies the rights of the user who created it, as set in bexio's user management. If, say, `bexio_list_invoices` answers 403 while contacts work, that user has no access to invoices (Verkauf → Rechnungen): grant the right in bexio, or create the PAT with a user who has it. With your own OAuth app instead of a PAT, the scope is missing (e.g. `kb_invoice_show` for invoices, `kb_offer_show` quotes, `kb_order_show` orders, `article_show` items, `project_show` projects, `monitoring_show` timesheets, `contact_show` contacts).\n\n**Mixed API versions.** bexio has migrated its resources one at a time, so the path segment differs per object: contacts and articles live under `/2.0/`, invoices under `/2.0/kb_invoice`, and newer resources under `/3.0/` or `/4.0/`. The tools below carry the correct version in each path — do not assume one prefix works for everything.\n\n**Searching**: bexio's list endpoints accept `order_by`, `limit` and `offset` (`order_by` takes only the fields each tool lists, with an optional `_asc`/`_desc` suffix), and each resource has a sibling `/search` endpoint that takes a POST body of `[{field, value, criteria}]`. This adapter exposes the list endpoints; for a precise field match use `bexio_search_contacts`.\n\n**Currency**: bexio is Swiss and most companies book in CHF. Amounts come back as decimal strings — parse, do not round in the prompt.\n\n**Writes**: `bexio_create_contact` writes to the live company. Invoices are not creatable here: bexio requires positions to be posted separately and a half-created invoice is worse than none.\n\n**Cloud reachability**: api.bexio.com is public with a valid certificate; AnythingMCP Cloud reaches it directly.",
   "requiredEnvVars": [
     "BEXIO_API_TOKEN"
   ],
@@ -55,7 +55,7 @@
           },
           "order_by": {
             "type": "string",
-            "description": "Field to sort by, e.g. `id_desc`, `name_1`, `nr`."
+            "description": "Field to sort by: `id`, `nr`, `name_1` or `updated_at`; append `_desc` for descending, e.g. `id_desc`."
           }
         }
       },
@@ -141,7 +141,7 @@
           },
           "order_by": {
             "type": "string",
-            "description": "Field to sort by, e.g. `id_desc` or `is_valid_from`."
+            "description": "Field to sort by: `id`, `total`, `total_net`, `total_gross` or `updated_at`; append `_desc` for descending, e.g. `id_desc`. Comma-separate several."
           }
         }
       },
@@ -191,7 +191,7 @@
           },
           "order_by": {
             "type": "string",
-            "description": "Field to sort by, e.g. `id_desc`."
+            "description": "Field to sort by: `id`, `total`, `total_net`, `total_gross` or `updated_at`; append `_desc` for descending, e.g. `id_desc`. Comma-separate several."
           }
         }
       },
@@ -221,7 +221,7 @@
           },
           "order_by": {
             "type": "string",
-            "description": "Field to sort by, e.g. `id_desc`."
+            "description": "Field to sort by: `id`, `total`, `total_net`, `total_gross` or `updated_at`; append `_desc` for descending, e.g. `id_desc`. Comma-separate several."
           }
         }
       },
@@ -251,7 +251,7 @@
           },
           "order_by": {
             "type": "string",
-            "description": "Field to sort by, e.g. `intern_code`."
+            "description": "Field to sort by: `id` or `intern_name`; append `_desc` for descending, e.g. `intern_name_desc`."
           }
         }
       },
@@ -306,7 +306,7 @@
           },
           "order_by": {
             "type": "string",
-            "description": "Field to sort by, e.g. `date_desc`."
+            "description": "Field to sort by: `id` or `date`; append `_desc` for descending, e.g. `date_desc`."
           }
         }
       },
@@ -338,9 +338,17 @@
             "type": "string",
             "description": "Second name line: given name, or a department."
           },
-          "address": {
+          "street_name": {
             "type": "string",
-            "description": "Street and house number."
+            "description": "Street name without the house number. Required when house_number or address_addition is set."
+          },
+          "house_number": {
+            "type": "string",
+            "description": "House number."
+          },
+          "address_addition": {
+            "type": "string",
+            "description": "Address addition, e.g. c/o or a P.O. box line."
           },
           "postcode": {
             "type": "string",
@@ -380,7 +388,9 @@
           "contact_type_id": "$contact_type_id",
           "name_1": "$name_1",
           "name_2": "$name_2",
-          "address": "$address",
+          "street_name": "$street_name",
+          "house_number": "$house_number",
+          "address_addition": "$address_addition",
           "postcode": "$postcode",
           "city": "$city",
           "country_id": "$country_id",

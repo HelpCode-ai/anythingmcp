@@ -5,8 +5,8 @@
   "region": "de",
   "category": "dms",
   "icon": "d-velop",
-  "docsUrl": "https://help.d-velop.de/dev/documentation",
-  "instructions": "**Getting an API key**\n1. In d.velop cloud open **Konfiguration → API-Schlüssel** (or, on premises, the identityprovider app) and create an API key for a technical user.\n2. Give that user read rights on the repositories the agent should reach. d.velop applies its permission model per document, so a restricted user quietly sees a smaller repository.\n3. Set `DVELOP_URL` to your tenant root — `https://<tenant>.d-velop.cloud` for cloud, or your own host on premises — and `DVELOP_API_KEY` to the key.\n\n**The Authorization header is `Bearer <apikey>`**, with the API key used directly as the bearer token. d.velop's API keys are long-lived; rotate them the way you would rotate a password.\n\n**Repository ids come first.** d.velop can host several repositories in one tenant and every document operation is scoped to one. Call `d_velop_list_repositories` and keep the `id` — it is an opaque string, not a number.\n\n**Search is HAL-shaped.** Responses embed results under `_embedded.repositories` / `_embedded.results` and carry `_links` for paging. Follow `_links.next.href` rather than computing an offset; d.velop's cursors are not guaranteed to be stable integers.\n\n**Source ids narrow a search.** A repository can expose several *sources* (index definitions); `sourceid` restricts a search to one of them, which is usually what makes a fuzzy search precise.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant — d.velop does not offer a public sandbox. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. If you run this against a real system, a correction to the adapter JSON is genuinely welcome.\n\n**Read-only by design**: no upload, no property change. A DMS is the audit trail, and an agent should not be able to edit it by accident.",
+  "docsUrl": "https://help.d-velop.de/dev/documentation/dms-app",
+  "instructions": "**Getting an API key**\n1. In d.velop cloud open **Konfiguration → API-Schlüssel** (or, on premises, the identityprovider app) and create an API key for a technical user.\n2. Give that user read rights on the repositories the agent should reach. d.velop applies its permission model per document, so a restricted user quietly sees a smaller repository.\n3. Set `DVELOP_URL` to your tenant root — `https://<tenant>.d-velop.cloud` for cloud, or your own host on premises — and `DVELOP_API_KEY` to the key.\n\n**The Authorization header is `Bearer <apikey>`**, with the API key used directly as the bearer token. d.velop's API keys are long-lived; rotate them the way you would rotate a password.\n\n**Repository ids come first.** d.velop can host several repositories in one tenant and every document operation is scoped to one. Call `d_velop_list_repositories` and keep the `id` — it is an opaque string, not a number.\n\n**Responses are HAL JSON.** `d_velop_list_repositories` returns `repositories[]` (`id`, `name`); a search returns `items[]`, each with `id`, `sourceProperties` and `sourceCategories`, plus `_links.next.href` for the next page. `page` starts at 1 and `pageSize` defaults to 25.\n\n**Every search and document read needs a source id.** d.velop maps its internal properties to a *source*, and the search (`/srm`) and document (`/o2m`) endpoints return property values only through that mapping: `sourceid` is required. Call `d_velop_list_categories` first: it returns the repository's default source with its `id` (normally `/dms/r/<repositoryId>/source`), its category keys and its property keys. Use that `id` as `sourceid`, the category keys in `sourcecategories` and the property keys in `sourceproperties`.\n\n**Not run against a live tenant.** The paths and parameters follow d.velop's DMSApp OpenAPI specification (help.d-velop.de/dev/documentation/dms-app); d.velop does not offer a public sandbox. If you run this against a real system, a correction to the adapter JSON is genuinely welcome.\n\n**Read-only by design**: no upload, no property change. A DMS is the audit trail, and an agent should not be able to edit it by accident.",
   "requiredEnvVars": [
     "DVELOP_URL",
     "DVELOP_API_KEY"
@@ -62,7 +62,7 @@
     },
     {
       "name": "d_velop_search_documents",
-      "description": "Search a repository by full text and/or property filter. Restrict to one source id to turn a fuzzy search into a precise one.",
+      "description": "Search a repository by full text and/or property and category filters, through a source's mapping. Returns items with their source property values; follow _links.next.href or raise page for more.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -72,44 +72,60 @@
           },
           "sourceid": {
             "type": "string",
-            "description": "Source (index definition) id to restrict the search to."
+            "description": "Source id: the `id` returned by d_velop_list_categories, normally /dms/r/<repositoryId>/source. Required: without it d.velop returns only ids and links."
           },
           "fulltext": {
             "type": "string",
             "description": "Full-text query over document content."
           },
-          "pagesize": {
-            "type": "number",
-            "description": "Results per page (default 50)."
-          },
           "sourcecategories": {
             "type": "string",
-            "description": "Comma-separated category ids to restrict to."
+            "description": "JSON array of category keys from d_velop_list_categories, e.g. [\"d42018fc-...\"]."
           },
           "sourceproperties": {
             "type": "string",
-            "description": "Property filter as JSON, e.g. {\"property_invoice_no\":[\"12345\"]}."
+            "description": "JSON object mapping property keys from d_velop_list_categories to arrays of values, e.g. {\"<propertyKey>\":[\"12345\"]}."
+          },
+          "sourcepropertysort": {
+            "type": "string",
+            "description": "Property key to sort by (default: last modified)."
+          },
+          "ascending": {
+            "type": "boolean",
+            "description": "Sort ascending (true) or descending (false)."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, starting at 1."
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Results per page (default 25)."
           }
         },
         "required": [
-          "repositoryId"
+          "repositoryId",
+          "sourceid"
         ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/dms/r/{repositoryId}/sr",
+        "path": "/dms/r/{repositoryId}/srm",
         "queryParams": {
           "sourceid": "$sourceid",
           "fulltext": "$fulltext",
-          "pagesize": "$pagesize",
           "sourcecategories": "$sourcecategories",
-          "sourceproperties": "$sourceproperties"
+          "sourceproperties": "$sourceproperties",
+          "sourcepropertysort": "$sourcepropertysort",
+          "ascending": "$ascending",
+          "page": "$page",
+          "pageSize": "$pageSize"
         }
       }
     },
     {
       "name": "d_velop_get_document",
-      "description": "Read one document's metadata: its display name, category, creation and modification dates, version and property values.",
+      "description": "Read one document's details through a source's mapping: its category, property values and link relations.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -123,17 +139,18 @@
           },
           "sourceid": {
             "type": "string",
-            "description": "Source id the document belongs to."
+            "description": "Source id: the `id` returned by d_velop_list_categories, normally /dms/r/<repositoryId>/source. Required: without it d.velop returns only ids and links."
           }
         },
         "required": [
           "repositoryId",
-          "documentId"
+          "documentId",
+          "sourceid"
         ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/dms/r/{repositoryId}/o2/{documentId}",
+        "path": "/dms/r/{repositoryId}/o2m/{documentId}",
         "queryParams": {
           "sourceid": "$sourceid"
         }
@@ -161,22 +178,18 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/dms/r/{repositoryId}/o2/{documentId}/v"
+        "path": "/dms/r/{repositoryId}/o2m/{documentId}/v"
       }
     },
     {
       "name": "d_velop_list_categories",
-      "description": "List the document categories (Dokumentarten) defined in a repository with their display names and property sets, so a search can filter by type.",
+      "description": "Read the repository's default source: its id (the sourceid every search and document read needs), its categories (Dokumentarten) and its properties, each with the key to use in a search filter and a display name.",
       "parameters": {
         "type": "object",
         "properties": {
           "repositoryId": {
             "type": "string",
             "description": "Repository id."
-          },
-          "sourceid": {
-            "type": "string",
-            "description": "Source id whose categories to list."
           }
         },
         "required": [
@@ -185,10 +198,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/dms/r/{repositoryId}/source",
-        "queryParams": {
-          "sourceid": "$sourceid"
-        }
+        "path": "/dms/r/{repositoryId}/source"
       }
     }
   ]

@@ -23,8 +23,28 @@ const toolNames = a.tools.map((t) => t.name);
 describe('matrix42 adapter — static spec conformance', () => {
   it("exchanges the API token for a short-lived bearer", () => {
     expect(a.connector.authType).toBe('LOGIN_TOKEN');
-    expect(a.connector.authConfig?.tokenJsonPath).toBe('access_token');
+    expect(a.connector.authConfig?.tokenJsonPath).toBe('RawToken');
     expect(a.connector.authConfig?.headerTemplate).toBe('Bearer ${token}');
+  });
+
+  it("sends the API token only in the Authorization header of the documented exchange call", () => {
+    const cfg = a.connector.authConfig as Record<string, unknown>;
+    expect(cfg.loginUrl).toBe('{{MATRIX42_URL}}/api/ApiToken/GenerateAccessTokenFromApiToken/');
+    expect((cfg.loginHeaders as Record<string, string>).Authorization).toBe('Bearer {{MATRIX42_API_TOKEN}}');
+    // An absent loginBody makes LoginTokenService post {username, password}: the token in the body.
+    expect(cfg.loginBody).toEqual({});
+  });
+
+  it("pages with pageSize/pageNumber and queries Data Definitions, not CI type names", () => {
+    for (const t of a.tools) {
+      const qp = (t.endpointMapping.queryParams ?? {}) as Record<string, string>;
+      expect(Object.keys(qp)).not.toContain('$top');
+      expect(Object.keys(qp)).not.toContain('$skip');
+      expect(String(t.endpointMapping.path)).not.toMatch(/fragments\/SPSActivityType|SPSScUserClassBase/);
+    }
+    const inc = a.tools.find((t) => t.name === 'matrix42_query_incidents')!;
+    expect(inc.endpointMapping.path).toBe('/api/data/fragments/SPSActivityClassBase');
+    expect((inc.endpointMapping.queryParams as Record<string, string>).where).toContain('UsedInTypeSPSActivityTypeIncident IS NOT NULL');
   });
 
   it("ships the fragment schema tool, since UI labels are not column names", () => {

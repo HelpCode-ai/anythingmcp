@@ -6,7 +6,7 @@
   "category": "hr",
   "icon": "papershift",
   "docsUrl": "https://developers.papershift.com/",
-  "instructions": "**Getting a token**\n1. Sign in to Papershift as an administrator and open **Einstellungen → API** (Settings → API).\n2. Generate a **public API token** and copy it into `PAPERSHIFT_API_TOKEN`. The token is account-wide and carries administrator rights — anyone holding it can read the whole roster, so treat it as a password.\n\n**The token travels as a query parameter**, not a header: Papershift's public API expects `?api_token=…` on every request. AnythingMCP appends it automatically (QUERY_AUTH), so it never appears in a tool's parameters and never has to be pasted into a prompt.\n\n**Shift plan vs worked time.** Papershift keeps the two apart, and mixing them up is the usual source of wrong answers:\n- `papershift_list_shifts` is the *plan* — who is scheduled, when.\n- `papershift_list_working_sessions` is the *record* — who actually clocked in and out.\nA question about payroll wants working sessions; a question about next week wants shifts.\n\n**Date filters** are `YYYY-MM-DD` and most list endpoints require both `start_date` and `end_date`. Papershift caps the span server-side; a whole year usually needs to be requested month by month.\n\n**Paging** is `page` (1-based) plus `per_page`. Responses carry the rows under the resource name, e.g. `{\"shifts\": [...]}`.\n\n**Cloud reachability**: app.papershift.com is public with a valid certificate.",
+  "instructions": "**Getting a token**\n1. The Papershift API is a paid add-on: ask Papershift sales or your customer success manager to activate it for the account.\n2. Sign in, click the gear icon (bottom left) → **Account Settings** → **API** tab → **Create New API Key**.\n3. A new key has read and write permissions by default; restrict it to read if you only want reporting, then copy it into `PAPERSHIFT_API_TOKEN`. Anyone holding it can read the whole roster, so treat it as a password.\n\n**The token travels as a query parameter**, not a header: Papershift's public API expects `?api_token=…` on every request. AnythingMCP appends it automatically (QUERY_AUTH), so it never appears in a tool's parameters and never has to be pasted into a prompt.\n\n**Shift plan vs worked time.** Papershift keeps the two apart, and mixing them up is the usual source of wrong answers:\n- `papershift_list_shifts` is the *plan* — which shifts are planned, where and when.\n- `papershift_list_working_sessions` is the *record* — who actually clocked in and out.\nA question about payroll wants working sessions; a question about next week wants shifts.\n\n**Date ranges** are `range_start` and `range_end` (`YYYY-MM-DD`). Shifts and absences need both; working sessions need `range_start`. **Shifts also need a `location_id`**: call `papershift_list_locations` first.\n\n**Paging** is `page` (1-based) with a fixed 25 rows per page; there is no page-size parameter. Locations and working areas come back in full, unpaged. Responses carry the rows under the resource name, e.g. `{\"shifts\": [...]}`, plus `next_page` when there is more.\n\n**Language**: Papershift requires an `interface_language` on every request; the connector sends `de` automatically.\n\n**Cloud reachability**: app.papershift.com is public with a valid certificate.",
   "requiredEnvVars": [
     "PAPERSHIFT_API_TOKEN"
   ],
@@ -16,7 +16,8 @@
     "baseUrl": "https://app.papershift.com/public_api/v1",
     "authType": "QUERY_AUTH",
     "authConfig": {
-      "api_token": "{{PAPERSHIFT_API_TOKEN}}"
+      "api_token": "{{PAPERSHIFT_API_TOKEN}}",
+      "interface_language": "de"
     },
     "healthcheckPath": "/users"
   },
@@ -26,17 +27,21 @@
   "tools": [
     {
       "name": "papershift_list_users",
-      "description": "List employees with their name, e-mail, employee number and the locations they belong to. No parameters needed — the quickest check that the token is accepted.",
+      "description": "List employees (25 per page) with their name, e-mail, staff number and the locations and working areas they belong to. No parameters needed — the quickest check that the token is accepted.",
       "parameters": {
         "type": "object",
         "properties": {
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
+            "description": "Page number, starting at 1 (25 rows per page, fixed)."
           },
-          "per_page": {
-            "type": "number",
-            "description": "Rows per page (default 25)."
+          "location_ids": {
+            "type": "string",
+            "description": "Only users in these locations: comma-separated location ids."
+          },
+          "working_area_ids": {
+            "type": "string",
+            "description": "Only users in these working areas: comma-separated working area ids."
           }
         }
       },
@@ -45,7 +50,8 @@
         "path": "/users",
         "queryParams": {
           "page": "$page",
-          "per_page": "$per_page"
+          "location_ids": "$location_ids",
+          "working_area_ids": "$working_area_ids"
         }
       }
     },
@@ -66,80 +72,66 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/users/{id}"
+        "path": "/users",
+        "queryParams": {
+          "id": "$id"
+        }
       }
     },
     {
       "name": "papershift_list_locations",
-      "description": "List the locations (Standorte) the account is organised into, with their address and working-area structure.",
+      "description": "List all locations (Standorte) of the account with their id, name, external id and status. Unpaged. Shifts need one of these ids.",
       "parameters": {
         "type": "object",
-        "properties": {
-          "page": {
-            "type": "number",
-            "description": "Page number, starting at 1."
-          },
-          "per_page": {
-            "type": "number",
-            "description": "Rows per page."
-          }
-        }
+        "properties": {}
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/locations",
-        "queryParams": {
-          "page": "$page",
-          "per_page": "$per_page"
-        }
+        "path": "/locations"
       }
     },
     {
       "name": "papershift_list_shifts",
-      "description": "Read the *planned* roster in a date range: who is scheduled where and when. This is the plan, not what was actually worked.",
+      "description": "Read the *planned* roster of one location in a date range: which shifts exist in which working area, when, and for how many employees. This is the plan, not what was actually worked. Needs a location_id from papershift_list_locations.",
       "parameters": {
         "type": "object",
         "properties": {
-          "start_date": {
+          "range_start": {
             "type": "string",
             "description": "First day of the range, YYYY-MM-DD."
           },
-          "end_date": {
+          "range_end": {
             "type": "string",
             "description": "Last day of the range, YYYY-MM-DD."
           },
           "location_id": {
             "type": "string",
-            "description": "Restrict to one location."
+            "description": "Location id (required by Papershift); get it from papershift_list_locations."
           },
-          "user_id": {
+          "working_area_id": {
             "type": "string",
-            "description": "Restrict to one employee."
+            "description": "Restrict to one working area."
           },
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
-          },
-          "per_page": {
-            "type": "number",
-            "description": "Rows per page."
+            "description": "Page number, starting at 1 (25 rows per page, fixed)."
           }
         },
         "required": [
-          "start_date",
-          "end_date"
+          "range_start",
+          "range_end",
+          "location_id"
         ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/shifts",
         "queryParams": {
-          "start_date": "$start_date",
-          "end_date": "$end_date",
+          "range_start": "$range_start",
+          "range_end": "$range_end",
           "location_id": "$location_id",
-          "user_id": "$user_id",
-          "page": "$page",
-          "per_page": "$per_page"
+          "working_area_id": "$working_area_id",
+          "page": "$page"
         }
       }
     },
@@ -149,11 +141,11 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "start_date": {
+          "range_start": {
             "type": "string",
             "description": "First day of the range, YYYY-MM-DD."
           },
-          "end_date": {
+          "range_end": {
             "type": "string",
             "description": "Last day of the range, YYYY-MM-DD."
           },
@@ -163,27 +155,22 @@
           },
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
-          },
-          "per_page": {
-            "type": "number",
-            "description": "Rows per page."
+            "description": "Page number, starting at 1 (25 rows per page, fixed)."
           }
         },
         "required": [
-          "start_date",
-          "end_date"
+          "range_start",
+          "range_end"
         ]
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/working_sessions",
         "queryParams": {
-          "start_date": "$start_date",
-          "end_date": "$end_date",
+          "range_start": "$range_start",
+          "range_end": "$range_end",
           "user_id": "$user_id",
-          "page": "$page",
-          "per_page": "$per_page"
+          "page": "$page"
         }
       }
     },
@@ -193,11 +180,11 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "start_date": {
+          "range_start": {
             "type": "string",
             "description": "First day of the range, YYYY-MM-DD."
           },
-          "end_date": {
+          "range_end": {
             "type": "string",
             "description": "Last day of the range, YYYY-MM-DD."
           },
@@ -205,49 +192,41 @@
             "type": "string",
             "description": "Restrict to one employee."
           },
-          "page": {
-            "type": "number",
-            "description": "Page number, starting at 1."
-          },
-          "per_page": {
-            "type": "number",
-            "description": "Rows per page."
-          }
-        },
-        "required": [
-          "start_date",
-          "end_date"
-        ]
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/absences",
-        "queryParams": {
-          "start_date": "$start_date",
-          "end_date": "$end_date",
-          "user_id": "$user_id",
-          "page": "$page",
-          "per_page": "$per_page"
-        }
-      }
-    },
-    {
-      "name": "papershift_list_working_areas",
-      "description": "List the working areas (Arbeitsbereiche) inside the locations — the roles a shift can be planned for, such as bar, kitchen or till.",
-      "parameters": {
-        "type": "object",
-        "properties": {
           "location_id": {
             "type": "string",
             "description": "Restrict to one location."
           },
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
-          },
-          "per_page": {
-            "type": "number",
-            "description": "Rows per page."
+            "description": "Page number, starting at 1 (25 rows per page, fixed)."
+          }
+        },
+        "required": [
+          "range_start",
+          "range_end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absences",
+        "queryParams": {
+          "range_start": "$range_start",
+          "range_end": "$range_end",
+          "user_id": "$user_id",
+          "location_id": "$location_id",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "papershift_list_working_areas",
+      "description": "List all working areas (Arbeitsbereiche) with their location — the roles a shift can be planned for, such as bar, kitchen or till. Unpaged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_id": {
+            "type": "string",
+            "description": "Restrict to one location."
           }
         }
       },
@@ -255,9 +234,7 @@
         "method": "GET",
         "path": "/working_areas",
         "queryParams": {
-          "location_id": "$location_id",
-          "page": "$page",
-          "per_page": "$per_page"
+          "location_id": "$location_id"
         }
       }
     }

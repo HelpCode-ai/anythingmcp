@@ -6,7 +6,7 @@
   "category": "monitoring",
   "icon": "checkmk",
   "docsUrl": "https://docs.checkmk.com/latest/en/rest_api.html",
-  "instructions": "**Setup**\n1. In Checkmk create an **automation user**: Setup → Users → Add user, tick *Automation secret for machine accounts*, and copy the secret. Give it the `guest` role for read-only access, or `admin` if you want the configuration endpoints.\n2. Set `CHECKMK_URL` to your site root including the site name — `https://monitoring.example.com/mysite` — with no trailing slash. The site name is part of the path and leaving it out is the usual cause of a 404 that looks like a wrong version.\n3. Set `CHECKMK_USERNAME` to the automation user and `CHECKMK_SECRET` to its secret.\n\n**The Authorization header is `Bearer <user> <secret>`** — two space-separated values in one Bearer token, which is Checkmk's own scheme and looks wrong the first time you see it. The adapter assembles it.\n\n**Setup vs Monitoring.** Checkmk's REST API has two halves and they answer different questions. `/domain-types/host_config/…` is the *configuration* — what has been set up. `/domain-types/host/…` and `/domain-types/service/…` are the *live monitoring state* — what is happening now. A question about a red service needs the second; a question about what is monitored needs the first.\n\n**Live state is queried with a Livestatus expression.** The `query` parameter takes JSON like `{\"op\": \"=\", \"left\": \"state\", \"right\": \"2\"}` — state 0 is OK, 1 warning, 2 critical, 3 unknown. Combine with `{\"op\": \"and\", \"expr\": [...]}`.\n\n**`columns` is repeated, not comma-separated.** Checkmk wants `columns=host_name&columns=state&columns=plugin_output`. The tools below send a useful default set.\n\n**Changes need activation.** Anything written into the Setup half sits in a pending-changes queue until activated. This adapter is read-only, so it never leaves a half-applied change behind.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch, and a homelab's default certificate is exactly the case that breaks.\n- On an internal host (`monitoring.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "instructions": "**Setup**\n1. In Checkmk create an **automation user**: Setup → Users → Add user, tick *Automation secret for machine accounts*, and copy the secret. Give it the `guest` role for read-only access, or `admin` if you want the configuration endpoints.\n2. Set `CHECKMK_URL` to your site root including the site name — `https://monitoring.example.com/mysite` — with no trailing slash. The site name is part of the path and leaving it out is the usual cause of a 404 that looks like a wrong version.\n3. Set `CHECKMK_USERNAME` to the automation user and `CHECKMK_SECRET` to its secret.\n\n**The Authorization header is `Bearer <user> <secret>`** — two space-separated values in one Bearer token, which is Checkmk's own scheme and looks wrong the first time you see it. The adapter assembles it.\n\n**Setup vs Monitoring.** Checkmk's REST API has two halves and they answer different questions. `/domain-types/host_config/…` is the *configuration* — what has been set up. `/domain-types/host/…` and `/domain-types/service/…` are the *live monitoring state* — what is happening now. A question about a red service needs the second; a question about what is monitored needs the first.\n\n**Live state is queried with a Livestatus expression.** The `query` parameter takes JSON like `{\"op\": \"=\", \"left\": \"state\", \"right\": \"2\"}` — state 0 is OK, 1 warning, 2 critical, 3 unknown. Combine with `{\"op\": \"and\", \"expr\": [...]}`.\n\n**Live state is read with POST.** The three live-state tools (`checkmk_list_host_states`, `checkmk_list_service_states`, `checkmk_list_host_services`) send `query` and `columns` as a JSON body to the `…/collections/…` endpoints. They only read. Checkmk 2.3 introduced this form and deprecated the old GET-with-query-string variant (werks 17003 and 17512), which Checkmk's development branch has already removed, so these tools need Checkmk 2.3 or newer. Each sends a useful default set of columns; `columns` adds one more.\n\n**Changes need activation.** Anything written into the Setup half sits in a pending-changes queue until activated. This adapter is read-only (the live-state POSTs are queries, not writes), so it never leaves a half-applied change behind.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch, and a homelab's default certificate is exactly the case that breaks.\n- On an internal host (`monitoring.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
   "requiredEnvVars": [
     "CHECKMK_URL",
     "CHECKMK_USERNAME",
@@ -52,9 +52,16 @@
             "type": "boolean",
             "description": "When true, include attributes inherited from the folder."
           },
-          "search": {
+          "hostnames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of exact host names to return, e.g. [\"web01\", \"db01\"]. Checkmk has no name-fragment search here; for a fragment use checkmk_list_host_states with a `~` query on `name`."
+          },
+          "site": {
             "type": "string",
-            "description": "Host name fragment to filter by."
+            "description": "Only hosts monitored by this site."
           }
         }
       },
@@ -63,7 +70,8 @@
         "path": "/domain-types/host_config/collections/all",
         "queryParams": {
           "effective_attributes": "$effective_attributes",
-          "search": "$search"
+          "hostnames": "$hostnames",
+          "site": "$site"
         }
       }
     },
@@ -106,14 +114,14 @@
           },
           "columns": {
             "type": "string",
-            "description": "One column name to include beyond the defaults."
+            "description": "One extra Livestatus column to return on top of the defaults, e.g. `last_state_change` or `perf_data`."
           }
         }
       },
       "endpointMapping": {
-        "method": "GET",
+        "method": "POST",
         "path": "/domain-types/host/collections/all",
-        "queryParams": {
+        "bodyMapping": {
           "query": "$query",
           "columns": [
             "name",
@@ -121,9 +129,13 @@
             "last_check",
             "plugin_output",
             "acknowledged",
-            "scheduled_downtime_depth"
+            "scheduled_downtime_depth",
+            "$columns"
           ]
         }
+      },
+      "annotations": {
+        "readOnlyHint": true
       }
     },
     {
@@ -142,14 +154,14 @@
           },
           "columns": {
             "type": "string",
-            "description": "One column name to include beyond the defaults."
+            "description": "One extra Livestatus column to return on top of the defaults, e.g. `last_state_change` or `perf_data`."
           }
         }
       },
       "endpointMapping": {
-        "method": "GET",
+        "method": "POST",
         "path": "/domain-types/service/collections/all",
-        "queryParams": {
+        "bodyMapping": {
           "query": "$query",
           "host_name": "$host_name",
           "columns": [
@@ -159,9 +171,13 @@
             "last_check",
             "plugin_output",
             "acknowledged",
-            "scheduled_downtime_depth"
+            "scheduled_downtime_depth",
+            "$columns"
           ]
         }
+      },
+      "annotations": {
+        "readOnlyHint": true
       }
     },
     {
@@ -176,7 +192,7 @@
           },
           "columns": {
             "type": "string",
-            "description": "One column name to include beyond the defaults."
+            "description": "One extra Livestatus column to return on top of the defaults, e.g. `last_state_change` or `perf_data`."
           }
         },
         "required": [
@@ -184,17 +200,21 @@
         ]
       },
       "endpointMapping": {
-        "method": "GET",
+        "method": "POST",
         "path": "/objects/host/{hostName}/collections/services",
-        "queryParams": {
+        "bodyMapping": {
           "columns": [
             "description",
             "state",
             "last_check",
             "plugin_output",
-            "acknowledged"
+            "acknowledged",
+            "$columns"
           ]
         }
+      },
+      "annotations": {
+        "readOnlyHint": true
       }
     },
     {

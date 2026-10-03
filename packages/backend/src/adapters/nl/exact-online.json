@@ -147,7 +147,7 @@
         "properties": {
           "select": {
             "type": "string",
-            "description": "OData $select list, e.g. InvoiceNumber,AccountName,DueDate,AmountDC."
+            "description": "OData $select list, e.g. InvoiceNumber,AccountName,InvoiceDate,DueDate,Amount,CurrencyCode. The open amount field is `Amount` (there is no AmountDC here)."
           },
           "filter": {
             "type": "string",
@@ -176,7 +176,7 @@
     },
     {
       "name": "exact_online_list_purchase_invoices",
-      "description": "List purchase invoices with their supplier, date, due date and amount — the payables side of the ledger.",
+      "description": "List purchase invoices from Exact's purchase module (purchase/PurchaseInvoices): supplier, dates, amounts and status. Only available in the Manufacturing, Professional Services and Wholesale packages; for an accounting-only administration use exact_online_list_purchase_entries.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -201,6 +201,41 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/{EXACT_DIVISION}/purchase/PurchaseInvoices",
+        "queryParams": {
+          "$select": "$select",
+          "$filter": "$filter",
+          "$top": "$top",
+          "$orderby": "$orderby"
+        }
+      }
+    },
+    {
+      "name": "exact_online_list_purchase_entries",
+      "description": "List purchase entries (Inkoopboekingen): the bookkeeping record of every supplier invoice, with supplier, invoice number, entry and due dates, AmountDC, VAT and status. Works in accounting-only administrations, where exact_online_list_purchase_invoices is not available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "select": {
+            "type": "string",
+            "description": "OData $select list, e.g. EntryNumber,InvoiceNumber,SupplierName,EntryDate,DueDate,AmountDC,VATAmountDC,StatusDescription."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter expression, e.g. EntryDate ge datetime'2026-01-01'."
+          },
+          "top": {
+            "type": "number",
+            "description": "Maximum rows to return."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort expression."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{EXACT_DIVISION}/purchaseentry/PurchaseEntries",
         "queryParams": {
           "$select": "$select",
           "$filter": "$filter",
@@ -241,13 +276,13 @@
     },
     {
       "name": "exact_online_list_stock_positions",
-      "description": "Read current stock positions per item and warehouse — the availability answer, separate from the item master.",
+      "description": "Read current stock per item and warehouse (Exact's ItemWarehouses: ItemCode, Warehouse, CurrentStock, plus planned and reserved stock). Needs a Manufacturing or Wholesale & Distribution package (Plus or higher); accounting-only administrations have no stock.",
       "parameters": {
         "type": "object",
         "properties": {
           "select": {
             "type": "string",
-            "description": "OData $select list, e.g. ItemCode,Warehouse,CurrentStock."
+            "description": "OData $select list, e.g. ItemCode,ItemDescription,WarehouseCode,CurrentStock,ProjectedStock,ReservedStock."
           },
           "filter": {
             "type": "string",
@@ -261,7 +296,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/{EXACT_DIVISION}/read/logistics/StockPosition",
+        "path": "/{EXACT_DIVISION}/inventory/ItemWarehouses",
         "queryParams": {
           "$select": "$select",
           "$filter": "$filter",

@@ -56,7 +56,8 @@
           },
           "fields": {
             "type": "string",
-            "description": "Field selector. Defaults to a useful set; override for custom fields."
+            "default": "id,idReadable,summary,resolved,updated,project(shortName),customFields(name,value(name,login,fullName,presentation))",
+            "description": "Field selector. Defaults to id, readable id, summary, resolved/updated dates, project and custom fields; override to add more, e.g. description or reporter(login)."
           },
           "top": {
             "type": "number",
@@ -91,7 +92,8 @@
           },
           "fields": {
             "type": "string",
-            "description": "Field selector. Defaults to a useful set."
+            "default": "id,idReadable,summary,description,created,updated,resolved,project(shortName,name),reporter(login,fullName),customFields(name,value(name,login,fullName,presentation,minutes,text))",
+            "description": "Field selector. Defaults to summary, description, dates, project, reporter and custom fields; override for something else."
           }
         },
         "required": [

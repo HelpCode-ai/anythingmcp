@@ -267,9 +267,13 @@
             "type": "string",
             "description": "Group (queue) name the ticket is routed to, e.g. Support."
           },
-          "customer_id": {
+          "customer": {
             "type": "string",
-            "description": "Customer's e-mail address or numeric user id."
+            "description": "Customer's e-mail address (or login). Zammad looks the user up and creates them if they do not exist. Use this OR customer_id."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Numeric Zammad user id of the customer. Use this OR customer."
           },
           "body": {
             "type": "string",
@@ -291,7 +295,6 @@
         "required": [
           "title",
           "group",
-          "customer_id",
           "body"
         ]
       },
@@ -301,6 +304,7 @@
         "bodyMapping": {
           "title": "$title",
           "group": "$group",
+          "customer": "$customer",
           "customer_id": "$customer_id",
           "priority": "$priority",
           "article": {

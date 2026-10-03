@@ -47,6 +47,21 @@ describe('znuny adapter — static spec conformance', () => {
   it("says the credentials land in the access log", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('access log');
   });
+
+  it("requires State and Priority on create, which TicketCreate has no default for", () => {
+    const t = a.tools.find((x) => x.name === 'znuny_create_ticket') as unknown as {
+      parameters: { required: string[] };
+      endpointMapping: { bodyMapping: { Ticket: Record<string, unknown> } };
+    };
+    expect(t.parameters.required).toEqual(expect.arrayContaining(['State', 'Priority']));
+    expect(t.endpointMapping.bodyMapping.Ticket.Type).toBe('$Type');
+  });
+
+  it("names the real location of the sample web service and the 6.5 path", () => {
+    const ins = (adapter as unknown as { instructions: string }).instructions;
+    expect(ins).toContain('development/webservices/GenericTicketConnectorREST.yml');
+    expect(ins).toContain('/otrs/');
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

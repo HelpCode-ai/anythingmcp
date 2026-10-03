@@ -37,6 +37,10 @@ describe('paperless-ngx adapter — static spec conformance', () => {
   it("exposes no write tool", () => {
     expect(a.tools.every((t) => t.endpointMapping.method === 'GET')).toBe(true);
   });
+
+  it("asks for API version 9, which both 2.x and 3.x accept", () => {
+    expect(a.connector.headers?.Accept).toBe('application/json; version=9');
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

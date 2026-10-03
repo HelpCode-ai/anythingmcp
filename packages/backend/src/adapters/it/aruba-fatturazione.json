@@ -6,7 +6,7 @@
   "category": "accounting",
   "icon": "aruba-fatturazione",
   "docsUrl": "https://fatturazioneelettronica.aruba.it/apidoc/docs.html",
-  "instructions": "**Getting credentials**\n1. You need an active **Aruba Fatturazione Elettronica** subscription with the API option enabled.\n2. In the web console create the API user. Aruba issues a username of the form `XXXXXXXX` and a password; these are *not* your Aruba portal login.\n3. Set `ARUBA_USERNAME` and `ARUBA_PASSWORD`. The adapter signs in at `/services/auth/signin` and reuses the returned bearer token, refreshing it when Aruba expires it. AnythingMCP keeps the token encrypted in `connector_auth_cache`.\n\n**The Sistema di Interscambio is asynchronous, and that is the whole shape of this API.** You hand an invoice to Aruba, Aruba hands it to the SDI, and the SDI answers minutes or hours later with a notification. `aruba_fatturazione_get_invoice_status` reads where a document currently stands; the states that matter are `PRESA_IN_CARICO` (accepted by Aruba), `INVIATA` (forwarded to the SDI), `CONSEGNATA` (delivered to the recipient), `SCARTATA` (rejected — a real problem), `MANCATA_CONSEGNA` (the recipient's channel failed, but the invoice is still legally issued) and `NON_RECAPITABILE`.\n\n**A `SCARTATA` invoice has not been issued.** It has to be corrected and resent with the same number within five days. An agent reporting revenue should exclude rejected documents, not count them.\n\n**Invoices are XML (FatturaPA), base64-encoded over this API.** The tools here read status and metadata; fetching a document returns the encoded XML, which is the legally binding artefact.\n\n**Unverified.** The paths and field names below follow the vendor's published documentation and have not been exercised against a live tenant. Treat a 404 as a docs-versus-reality gap and check the developer portal before concluding that the credential is wrong. A correction from anyone running this against a real system is genuinely welcome.\n\n**Cloud reachability**: ws.fatturazioneelettronica.aruba.it is public with a valid certificate.",
+  "instructions": "**Getting credentials**\n1. You need an active **Aruba Fatturazione Elettronica** subscription with the API option enabled.\n2. In the web console create the API user. Aruba issues a username of the form `XXXXXXXX` and a password; these are *not* your Aruba portal login.\n3. Set `ARUBA_USERNAME` and `ARUBA_PASSWORD`. The adapter signs in at `https://auth.fatturazioneelettronica.aruba.it/auth/signin` (a separate host from the `ws.` API host, form-encoded `grant_type=password`) and reuses the returned bearer token, which Aruba expires after 30 minutes; AnythingMCP signs in again before then. The token is kept encrypted in `connector_auth_cache`.\n4. **Premium (multi-company) accounts**: Aruba requires the company's country and VAT number on every search, `countrySender` + `vatcodeSender` for sent invoices and `countryReceiver` + `vatcodeReceiver` for received ones. Without them the list tools fail.\n\n**The Sistema di Interscambio is asynchronous, and that is the whole shape of this API.** You hand an invoice to Aruba, Aruba hands it to the SDI, and the SDI answers minutes or hours later with a notification. `aruba_fatturazione_get_invoice_status` reads where a document currently stands; Aruba reports the state as words: `Presa in carico` (accepted by Aruba, not yet sent), `Errore elaborazione` (a technical error before the SDI), `Inviata` (forwarded to the SDI), `Scartata` (SCARTATA, rejected by the SDI with notification NS: a real problem), `Non consegnata` (MC: the recipient's channel failed, but the invoice is still legally issued; for the PA the SDI retries for 10 days), `Recapito impossibile` (AT), `Consegnata` (RC, delivered), `Accettata` / `Rifiutata` (the customer's outcome, EC01 / EC02) and `Decorrenza termini` (DT, no answer within 15 days).\n\n**A `SCARTATA` invoice has not been issued.** It has to be corrected and resent with the same number within five days. An agent reporting revenue should exclude rejected documents, not count them.\n\n**Invoices are XML (FatturaPA), base64-encoded over this API.** The list tools return metadata only (Aruba's lazy loading); fetching one document by its SDI id returns the encoded XML in `file`, which is the legally binding artefact. Lists page with `page` (from 1) and `size` (1-100) and filter by creation date in ISO 8601.\n\n**Checked against Aruba's published API documentation** (hosts, paths, parameters, login), not yet against a live account. A correction from anyone running it on a real one is welcome.\n\n**Cloud reachability**: ws.fatturazioneelettronica.aruba.it is public with a valid certificate.",
   "requiredEnvVars": [
     "ARUBA_USERNAME",
     "ARUBA_PASSWORD"
@@ -17,19 +17,21 @@
     "baseUrl": "https://ws.fatturazioneelettronica.aruba.it/services",
     "authType": "LOGIN_TOKEN",
     "authConfig": {
-      "loginUrl": "https://ws.fatturazioneelettronica.aruba.it/services/auth/signin",
+      "loginUrl": "https://auth.fatturazioneelettronica.aruba.it/auth/signin",
       "loginMethod": "POST",
       "loginHeaders": {
-        "Content-Type": "application/json"
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "Accept": "application/json"
       },
       "loginBody": {
+        "grant_type": "password",
         "username": "${username}",
         "password": "${password}"
       },
       "username": "{{ARUBA_USERNAME}}",
       "password": "{{ARUBA_PASSWORD}}",
       "tokenJsonPath": "access_token",
-      "tokenTTLSeconds": 3600,
+      "tokenTTLSeconds": 1800,
       "proactiveRefreshSeconds": 300,
       "refreshOn401": true,
       "headerName": "Authorization",
@@ -38,7 +40,7 @@
     "headers": {
       "Accept": "application/json"
     },
-    "healthcheckPath": "/invoice/out/findByFilters"
+    "healthcheckPath": "https://auth.fatturazioneelettronica.aruba.it/auth/userInfo"
   },
   "probe": {
     "tool": "aruba_fatturazione_list_sent_invoices"
@@ -46,47 +48,58 @@
   "tools": [
     {
       "name": "aruba_fatturazione_list_sent_invoices",
-      "description": "List invoices sent through the Sistema di Interscambio in a date range, with their number, recipient, total and current SDI state.",
+      "description": "List invoices sent through the Sistema di Interscambio in a creation-date range, with sender, recipient, number, date, file name, SDI id and current state. The list carries no file content; read one invoice with aruba_fatturazione_get_sent_invoice.",
       "parameters": {
         "type": "object",
         "properties": {
           "startDate": {
             "type": "string",
-            "description": "Earliest invoice date, dd/MM/yyyy."
+            "description": "Creation date from, ISO 8601, e.g. 2026-09-01T00:00:00Z."
           },
           "endDate": {
             "type": "string",
-            "description": "Latest invoice date, dd/MM/yyyy."
+            "description": "Creation date to, ISO 8601, e.g. 2026-09-30T23:59:59Z."
           },
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
+            "description": "Page number, starting at 1 (default 1)."
           },
           "size": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1-100 (default 10)."
           },
-          "status": {
+          "countrySender": {
             "type": "string",
-            "description": "Restrict by SDI state, e.g. CONSEGNATA, SCARTATA, MANCATA_CONSEGNA."
+            "description": "Seller country code, e.g. IT. Required on Premium (multi-company) accounts."
+          },
+          "vatcodeSender": {
+            "type": "string",
+            "description": "Seller VAT number (partita IVA). Required on Premium (multi-company) accounts."
+          },
+          "vatcodeReceiver": {
+            "type": "string",
+            "description": "Restrict to one customer's VAT number."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/invoice/out/findByFilters",
+        "path": "/invoice/out/findByUsername",
         "queryParams": {
+          "username": "$ARUBA_USERNAME",
           "startDate": "$startDate",
           "endDate": "$endDate",
           "page": "$page",
           "size": "$size",
-          "status": "$status"
+          "countrySender": "$countrySender",
+          "vatcodeSender": "$vatcodeSender",
+          "vatcodeReceiver": "$vatcodeReceiver"
         }
       }
     },
     {
       "name": "aruba_fatturazione_get_invoice_status",
-      "description": "Read where one sent invoice currently stands with the SDI, including the notification history. SCARTATA means it was rejected and has not legally been issued.",
+      "description": "Read where one sent invoice currently stands: its state (Presa in carico, Inviata, Scartata, Non consegnata, Recapito impossibile, Consegnata, Accettata, Rifiutata, Decorrenza termini) and, for Errore elaborazione, the reason. Scartata means it was rejected and has not legally been issued. The SDI notifications themselves come from aruba_fatturazione_list_notifications.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -101,21 +114,26 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/invoice/out/getBySdiId",
+        "path": "/invoice/out/getByIdSdi",
         "queryParams": {
-          "idSdi": "$idSdi"
+          "idSdi": "$idSdi",
+          "includeFile": "false"
         }
       }
     },
     {
       "name": "aruba_fatturazione_get_sent_invoice",
-      "description": "Fetch one sent invoice as base64-encoded FatturaPA XML — the legally binding artefact, not a rendering of it.",
+      "description": "Fetch one sent invoice with its file as base64-encoded FatturaPA XML (`file`), the legally binding artefact, plus its state and file name. Set includePdf for a PDF rendering in `pdfFile`.",
       "parameters": {
         "type": "object",
         "properties": {
           "idSdi": {
             "type": "string",
             "description": "SDI identifier of the document."
+          },
+          "includePdf": {
+            "type": "boolean",
+            "description": "When true, also return a PDF rendering in pdfFile."
           }
         },
         "required": [
@@ -124,56 +142,77 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/invoice/out/getFile",
+        "path": "/invoice/out/getByIdSdi",
         "queryParams": {
-          "idSdi": "$idSdi"
+          "idSdi": "$idSdi",
+          "includePdf": "$includePdf"
         }
       }
     },
     {
       "name": "aruba_fatturazione_list_received_invoices",
-      "description": "List invoices received from suppliers through the SDI in a date range, with their sender, number, date and total.",
+      "description": "List invoices received from suppliers through the SDI in a creation-date range, with sender, number, date, file name and SDI id. The list carries no file content; read one invoice with aruba_fatturazione_get_received_invoice.",
       "parameters": {
         "type": "object",
         "properties": {
           "startDate": {
             "type": "string",
-            "description": "Earliest invoice date, dd/MM/yyyy."
+            "description": "Creation date from, ISO 8601, e.g. 2026-09-01T00:00:00Z."
           },
           "endDate": {
             "type": "string",
-            "description": "Latest invoice date, dd/MM/yyyy."
+            "description": "Creation date to, ISO 8601, e.g. 2026-09-30T23:59:59Z."
           },
           "page": {
             "type": "number",
-            "description": "Page number, starting at 1."
+            "description": "Page number, starting at 1 (default 1)."
           },
           "size": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1-100 (default 10)."
+          },
+          "countryReceiver": {
+            "type": "string",
+            "description": "Your company's country code, e.g. IT. Required on Premium (multi-company) accounts."
+          },
+          "vatcodeReceiver": {
+            "type": "string",
+            "description": "Your company's VAT number (partita IVA). Required on Premium (multi-company) accounts."
+          },
+          "vatcodeSender": {
+            "type": "string",
+            "description": "Restrict to one supplier's VAT number."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/invoice/in/findByFilters",
+        "path": "/invoice/in/findByUsername",
         "queryParams": {
+          "username": "$ARUBA_USERNAME",
           "startDate": "$startDate",
           "endDate": "$endDate",
           "page": "$page",
-          "size": "$size"
+          "size": "$size",
+          "countryReceiver": "$countryReceiver",
+          "vatcodeReceiver": "$vatcodeReceiver",
+          "vatcodeSender": "$vatcodeSender"
         }
       }
     },
     {
       "name": "aruba_fatturazione_get_received_invoice",
-      "description": "Fetch one received supplier invoice as base64-encoded FatturaPA XML, for archiving or for feeding into bookkeeping.",
+      "description": "Fetch one received supplier invoice with its file as base64-encoded FatturaPA XML (`file`), for archiving or for feeding into bookkeeping. Set includePdf for a PDF rendering in `pdfFile`.",
       "parameters": {
         "type": "object",
         "properties": {
           "idSdi": {
             "type": "string",
             "description": "SDI identifier of the received document."
+          },
+          "includePdf": {
+            "type": "boolean",
+            "description": "When true, also return a PDF rendering in pdfFile."
           }
         },
         "required": [
@@ -182,32 +221,33 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/invoice/in/getFile",
+        "path": "/invoice/in/getByIdSdi",
         "queryParams": {
-          "idSdi": "$idSdi"
+          "idSdi": "$idSdi",
+          "includePdf": "$includePdf"
         }
       }
     },
     {
       "name": "aruba_fatturazione_list_notifications",
-      "description": "List the SDI notifications attached to one document: receipt, delivery, non-delivery or rejection, each with its timestamp and reason code.",
+      "description": "List the SDI notifications of one sent invoice (RC delivered, NS rejected, MC not delivered, AT undeliverable, NE customer outcome, DT terms elapsed), each with its date, file name and base64 content. Looked up by the invoice's file name, not its SDI id.",
       "parameters": {
         "type": "object",
         "properties": {
-          "idSdi": {
+          "invoiceFilename": {
             "type": "string",
-            "description": "SDI identifier of the document."
+            "description": "File name of the sent invoice as returned by the list/get tools, e.g. IT01879020517_abcde.xml.p7m."
           }
         },
         "required": [
-          "idSdi"
+          "invoiceFilename"
         ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/invoice/out/getNotifications",
+        "path": "/notification/out/getByInvoiceFilename",
         "queryParams": {
-          "idSdi": "$idSdi"
+          "invoiceFilename": "$invoiceFilename"
         }
       }
     }

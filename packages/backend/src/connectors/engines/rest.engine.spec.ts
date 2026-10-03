@@ -1125,7 +1125,7 @@ describe('RestEngine', () => {
         tools: Array<{ name: string; endpointMapping: Record<string, unknown> }>;
       };
       const tool = checkmk.tools.find(
-        (t) => t.name === 'checkmk_list_host_states',
+        (t) => t.name === 'checkmk_list_hosts',
       )!;
 
       await engine.execute(
@@ -1135,7 +1135,7 @@ describe('RestEngine', () => {
           authConfig: { headerName: 'Authorization', apiKey: 'Bearer u s' },
         },
         tool.endpointMapping as never,
-        {},
+        { hostnames: ['web01', 'db01'] },
       );
 
       const cfg = mockedAxios.mock.calls[0][0] as unknown as {
@@ -1146,8 +1146,8 @@ describe('RestEngine', () => {
         p: Record<string, unknown>,
       ) => string;
       const serialized = query(cfg.params);
-      expect(serialized).toContain('columns=name&columns=state');
-      expect(serialized).not.toContain('columns%5B%5D');
+      expect(serialized).toContain('hostnames=web01&hostnames=db01');
+      expect(serialized).not.toContain('hostnames%5B%5D');
     });
   });
 

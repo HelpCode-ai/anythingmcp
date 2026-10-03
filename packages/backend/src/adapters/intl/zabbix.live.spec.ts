@@ -30,7 +30,7 @@ describe('zabbix adapter — static spec conformance', () => {
 
   it("names a distinct JSON-RPC method per tool", () => {
     const methods = a.tools.map((t) => (t.endpointMapping.bodyMapping as Record<string, string>).method);
-    expect(methods).toEqual(expect.arrayContaining(['apiinfo.version', 'host.get', 'problem.get', 'event.get']));
+    expect(methods).toEqual(expect.arrayContaining(['hostgroup.get', 'host.get', 'problem.get', 'event.get']));
     expect(methods.every((m) => typeof m === 'string' && m.includes('.'))).toBe(true);
   });
 
@@ -40,8 +40,24 @@ describe('zabbix adapter — static spec conformance', () => {
     };
   });
 
-  it("probes apiinfo.version, the one method needing no auth", () => {
+  it("probes with an authenticated call, since apiinfo.version refuses an Authorization header", () => {
     expect(a.probe?.tool).toBe('zabbix_get_api_version');
+    const probe = a.tools.find((t) => t.name === 'zabbix_get_api_version')!;
+    const body = probe.endpointMapping.bodyMapping as { method: string; params: Record<string, unknown> };
+    expect(body.method).toBe('hostgroup.get');
+    expect(body.params.countOutput).toBe(true);
+    const methods = a.tools.map((t) => (t.endpointMapping.bodyMapping as Record<string, string>).method);
+    expect(methods).not.toContain('apiinfo.version');
+  });
+
+  it("asks for host groups under both the 7.x and the pre-7.2 parameter name", () => {
+    for (const name of ['zabbix_list_hosts', 'zabbix_list_maintenance_windows']) {
+      const params = (a.tools.find((t) => t.name === name)!.endpointMapping.bodyMapping as {
+        params: Record<string, unknown>;
+      }).params;
+      expect(params).toHaveProperty('selectHostGroups');
+      expect(params).toHaveProperty('selectGroups');
+    }
   });
 
   it("keeps the live problem board separate from event history", () => {

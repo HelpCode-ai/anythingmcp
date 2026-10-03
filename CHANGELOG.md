@@ -8,7 +8,7 @@ Each release ships with a structured changelog covering fixes, new features, bre
 
 - [Latest release](https://github.com/HelpCode-ai/anythingmcp/releases/latest)
 - [All releases](https://github.com/HelpCode-ai/anythingmcp/releases)
-- [Roadmap](ROADMAP.md)
+- [Roadmap](docs/ROADMAP.md)
 
 ## Versioning
 

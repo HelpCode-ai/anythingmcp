@@ -21,8 +21,24 @@ const a = adapter as unknown as {
 const toolNames = a.tools.map((t) => t.name);
 
 describe('quipu adapter — static spec conformance', () => {
-  it("sends the JSON:API Accept header Quipu requires", () => {
-    expect(a.connector.headers?.Accept).toBe('application/vnd.api+json');
+  it("sends Quipu's versioned Accept header (vnd.api+json gets 404 on every path)", () => {
+    expect(a.connector.headers?.Accept).toBe('application/vnd.quipu.v1+json');
+  });
+
+  it("asks for the mandatory `ecommerce` scope on the client-credentials token", () => {
+    expect(a.connector.authConfig?.grant).toBe('client_credentials');
+    expect(a.connector.authConfig?.scope).toBe('ecommerce');
+  });
+
+  it("reads expenses from /invoices by kind, since /expenses and /items do not exist", () => {
+    const inv = a.tools.find((x) => x.name === 'quipu_list_invoices')!;
+    const exp = a.tools.find((x) => x.name === 'quipu_list_expenses')!;
+    expect(inv.endpointMapping.path).toBe('/invoices');
+    expect(exp.endpointMapping.path).toBe('/invoices');
+    expect((inv.endpointMapping.queryParams as Record<string, unknown>)['filter[kind]']).toBe('income');
+    expect((exp.endpointMapping.queryParams as Record<string, unknown>)['filter[kind]']).toBe('expenses');
+    expect(Object.keys(inv.endpointMapping.queryParams as object)).toContain('filter[period]');
+    expect(a.tools.map((t) => t.endpointMapping.path)).not.toContain('/items');
   });
 
   it("pages JSON:API style", () => {
