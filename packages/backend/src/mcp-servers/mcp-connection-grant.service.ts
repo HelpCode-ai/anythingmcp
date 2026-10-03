@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { ProductEvents, ProductEventService } from '../audit/product-event.service';
 
 /**
  * What a grant resolved to, for the caller that is about to build a tool list.
@@ -42,7 +43,10 @@ export type ResolvedGrant =
 export class McpConnectionGrantService {
   private readonly logger = new Logger(McpConnectionGrantService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly events?: ProductEventService,
+  ) {}
 
   /**
    * Resolve what `clientId` may see on behalf of `userId`, re-validating every
@@ -93,7 +97,7 @@ export class McpConnectionGrantService {
       );
       return false;
     }
-    await this.upsert(clientId, userId, { organizationId, serverIds: [] });
+    await this.upsert(clientId, userId, { organizationId, serverIds: [] }, organizationId);
     return true;
   }
 
@@ -118,10 +122,12 @@ export class McpConnectionGrantService {
     }
     if (valid.length === 0) return [];
 
-    await this.upsert(clientId, userId, {
-      organizationId: null,
-      serverIds: valid.map((s) => s.id),
-    });
+    await this.upsert(
+      clientId,
+      userId,
+      { organizationId: null, serverIds: valid.map((s) => s.id) },
+      valid[0].organizationId,
+    );
     return valid.map((s) => s.id);
   }
 
@@ -251,13 +257,38 @@ export class McpConnectionGrantService {
     clientId: string,
     userId: string,
     data: { organizationId: string | null; serverIds: string[] },
+    /** Workspace the grant points into, for the product event. */
+    eventOrganizationId?: string,
   ): Promise<void> {
+    const existing = await this.prisma.mcpConnectionGrant.findUnique({
+      where: { clientId_userId: { clientId, userId } },
+      select: { id: true },
+    });
     await this.prisma.mcpConnectionGrant.upsert({
       where: { clientId_userId: { clientId, userId } },
       create: { clientId, userId, ...data },
       // Choosing again un-revokes: the user is explicitly saying what this
       // client may reach, which is the opposite of having revoked it.
       update: { ...data, revokedAt: null },
+    });
+    if (!existing) await this.reportConnected(clientId, userId, eventOrganizationId);
+  }
+
+  /** First connection of this client for this user: the funnel step between sign-up and first call. */
+  private async reportConnected(
+    clientId: string,
+    userId: string,
+    organizationId?: string,
+  ): Promise<void> {
+    if (!this.events) return;
+    const client = await this.prisma.oAuthClient
+      .findUnique({ where: { clientId }, select: { clientName: true } })
+      .catch(() => null);
+    await this.events.log({
+      event: ProductEvents.AI_CLIENT_CONNECTED,
+      userId,
+      organizationId: organizationId ?? null,
+      metadata: { client: client?.clientName ?? 'unknown' },
     });
   }
 }

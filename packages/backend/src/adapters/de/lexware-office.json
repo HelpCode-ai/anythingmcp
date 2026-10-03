@@ -109,11 +109,11 @@
         "properties": {
           "voucherType": {
             "type": "string",
-            "description": "Comma-separated types: salesinvoice, salescreditnote, purchaseinvoice, purchasecreditnote, invoice, creditnote, orderconfirmation, quotation, deliverynote, downpaymentinvoice."
+            "description": "Required by Lexware. Comma-separated types: salesinvoice, salescreditnote, purchaseinvoice, purchasecreditnote, invoice, creditnote, orderconfirmation, quotation, deliverynote, downpaymentinvoice, or any."
           },
           "voucherStatus": {
             "type": "string",
-            "description": "Comma-separated statuses: draft, open, paid, paidoff, voided, transferred, sepadebit, overdue, accepted, rejected."
+            "description": "Required by Lexware. Comma-separated statuses: draft, open, paid, paidoff, voided, transferred, sepadebit, overdue, accepted, rejected, or any. overdue cannot be combined with other statuses: ask for it on its own (Lexware answers 400 otherwise)."
           },
           "archived": {
             "type": "boolean",
@@ -139,7 +139,11 @@
             "type": "number",
             "description": "Page size, 1–250 (default 25)."
           }
-        }
+        },
+        "required": [
+          "voucherType",
+          "voucherStatus"
+        ]
       },
       "endpointMapping": {
         "method": "GET",

@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { normalizeConnectorBaseUrl, resolveMcpEndpointUrl } from './url.util';
+import { connectorPageUrl, normalizeConnectorBaseUrl, resolveMcpEndpointUrl } from './url.util';
 
 describe('normalizeConnectorBaseUrl', () => {
   it('keeps a well-formed https URL untouched', () => {
@@ -153,5 +153,25 @@ describe('resolveMcpEndpointUrl credential handling', () => {
     expect(
       resolveMcpEndpointUrl('http://mcp.example.com:8931/tenant/a', '/mcp').toString(),
     ).toBe('http://mcp.example.com:8931/tenant/a');
+  });
+});
+
+describe('connectorPageUrl', () => {
+  const saved = process.env.FRONTEND_URL;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.FRONTEND_URL;
+    else process.env.FRONTEND_URL = saved;
+  });
+
+  it('builds the dashboard link from FRONTEND_URL', () => {
+    process.env.FRONTEND_URL = 'https://cloud.example.com/';
+    expect(connectorPageUrl('c1')).toBe('https://cloud.example.com/connectors/c1');
+  });
+
+  it('gives nothing without a usable FRONTEND_URL or id', () => {
+    delete process.env.FRONTEND_URL;
+    expect(connectorPageUrl('c1')).toBeUndefined();
+    process.env.FRONTEND_URL = 'https://cloud.example.com';
+    expect(connectorPageUrl(undefined)).toBeUndefined();
   });
 });

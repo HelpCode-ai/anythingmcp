@@ -15,7 +15,7 @@
     "name": "API-Football v3",
     "type": "REST",
     "baseUrl": "https://v3.football.api-sports.io",
-    "healthPath": "/status",
+    "healthcheckPath": "/status",
     "authType": "API_KEY",
     "authConfig": {
       "headerName": "x-apisports-key",

@@ -4,6 +4,9 @@ import { EmailService } from '../../settings/email.service';
 import { LicenseService } from '../../license/license.service';
 
 const HOURS = (n: number) => n * 60 * 60 * 1000;
+
+/** How long after connecting an AI client to an empty workspace we nudge. */
+const AI_CLIENT_NUDGE_AFTER = HOURS(2);
 const DAYS = (n: number) => n * 24 * 60 * 60 * 1000;
 
 /**
@@ -67,18 +70,23 @@ export class OnboardingCronService {
       skipped: 0,
     };
 
-    // Candidate set: verified, no completion, ≤2 reminders, not opted out,
-    // and registered between 24h and 14d ago. We bound at 14d so a user
+    // Candidate set: verified, ≤2 reminders, not opted out, registered
+    // between AI_CLIENT_NUDGE_AFTER and 14d ago. We bound at 14d so a user
     // who signed up months ago doesn't suddenly get woken up if we ever
     // backfill columns.
+    //
+    // onboardingCompletedAt is NOT a filter any more: the Skip button on
+    // /welcome sets it, and people who skipped the page with an empty
+    // workspace stopped getting the reminders that were meant for exactly
+    // them (13 of the 428 sign-ups of 1-3 Oct 2026). What counts is whether
+    // the workspace has a connector, checked below.
     const candidates = await this.prisma.user.findMany({
       where: {
         emailVerified: true,
         emailMarketingOptOut: false,
-        onboardingCompletedAt: null,
         onboardingReminderCount: { lt: 2 },
         createdAt: {
-          lte: new Date(now - HOURS(24)),
+          lte: new Date(now - AI_CLIENT_NUDGE_AFTER),
           gte: new Date(now - HOURS(24 * 14)),
         },
       },
@@ -87,25 +95,56 @@ export class OnboardingCronService {
         email: true,
         name: true,
         createdAt: true,
+        organizationId: true,
+        onboardingCompletedAt: true,
         onboardingReminderCount: true,
         onboardingLastReminderAt: true,
         _count: { select: { connectors: true } },
       },
     });
 
+    // Connectors per workspace: a teammate's connector serves this user too.
+    const orgIds = [
+      ...new Set(candidates.map((u) => u.organizationId).filter((id): id is string => !!id)),
+    ];
+    const orgConnectors = new Map<string, number>();
+    if (orgIds.length > 0) {
+      const rows = await this.prisma.connector.groupBy({
+        by: ['organizationId'],
+        where: { organizationId: { in: orgIds } },
+        _count: { _all: true },
+      });
+      for (const r of rows) {
+        if (r.organizationId) orgConnectors.set(r.organizationId, r._count._all);
+      }
+    }
+
+    // Who already connected an AI client (Claude, ChatGPT…) and how long ago.
+    // These are the warmest leads of all: the client is waiting on a
+    // workspace with nothing in it.
+    const aiClients = await this.connectedAiClients(
+      candidates.map((u) => u.id),
+      now,
+    );
+
     for (const u of candidates) {
       out.examined++;
 
-      // Race-safe: a user that created a connector between candidate
-      // pull and now should never receive a nudge.
-      if (u._count.connectors > 0) {
+      // Race-safe: a workspace that got a connector between candidate pull
+      // and now should never receive a nudge.
+      const connectors =
+        (u.organizationId ? orgConnectors.get(u.organizationId) : undefined) ??
+        u._count.connectors;
+      if (connectors > 0) {
         // Auto-stamp completion so we never see them again.
-        await this.prisma.user
-          .update({
-            where: { id: u.id },
-            data: { onboardingCompletedAt: new Date() },
-          })
-          .catch(() => {});
+        if (!u.onboardingCompletedAt) {
+          await this.prisma.user
+            .update({
+              where: { id: u.id },
+              data: { onboardingCompletedAt: new Date() },
+            })
+            .catch(() => {});
+        }
         out.skipped++;
         continue;
       }
@@ -115,12 +154,16 @@ export class OnboardingCronService {
         ? now - u.onboardingLastReminderAt.getTime()
         : Infinity;
 
-      // First nudge: 24-72h after signup, count == 0.
-      if (u.onboardingReminderCount === 0 && age >= HOURS(24)) {
+      // First nudge: 24h after signup, or as soon as an AI client has been
+      // connected for AI_CLIENT_NUDGE_AFTER, whichever comes first. The
+      // second one names the client, because that is what the user just did.
+      const aiClient = aiClients.get(u.id);
+      if (u.onboardingReminderCount === 0 && (age >= HOURS(24) || aiClient)) {
         const ok = await this.email.sendOnboardingReminderEmail(
           u.email,
           u.name || 'there',
           1,
+          aiClient ? { aiClient } : undefined,
         );
         if (ok) {
           await this.prisma.user.update({
@@ -310,6 +353,33 @@ export class OnboardingCronService {
    * `firstSuccessfulInvocationAt: null` = never activated; `activationReminderAt`
    * caps it at one send.
    */
+  /**
+   * Users among `userIds` with a live AI-client connection made at least
+   * AI_CLIENT_NUDGE_AFTER ago, mapped to the client's display name.
+   */
+  private async connectedAiClients(userIds: string[], now: number): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (userIds.length === 0) return out;
+    const grants = await this.prisma.mcpConnectionGrant.findMany({
+      where: {
+        userId: { in: userIds },
+        revokedAt: null,
+        createdAt: { lte: new Date(now - AI_CLIENT_NUDGE_AFTER) },
+      },
+      select: { userId: true, clientId: true },
+    });
+    if (grants.length === 0) return out;
+    const clients = await this.prisma.oAuthClient.findMany({
+      where: { clientId: { in: [...new Set(grants.map((g) => g.clientId))] } },
+      select: { clientId: true, clientName: true },
+    });
+    const names = new Map(clients.map((c) => [c.clientId, c.clientName]));
+    for (const g of grants) {
+      if (!out.has(g.userId)) out.set(g.userId, names.get(g.clientId) || 'your AI client');
+    }
+    return out;
+  }
+
   private async runActivationPass(
     now: number,
     out: {
