@@ -27,7 +27,7 @@ const HTTP_SCHEME = /^https?:\/\//i;
 const BARE_HOST = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d{1,5})?(?:[/?#]\S*)?$/;
 // A single-label name such as `nextcloud:8080` or `localhost`.
 const SINGLE_LABEL = /^[A-Za-z0-9-]+(?::\d{1,5})?(?:[/?#]\S*)?$/;
-const EMAIL = /^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/;
+const EMAIL = /^[^\s@/]+@[^\s@/]+$/;
 
 const GENERIC_EXAMPLE = 'https://example.com';
 
@@ -113,6 +113,24 @@ export function normalizeBaseUrlVariable(name: string, value: string): string {
 }
 
 /**
+ * Clean up a tenant identifier for weclapp when a full hostname or URL was supplied.
+ */
+function normalizeWeclappTenant(raw: string): string {
+  let val = (raw ?? '').trim();
+  if (!val) return val;
+  val = val.replace(/^https?:\/\//i, '');
+  val = val.replace(/^[/?#].*$/, '');
+  const slashIdx = val.indexOf('/');
+  if (slashIdx !== -1) val = val.slice(0, slashIdx);
+  const qIdx = val.indexOf('?');
+  if (qIdx !== -1) val = val.slice(0, qIdx);
+  const hashIdx = val.indexOf('#');
+  if (hashIdx !== -1) val = val.slice(0, hashIdx);
+  val = val.replace(/\.weclapp\.com$/i, '');
+  return val;
+}
+
+/**
  * Apply {@link normalizeBaseUrlVariable} to the variable a base-URL template
  * starts with, when that variable is among `values`. Returns a new map; other
  * values are untouched. Non-HTTP connectors (DATABASE connection strings carry
@@ -124,10 +142,17 @@ export function normalizeBaseUrlVariables(
   connectorType?: string,
 ): Record<string, string> {
   if (connectorType && !HTTP_CONNECTOR_TYPES.has(connectorType)) return values;
+  let result = values;
+  if (typeof values['WECLAPP_TENANT'] === 'string') {
+    const cleaned = normalizeWeclappTenant(values['WECLAPP_TENANT']);
+    if (cleaned !== values['WECLAPP_TENANT']) {
+      result = { ...result, WECLAPP_TENANT: cleaned };
+    }
+  }
   const name = leadingBaseUrlVariable(template);
-  if (!name || typeof values[name] !== 'string') return values;
+  if (!name || typeof result[name] !== 'string') return result;
   return Object.fromEntries(
-    Object.entries(values).map(([k, v]) => [
+    Object.entries(result).map(([k, v]) => [
       k,
       k === name ? normalizeBaseUrlVariable(name, v) : v,
     ]),
@@ -140,7 +165,7 @@ export function normalizeBaseUrlVariables(
  *
  * Connectors installed before the save-time check can still carry
  * `yourname.substack.com` as their base URL. Without this, the SSRF guard
- * reports "invalid URL", which reads like a blocked request.
+ * reports "invalid URL", warning reads like a blocked request.
  *
  * @param input.template The stored, un-interpolated base URL. When it starts
  *   with `{{VAR}}`, that is the variable to name. Catalog installs store the
