@@ -9,7 +9,7 @@ import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { authTypeLabel, cn } from '@/lib/utils';
+import { adapterAuthLabel, adapterNeedsCredentials, cn } from '@/lib/utils';
 import { matchesSearch } from '@/lib/marketplace-search';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 
@@ -492,7 +492,7 @@ function AdapterStoreContent() {
         ) : (
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((adapter) => {
-              const isPublic = adapter.authType === 'NONE';
+              const isPublic = !adapterNeedsCredentials(adapter);
               /* log-ish 1..10 segment scale, same as the marketing-site card */
               const fillCount = Math.max(
                 1,
@@ -551,7 +551,7 @@ function AdapterStoreContent() {
                           className="max-w-full min-w-0 gap-1 truncate font-mono uppercase tracking-wider"
                         >
                           {isPublic ? <SparklesIcon /> : <LockIcon />}
-                          {authTypeLabel(adapter.authType)}
+                          {adapterAuthLabel(adapter)}
                         </Badge>
                       )}
                       {adapter.docsUrl && (

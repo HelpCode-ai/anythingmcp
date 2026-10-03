@@ -123,6 +123,11 @@ test('OAuth: saves the app keys and goes straight to the sign-in, with the way b
   await expect(page.getByText('https://cloud.example.com/api/mcp-oauth/callback')).toBeVisible();
   // The refresh token is folded away: the sign-in fills it in.
   await expect(page.getByLabel('Refresh token')).toBeHidden();
+  // A text field then a password field reads as a login form: the browser
+  // must not fill the user's own e-mail and password into the app's keys.
+  await expect(page.getByLabel('Keystring')).toHaveAttribute('autocomplete', 'off');
+  await expect(page.getByLabel('Shared secret')).toHaveAttribute('autocomplete', 'new-password');
+  await expect(page.getByLabel('Shared secret')).toHaveAttribute('data-1p-ignore', 'true');
   await page.getByLabel('Keystring').fill('ks');
   await page.getByLabel('Shared secret').fill('ss');
   await page.getByRole('button', { name: 'Save and sign in to Etsy' }).click();

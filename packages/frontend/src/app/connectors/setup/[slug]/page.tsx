@@ -286,9 +286,16 @@ function SetupContent() {
         <div className="relative">
           <input
             id={id}
-            name={f.name}
+            // API credentials, never the person's own login: a non-login name
+            // and the password managers' opt-outs stop a browser from filling
+            // the signed-in user's e-mail and password in here.
+            name={`amcp-connector-var-${f.name}`}
             type={f.secret && !show ? 'password' : 'text'}
-            autoComplete="off"
+            autoComplete={f.secret ? 'new-password' : 'off'}
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore="true"
+            data-form-type="other"
             spellCheck={false}
             value={values[f.name] ?? ''}
             placeholder={storedSecrets.includes(f.name) ? 'Stored. Leave empty to keep it' : (f.example ?? '')}

@@ -66,12 +66,18 @@ export class McpOAuthCallbackController {
       'the authorization with POST /api/mcp-oauth/complete.',
   })
   async oauthCallback(
-    @Query('code') code: string,
-    @Query('state') state: string,
-    @Query('error') providerError: string | undefined,
-    @Query('error_description') providerErrorDescription: string | undefined,
+    @Query('code') rawCode: unknown,
+    @Query('state') rawState: unknown,
+    @Query('error') rawError: unknown,
+    @Query('error_description') rawErrorDescription: unknown,
     @Res() res: Response,
   ) {
+    // A repeated parameter (?state=a&state=b) arrives as an array: take
+    // strings only, so nothing below is fed a value of the wrong type.
+    const code = singleQueryValue(rawCode);
+    const state = singleQueryValue(rawState);
+    const providerError = singleQueryValue(rawError);
+    const providerErrorDescription = singleQueryValue(rawErrorDescription);
     if (providerError) {
       // The user declined, or the provider refused the request. The attempt
       // is spent either way.
@@ -260,6 +266,10 @@ export class McpOAuthCallbackController {
     );
     return toolsImported;
   }
+}
+
+function singleQueryValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 /** The provider's refusal in words a user can act on. */
