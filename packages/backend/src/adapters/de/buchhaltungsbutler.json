@@ -1,12 +1,12 @@
 {
   "slug": "buchhaltungsbutler",
   "name": "BuchhaltungsButler",
-  "description": "BuchhaltungsButler — German automated bookkeeping: postings, receipts, bank transactions, customers and suppliers. Every endpoint is a POST; auth is HTTP Basic (API client id and secret) plus an api_key field in the request body.",
+  "description": "BuchhaltungsButler, German automated bookkeeping: postings, receipts, bank transactions, debtors, creditors, posting accounts and cost centres. Every endpoint is a POST; auth is HTTP Basic (API client id and secret) plus an api_key field in the request body.",
   "region": "de",
   "category": "accounting",
   "icon": "buchhaltungsbutler",
   "docsUrl": "https://docs.buchhaltungsbutler.de/",
-  "instructions": "**Getting credentials** — BuchhaltungsButler needs *three* values, not one.\n1. In the web app open **Einstellungen → API** and create an API client. You receive an **API client id** and an **API client secret**: these are the HTTP Basic username and password.\n2. On the same page copy the **API key** for the client (Mandant) you want to reach. This is a separate value that travels in the JSON body of every request.\n3. Set `BUCHHALTUNGSBUTLER_CLIENT_ID`, `BUCHHALTUNGSBUTLER_CLIENT_SECRET` and `BUCHHALTUNGSBUTLER_API_KEY`.\n\n**Everything is a POST.** BuchhaltungsButler's API does not use GET for reads — `/postings/get`, `/receipts/get` and the rest are POST endpoints whose body carries both the api_key and the filter. That is why these tools look like writes in the HTTP trace even when they only read; the tool names here say what each one actually does.\n\n**Paging** uses `limit` and `offset` in the body. The default page is small; ask for what you need rather than looping.\n\n**Dates** are `YYYY-MM-DD` strings. A posting's `date` is the booking date (Buchungsdatum), which is not the same as the receipt date.\n\n**Unverified**: the endpoint paths and field names below follow BuchhaltungsButler's published documentation but have not been exercised against a live tenant. Treat a 404 as a docs-vs-reality gap and check docs.buchhaltungsbutler.de before assuming the credential is wrong.\n\n**Cloud reachability**: webapp.buchhaltungsbutler.de is public with a valid certificate.",
+  "instructions": "**Getting credentials**: BuchhaltungsButler needs *three* values, not one.\n1. In the web app open **Einstellungen → API** and create an API client. You receive an **API client id** and an **API client secret**: these are the HTTP Basic username and password.\n2. On the same page copy the **API key** for the client (Mandant) you want to reach. This is a separate value that travels in the body of every request.\n3. Set `BUCHHALTUNGSBUTLER_CLIENT_ID`, `BUCHHALTUNGSBUTLER_CLIENT_SECRET` and `BUCHHALTUNGSBUTLER_API_KEY`.\n\nThe connector's Basic Auth username and password are this API client id and secret, filled in from the variables. They are **not** your BuchhaltungsButler login: an e-mail address and password there are refused with a 401.\n\nA wrong client id or secret answers `401 {\"error_code\":3,\"message\":\"API credentials unknown or invalid\"}`. A path the API does not know answers with the web app's HTML 404 page, not with JSON.\n\n**Everything is a POST.** The API does not use GET for reads: `/receipts/get`, `/postings/get` and the rest are POST endpoints whose JSON body carries both the api_key and the filter. The tool names here say what each one actually does.\n\n**Required filters**:\n- `buchhaltungsbutler_list_receipts` needs `list_direction`: `inbound` (Eingangsbelege, supplier invoices) or `outbound` (Ausgangsbelege, your own invoices). For \"all receipts\" call it twice.\n- `buchhaltungsbutler_list_postings` needs `date_from` and `date_to`.\n\n**Customers and suppliers** are *debtors* and *creditors* in BuchhaltungsButler (Debitoren / Kreditoren, under `/settings/get/...`). Their numbers are posting account numbers.\n\n**Paging** uses `limit` and `offset`. Defaults differ per endpoint (debtors and creditors return 25, receipts and transactions 500, postings up to 1000); ask for what you need rather than looping.\n\n**Dates** are `YYYY-MM-DD` strings. A posting's date is the booking date (Buchungsdatum), which is not the same as the receipt date.\n\n**Rate limit**: at most 100 requests per minute per client (Mandant).\n\nVerified against a live tenant in October 2026 (BuchhaltungsButler API v1). `webapp.buchhaltungsbutler.de` and `app.buchhaltungsbutler.de` both serve the API.",
   "requiredEnvVars": [
     "BUCHHALTUNGSBUTLER_CLIENT_ID",
     "BUCHHALTUNGSBUTLER_CLIENT_SECRET",
@@ -28,7 +28,134 @@
   "tools": [
     {
       "name": "buchhaltungsbutler_list_postings",
-      "description": "Read bookkeeping postings (Buchungen) in a date range, with their account, amount, tax key and the receipt they belong to. This is the ledger view of the client.",
+      "description": "List postings (Buchungen) booked between two dates, optionally narrowed to accounts, posting accounts or status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Earliest booking date, YYYY-MM-DD. Required."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Latest booking date, YYYY-MM-DD. Required."
+          },
+          "account": {
+            "type": "string",
+            "description": "Comma separated accounts: 'all' (default), 'all financial accounts', 'free booking' or account numbers."
+          },
+          "postingaccount": {
+            "type": "string",
+            "description": "Comma separated posting accounts: 'all' (default), 'all postingaccounts', 'all debtors', 'all creditors' or numbers."
+          },
+          "posting_status": {
+            "type": "string",
+            "description": "'all' (default), 'fixed' or 'unfixed'."
+          },
+          "order": {
+            "type": "string",
+            "description": "'date ASC', 'date DESC', 'date_last_action ASC', 'date_last_action DESC', 'id_by_customer ASC' or 'id_by_customer DESC'."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (up to 1000)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/postings/get",
+        "bodyMapping": {
+          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "account": "$account",
+          "postingaccount": "$postingaccount",
+          "posting_status": "$posting_status",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_list_receipts",
+      "description": "List receipts (Belege): inbound supplier invoices or outbound own invoices, with payment status, counterparty and amounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound"
+            ],
+            "description": "'inbound' = Eingangsbelege (supplier invoices), 'outbound' = Ausgangsbelege (your invoices). Required."
+          },
+          "payment_status": {
+            "type": "string",
+            "enum": [
+              "paid",
+              "unpaid"
+            ],
+            "description": "Only paid or only unpaid receipts."
+          },
+          "counterparty": {
+            "type": "string",
+            "description": "Invoicing party (inbound) or recipient (outbound), e.g. 'Peter Maier'."
+          },
+          "invoicenumber": {
+            "type": "string",
+            "description": "Only receipts with this invoice number."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Earliest issuing date, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Latest issuing date, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (default and maximum 500)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        },
+        "required": [
+          "list_direction"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/receipts/get",
+        "bodyMapping": {
+          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "list_direction": "$list_direction",
+          "payment_status": "$payment_status",
+          "counterparty": "$counterparty",
+          "invoicenumber": "$invoicenumber",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_list_transactions",
+      "description": "List bank and payment transactions (Umsätze) of the connected accounts.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -40,81 +167,17 @@
             "type": "string",
             "description": "Latest booking date, YYYY-MM-DD."
           },
-          "limit": {
+          "account": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Only transactions of this account number (see buchhaltungsbutler_list_accounts)."
           },
-          "offset": {
-            "type": "number",
-            "description": "Rows to skip, for paging."
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/postings/get",
-        "bodyMapping": {
-          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
-          "date_from": "$date_from",
-          "date_to": "$date_to",
-          "limit": "$limit",
-          "offset": "$offset"
-        }
-      }
-    },
-    {
-      "name": "buchhaltungsbutler_list_receipts",
-      "description": "Read receipts (Belege) — the scanned or uploaded documents behind the postings — with their date, gross amount, supplier and processing state.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "date_from": {
+          "to_from": {
             "type": "string",
-            "description": "Earliest receipt date, YYYY-MM-DD."
-          },
-          "date_to": {
-            "type": "string",
-            "description": "Latest receipt date, YYYY-MM-DD."
+            "description": "Payer or payee."
           },
           "limit": {
             "type": "number",
-            "description": "Maximum rows to return."
-          },
-          "offset": {
-            "type": "number",
-            "description": "Rows to skip, for paging."
-          }
-        }
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/receipts/get",
-        "bodyMapping": {
-          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
-          "date_from": "$date_from",
-          "date_to": "$date_to",
-          "limit": "$limit",
-          "offset": "$offset"
-        }
-      }
-    },
-    {
-      "name": "buchhaltungsbutler_list_transactions",
-      "description": "Read bank transactions imported into BuchhaltungsButler, so a posting or an open receipt can be matched against money that actually moved.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "date_from": {
-            "type": "string",
-            "description": "Earliest value date, YYYY-MM-DD."
-          },
-          "date_to": {
-            "type": "string",
-            "description": "Latest value date, YYYY-MM-DD."
-          },
-          "limit": {
-            "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Maximum rows to return (default and maximum 500)."
           },
           "offset": {
             "type": "number",
@@ -129,6 +192,8 @@
           "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
           "date_from": "$date_from",
           "date_to": "$date_to",
+          "account": "$account",
+          "to_from": "$to_from",
           "limit": "$limit",
           "offset": "$offset"
         }
@@ -136,13 +201,13 @@
     },
     {
       "name": "buchhaltungsbutler_list_customers",
-      "description": "Read the customer master data (Debitoren) with names, customer numbers and the ledger accounts they book to. No parameters needed — good for verifying the three credentials line up.",
+      "description": "List customers, i.e. debtors (Debitoren), with their posting account number and address.",
       "parameters": {
         "type": "object",
         "properties": {
           "limit": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Maximum rows to return (default 25)."
           },
           "offset": {
             "type": "number",
@@ -152,7 +217,7 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/customers/get",
+        "path": "/settings/get/debtors",
         "bodyMapping": {
           "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
           "limit": "$limit",
@@ -162,13 +227,13 @@
     },
     {
       "name": "buchhaltungsbutler_list_suppliers",
-      "description": "Read the supplier master data (Kreditoren) with names, supplier numbers and their ledger accounts, to resolve who an incoming receipt belongs to.",
+      "description": "List suppliers, i.e. creditors (Kreditoren), with their posting account number, address and IBAN.",
       "parameters": {
         "type": "object",
         "properties": {
           "limit": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Maximum rows to return (default 25)."
           },
           "offset": {
             "type": "number",
@@ -178,7 +243,7 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/suppliers/get",
+        "path": "/settings/get/creditors",
         "bodyMapping": {
           "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
           "limit": "$limit",
@@ -188,13 +253,44 @@
     },
     {
       "name": "buchhaltungsbutler_list_accounts",
-      "description": "Read the chart of accounts (Sachkonten) available in this client, so a posting can be attributed to the right account number.",
+      "description": "List the base accounts (bank accounts, cash, payment providers) set up in BuchhaltungsButler.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounts/get",
+        "bodyMapping": {
+          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY"
+        }
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_list_posting_accounts",
+      "description": "List the chart of accounts (Sachkonten), optionally without debtors, creditors or base accounts.",
       "parameters": {
         "type": "object",
         "properties": {
+          "order": {
+            "type": "string",
+            "description": "'postingaccount_number ASC|DESC', 'name ASC|DESC' or 'type ASC|DESC'."
+          },
+          "exclude_debtors": {
+            "type": "boolean",
+            "description": "Leave out debtor accounts."
+          },
+          "exclude_creditors": {
+            "type": "boolean",
+            "description": "Leave out creditor accounts."
+          },
+          "exclude_accounts": {
+            "type": "boolean",
+            "description": "Leave out base accounts such as bank accounts."
+          },
           "limit": {
             "type": "number",
-            "description": "Maximum rows to return."
+            "description": "Maximum rows to return (default 1000)."
           },
           "offset": {
             "type": "number",
@@ -204,9 +300,44 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/accounts/get",
+        "path": "/settings/get/postingaccounts",
         "bodyMapping": {
           "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "order": "$order",
+          "exclude_debtors": "$exclude_debtors",
+          "exclude_creditors": "$exclude_creditors",
+          "exclude_accounts": "$exclude_accounts",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_list_cost_locations",
+      "description": "List cost centres (Kostenstellen), or look one up by its code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Code of one cost centre."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum rows to return (up to 1000)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cost-locations/get",
+        "bodyMapping": {
+          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "code": "$code",
           "limit": "$limit",
           "offset": "$offset"
         }
