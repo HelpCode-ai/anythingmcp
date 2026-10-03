@@ -11,7 +11,7 @@ import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { authTypeLabel, cn } from '@/lib/utils';
+import { adapterAuthLabel, adapterNeedsCredentials, cn } from '@/lib/utils';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
 import { matchesSearch } from '@/lib/marketplace-search';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
@@ -606,7 +606,7 @@ function AdapterStoreContent() {
         ) : (
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((adapter) => {
-              const isPublic = adapter.authType === 'NONE';
+              const isPublic = !adapterNeedsCredentials(adapter);
               const isImporting = importing === adapter.slug;
               /* log-ish 1..10 segment scale, same as the marketing-site card */
               const fillCount = Math.max(
@@ -666,7 +666,7 @@ function AdapterStoreContent() {
                           className="max-w-full min-w-0 gap-1 truncate font-mono uppercase tracking-wider"
                         >
                           {isPublic ? <SparklesIcon /> : <LockIcon />}
-                          {authTypeLabel(adapter.authType)}
+                          {adapterAuthLabel(adapter)}
                         </Badge>
                       )}
                       {adapter.docsUrl && (
@@ -734,7 +734,7 @@ function AdapterStoreContent() {
 
             <div className="mb-3 flex items-center gap-2 text-xs text-[var(--text-3)]">
               <LockIcon />
-              <span>Auth type: {authTypeLabel(configAdapter.connector?.authType)}</span>
+              <span>Auth type: {adapterAuthLabel({ authType: configAdapter.connector?.authType, requiredEnvVars: configAdapter.requiredEnvVars })}</span>
             </div>
 
             {/* Setup instructions — collapsible details block, default open
@@ -784,6 +784,16 @@ function AdapterStoreContent() {
                     <div className="relative">
                       <input
                         id={`cred-${envVar}`}
+                        // These are API credentials, never the person's own
+                        // login: without this, a browser that sees a text field
+                        // followed by a password field fills in the saved
+                        // AnythingMCP e-mail and password (seen on live installs).
+                        name={`amcp-connector-var-${envVar}`}
+                        autoComplete={isSecret ? 'new-password' : 'off'}
+                        data-1p-ignore
+                        data-lpignore="true"
+                        data-bwignore="true"
+                        data-form-type="other"
                         type={isSecret && !visible ? 'password' : 'text'}
                         value={credentialValues[envVar] || ''}
                         onChange={(e) =>
