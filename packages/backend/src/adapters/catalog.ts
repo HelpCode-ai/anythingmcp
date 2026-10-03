@@ -174,6 +174,7 @@ import * as nominatim from './intl/nominatim.json';
 import * as nutshellCrm from './intl/nutshell-crm.json';
 import * as oddsApi from './intl/odds-api.json';
 import * as odoo from './intl/odoo.json';
+import * as odooJsonrpc from './intl/odoo-jsonrpc.json';
 import * as omnisend from './intl/omnisend.json';
 import * as opentable from './intl/opentable.json';
 import * as openweather from './intl/openweather.json';
@@ -312,6 +313,12 @@ export interface AdapterMeta {
    *  scraper). Listed on self-host, hidden on the cloud, and excluded from the
    *  advertised "no API key" count. See scripts/probe-keyless.mjs. */
   selfHostOnly?: boolean;
+  /** Not offered anywhere: left out of the catalog listing, the install
+   *  endpoint and the advertised count, on the cloud and on self-host alike.
+   *  For adapters that do not match the vendor's real API and could not be
+   *  verified (Oct 2026 audit of the #642 batch). Still resolvable by slug, so
+   *  a connector installed earlier keeps its icon and catalog re-sync. */
+  unlisted?: boolean;
   /** A safe, read-only call that proves the connector works: run right after
    *  import so a wrong credential is reported on the install form instead of
    *  by the agent days later, and by scripts/probe-keyless.mjs in CI. Params
@@ -601,6 +608,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   nutshellCrm as unknown as AdapterDefinition,
   oddsApi as unknown as AdapterDefinition,
   odoo as unknown as AdapterDefinition,
+  odooJsonrpc as unknown as AdapterDefinition,
   omnisend as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
   openweather as unknown as AdapterDefinition,
@@ -722,6 +730,7 @@ export function listAdapters(): AdapterMeta[] {
     featured: adapter.featured,
     priority: adapter.priority,
     selfHostOnly: adapter.selfHostOnly,
+    unlisted: adapter.unlisted,
     probe: adapter.probe,
   }));
 }

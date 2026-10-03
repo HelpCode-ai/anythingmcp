@@ -108,7 +108,9 @@ export class AdaptersService {
    * the catalog. From the cloud's datacenter address they fail every call, so
    * the cloud does not list them at all. Self-host shows them as usual.
    */
-  private isInstallableHere(adapter: { selfHostOnly?: boolean }): boolean {
+  private isInstallableHere(adapter: { selfHostOnly?: boolean; unlisted?: boolean }): boolean {
+    // Unlisted adapters do not match the vendor's API; nowhere offers them.
+    if (adapter.unlisted) return false;
     if (!adapter.selfHostOnly) return true;
     return this.configService.get<string>('DEPLOYMENT_MODE') !== 'cloud';
   }

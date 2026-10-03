@@ -6,7 +6,7 @@
   "category": "crm",
   "icon": "sellsy",
   "docsUrl": "https://api.sellsy.com/doc/v2/",
-  "instructions": "**Getting credentials**\n1. Sign in to Sellsy, open **Paramètres → API** and create an **application** in the developer area.\n2. Choose the *client credentials* flow — it authorises the application against your own account with no browser consent step. You receive a **client id** and **client secret**.\n3. Set `SELLSY_CLIENT_ID` and `SELLSY_CLIENT_SECRET`. AnythingMCP mints and refreshes the access token on its own.\n\n**This is API v2**, at `https://api.sellsy.com/v2`. Sellsy's v1 was an entirely different, single-endpoint RPC API — if you find an example that POSTs everything to one URL with a `request` parameter, that is v1 and it does not apply here.\n\n**Searching is a POST.** Sellsy's v2 list endpoints have a sibling `/search` that takes a JSON body of `{\"filters\": {...}}`. It is far more expressive than the query parameters on the plain list, which is why the search tools below are POSTs that read.\n\n**`embed` resolves relationships.** A document returns its `related` parties as ids; `embed[]=contact` and similar bring them back inline and save a round of calls.\n\n**Amounts are strings in the document's currency**, with the tax detail in a separate `amounts` object. `total_amount_without_taxes` and `total_amount` are both present, and confusing them is how a revenue figure ends up 20% wrong.\n\n**Cloud reachability**: api.sellsy.com is public with a valid certificate.",
+  "instructions": "**Getting credentials**\n1. Sign in to Sellsy, open **Paramètres → API** and create an **application** in the developer area.\n2. Choose the *client credentials* flow — it authorises the application against your own account with no browser consent step. You receive a **client id** and **client secret**.\n3. Set `SELLSY_CLIENT_ID` and `SELLSY_CLIENT_SECRET`. AnythingMCP mints and refreshes the access token on its own.\n\n**This is API v2**, at `https://api.sellsy.com/v2`. Sellsy's v1 was an entirely different, single-endpoint RPC API — if you find an example that POSTs everything to one URL with a `request` parameter, that is v1 and it does not apply here.\n\n**Searching is a POST.** Sellsy's v2 list endpoints have a sibling `/search` that takes a JSON body of `{\"filters\": {...}}`. It is far more expressive than the query parameters on the plain list, which is why the search tools below are POSTs that read.\n\n**Sellsy validates every argument against its spec.** `order`, `direction` and `embed` accept only the listed values, and the search filters reject unknown keys (`ids`, `updated` on companies) and bare dates where a date-time is expected (`created.start` must be `2026-01-01T00:00:00+00:00`, not `2026-01-01`). A 400 \"invalid arguments\" almost always means one of these.\n\n**`embed` resolves relationships.** A document returns its `related` parties as ids; `embed[]=contact` and similar bring them back inline and save a round of calls. Each endpoint has its own list of allowed embeds.\n\n**Paging**: `limit` (max 100) and `offset`, where `offset` is the opaque `pagination.offset` token of the previous response.\n\n**Amounts are strings in the document's currency**, with the tax detail in a separate `amounts` object. `total_amount_without_taxes` and `total_amount` are both present, and confusing them is how a revenue figure ends up 20% wrong.\n\n**Cloud reachability**: api.sellsy.com is public with a valid certificate.",
   "requiredEnvVars": [
     "SELLSY_CLIENT_ID",
     "SELLSY_CLIENT_SECRET"
@@ -38,24 +38,37 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "number",
-            "description": "Rows per page (default 25, max 100)."
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
           },
           "offset": {
             "type": "string",
-            "description": "Offset token from the previous page's pagination block."
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2…) also works, up to the first 100,000 results."
           },
           "order": {
             "type": "string",
-            "description": "Sort field, e.g. created or name."
+            "enum": [
+              "name",
+              "id",
+              "created_at",
+              "updated_at"
+            ],
+            "description": "Sort field."
           },
           "direction": {
             "type": "string",
-            "description": "`asc` or `desc`."
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
           },
           "embed": {
-            "type": "string",
-            "description": "Relationship to resolve inline, e.g. invoicing_address."
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: invoicing_address, delivery_address, e_invoicing, main_contact, dunning_contact, invoicing_contact, opportunities, estimates, invoices, orders, deliveries, acl, smart_tags, owner, or cf.<customFieldId>. Any other value is a 400."
           }
         }
       },
@@ -73,21 +86,39 @@
     },
     {
       "name": "sellsy_search_companies",
-      "description": "Search companies with Sellsy's filter object — far more expressive than the plain list. A POST that only reads.",
+      "description": "Search companies with Sellsy's filter object (a POST that only reads). Only the documented filter keys are accepted; an unknown key or a bare date is a 400.",
       "parameters": {
         "type": "object",
         "properties": {
           "filters": {
             "type": "object",
-            "description": "Filter object, e.g. {\"name\": \"Dupont\"} or {\"created\": {\"start\": \"2026-01-01\"}}."
+            "description": "Sellsy company filters. ONLY these keys are accepted, anything else is a 400: name (string, exact match), email (string, exact), type (array of prospect|client|supplier), is_archived (boolean), id (array of integer company ids; the key is `id`, not `ids`), contacts (array of integer contact ids), siret (string), vat (string), reference (array of strings), country_code (string), postal_code (array of strings), number_of_employees ({\"min\": n, \"max\": n}), favourite_filter (integer), created ({\"start\", \"end\"}), updated_at ({\"start\", \"end\"}; the key is `updated_at`, not `updated`). Dates must be full ISO 8601 date-times, e.g. {\"created\": {\"start\": \"2026-01-01T00:00:00+00:00\"}}; a bare date is rejected. Pass {} for no filter."
           },
           "limit": {
-            "type": "number",
-            "description": "Rows per page."
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
           },
           "offset": {
             "type": "string",
-            "description": "Offset token from the previous page."
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2…) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "name",
+              "id",
+              "created_at",
+              "updated_at"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
           }
         },
         "required": [
@@ -99,7 +130,9 @@
         "path": "/companies/search",
         "queryParams": {
           "limit": "$limit",
-          "offset": "$offset"
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
         },
         "bodyMapping": {
           "filters": "$filters"
@@ -117,8 +150,11 @@
             "description": "Numeric Sellsy company id."
           },
           "embed": {
-            "type": "string",
-            "description": "Relationship to resolve inline, e.g. contacts."
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: invoicing_address, delivery_address, e_invoicing, main_contact, dunning_contact, invoicing_contact, opportunities, estimates, invoices, orders, deliveries, acl, smart_tags, owner, or cf.<customFieldId>. Any other value (e.g. `contacts`) is a 400."
           }
         },
         "required": [
@@ -140,16 +176,29 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "number",
-            "description": "Rows per page."
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
           },
           "offset": {
             "type": "string",
-            "description": "Offset token from the previous page."
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2…) also works, up to the first 100,000 results."
           },
           "order": {
             "type": "string",
-            "description": "Sort field, e.g. created or last_name."
+            "enum": [
+              "id",
+              "name",
+              "created_at"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
           }
         }
       },
@@ -159,7 +208,8 @@
         "queryParams": {
           "limit": "$limit",
           "offset": "$offset",
-          "order": "$order"
+          "order": "$order",
+          "direction": "$direction"
         }
       }
     },
@@ -170,24 +220,39 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "number",
-            "description": "Rows per page."
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
           },
           "offset": {
             "type": "string",
-            "description": "Offset token from the previous page."
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2…) also works, up to the first 100,000 results."
           },
           "order": {
             "type": "string",
-            "description": "Sort field, e.g. created or due_date."
+            "enum": [
+              "id",
+              "number",
+              "created",
+              "date",
+              "amount",
+              "due_date"
+            ],
+            "description": "Sort field."
           },
           "direction": {
             "type": "string",
-            "description": "`asc` or `desc`."
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
           },
           "embed": {
-            "type": "string",
-            "description": "Relationship to resolve inline, e.g. related."
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: acl, owner, related, contact, individual, company, fiscal_year, currency, smart_tags, deposits, invoicing_address, delivery_address, issuer_address, payment_method_ids, or cf.<customFieldId>."
           }
         }
       },
@@ -211,15 +276,35 @@
         "properties": {
           "filters": {
             "type": "object",
-            "description": "Filter object, e.g. {\"status\": [\"late\"], \"created\": {\"start\": \"2026-01-01\"}}."
+            "description": "Sellsy invoice filters. Allowed keys: date ({\"start\", \"end\"} as plain dates YYYY-MM-DD, the invoice date), created / updated ({\"start\", \"end\"} as full ISO 8601 date-times, e.g. 2026-01-01T00:00:00+00:00; a bare date is rejected), status (array of draft|due|payinprogress|paid|late|cancelled), related_objects (array of {\"type\": company|individual|opportunity, \"id\": n}), contacts, owners, assigned_staff_ids (arrays of integer ids), number (string), currency (string), credit_note_id (integer), is_deposit (boolean), is_progress_invoice (boolean), lifecycle_status (array of integer), favourite_filter (integer). Example: {\"status\": [\"late\"], \"date\": {\"start\": \"2026-01-01\"}}. Pass {} for no filter."
           },
           "limit": {
-            "type": "number",
-            "description": "Rows per page."
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
           },
           "offset": {
             "type": "string",
-            "description": "Offset token from the previous page."
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2…) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "number",
+              "created",
+              "date",
+              "amount",
+              "due_date"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
           }
         },
         "required": [
@@ -231,7 +316,9 @@
         "path": "/invoices/search",
         "queryParams": {
           "limit": "$limit",
-          "offset": "$offset"
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
         },
         "bodyMapping": {
           "filters": "$filters"
@@ -240,7 +327,7 @@
     },
     {
       "name": "sellsy_get_invoice",
-      "description": "Read one invoice in full: every row with its quantity, unit price, discount and VAT, the totals and the payments applied against it.",
+      "description": "Read one invoice in full: every row with its quantity, unit price, discount and VAT, the totals and the related parties. Payments are not part of this response.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -249,8 +336,11 @@
             "description": "Numeric Sellsy invoice id."
           },
           "embed": {
-            "type": "string",
-            "description": "Relationship to resolve inline, e.g. rows or related."
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: acl, payment_terms, owner, related, contact, individual, company, fiscal_year, currency, automatic_dunning, smart_tags, discount_incl_taxes, deposits, invoicing_address, delivery_address, issuer_address, payment_method_ids, settings, file, or cf.<customFieldId>. Rows are returned without an embed."
           }
         },
         "required": [
@@ -272,16 +362,33 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "number",
-            "description": "Rows per page."
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
           },
           "offset": {
             "type": "string",
-            "description": "Offset token from the previous page."
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2…) also works, up to the first 100,000 results."
           },
           "order": {
             "type": "string",
-            "description": "Sort field, e.g. created."
+            "enum": [
+              "id",
+              "numero",
+              "created",
+              "date",
+              "expiry_date",
+              "number",
+              "amount"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
           }
         }
       },
@@ -291,7 +398,8 @@
         "queryParams": {
           "limit": "$limit",
           "offset": "$offset",
-          "order": "$order"
+          "order": "$order",
+          "direction": "$direction"
         }
       }
     },
@@ -302,16 +410,31 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "number",
-            "description": "Rows per page."
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
           },
           "offset": {
             "type": "string",
-            "description": "Offset token from the previous page."
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2…) also works, up to the first 100,000 results."
           },
           "order": {
             "type": "string",
-            "description": "Sort field, e.g. created."
+            "enum": [
+              "id",
+              "created",
+              "step_rank",
+              "due_date",
+              "amount"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
           }
         }
       },
@@ -321,7 +444,8 @@
         "queryParams": {
           "limit": "$limit",
           "offset": "$offset",
-          "order": "$order"
+          "order": "$order",
+          "direction": "$direction"
         }
       }
     },
@@ -332,12 +456,28 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "number",
-            "description": "Rows per page."
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
           },
           "offset": {
             "type": "string",
-            "description": "Offset token from the previous page."
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2…) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "created_at"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
           }
         }
       },
@@ -346,7 +486,9 @@
         "path": "/items",
         "queryParams": {
           "limit": "$limit",
-          "offset": "$offset"
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
         }
       }
     }

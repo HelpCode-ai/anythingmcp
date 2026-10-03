@@ -34,6 +34,12 @@ describe('e-conomic adapter — static spec conformance', () => {
     expect(toolNames).toEqual(expect.arrayContaining(['e_conomic_list_booked_invoices', 'e_conomic_list_overdue_invoices', 'e_conomic_list_draft_invoices']));
   });
 
+  it("never suggests sorting by dueDate, which e-conomic rejects with 400", () => {
+    const t = (adapter as unknown as { tools: Array<{ name: string; parameters: { properties: Record<string, { description?: string }> } }> })
+      .tools.find((x) => x.name === 'e_conomic_list_overdue_invoices')!;
+    expect(t.parameters.properties.sort.description).toContain('dueDate is not sortable');
+  });
+
   it("probes /self, which exercises both tokens at once", () => {
     expect(a.probe?.tool).toBe('e_conomic_get_self');
   });

@@ -38,6 +38,21 @@ describe('sevdesk adapter — static spec conformance', () => {
     expect(paths).toContain('/Voucher');
   });
 
+  it("maps contact categories the way sevDesk numbers them (3 customer, 2 supplier)", () => {
+    const create = a.tools.find((t) => t.name === 'sevdesk_create_contact') as unknown as {
+      parameters: { properties: Record<string, { description: string }>; required: string[] };
+    };
+    expect(create.parameters.properties.categoryId.description).toContain('3 = customer, 2 = supplier');
+    expect(create.parameters.required).toEqual(['categoryId']);
+  });
+
+  it("filters bank transactions with the documented isBooked flag", () => {
+    const tx = a.tools.find((t) => t.name === 'sevdesk_list_transactions');
+    const qp = tx?.endpointMapping.queryParams as Record<string, string>;
+    expect(qp.isBooked).toBe('$isBooked');
+    expect(qp).not.toHaveProperty('status');
+  });
+
   it("probes /SevUser, which any token may read", () => {
     expect(a.probe?.tool).toBe('sevdesk_list_users');
   });

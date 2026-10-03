@@ -30,6 +30,11 @@ describe('moneybird adapter — static spec conformance', () => {
     for (const t of a.tools) expect(String(t.endpointMapping.path)).toMatch(/\.json$/);
   });
 
+  it("sends no paging to financial mutations, which caps at 100 rows and ignores it", () => {
+    const t = a.tools.find((x) => x.name === 'moneybird_list_financial_mutations')!;
+    expect(t.endpointMapping.queryParams).toEqual({ filter: '$filter' });
+  });
+
   it("explains the comma-separated filter string", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('period:this_year,state:open');
   });

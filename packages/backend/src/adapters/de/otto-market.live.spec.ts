@@ -26,16 +26,30 @@ describe('otto-market adapter — static spec conformance', () => {
     expect(a.connector.authConfig?.tokenUrl).toBe('https://api.otto.market/v1/token');
   });
 
+  it("asks for the scopes OTTO requires, with the credentials in the form body", () => {
+    expect(a.connector.authConfig?.grant).toBe('client_credentials');
+    expect(a.connector.authConfig?.tokenAuthMethod).toBe('client_secret_post');
+    expect(String(a.connector.authConfig?.scope).split(' ')).toEqual(
+      expect.arrayContaining(['orders', 'products', 'availability', 'returns']),
+    );
+  });
+
   it("carries OTTO's per-resource version in each path", () => {
     const byName = Object.fromEntries(a.tools.map((t) => [t.name, t.endpointMapping.path]));
     expect(byName.otto_market_list_orders).toBe('/v4/orders');
-    expect(byName.otto_market_update_price).toBe('/v3/prices');
-    expect(byName.otto_market_list_quantities).toBe('/v1/quantities');
+    expect(byName.otto_market_list_products).toBe('/v5/products');
+    expect(byName.otto_market_get_product).toBe('/v5/products/{sku}');
+    expect(byName.otto_market_update_price).toBe('/v5/products/prices');
+    expect(byName.otto_market_list_quantities).toBe('/v1/availability/quantities');
+    expect(byName.otto_market_update_quantity).toBe('/v1/availability/quantities');
+    expect(byName.otto_market_list_returns).toBe('/v3/returns');
   });
 
-  it("makes the order date range explicit rather than implicit", () => {
-    const t = adapter.tools.find((x: { name: string }) => x.name === 'otto_market_list_orders')!;
-    expect((t as unknown as { parameters: { required: string[] } }).parameters.required).toEqual(['fromOrderDate']);
+  it("pages orders with OTTO's lowercase nextcursor parameter", () => {
+    const t = a.tools.find((x) => x.name === 'otto_market_list_orders')!;
+    const q = t.endpointMapping.queryParams as Record<string, string>;
+    expect(q.nextcursor).toBe('$nextCursor');
+    expect(q).not.toHaveProperty('nextCursor');
   });
 });
 

@@ -35,14 +35,33 @@ describe('checkmk adapter — static spec conformance', () => {
     expect(toolNames).toContain('checkmk_list_host_states');
   });
 
-  it("sends columns as a repeated parameter, as Checkmk wants", () => {
-    const t = a.tools.find((x) => x.name === 'checkmk_list_service_states')!;
-    const cols = (t.endpointMapping.queryParams as Record<string, unknown>).columns;
-    expect(Array.isArray(cols)).toBe(true);
+  it("reads live state with the POST list form (the GET form is deprecated, werks 17003/17512)", () => {
+    for (const name of ['checkmk_list_host_states', 'checkmk_list_service_states', 'checkmk_list_host_services']) {
+      const t = a.tools.find((x) => x.name === name)!;
+      expect(t.endpointMapping.method).toBe('POST');
+      const cols = (t.endpointMapping.bodyMapping as Record<string, unknown>).columns as unknown[];
+      expect(Array.isArray(cols)).toBe(true);
+      expect(cols).toContain('$columns');
+    }
+    const svc = a.tools.find((x) => x.name === 'checkmk_list_service_states')!;
+    expect(svc.endpointMapping.path).toBe('/domain-types/service/collections/all');
   });
 
-  it("exposes no write tool", () => {
-    expect(a.tools.every((t) => t.endpointMapping.method === 'GET')).toBe(true);
+  it("filters configured hosts by `hostnames`, the parameter Checkmk actually has", () => {
+    const t = a.tools.find((x) => x.name === 'checkmk_list_hosts')!;
+    const q = t.endpointMapping.queryParams as Record<string, unknown>;
+    expect(q.hostnames).toBe('$hostnames');
+    expect(q).not.toHaveProperty('search');
+  });
+
+  it("exposes no write tool: every non-GET is a read marked readOnlyHint", () => {
+    const tools = a.tools as Array<{ endpointMapping: Record<string, unknown>; annotations?: { readOnlyHint?: boolean } }>;
+    for (const t of tools) {
+      if (t.endpointMapping.method !== 'GET') {
+        expect(t.endpointMapping.method).toBe('POST');
+        expect(t.annotations?.readOnlyHint).toBe(true);
+      }
+    }
   });
 });
 

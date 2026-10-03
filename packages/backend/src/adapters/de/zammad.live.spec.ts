@@ -37,6 +37,13 @@ describe('zammad adapter — static spec conformance', () => {
   it("separates listing, searching and reading one ticket", () => {
     expect(toolNames).toEqual(expect.arrayContaining(['zammad_list_tickets', 'zammad_search_tickets', 'zammad_get_ticket', 'zammad_list_ticket_articles']));
   });
+
+  it("names the customer by e-mail in `customer`, which Zammad looks up", () => {
+    const t = a.tools.find((x) => x.name === 'zammad_create_ticket')!;
+    const body = t.endpointMapping.bodyMapping as Record<string, unknown>;
+    expect(body.customer).toBe('$customer');
+    expect(body.customer_id).toBe('$customer_id');
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

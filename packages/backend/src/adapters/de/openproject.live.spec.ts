@@ -35,6 +35,13 @@ describe('openproject adapter — static spec conformance', () => {
     expect(toolNames).toContain('openproject_list_work_packages');
   });
 
+  it("sends no paging to the unpaginated activities and versions collections", () => {
+    for (const name of ['openproject_list_work_package_activities', 'openproject_list_versions']) {
+      const t = a.tools.find((x) => x.name === name)!;
+      expect(t.endpointMapping.queryParams).toBeUndefined();
+    }
+  });
+
   it("explains the operator short codes", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('`o` open');
   });

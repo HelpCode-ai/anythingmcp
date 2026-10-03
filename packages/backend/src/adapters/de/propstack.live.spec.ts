@@ -30,6 +30,21 @@ describe('propstack adapter — static spec conformance', () => {
     expect(toolNames).toContain('propstack_list_contacts');
   });
 
+  it("reads listings from /units and enquiries from inquiry activities", () => {
+    const byName = Object.fromEntries(a.tools.map((t) => [t.name, t.endpointMapping]));
+    expect(byName.propstack_list_properties.path).toBe('/units');
+    expect(byName.propstack_get_property.path).toBe('/units/{id}');
+    expect(byName.propstack_list_enquiries.path).toBe('/activities');
+    expect(byName.propstack_list_enquiries.queryParams).toMatchObject({ only_inquiries: '1' });
+    expect(a.connector.healthcheckPath).toBe('/units?per=1');
+  });
+
+  it("uses the documented filter names (`status`, `q`)", () => {
+    const byName = Object.fromEntries(a.tools.map((t) => [t.name, t.endpointMapping]));
+    expect(byName.propstack_list_properties.queryParams).toMatchObject({ status: '$status' });
+    expect(byName.propstack_list_contacts.queryParams).toMatchObject({ q: '$q' });
+  });
+
   it("exposes no write tool", () => {
     expect(a.tools.every((t) => t.endpointMapping.method === 'GET')).toBe(true);
   });

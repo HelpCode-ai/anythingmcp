@@ -37,6 +37,17 @@ describe('erpnext adapter — static spec conformance', () => {
     };
   });
 
+  it("reads DocType meta through getdoctype, not /resource/DocType (System Manager only)", () => {
+    const t = a.tools.find((x) => x.name === 'erpnext_get_doctype_meta')!;
+    expect(t.endpointMapping.path).toBe('/method/frappe.desk.form.load.getdoctype');
+    expect(t.endpointMapping.queryParams).toEqual({ doctype: '$doctype' });
+  });
+
+  it("encodes the document name in the path", () => {
+    const t = a.tools.find((x) => x.name === 'erpnext_get_document')!;
+    expect(t.endpointMapping.encodePathParams).toBe(true);
+  });
+
   it("warns that omitting fields returns only the primary key", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('only `name` (the primary key)');
   });

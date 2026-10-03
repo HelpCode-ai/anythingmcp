@@ -33,6 +33,26 @@ describe('topdesk adapter — static spec conformance', () => {
     expect(a.probe?.tool).toBe('topdesk_get_version');
   });
 
+  it("links the caller through callerLookup, which is how the API takes a registered person", () => {
+    const t = a.tools.find((x) => x.name === 'topdesk_create_incident')!;
+    const body = t.endpointMapping.bodyMapping as Record<string, unknown>;
+    expect(body.callerLookup).toEqual({ id: '$callerId' });
+    expect(body).not.toHaveProperty('caller');
+    // Whole-object params, so an omitted one is dropped instead of sent as {}.
+    expect(body.operatorGroup).toBe('$operatorGroup');
+  });
+
+  it("pages incidents and changes with pageStart/pageSize and sorts with sort", () => {
+    for (const name of ['topdesk_list_incidents', 'topdesk_list_changes']) {
+      const qp = a.tools.find((x) => x.name === name)!.endpointMapping.queryParams as Record<string, string>;
+      expect(qp.pageSize).toBe('$pageSize');
+      expect(qp.pageStart).toBe('$pageStart');
+      expect(qp).not.toHaveProperty('page_size');
+    }
+    const incidents = a.tools.find((x) => x.name === 'topdesk_list_incidents')!;
+    expect((incidents.endpointMapping.queryParams as Record<string, string>).sort).toBe('$sort');
+  });
+
   it("explains FIQL, which is how TOPdesk filters", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('FIQL');
   });

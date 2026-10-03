@@ -6,7 +6,7 @@
   "category": "e-commerce",
   "icon": "ebay-sell",
   "docsUrl": "https://developer.ebay.com/api-docs/sell/static/overview.html",
-  "instructions": "**Getting a token** — the Sell APIs need a *user* token, not an application token.\n1. Register at developer.ebay.com and create a **production** keyset. Note the App ID (client id), Cert ID (client secret) and an RuName (redirect URI name).\n2. Run the authorization-code grant once for the seller account, requesting the scopes you need: `sell.inventory`, `sell.fulfillment`, `sell.account`, optionally read-only variants. eBay's OAuth documentation has a browser-based token tool for this.\n3. Keep the **refresh token** — it lasts around 18 months — and set `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` and `EBAY_REFRESH_TOKEN`. AnythingMCP mints access tokens from it (access tokens expire in two hours, which is why the refresh token is the thing to store).\n4. Set `EBAY_MARKETPLACE_ID` to the marketplace the seller trades on, e.g. `EBAY_DE`, `EBAY_US`, `EBAY_GB`. eBay reads it from the `X-EBAY-C-MARKETPLACE-ID` header and answers differently per marketplace.\n\n**Sandbox is a separate host.** This adapter points at `api.ebay.com` (production). The sandbox lives at `api.sandbox.ebay.com` with its own keyset and its own tokens; a production token there fails with a confusing 401.\n\n**Inventory vs Trading.** The Sell Inventory API only sees listings created through it or migrated into it. A long-established seller whose listings were created with the legacy Trading API may find `ebay_sell_list_inventory_items` almost empty while their eBay shop is full — that is expected, and the migration is a one-time API call eBay documents.\n\n**Limits**: most Sell endpoints allow a few thousand calls a day per application. Pace bulk work.\n\n**Writes**: `ebay_sell_update_offer_price` changes a live listing's price, which buyers see immediately.",
+  "instructions": "**Getting a token** — the Sell APIs need a *user* token, not an application token.\n1. Register at developer.ebay.com and create a **production** keyset. Note the App ID (client id), Cert ID (client secret) and an RuName (redirect URI name).\n2. Run the authorization-code grant once for the seller account, requesting the scopes you need: `sell.inventory`, `sell.fulfillment`, `sell.account`, plus `sell.payment.dispute` for `ebay_sell_list_payment_disputes`, optionally read-only variants. eBay's OAuth documentation has a browser-based token tool for this.\n3. Keep the **refresh token** — it lasts around 18 months — and set `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` and `EBAY_REFRESH_TOKEN`. AnythingMCP mints access tokens from it (access tokens expire in two hours, which is why the refresh token is the thing to store).\n4. Set `EBAY_MARKETPLACE_ID` to the marketplace the seller trades on, e.g. `EBAY_DE`, `EBAY_US`, `EBAY_GB`. eBay reads it from the `X-EBAY-C-MARKETPLACE-ID` header and answers differently per marketplace.\n\n**Sandbox is a separate host.** This adapter points at `api.ebay.com` (production). The sandbox lives at `api.sandbox.ebay.com` with its own keyset and its own tokens; a production token there fails with a confusing 401.\n\n**Inventory vs Trading.** The Sell Inventory API only sees listings created through it or migrated into it. A long-established seller whose listings were created with the legacy Trading API may find `ebay_sell_list_inventory_items` almost empty while their eBay shop is full — that is expected, and the migration is a one-time API call eBay documents.\n\n**Limits**: most Sell endpoints allow a few thousand calls a day per application. Pace bulk work.\n\n**Payment disputes live on another host.** eBay serves them from `apiz.ebay.com`, not `api.ebay.com`; `ebay_sell_list_payment_disputes` calls that host directly (the same token works).\n\n**Paging differs per API.** In the Fulfillment API (`ebay_sell_list_orders`) `offset` is the number of orders to skip. In the Inventory API (`ebay_sell_list_inventory_items`, `ebay_sell_list_offers`) `offset` is the 0-based *page* number.\n\n**Writes**: `ebay_sell_update_offer_price` changes a live listing's price, which buyers see immediately. It uses eBay's `bulk_update_price_quantity` call, which answers 200 or 207 Multi-Status: a success code does not mean the offer changed, so read the per-offer `statusCode` and `errors` in the response. eBay allows 250 revisions per listing per calendar day.",
   "requiredEnvVars": [
     "EBAY_CLIENT_ID",
     "EBAY_CLIENT_SECRET",
@@ -97,7 +97,7 @@
           },
           "offset": {
             "type": "number",
-            "description": "Rows to skip, for paging."
+            "description": "Page number, 0-based (0 = first page). Not a row count: eBay's Inventory API pages by index."
           }
         }
       },
@@ -142,11 +142,11 @@
           },
           "limit": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page (default 100)."
           },
           "offset": {
             "type": "number",
-            "description": "Rows to skip, for paging."
+            "description": "Page number, 0-based (0 = first page). Not a row count: eBay's Inventory API pages by index."
           }
         },
         "required": [
@@ -195,7 +195,7 @@
     },
     {
       "name": "ebay_sell_list_payment_disputes",
-      "description": "List payment disputes opened against the seller, with the reason, amount, status and the deadline to respond. The thing that costs money when it is missed.",
+      "description": "List payment disputes opened against the seller, with the reason, amount, status and the deadline to respond. The thing that costs money when it is missed. Needs the `sell.payment.dispute` scope.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -205,7 +205,7 @@
           },
           "limit": {
             "type": "number",
-            "description": "Rows per page."
+            "description": "Rows per page, 1–200 (default 200)."
           },
           "offset": {
             "type": "number",
@@ -215,7 +215,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/sell/fulfillment/v1/payment_dispute_summary",
+        "path": "https://apiz.ebay.com/sell/fulfillment/v1/payment_dispute_summary",
         "queryParams": {
           "order_id": "$order_id",
           "limit": "$limit",
@@ -237,7 +237,7 @@
     },
     {
       "name": "ebay_sell_update_offer_price",
-      "description": "Change the price of a live offer. Buyers see the new price immediately — this is not a draft operation.",
+      "description": "Change the price of a published offer (eBay bulk_update_price_quantity). Buyers see the new price immediately — this is not a draft operation. eBay answers 200 or 207 Multi-Status; check the offer's statusCode and errors in the response.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -262,15 +262,19 @@
       },
       "endpointMapping": {
         "method": "POST",
-        "path": "/sell/inventory/v1/offer/{offerId}/update_price_quantity",
+        "path": "/sell/inventory/v1/bulk_update_price_quantity",
         "bodyMapping": {
           "requests": [
             {
-              "offerId": "$offerId",
-              "price": {
-                "value": "$value",
-                "currency": "$currency"
-              }
+              "offers": [
+                {
+                  "offerId": "$offerId",
+                  "price": {
+                    "value": "$value",
+                    "currency": "$currency"
+                  }
+                }
+              ]
             }
           ]
         }

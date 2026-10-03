@@ -36,6 +36,16 @@ describe('pennylane adapter — static spec conformance', () => {
     };
   });
 
+  it("reads bank transactions from /transactions, the v2 path", () => {
+    const t = a.tools.find((x) => x.name === 'pennylane_list_bank_transactions')!;
+    expect(t.endpointMapping.path).toBe('/transactions');
+  });
+
+  it("reads invoice lines from their own endpoint, since the invoice only links to them", () => {
+    const t = a.tools.find((x) => x.name === 'pennylane_list_customer_invoice_lines')!;
+    expect(t.endpointMapping.path).toBe('/customer_invoices/{invoiceId}/invoice_lines');
+  });
+
   it("keeps customer and supplier invoices apart", () => {
     expect(toolNames).toContain('pennylane_list_customer_invoices');
     expect(toolNames).toContain('pennylane_list_supplier_invoices');

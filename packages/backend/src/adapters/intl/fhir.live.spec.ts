@@ -30,6 +30,12 @@ describe('fhir adapter — static spec conformance', () => {
     expect(a.connector.healthcheckPath).toBe('/metadata');
   });
 
+  it("can follow a base-level next link (HAPI `?_getpages=`) through the raw query", () => {
+    const t = a.tools.find((x) => x.name === 'fhir_next_page')!;
+    expect(t.endpointMapping.path).toBe('/');
+    expect(t.endpointMapping.queryParams).toEqual({ __rawquery: '$query' });
+  });
+
   it("exposes no write interaction", () => {
     expect(a.tools.every((t) => t.endpointMapping.method === 'GET')).toBe(true);
   });

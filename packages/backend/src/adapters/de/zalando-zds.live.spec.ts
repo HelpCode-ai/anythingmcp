@@ -29,10 +29,33 @@ describe('zalando-zds adapter — static spec conformance', () => {
     expect(a.connector.authConfig?.grant).toBe('client_credentials');
   });
 
-  it("says partner onboarding is required and there is no sandbox", () => {
+  it("says partner onboarding is required, sandbox included", () => {
     const i = (adapter as unknown as { instructions: string }).instructions;
     expect(i).toContain('Partner onboarding required');
-    expect(i).toContain('no public sandbox');
+    expect(i).toContain('api-sandbox.merchants.zalando.com');
+  });
+
+  it("targets the zDirect merchant API and its /auth/token endpoint", () => {
+    expect(a.connector.baseUrl).toBe('https://api.merchants.zalando.com/merchants/{{ZALANDO_MERCHANT_ID}}');
+    expect(a.connector.authConfig?.tokenUrl).toBe('https://api.merchants.zalando.com/auth/token');
+  });
+
+  it("uses the documented order filters, page-number paging and per-order shipments", () => {
+    const orders = a.tools.find((t) => t.name === 'zalando_zds_list_orders')!;
+    const qp = orders.endpointMapping.queryParams as Record<string, string>;
+    expect(qp['page[size]']).toBe('$page_size');
+    expect(qp['page[number]']).toBe('$page_number');
+    expect(qp.order_status).toBe('$order_status');
+    expect(qp.created_after).toBe('$created_after');
+    expect(a.tools.find((t) => t.name === 'zalando_zds_list_shipments')!.endpointMapping.path).toBe(
+      '/orders/{orderId}/shipments',
+    );
+    expect(a.tools.find((t) => t.name === 'zalando_zds_list_returns')!.endpointMapping.path).toBe('/announced-returns');
+  });
+
+  it("offers no stock or price read tool, since those APIs are write-only", () => {
+    expect(toolNames).not.toContain('zalando_zds_list_stock');
+    expect(toolNames).not.toContain('zalando_zds_list_prices');
   });
 
   it("exposes no write tool", () => {

@@ -6,7 +6,7 @@
   "category": "erp",
   "icon": "dynamics-nav",
   "docsUrl": "https://learn.microsoft.com/en-us/dynamics-nav/odata-web-services",
-  "instructions": "**Publish the web services first.** NAV exposes nothing by default. In the NAV client open **Web Services** (page 810) and add a row per object you want to reach: Object Type `Page`, the object id, and a **Service Name** — that service name is the OData entity set name, not the page's caption. Tick Published. Common ones: page 21 → `Customer`, page 27 → `Vendor`, page 30 → `Item`, page 42 → `SalesOrder`.\n\n**Then point the connector at one company.**\n1. `NAV_BASE_URL` is the OData root of your service tier, e.g. `https://nav.example.com:7048/DynamicsNAV110/OData`. No trailing slash.\n2. `NAV_COMPANY` is the company name exactly as NAV spells it, including spaces — `CRONUS Deutschland GmbH`. The adapter builds `.../OData/Company('<name>')`, so one connector serves one company; add a second connector for a second company.\n3. `NAV_USERNAME` and `NAV_PASSWORD` are a NavUserPassword credential (or a Windows account, if the service tier is configured for NTLM).\n\n**OData v4 vocabulary**: `$filter`, `$select`, `$top`, `$orderby`, `$expand`. String comparison is `Name eq 'Muster'` with single quotes; dates are bare (`Order_Date ge 2026-01-01`). NAV replaces spaces in field names with underscores, so *Order Date* is `Order_Date`.\n\n**Updates need the row's etag.** OData v4 requires `If-Match` on a PATCH. `dynamics_nav_update_record` sends `If-Match: *`, which means 'update whichever version is current' — simple, and deliberately last-writer-wins. Read the row first if that matters.\n\n**SOAP is being retired**, in Business Central from release wave 2026-2. OData is the path forward, which is why this adapter speaks it and not the older SOAP endpoint.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`nav.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
+  "instructions": "**Publish the web services first.** NAV exposes nothing by default. In the NAV client open **Web Services** (page 810) and add a row per object you want to reach: Object Type `Page`, the object id, and a **Service Name** — that service name is the OData entity set name, not the page's caption. Tick Published. Common ones: page 21 → `Customer`, page 27 → `Vendor`, page 30 → `Item`, page 42 → `SalesOrder`.\n\n**Then point the connector at one company.**\n1. `NAV_BASE_URL` is the **OData V4** root of your service tier, e.g. `https://nav.example.com:7048/DynamicsNAV110/ODataV4`. No trailing slash. `/OData` (without V4) is the older OData V3 endpoint; this adapter speaks V4 (`OData-Version: 4.0`, bare date literals, PATCH with `If-Match`), which NAV offers from NAV 2017. On NAV 2013-2016 only V3 exists, and date filters there need `datetime'2026-01-01T00:00:00'`.\n2. `NAV_COMPANY` is the company name exactly as NAV spells it, including spaces — `CRONUS Deutschland GmbH`. The adapter builds `.../ODataV4/Company('<name>')` for the data tools (the service list and `$metadata` live at the root, outside the company), so one connector serves one company; add a second connector for a second company.\n3. `NAV_USERNAME` and `NAV_PASSWORD` are a NavUserPassword credential (or a Windows account, if the service tier is configured for NTLM).\n\n**OData v4 vocabulary**: `$filter`, `$select`, `$top`, `$orderby`, `$expand`. String comparison is `Name eq 'Muster'` with single quotes; dates are bare (`Order_Date ge 2026-01-01`). NAV replaces spaces in field names with underscores, so *Order Date* is `Order_Date`.\n\n**Updates need the row's etag.** OData v4 requires `If-Match` on a PATCH. `dynamics_nav_update_record` sends `If-Match: *`, which means 'update whichever version is current' — simple, and deliberately last-writer-wins. Read the row first if that matters.\n\n**SOAP is being retired**, in Business Central from release wave 2026-2. OData is the path forward, which is why this adapter speaks it and not the older SOAP endpoint.\n\n**Self-hosted, which is the thing to plan for.**\n- On **AnythingMCP Cloud** the instance must be reachable from the public internet on a real hostname with a valid TLS certificate. A self-signed certificate will fail: the connector offers no trust-anything switch.\n- On an internal host (`nav.intern`, `10.0.0.x`), self-host AnythingMCP on the same network and add that host to `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made.\n",
   "requiredEnvVars": [
     "NAV_BASE_URL",
     "NAV_COMPANY",
@@ -34,14 +34,14 @@
   "tools": [
     {
       "name": "dynamics_nav_list_services",
-      "description": "List the published web services available on this company — the entity set names every other tool needs. Start here: NAV exposes nothing that has not been published by hand.",
+      "description": "List the published web services (the OData service document at the service root) — the entity set names every other tool needs. Start here: NAV exposes nothing that has not been published by hand.",
       "parameters": {
         "type": "object",
         "properties": {}
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/"
+        "path": "{{NAV_BASE_URL}}/"
       }
     },
     {
@@ -130,14 +130,17 @@
     },
     {
       "name": "dynamics_nav_get_metadata",
-      "description": "Read the OData $metadata document: every published entity type, its properties and their data types. The authoritative field list when a $filter keeps failing.",
+      "description": "Read the OData $metadata document (EDMX, XML) at the service root: every published entity type, its properties and their data types. The authoritative field list when a $filter keeps failing.",
       "parameters": {
         "type": "object",
         "properties": {}
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/$metadata"
+        "path": "{{NAV_BASE_URL}}/$metadata",
+        "headers": {
+          "Accept": "application/xml"
+        }
       }
     },
     {

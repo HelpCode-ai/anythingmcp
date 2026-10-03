@@ -36,6 +36,21 @@ describe('kimai adapter — static spec conformance', () => {
     expect(a.connector.healthcheckPath).toBe('/version');
   });
 
+  it("asks for global activities with `globals`, since `project` only takes a numeric id", () => {
+    const t = a.tools.find((x) => x.name === 'kimai_list_activities')!;
+    const q = t.endpointMapping.queryParams as Record<string, unknown>;
+    expect(q.globals).toBe('$globals');
+    expect(q.project).toBe('$project');
+  });
+
+  it("does not pretend to page lists Kimai returns whole", () => {
+    for (const name of ['kimai_list_customers', 'kimai_list_projects', 'kimai_list_activities']) {
+      const q = a.tools.find((x) => x.name === name)!.endpointMapping.queryParams as Record<string, unknown>;
+      expect(q).not.toHaveProperty('page');
+      expect(q).not.toHaveProperty('size');
+    }
+  });
+
   it("tells self-hosters about SSRF_ALLOWED_HOSTS", () => {
     expect((adapter as unknown as { instructions: string }).instructions).toContain('SSRF_ALLOWED_HOSTS');
   });
