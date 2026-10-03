@@ -1096,6 +1096,22 @@ export class ConnectorsController {
     return this.connectorsService.testConnection(id);
   }
 
+  @Get('oauth/redirect-uri')
+  @ApiOperation({
+    summary: 'The OAuth redirect URI to register in a provider app',
+    description:
+      'Computed by the server from SERVER_URL, so it matches what the authorization request sends.',
+  })
+  oauthRedirectUri() {
+    return { redirectUri: this.oauthCallbackUrl() };
+  }
+
+  /** Where providers send the browser back; must equal what the user registered. */
+  private oauthCallbackUrl(): string {
+    const base = (this.configService.get<string>('SERVER_URL') || 'http://localhost:4000').replace(/\/+$/, '');
+    return `${base}/api/mcp-oauth/callback`;
+  }
+
   @Post(':id/oauth/authorize')
   @ApiOperation({
     summary: 'Initiate OAuth2 authorization for a connector',
@@ -1104,7 +1120,11 @@ export class ConnectorsController {
       'For REST/GraphQL connectors: uses authorizationUrl and tokenUrl from authConfig. ' +
       'Returns an authorization URL for the user to visit.',
   })
-  async initiateOAuth(@Req() req: any, @Param('id') id: string) {
+  async initiateOAuth(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body?: { returnTo?: string },
+  ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
 
@@ -1113,7 +1133,7 @@ export class ConnectorsController {
     }
 
     try {
-      const callbackUrl = `${this.configService.get('SERVER_URL') || 'http://localhost:4000'}/api/mcp-oauth/callback`;
+      const callbackUrl = this.oauthCallbackUrl();
       const authConfig = connector.authConfig
         ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
         : {};
@@ -1200,7 +1220,7 @@ export class ConnectorsController {
       const state = this.mcpOAuthService.generateState();
 
       // Store pending flow
-      this.mcpOAuthService.storePendingFlow(state, {
+      await this.mcpOAuthService.storePendingFlow(state, {
         codeVerifier,
         connectorId: connector.id,
         userId: req.user.sub,
@@ -1212,7 +1232,7 @@ export class ConnectorsController {
         clientAssertion,
         persistAuthConfig,
         createdAt: Date.now(),
-      });
+      }, { returnTo: body?.returnTo });
 
       // Build authorization URL
       const authorizationUrl = this.mcpOAuthService.buildAuthorizationUrl({

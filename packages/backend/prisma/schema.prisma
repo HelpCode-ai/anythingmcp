@@ -991,6 +991,32 @@ model UserIdentity {
 /// Everything security-relevant lives here rather than in a cookie that has to
 /// survive the hop to the IdP and back: the CSRF `state`, the replay-guarding
 /// `nonce`, and the PKCE verifier. Consumed atomically exactly once.
+/// A connector OAuth authorization in flight ("Authorize with Provider"):
+/// created when the user starts it, consumed once when the code comes back.
+///
+/// Persisted rather than held in memory so a restart or a blue/green deploy
+/// between consent and callback does not lose it. The state is stored as a
+/// SHA-256 hash and the rest (PKCE verifier, client credentials, signing
+/// settings) encrypted with ENCRYPTION_KEY. `userId` is who started it: the
+/// code is only exchanged in an authenticated request by that same user, so a
+/// consent link started on someone else's connector cannot be completed by a
+/// victim on the attacker's behalf.
+model ConnectorOAuthAttempt {
+  id          String   @id @default(cuid())
+  stateHash   String   @unique @map("state_hash")
+  userId      String   @map("user_id")
+  connectorId String   @map("connector_id")
+  /// Encrypted JSON of the pending flow.
+  payload     String
+  /// Internal path to land on afterwards; validated when written and when read.
+  returnTo    String?  @map("return_to")
+  createdAt   DateTime @default(now()) @map("created_at")
+  expiresAt   DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("connector_oauth_attempts")
+}
+
 model SsoLoginAttempt {
   id String @id @default(cuid())
 

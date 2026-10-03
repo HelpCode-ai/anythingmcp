@@ -425,11 +425,19 @@ export const connectors = {
     request<{ message: string; created: number; skipped: number; tools: number; errors?: string[] }>('/api/connectors/import-all', { method: 'POST', body: data, token }),
   healthCheck: (token: string) =>
     request<{ total: number; healthy: number; unhealthy: number; connectors: any[] }>('/api/connectors/health-check', { token }),
-  oauthAuthorize: (id: string, token: string) =>
+  oauthAuthorize: (id: string, token: string, returnTo?: string) =>
     request<{ authorizationUrl?: string; error?: string }>(
       `/api/connectors/${id}/oauth/authorize`,
-      { method: 'POST', token },
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
     ),
+  /** Second half of "Authorize with Provider": exchange the code the provider sent back. */
+  oauthComplete: (state: string, code: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
+      '/api/mcp-oauth/complete',
+      { method: 'POST', token, body: { state, code } },
+    ),
+  oauthRedirectUri: (token: string) =>
+    request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>
     request<{ message: string; tools: any[]; skipped?: string[]; error?: string }>(
       `/api/connectors/${id}/discover-tools`,

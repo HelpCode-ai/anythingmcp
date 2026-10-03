@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
+import { PrismaService } from '../common/prisma.service';
+import { decrypt, encrypt } from '../common/crypto/encryption.util';
 import axios from 'axios';
 import { assertSafeOutboundUrl } from '../common/ssrf.util';
 import {
@@ -18,7 +20,7 @@ interface OAuthMetadata {
   code_challenge_methods_supported?: string[];
 }
 
-interface PendingOAuthFlow {
+export interface PendingOAuthFlow {
   codeVerifier: string;
   connectorId: string;
   userId: string;
@@ -55,9 +57,13 @@ interface PendingOAuthFlow {
 export class McpOAuthService {
   private readonly logger = new Logger(McpOAuthService.name);
 
-  // In-memory store for pending OAuth flows, keyed by state.
-  // Entries auto-expire after 10 minutes.
-  private pendingFlows = new Map<string, PendingOAuthFlow>();
+  /**
+   * Pending flows when no database is wired (unit tests). In the application
+   * they live in `connector_oauth_attempts`, see storePendingFlow.
+   */
+  private memoryFlows = new Map<string, { flow: PendingOAuthFlow; returnTo?: string; expiresAt: number }>();
+
+  constructor(@Optional() private readonly prisma?: PrismaService) {}
 
   /**
    * Discover the OAuth metadata of a remote MCP server.
@@ -412,33 +418,115 @@ export class McpOAuthService {
   }
 
   // --- Pending Flow Storage ---
+  //
+  // An authorization in flight is stored in the database (state hashed, the
+  // rest encrypted), so it survives a restart or a blue/green deploy between
+  // consent and callback. It is read twice: peeked by the provider callback,
+  // which only forwards the code to the dashboard, and taken (deleted) by the
+  // authenticated request that exchanges the code, after checking that the
+  // same user started it.
 
-  storePendingFlow(state: string, data: PendingOAuthFlow): void {
-    // Clean up expired entries (>10 min)
-    const now = Date.now();
-    for (const [key, flow] of this.pendingFlows) {
-      if (now - flow.createdAt > 10 * 60 * 1000) {
-        this.pendingFlows.delete(key);
-      }
-    }
-
-    this.pendingFlows.set(state, data);
+  private stateHash(state: string): string {
+    return createHash('sha256').update(state).digest('hex');
   }
 
-  getPendingFlow(state: string): PendingOAuthFlow | undefined {
-    const flow = this.pendingFlows.get(state);
-    if (!flow) return undefined;
+  private encryptionKey(): string {
+    const key = process.env.ENCRYPTION_KEY;
+    if (!key) throw new Error('ENCRYPTION_KEY is not set');
+    return key;
+  }
 
-    // Check expiry
-    if (Date.now() - flow.createdAt > 10 * 60 * 1000) {
-      this.pendingFlows.delete(state);
+  async storePendingFlow(
+    state: string,
+    data: PendingOAuthFlow,
+    opts: { returnTo?: string } = {},
+  ): Promise<void> {
+    const expiresAt = Date.now() + PENDING_FLOW_TTL_MS;
+    const returnTo = safeReturnTo(opts.returnTo);
+    if (!this.prisma) {
+      this.memoryFlows.set(state, { flow: data, returnTo, expiresAt });
+      return;
+    }
+    await this.prisma.connectorOAuthAttempt
+      .deleteMany({ where: { expiresAt: { lt: new Date() } } })
+      .catch(() => undefined);
+    await this.prisma.connectorOAuthAttempt.create({
+      data: {
+        stateHash: this.stateHash(state),
+        userId: data.userId,
+        connectorId: data.connectorId,
+        payload: encrypt(JSON.stringify(data), this.encryptionKey(), 'connector-oauth'),
+        returnTo: returnTo ?? null,
+        expiresAt: new Date(expiresAt),
+      },
+    });
+  }
+
+  /** The pending flow for `state`, without consuming it. */
+  async getPendingFlow(state: string): Promise<PendingFlowRecord | undefined> {
+    if (!state) return undefined;
+    if (!this.prisma) {
+      const hit = this.memoryFlows.get(state);
+      if (!hit || hit.expiresAt < Date.now()) return undefined;
+      return { flow: hit.flow, returnTo: hit.returnTo };
+    }
+    const row = await this.prisma.connectorOAuthAttempt.findUnique({
+      where: { stateHash: this.stateHash(state) },
+    });
+    if (!row || row.expiresAt.getTime() < Date.now()) return undefined;
+    return this.toRecord(row);
+  }
+
+  /** The pending flow for `state`, deleted in the same step: usable once. */
+  async takePendingFlow(state: string): Promise<PendingFlowRecord | undefined> {
+    if (!state) return undefined;
+    if (!this.prisma) {
+      const hit = this.memoryFlows.get(state);
+      this.memoryFlows.delete(state);
+      if (!hit || hit.expiresAt < Date.now()) return undefined;
+      return { flow: hit.flow, returnTo: hit.returnTo };
+    }
+    const row = await this.prisma.connectorOAuthAttempt
+      .delete({ where: { stateHash: this.stateHash(state) } })
+      .catch(() => null);
+    if (!row || row.expiresAt.getTime() < Date.now()) return undefined;
+    return this.toRecord(row);
+  }
+
+  async deletePendingFlow(state: string): Promise<void> {
+    await this.takePendingFlow(state);
+  }
+
+  private toRecord(row: { payload: string; returnTo: string | null }): PendingFlowRecord | undefined {
+    try {
+      const flow = JSON.parse(
+        decrypt(row.payload, this.encryptionKey(), 'connector-oauth'),
+      ) as PendingOAuthFlow;
+      return { flow, returnTo: safeReturnTo(row.returnTo ?? undefined) };
+    } catch (err: any) {
+      this.logger.warn(`Unreadable pending OAuth flow: ${err?.message || err}`);
       return undefined;
     }
-
-    return flow;
   }
+}
 
-  deletePendingFlow(state: string): void {
-    this.pendingFlows.delete(state);
-  }
+/** How long a started authorization waits for the user to come back. */
+export const PENDING_FLOW_TTL_MS = 15 * 60 * 1000;
+
+export interface PendingFlowRecord {
+  flow: PendingOAuthFlow;
+  /** Where the dashboard should land afterwards (internal path), if set. */
+  returnTo?: string;
+}
+
+/**
+ * An internal dashboard path, or undefined. Anything else (an absolute URL,
+ * `//host`, a backslash trick) would be an open redirect.
+ */
+export function safeReturnTo(value: string | undefined | null): string | undefined {
+  if (!value || typeof value !== 'string') return undefined;
+  if (value.length > 500) return undefined;
+  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return undefined;
+  if ([...value].some((ch) => ch.charCodeAt(0) < 0x20)) return undefined;
+  return value;
 }

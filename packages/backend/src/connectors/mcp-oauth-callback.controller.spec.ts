@@ -11,28 +11,32 @@ function makeController(overrides: {
   connectorType?: string;
   remoteTools?: Array<{ name: string }>;
   flow?: Record<string, unknown>;
+  noFlow?: boolean;
+  returnTo?: string;
 } = {}) {
   const reloadConnectorTools = jest.fn().mockResolvedValue(undefined);
   const updateAuthConfigMerge = jest.fn().mockResolvedValue(undefined);
-  const deletePendingFlow = jest.fn();
+  const flow = {
+    connectorId: 'conn-1',
+    userId: 'user-1',
+    tokenUrl: 'https://sandbox-api.datev.de/token',
+    redirectUri: 'https://cloud.example.com/api/mcp-oauth/callback',
+    clientId: 'cid',
+    clientSecret: 'sec',
+    codeVerifier: 'verifier',
+    tokenAuthMethod: 'basic',
+    ...overrides.flow,
+  };
+  const record = overrides.noFlow ? undefined : { flow, returnTo: overrides.returnTo };
 
   const mcpOAuthService: any = {
-    getPendingFlow: jest.fn().mockReturnValue({
-      connectorId: 'conn-1',
-      tokenUrl: 'https://sandbox-api.datev.de/token',
-      redirectUri: 'https://cloud.example.com/api/mcp-oauth/callback',
-      clientId: 'cid',
-      clientSecret: 'sec',
-      codeVerifier: 'verifier',
-      tokenAuthMethod: 'basic',
-      ...overrides.flow,
-    }),
+    getPendingFlow: jest.fn().mockResolvedValue(record),
+    takePendingFlow: jest.fn().mockResolvedValue(record),
     exchangeCodeForTokens: jest.fn().mockResolvedValue({
       accessToken: 'AT',
       refreshToken: 'RT',
       expiresIn: 3600,
     }),
-    deletePendingFlow,
   };
   const connectorsService: any = {
     updateAuthConfigMerge,
@@ -73,13 +77,78 @@ function makeRes() {
   return { redirect: jest.fn() } as any;
 }
 
-describe('McpOAuthCallbackController', () => {
+const asUser = (sub: string) => ({ user: { sub } });
+
+describe('McpOAuthCallbackController — provider redirect', () => {
+  it('forwards code and state to the dashboard and exchanges nothing itself', async () => {
+    const { controller, mcpOAuthService, updateAuthConfigMerge } = makeController();
+    const res = makeRes();
+    await controller.oauthCallback('the-code', 'the-state', undefined, undefined, res);
+    expect(res.redirect).toHaveBeenCalledWith(
+      'https://cloud.example.com/connectors/oauth/complete?state=the-state&code=the-code',
+    );
+    expect(mcpOAuthService.exchangeCodeForTokens).not.toHaveBeenCalled();
+    expect(mcpOAuthService.takePendingFlow).not.toHaveBeenCalled();
+    expect(updateAuthConfigMerge).not.toHaveBeenCalled();
+  });
+
+  it('does not forward a state it never issued', async () => {
+    const { controller } = makeController({ noFlow: true });
+    const res = makeRes();
+    await controller.oauthCallback('the-code', 'forged', undefined, undefined, res);
+    expect(res.redirect.mock.calls[0][0]).toMatch(/complete\?error=/);
+    expect(res.redirect.mock.calls[0][0]).not.toContain('code=');
+  });
+
+  it('redirects with an error when code/state are missing', async () => {
+    const { controller, reloadConnectorTools } = makeController();
+    const res = makeRes();
+    await controller.oauthCallback('', '', undefined, undefined, res);
+    expect(reloadConnectorTools).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('error='));
+  });
+
+  it('spends the attempt and explains a refusal at the provider', async () => {
+    const { controller, mcpOAuthService } = makeController();
+    const res = makeRes();
+    await controller.oauthCallback('', 'the-state', 'access_denied', 'User said no', res);
+    expect(mcpOAuthService.takePendingFlow).toHaveBeenCalledWith('the-state');
+    const url = new URL(res.redirect.mock.calls[0][0]);
+    expect(url.searchParams.get('error')).toMatch(/cancelled at the provider/);
+    expect(url.searchParams.get('connectorId')).toBe('conn-1');
+  });
+});
+
+describe('McpOAuthCallbackController — completion by the dashboard', () => {
+  it('refuses a user other than the one who started the flow, and kills the attempt', async () => {
+    const { controller, mcpOAuthService, updateAuthConfigMerge } = makeController();
+    await expect(
+      controller.complete(asUser('attacker'), { state: 'the-state', code: 'the-code' }),
+    ).rejects.toThrow(/started by another account/);
+    expect(mcpOAuthService.takePendingFlow).toHaveBeenCalledWith('the-state');
+    expect(mcpOAuthService.exchangeCodeForTokens).not.toHaveBeenCalled();
+    expect(updateAuthConfigMerge).not.toHaveBeenCalled();
+  });
+
+  it('answers 410 for an expired or reused state', async () => {
+    const { controller } = makeController({ noFlow: true });
+    await expect(
+      controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' }),
+    ).rejects.toThrow(/expired or was already used/);
+  });
+
+  it('returns where the dashboard should land', async () => {
+    const { controller } = makeController({ returnTo: '/connectors/setup/etsy?step=done' });
+    await expect(
+      controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' }),
+    ).resolves.toEqual({ connectorId: 'conn-1', toolsImported: 0, returnTo: '/connectors/setup/etsy?step=done' });
+  });
+
   it('reloads connector tools after storing the token even when MCP discovery throws (REST connector)', async () => {
     const { controller, reloadConnectorTools, updateAuthConfigMerge } =
       makeController({ listToolsThrows: true });
-    const res = makeRes();
 
-    await controller.oauthCallback('the-code', 'the-state', res);
+    await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
 
     // Token was persisted via a MERGE (preserves authorizationUrl/scopes)...
     expect(updateAuthConfigMerge).toHaveBeenCalledWith(
@@ -88,10 +157,6 @@ describe('McpOAuthCallbackController', () => {
     );
     // ...and the registry was reloaded despite discovery throwing.
     expect(reloadConnectorTools).toHaveBeenCalledWith('conn-1');
-    // Redirects to success.
-    expect(res.redirect).toHaveBeenCalledWith(
-      expect.stringContaining('oauth=success'),
-    );
   });
 
   it('does not import MCP tools into a REST connector whose host also speaks MCP', async () => {
@@ -102,13 +167,12 @@ describe('McpOAuthCallbackController', () => {
       connectorType: 'REST',
       remoteTools: [{ name: 'get' }, { name: 'query' }, { name: 'sites_list' }],
     });
-    const res = makeRes();
 
-    await controller.oauthCallback('the-code', 'the-state', res);
+    const out = await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
 
     expect(mcpClientEngine.listTools).not.toHaveBeenCalled();
     expect(prisma.mcpTool.create).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('tools=0'));
+    expect(out.toolsImported).toBe(0);
   });
 
   it('still discovers tools for an MCP connector', async () => {
@@ -116,21 +180,12 @@ describe('McpOAuthCallbackController', () => {
       connectorType: 'MCP',
       remoteTools: [{ name: 'search' }, { name: 'fetch' }],
     });
-    const res = makeRes();
 
-    await controller.oauthCallback('the-code', 'the-state', res);
+    const out = await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
 
     expect(mcpClientEngine.listTools).toHaveBeenCalled();
     expect(prisma.mcpTool.create).toHaveBeenCalledTimes(2);
-    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('tools=2'));
-  });
-
-  it('redirects with an error when code/state are missing', async () => {
-    const { controller, reloadConnectorTools } = makeController();
-    const res = makeRes();
-    await controller.oauthCallback('', '', res);
-    expect(reloadConnectorTools).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('error='));
+    expect(out.toolsImported).toBe(2);
   });
 
   it('writes what the flow took from the catalog next to the tokens, and not the resolved client', async () => {
@@ -150,7 +205,7 @@ describe('McpOAuthCallbackController', () => {
       },
     });
 
-    await controller.oauthCallback('the-code', 'the-state', makeRes());
+    await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
 
     const patch = updateAuthConfigMerge.mock.calls[0][1];
     expect(patch).toMatchObject({
@@ -166,7 +221,7 @@ describe('McpOAuthCallbackController', () => {
 
   it('still writes the client settings when the flow does not say otherwise (MCP)', async () => {
     const { controller, updateAuthConfigMerge } = makeController({ connectorType: 'MCP' });
-    await controller.oauthCallback('the-code', 'the-state', makeRes());
+    await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
     expect(updateAuthConfigMerge.mock.calls[0][1]).toMatchObject({
       clientId: 'cid',
       clientSecret: 'sec',
