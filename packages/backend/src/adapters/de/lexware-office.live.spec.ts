@@ -38,6 +38,22 @@ describe('lexware-office adapter — static spec conformance', () => {
   it("exposes the voucher list, which is what 'what is unpaid' needs", () => {
     expect(toolNames).toContain('lexware_office_list_vouchers');
   });
+
+  // Voucher-list rows of type salesinvoice/purchaseinvoice/... live under
+  // /vouchers/{id}; sending them to /invoices/{id} answered 404 for a user.
+  it('reads bookkeeping vouchers and the other sales documents at their own endpoints', () => {
+    const path = (n: string) => a.tools.find((t) => t.name === n)?.endpointMapping.path;
+    expect(path('lexware_office_get_voucher')).toBe('/vouchers/{id}');
+    expect(path('lexware_office_get_sales_document')).toBe('/{resource}/{id}');
+  });
+
+  it('creates a contact with the roles asked for, and no empty address or person', () => {
+    const body = a.tools.find((t) => t.name === 'lexware_office_create_contact')!.endpointMapping
+      .bodyMapping as Record<string, unknown>;
+    expect(body.roles).toBe('$roles');
+    expect(body.person).toBeUndefined();
+    expect(body.addresses).toEqual({ billing: ['$billingAddress'] });
+  });
 });
 
 // Opt-in live check. Needs real credentials; skipped in CI.

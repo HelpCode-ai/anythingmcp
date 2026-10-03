@@ -108,13 +108,17 @@ export class RestEngine {
     },
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
-    const withMeta = (response: AxiosResponse) => ({
-      body: endpointMapping.rawBody ? response.data : parseXmlBody(response),
-      headers: pickExposedHeaders(
-        response.headers as Record<string, unknown>,
-        endpointMapping.exposeHeaders,
-      ),
-    });
+    const withMeta = (response: AxiosResponse) => {
+      const body = endpointMapping.rawBody ? response.data : parseXmlBody(response);
+      assertNotJsonRpcError(body);
+      return {
+        body,
+        headers: pickExposedHeaders(
+          response.headers as Record<string, unknown>,
+          endpointMapping.exposeHeaders,
+        ),
+      };
+    };
     // Interpolate path parameters: /users/{id} → /users/123
     //
     // `path` is optional on the stored mapping — tools saved as `method:
@@ -1148,6 +1152,46 @@ function assertNoPrototypePollution(value: unknown): void {
  * zyte-request-id is included because it is the first thing Zyte support asks
  * for, and it is not recoverable after the fact.
  */
+/**
+ * JSON-RPC servers (Odoo's /jsonrpc, Zabbix's api_jsonrpc.php) answer an
+ * error with HTTP 200 and an `error` member instead of `result`. Passed on as
+ * a body, such a call was logged as a success and the model had to notice the
+ * error itself; a connector test passed with a wrong key. Raise it instead,
+ * with the server's own message (Odoo puts the useful part in
+ * error.data.message, Zabbix in error.data) and without the traceback.
+ */
+export class JsonRpcError extends Error {
+  constructor(
+    message: string,
+    readonly code: unknown,
+  ) {
+    super(message);
+    this.name = 'JsonRpcError';
+  }
+}
+
+export function assertNotJsonRpcError(body: unknown): void {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return;
+  const envelope = body as { jsonrpc?: unknown; error?: unknown; result?: unknown };
+  if (typeof envelope.jsonrpc !== 'string') return;
+  if (!envelope.error || typeof envelope.error !== 'object') return;
+  if (envelope.result !== undefined) return;
+  const error = envelope.error as { code?: unknown; message?: unknown; data?: unknown };
+  const data = error.data as { message?: unknown; name?: unknown } | string | undefined;
+  const detail =
+    typeof data === 'string'
+      ? data
+      : data && typeof data === 'object' && typeof data.message === 'string'
+        ? data.message
+        : undefined;
+  const head = typeof error.message === 'string' && error.message ? error.message : 'JSON-RPC error';
+  const text = detail && detail !== head ? `${head}: ${detail}` : head;
+  throw new JsonRpcError(
+    `JSON-RPC error${error.code !== undefined ? ` ${String(error.code)}` : ''}: ${text.slice(0, 1000)}`,
+    error.code,
+  );
+}
+
 export function restateProxyError(error: unknown): unknown {
   if (!(error instanceof AxiosError) || !error.response) return error;
   const headers = error.response.headers as Record<string, unknown> | undefined;
