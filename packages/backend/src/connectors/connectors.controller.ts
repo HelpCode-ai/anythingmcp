@@ -71,6 +71,7 @@ import {
 } from './odata/odata-builtins';
 import { parseODataTools } from './parsers/odata.parser';
 import { normalizeSettings } from './engines/odata.engine';
+import { computeSetupState } from './connector-setup-status.util';
 
 class CreateConnectorDto {
   @ApiProperty({
@@ -598,7 +599,40 @@ export class ConnectorsController {
       limit: pagination.limit,
       offset: pagination.offset,
     });
-    return rows.map((c) => toPublicConnector(c));
+    return rows.map((c) => this.withSetupState(c));
+  }
+
+  /**
+   * The public view of a connector plus whether it can serve calls yet
+   * (`setupStatus`, and the variables still empty). The dashboard shows it as
+   * a badge; MCP does not list connectors that are not ready.
+   */
+  private withSetupState<C extends Parameters<typeof toPublicConnector>[0] & {
+    authType: string;
+    baseUrl: string;
+    config?: unknown;
+  }>(connector: C) {
+    let authConfig: unknown = undefined;
+    if (typeof connector.authConfig === 'string' && connector.authConfig) {
+      try {
+        authConfig = JSON.parse(decrypt(connector.authConfig, this.encryptionKey));
+      } catch {
+        authConfig = undefined;
+      }
+    }
+    const setup = computeSetupState({
+      authType: connector.authType,
+      authConfig,
+      baseUrl: connector.baseUrl,
+      headers: connector.headers,
+      envVars: connector.envVars,
+      config: connector.config,
+    });
+    return {
+      ...toPublicConnector(connector),
+      setupStatus: setup.status,
+      missingVariables: setup.missing,
+    };
   }
 
   @Post()
@@ -847,7 +881,7 @@ export class ConnectorsController {
   async findOne(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertOrgMatch(connector, req);
-    return toPublicConnector(connector);
+    return this.withSetupState(connector);
   }
 
   @Put(':id')

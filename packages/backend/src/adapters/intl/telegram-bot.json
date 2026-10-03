@@ -8,6 +8,17 @@
   "icon": "telegram",
   "docsUrl": "https://core.telegram.org/bots/api",
   "requiredEnvVars": ["TELEGRAM_BOT_TOKEN"],
+  "envVarMeta": {
+    "TELEGRAM_BOT_TOKEN": {
+      "label": "Bot token",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Telegram, open @BotFather, send /newbot, and copy the token it replies with.",
+      "example": "123456789:AAH...",
+      "pattern": "^[0-9]+:[A-Za-z0-9_-]{30,}$",
+      "link": "https://t.me/BotFather"
+    }
+  },
   "connector": {
     "name": "Telegram Bot API",
     "type": "REST",

@@ -14,6 +14,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
+import { SetupStatusBanner, SetupStatusPill } from '@/components/setup-status';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { authTypeLabel, cn } from '@/lib/utils';
@@ -814,12 +815,15 @@ export default function ConnectorDetailPage() {
               >
                 {connector.isActive ? 'Active' : 'Inactive'}
               </StatusPill>
+              <SetupStatusPill status={connector.setupStatus} />
             </div>
             <div className="mt-0.5 break-all font-mono text-[12.5px] text-[var(--text-3)]">
               {connector.baseUrl}
             </div>
           </div>
         </div>
+
+        <SetupStatusBanner connector={connector} />
 
         {msg && (
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">

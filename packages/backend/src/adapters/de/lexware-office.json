@@ -10,6 +10,12 @@
   "requiredEnvVars": [
     "LEXWARE_API_KEY"
   ],
+  "envVarMeta": {
+    "LEXWARE_API_KEY": {
+      "label": "API key",
+      "help": "In Lexware Office (paid plan): Einstellungen → Erweiterungen → Öffentliche API → create a new access token. It is shown once."
+    }
+  },
   "connector": {
     "name": "Lexware Office API v1",
     "type": "REST",

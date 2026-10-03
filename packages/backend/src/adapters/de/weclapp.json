@@ -10,6 +10,18 @@
     "WECLAPP_TENANT",
     "WECLAPP_API_TOKEN"
   ],
+  "envVarMeta": {
+    "WECLAPP_TENANT": {
+      "label": "Tenant",
+      "help": "The first part of your weclapp address: acme for acme.weclapp.com. Not the whole address.",
+      "example": "acme",
+      "pattern": "^[A-Za-z0-9-]+$"
+    },
+    "WECLAPP_API_TOKEN": {
+      "label": "API token",
+      "help": "In weclapp: your user menu → My settings → API → API token."
+    }
+  },
   "connector": {
     "name": "weclapp ERP",
     "type": "REST",

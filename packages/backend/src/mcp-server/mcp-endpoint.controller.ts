@@ -26,7 +26,7 @@ import { toolVisibilityRole } from './mcp-server.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { processGauges } from '../common/process-vitals';
-import { ToolRegistry, RegisteredTool } from './tool-registry';
+import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
 import {
   McpConnectionGrantService,
   ResolvedGrant,
@@ -305,6 +305,7 @@ export class McpEndpointController {
         return result;
       },
       connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
+      connectorUrl: (id) => `${dashboardBase}/connectors/${encodeURIComponent(id)}`,
       guide: (ids, wholeScope) =>
         this.mcpServersService.getSharedGuide({
           connectorIds: ids,
@@ -559,6 +560,7 @@ export class McpEndpointController {
     const seen = new Set<string>();
     const listed: Array<Record<string, unknown>> = [];
     for (const tool of tools) {
+      if (!isListable(tool)) continue;
       // Two reachable connectors may expose the same name (a grant spanning
       // two configs of one provider). One entry per name, like the per-server
       // endpoint; the call path resolves within the same connector scope.
@@ -1296,6 +1298,8 @@ export class McpEndpointController {
     const registeredNames = new Set<string>();
 
     for (const tool of serverTools) {
+      // A connector that is not set up yet would only produce errors.
+      if (!isListable(tool)) continue;
       // Skip tools not allowed by role
       if (allowedToolIds !== null && !allowedToolIds.includes(tool.id)) continue;
       // Dedupe by tool name. Two connectors can expose the same name (same

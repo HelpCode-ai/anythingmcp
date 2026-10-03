@@ -14,6 +14,25 @@
   "optionalEnvVars": [
     "GOOGLE_ADS_LOGIN_CUSTOMER_ID"
   ],
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_ADS_LOGIN_CUSTOMER_ID": {
+      "label": "Manager account ID",
+      "help": "Only if you reach client accounts through a manager account: its 10-digit id, without dashes. Leave empty otherwise.",
+      "pattern": "^[0-9]{10}$"
+    }
+  },
   "connector": {
     "name": "Google Ads",
     "type": "REST",

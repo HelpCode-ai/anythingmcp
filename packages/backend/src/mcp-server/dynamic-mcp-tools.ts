@@ -341,6 +341,17 @@ export class DynamicMcpTools {
         ...(proxyUrl ? { proxyUrl } : {}),
       };
 
+      // An OAuth connector nobody has authorized carries a placeholder where
+      // the refresh token goes. Say what to do about it, rather than naming
+      // a variable the user is not supposed to fill in by hand.
+      if (tool.setupStatus === 'needs_authorization') {
+        const page = connectorPageUrl(tool.connectorId);
+        throw new Error(
+          'OAuth2: this connector has not been authorized yet. No request was sent to the API. ' +
+            `Open the connector in AnythingMCP${page ? ` (${page})` : ''} and click Authorize with Provider.`,
+        );
+      }
+
       // Nothing left to substitute it with: fail here, with the variable names,
       // rather than let the vendor answer something that reads like our bug.
       assertNoUnresolvedPlaceholders(

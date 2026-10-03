@@ -35,6 +35,18 @@ export const ProductEvents = {
   /** Installed connectors from the starter pack. metadata.adapterSlug = comma list. */
   STARTER_PACK_INSTALLED: 'starter_pack_installed',
   /**
+   * The guided connector setup (/connectors/setup/<slug>). metadata.adapterSlug
+   * on all of them; read in order they answer where a setup is abandoned:
+   * opened, credentials refused (metadata.kind = auth_failed, invalid_input…),
+   * sent to the provider's sign-in, finished, or kept as a draft / unverified.
+   */
+  SETUP_STARTED: 'setup_started',
+  SETUP_VERIFY_FAILED: 'setup_verify_failed',
+  OAUTH_STARTED: 'oauth_started',
+  SETUP_COMPLETED: 'setup_completed',
+  SETUP_SAVED_DRAFT: 'setup_saved_draft',
+  SETUP_SAVED_UNVERIFIED: 'setup_saved_unverified',
+  /**
    * A new cloud account was created; metadata = the first and last touch the
    * visitor arrived through (see signup-attribution.ts). Written by the
    * server on sign-up, never accepted from a client. Answers: which channel

@@ -65,6 +65,7 @@ function makeDeps(overrides: Partial<SharedToolsetDeps> = {}) {
     ),
     guide: jest.fn(async () => '## Acme CRM\nUse emails in lower case.'),
     kgLookup: jest.fn(async () => ({ entities: [] })),
+    connectorUrl: (id: string) => `https://cloud.example.com/connectors/${id}`,
     configuration: jest.fn(async () => ({
       dashboardUrl: 'https://cloud.example.com/connectors',
       servers: [{ name: 'Default', url: 'https://cloud.example.com/mcp/srv-1' }],
@@ -306,5 +307,46 @@ describe('shared /mcp tool set', () => {
         else process.env[k] = v;
       }
     }
+  });
+});
+
+describe('connectors that are not set up yet', () => {
+  const ETSY_PENDING = tool({
+    name: 'etsy_get_shop',
+    connectorId: 'c-etsy',
+    setupStatus: 'needs_authorization',
+  });
+
+  it('are not offered to the model, but named with where to finish them', async () => {
+    const { client } = await connect([CRM_READ, ETSY_PENDING]);
+    const list = await call(client, 'anythingmcp_list_connectors');
+    expect(list.body.connectors.map((c: any) => c.id)).toEqual(['c-crm']);
+    expect(list.body.needsSetup).toEqual([
+      {
+        name: 'c-etsy',
+        status: 'needs_authorization',
+        whatIsMissing: 'it has to be authorized with the provider',
+        finishSetupUrl: 'https://cloud.example.com/connectors/c-etsy',
+      },
+    ]);
+    const search = await call(client, 'anythingmcp_search_tools', { query: 'etsy shop' });
+    expect(JSON.stringify(search.body)).not.toContain('etsy_get_shop');
+  });
+
+  it('answer a call by name with the link instead of running it', async () => {
+    const { client, deps } = await connect([CRM_READ, ETSY_PENDING]);
+    const out = await call(client, 'anythingmcp_run_read_tool', { tool: 'etsy_get_shop', arguments: {} });
+    expect(out.isError).toBe(true);
+    expect(out.body.error).toContain('not set up yet');
+    expect(out.body.error).toContain('https://cloud.example.com/connectors/c-etsy');
+    expect(deps.execute).not.toHaveBeenCalled();
+  });
+
+  it('drop the empty-workspace hint when the only connector is waiting for setup', async () => {
+    const { client } = await connect([ETSY_PENDING]);
+    const list = await call(client, 'anythingmcp_list_connectors');
+    expect(list.body.connectors).toEqual([]);
+    expect(list.body.hint).toBeUndefined();
+    expect(list.body.needsSetup).toHaveLength(1);
   });
 });

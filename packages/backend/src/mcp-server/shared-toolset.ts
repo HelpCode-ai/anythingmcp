@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/server';
 import { listAdapters } from '../adapters/catalog';
-import { RegisteredTool } from './tool-registry';
+import { RegisteredTool, isListable } from './tool-registry';
 import { deriveToolAnnotations } from './tool-annotations';
 import { jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
 
@@ -80,6 +80,12 @@ export function excludedOnSharedEndpoint(tool: RegisteredTool): boolean {
   return typeof slug === 'string' && excludedAdapterSlugs().has(slug);
 }
 
+function describeSetupStatus(status: RegisteredTool['setupStatus']): string {
+  return status === 'needs_authorization'
+    ? 'it has to be authorized with the provider'
+    : 'a credential or setting is still empty';
+}
+
 type TextResult = {
   content: { type: 'text'; text: string }[];
   isError?: boolean;
@@ -100,6 +106,8 @@ export interface SharedToolsetDeps {
   guide(connectorIds: string[], wholeScope: boolean): Promise<string | undefined>;
   /** Knowledge-graph answer, or null when the graph is off for the workspace. */
   kgLookup(query: string, connectorIds: string[]): Promise<unknown | null>;
+  /** Dashboard page of one connector, where the user finishes its setup. */
+  connectorUrl(connectorId: string): string;
   /** Where the user configures connectors, plus their servers' direct URLs. */
   configuration(): Promise<{
     dashboardUrl: string;
@@ -176,8 +184,12 @@ export function registerSharedToolset(
   scopeTools: RegisteredTool[],
   deps: SharedToolsetDeps,
 ): void {
-  const tools = scopeTools.filter((t) => !excludedOnSharedEndpoint(t));
+  const served = scopeTools.filter((t) => !excludedOnSharedEndpoint(t));
   const withheld = scopeTools.filter((t) => excludedOnSharedEndpoint(t));
+  // Connectors still missing a credential or an authorization: not offered to
+  // the model, but named in list_connectors with where to finish them.
+  const tools = served.filter(isListable);
+  const pending = served.filter((t) => !isListable(t));
   const connectorIds = [...new Set(tools.map((t) => t.connectorId))];
 
   let summaries: Promise<Map<string, ConnectorSummary>> | null = null;
@@ -229,6 +241,18 @@ export function registerSharedToolset(
               id: t.connectorId,
               name: connectorName(byId, t.connectorId),
             })),
+          },
+          true,
+        ),
+      };
+    }
+    const unfinished = pending.find((t) => t.name === name);
+    if (unfinished) {
+      const byId = await connectorsById();
+      return {
+        error: json(
+          {
+            error: `'${name}' belongs to the connector '${connectorName(byId, unfinished.connectorId)}', which is not set up yet (${describeSetupStatus(unfinished.setupStatus)}). Give the user this link to finish it: ${deps.connectorUrl(unfinished.connectorId)}`,
           },
           true,
         ),
@@ -325,8 +349,23 @@ export function registerSharedToolset(
       const notServedHere = [...new Set(withheld.map((t) => t.connectorId))].map(
         (id) => connectorName(byId, id),
       );
+      const needsSetup = [...new Map(pending.map((t) => [t.connectorId, t])).values()]
+        .map((t) => ({
+          name: connectorName(byId, t.connectorId),
+          status: t.setupStatus,
+          whatIsMissing: describeSetupStatus(t.setupStatus),
+          finishSetupUrl: deps.connectorUrl(t.connectorId),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
       return json({
         connectors,
+        ...(needsSetup.length
+          ? {
+              needsSetup,
+              needsSetupHint:
+                'These connectors are installed but not usable yet. Give the user the finishSetupUrl; their tools appear here as soon as the setup is done.',
+            }
+          : {}),
         ...(notServedHere.length
           ? {
               notServedHere,
@@ -334,7 +373,7 @@ export function registerSharedToolset(
                 'Payment, banking and trading connectors are only served on their server\'s own URL.',
             }
           : {}),
-        ...(connectors.length === 0
+        ...(connectors.length === 0 && needsSetup.length === 0
           ? {
               hint: 'No connectors yet. The user adds them in the dashboard: call anythingmcp_get_configuration_url.',
             }

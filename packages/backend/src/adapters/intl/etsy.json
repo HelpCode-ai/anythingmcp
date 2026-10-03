@@ -14,6 +14,24 @@
   "optionalEnvVars": [
     "ETSY_REFRESH_TOKEN"
   ],
+  "envVarMeta": {
+    "ETSY_CLIENT_ID": {
+      "label": "Keystring",
+      "kind": "credential",
+      "help": "Etsy developers → Your apps → your app: the Keystring.",
+      "link": "https://www.etsy.com/developers/your-apps"
+    },
+    "ETSY_CLIENT_SECRET": {
+      "label": "Shared secret",
+      "help": "Same page, the Shared secret next to the Keystring.",
+      "link": "https://www.etsy.com/developers/your-apps"
+    },
+    "ETSY_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "help": "Leave empty: the authorization with Etsy fills it in.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Etsy Open API v3",
     "type": "REST",

@@ -12,6 +12,23 @@
     "ODOO_DB",
     "ODOO_API_KEY"
   ],
+  "envVarMeta": {
+    "ODOO_URL": {
+      "label": "Odoo address",
+      "help": "The address you open Odoo at, without a trailing slash.",
+      "example": "https://mycompany.odoo.com",
+      "pattern": "^https?://[^\\s/]+(/[^\\s]*)?[^/\\s]$"
+    },
+    "ODOO_DB": {
+      "label": "Database name",
+      "help": "On Odoo Online this is usually the subdomain: mycompany for mycompany.odoo.com.",
+      "example": "mycompany"
+    },
+    "ODOO_API_KEY": {
+      "label": "API key",
+      "help": "In Odoo: your avatar → My Profile → Account Security → New API key. Odoo shows it once."
+    }
+  },
   "connector": {
     "name": "Odoo JSON-2 API",
     "type": "REST",

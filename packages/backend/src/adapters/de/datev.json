@@ -11,6 +11,18 @@
     "DATEV_CLIENT_ID",
     "DATEV_CLIENT_SECRET"
   ],
+  "envVarMeta": {
+    "DATEV_CLIENT_ID": {
+      "label": "Client ID",
+      "help": "From your app in the DATEV developer portal.",
+      "link": "https://developer.datev.de"
+    },
+    "DATEV_CLIENT_SECRET": {
+      "label": "Client secret",
+      "help": "The client secret of the same app.",
+      "link": "https://developer.datev.de"
+    }
+  },
   "connector": {
     "name": "DATEV Online APIs",
     "type": "REST",

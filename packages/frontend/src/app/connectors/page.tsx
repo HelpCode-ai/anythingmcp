@@ -9,6 +9,7 @@ import { AppSelect } from '@/components/ui/select';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill, type Tone } from '@/components/ui/badge';
+import { SetupStatusPill } from '@/components/setup-status';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ActionMenu } from '@/components/ui/action-menu';
 import { authTypeLabel, cn } from '@/lib/utils';
@@ -488,6 +489,7 @@ export default function ConnectorsPage() {
                     >
                       {c.isActive ? 'Active' : 'Inactive'}
                     </StatusPill>
+                    <SetupStatusPill status={c.setupStatus} />
                   </div>
                   {/* Hover actions (above the full-card link) */}
                   <div className="relative z-10 mt-[14px] flex gap-2 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">

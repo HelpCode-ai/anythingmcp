@@ -8,22 +8,21 @@ import { adapters, users } from '@/lib/api';
 import { LogoIcon } from '@/components/logo-icon';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { StarterPack } from '@/components/starter-pack';
+import { matchesSearch } from '@/lib/marketplace-search';
 
-// A small, curated subset of slugs known to actually work end-to-end
-// today, ordered by popularity from the production analytics
-// (Sendcloud + Playtomic lead, then GitHub/Twitter/Slack as broadly
-// useful starters). We don't fetch and re-rank: a stable list keeps
-// the wizard predictable, and the user can switch to the full
-// /connectors/store from the CTA below.
+// What people connect most and get working, from production (installs that
+// went on to a successful call, September-October 2026). Keyless demos have
+// their own section below: they are installed often and used almost never,
+// so they no longer lead.
 const STARTER_SLUGS = [
+  'etsy',
+  'telegram-bot',
+  'odoo',
+  'weclapp',
+  'lexware-office',
   'sendcloud',
-  'playtomic-public',
-  'github',
-  'twitter',
-  'slack',
-  'notion',
-  'stripe',
-  'help-scout',
+  'getmyinvoices',
+  'google-search-console',
 ];
 
 export default function WelcomePage() {
@@ -31,6 +30,8 @@ export default function WelcomePage() {
   const router = useRouter();
   const [starters, setStarters] = useState<any[]>([]);
   const [skipping, setSkipping] = useState(false);
+  const [catalog, setCatalog] = useState<any[]>([]);
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     // Bounce to /login if the user landed here unauthenticated.
@@ -45,6 +46,7 @@ export default function WelcomePage() {
     adapters
       .list(token)
       .then((all: any[]) => {
+        setCatalog(all);
         const bySlug = new Map(all.map((a) => [a.slug, a]));
         setStarters(
           STARTER_SLUGS.map((s) => bySlug.get(s)).filter(Boolean) as any[],
@@ -110,13 +112,56 @@ export default function WelcomePage() {
           </p>
         </div>
 
-        {/* Starter pack: keyless connectors, ticked by default, added in one
-            click and put on the user's MCP server. It replaces the old
-            single-connector demo, and offers the same live "Try it" call
-            for each connector once it is added. */}
-        {/* Viewers can't add connectors (the install endpoint rejects them),
-            so don't offer the pack only to fail. */}
-        {token && user.role !== 'VIEWER' && <StarterPack token={token} />}
+        {/* What do you want to connect? Search first: people arrive with an
+            app in mind, and every result opens the guided setup. */}
+        {token && user.role !== 'VIEWER' && (
+          <section className="mb-10">
+            <label htmlFor="connect-search" className="mb-2 block text-sm font-semibold text-[var(--text)]">
+              What should your AI client work with?
+            </label>
+            <input
+              id="connect-search"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Etsy, Odoo, weclapp, Lexware, Shopify…"
+              className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-[16px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--border-strong)] focus:outline-none"
+            />
+            <div className="mt-3 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
+              {(query.trim()
+                ? catalog.filter((a) => matchesSearch([a.name, a.slug, a.description ?? '', a.category ?? ''], query)).slice(0, 8)
+                : starters
+              ).map((a) => (
+                <Link
+                  key={a.slug}
+                  href={`/connectors/setup/${encodeURIComponent(a.slug)}`}
+                  className="flex items-center gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-3 shadow-[var(--shadow-sm)] transition-colors hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]"
+                >
+                  <ConnectorLogo icon={a.icon} name={a.name} small />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-[var(--text)]">{a.name}</div>
+                    <div className="truncate text-xs text-[var(--text-2)]">
+                      {a.setupKind === 'none' ? 'No account needed' : a.setupKind === 'oauth_browser' ? 'Sign in with your account' : 'API key'}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+            {query.trim() && catalog.length > 0 &&
+              !catalog.some((a) => matchesSearch([a.name, a.slug, a.description ?? '', a.category ?? ''], query)) && (
+                <p className="mt-3 text-sm text-[var(--text-2)]">
+                  Nothing in the catalog matches. You can still{' '}
+                  <Link href="/connectors/new?from=welcome" className="text-[var(--brand)] underline">add your own API</Link>.
+                </p>
+              )}
+          </section>
+        )}
+
+        {/* Keyless demos, added in one click, for trying AnythingMCP before
+            picking a real app. Viewers can't add connectors. */}
+        {token && user.role !== 'VIEWER' && (
+          <StarterPack token={token} />
+        )}
 
         {/* Two big paths — marketplace vs custom */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
@@ -131,8 +176,8 @@ export default function WelcomePage() {
               Browse the marketplace
             </h2>
             <p className="text-sm text-[var(--text-2)] mb-4">
-              180+ pre-built connectors. OAuth, API keys, refresh-token
-              rotation — all wired up. Click → install → done.
+              265 pre-built connectors. OAuth, API keys, refresh-token
+              rotation, all wired up. Pick one and follow the setup.
             </p>
             <div className="text-sm font-medium text-[var(--brand)] group-hover:underline">
               Open marketplace →
@@ -156,32 +201,6 @@ export default function WelcomePage() {
             </div>
           </Link>
         </div>
-
-        {/* Starter shortcuts — real logos + 1-click install */}
-        {starters.length > 0 && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3 text-[var(--text-2)]">
-              Popular connectors (sign in with your account)
-            </h3>
-            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-4 gap-3">
-              {starters.map((a) => (
-                <Link
-                  key={a.slug}
-                  href={`/connectors/store?install=${encodeURIComponent(a.slug)}&from=welcome`}
-                  className="border border-[var(--border)] rounded-[12px] p-3 bg-[var(--surface)] shadow-[var(--shadow-sm)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition-colors flex items-center gap-3"
-                >
-                  <ConnectorLogo icon={a.icon} name={a.name} small />
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium truncate text-[var(--text)]">{a.name}</div>
-                    <div className="text-xs text-[var(--text-2)] truncate">
-                      {a.toolCount} tools
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Differentiator teaser — what makes AnythingMCP "smart" beyond a
             proxy. It's empty for a brand-new account, so this is a concept
