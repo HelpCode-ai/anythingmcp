@@ -32,7 +32,7 @@ export function mergeDiscoveredMcpTools(
       endpointMapping: d.endpointMapping,
       ...(d.outputSchema ? { outputSchema: d.outputSchema } : {}),
       ...(own?.annotations || d.annotations
-        ? { annotations: { ...(d.annotations ?? {}), ...(own?.annotations ?? {}) } }
+        ? { annotations: { ...(own?.annotations ?? {}), ...(d.annotations ?? {}) } }
         : {}),
       ...(own?.enabled === false ? { enabled: false } : {}),
     };

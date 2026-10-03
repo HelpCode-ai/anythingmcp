@@ -109,7 +109,8 @@ installs what it lists, so a workspace gets exactly the tools of the server
 version it runs. The adapter's `tools` array is a snapshot: it is what the
 catalog shows, the fallback installed when the server cannot be reached at
 install, and the place for policy. A snapshot tool with `"enabled": false`
-installs switched off, and `annotations` set there override the server's.
+installs switched off, and `annotations` set there fill the hints the server
+leaves out (the server's own hints win).
 Each tool's `endpointMapping` is `{ "method": "<tool name>", "path": "/mcp" }`.
 Listing the tools is also the install check, so no `probe` is needed, and a
 catalog update never rewrites or retires the tools of an MCP adapter: the

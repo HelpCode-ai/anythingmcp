@@ -1388,6 +1388,43 @@
       }
     },
     {
+      "repo": "splunk-mcp-gateway",
+      "owner": "keysersoft",
+      "type": "connector",
+      "system": "Splunk",
+      "title": "Splunk MCP Gateway",
+      "adapters": [
+        "splunk"
+      ],
+      "wave": 1,
+      "about": "Splunk MCP server gateway: Splunk's official MCP Server in Claude & ChatGPT with OAuth, per-tool roles and audit. SPL and saved searches.",
+      "topics": [
+        "splunk",
+        "splunk-cloud",
+        "splunk-mcp",
+        "spl",
+        "siem",
+        "log-analysis",
+        "security-operations"
+      ],
+      "website": "https://anythingmcp.com/guides/splunk-to-mcp",
+      "languages": [
+        "en"
+      ],
+      "related": [
+        "jev-mcp-server",
+        "openapi-to-mcp"
+      ],
+      "objects": {
+        "en": "SPL searches, saved searches, indexes, hosts and sources, knowledge objects and KV Store collections"
+      },
+      "lastVerified": {
+        "date": "2026-10-02",
+        "against": "a production Splunk Cloud Platform stack with the Splunk MCP Server app",
+        "how": "bridged over MCP on AnythingMCP Cloud: tools/list returned 16 tools, splunk_get_indexes called from Claude Desktop through OAuth"
+      }
+    },
+    {
       "repo": "google-ads-mcp-server",
       "owner": "keysersoft",
       "type": "connector",

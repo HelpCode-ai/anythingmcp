@@ -42,10 +42,11 @@ describe('mergeDiscoveredMcpTools', () => {
     expect(merged[0].parameters).toEqual(remote('a_read').parameters);
   });
 
-  it('keeps the catalog policy: switched off, annotations overridden', () => {
+  it('keeps the catalog policy: switched off; annotations fill what the server leaves out', () => {
     const write = merged.find((t) => t.name === 'a_write')!;
     expect(write.enabled).toBe(false);
-    expect(write.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
+    // The server says readOnlyHint: true and wins on it; destructiveHint only the catalog has.
+    expect(write.annotations).toEqual({ readOnlyHint: true, destructiveHint: true });
     expect(merged.find((t) => t.name === 'a_read')!.enabled).toBeUndefined();
     expect(merged.find((t) => t.name === 'a_read')!.annotations).toEqual({ readOnlyHint: true });
   });
