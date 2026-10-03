@@ -21,6 +21,7 @@ import { STARTER_PACK } from './starter-pack';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
+import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 
 @Injectable()
 export class AdaptersService {
@@ -226,14 +227,57 @@ export class AdaptersService {
 
     let toolsCreated = 0;
 
-    for (const tool of adapter.tools) {
+    // An adapter for a vendor's own MCP server installs the tools that server
+    // lists now; the catalog's copy is the fallback. Listing them is also the
+    // proof that the address and token work, so it stands in for the probe.
+    let toolsToCreate = adapter.tools;
+    let mcpProbe: ImportProbeResult | null = null;
+    if (adapter.connector.type === 'MCP') {
+      const started = Date.now();
+      try {
+        const discovered = await this.connectors.discoverRemoteMcpTools(connector);
+        toolsToCreate = mergeDiscoveredMcpTools(adapter.tools, discovered);
+        mcpProbe = {
+          ok: true,
+          toolName: 'tools/list',
+          durationMs: Date.now() - started,
+          sample: describeDiscoveredTools(discovered),
+        };
+      } catch (err: any) {
+        // The MCP SDK reports the HTTP status of a failed request as `code`.
+        const status: number | undefined =
+          typeof err?.status === 'number'
+            ? err.status
+            : typeof err?.code === 'number' && err.code >= 400
+              ? err.code
+              : undefined;
+        const upstream = String(err?.message ?? err ?? 'unknown error').slice(0, 400);
+        const { hint } = classifyToolExecutionError({
+          status,
+          authType: adapter.connector.authType,
+          message: upstream,
+        });
+        this.logger.warn(
+          `Could not list the tools of "${slug}" at install (${upstream}); installed the catalog's list`,
+        );
+        mcpProbe = {
+          ok: false,
+          toolName: 'tools/list',
+          durationMs: Date.now() - started,
+          status: status ?? null,
+          message: `${upstream} ${hint}`.trim(),
+        };
+      }
+    }
+
+    for (const tool of toolsToCreate) {
       try {
         await this.prisma.mcpTool.create({
           data: {
             connectorId: connector.id,
             name: tool.name,
             description: tool.description,
-            isEnabled: true,
+            isEnabled: tool.enabled !== false,
             // Seed the proxy preference from the adapter spec (default off).
             useProxy: tool.useProxy === true,
             parameters: tool.parameters as any,
@@ -259,11 +303,14 @@ export class AdaptersService {
       `Imported adapter "${slug}" as connector ${connector.id} with ${toolsCreated} tools`,
     );
 
-    const probe = await this.runImportProbe(
-      adapter,
-      connector.id,
-      resolvedAuthConfig as Record<string, unknown> | null,
-    );
+    const probe =
+      adapter.connector.type === 'MCP'
+        ? mcpProbe
+        : await this.runImportProbe(
+            adapter,
+            connector.id,
+            resolvedAuthConfig as Record<string, unknown> | null,
+          );
 
     return { connectorId: connector.id, toolsCreated, probe };
   }

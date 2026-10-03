@@ -347,6 +347,51 @@ export class ConnectorsService {
     }
   }
 
+  /**
+   * The tools a remote MCP server offers right now, as tool definitions ready
+   * to store. The catalog's MCP adapters call this at install, so a workspace
+   * gets the tools its own server version has rather than the catalog's copy.
+   * Throws what the server or the transport threw.
+   */
+  async discoverRemoteMcpTools(connector: {
+    name: string;
+    baseUrl: string;
+    authType: string;
+    authConfig: string | null;
+    headers: unknown;
+    envVars: unknown;
+  }): Promise<DiscoveredMcpTool[]> {
+    const envVars = (connector.envVars as Record<string, string> | null) || {};
+    const authConfig = connector.authConfig
+      ? interpolateDeep(JSON.parse(decrypt(connector.authConfig, this.encryptionKey)), envVars)
+      : undefined;
+    const baseUrl = interpolateDeep(connector.baseUrl, envVars);
+    const headers = interpolateDeep(
+      (connector.headers as Record<string, string>) || undefined,
+      envVars,
+    );
+    assertNoUnresolvedPlaceholders(
+      { baseUrl, headers, authConfig },
+      `the "${connector.name}" connector`,
+    );
+    const remote = await this.mcpClientEngine.listTools({
+      baseUrl,
+      authType: connector.authType,
+      authConfig,
+      headers,
+    });
+    return remote.map((rt) => ({
+      name: rt.name,
+      description: rt.description || `MCP tool: ${rt.name}`,
+      parameters: (rt.inputSchema as Record<string, unknown>) || { type: 'object', properties: {} },
+      // '/mcp' is the historical default that resolveMcpEndpointUrl() treats
+      // as unset, so the path in the connector's base URL is used (#501).
+      endpointMapping: { method: rt.name, path: '/mcp' },
+      outputSchema: (rt.outputSchema as Record<string, unknown>) ?? null,
+      annotations: (rt.annotations as Record<string, unknown>) ?? null,
+    }));
+  }
+
   private classifyTestError(
     error: any,
     healthcheckPath: string,
@@ -1052,4 +1097,14 @@ export class ConnectorsService {
       note,
     ].join('\n');
   }
+}
+
+/** A tool listed by a remote MCP server, shaped like a catalog tool. */
+export interface DiscoveredMcpTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  endpointMapping: { method: string; path: string };
+  outputSchema: Record<string, unknown> | null;
+  annotations: Record<string, unknown> | null;
 }

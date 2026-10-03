@@ -135,7 +135,12 @@ export class CatalogResyncService {
     const adapter = getAdapter(slug);
     if (!adapter) return null;
 
-    const catalogTools = adapter.tools as CatalogTool[];
+    // An adapter for a vendor's own MCP server ships a snapshot of its tools;
+    // the workspace's server is the authority on them (it may run another
+    // version), so a catalog update never adds, rewrites or retires them.
+    // Instructions and the base URL are still compared below.
+    const serverOwnsTools = adapter.connector.type === 'MCP';
+    const catalogTools = serverOwnsTools ? [] : (adapter.tools as CatalogTool[]);
     const catalogByName = new Map(catalogTools.map((t) => [t.name, t]));
     const existingByName = new Map(connector.tools.map((t) => [t.name, t]));
 
@@ -166,7 +171,7 @@ export class CatalogResyncService {
     const catalogNames = new Set(catalogByName.keys());
     const removed: string[] = [];
     const custom: string[] = [];
-    for (const et of connector.tools) {
+    for (const et of serverOwnsTools ? [] : connector.tools) {
       if (catalogByName.has(et.name)) continue;
       if (!CatalogResyncService.isCatalogTool(et, connector.createdAt, catalogNames)) {
         if (!et.deprecatedAt) custom.push(et.name);

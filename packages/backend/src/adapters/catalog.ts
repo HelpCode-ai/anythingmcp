@@ -208,6 +208,7 @@ import * as signwell from './intl/signwell.json';
 import * as slab from './intl/slab.json';
 import * as snov from './intl/snov.json';
 import * as sorare from './intl/sorare.json';
+import * as splunk from './intl/splunk.json';
 import * as statsig from './intl/statsig.json';
 import * as streak from './intl/streak.json';
 import * as substack from './intl/substack.json';
@@ -355,6 +356,9 @@ export interface AdapterDefinition extends AdapterMeta {
      *  `readOnlyHint` for a read exposed over POST. Seeds mcp_tools.annotations
      *  on import, the same column a user override lives in. */
     annotations?: Record<string, unknown>;
+    /** `false` installs the tool switched off, for writes a workspace should
+     *  opt into rather than get by default. Default true. */
+    enabled?: boolean;
   }>;
 }
 
@@ -631,6 +635,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   slab as unknown as AdapterDefinition,
   snov as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
+  splunk as unknown as AdapterDefinition,
   statsig as unknown as AdapterDefinition,
   streak as unknown as AdapterDefinition,
   substack as unknown as AdapterDefinition,
