@@ -28,6 +28,12 @@ describe('zabbix adapter — static spec conformance', () => {
     };
   });
 
+  // A GET on /api_jsonrpc.php answers a JSON-RPC "Parse error", which the
+  // engine now raises: Test connection must not point there.
+  it("checks the connection on the frontend, not on the JSON-RPC endpoint", () => {
+    expect(a.connector.healthcheckPath).toBe('/');
+  });
+
   it("names a distinct JSON-RPC method per tool", () => {
     const methods = a.tools.map((t) => (t.endpointMapping.bodyMapping as Record<string, string>).method);
     expect(methods).toEqual(expect.arrayContaining(['hostgroup.get', 'host.get', 'problem.get', 'event.get']));
