@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import {
   ENC_KEY,
@@ -111,10 +111,10 @@ describe('connector variables at rest', () => {
     // would bypass the query extension and store variables in clear.
     const offenders: string[] = [];
     const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
-        const path = join(dir, name);
-        if (name === 'generated' || name === 'node_modules') continue;
-        if (statSync(path).isDirectory()) walk(path);
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.name === 'generated' || entry.name === 'node_modules') continue;
+        if (entry.isDirectory()) walk(path);
         else if (path.endsWith('.ts') && !path.endsWith('.spec.ts')) {
           const text = readFileSync(path, 'utf8');
           if (/connectors?\s*:\s*\{\s*(create|createMany|connectOrCreate|upsert|update|updateMany)\b/.test(text)) {
