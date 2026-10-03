@@ -268,6 +268,11 @@ export class RestEngine {
         } else {
           const mapped = this.mapParams(endpointMapping.bodyMapping, params);
           const encoding = endpointMapping.bodyEncoding || 'json';
+          // Only fields whose marker is written in the tool's own bodyMapping
+          // may fetch a file. A `$param` resolves to whatever the caller sent,
+          // objects included, so without this a model could make any
+          // form-data tool download a URL of its choosing.
+          const fileKeys = configuredFileKeys(endpointMapping.bodyMapping);
 
           if (encoding === 'form-urlencoded') {
             const urlParams = new URLSearchParams();
@@ -299,6 +304,15 @@ export class RestEngine {
             const fileEntries: Array<{ key: string; file: FetchedFile }> = [];
             for (const [k, v] of spreadFormEntries(mapped)) {
               if (isFileMarker(v)) {
+                if (!fileKeys.has(k)) {
+                  throw new Error(
+                    `bodyMapping.${k} received a __file marker from the call's ` +
+                      `arguments. Files can only be fetched for fields the tool ` +
+                      `itself declares with { "__file": "$param" }.`,
+                  );
+                }
+                // An optional file the caller did not pass: leave the part out.
+                if (v.__file === undefined || v.__file === null || v.__file === '') continue;
                 fileEntries.push({
                   key: k,
                   file: await fetchFileForUpload(String(v.__file)),
@@ -1064,6 +1078,15 @@ function isFileMarker(value: unknown): value is { __file: unknown } {
     typeof value === 'object' &&
     !Array.isArray(value) &&
     '__file' in (value as Record<string, unknown>)
+  );
+}
+
+/** Top-level bodyMapping keys whose template is a `{ __file: ... }` marker. */
+function configuredFileKeys(bodyMapping: Record<string, unknown>): Set<string> {
+  return new Set(
+    Object.entries(bodyMapping)
+      .filter(([, template]) => isFileMarker(template))
+      .map(([key]) => key),
   );
 }
 

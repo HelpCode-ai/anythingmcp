@@ -1630,6 +1630,60 @@ describe('RestEngine', () => {
       expect(mockedAxios).not.toHaveBeenCalled();
     });
 
+    it('refuses a __file marker that arrives in the call arguments instead of the tool config', async () => {
+      // `meta: "$meta"` passes the caller's object through as-is; a model must
+      // not be able to turn an ordinary form field into a server-side download.
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          {
+            method: 'POST',
+            path: '/x',
+            bodyEncoding: 'form-data',
+            bodyMapping: { meta: '$meta' },
+          },
+          { meta: { __file: 'https://attacker.example/payload.bin' } },
+        ),
+      ).rejects.toThrow(/Files can only be fetched for fields the tool itself declares/);
+
+      // Same through __spread, where the caller chooses the keys.
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          {
+            method: 'POST',
+            path: '/x',
+            bodyEncoding: 'form-data',
+            bodyMapping: { __spread: '$params' },
+          },
+          { params: { image: { __file: 'https://attacker.example/payload.bin' } } },
+        ),
+      ).rejects.toThrow(/Files can only be fetched/);
+
+      expect(mockedFetchOutbound).not.toHaveBeenCalled();
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+
+    it('leaves out an optional file part the caller did not pass', async () => {
+      mockedAxios.mockResolvedValueOnce({ data: { ok: true } });
+      const appendSpy = jest.spyOn(FormData.prototype, 'append');
+
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        {
+          method: 'POST',
+          path: '/x',
+          bodyEncoding: 'form-data',
+          bodyMapping: { title: '$title', image: { __file: '$image' } },
+        },
+        { title: 'Mug' },
+      );
+
+      expect(mockedFetchOutbound).not.toHaveBeenCalled();
+      expect(appendSpy.mock.calls.map((c) => c[0])).toEqual(['title']);
+      appendSpy.mockRestore();
+    });
+
     it('rejects a __file marker when encoding is form-urlencoded (it cannot carry a file)', async () => {
       await expect(
         engine.execute(
