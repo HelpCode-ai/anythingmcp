@@ -2,6 +2,21 @@ import { RestEngine, parseRetryAfterMs, serializeRepeatedParams } from './rest.e
 import { OAuth2TokenService } from './oauth2-token.service';
 import { LoginTokenService } from './login-token.service';
 import axios, { AxiosError } from 'axios';
+import FormData from 'form-data';
+import { fetchOutbound, OutboundFetchError } from '../../common/outbound-fetch.util';
+import { SsrfBlockedError } from '../../common/ssrf.util';
+
+// The file-upload path delegates its download entirely to fetchOutbound
+// (SSRF checks, size cap, timeout, non-2xx handling all live there — see
+// outbound-fetch.util.spec.ts); these tests only need to control what it
+// resolves or rejects with.
+jest.mock('../../common/outbound-fetch.util', () => ({
+  ...jest.requireActual('../../common/outbound-fetch.util'),
+  fetchOutbound: jest.fn(),
+}));
+const mockedFetchOutbound = fetchOutbound as jest.MockedFunction<
+  typeof fetchOutbound
+>;
 
 // Mock the callable default export but keep the real AxiosError class so the
 // engine's `instanceof AxiosError` checks (used by the retry logic) work.
@@ -1445,6 +1460,290 @@ describe('RestEngine', () => {
       const retried = mockedAxios.mock.calls[1][0] as any;
       expect(retried.headers['x-amz-access-token']).toBe('new-access-token');
       expect(retried.headers.Authorization).toBeUndefined();
+    });
+  });
+
+  describe('form-data file upload (__file)', () => {
+    function fetchResult(opts: {
+      body: Buffer;
+      headers?: Record<string, string>;
+      finalUrl: string;
+    }) {
+      return {
+        status: 200,
+        headers: opts.headers ?? { 'content-type': 'image/jpeg' },
+        body: opts.body,
+        finalUrl: opts.finalUrl,
+      };
+    }
+
+    it('fetches the __file URL via fetchOutbound and attaches it as a real multipart part, with no connector credentials on the download', async () => {
+      const bytes = Buffer.from('fake-image-bytes');
+      mockedFetchOutbound.mockResolvedValueOnce(
+        fetchResult({
+          body: bytes,
+          finalUrl: 'https://cdn.example.com/photos/mug-123.jpg',
+        }),
+      );
+      mockedAxios.mockResolvedValueOnce({ data: { ok: true } });
+      const appendSpy = jest.spyOn(FormData.prototype, 'append');
+
+      const result = await engine.execute(
+        {
+          baseUrl: 'https://openapi.etsy.com',
+          authType: 'BEARER_TOKEN',
+          authConfig: { token: 'etsy-token' },
+        },
+        {
+          method: 'POST',
+          path: '/v3/application/shops/1/listings/2/images',
+          bodyEncoding: 'form-data',
+          bodyMapping: { image: { __file: '$image' } },
+        },
+        { image: 'https://cdn.example.com/photos/mug-123.jpg' },
+      );
+
+      expect(result).toEqual({ ok: true });
+
+      // Called with only maxBytes/timeoutMs — no connector headers, auth or
+      // proxy config reach the download at all.
+      expect(mockedFetchOutbound).toHaveBeenCalledWith(
+        'https://cdn.example.com/photos/mug-123.jpg',
+        { maxBytes: 10 * 1024 * 1024, timeoutMs: 30000 },
+      );
+
+      // The real Etsy request still carries its own auth and the file part.
+      const mainCall = mockedAxios.mock.calls[0][0] as any;
+      expect(mainCall.headers.Authorization).toBe('Bearer etsy-token');
+      expect(appendSpy).toHaveBeenCalledWith(
+        'image',
+        expect.any(Buffer),
+        expect.objectContaining({
+          filename: 'mug-123.jpg',
+          contentType: 'image/jpeg',
+        }),
+      );
+
+      appendSpy.mockRestore();
+    });
+
+    it('names the part after the redirected finalUrl, not the original short link', async () => {
+      mockedFetchOutbound.mockResolvedValueOnce(
+        fetchResult({
+          body: Buffer.from('pdf-bytes'),
+          headers: { 'content-type': 'application/pdf' },
+          finalUrl: 'https://cdn.example.com/files/report.pdf',
+        }),
+      );
+      mockedAxios.mockResolvedValueOnce({ data: { ok: true } });
+      const appendSpy = jest.spyOn(FormData.prototype, 'append');
+
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        {
+          method: 'POST',
+          path: '/upload',
+          bodyEncoding: 'form-data',
+          bodyMapping: { doc: { __file: '$doc' } },
+        },
+        { doc: 'https://short.ly/abc123' },
+      );
+
+      expect(appendSpy).toHaveBeenCalledWith(
+        'doc',
+        expect.any(Buffer),
+        expect.objectContaining({ filename: 'report.pdf' }),
+      );
+
+      appendSpy.mockRestore();
+    });
+
+    it('propagates a too-large failure from fetchOutbound without sending the real request', async () => {
+      mockedFetchOutbound.mockRejectedValueOnce(
+        new OutboundFetchError(
+          'https://cdn.example.com/big.jpg is larger than 10 MB.',
+          'too_large',
+        ),
+      );
+
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://openapi.etsy.com', authType: 'NONE' },
+          {
+            method: 'POST',
+            path: '/images',
+            bodyEncoding: 'form-data',
+            bodyMapping: { image: { __file: '$image' } },
+          },
+          { image: 'https://cdn.example.com/big.jpg' },
+        ),
+      ).rejects.toThrow(/is larger than 10 MB/);
+
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+
+    it('propagates a non-2xx failure from fetchOutbound without sending the real request', async () => {
+      mockedFetchOutbound.mockRejectedValueOnce(
+        new OutboundFetchError(
+          'https://cdn.example.com/missing.jpg answered HTTP 404.',
+          'status',
+          404,
+        ),
+      );
+
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://openapi.etsy.com', authType: 'NONE' },
+          {
+            method: 'POST',
+            path: '/images',
+            bodyEncoding: 'form-data',
+            bodyMapping: { image: { __file: '$image' } },
+          },
+          { image: 'https://cdn.example.com/missing.jpg' },
+        ),
+      ).rejects.toThrow(/HTTP 404/);
+
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+
+    it('propagates a blocked-host failure from fetchOutbound without sending the real request', async () => {
+      mockedFetchOutbound.mockRejectedValueOnce(
+        new SsrfBlockedError(
+          "SSRF guard: address '127.0.0.1' is not a public IP",
+        ),
+      );
+
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://openapi.etsy.com', authType: 'NONE' },
+          {
+            method: 'POST',
+            path: '/images',
+            bodyEncoding: 'form-data',
+            bodyMapping: { image: { __file: '$image' } },
+          },
+          { image: 'http://127.0.0.1/secret.jpg' },
+        ),
+      ).rejects.toThrow(/SSRF guard/);
+
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+
+    it('refuses a __file marker that arrives in the call arguments instead of the tool config', async () => {
+      // `meta: "$meta"` passes the caller's object through as-is; a model must
+      // not be able to turn an ordinary form field into a server-side download.
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          {
+            method: 'POST',
+            path: '/x',
+            bodyEncoding: 'form-data',
+            bodyMapping: { meta: '$meta' },
+          },
+          { meta: { __file: 'https://attacker.example/payload.bin' } },
+        ),
+      ).rejects.toThrow(/Files can only be fetched for fields the tool itself declares/);
+
+      // Same through __spread, where the caller chooses the keys.
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          {
+            method: 'POST',
+            path: '/x',
+            bodyEncoding: 'form-data',
+            bodyMapping: { __spread: '$params' },
+          },
+          { params: { image: { __file: 'https://attacker.example/payload.bin' } } },
+        ),
+      ).rejects.toThrow(/Files can only be fetched/);
+
+      expect(mockedFetchOutbound).not.toHaveBeenCalled();
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+
+    it('leaves out an optional file part the caller did not pass', async () => {
+      mockedAxios.mockResolvedValueOnce({ data: { ok: true } });
+      const appendSpy = jest.spyOn(FormData.prototype, 'append');
+
+      await engine.execute(
+        { baseUrl: 'https://api.example.com', authType: 'NONE' },
+        {
+          method: 'POST',
+          path: '/x',
+          bodyEncoding: 'form-data',
+          bodyMapping: { title: '$title', image: { __file: '$image' } },
+        },
+        { title: 'Mug' },
+      );
+
+      expect(mockedFetchOutbound).not.toHaveBeenCalled();
+      expect(appendSpy.mock.calls.map((c) => c[0])).toEqual(['title']);
+      appendSpy.mockRestore();
+    });
+
+    it('rejects a __file marker when encoding is form-urlencoded (it cannot carry a file)', async () => {
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          {
+            method: 'POST',
+            path: '/x',
+            bodyEncoding: 'form-urlencoded',
+            bodyMapping: { image: { __file: '$image' } },
+          },
+          { image: 'https://cdn.example.com/photo.jpg' },
+        ),
+      ).rejects.toThrow(/form-urlencoded cannot carry a file/);
+
+      expect(mockedFetchOutbound).not.toHaveBeenCalled();
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+
+    it('rebuilds the multipart body with the same file on a 401 retry, fetching the file only once', async () => {
+      const bytes = Buffer.from('fake-image-bytes');
+      const err = new AxiosError('Unauthorized');
+      (err as any).response = { status: 401, data: {} };
+
+      mockedFetchOutbound.mockResolvedValueOnce(
+        fetchResult({
+          body: bytes,
+          finalUrl: 'https://cdn.example.com/photos/mug-123.jpg',
+        }),
+      );
+      mockedAxios
+        .mockRejectedValueOnce(err) // first attempt on Etsy -> 401
+        .mockResolvedValueOnce({ data: { ok: true } }); // retry succeeds
+
+      const result = await engine.execute(
+        {
+          baseUrl: 'https://openapi.etsy.com',
+          authType: 'OAUTH2',
+          authConfig: {
+            refreshToken: 'rt',
+            tokenUrl: 'https://openapi.etsy.com/token',
+          },
+        },
+        {
+          method: 'POST',
+          path: '/images',
+          bodyEncoding: 'form-data',
+          bodyMapping: { image: { __file: '$image' } },
+        },
+        { image: 'https://cdn.example.com/photos/mug-123.jpg' },
+      );
+
+      expect(result).toEqual({ ok: true });
+      // The file itself was only fetched once, even though the main request
+      // (first attempt + retry) went out twice.
+      expect(mockedFetchOutbound).toHaveBeenCalledTimes(1);
+      expect(mockedAxios).toHaveBeenCalledTimes(2);
+
+      const retryCall = mockedAxios.mock.calls[1][0] as any;
+      expect(retryCall.data).toBeInstanceOf(FormData);
+      expect(retryCall.headers.Authorization).toBe('Bearer new-access-token');
     });
   });
 });
