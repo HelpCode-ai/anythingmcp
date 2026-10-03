@@ -8,6 +8,19 @@
   "icon": "sendcloud",
   "docsUrl": "https://api.sendcloud.dev/docs/sendcloud-public-api/",
   "requiredEnvVars": ["SENDCLOUD_PUBLIC_KEY", "SENDCLOUD_SECRET_KEY"],
+  "envVarMeta": {
+    "SENDCLOUD_PUBLIC_KEY": {
+      "label": "Public key",
+      "secret": false,
+      "help": "Sendcloud panel → Settings → Integrations → Sendcloud API: create a key pair and copy the public key.",
+      "link": "https://panel.sendcloud.sc/#/settings/integrations"
+    },
+    "SENDCLOUD_SECRET_KEY": {
+      "label": "Secret key",
+      "help": "The secret key of the same key pair.",
+      "link": "https://panel.sendcloud.sc/#/settings/integrations"
+    }
+  },
   "connector": {
     "name": "Sendcloud",
     "type": "REST",

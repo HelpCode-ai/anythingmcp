@@ -18,6 +18,7 @@ import { LoginTokenService } from '../connectors/engines/login-token.service';
 import { GraphqlSchemaService } from '../connectors/engines/graphql-schema.service';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 import { LicenseModule } from '../license/license.module';
+import { SharedSetupRegistry } from './shared-setup';
 
 const ENGINES = [
   RestEngine,
@@ -31,7 +32,7 @@ const ENGINES = [
 @Module({
   imports: [McpServersModule, LicenseModule],
   controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
-  providers: [McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, GraphqlSchemaService, ...ENGINES],
-  exports: [McpServerService, ToolRegistry],
+  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, GraphqlSchemaService, ...ENGINES],
+  exports: [McpServerService, ToolRegistry, SharedSetupRegistry],
 })
 export class McpServerModule {}

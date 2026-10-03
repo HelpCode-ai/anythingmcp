@@ -18,7 +18,7 @@ import { CALLER_CONTEXT_PREFIX } from '../common/caller-context.util';
 import { assertNoUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
 import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
-import { normalizeConnectorBaseUrl } from '../common/url.util';
+import { connectorPageUrl, normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
@@ -251,6 +251,7 @@ export class ConnectorsService {
       assertNoUnresolvedPlaceholders(
         { baseUrl, headers, authConfig },
         `the "${connector.name}" connector`,
+        connectorPageUrl(connector.id),
       );
       assertAbsoluteBaseUrl(
         {
@@ -547,6 +548,7 @@ export class ConnectorsService {
         authConfig,
       },
       toolName ? `the connector behind ${toolName}` : `the "${connector.name}" connector`,
+      connectorPageUrl(connector.id),
     );
     assertAbsoluteBaseUrl(
       {

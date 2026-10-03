@@ -532,3 +532,30 @@ describe('DynamicMcpTools — a base URL variable without https://', () => {
     expect(text).not.toMatch(/SSRF/);
   });
 });
+
+describe('DynamicMcpTools — connector not authorized yet', () => {
+  it('says to authorize, with the link, instead of naming the refresh-token variable', async () => {
+    const saved = process.env.FRONTEND_URL;
+    process.env.FRONTEND_URL = 'https://cloud.example.com';
+    try {
+      const tool = makeTool();
+      tool.setupStatus = 'needs_authorization';
+      tool.connectorConfig = {
+        baseUrl: 'https://openapi.etsy.com/v3/application',
+        authType: 'OAUTH2',
+        authConfig: JSON.stringify({ refreshToken: '{{ETSY_REFRESH_TOKEN}}' }),
+      };
+      const { executor, restEngine } = build(tool);
+      const res = await executor.executeTool('list_devices', {});
+      expect(res.isError).toBe(true);
+      const text = res.content[0].text;
+      expect(text).toContain('has not been authorized yet');
+      expect(text).toContain('https://cloud.example.com/connectors/conn-1');
+      expect(text).not.toContain('ETSY_REFRESH_TOKEN');
+      expect(restEngine.execute).not.toHaveBeenCalled();
+    } finally {
+      if (saved === undefined) delete process.env.FRONTEND_URL;
+      else process.env.FRONTEND_URL = saved;
+    }
+  });
+});

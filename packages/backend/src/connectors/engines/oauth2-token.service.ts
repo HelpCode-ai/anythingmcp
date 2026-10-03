@@ -12,6 +12,7 @@ import {
   isPrivateKeyJwt,
 } from './client-assertion.util';
 import { ssrfGuardedAxiosOptions } from '../../common/guarded-http.util';
+import { connectorPageUrl } from '../../common/url.util';
 
 /** Refresh tokens that expire within this window (5 minutes). */
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -147,9 +148,10 @@ export class OAuth2TokenService {
         );
       }
       if (!authConfig.refreshToken && authConfig.authorizationUrl) {
+        const page = connectorPageUrl(connectorId);
         throw unauthorized(
           'OAuth2: this connector has not been authorized yet. No request was sent to the API. ' +
-            'Open the connector in AnythingMCP and click Authorize with Provider.',
+            `Open the connector in AnythingMCP${page ? ` (${page})` : ''} and click Authorize with Provider.`,
         );
       }
     }

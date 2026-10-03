@@ -8,6 +8,18 @@
   "icon": "whatsapp",
   "docsUrl": "https://developers.facebook.com/docs/whatsapp/cloud-api",
   "requiredEnvVars": ["WHATSAPP_ACCESS_TOKEN", "WHATSAPP_BUSINESS_ACCOUNT_ID"],
+  "envVarMeta": {
+    "WHATSAPP_ACCESS_TOKEN": {
+      "label": "Access token",
+      "help": "Meta Business settings → System users: generate a permanent token with whatsapp_business_messaging and whatsapp_business_management. The 24-hour token from API Setup works for a first try.",
+      "link": "https://business.facebook.com/settings/system-users"
+    },
+    "WHATSAPP_BUSINESS_ACCOUNT_ID": {
+      "label": "WhatsApp Business Account ID",
+      "help": "developers.facebook.com → your app → WhatsApp → API Setup: the WhatsApp Business Account ID (WABA ID).",
+      "pattern": "^[0-9]+$"
+    }
+  },
   "connector": {
     "name": "WhatsApp Business Cloud API",
     "type": "REST",

@@ -9,6 +9,12 @@
   "requiredEnvVars": [
     "GETMYINVOICES_API_KEY"
   ],
+  "envVarMeta": {
+    "GETMYINVOICES_API_KEY": {
+      "label": "API key",
+      "help": "GetMyInvoices web app → top-right menu → API access."
+    }
+  },
   "connector": {
     "name": "GetMyInvoices Accounts API v3",
     "type": "REST",

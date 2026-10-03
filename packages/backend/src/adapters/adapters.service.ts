@@ -21,6 +21,14 @@ import { STARTER_PACK } from './starter-pack';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
+import {
+  describeAdapterEnvVars,
+  EnvVarDescriptor,
+  needsBrowserAuthorization,
+  setupKind,
+  SetupKind,
+} from './env-var-meta';
+import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 
 @Injectable()
@@ -43,10 +51,32 @@ export class AdaptersService {
   listAll(): AdapterMeta[] {
     return listAdapters()
       .filter((a) => this.isInstallableHere(a))
-      .map((a) => ({
-        ...a,
-        requiredEnvVars: withoutOperatorProvided(a.requiredEnvVars) ?? [],
-      }));
+      .map((a) => {
+        const requiredEnvVars = withoutOperatorProvided(a.requiredEnvVars) ?? [];
+        const full = getAdapter(a.slug);
+        return {
+          ...a,
+          requiredEnvVars,
+          setupKind: full ? setupKind({ ...full, requiredEnvVars }) : undefined,
+        };
+      });
+  }
+
+  /**
+   * The adapter as the setup form needs it: the definition, each variable
+   * described (label, address / credential / setting, secret, help), and what
+   * setting it up involves.
+   */
+  describe(slug: string): AdapterDefinition & {
+    envVars: EnvVarDescriptor[];
+    setupKind: SetupKind;
+  } {
+    const adapter = this.getBySlug(slug);
+    return {
+      ...adapter,
+      envVars: describeAdapterEnvVars(adapter),
+      setupKind: setupKind(adapter),
+    };
   }
 
   getBySlug(slug: string): AdapterDefinition {
@@ -115,18 +145,18 @@ export class AdaptersService {
     return this.configService.get<string>('DEPLOYMENT_MODE') !== 'cloud';
   }
 
-  async importAdapter(
-    slug: string,
-    userId: string,
-    organizationId: string,
-    credentials?: Record<string, string>,
-  ): Promise<{
-    connectorId: string;
-    toolsCreated: number;
-    probe: ImportProbeResult | null;
-  }> {
-    const adapter = this.getBySlug(slug);
-
+  /**
+   * The connector an adapter becomes with these credentials, before anything
+   * is written: credentials trimmed and operator values applied, base-URL
+   * variables normalised, {{VAR}} resolved in auth, address and headers.
+   * Shared by the import and by the pre-save verification, so both judge
+   * exactly the same configuration.
+   */
+  private prepareConnector(
+    adapter: AdapterDefinition,
+    input?: Record<string, string>,
+  ) {
+    let credentials = input;
     // Values the operator provides for everyone (e.g. the cloud's own MOTIS
     // URL) go in here, and override anything the request carried.
     credentials = withOperatorProvided(credentials);
@@ -171,7 +201,7 @@ export class AdaptersService {
     // Resolve {{VAR}} placeholders in baseUrl (e.g. weclapp tenant)
     const resolvedBaseUrl = this.resolveString(adapter.connector.baseUrl, credentials);
     this.assertBaseUrlFullyResolved(
-      slug,
+      adapter.slug,
       adapter.connector.baseUrl,
       resolvedBaseUrl,
     );
@@ -190,6 +220,168 @@ export class AdaptersService {
     const envVarsToPersist = credentials && Object.keys(credentials).length > 0
       ? (credentials as Record<string, unknown>)
       : null;
+
+    return {
+      credentials,
+      resolvedAuthConfig,
+      encryptedAuth,
+      resolvedBaseUrl,
+      resolvedHeaders,
+      envVarsToPersist,
+    };
+  }
+
+  /**
+   * Try the adapter with these credentials before anything is saved: the same
+   * preparation as the import, then its probe call against a connector that
+   * exists only in memory (no row, no token cache written).
+   *
+   * - `ok: true`: the API answered; `sample` shows what came back.
+   * - `ok: false`: a value is missing or malformed (`kind: 'invalid_input'`),
+   *   or the API refused the call (`kind` from the shared classifier, e.g.
+   *   `auth_failed`).
+   * - `ok: null`: nothing to try yet: the connector needs a sign-in at the
+   *   provider first, or the adapter has no safe read call.
+   */
+  async verifyCredentials(
+    slug: string,
+    organizationId: string,
+    credentials?: Record<string, string>,
+    /** Finishing an existing connector: a field left empty uses what it stores (masked secrets come back empty). */
+    existingConnectorId?: string,
+  ): Promise<VerifyResult> {
+    const adapter = this.getBySlug(slug);
+    if (existingConnectorId) {
+      const stored = await this.prisma.connector.findFirst({
+        where: { id: existingConnectorId, organizationId },
+        select: { envVars: true },
+      });
+      const env = (stored?.envVars ?? {}) as Record<string, unknown>;
+      // Only names the adapter declares come from the request.
+      const declared = new Set([...adapter.requiredEnvVars, ...(adapter.optionalEnvVars ?? [])]);
+      const merged = new Map<string, string>();
+      for (const [k, v] of Object.entries(env)) if (typeof v === 'string' && v) merged.set(k, v);
+      for (const [k, v] of Object.entries(credentials ?? {})) {
+        if (declared.has(k) && typeof v === 'string' && v.trim()) merged.set(k, v);
+      }
+      credentials = Object.fromEntries(merged);
+    }
+    // Required fields left empty: say which, before anything else complains
+    // about the address they would have formed.
+    const empty = adapter.requiredEnvVars.filter((name) => !credentials?.[name]?.trim());
+    const browserTokens = needsBrowserAuthorization(adapter)
+      ? new Set(describeAdapterEnvVars(adapter).filter((d) => d.advanced).map((d) => d.name))
+      : new Set<string>();
+    const missingRequired = empty.filter((name) => !browserTokens.has(name));
+    if (missingRequired.length > 0) {
+      return {
+        ok: false,
+        kind: 'invalid_input',
+        missing: missingRequired,
+        message: `Still empty: ${missingRequired.join(', ')}.`,
+      };
+    }
+    let prepared: ReturnType<AdaptersService['prepareConnector']>;
+    try {
+      prepared = this.prepareConnector(adapter, credentials);
+    } catch (err: any) {
+      return { ok: false, kind: 'invalid_input', message: String(err?.message ?? err) };
+    }
+    const state = computeSetupState({
+      authType: adapter.connector.authType,
+      authConfig: prepared.resolvedAuthConfig,
+      baseUrl: prepared.resolvedBaseUrl,
+      headers: prepared.resolvedHeaders,
+      envVars: prepared.envVarsToPersist,
+      config: { adapterSlug: slug },
+    });
+    if (state.status === 'needs_input') {
+      return {
+        ok: false,
+        kind: 'invalid_input',
+        missing: state.missing,
+        message: `Still empty: ${state.missing.join(', ')}.`,
+      };
+    }
+    if (state.status === 'needs_authorization') return { ok: null, skipped: 'authorization' };
+
+    const call = pickProbe(adapter);
+    const tool = call ? adapter.tools.find((t) => t.name === call.toolName) : undefined;
+    if (!call || !tool) return { ok: null, skipped: 'no_probe' };
+
+    const transient = {
+      // No id: token services then keep what they fetch in memory only.
+      id: '',
+      name: adapter.connector.name,
+      type: adapter.connector.type,
+      baseUrl: prepared.resolvedBaseUrl,
+      authType: adapter.connector.authType || 'NONE',
+      authConfig: prepared.encryptedAuth,
+      headers: prepared.resolvedHeaders,
+      envVars: prepared.envVarsToPersist,
+      config: { ...(adapter.connector.config ?? {}), adapterSlug: slug },
+      organizationId,
+      specUrl: null,
+    } as unknown as Parameters<ConnectorsService['executeConnectorCall']>[0];
+
+    const started = Date.now();
+    try {
+      const raw = await this.connectors.executeConnectorCall(
+        transient,
+        tool.endpointMapping as any,
+        call.params,
+        call.toolName,
+        tool.parameters,
+      );
+      const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
+      return {
+        ok: true,
+        toolName: call.toolName,
+        durationMs: Date.now() - started,
+        sample: truncateSample(shaped),
+      };
+    } catch (err: any) {
+      const status: number | undefined =
+        typeof err?.status === 'number'
+          ? err.status
+          : typeof err?.response?.status === 'number'
+            ? err.response.status
+            : undefined;
+      const upstream = String(err?.message ?? err ?? 'unknown error').slice(0, 400);
+      const { kind, hint } = classifyToolExecutionError({
+        status,
+        authType: adapter.connector.authType,
+        message: upstream,
+      });
+      return {
+        ok: false,
+        kind,
+        toolName: call.toolName,
+        status: status ?? null,
+        // The hint is what the user acts on; the provider's own words follow.
+        message: hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream,
+      };
+    }
+  }
+
+  async importAdapter(
+    slug: string,
+    userId: string,
+    organizationId: string,
+    credentials?: Record<string, string>,
+  ): Promise<{
+    connectorId: string;
+    toolsCreated: number;
+    probe: ImportProbeResult | null;
+  }> {
+    const adapter = this.getBySlug(slug);
+    const {
+      resolvedAuthConfig,
+      encryptedAuth,
+      resolvedBaseUrl,
+      resolvedHeaders,
+      envVarsToPersist,
+    } = this.prepareConnector(adapter, credentials);
 
     const connector = await this.prisma.connector.create({
       data: {
@@ -394,7 +586,8 @@ export class AdaptersService {
         toolName: call.toolName,
         durationMs: Date.now() - started,
         status: status ?? null,
-        message: `${upstream} ${hint}`.trim(),
+        // The hint is what the user acts on; the provider's own words follow.
+        message: hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream,
       };
     }
   }
@@ -503,6 +696,18 @@ export interface StarterPackItem {
   preselected: boolean;
   installed: boolean;
 }
+
+export type VerifyResult =
+  | { ok: true; toolName: string; durationMs: number; sample: string }
+  | {
+      ok: false;
+      kind: string;
+      message: string;
+      missing?: string[];
+      toolName?: string;
+      status?: number | null;
+    }
+  | { ok: null; skipped: 'authorization' | 'no_probe' };
 
 export type ImportProbeResult =
   | { ok: true; toolName: string; durationMs: number; sample: string }

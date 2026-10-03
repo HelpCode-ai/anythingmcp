@@ -8,6 +8,13 @@
   "icon": "jev",
   "docsUrl": "https://docs.typesafe.ai/api",
   "requiredEnvVars": ["TYPESAFE_API_KEY"],
+  "envVarMeta": {
+    "TYPESAFE_API_KEY": {
+      "label": "TypeSafe API key",
+      "help": "Create an API key in the TypeSafe console.",
+      "link": "https://console.typesafe.ai"
+    }
+  },
   "probe": {
     "tool": "jev_list_models",
     "params": {}

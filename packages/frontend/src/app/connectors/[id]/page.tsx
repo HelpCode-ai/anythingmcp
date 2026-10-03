@@ -14,6 +14,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
+import { SetupStatusBanner, SetupStatusPill } from '@/components/setup-status';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { authTypeLabel, cn } from '@/lib/utils';
@@ -814,12 +815,15 @@ export default function ConnectorDetailPage() {
               >
                 {connector.isActive ? 'Active' : 'Inactive'}
               </StatusPill>
+              <SetupStatusPill status={connector.setupStatus} />
             </div>
             <div className="mt-0.5 break-all font-mono text-[12.5px] text-[var(--text-3)]">
               {connector.baseUrl}
             </div>
           </div>
         </div>
+
+        <SetupStatusBanner connector={connector} />
 
         {msg && (
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
@@ -1147,29 +1151,29 @@ export default function ConnectorDetailPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium mb-1">Header Name</label>
-                    <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="X-API-Key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">API Key</label>
-                    <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                 </div>
               )}
               {editAuthType === 'BEARER_TOKEN' && (
                 <div>
                   <label className="block text-sm font-medium mb-1">Bearer Token</label>
-                  <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                  <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                 </div>
               )}
               {editAuthType === 'BASIC_AUTH' && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium mb-1">Username</label>
-                    <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Password</label>
-                    <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                    <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                   </div>
                 </div>
               )}
@@ -1178,11 +1182,11 @@ export default function ConnectorDetailPage() {
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">Client ID</label>
-                      <input type="text" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthKey} onChange={(e) => setEditAuthKey(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">Client Secret</label>
-                      <input type="password" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editAuthValue} onChange={(e) => setEditAuthValue(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
                   <div>
@@ -1266,11 +1270,11 @@ export default function ConnectorDetailPage() {
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">Username / Access key</label>
-                      <input type="text" value={editLtUsername} onChange={(e) => setEditLtUsername(e.target.value)} placeholder="access key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editLtUsername} onChange={(e) => setEditLtUsername(e.target.value)} placeholder="access key" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">Password / Secret</label>
-                      <input type="password" value={editLtPassword} onChange={(e) => setEditLtPassword(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editLtPassword} onChange={(e) => setEditLtPassword(e.target.value)} placeholder="Leave empty to keep current" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                   </div>
                   <div>

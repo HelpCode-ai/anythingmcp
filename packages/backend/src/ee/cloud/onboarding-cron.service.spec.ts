@@ -202,3 +202,98 @@ describe('OnboardingCronService — trial repair', () => {
     expect(out.licensesDeactivated).toBe(1);
   });
 });
+
+describe('OnboardingCronService — onboarding pass', () => {
+  const HOUR = 60 * 60 * 1000;
+  function makeService(opts: {
+    candidates: any[];
+    orgConnectors?: Record<string, number>;
+    grants?: { userId: string; clientId: string }[];
+  }) {
+    const update = jest.fn().mockResolvedValue({});
+    const prisma = {
+      user: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce(opts.candidates)
+          .mockResolvedValueOnce([]),
+        update,
+      },
+      connector: {
+        groupBy: jest.fn().mockResolvedValue(
+          Object.entries(opts.orgConnectors ?? {}).map(([organizationId, n]) => ({
+            organizationId,
+            _count: { _all: n },
+          })),
+        ),
+      },
+      mcpConnectionGrant: { findMany: jest.fn().mockResolvedValue(opts.grants ?? []) },
+      oAuthClient: {
+        findMany: jest.fn().mockResolvedValue([{ clientId: 'claude-client', clientName: 'Claude' }]),
+      },
+      license: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+    } as any;
+    const email = {
+      sendOnboardingReminderEmail: jest.fn().mockResolvedValue(true),
+      sendActivationReminderEmail: jest.fn().mockResolvedValue(true),
+    } as any;
+    return { service: new OnboardingCronService(prisma, email, makeLicense()), email, update, prisma };
+  }
+  const user = (over: Partial<any>) => ({
+    id: 'u1',
+    email: 'u1@example.com',
+    name: 'Ada',
+    organizationId: 'org-1',
+    onboardingCompletedAt: null,
+    onboardingReminderCount: 0,
+    onboardingLastReminderAt: null,
+    _count: { connectors: 0 },
+    createdAt: new Date(Date.now() - 3 * HOUR),
+    ...over,
+  });
+
+  it('nudges a user who connected Claude to an empty workspace, naming the client', async () => {
+    const { service, email, update } = makeService({
+      candidates: [user({})],
+      grants: [{ userId: 'u1', clientId: 'claude-client' }],
+    });
+    await service.run();
+    expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, {
+      aiClient: 'Claude',
+    });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ onboardingReminderCount: 1 }) }),
+    );
+  });
+
+  it('waits the usual 24h for a user with no AI client yet', async () => {
+    const { service, email } = makeService({ candidates: [user({})] });
+    await service.run();
+    expect(email.sendOnboardingReminderEmail).not.toHaveBeenCalled();
+  });
+
+  it('still reminds a user who pressed Skip on /welcome with an empty workspace', async () => {
+    const { service, email } = makeService({
+      candidates: [
+        user({ onboardingCompletedAt: new Date(), createdAt: new Date(Date.now() - 30 * HOUR) }),
+      ],
+    });
+    await service.run();
+    expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, undefined);
+  });
+
+  it('counts a teammate\'s connector: no reminder, completion stamped', async () => {
+    const { service, email, update } = makeService({
+      candidates: [user({ createdAt: new Date(Date.now() - 30 * HOUR) })],
+      orgConnectors: { 'org-1': 1 },
+    });
+    await service.run();
+    expect(email.sendOnboardingReminderEmail).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { onboardingCompletedAt: expect.any(Date) } }),
+    );
+  });
+});

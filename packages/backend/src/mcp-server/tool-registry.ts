@@ -1,3 +1,4 @@
+import type { SetupStatus } from '../connectors/connector-setup-status.util';
 import { processGauges } from '../common/process-vitals';
 import { Injectable, Logger } from '@nestjs/common';
 
@@ -50,6 +51,15 @@ export interface RegisteredTool {
   // Explicit MCP tool annotations: an admin override, or the annotations
   // reported by an upstream MCP server. Layered over the derived ones.
   annotations?: unknown;
+  // Whether the owning connector can serve calls yet (see
+  // connector-setup-status.util). Undefined counts as ready: tools registered
+  // outside McpServerService (tests, previews) keep being listed.
+  setupStatus?: SetupStatus;
+}
+
+/** True when a tool's connector is fully set up, so the tool may be listed. */
+export function isListable(tool: RegisteredTool): boolean {
+  return tool.setupStatus === undefined || tool.setupStatus === 'ready';
 }
 
 @Injectable()
@@ -129,6 +139,16 @@ export class ToolRegistry {
    */
   getAllTools(): RegisteredTool[] {
     return Array.from(this.toolsById.values());
+  }
+
+  /**
+   * Tools whose connector is fully set up: what tools/list and the shared
+   * endpoint may show. A connector still missing a credential or an OAuth
+   * authorization stays registered (a call by name gets the precise error)
+   * but is not offered to the model.
+   */
+  getListableTools(): RegisteredTool[] {
+    return this.getAllTools().filter(isListable);
   }
 
   /**

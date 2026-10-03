@@ -324,7 +324,7 @@ describe('McpOAuthService PKCE', () => {
     expect(params.get('client_id')).toBe('keystring');
   });
 
-  it('keeps the verifier with its state, for ten minutes', () => {
+  it('keeps the verifier with its state, until it expires or is taken', async () => {
     const s = new McpOAuthService();
     const flow = {
       codeVerifier: 'v',
@@ -335,10 +335,91 @@ describe('McpOAuthService PKCE', () => {
       tokenUrl: 't',
       createdAt: Date.now(),
     };
-    s.storePendingFlow('state-a', flow);
-    expect(s.getPendingFlow('state-a')?.codeVerifier).toBe('v');
-    expect(s.getPendingFlow('state-b')).toBeUndefined();
-    s.storePendingFlow('state-old', { ...flow, createdAt: Date.now() - 11 * 60 * 1000 });
-    expect(s.getPendingFlow('state-old')).toBeUndefined();
+    await s.storePendingFlow('state-a', flow, { returnTo: '/connectors/c' });
+    expect((await s.getPendingFlow('state-a'))?.flow.codeVerifier).toBe('v');
+    expect((await s.getPendingFlow('state-a'))?.returnTo).toBe('/connectors/c');
+    expect(await s.getPendingFlow('state-b')).toBeUndefined();
+    // Taking it consumes it.
+    expect((await s.takePendingFlow('state-a'))?.flow.codeVerifier).toBe('v');
+    expect(await s.takePendingFlow('state-a')).toBeUndefined();
+  });
+
+});
+
+describe('McpOAuthService pending flows in the database', () => {
+  const flow = {
+    codeVerifier: 'the-verifier',
+    connectorId: 'conn-1',
+    userId: 'user-1',
+    redirectUri: 'https://cloud.example.com/api/mcp-oauth/callback',
+    clientId: 'cid',
+    clientSecret: 'very-secret',
+    tokenUrl: 'https://example.com/token',
+    createdAt: Date.now(),
+  };
+  const saved = process.env.ENCRYPTION_KEY;
+  beforeAll(() => {
+    process.env.ENCRYPTION_KEY = 'k'.repeat(32);
+  });
+  afterAll(() => {
+    if (saved === undefined) delete process.env.ENCRYPTION_KEY;
+    else process.env.ENCRYPTION_KEY = saved;
+  });
+
+  function fakePrisma() {
+    const rows = new Map<string, any>();
+    return {
+      rows,
+      connectorOAuthAttempt: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        create: jest.fn(async ({ data }: any) => {
+          rows.set(data.stateHash, data);
+          return data;
+        }),
+        findUnique: jest.fn(async ({ where }: any) => rows.get(where.stateHash) ?? null),
+        delete: jest.fn(async ({ where }: any) => {
+          const row = rows.get(where.stateHash);
+          if (!row) throw new Error('P2025');
+          rows.delete(where.stateHash);
+          return row;
+        }),
+      },
+    };
+  }
+
+  it('stores the state hashed and the secrets encrypted', async () => {
+    const prisma = fakePrisma();
+    const s = new McpOAuthService(prisma as any);
+    await s.storePendingFlow('the-state', flow);
+    const [row] = [...prisma.rows.values()];
+    expect(row.stateHash).not.toContain('the-state');
+    expect(row.payload).not.toContain('very-secret');
+    expect(row.payload).not.toContain('the-verifier');
+    expect(row.userId).toBe('user-1');
+    expect((await s.getPendingFlow('the-state'))?.flow.clientSecret).toBe('very-secret');
+  });
+
+  it('can be taken only once', async () => {
+    const s = new McpOAuthService(fakePrisma() as any);
+    await s.storePendingFlow('the-state', flow);
+    expect((await s.takePendingFlow('the-state'))?.flow.userId).toBe('user-1');
+    expect(await s.takePendingFlow('the-state')).toBeUndefined();
+  });
+
+  it('ignores an expired attempt', async () => {
+    const prisma = fakePrisma();
+    const s = new McpOAuthService(prisma as any);
+    await s.storePendingFlow('the-state', flow);
+    for (const row of prisma.rows.values()) row.expiresAt = new Date(Date.now() - 1000);
+    expect(await s.getPendingFlow('the-state')).toBeUndefined();
+    expect(await s.takePendingFlow('the-state')).toBeUndefined();
+  });
+
+  it('drops a returnTo that would leave the dashboard', async () => {
+    const s = new McpOAuthService(fakePrisma() as any);
+    for (const bad of ['https://evil.example/x', '//evil.example', '/\\evil.example', 'connectors/1']) {
+      await s.storePendingFlow(`st-${bad}`, flow, { returnTo: bad });
+      expect((await s.getPendingFlow(`st-${bad}`))?.returnTo).toBeUndefined();
+    }
   });
 });

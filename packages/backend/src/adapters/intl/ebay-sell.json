@@ -13,6 +13,28 @@
     "EBAY_REFRESH_TOKEN",
     "EBAY_MARKETPLACE_ID"
   ],
+  "envVarMeta": {
+    "EBAY_CLIENT_ID": {
+      "label": "App ID (client ID)",
+      "help": "developer.ebay.com → your production keyset: the App ID.",
+      "link": "https://developer.ebay.com/my/keys"
+    },
+    "EBAY_CLIENT_SECRET": {
+      "label": "Cert ID (client secret)",
+      "help": "The Cert ID of the same keyset.",
+      "link": "https://developer.ebay.com/my/keys"
+    },
+    "EBAY_REFRESH_TOKEN": {
+      "label": "User refresh token",
+      "help": "Run eBay's authorization once for the seller account (eBay's user token tool) and paste the refresh token. It lasts about 18 months."
+    },
+    "EBAY_MARKETPLACE_ID": {
+      "label": "Marketplace",
+      "help": "The eBay site you sell on.",
+      "example": "EBAY_DE",
+      "pattern": "^EBAY_[A-Z_]+$"
+    }
+  },
   "connector": {
     "name": "eBay Sell APIs",
     "type": "REST",

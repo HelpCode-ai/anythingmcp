@@ -280,6 +280,31 @@ test.describe('phone layout has no horizontal overflow', () => {
     expect(o.main, '<main> with tool editor').toBeLessThanOrEqual(o.vw);
   });
 
+  /**
+   * The empty connector list centres three buttons in one row. On a phone
+   * the row was wider than the card and spilled out on both sides; centred
+   * content that overflows to the left does not widen the page, so the
+   * document checks above cannot see it. Check each button instead.
+   */
+  test('empty connector list keeps its buttons on screen', async ({ page }) => {
+    await fakeSession(page);
+    await page.route(/\/api\/connectors$/, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    );
+    await page.goto('/connectors');
+    await page.getByText('No connectors yet').waitFor();
+    await shot(page, '/connectors-empty');
+
+    const vw = page.viewportSize()!.width;
+    const card = page.getByText('No connectors yet').locator('xpath=ancestor::div[contains(@class,"border-dashed")][1]');
+    for (const name of ['Add Connector', 'Browse Adapters', 'Import from Backup']) {
+      const box = await card.getByText(name, { exact: true }).boundingBox();
+      expect(box, name).not.toBeNull();
+      expect(box!.x, `${name} left edge`).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width, `${name} right edge`).toBeLessThanOrEqual(vw);
+    }
+  });
+
   test('audit log expands a row without overflowing', async ({ page }) => {
     await fakeSession(page);
     await page.goto('/logs');

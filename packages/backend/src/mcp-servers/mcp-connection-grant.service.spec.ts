@@ -346,3 +346,36 @@ describe('McpConnectionGrantService writing a grant', () => {
     expect(calls.upsert[0].update.revokedAt).toBeNull();
   });
 });
+
+describe('McpConnectionGrantService reports the first connection of a client', () => {
+  function withEvents(existing: object | null) {
+    const { prisma } = build({
+      grant: existing as any,
+      servers: [{ id: 'srv-1', organizationId: 'org-1' }],
+      memberCount: 1,
+    });
+    prisma.oAuthClient = {
+      findUnique: jest.fn().mockResolvedValue({ clientName: 'Claude' }),
+    };
+    const events = { log: jest.fn().mockResolvedValue(undefined) };
+    const svc = new McpConnectionGrantService(prisma, events as any);
+    return { svc, events };
+  }
+
+  it('logs ai_client_connected with the client name on a new grant', async () => {
+    const { svc, events } = withEvents(null);
+    await svc.grantServers('client-1', 'user-1', ['srv-1']);
+    expect(events.log).toHaveBeenCalledWith({
+      event: 'ai_client_connected',
+      userId: 'user-1',
+      organizationId: 'org-1',
+      metadata: { client: 'Claude' },
+    });
+  });
+
+  it('does not log again when the user changes an existing grant', async () => {
+    const { svc, events } = withEvents({ id: 'g1', organizationId: null, serverIds: ['srv-1'] });
+    await svc.grantWholeOrganization('client-1', 'user-1', 'org-1');
+    expect(events.log).not.toHaveBeenCalled();
+  });
+});

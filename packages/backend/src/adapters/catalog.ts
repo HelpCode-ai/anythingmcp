@@ -274,6 +274,7 @@ import {
   wantsODataBuiltins,
 } from '../connectors/odata/odata-builtins';
 import { computeAdapterVersion } from './catalog-fingerprint';
+import type { EnvVarMeta, SetupKind } from './env-var-meta';
 
 export interface AdapterMeta {
   slug: string;
@@ -325,6 +326,12 @@ export interface AdapterMeta {
    *  may use the literal `__TOMORROW__` for a date. Without one, the first
    *  GET tool with no required parameters is used. */
   probe?: { tool: string; params?: Record<string, unknown> };
+  /** How each variable is presented when someone sets the connector up
+   *  (label, secret or not, where to find it). Optional and partial: what is
+   *  left out is derived from the name, see env-var-meta.ts. */
+  envVarMeta?: Record<string, EnvVarMeta>;
+  /** What setting it up involves; filled in by the adapters API. */
+  setupKind?: SetupKind;
 }
 
 export interface AdapterDefinition extends AdapterMeta {
@@ -732,6 +739,7 @@ export function listAdapters(): AdapterMeta[] {
     selfHostOnly: adapter.selfHostOnly,
     unlisted: adapter.unlisted,
     probe: adapter.probe,
+    envVarMeta: adapter.envVarMeta,
   }));
 }
 

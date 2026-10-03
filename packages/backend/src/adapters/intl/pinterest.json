@@ -9,6 +9,23 @@
   "docsUrl": "https://developers.pinterest.com/docs/api/v5/",
   "requiredEnvVars": ["PINTEREST_CLIENT_ID", "PINTEREST_CLIENT_SECRET"],
   "optionalEnvVars": ["PINTEREST_REFRESH_TOKEN"],
+  "envVarMeta": {
+    "PINTEREST_CLIENT_ID": {
+      "label": "App ID",
+      "help": "Pinterest developers → My apps → your app: the App ID.",
+      "link": "https://developers.pinterest.com/apps/"
+    },
+    "PINTEREST_CLIENT_SECRET": {
+      "label": "App secret key",
+      "help": "Same page, the App secret key.",
+      "link": "https://developers.pinterest.com/apps/"
+    },
+    "PINTEREST_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "help": "Leave empty: the authorization with Pinterest fills it in.",
+      "advanced": true
+    }
+  },
   "connector": {
     "name": "Pinterest Business API v5",
     "type": "REST",
