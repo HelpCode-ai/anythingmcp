@@ -108,6 +108,16 @@ describe('McpOAuthCallbackController — provider redirect', () => {
     expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('error='));
   });
 
+  it('treats repeated parameters as missing, never as arrays', async () => {
+    const { controller, mcpOAuthService } = makeController();
+    const res = makeRes();
+    await controller.oauthCallback(['a', 'b'], ['s1', 's2'], ['access_denied', 'x'], ['d'], res);
+    expect(mcpOAuthService.takePendingFlow).not.toHaveBeenCalled();
+    expect(mcpOAuthService.getPendingFlow).not.toHaveBeenCalled();
+    expect(res.redirect.mock.calls[0][0]).toMatch(/complete\?error=/);
+    expect(res.redirect.mock.calls[0][0]).not.toContain('code=');
+  });
+
   it('spends the attempt and explains a refusal at the provider', async () => {
     const { controller, mcpOAuthService } = makeController();
     const res = makeRes();
