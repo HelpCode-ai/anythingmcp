@@ -1,0 +1,138 @@
+{
+  "slug": "baserow",
+  "name": "Baserow",
+  "description": "Read Baserow tables, fields, and rows from Baserow Cloud or a self-hosted instance. 4 generic read-only tools using database-token authentication.",
+  "instructions": "This connector uses Baserow's database API and is read-only.\n\n**Setup**:\n1. In Baserow, open Settings > Database tokens and create a token with read access only to the databases and tables this connector needs.\n2. Set `BASEROW_API_TOKEN` to that token.\n3. Set `BASEROW_URL` to the root Baserow API host, with no trailing slash. For Baserow Cloud use `https://api.baserow.io`. For self-hosted Baserow use your own host, for example `https://baserow.example.com`.\n\n**Authentication**: Baserow database tokens use `Authorization: Token <token>`, not Bearer authentication. This adapter sends the header correctly. Database tokens only work with the database API; some account/workspace endpoints require JWT authentication and are intentionally not exposed here.\n\n**Discovery order**: call `baserow_list_tables` first, then `baserow_list_fields` for the table you want to query. Every Baserow installation has different tables, so the adapter stays generic rather than creating one tool per table.\n\n**Rows**: row tools always send `user_field_names=true`, so responses use human-readable field names instead of keys such as `field_1234`. `baserow_list_rows` supports search plus page/size pagination. Start with page 1 and a modest size; increase only when the task needs more rows.\n\n**Self-hosted instances**: if the Baserow host is private or resolves to private address space, self-host AnythingMCP on the same network and allow the host through `SSRF_ALLOWED_HOSTS`; otherwise the outbound guard may block the request.\n\n**Out of scope**: creating, updating, or deleting rows, fields, tables, databases, or workspace/account objects.",
+  "region": "intl",
+  "category": "data",
+  "icon": "baserow",
+  "docsUrl": "https://baserow.io/user-docs/database-api",
+  "requiredEnvVars": [
+    "BASEROW_URL",
+    "BASEROW_API_TOKEN"
+  ],
+  "connector": {
+    "name": "Baserow Database API",
+    "type": "REST",
+    "baseUrl": "{{BASEROW_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Token {{BASEROW_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/database/tables/all-tables/"
+  },
+  "probe": {
+    "tool": "baserow_list_tables"
+  },
+  "tools": [
+    {
+      "name": "baserow_list_tables",
+      "description": "List every table visible to the configured database token. Call this first to discover table IDs and names, for example table id 42 named Tasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/database/tables/all-tables/"
+      }
+    },
+    {
+      "name": "baserow_list_fields",
+      "description": "List the fields in one Baserow table so later row queries can use the real human-readable field names and understand their types.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_id": {
+            "type": "integer",
+            "description": "Numeric table ID returned by baserow_list_tables, for example 42."
+          }
+        },
+        "required": [
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/database/fields/table/{table_id}/",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "baserow_list_rows",
+      "description": "List rows from one Baserow table using human-readable field names. Supports free-text search and page/size pagination; use baserow_list_fields first when the schema is unknown.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_id": {
+            "type": "integer",
+            "description": "Numeric table ID returned by baserow_list_tables, for example 42."
+          },
+          "search": {
+            "type": "string",
+            "description": "Optional free-text search across searchable fields, for example overdue."
+          },
+          "page": {
+            "type": "integer",
+            "description": "1-based page number. Start with 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "size": {
+            "type": "integer",
+            "description": "Number of rows per page. Use a modest page size such as 20 unless more rows are required.",
+            "minimum": 1,
+            "default": 20
+          }
+        },
+        "required": [
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/database/rows/table/{table_id}/",
+        "queryParams": {
+          "user_field_names": true,
+          "search": "$search",
+          "page": "$page",
+          "size": "$size"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "baserow_get_row",
+      "description": "Get one row by numeric row ID from a Baserow table, returning human-readable field names. Use baserow_list_rows to discover row IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_id": {
+            "type": "integer",
+            "description": "Numeric table ID returned by baserow_list_tables, for example 42."
+          },
+          "row_id": {
+            "type": "integer",
+            "description": "Numeric row ID to retrieve, for example 123."
+          }
+        },
+        "required": [
+          "table_id",
+          "row_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/database/rows/table/{table_id}/{row_id}/",
+        "queryParams": {
+          "user_field_names": true
+        },
+        "encodePathParams": true
+      }
+    }
+  ]
+}

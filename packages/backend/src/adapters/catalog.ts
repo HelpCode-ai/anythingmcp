@@ -73,6 +73,7 @@ import * as apollo from './intl/apollo.json';
 import * as attio from './intl/attio.json';
 import * as bamboohr from './intl/bamboohr.json';
 import * as basecamp from './intl/basecamp.json';
+import * as baserow from './intl/baserow.json';
 import * as beehiiv from './intl/beehiiv.json';
 import * as bigcommerce from './intl/bigcommerce.json';
 import * as bitrix24 from './intl/bitrix24.json';
@@ -514,6 +515,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   attio as unknown as AdapterDefinition,
   bamboohr as unknown as AdapterDefinition,
   basecamp as unknown as AdapterDefinition,
+  baserow as unknown as AdapterDefinition,
   beehiiv as unknown as AdapterDefinition,
   bigcommerce as unknown as AdapterDefinition,
   bitrix24 as unknown as AdapterDefinition,
