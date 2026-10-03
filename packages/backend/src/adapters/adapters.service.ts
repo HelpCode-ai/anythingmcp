@@ -257,10 +257,14 @@ export class AdaptersService {
         select: { envVars: true },
       });
       const env = (stored?.envVars ?? {}) as Record<string, unknown>;
-      const merged: Record<string, string> = {};
-      for (const [k, v] of Object.entries(env)) if (typeof v === 'string' && v) merged[k] = v;
-      for (const [k, v] of Object.entries(credentials ?? {})) if (typeof v === 'string' && v.trim()) merged[k] = v;
-      credentials = merged;
+      // Only names the adapter declares come from the request.
+      const declared = new Set([...adapter.requiredEnvVars, ...(adapter.optionalEnvVars ?? [])]);
+      const merged = new Map<string, string>();
+      for (const [k, v] of Object.entries(env)) if (typeof v === 'string' && v) merged.set(k, v);
+      for (const [k, v] of Object.entries(credentials ?? {})) {
+        if (declared.has(k) && typeof v === 'string' && v.trim()) merged.set(k, v);
+      }
+      credentials = Object.fromEntries(merged);
     }
     // Required fields left empty: say which, before anything else complains
     // about the address they would have formed.
@@ -372,14 +376,12 @@ export class AdaptersService {
   }> {
     const adapter = this.getBySlug(slug);
     const {
-      credentials: cleaned,
       resolvedAuthConfig,
       encryptedAuth,
       resolvedBaseUrl,
       resolvedHeaders,
       envVarsToPersist,
     } = this.prepareConnector(adapter, credentials);
-    credentials = cleaned;
 
     const connector = await this.prisma.connector.create({
       data: {
