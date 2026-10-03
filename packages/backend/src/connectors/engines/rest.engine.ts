@@ -15,6 +15,7 @@ import {
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { fetchOutbound } from '../../common/outbound-fetch.util';
 import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
@@ -1036,100 +1037,28 @@ function getMaxFileUploadBytes(env: NodeJS.ProcessEnv = process.env): number {
     : DEFAULT_MAX_FILE_UPLOAD_BYTES;
 }
 
-const fileFetchLogger = new Logger('RestEngine:file-upload');
-
 /**
  * Fetch a `__file` URL and return it as a ready-to-attach multipart part.
  *
- * This is a plain, bare request to a third party the connector has no
- * relationship with — none of the connector's auth, headers or proxy config
- * are attached, and the URL's query string (which a presigned link uses to
- * carry its credentials) is never logged.
+ * The download itself — SSRF checks on the URL and every redirect, no
+ * connector credentials, the size cap, the timeout, non-2xx as an error —
+ * is entirely fetchOutbound's job; this only resolves the filename and
+ * content-type once the bytes are back.
  */
 async function fetchFileForUpload(url: string): Promise<FetchedFile> {
-  await assertSafeOutboundUrl(url);
-
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error(`__file value is not a valid URL: '${url}'`);
-  }
-  fileFetchLogger.debug(
-    `Fetching file for upload: ${parsed.origin}${parsed.pathname}`,
-  );
-
-  const response = await axios({
-    method: 'GET',
-    url,
-    responseType: 'stream',
-    timeout: 30000,
-    validateStatus: () => true,
+  const result = await fetchOutbound(url, {
+    maxBytes: getMaxFileUploadBytes(),
+    timeoutMs: 30000,
   });
 
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(
-      `Could not download the file for upload: the URL answered with HTTP ${response.status}.`,
-    );
-  }
-
-  const maxBytes = getMaxFileUploadBytes();
-  const buffer = await readStreamWithLimit(
-    response.data as NodeJS.ReadableStream,
-    maxBytes,
-  );
-  const headers = (response.headers ?? {}) as Record<string, unknown>;
   const contentType = String(
-    headers['content-type'] ?? 'application/octet-stream',
+    result.headers['content-type'] ?? 'application/octet-stream',
   );
-  const filename = resolveUploadFilename(url, headers);
+  // finalUrl, not the original url: a short link redirecting to
+  // /files/report.pdf should name the part after the real file.
+  const filename = resolveUploadFilename(result.finalUrl, result.headers);
 
-  return { buffer, filename, contentType };
-}
-
-/** Buffers a stream, aborting as soon as `maxBytes` is crossed. */
-function readStreamWithLimit(
-  stream: NodeJS.ReadableStream,
-  maxBytes: number,
-): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    let settled = false;
-
-    const cleanup = () => {
-      stream.removeListener('data', onData);
-      stream.removeListener('end', onEnd);
-      stream.removeListener('error', onError);
-    };
-    const finish = (err: Error | null, buffer?: Buffer) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (err) reject(err);
-      else resolve(buffer as Buffer);
-    };
-    const onData = (chunk: Buffer) => {
-      total += chunk.length;
-      if (total > maxBytes) {
-        const mb = Math.floor(maxBytes / (1024 * 1024));
-        (stream as unknown as { destroy?: () => void }).destroy?.();
-        finish(
-          new Error(
-            `The file exceeds the ${mb} MB upload limit (set MAX_FILE_UPLOAD_BYTES to raise it).`,
-          ),
-        );
-        return;
-      }
-      chunks.push(chunk);
-    };
-    const onEnd = () => finish(null, Buffer.concat(chunks));
-    const onError = (err: Error) => finish(err);
-
-    stream.on('data', onData);
-    stream.on('end', onEnd);
-    stream.on('error', onError);
-  });
+  return { buffer: result.body, filename, contentType };
 }
 
 /**
