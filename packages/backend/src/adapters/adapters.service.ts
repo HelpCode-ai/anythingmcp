@@ -464,29 +464,41 @@ export class AdaptersService {
       }
     }
 
-    for (const tool of toolsToCreate) {
-      try {
-        await this.prisma.mcpTool.create({
-          data: {
-            connectorId: connector.id,
-            name: tool.name,
-            description: tool.description,
-            isEnabled: tool.enabled !== false,
-            // Seed the proxy preference from the adapter spec (default off).
-            useProxy: tool.useProxy === true,
-            parameters: tool.parameters as any,
-            endpointMapping: tool.endpointMapping as any,
-            responseMapping: tool.responseMapping as any,
-            outputSchema: ((tool as any).outputSchema ?? null) as any,
-            annotations: (tool.annotations ?? undefined) as any,
-            // A catalog tool: catalog updates may change or retire it.
-            origin: 'catalog',
-          },
-        });
-        toolsCreated++;
-      } catch (err: any) {
-        if (err.code !== 'P2002') {
-          this.logger.warn(`Failed to create tool ${tool.name}: ${err.message}`);
+    const toolRows = toolsToCreate.map((tool) => ({
+      connectorId: connector.id,
+      name: tool.name,
+      description: tool.description,
+      isEnabled: tool.enabled !== false,
+      // Seed the proxy preference from the adapter spec (default off).
+      useProxy: tool.useProxy === true,
+      parameters: tool.parameters as any,
+      endpointMapping: tool.endpointMapping as any,
+      responseMapping: tool.responseMapping as any,
+      outputSchema: ((tool as any).outputSchema ?? null) as any,
+      annotations: (tool.annotations ?? undefined) as any,
+      // A catalog tool: catalog updates may change or retire it.
+      origin: 'catalog',
+    }));
+
+    try {
+      // One insert for the whole adapter instead of one per tool
+      // (ANYTHINGMCP-CLOUD-BACKEND-5: 40-odd inserts for Telegram Bot). A
+      // name the connector already has is skipped, as before.
+      toolsCreated = (
+        await this.prisma.mcpTool.createMany({ data: toolRows, skipDuplicates: true })
+      ).count;
+    } catch (err: any) {
+      // A row the batch cannot take would otherwise lose every tool: insert
+      // one by one so only that tool is left out, as the import always did.
+      this.logger.warn(`Batch insert of the "${slug}" tools failed (${err.message}); inserting one by one`);
+      for (const data of toolRows) {
+        try {
+          await this.prisma.mcpTool.create({ data });
+          toolsCreated++;
+        } catch (e: any) {
+          if (e.code !== 'P2002') {
+            this.logger.warn(`Failed to create tool ${data.name}: ${e.message}`);
+          }
         }
       }
     }

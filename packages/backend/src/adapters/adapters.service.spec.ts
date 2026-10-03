@@ -239,7 +239,10 @@ describe('AdaptersService install — a base URL variable without https://', () 
         // The import probe looks the connector up; nothing found = no probe.
         findUnique: jest.fn().mockResolvedValue(null),
       },
-      mcpTool: { create: jest.fn().mockResolvedValue({}) },
+      mcpTool: {
+        create: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn(async ({ data }: any) => ({ count: data.length })),
+      },
     };
     const service = new AdaptersService(
       prisma as any,

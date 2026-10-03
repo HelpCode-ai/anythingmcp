@@ -123,6 +123,28 @@ export const BROWSER_IGNORE_ERRORS: Array<string | RegExp> = [
   /Invalid call to runtime\.sendMessage\(\)\. Tab not found/,
 ];
 
+const SCRIPT_FILE = /\.[cm]?js(?:[?#]|$)/i;
+
+/**
+ * True for an error whose stack runs entirely through code that is not a
+ * script file: what a browser injects into the page itself. Chrome on iOS
+ * runs its translate helpers that way; translating /login into Portuguese
+ * overflowed one of them (ANYTHINGMCP-CLOUD-FRONTEND-9, -A: frames at lines
+ * 191 and 425 of a 12-line document). None of our /_next/ chunks was on the
+ * stack. The site drops the same events (ANYTHINGMCP-WEBSITE-K). Errors
+ * without a stack are kept.
+ */
+export function isInjectedScriptError(event: Event): boolean {
+  const frames = (event.exception?.values ?? []).flatMap((v) => v.stacktrace?.frames ?? []);
+  if (frames.length === 0) return false;
+  return frames.every((f) => !SCRIPT_FILE.test(f.filename ?? f.abs_path ?? ''));
+}
+
+/** The browser's beforeSend: drop injected-script noise, scrub the rest. */
+export function beforeSendBrowser<T extends Event>(event: T): T | null {
+  return isInjectedScriptError(event) ? null : scrubEvent(event);
+}
+
 /** Errors raised by scripts browser extensions inject into the page. */
 export const BROWSER_DENY_URLS: RegExp[] = [
   /^(chrome|moz|safari(-web)?|ms-browser)-extension:\/\//i,

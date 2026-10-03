@@ -75,6 +75,10 @@ describe('importAdapter for an MCP adapter (splunk)', () => {
           created.push(data);
           return data;
         }),
+        createMany: jest.fn(async ({ data }: any) => {
+          created.push(...data);
+          return { count: data.length };
+        }),
       },
     };
     const service = new AdaptersService(
@@ -130,5 +134,19 @@ describe('importAdapter for an MCP adapter (splunk)', () => {
     expect(created.find((t) => t.name === 'splunk_create_dashboard').isEnabled).toBe(false);
     expect(out.probe).toMatchObject({ ok: false, toolName: 'tools/list', status: 403 });
     expect((out.probe as any).message).toContain('invalid token audience');
+  });
+
+  it('inserts the tools in one batch, and one by one only if the batch fails', async () => {
+    const discover = jest.fn().mockResolvedValue([remote('splunk_get_info'), remote('splunk_get_indexes')]);
+    const { service, prisma } = build(discover);
+    await service.importAdapter('splunk', 'u1', 'o1', creds);
+    expect(prisma.mcpTool.createMany).toHaveBeenCalledTimes(1);
+    expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+
+    const fallback = build(jest.fn().mockResolvedValue([remote('splunk_get_info'), remote('splunk_get_indexes')]));
+    fallback.prisma.mcpTool.createMany.mockRejectedValueOnce(new Error('batch refused'));
+    const out = await fallback.service.importAdapter('splunk', 'u1', 'o1', creds);
+    expect(fallback.prisma.mcpTool.create).toHaveBeenCalledTimes(2);
+    expect(out.toolsCreated).toBe(2);
   });
 });

@@ -11,6 +11,7 @@ import {
   BROWSER_CONFIG_GLOBAL,
   BROWSER_DENY_URLS,
   BROWSER_IGNORE_ERRORS,
+  beforeSendBrowser,
   scrubBreadcrumb,
   scrubEvent,
   type BrowserSentryConfig,
@@ -32,7 +33,8 @@ function init(): void {
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: 0,
     sendDefaultPii: false,
-    beforeSend: scrubEvent,
+    // Drops errors thrown entirely inside scripts the browser injected.
+    beforeSend: beforeSendBrowser,
     beforeSendTransaction: scrubEvent,
     beforeBreadcrumb: scrubBreadcrumb,
     // Noise from extensions and link scanners: see lib/sentry-scrub.ts.
