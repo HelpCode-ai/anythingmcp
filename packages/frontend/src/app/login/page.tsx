@@ -470,6 +470,10 @@ function LoginForm() {
               <input
                 type="text"
                 inputMode="numeric"
+                // Lets iOS and Android offer the code from the email (Apple
+                // Mail) or a message right above the keyboard.
+                autoComplete="one-time-code"
+                name="one-time-code"
                 maxLength={6}
                 value={verificationCode}
                 onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}

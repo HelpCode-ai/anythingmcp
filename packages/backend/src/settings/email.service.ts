@@ -392,7 +392,9 @@ export class EmailService {
         await transport.transporter.sendMail({
           from: transport.from,
           to,
-          subject: 'Verify Your Email — AnythingMCP',
+          // Code first: it is what the inbox preview shows, and what iOS
+          // reads to offer it above the keyboard (autocomplete one-time-code).
+          subject: `${code} is your AnythingMCP verification code`,
           html: `
             <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
               <h2 style="color: #2563eb;">Verify Your Email</h2>
